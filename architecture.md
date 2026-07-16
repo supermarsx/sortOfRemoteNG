@@ -297,15 +297,20 @@ Legend: ● full / ◐ partial / ○ scaffold, roadmap, or out-of-scope / — no
 | -------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------: | :---------------: | :------------------: |
 | SSH (key + password + agent + cert)                                                                      |              ● `sorng-ssh` (ssh2 + agent fwd + script-engine)               |     ● (PuTTY)     |          ●           |
 | RDP (GFX / RemoteFX / AVC)                                                                               |      ● `sorng-rdp` + `sorng-rdp-vendor` (IronRDP, MF/openh264 decode)       |  ● (mstsc shell)  |          ●           |
-| VNC                                                                                                      |                           ● `sorng-vnc` (vnc-rs)                            |         ●         |          ●           |
-| SFTP / SCP                                                                                               |                         ● `sorng-sftp`, `sorng-scp`                         |  ◐ (via WinSCP)   |          ●           |
-| FTP / FTPS                                                                                               |                          ● `sorng-ftp` (suppaftp)                           |         ◐         |          ●           |
+| VNC                                                                                                      |          ◐ WebSocket-capable endpoints only; no raw-TCP RFB bridge          |         ●         |          ●           |
+| SFTP                                                                                                     |             ● native saved-session browser and file operations              |  ◐ (via WinSCP)   |          ●           |
+| SCP                                                                                                      |               ○ backend crate; no direct saved-session viewer               |  ◐ (via WinSCP)   |          ●           |
+| FTP / FTPS                                                                                               |               ○ backend crate; no direct saved-session viewer               |         ◐         |          ●           |
 | SMB file share                                                                                           |       ● `sorng-smb` (platform-native: Windows UNC / Unix `smbclient`)       |         ○         |          ●           |
-| Telnet                                                                                                   |             ◐ `sorng-telnet` backend and terminal presentation              |         ●         |          ●           |
-| RLogin                                                                                                   | ○ Scaffold: saved/import identity; commands disabled, sending unimplemented |         ●         |          ●           |
-| Serial console                                                                                           |        ● `sorng-serial` (serialport-rs) — static + dynamic dispatch         |         ○         |          ●           |
-| RustDesk                                                                                                 |                             ● `sorng-rustdesk`                              |         ○         |          ○           |
-| Spice / NX / x2go / XDMCP                                                                                |          ● `sorng-spice`, `sorng-nx`, `sorng-x2go`, `sorng-xdmcp`           |         ○         |          ◐           |
+| Telnet                                                                                                   |                        ● native interactive terminal                        |         ●         |          ●           |
+| RLogin                                                                                                   |            ● RFC 1282 interactive terminal and native lifecycle             |         ●         |          ●           |
+| Raw Socket                                                                                               |                    ● binary-safe TCP/UDP payload client                     |         ◐         |          ●           |
+| PowerShell Remoting                                                                                      |                  ● persistent PSRP over WSMan/WinRM or SSH                  |         ◐         |          ●           |
+| Apple Remote Desktop                                                                                     |     ● embedded ARD/RFB, with macOS Screen Sharing Apple Account handoff     |         ○         |          ●           |
+| Serial console                                                                                           |          ● local native terminal, driver and permission dependent           |         ○         |          ●           |
+| AnyDesk                                                                                                  |         ◐ installed native-client handoff; no embedded framebuffer          |         ○         |          ●           |
+| RustDesk                                                                                                 |         ◐ installed native-client handoff; no embedded framebuffer          |         ○         |          ○           |
+| Spice / NX / x2go / XDMCP                                                                                |              ○ implementations exist; no saved-session viewers              |         ○         |          ◐           |
 | VPN (OpenVPN / WireGuard / SoftEther / Tailscale / ZeroTier / Netbird / Teleport)                        |    ● `sorng-vpn` + siblings (SoftEther dataplane behind `vpn-softether`)    | ○ (external only) | ◐ (OpenVPN launcher) |
 | Wake-on-LAN                                                                                              |                     ● `sorng-netutils` + `sorng-netmgr`                     |         ●         |          ●           |
 | TOTP / MFA                                                                                               |                      ● `sorng-totp` + `sorng-yubikey`                       |         ○         |          ●           |
@@ -323,9 +328,9 @@ Legend: ● full / ◐ partial / ○ scaffold, roadmap, or out-of-scope / — no
 | Cross-platform (Win / macOS / Linux)                                                                     |                           ● Tauri 2 build matrix                            | ○ (Windows only)  |          ●           |
 | Open source                                                                                              |                                      ●                                      |         ●         |          ○           |
 
-The matrix reflects intent for the 1.0 milestone; individual cells whose
-crates are behind an unstable feature flag ship as **beta** until their
-executor completes.
+The sortOfRemoteNG column reflects the current saved-session product boundary,
+not merely the presence of a crate. Environment-dependent clients still need
+their external target, driver, proxy, or installed application.
 
 ---
 

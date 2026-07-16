@@ -237,28 +237,19 @@ function projectStatusCell(row) {
 async function checkProtocolSupportDocumentation() {
   const architecturePath = path.join(root, "architecture.md");
   const protocolsPath = path.join(docsRoot, "protocols.md");
-  const handlerPath = path.join(
+  const availabilityPath = path.join(
     root,
-    "src-tauri",
-    "crates",
-    "sorng-commands-core",
     "src",
-    "core_handler.rs",
+    "utils",
+    "session",
+    "protocolAvailability.ts",
   );
-  const rloginPath = path.join(
-    root,
-    "src-tauri",
-    "crates",
-    "sorng-protocols",
-    "src",
-    "rlogin.rs",
-  );
-  const frontendImporterPath = path.join(
+  const portabilityPath = path.join(
     root,
     "src",
     "components",
     "ImportExport",
-    "utils.ts",
+    "advancedProtocolPortability.ts",
   );
   const rustImporterPath = path.join(
     root,
@@ -273,9 +264,8 @@ async function checkProtocolSupportDocumentation() {
   const requiredFiles = [
     architecturePath,
     protocolsPath,
-    handlerPath,
-    rloginPath,
-    frontendImporterPath,
+    availabilityPath,
+    portabilityPath,
     rustImporterPath,
   ];
   const missingFiles = requiredFiles.filter((file) => !existsSync(file));
@@ -288,26 +278,8 @@ async function checkProtocolSupportDocumentation() {
     return;
   }
 
-  const [
-    architecture,
-    protocols,
-    handler,
-    rlogin,
-    frontendImporter,
-    rustImporter,
-  ] = await Promise.all(requiredFiles.map((file) => readFile(file, "utf8")));
-
-  const rloginCommandsDisabled =
-    /^\s*\/\/\s*rlogin::connect_rlogin,/m.test(handler) &&
-    /^\s*\/\/\s*rlogin::send_rlogin_command,/m.test(handler);
-  const rloginSendMissing =
-    /send_rlogin_command[\s\S]*?Command sending not implemented/i.test(rlogin);
-  if (!rloginCommandsDisabled || !rloginSendMissing) {
-    errors.push(
-      "architecture.md:1: RLogin source support changed; review the documentation support contract",
-    );
-    return;
-  }
+  const [architecture, protocols, availability, portability, rustImporter] =
+    await Promise.all(requiredFiles.map((file) => readFile(file, "utf8")));
 
   if (/^\|\s*Telnet\s*\/\s*rlogin\b/im.test(architecture)) {
     errors.push(
@@ -315,64 +287,111 @@ async function checkProtocolSupportDocumentation() {
     );
   }
 
-  const architectureTelnet = markdownTableRow(architecture, "Telnet");
-  if (!projectStatusCell(architectureTelnet).startsWith("◐")) {
-    errors.push("architecture.md:1: Telnet must remain labelled partial");
-  }
-
-  const architectureRlogin = markdownTableRow(architecture, "RLogin");
-  const architectureRloginStatus = projectStatusCell(architectureRlogin);
-  if (
-    !architectureRloginStatus.startsWith("○") ||
-    !/scaffold/i.test(architectureRloginStatus)
-  ) {
-    const line = architectureRlogin
-      ? lineAt(architecture, architecture.indexOf(architectureRlogin))
-      : 1;
-    errors.push(
-      `architecture.md:${line}: RLogin must remain an explicit scaffold, not full support`,
-    );
-  }
-
-  const requiredStatuses = [
-    ["RLogin", "Scaffold"],
-    ["RAW socket", "Scaffold"],
-    ["PowerShell Remoting", "Partial"],
+  const architectureStatuses = [
+    ["Telnet", "●"],
+    ["RLogin", "●"],
+    ["Raw Socket", "●"],
+    ["PowerShell Remoting", "●"],
+    ["Apple Remote Desktop", "●"],
+    ["Serial console", "●"],
+    ["SFTP", "●"],
+    ["VNC", "◐"],
+    ["AnyDesk", "◐"],
+    ["RustDesk", "◐"],
+    ["FTP / FTPS", "○"],
+    ["SCP", "○"],
+    ["Spice / NX / x2go / XDMCP", "○"],
   ];
-  for (const [label, status] of requiredStatuses) {
+  for (const [label, status] of architectureStatuses) {
+    const row = markdownTableRow(architecture, label);
+    if (!projectStatusCell(row).startsWith(status)) {
+      const line = row ? lineAt(architecture, architecture.indexOf(row)) : 1;
+      errors.push(
+        `architecture.md:${line}: ${label} must match the current ${status} product boundary`,
+      );
+    }
+  }
+
+  const protocolStatuses = [
+    ["Apple Remote Desktop (ARD)", "Interactive client"],
+    ["Serial", "Interactive client"],
+    ["Telnet", "Interactive client"],
+    ["Raw Socket", "Interactive client"],
+    ["RLogin", "Interactive client"],
+    ["MySQL / MariaDB", "Interactive client"],
+    ["SFTP", "Interactive client"],
+    ["PowerShell Remoting (`winrm`)", "Interactive client"],
+    ["SMB", "Interactive client"],
+    ["VNC", "Interactive client, constrained transport"],
+    ["AnyDesk", "External handoff"],
+    ["RustDesk", "External handoff"],
+    ["FTP", "Unavailable direct session"],
+    ["SCP", "Unavailable direct session"],
+  ];
+  for (const [label, status] of protocolStatuses) {
     const row = markdownTableRow(protocols, label);
-    if (!row || !row.includes(`>${status}<`)) {
-      errors.push(
-        `docs/protocols.md:1: ${label} must remain labelled ${status}`,
-      );
+    if (projectStatusCell(row) !== status) {
+      errors.push(`docs/protocols.md:1: ${label} must be labelled ${status}`);
     }
   }
 
-  const frontendTarget = frontendImporter.match(
-    /\bPowerShell:\s*["']([^"']+)["']/,
-  )?.[1];
-  const rustTarget = rustImporter.match(
-    /MrngProtocol::PowerShell\s*=>\s*["']([^"']+)["']/,
-  )?.[1];
-  if (!frontendTarget || !rustTarget) {
-    errors.push(
-      "docs/protocols.md:1: PowerShell importer mappings changed; review the documentation support contract",
-    );
-    return;
-  }
-
-  const importerContracts = [
-    `frontend import path maps PowerShell entries to ${frontendTarget}`,
-    `Rust mRemoteNG converter maps PowerShell entries to ${rustTarget}`,
-    "neither PowerShell mapping creates a complete end-user PowerShell Remoting session",
+  const capabilityContracts = [
+    ["ard", "fully-interactive"],
+    ["serial", "fully-interactive"],
+    ["telnet", "fully-interactive"],
+    ["raw", "fully-interactive"],
+    ["rlogin", "fully-interactive"],
+    ["mysql", "fully-interactive"],
+    ["sftp", "fully-interactive"],
+    ["winrm", "fully-interactive"],
+    ["smb", "fully-interactive"],
+    ["vnc", "fully-interactive"],
+    ["anydesk", "external-native-handoff"],
+    ["rustdesk", "external-native-handoff"],
+    ["ftp", "genuinely-unsupported"],
+    ["scp", "genuinely-unsupported"],
   ];
-  const normalizedProtocols = protocols.toLowerCase();
-  for (const statement of importerContracts) {
-    if (!normalizedProtocols.includes(statement.toLowerCase())) {
+  for (const [protocol, classification] of capabilityContracts) {
+    const marker = `  ${protocol}: capability({`;
+    const start = availability.indexOf(marker);
+    const end = start < 0 ? -1 : availability.indexOf("\n  }),", start);
+    const declaration =
+      start < 0 || end < 0 ? "" : availability.slice(start, end);
+    if (!declaration.includes(`classification: "${classification}"`)) {
       errors.push(
-        `docs/protocols.md:1: importer support boundary is missing: ${statement}`,
+        `src/utils/session/protocolAvailability.ts:1: ${protocol} must remain ${classification}; review the public protocol docs`,
       );
     }
+  }
+
+  const importerMappingsCurrent =
+    portability.includes('return { protocol: "raw", rawTransport: "tcp" };') &&
+    portability.includes('return { protocol: "raw", rawTransport: "udp" };') &&
+    portability.includes('return { protocol: "winrm" };') &&
+    portability.includes('return { protocol: "rlogin" };') &&
+    rustImporter.includes('MrngProtocol::PowerShell => "winrm"');
+  const normalizedProtocols = protocols.replaceAll("`", "").toLowerCase();
+  const importerDocsCurrent =
+    normalizedProtocols.includes("raw variants map to raw") &&
+    normalizedProtocols.includes("rlogin maps to rlogin") &&
+    normalizedProtocols.includes("powershell-like entries map to winrm") &&
+    normalizedProtocols.includes(
+      "recognizing ftp or scp does not create a direct session viewer",
+    );
+  if (!importerMappingsCurrent || !importerDocsCurrent) {
+    errors.push(
+      "docs/protocols.md:1: importer mappings and runtime boundaries must remain source-backed",
+    );
+  }
+
+  if (
+    !/reachable targets, credentials, local applications, devices, or drivers/i.test(
+      protocols,
+    )
+  ) {
+    errors.push(
+      "docs/protocols.md:1: environment-dependent live-target limits must remain explicit",
+    );
   }
 }
 

@@ -30,8 +30,25 @@ Compatibility means the importer recognizes the source format. It does not mean 
 
 <div class="callout callout--danger">
   <strong>Imported protocol names are not capability proof.</strong>
-  <p>Vendor RAW or PowerShell-like entries may be converted to the nearest saved model. That mapping preserves data as far as practical; it does not create a native RAW socket client or a complete PowerShell Remoting session.</p>
+  <p>RAW, RLogin, and PowerShell-like entries can map to real interactive clients, but a protocol mapping cannot invent vendor-specific fields, credentials, trust decisions, or a reachable target. FTP and SCP imports still have no direct session tab. Review the normalized settings before connecting.</p>
 </div>
+
+### Post-import protocol review
+
+The current direct-session behavior is:
+
+| Imported target             | Runtime truth and review required                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Raw / RAW-TCP / RAW-UDP     | Opens the binary-safe Raw Socket client. Confirm TCP versus UDP, payload encoding, framing, and TLS because a generic vendor export may preserve only endpoint fields.  |
+| RLogin                      | Opens the native RLogin terminal after its plaintext-risk acknowledgement is saved. Recheck local/remote usernames and terminal behavior.                               |
+| PowerShell / WinRM          | Opens PowerShell Remoting over configured WSMan/WinRM or SSH. Confirm transport capability, authentication, certificate/host trust, and endpoint details.               |
+| ARD, Telnet, or Serial      | Opens the dedicated client when the imported record contains enough settings. Serial still needs a valid local device path, driver, and OS permission on this computer. |
+| SFTP, MySQL/MariaDB, or SMB | Opens the saved file/query client. Recheck authentication, initial path/database/share, and server reachability.                                                        |
+| AnyDesk or RustDesk         | Hands off to the installed native application; importing an ID does not install that client.                                                                            |
+| VNC                         | Requires a WebSocket-capable VNC endpoint or compatible proxy; a conventional raw-RFB TCP endpoint is not bridged by the app.                                           |
+| FTP or SCP                  | Preserved as recognized connection types, but no direct interactive tab is wired yet. Prefer SFTP where possible.                                                       |
+
+Imports never prove that a live target is available. Test a small sample with non-production credentials and verify any driver, native client, proxy, certificate, or host-key requirement before applying a bulk migration.
 
 ## Export deliberately
 

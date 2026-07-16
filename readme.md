@@ -37,25 +37,28 @@ The project is under active development. Features that depend on an external ser
 
 ## What works today
 
-| Area            | Current capability                                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Remote sessions | SSH terminal sessions, RDP, HTTP/HTTPS views, AnyDesk and RustDesk session panels, and VNC through WebSocket-enabled endpoints |
-| Files           | An SFTP backend and directory-browser scaffold; upload/download controls and saved-credential flow remain incomplete           |
-| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                      |
-| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                        |
-| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels            |
-| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                            |
-| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                              |
+| Area            | Current capability                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk and RustDesk |
+| Files           | Native SFTP sessions with saved authentication, directory browsing, and file operations. FTP and SCP do not yet have direct session tabs                                                 |
+| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                |
+| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                  |
+| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                      |
+| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                      |
+| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                        |
 
 ### Capability boundaries
 
-The data model and importers recognize more protocol names than the application currently exposes as complete interactive clients. In particular:
+The saved-session matrix is source-backed and tested, but “supported” still has a precise meaning:
 
-- RLogin and RAW socket support are **scaffolds only**; neither is a finished interactive connection client.
-- PowerShell Remoting is **partial**: its Rust command surface and typed frontend hook exist, but there is no complete end-user remoting session UI. The connection-scoped Windows management panel runs WMI/WQL queries; it is **not** a general-purpose PowerShell terminal.
-- The mounted VNC client expects a WebSocket-capable endpoint; it does not currently bridge a standard raw-RFB endpoint itself.
-- SFTP has native commands and a directory browser, but the active session UI does not yet provide a complete credential and transfer workflow.
-- An entry in an import format, backend crate, or settings screen does not by itself mean that the full user workflow is production-ready.
+- **Raw Socket**, **RLogin**, **PowerShell Remoting**, **ARD**, **Telnet**, and **Serial** now have dedicated interactive clients. Raw Socket supplies exact binary TCP/UDP payload I/O rather than a shell; Telnet and RLogin are plaintext; and Serial depends on a local device, its driver, and operating-system permissions.
+- Embedded **ARD** uses a remote Mac account or dedicated VNC password. Apple Account mode is a macOS-only handoff to Screen Sharing.app; sortOfRemoteNG does not collect or send the Apple Account password.
+- **SFTP**, **MySQL/MariaDB**, and **SMB** connect from saved settings before their file or query surfaces load. The current MySQL backend is process-wide, so independent concurrent MySQL tabs are not yet isolated.
+- **VNC** requires a WebSocket-capable endpoint or trusted WebSocket proxy because the app does not provide a raw-TCP RFB bridge.
+- **AnyDesk** and **RustDesk** are installed-client handoffs. The app launches and monitors the native client; it does not embed either product's framebuffer.
+- **FTP** and **SCP** remain unavailable as direct session tabs even though backend or import code exists. Use SFTP when the server supports it.
+- Automated tests verify application contracts and local simulated transports. A real connection still requires a reachable target, valid credentials, and any applicable native client, driver, or server configuration.
+- An entry in an import format, backend crate, or settings screen does not by itself prove a complete session path. The maintained [protocol matrix](docs/protocols.md) is the authority.
 
 These boundaries are intentional: this page describes usable application paths, not every protocol or experimental module present in the source tree.
 

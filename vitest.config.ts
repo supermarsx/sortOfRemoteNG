@@ -1,44 +1,63 @@
-import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+
+/**
+ * These suites use Node's built-in test runner and have dedicated package
+ * scripts. Keeping them out of Vitest prevents duplicate discovery and the
+ * misleading "No test suite found" errors produced by node:test modules in a
+ * jsdom worker.
+ */
+export const NODE_TEST_SUITE_EXCLUDES = [
+  "tests/readme-screenshot/**/*.mjs",
+  "tests/release/**/*.mjs",
+  "tests/versioning/**/*.mjs",
+] as const;
 
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: 'jsdom',
+    environment: "jsdom",
     globals: true,
-    setupFiles: './vitest.setup.ts',
+    setupFiles: "./vitest.setup.ts",
     exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/.claude/**',
-      '**/e2e/**',
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.claude/**",
+      "**/e2e/**",
+      ...NODE_TEST_SUITE_EXCLUDES,
     ],
     server: {
       deps: {
         inline: [
-          '@tauri-apps/plugin-fs',
-          '@tauri-apps/plugin-dialog',
-          '@tauri-apps/api'
-        ]
-      }
+          "@tauri-apps/plugin-fs",
+          "@tauri-apps/plugin-dialog",
+          "@tauri-apps/api",
+        ],
+      },
     },
     alias: {
-      '@tauri-apps/plugin-fs': new URL('./vitest.mocks/tauri-plugin-fs.ts', import.meta.url).pathname,
-      '@tauri-apps/plugin-dialog': new URL('./vitest.mocks/tauri-plugin-dialog.ts', import.meta.url).pathname,
+      "@tauri-apps/plugin-fs": new URL(
+        "./vitest.mocks/tauri-plugin-fs.ts",
+        import.meta.url,
+      ).pathname,
+      "@tauri-apps/plugin-dialog": new URL(
+        "./vitest.mocks/tauri-plugin-dialog.ts",
+        import.meta.url,
+      ).pathname,
       // Mirror tsconfig.json `paths` so modules that use the `@/*` alias
       // (e.g. src/components/connection/CheckConnectionsModal.tsx) resolve
       // under vitest the same way they do under Next.js / the Tauri webview.
-      '@/': new URL('./src/', import.meta.url).pathname,
+      "@/": new URL("./src/", import.meta.url).pathname,
     },
     coverage: {
-      provider: 'v8',
-      include: ['src/**/*.{ts,tsx}'],
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
       exclude: [
-        'src/**/*.d.ts',
-        'src/**/index.ts',
-        'src/types/**',
-        'src/vite-env.d.ts',
-        'src/main.tsx',
+        "src/**/*.d.ts",
+        "src/**/index.ts",
+        "src/types/**",
+        "src/vite-env.d.ts",
+        "src/main.tsx",
       ],
       // RATCHET (t3-e34): floor set at current ~34.7% line coverage minus a
       // 5pt buffer so e40 (bcryptjs→Rust) and e41 (ssh-client retirement)
@@ -59,6 +78,6 @@ export default defineConfig({
         functions: 22,
         branches: 25,
       },
-    }
-  }
+    },
+  },
 });

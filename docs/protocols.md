@@ -40,6 +40,12 @@ The executable contract is `src/utils/session/protocolAvailability.ts`. The sess
 | RustDesk                      | External handoff                          | Uses the saved RustDesk ID and credential, launches the installed RustDesk process, and verifies the backend session before reporting success. It does not embed RustDesk’s framebuffer.                            | `src/components/protocol/RustDeskClient.tsx`, `src/hooks/protocol/useRustDeskClient.ts`, `src-tauri/crates/sorng-rustdesk`                     |
 | SMB                           | Interactive client                        | Connects with the saved host, port, domain/workgroup, share, and credentials, then exposes share and directory browsing plus file operations.                                                                       | `src/components/protocol/SMBClient.tsx`, `src/hooks/protocol/useSMBClient.ts`, `src-tauri/crates/sorng-smb`                                    |
 
+## Import mappings versus runtime support
+
+The native and vendor importers normalize recognized names into saved connection protocols. For example, RAW variants map to `raw`, RLogin maps to `rlogin`, and PowerShell-like entries map to `winrm`. Those destinations now have interactive clients, but conversion can preserve only fields represented by the source format. Review transport, authentication, trust, and protocol-specific settings after import.
+
+The same distinction applies in the other direction: recognizing FTP or SCP does not create a direct session viewer, and recognizing VNC does not add a raw-TCP RFB bridge. Imported AnyDesk and RustDesk entries still require their installed native clients. See [Import, Export & Clone]({{ '/import-export-clone/' | relative_url }}) for the review workflow.
+
 ## Provider and hardware entries
 
 The following persisted values are management identities, not interchangeable terminal or desktop protocols. Direct connection tabs are rejected with a message that points to a management surface; they never pass through the old timer-based simulated connection path.
@@ -77,7 +83,7 @@ The protocol matrix is checked at three layers:
 2. `tests/session/protocolAvailability.test.ts` verifies that every primary editor option is client-owned and that no audited protocol still uses the simulated connection timer.
 3. `tests/session/SessionViewer.test.tsx` verifies that dedicated clients mount during connecting and reconnecting states, before any runtime can honestly report success.
 
-Focused protocol tests cover the transport-specific behavior. Raw Socket and RLogin have native Rust end-to-end tests; Telnet verifies native connect/events/exact input; ARD verifies framebuffer/input and command parity; PowerShell verifies PSRP over SSH and WSMan. Live WinRM and SSH fixtures remain opt-in because they require reachable external servers and credentials—an ignored live fixture is not counted as a passing network connection.
+Focused protocol tests cover the transport-specific behavior. Raw Socket and RLogin have native Rust end-to-end tests; Telnet verifies native connect/events/exact input; Serial verifies configuration, byte streaming, echo, controls, and cleanup; ARD verifies framebuffer/input and command parity; and PowerShell verifies PSRP over SSH and WSMan. Live WinRM, SSH, VNC, native-client, and hardware-backed Serial checks remain environment-dependent because they require reachable targets, credentials, local applications, devices, or drivers—an ignored live fixture is not counted as a passing connection.
 
 ## Choosing a path
 
