@@ -52,7 +52,7 @@ The project is under active development. Features that depend on an external ser
 The saved-session matrix is source-backed and tested, but “supported” still has a precise meaning:
 
 - **Raw Socket**, **RLogin**, **PowerShell Remoting**, **ARD**, **Telnet**, and **Serial** now have dedicated interactive clients. Raw Socket supplies exact binary TCP/UDP payload I/O rather than a shell; Telnet and RLogin are plaintext; and Serial depends on a local device, its driver, and operating-system permissions.
-- Embedded **ARD** uses a remote Mac account or dedicated VNC password. Apple Account mode is a macOS-only handoff to Screen Sharing.app; sortOfRemoteNG does not collect or send the Apple Account password.
+- **ARD / Apple Screen Sharing** has three deliberately separate paths: embedded authentication with a remote Mac local or directory account, embedded access with a dedicated VNC password, and a macOS-only Apple Account handoff to Screen Sharing.app. The VNC password must not reuse an Apple Account, local-user, or Remote Desktop administrator password. Apple Account mode saves only the non-secret account identifier; password, two-factor authentication, and remote approval stay entirely in Apple's app. See the [Apple Screen Sharing authentication guide](docs/apple-screen-sharing.md).
 - **FTP/FTPS**, **SFTP**, **SCP**, **MySQL/MariaDB**, and **SMB** connect from saved settings before their file or query surfaces load. FTP and SCP currently support direct targets only; the current MySQL backend is process-wide, so independent concurrent MySQL tabs are not yet isolated.
 - **PostgreSQL** opens an isolated native query session with catalog browsing, SQL query/statement results, explicit SSL modes, CA and mutual-TLS certificate paths, and deterministic disconnect. It currently supports direct targets only and rejects configured proxy, VPN, SSH-hop, or tunnel-chain routes before credentials are sent.
 - **VNC** requires a WebSocket-capable endpoint or trusted WebSocket proxy because the app does not provide a raw-TCP RFB bridge.
@@ -122,7 +122,7 @@ The release workflow builds bundles for Windows, macOS, and Linux. See the [rele
 ## Documentation
 
 - [Documentation home](docs/index.md) and [getting started](docs/getting-started.md)
-- [Connections and editor](docs/connections-editor.md), [protocol status](docs/protocols.md), [network paths](docs/network-paths.md), [behaviors](docs/behaviors.md), and [import, export, and clone](docs/import-export-clone.md)
+- [Connections and editor](docs/connections-editor.md), [protocol status](docs/protocols.md), [Apple Screen Sharing authentication](docs/apple-screen-sharing.md), [network paths](docs/network-paths.md), [behaviors](docs/behaviors.md), and [import, export, and clone](docs/import-export-clone.md)
 - [Architecture](docs/architecture.md), [security](docs/security-overview.md), [testing](docs/testing.md), [releases](docs/releases.md), and [contributing](docs/contributing.md)
 - [Vulnerability reporting policy](security.md), [encryption-at-rest design](docs/security.md), and [license](license.md)
 
