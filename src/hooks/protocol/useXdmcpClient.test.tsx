@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => ({
   useConnections: vi.fn(),
 }));
 
+const deferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mocks.invoke(...args),
 }));
@@ -51,8 +59,10 @@ const session: ConnectionSession = {
   hostname: connection.hostname,
 };
 
+const firstLaunchId = `${session.id}-xdmcp-1`;
+
 const info = {
-  id: `${session.id}-xdmcp`,
+  id: firstLaunchId,
   host: connection.hostname,
   port: 177,
   state: "Running",
@@ -111,19 +121,33 @@ describe("useXdmcpClient", () => {
     });
   });
 
+  it("rejects option-like and control-bearing hosts before invoking the backend", () => {
+    for (const hostname of [
+      "-query",
+      "--help",
+      "display.example\ttest",
+      "display.example\ntest",
+      "display.example.test\n",
+      "display.example\u0000test",
+    ]) {
+      expect(() =>
+        buildXdmcpConfig({ ...connection, hostname }, session),
+      ).toThrow(/unsafe option or control syntax/i);
+    }
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
   it("launches a real backend handle and preserves it across remount", async () => {
     const { result, unmount } = renderHook(() => useXdmcpClient(session));
     await waitFor(() => expect(result.current.status).toBe("x-server-running"));
     expect(mocks.invoke).toHaveBeenCalledWith("connect_xdmcp", {
-      sessionId: `${session.id}-xdmcp`,
+      sessionId: firstLaunchId,
       config: expect.objectContaining({
         acknowledge_insecure_transport: true,
         auth_data: null,
       }),
     });
-    expect(JSON.stringify(mocks.dispatch.mock.calls)).toContain(
-      `${session.id}-xdmcp`,
-    );
+    expect(JSON.stringify(mocks.dispatch.mock.calls)).toContain(firstLaunchId);
 
     const disconnectCallsBeforeUnmount = mocks.invoke.mock.calls.filter(
       ([command]) => command === "disconnect_xdmcp",
@@ -170,5 +194,107 @@ describe("useXdmcpClient", () => {
     // One idempotent stale-handle cleanup before launch, then one guaranteed
     // cleanup after verification fails.
     expect(disconnects).toHaveLength(2);
+  });
+
+  it("cleans only its own stale launch after a newer generation succeeds", async () => {
+    const firstVerification = deferred<typeof info>();
+    const secondLaunchId = `${session.id}-xdmcp-2`;
+    let verificationCount = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_xdmcp_session_info") {
+        verificationCount += 1;
+        return verificationCount === 1
+          ? firstVerification.promise
+          : Promise.resolve({ ...info, id: secondLaunchId });
+      }
+      if (command === "is_xdmcp_connected") return Promise.resolve(true);
+      if (command === "discover_xdmcp") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useXdmcpClient(session));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_xdmcp_session_info", {
+        sessionId: firstLaunchId,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe("x-server-running");
+      expect(result.current.backendSessionId).toBe(secondLaunchId);
+    });
+
+    const secondDisconnectCountBeforeStaleCleanup =
+      mocks.invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === "disconnect_xdmcp" &&
+          (args as { sessionId?: string } | undefined)?.sessionId ===
+            secondLaunchId,
+      ).length;
+    expect(secondDisconnectCountBeforeStaleCleanup).toBe(1);
+
+    await act(async () => {
+      firstVerification.resolve(info);
+      await firstVerification.promise;
+    });
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_xdmcp", {
+        sessionId: firstLaunchId,
+      }),
+    );
+
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === "disconnect_xdmcp" &&
+          (args as { sessionId?: string } | undefined)?.sessionId ===
+            secondLaunchId,
+      ),
+    ).toHaveLength(secondDisconnectCountBeforeStaleCleanup);
+    expect(result.current.backendSessionId).toBe(secondLaunchId);
+  });
+
+  it("never lets a stale initializer close an existing X server reused by its replacement", async () => {
+    const existingId = "existing-xdmcp";
+    const existingInfo = { ...info, id: existingId };
+    const firstVerification = deferred<typeof existingInfo>();
+    let verificationCount = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "get_xdmcp_session_info") {
+        verificationCount += 1;
+        return verificationCount === 1
+          ? firstVerification.promise
+          : Promise.resolve(existingInfo);
+      }
+      if (command === "is_xdmcp_connected") return Promise.resolve(true);
+      if (command === "discover_xdmcp") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    const attachedSession = { ...session, backendSessionId: existingId };
+    const { result } = renderHook(() => useXdmcpClient(attachedSession));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_xdmcp_session_info", {
+        sessionId: existingId,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.status).toBe("x-server-running"));
+
+    await act(async () => {
+      firstVerification.resolve(existingInfo);
+      await firstVerification.promise;
+    });
+
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_xdmcp", {
+      sessionId: existingId,
+    });
+    expect(result.current.backendSessionId).toBe(existingId);
   });
 });

@@ -222,11 +222,18 @@ export function useSpiceClient(session: ConnectionSession) {
           newlyLaunchedId = id;
         }
         if (generationRef.current !== generation) {
-          await spiceApi.disconnect(id).catch(() => undefined);
+          if (newlyLaunchedId) {
+            await spiceApi.disconnect(newlyLaunchedId).catch(() => undefined);
+          }
           return;
         }
         const info = await spiceApi.getSessionInfo(id);
-        if (generationRef.current !== generation) return;
+        if (generationRef.current !== generation) {
+          if (newlyLaunchedId) {
+            await spiceApi.disconnect(newlyLaunchedId).catch(() => undefined);
+          }
+          return;
+        }
         if (!info.connected) {
           throw new Error(
             "The native SPICE viewer process stopped during startup.",

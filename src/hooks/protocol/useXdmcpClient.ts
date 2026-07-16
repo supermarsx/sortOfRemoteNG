@@ -33,6 +33,17 @@ const boundedInteger = (
     ? Math.min(maximum, Math.max(minimum, Math.floor(value as number)))
     : fallback;
 
+const hasUnsafeXdmcpHostSyntax = (
+  rawHost: string,
+  normalizedHost: string,
+): boolean =>
+  normalizedHost.startsWith("-") ||
+  Array.from(rawHost).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+  }) ||
+  Array.from(normalizedHost).some((character) => /\s/u.test(character));
+
 export const defaultXdmcpServerType = () =>
   typeof navigator !== "undefined" &&
   /windows|win32|win64/i.test(
@@ -46,8 +57,14 @@ export const buildXdmcpConfig = (
   session: ConnectionSession,
 ): XdmcpConfig => {
   const saved = connection as SavedXdmcpConnection;
-  const host = (saved.hostname || session.hostname).trim();
+  const rawHost = saved.hostname || session.hostname;
+  const host = rawHost.trim();
   if (!host) throw new Error("An XDMCP display-manager host is required.");
+  if (hasUnsafeXdmcpHostSyntax(rawHost, host)) {
+    throw new Error(
+      "The XDMCP display-manager host contains unsafe option or control syntax.",
+    );
+  }
   return {
     host,
     port: boundedInteger(saved.port, 177, 1, 65_535),
@@ -204,15 +221,18 @@ export function useXdmcpClient(session: ConnectionSession) {
       let newlyLaunchedId: string | null = null;
 
       try {
-        let id =
-          currentSession.backendSessionId ?? `${currentSession.id}-xdmcp`;
+        // Every launch generation gets a distinct backend key. A late cleanup
+        // from an abandoned generation can therefore never terminate the
+        // replacement process started by a newer reconnect.
+        const launchId = `${currentSession.id}-xdmcp-${generation}`;
+        let id = currentSession.backendSessionId ?? launchId;
         let running = currentSession.backendSessionId
           ? await xdmcpApi.isXServerRunning(id).catch(() => false)
           : false;
         if (generationRef.current !== generation) return;
         if (!running) {
           await xdmcpApi.disconnect(id).catch(() => undefined);
-          id = `${currentSession.id}-xdmcp`;
+          id = launchId;
           await xdmcpApi.connect(
             id,
             buildXdmcpConfig(currentConnection, currentSession),
@@ -221,10 +241,18 @@ export function useXdmcpClient(session: ConnectionSession) {
           running = true;
         }
         if (generationRef.current !== generation) {
-          await xdmcpApi.disconnect(id).catch(() => undefined);
+          if (newlyLaunchedId) {
+            await xdmcpApi.disconnect(newlyLaunchedId).catch(() => undefined);
+          }
           return;
         }
         const info = await xdmcpApi.getSessionInfo(id);
+        if (generationRef.current !== generation) {
+          if (newlyLaunchedId) {
+            await xdmcpApi.disconnect(newlyLaunchedId).catch(() => undefined);
+          }
+          return;
+        }
         if (!running || info.state !== "Running" || !info.x_server_pid) {
           throw new Error(
             "The local X server process stopped during XDMCP startup.",

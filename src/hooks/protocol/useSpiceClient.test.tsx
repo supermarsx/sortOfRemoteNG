@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => ({
   useConnections: vi.fn(),
 }));
 
+const deferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mocks.invoke(...args),
 }));
@@ -159,5 +167,130 @@ describe("useSpiceClient", () => {
       sessionId: "orphan-spice",
     });
     expect(result.current.error).not.toContain(ticket);
+  });
+
+  it("closes a newly launched viewer when verified process state rejects it", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_spice") return Promise.resolve("stopped-spice");
+      if (command === "get_spice_session_info") {
+        return Promise.resolve({
+          ...sessionInfo,
+          id: "stopped-spice",
+          connected: false,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = renderHook(() => useSpiceClient(session));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_spice", {
+      sessionId: "stopped-spice",
+    });
+  });
+
+  it("closes a launch that becomes stale before session verification starts", async () => {
+    const connect = deferred<string>();
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_spice") return connect.promise;
+      if (command === "get_spice_session_info") {
+        return Promise.resolve(sessionInfo);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { unmount } = renderHook(() => useSpiceClient(session));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "connect_spice",
+        expect.any(Object),
+      ),
+    );
+    unmount();
+    await act(async () => {
+      connect.resolve("stale-before-verification");
+      await connect.promise;
+    });
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_spice", {
+        sessionId: "stale-before-verification",
+      }),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "get_spice_session_info",
+      expect.anything(),
+    );
+  });
+
+  it("closes a launch that becomes stale after successful session verification", async () => {
+    const verification = deferred<typeof sessionInfo>();
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_spice") return Promise.resolve("stale-spice");
+      if (command === "get_spice_session_info") return verification.promise;
+      return Promise.resolve(undefined);
+    });
+
+    const { unmount } = renderHook(() => useSpiceClient(session));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_spice_session_info", {
+        sessionId: "stale-spice",
+      }),
+    );
+    unmount();
+    await act(async () => {
+      verification.resolve({ ...sessionInfo, id: "stale-spice" });
+      await verification.promise;
+    });
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("disconnect_spice", {
+        sessionId: "stale-spice",
+      }),
+    );
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ backendSessionId: "stale-spice" }),
+      }),
+    );
+  });
+
+  it("never lets a stale initializer close an existing viewer reused by its replacement", async () => {
+    const existingId = "existing-spice";
+    const firstVerification = deferred<typeof sessionInfo>();
+    let verificationCount = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "is_spice_connected") return Promise.resolve(true);
+      if (command === "get_spice_session_info") {
+        verificationCount += 1;
+        return verificationCount === 1
+          ? firstVerification.promise
+          : Promise.resolve({ ...sessionInfo, id: existingId });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const attachedSession = { ...session, backendSessionId: existingId };
+    const { result } = renderHook(() => useSpiceClient(attachedSession));
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("get_spice_session_info", {
+        sessionId: existingId,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.status).toBe("viewer-running"));
+
+    await act(async () => {
+      firstVerification.resolve({ ...sessionInfo, id: existingId });
+      await firstVerification.promise;
+    });
+
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_spice", {
+      sessionId: existingId,
+    });
+    expect(result.current.backendSessionId).toBe(existingId);
   });
 });

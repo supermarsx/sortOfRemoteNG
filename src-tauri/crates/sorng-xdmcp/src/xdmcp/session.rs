@@ -46,17 +46,18 @@ pub struct XdmcpSessionHandle {
 }
 
 fn validate_host(host: &str) -> Result<(), XdmcpError> {
-    let host = host.trim();
-    if host.is_empty() {
+    let normalized_host = host.trim();
+    if normalized_host.is_empty() {
         return Err(XdmcpError::connection_failed(
             "An XDMCP display-manager host is required",
         ));
     }
-    if host.chars().any(|character| {
-        character.is_whitespace() || character == '\0' || character == '\r' || character == '\n'
-    }) {
+    if normalized_host.starts_with('-')
+        || host.chars().any(char::is_control)
+        || normalized_host.chars().any(char::is_whitespace)
+    {
         return Err(XdmcpError::connection_failed(
-            "The XDMCP display-manager host contains unsupported characters",
+            "The XDMCP display-manager host contains unsafe option or control syntax",
         ));
     }
     Ok(())
@@ -113,6 +114,11 @@ fn validate_native_launch(config: &XdmcpConfig) -> Result<(), XdmcpError> {
     if config.retry_count.unwrap_or(3) != 3 {
         return Err(XdmcpError::x_server(
             "A custom XDMCP retry count cannot be enforced by the native X server handoff",
+        ));
+    }
+    if config.color_depth.unwrap_or(24) != 24 {
+        return Err(XdmcpError::x_server(
+            "A non-default XDMCP colour depth cannot be enforced by the supported visible native X servers",
         ));
     }
 
@@ -327,6 +333,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_option_like_and_control_bearing_hosts_before_launch() {
+        for host in [
+            "-query",
+            "--help",
+            "display.example\ttest",
+            "display.example\ntest",
+            "display.example.test\n",
+            "display.example\0test",
+        ] {
+            let error = validate_host(host).unwrap_err();
+            assert_eq!(error.kind, XdmcpErrorKind::ConnectionFailed);
+            assert!(error.message.contains("unsafe option or control syntax"));
+        }
+
+        for host in [
+            "display-manager.example.test",
+            "192.0.2.25",
+            "2001:db8::25",
+            "[2001:db8::25]",
+        ] {
+            validate_host(host).unwrap();
+        }
+    }
+
+    #[test]
     fn rejects_headless_and_unsupported_servers() {
         for server_type in [
             XServerType::Xvfb,
@@ -371,5 +402,11 @@ mod tests {
         let mut retries = base();
         retries.retry_count = Some(9);
         assert!(validate_native_launch(&retries).is_err());
+
+        let mut color_depth = base();
+        color_depth.color_depth = Some(16);
+        let error = validate_native_launch(&color_depth).unwrap_err();
+        assert_eq!(error.kind, XdmcpErrorKind::XServerError);
+        assert!(error.message.contains("colour depth"));
     }
 }

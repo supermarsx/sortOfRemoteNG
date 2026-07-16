@@ -138,7 +138,8 @@ pub fn build_x_server_args(
         }
         XServerType::VcXsrv | XServerType::Xming => {
             args.push("-screen".into());
-            args.push(format!("0 {}x{}", width, height));
+            args.push("0".into());
+            args.push(format!("{}x{}", width, height));
         }
         _ => {}
     }
@@ -279,6 +280,34 @@ mod tests {
         assert!(indirect
             .windows(2)
             .any(|pair| { pair == ["-indirect".to_string(), "chooser.example".to_string()] }));
+    }
+
+    #[test]
+    fn vcxsrv_and_xming_screen_argv_are_exact_separate_tokens() {
+        for server_type in [XServerType::VcXsrv, XServerType::Xming] {
+            assert_eq!(
+                build_x_server_args(
+                    &server_type,
+                    11,
+                    1280,
+                    720,
+                    24,
+                    "chooser.example",
+                    177,
+                    QueryType::Indirect,
+                    false,
+                    &[],
+                ),
+                vec![
+                    ":11".to_string(),
+                    "-indirect".to_string(),
+                    "chooser.example".to_string(),
+                    "-screen".to_string(),
+                    "0".to_string(),
+                    "1280x720".to_string(),
+                ],
+            );
+        }
     }
 
     #[test]
