@@ -1152,6 +1152,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   if (isIntegrationConnectionProtocol(p)) {
     return <IntegrationConnectionFields mgr={mgr} />;
   }
+  if (p === "rustdesk") return null;
 
   return (
     <div className="space-y-2">
@@ -1198,7 +1199,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           />
         </div>
       </div>
-      {!["ssh", "raw", "rlogin"].includes(p) && (
+      {!["ssh", "raw", "rlogin", "ard", "sftp"].includes(p) && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">

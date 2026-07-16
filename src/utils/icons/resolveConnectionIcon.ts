@@ -17,6 +17,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
 > = Object.freeze({
   rdp: "monitor",
   ssh: "terminal",
+  ard: "eye",
   vnc: "eye",
   anydesk: "monitor",
   http: "globe",

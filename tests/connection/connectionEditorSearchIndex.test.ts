@@ -181,6 +181,14 @@ describe("connection editor search index", () => {
       sshIndex.find((entry) => entry.fieldId === "network-path"),
     ).toMatchObject({ protocolSubtabId: "network-path" });
 
+    for (const protocol of ["raw", "rlogin", "winrm"] as const) {
+      expect(
+        buildIndex({ isGroup: false, protocol }).find(
+          (entry) => entry.fieldId === "network-path",
+        ),
+      ).toMatchObject({ protocolSubtabId: "network-path" });
+    }
+
     const httpsIndex = buildIndex({ isGroup: false, protocol: "https" });
     expect(
       httpsIndex.find((entry) => entry.fieldId === "http-tls"),
@@ -255,6 +263,67 @@ describe("connection editor search index", () => {
         (entry) => entry.fieldId === "powershell-username",
       ),
     ).toMatchObject({ protocolSubtabId: "authentication" });
+  });
+
+  it("indexes ARD and saved-protocol settings on their truthful subtabs", () => {
+    const ardIndex = buildIndex({
+      isGroup: false,
+      protocol: "ard",
+      ardSettings: { authMode: "appleAccountNative" },
+      username: "not-an-apple-account-field",
+      password: "apple-password-must-never-be-indexed",
+    });
+    expect(
+      searchConnectionEditorIndex(ardIndex, "Screen Sharing handoff")[0],
+    ).toMatchObject({
+      fieldId: "ard-native-handoff",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(ardIndex, "ARD display and input")[0],
+    ).toMatchObject({
+      fieldId: "ard-display-input",
+      protocolSubtabId: "display-input",
+    });
+    expect(ardIndex.map((entry) => entry.fieldId)).not.toContain("username");
+    expect(ardIndex.map((entry) => entry.fieldId)).not.toContain("password");
+    expect(
+      searchConnectionEditorIndex(
+        ardIndex,
+        "apple-password-must-never-be-indexed",
+      ),
+    ).toEqual([]);
+
+    expect(
+      buildIndex({ isGroup: false, protocol: "sftp" }).find(
+        (entry) => entry.fieldId === "sftp-auth-type",
+      ),
+    ).toMatchObject({ protocolSubtabId: "authentication" });
+    expect(
+      searchConnectionEditorIndex(
+        buildIndex({
+          isGroup: false,
+          protocol: "mysql",
+          database: "inventory_schema",
+        }),
+        "inventory_schema",
+      )[0],
+    ).toMatchObject({
+      fieldId: "mysql-database",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      buildIndex({ isGroup: false, protocol: "smb", shareName: "Shared" }).find(
+        (entry) => entry.fieldId === "smb-share",
+      ),
+    ).toMatchObject({ protocolSubtabId: "connection" });
+    expect(
+      buildIndex({
+        isGroup: false,
+        protocol: "rustdesk",
+        rustdeskId: "123-456",
+      }).find((entry) => entry.fieldId === "rustdesk-id"),
+    ).toMatchObject({ protocolSubtabId: "connection" });
   });
 
   it("excludes exchange fields hidden by the selected environment", () => {

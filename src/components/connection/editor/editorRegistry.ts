@@ -472,6 +472,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Hostname / IP",
         keywords: ["host", "server"],
         copy: ["Server address"],
+        excludedProtocols: ["rustdesk"],
         visibleWhen: (formData) =>
           !String(formData.protocol ?? "").startsWith("integration:"),
         valuePaths: ["hostname"],
@@ -479,7 +480,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       {
         id: "port",
         label: "Port",
-        excludedProtocols: ["integration:exchange"],
+        excludedProtocols: ["rustdesk", "integration:exchange"],
         visibleWhen: (formData) =>
           !String(formData.protocol ?? "").startsWith("integration:"),
       },
@@ -492,7 +493,15 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Account for WinRM Basic auth",
           "Username for authentication with the remote service",
         ],
-        excludedProtocols: ["ssh", "raw", "rlogin", "integration:exchange"],
+        excludedProtocols: [
+          "ssh",
+          "raw",
+          "rlogin",
+          "ard",
+          "sftp",
+          "rustdesk",
+          "integration:exchange",
+        ],
         valuePaths: ["username", "integration.username"],
       },
       {
@@ -504,7 +513,15 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Password for WinRM authentication",
           "Password for authentication with the remote service",
         ],
-        excludedProtocols: ["ssh", "raw", "rlogin", "integration:exchange"],
+        excludedProtocols: [
+          "ssh",
+          "raw",
+          "rlogin",
+          "ard",
+          "sftp",
+          "rustdesk",
+          "integration:exchange",
+        ],
       },
       {
         id: "integration-instance-id",
@@ -662,6 +679,16 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     label: "Protocol Options",
     keywords: [
       "ssh",
+      "ard",
+      "apple remote desktop",
+      "macos screen sharing",
+      "telnet",
+      "sftp",
+      "mysql",
+      "mariadb",
+      "smb",
+      "samba",
+      "rustdesk",
       "http",
       "https",
       "cloud",
@@ -675,10 +702,158 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
     copy: ["Settings shown for the selected connection protocol."],
     fields: [
       {
+        id: "telnet-plaintext",
+        label: "Plaintext terminal",
+        protocols: ["telnet"],
+        protocolSubtabId: "connection",
+        keywords: ["telnet", "unencrypted", "legacy terminal"],
+        copy: ["Use only on a trusted network or separately secured path."],
+      },
+      {
+        id: "sftp-auth-type",
+        label: "SFTP authentication",
+        protocols: ["sftp"],
+        protocolSubtabId: "authentication",
+        optionText: ["Username and password", "Username and private key"],
+        valuePaths: ["authType"],
+      },
+      {
+        id: "sftp-username",
+        label: "SFTP username",
+        protocols: ["sftp"],
+        protocolSubtabId: "authentication",
+        valuePaths: ["username"],
+      },
+      {
+        id: "sftp-password",
+        label: "SFTP password",
+        protocols: ["sftp"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) => formData.authType !== "key",
+      },
+      {
+        id: "sftp-private-key",
+        label: "SFTP private key",
+        protocols: ["sftp"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) => formData.authType === "key",
+      },
+      {
+        id: "mysql-database",
+        label: "Default database",
+        protocols: ["mysql"],
+        protocolSubtabId: "connection",
+        keywords: ["mysql", "mariadb", "schema"],
+        valuePaths: ["database"],
+      },
+      {
+        id: "smb-share",
+        label: "Share name",
+        protocols: ["smb"],
+        protocolSubtabId: "connection",
+        keywords: ["windows share", "samba", "unc"],
+        valuePaths: ["shareName"],
+      },
+      {
+        id: "smb-workgroup",
+        label: "Workgroup",
+        protocols: ["smb"],
+        protocolSubtabId: "connection",
+        valuePaths: ["workgroup"],
+      },
+      {
+        id: "rustdesk-id",
+        label: "Remote device ID",
+        protocols: ["rustdesk"],
+        protocolSubtabId: "connection",
+        keywords: ["rustdesk", "remote id", "device id"],
+        valuePaths: ["rustdeskId"],
+      },
+      {
+        id: "rustdesk-password",
+        label: "Unattended password",
+        protocols: ["rustdesk"],
+        protocolSubtabId: "connection",
+        keywords: ["rustdesk credential"],
+      },
+      {
+        id: "ard-auto-reconnect",
+        label: "Automatically reconnect",
+        protocols: ["ard"],
+        protocolSubtabId: "connection",
+        copy: [
+          "Apple Remote Desktop",
+          "macOS Screen Sharing",
+          "Embedded ARD session",
+          "RFB port 5900",
+        ],
+        valuePaths: ["ardSettings.autoReconnect"],
+      },
+      {
+        id: "ard-auth-mode",
+        label: "Authentication mode",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        optionText: [
+          "Remote Mac account (embedded ARD)",
+          "Legacy VNC password (embedded RFB)",
+          "Apple Account via Screen Sharing.app",
+        ],
+        valuePaths: ["ardSettings.authMode"],
+      },
+      {
+        id: "ard-username",
+        label: "Remote Mac username",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) =>
+          (formData.ardSettings as Record<string, unknown> | undefined)
+            ?.authMode !== "vncPassword" &&
+          (formData.ardSettings as Record<string, unknown> | undefined)
+            ?.authMode !== "appleAccountNative",
+        valuePaths: ["username"],
+      },
+      {
+        id: "ard-password",
+        label: "ARD or VNC password",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) =>
+          (formData.ardSettings as Record<string, unknown> | undefined)
+            ?.authMode !== "appleAccountNative",
+        keywords: ["credential", "remote mac", "vnc server"],
+      },
+      {
+        id: "ard-native-handoff",
+        label: "Apple Screen Sharing handoff",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) =>
+          (formData.ardSettings as Record<string, unknown> | undefined)
+            ?.authMode === "appleAccountNative",
+        copy: [
+          "Sign in or approve in Screen Sharing.app",
+          "No Apple Account password is stored or sent by this app",
+          "macOS only",
+        ],
+      },
+      {
+        id: "ard-display-input",
+        label: "ARD display and input",
+        protocols: ["ard"],
+        protocolSubtabId: "display-input",
+        copy: ["Show local cursor", "View only", "Curtain mode on connect"],
+        valuePaths: [
+          "ardSettings.localCursor",
+          "ardSettings.viewOnly",
+          "ardSettings.curtainOnConnect",
+        ],
+      },
+      {
         id: "network-path",
         focusId: "network-path-section",
         label: "Network Path",
-        protocols: ["ssh", "rdp"],
+        protocols: ["ssh", "rdp", "raw", "rlogin", "winrm"],
         protocolSubtabId: "network-path",
         keywords: [
           "route",

@@ -12,6 +12,8 @@ import {
   HardDrive,
   Cable,
   Phone,
+  Files,
+  Network,
   LucideIcon,
 } from "lucide-react";
 import {
@@ -110,6 +112,13 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "green",
   },
   {
+    value: "ard",
+    label: "Apple Remote Desktop",
+    desc: "macOS Screen Sharing (ARD/RFB)",
+    icon: Monitor,
+    color: "blue",
+  },
+  {
     value: "raw",
     label: "Raw Socket",
     desc: "TCP / UDP Payload Client",
@@ -122,6 +131,41 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "RFC 1282 Remote Login",
     icon: Phone,
     color: "amber",
+  },
+  {
+    value: "telnet",
+    label: "Telnet",
+    desc: "Legacy plaintext terminal",
+    icon: Terminal,
+    color: "amber",
+  },
+  {
+    value: "sftp",
+    label: "SFTP",
+    desc: "SSH File Transfer",
+    icon: Files,
+    color: "green",
+  },
+  {
+    value: "mysql",
+    label: "MySQL",
+    desc: "MySQL / MariaDB database",
+    icon: Database,
+    color: "blue",
+  },
+  {
+    value: "smb",
+    label: "SMB",
+    desc: "Windows and Samba file shares",
+    icon: Network,
+    color: "cyan",
+  },
+  {
+    value: "rustdesk",
+    label: "RustDesk",
+    desc: "Remote desktop by device ID",
+    icon: Monitor,
+    color: "red",
   },
   {
     value: "vnc",

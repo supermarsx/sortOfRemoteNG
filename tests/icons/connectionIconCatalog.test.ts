@@ -140,6 +140,17 @@ describe("resolveEffectiveConnectionIcon", () => {
     });
   });
 
+  it("maps ARD and macOS Screen Sharing searches to the viewer icon", () => {
+    expect(getProtocolDefaultIconKey("ard")).toBe("eye");
+    expect(getConnectionIconDefinition("eye")?.keywords).toEqual(
+      expect.arrayContaining([
+        "ard",
+        "apple remote desktop",
+        "macos screen sharing",
+      ]),
+    );
+  });
+
   it("uses a valid explicit override before integration and protocol defaults", () => {
     const descriptor = integrationRegistry[0];
     const connection = makeConnection(`integration:${descriptor.key}`, {

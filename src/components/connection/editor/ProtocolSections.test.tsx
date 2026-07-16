@@ -93,6 +93,26 @@ vi.mock("../../connectionEditor/CloudProviderOptions", () => ({
   default: () => <div data-testid="cloud-options">Cloud provider</div>,
 }));
 
+vi.mock("../../connectionEditor/ARDOptions", () => ({
+  default: ({ sections }: any) => (
+    <div data-testid="ard-options" data-sections={sections?.join(",") ?? "all"}>
+      ARD: {sections?.join(",") ?? "all"}
+    </div>
+  ),
+}));
+
+vi.mock("../../connectionEditor/SavedProtocolOptions", () => ({
+  default: ({ formData, section }: any) => (
+    <div
+      data-testid="saved-protocol-options"
+      data-protocol={formData.protocol}
+      data-section={section}
+    >
+      {formData.protocol}: {section}
+    </div>
+  ),
+}));
+
 vi.mock("./NetworkPathSection", () => ({
   default: ({ formData }: any) => (
     <div data-testid="network-path-section">
@@ -228,6 +248,19 @@ describe("ProtocolSections", () => {
       "network-path",
       "advanced",
     ]);
+    expect(idsFor({ protocol: "ard" })).toEqual([
+      "connection",
+      "authentication",
+      "display-input",
+      "recovery",
+    ]);
+    expect(idsFor({ protocol: "sftp" })).toEqual([
+      "authentication",
+      "recovery",
+    ]);
+    for (const protocol of ["telnet", "mysql", "smb", "rustdesk"] as const) {
+      expect(idsFor({ protocol })).toEqual(["connection", "recovery"]);
+    }
     expect(idsFor({ protocol: "gcp" })).toEqual([
       "provider",
       "authentication",
@@ -341,6 +374,56 @@ describe("ProtocolSections", () => {
     expect(screen.getByTestId("powershell-options")).toHaveAttribute(
       "data-sections",
       "ssh,session,windows-tools",
+    );
+  });
+
+  it("mounts ARD and saved-protocol editors only on their owning subtabs", () => {
+    const { rerender } = render(
+      <Harness initial={{ protocol: "ard", isGroup: false }} />,
+    );
+
+    expect(screen.getByTestId("ard-options")).toHaveAttribute(
+      "data-sections",
+      "connection",
+    );
+    expect(
+      screen.queryByRole("tab", { name: "Network Path" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Authentication" }));
+    expect(screen.getByTestId("ard-options")).toHaveAttribute(
+      "data-sections",
+      "authentication",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Display & Input" }));
+    expect(screen.getByTestId("ard-options")).toHaveAttribute(
+      "data-sections",
+      "display-input",
+    );
+
+    rerender(
+      <Harness key="sftp" initial={{ protocol: "sftp", isGroup: false }} />,
+    );
+    expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+      "data-protocol",
+      "sftp",
+    );
+    expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+      "data-section",
+      "authentication",
+    );
+  });
+
+  it("does not render SSH controls for unrelated protocol fallbacks", () => {
+    render(<Harness initial={{ protocol: "vnc", isGroup: false }} />);
+
+    expect(screen.queryByTestId("ssh-options")).not.toBeInTheDocument();
+    expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+      "data-protocol",
+      "vnc",
+    );
+    expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+      "data-section",
+      "authentication",
     );
   });
 

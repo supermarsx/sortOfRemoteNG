@@ -95,12 +95,18 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
     const ports: Record<string, number> = {
       rdp: 3389,
       ssh: 22,
+      ard: 5900,
       vnc: 5900,
       http: 80,
       https: 443,
       raw: 23,
       rlogin: 513,
       winrm: 5985,
+      telnet: 23,
+      sftp: 22,
+      mysql: 3306,
+      smb: 445,
+      rustdesk: 21116,
     };
     return ports[protocol] || 3389;
   }),
@@ -1039,7 +1045,7 @@ describe("ConnectionEditor", () => {
       flushFrames();
 
       expect(pane!.scrollTop).toBe(186);
-      expect(pane!.scrollLeft).toBe(156);
+      expect(pane!.scrollLeft).toBe(30);
       expect(document.body.scrollTop).toBe(bodyTop);
       expect(document.documentElement.scrollTop).toBe(documentTop);
       expect(windowScroll).not.toHaveBeenCalled();
@@ -1168,6 +1174,70 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Protocol-Specific Options", () => {
+    it("finds ARD by Screen Sharing terminology and applies its saved default", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.change(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { target: { value: "screen sharing" } },
+      );
+      fireEvent.click(
+        screen.getByRole("option", { name: /Apple Remote Desktop/i }),
+      );
+
+      expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+        "Apple Remote Desktop",
+      );
+      expect(screen.getByTestId("editor-port")).toHaveValue(5900);
+      expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByRole("tab", { name: "Connection" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.getByRole("tab", { name: "Authentication" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("tab", { name: "Display & Input" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("tab", { name: "Network Path" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("searches every newly saved protocol by its user-facing terminology", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      const cases = [
+        { query: "plaintext terminal", label: "Telnet", port: 23 },
+        { query: "file transfer", label: "SFTP", port: 22 },
+        { query: "mariadb", label: "MySQL", port: 3306 },
+        { query: "samba", label: "SMB", port: 445 },
+        { query: "device id", label: "RustDesk", port: undefined },
+      ] as const;
+
+      for (const entry of cases) {
+        fireEvent.click(screen.getByTestId("editor-protocol"));
+        fireEvent.change(
+          screen.getByRole("combobox", { name: "Search protocols" }),
+          { target: { value: entry.query } },
+        );
+        fireEvent.click(
+          screen.getByRole("option", { name: new RegExp(`^${entry.label}`) }),
+        );
+        expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+          entry.label,
+        );
+        if (entry.port !== undefined) {
+          expect(screen.getByTestId("editor-port")).toHaveValue(entry.port);
+        }
+      }
+    });
+
     it("shows tailored subtabs and remembers selection per protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 

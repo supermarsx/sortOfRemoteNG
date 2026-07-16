@@ -11,11 +11,18 @@
 export const DEFAULT_PORTS: Record<string, number> = {
   rdp: 3389,
   ssh: 22,
+  ard: 5900,
   vnc: 5900,
   http: 80,
   https: 443,
   winrm: 5985,
   telnet: 23,
+  sftp: 22,
+  mysql: 3306,
+  smb: 445,
+  // RustDesk saved connections primarily address a remote ID; 21116 is the
+  // standard rendezvous/relay control port used when a numeric port is needed.
+  rustdesk: 21116,
   // Raw Socket has no wire-level standard port; 23 is the conventional
   // netcat-style plaintext starting point and remains fully editable.
   raw: 23,

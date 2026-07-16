@@ -161,7 +161,13 @@ export const CONNECTION_ICON_CATALOG = [
     "shell",
     "console",
   ]),
-  defineIcon("eye", "Viewer", "remote-protocols", Eye, ["vnc", "view"]),
+  defineIcon("eye", "Viewer", "remote-protocols", Eye, [
+    "vnc",
+    "ard",
+    "apple remote desktop",
+    "macos screen sharing",
+    "view",
+  ]),
   defineIcon("phone", "Legacy terminal", "remote-protocols", Phone, [
     "telnet",
     "rlogin",

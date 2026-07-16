@@ -155,6 +155,23 @@ export function getProtocolSubtabs(
     ]);
   }
 
+  if (protocol === "ard") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "display-input",
+      "recovery",
+    ]);
+  }
+
+  if (protocol === "sftp") {
+    return selectSubtabs(["authentication", "recovery"]);
+  }
+
+  if (["telnet", "mysql", "smb", "rustdesk"].includes(protocol)) {
+    return selectSubtabs(["connection", "recovery"]);
+  }
+
   if (protocol === "raw" || protocol === "rlogin") {
     return selectSubtabs([
       "connection",

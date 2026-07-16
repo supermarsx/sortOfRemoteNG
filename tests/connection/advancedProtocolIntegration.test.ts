@@ -74,6 +74,34 @@ describe("advanced protocol connection integration", () => {
     expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
   });
 
+  it("normalizes ARD settings without persisting Apple Account credentials", () => {
+    const normalized = normalizeAdvancedProtocolConnection(
+      connection({
+        protocol: "ard",
+        port: 5900,
+        username: "apple-account@example.test",
+        password: "must-not-be-an-embedded-ard-secret",
+        ardSettings: {
+          version: 1,
+          authMode: "appleAccountNative",
+          autoReconnect: true,
+          curtainOnConnect: false,
+          localCursor: true,
+          viewOnly: false,
+        },
+      }),
+    );
+
+    expect(normalized.ardSettings).toMatchObject({
+      version: 1,
+      authMode: "appleAccountNative",
+      autoReconnect: true,
+    });
+    expect(normalized.username).toBeUndefined();
+    expect(normalized.password).toBeUndefined();
+    expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+  });
+
   it("migrates WinRM-shaped settings into versioned PowerShell Remoting settings", () => {
     const normalized = normalizeAdvancedProtocolConnection(
       connection({
@@ -107,12 +135,14 @@ describe("advanced protocol connection integration", () => {
     expect(normalized.rloginSettings).toBeUndefined();
   });
 
-  it("publishes stable picker defaults for all three protocol families", () => {
+  it("publishes stable picker defaults for all advanced protocol families", () => {
     expect(getDefaultPort("raw")).toBe(23);
     expect(getDefaultPort("rlogin")).toBe(513);
     expect(getDefaultPort("winrm")).toBe(5985);
+    expect(getDefaultPort("ard")).toBe(5900);
     expect(getProtocolDefaultIconKey("raw")).toBe("cable");
     expect(getProtocolDefaultIconKey("rlogin")).toBe("phone");
     expect(getProtocolDefaultIconKey("winrm")).toBe("server");
+    expect(getProtocolDefaultIconKey("ard")).toBe("eye");
   });
 });

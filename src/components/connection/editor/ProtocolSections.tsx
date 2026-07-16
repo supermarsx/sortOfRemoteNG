@@ -1,10 +1,12 @@
 import React, { useRef, useState } from "react";
 import type { ConnectionEditorMgr } from "../../../hooks/connection/useConnectionEditor";
 import BackupCodesSection from "../../connectionEditor/BackupCodesSection";
+import ARDOptions from "../../connectionEditor/ARDOptions";
 import CloudProviderOptions from "../../connectionEditor/CloudProviderOptions";
 import HTTPOptions from "../../connectionEditor/HTTPOptions";
 import RDPOptions from "../../connectionEditor/RDPOptions";
 import RloginOptions from "../../connectionEditor/RloginOptions";
+import SavedProtocolOptions from "../../connectionEditor/SavedProtocolOptions";
 import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
 import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
 import RecoveryInfoSection from "../../connectionEditor/RecoveryInfoSection";
@@ -50,6 +52,34 @@ const ProtocolSubtabContent: React.FC<{
   const protocol = mgr.formData.protocol ?? "";
 
   if (subtabId === "recovery") return <RecoverySections mgr={mgr} />;
+
+  if (protocol === "ard") {
+    const section =
+      subtabId === "authentication"
+        ? "authentication"
+        : subtabId === "display-input"
+          ? "display-input"
+          : "connection";
+    return (
+      <ARDOptions
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        sections={[section]}
+      />
+    );
+  }
+
+  if (["telnet", "sftp", "mysql", "smb", "rustdesk"].includes(protocol)) {
+    return (
+      <SavedProtocolOptions
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        section={
+          subtabId === "authentication" ? "authentication" : "connection"
+        }
+      />
+    );
+  }
 
   if (
     subtabId === "network-path" &&
@@ -288,11 +318,10 @@ const ProtocolSubtabContent: React.FC<{
   }
 
   return (
-    <SSHOptions
+    <SavedProtocolOptions
       formData={mgr.formData}
       setFormData={mgr.setFormData}
-      sshSecretManager={mgr.sshSecrets}
-      sections={["authentication"]}
+      section="authentication"
     />
   );
 };
