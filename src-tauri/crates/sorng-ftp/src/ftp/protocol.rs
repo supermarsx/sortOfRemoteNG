@@ -56,7 +56,7 @@ impl FtpCodec {
             WriteHalf::Plain(w) => w.write_all(line.as_bytes()).await?,
             WriteHalf::Tls(w) => w.write_all(line.as_bytes()).await?,
         }
-        log::trace!(">>> {}", cmd);
+        log::trace!(">>> {}", command_for_log(cmd));
         Ok(())
     }
 
@@ -140,6 +140,18 @@ impl FtpCodec {
     }
 }
 
+/// Credentials must never enter trace logs. PASS and ACCT both carry
+/// authentication material under RFC 959, including when issued through the
+/// raw-command API.
+fn command_for_log(command: &str) -> String {
+    let verb = command.split_ascii_whitespace().next().unwrap_or("");
+    if verb.eq_ignore_ascii_case("PASS") || verb.eq_ignore_ascii_case("ACCT") {
+        format!("{} [redacted]", verb.to_ascii_uppercase())
+    } else {
+        command.to_string()
+    }
+}
+
 /// Parse the 3-digit reply code from the start of a line.
 fn parse_code(line: &str) -> FtpResult<u16> {
     if line.len() < 3 {
@@ -150,4 +162,22 @@ fn parse_code(line: &str) -> FtpResult<u16> {
     line[..3]
         .parse::<u16>()
         .map_err(|_| FtpError::protocol_error(format!("Invalid reply code in: '{}'", line)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::command_for_log;
+
+    #[test]
+    fn redacts_password_and_account_commands_before_logging() {
+        assert_eq!(command_for_log("PASS top-secret"), "PASS [redacted]");
+        assert_eq!(command_for_log("pass top-secret"), "PASS [redacted]");
+        assert_eq!(command_for_log("ACCT billing-secret"), "ACCT [redacted]");
+        assert!(!command_for_log("PASS top-secret").contains("top-secret"));
+    }
+
+    #[test]
+    fn preserves_non_secret_commands_for_diagnostics() {
+        assert_eq!(command_for_log("LIST /incoming"), "LIST /incoming");
+    }
 }
