@@ -111,7 +111,8 @@ export function buildNxNativeConnectArgs(
     resolutionWidth: positive(saved.nxWidth, 1280),
     resolutionHeight: positive(saved.nxHeight, 800),
     fullscreen: saved.nxFullscreen ?? false,
-    clipboard: saved.nxClipboardEnabled ?? true,
+    // nxplayer's portable NXS profile cannot enforce clipboard-off.
+    clipboard: true,
     audioEnabled: saved.nxAudioEnabled ?? true,
     resumeSessionId: null,
     connectionService,

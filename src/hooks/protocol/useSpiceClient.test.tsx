@@ -115,6 +115,25 @@ describe("useSpiceClient", () => {
     });
   });
 
+  it("repairs imported TLS requirements and rejects legacy unverified trust at runtime", () => {
+    expect(
+      buildSpiceNativeConnectRequest(
+        {
+          ...connection,
+          spiceTlsPort: undefined,
+          spiceAllowSelfSigned: true,
+          spiceShareClipboard: false,
+        },
+        session,
+      ),
+    ).toMatchObject({
+      tlsPort: 5901,
+      requireTls: true,
+      allowSelfSigned: false,
+      shareClipboard: true,
+    });
+  });
+
   it("publishes only the backend process handle and never the ticket", async () => {
     const { result, unmount } = renderHook(() => useSpiceClient(session));
     await waitFor(() => expect(result.current.status).toBe("viewer-running"));

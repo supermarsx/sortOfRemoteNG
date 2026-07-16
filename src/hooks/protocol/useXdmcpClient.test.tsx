@@ -121,6 +121,13 @@ describe("useXdmcpClient", () => {
     });
   });
 
+  it("pins imported legacy color depths to the portable 24-bit contract", () => {
+    expect(
+      buildXdmcpConfig({ ...connection, xdmcpColorDepth: 16 }, session)
+        .color_depth,
+    ).toBe(24);
+  });
+
   it("rejects option-like and control-bearing hosts before invoking the backend", () => {
     for (const hostname of [
       "-query",

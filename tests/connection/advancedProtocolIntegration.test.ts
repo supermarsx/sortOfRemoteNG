@@ -179,12 +179,15 @@ describe("advanced protocol connection integration", () => {
         connection({
           protocol: "spice",
           port: 0,
+          spiceRequireTls: true,
           spiceAllowSelfSigned: true,
           spiceShareClipboard: false,
         }),
       ),
     ).toMatchObject({
       port: 5900,
+      spiceRequireTls: true,
+      spiceTlsPort: 5901,
       spiceAllowSelfSigned: false,
       spiceShareClipboard: true,
     });

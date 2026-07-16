@@ -23,11 +23,11 @@ import {
   useConnectionEditor,
   PROTOCOL_OPTIONS,
   INTEGRATION_PROTOCOL_OPTIONS,
-  CLOUD_OPTIONS,
   PROTOCOL_COLOR_MAP,
   getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
+import { getProtocolAvailability } from "../../utils/session/protocolAvailability";
 import {
   EXCHANGE_AUTH_METHODS,
   EXCHANGE_ENVIRONMENTS,
@@ -250,14 +250,6 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
 
 const ALL_PROTOCOL_OPTIONS = [
   ...PROTOCOL_OPTIONS.map((p) => ({ ...p, group: "protocol" as const })),
-  ...CLOUD_OPTIONS.map((c) => ({
-    value: c.value,
-    label: c.label,
-    desc: c.desc,
-    icon: Cloud,
-    color: "info",
-    group: "cloud" as const,
-  })),
   ...INTEGRATION_PROTOCOL_OPTIONS.map((p) => ({
     ...p,
     group: "integration" as const,
@@ -271,7 +263,6 @@ const PROTOCOL_GROUP_SEARCH_TERMS: Record<
   string
 > = {
   protocol: "protocol protocols",
-  cloud: "cloud clouds provider providers cloud provider cloud providers",
   integration: "integration integrations",
 };
 
@@ -300,9 +291,9 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     );
   }, [normalizedQuery]);
 
-  const firstVisibleGroup = (
-    ["protocol", "cloud", "integration"] as const
-  ).find((group) => visibleOptions.some((option) => option.group === group));
+  const firstVisibleGroup = (["protocol", "integration"] as const).find(
+    (group) => visibleOptions.some((option) => option.group === group),
+  );
 
   const closeDropdown = React.useCallback((restoreFocus = false) => {
     setOpen(false);
@@ -347,6 +338,21 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   const current = ALL_PROTOCOL_OPTIONS.find(
     (p) => p.value === mgr.formData.protocol,
   );
+  const persistedAvailability = mgr.formData.protocol
+    ? getProtocolAvailability(mgr.formData.protocol)
+    : undefined;
+  const currentLabel =
+    current?.label ??
+    persistedAvailability?.label ??
+    mgr.formData.protocol ??
+    "Select";
+  const currentDescription =
+    current?.desc ??
+    (persistedAvailability?.classification === "management-only"
+      ? "Saved management identity — no direct session"
+      : mgr.formData.protocol
+        ? "Unavailable saved protocol"
+        : "");
   const CurrentIcon = current?.icon ?? Cloud;
 
   const selectProtocol = React.useCallback(
@@ -402,7 +408,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   };
 
   const renderProtocolGroup = (
-    group: "protocol" | "cloud" | "integration",
+    group: "protocol" | "integration",
     label: string,
   ) => {
     const options = visibleOptions.filter((option) => option.group === group);
@@ -521,12 +527,14 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           id="editor-protocol-value"
           className="min-w-0 flex-1 truncate text-left"
           title={
-            current ? `${current.label} — ${current.desc}` : "Select protocol"
+            currentLabel === "Select"
+              ? "Select protocol"
+              : `${currentLabel} — ${currentDescription}`
           }
         >
-          <span className="font-medium">{current?.label ?? "Select"}</span>{" "}
+          <span className="font-medium">{currentLabel}</span>{" "}
           <span className="text-xs text-[var(--color-textMuted)]">
-            {current?.desc ?? ""}
+            {currentDescription}
           </span>
         </span>
         <ChevronDown
@@ -562,7 +570,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   : undefined
               }
               autoComplete="off"
-              placeholder="Search protocols, clouds, integrations…"
+              placeholder="Search protocols and integrations…"
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
             />
             {searchQuery && (
@@ -589,7 +597,6 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               {visibleOptions.length > 0 && (
                 <>
                   {renderProtocolGroup("protocol", "Protocols")}
-                  {renderProtocolGroup("cloud", "Cloud Providers")}
                   {renderProtocolGroup("integration", "Integrations")}
                 </>
               )}

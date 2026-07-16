@@ -91,7 +91,9 @@ export const buildXdmcpConfig = (
       200,
       16_384,
     ),
-    color_depth: saved.xdmcpColorDepth ?? 24,
+    // The portable native X-server handoff cannot enforce alternative depths.
+    // Keep imported legacy values on the backend-supported 24-bit contract.
+    color_depth: 24,
     fullscreen: saved.xdmcpFullscreen ?? false,
     x_server_type: saved.xdmcpXServerType ?? defaultXdmcpServerType(),
     x_server_path: saved.xdmcpXServerPath?.trim() || null,

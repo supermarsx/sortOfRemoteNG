@@ -43,6 +43,11 @@ const KNOWN_SCHEMES = [
   "https",
   // Remote-desktop / shell
   "ssh",
+  "ard",
+  "serial",
+  "raw",
+  "raw-tcp",
+  "raw-udp",
   "sftp",
   "scp",
   "telnet",
@@ -53,6 +58,11 @@ const KNOWN_SCHEMES = [
   "x2go",
   "nx",
   "rlogin",
+  "winrm",
+  "wsman",
+  "powershell",
+  "anydesk",
+  "rustdesk",
   "ftp",
   "ftps",
   // App-internal / paste mistakes worth catching
@@ -63,6 +73,19 @@ const KNOWN_SCHEMES = [
   "postgresql",
   "redis",
   "mongodb",
+  // Persisted management identities. These are not direct-session picker
+  // choices, but imported records still pass through this boundary.
+  "gcp",
+  "azure",
+  "ibm-csp",
+  "digital-ocean",
+  "heroku",
+  "scaleway",
+  "linode",
+  "ovhcloud",
+  "ilo",
+  "lenovo",
+  "supermicro",
   "ws",
   "wss",
 ] as const;

@@ -16,6 +16,9 @@ export type AdvancedProtocolConnectionInput = Omit<
   protocol?: string;
 };
 
+const isValidNetworkPort = (value: unknown): value is number =>
+  Number.isInteger(value) && Number(value) > 0 && Number(value) <= 65_535;
+
 /**
  * Canonicalize versioned protocol settings at every connection persistence
  * boundary. The function is intentionally pure and idempotent so loading,
@@ -120,7 +123,18 @@ export function normalizeAdvancedProtocolConnection(
     next.spiceShareClipboard = true;
     next.spiceUsbRedirection = input.spiceUsbRedirection ?? false;
     next.spiceAudioPlayback = input.spiceAudioPlayback ?? true;
-    next.spiceRequireTls = input.spiceRequireTls ?? false;
+    const requireTls = input.spiceRequireTls ?? false;
+    const hasTlsMetadata = Boolean(
+      input.spiceCaCertificatePath?.trim() || input.spiceTlsHostSubject?.trim(),
+    );
+    next.spiceRequireTls = requireTls;
+    if (requireTls || input.spiceTlsPort !== undefined || hasTlsMetadata) {
+      // Imported records can require TLS while omitting the separate TLS
+      // port. Canonicalize that shape before the native viewer validates it.
+      next.spiceTlsPort = isValidNetworkPort(input.spiceTlsPort)
+        ? input.spiceTlsPort
+        : 5901;
+    }
     // Unverified certificates are intentionally unsupported by the native
     // handoff. Legacy unsafe values migrate back to verified trust.
     next.spiceAllowSelfSigned = false;

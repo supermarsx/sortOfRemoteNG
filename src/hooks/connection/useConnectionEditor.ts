@@ -269,12 +269,6 @@ export const INTEGRATION_PROTOCOL_OPTIONS: ProtocolOption[] =
     color: "cyan",
   }));
 
-export const CLOUD_OPTIONS = [
-  { value: "gcp", label: "GCP", desc: "Google Cloud" },
-  { value: "azure", label: "Azure", desc: "Microsoft" },
-  { value: "digital-ocean", label: "DO", desc: "Digital Ocean" },
-];
-
 export interface IconOption {
   value: string;
   label: string;

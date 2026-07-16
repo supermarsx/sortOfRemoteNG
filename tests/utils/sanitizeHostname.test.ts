@@ -67,6 +67,45 @@ describe("sanitizeHostname", () => {
     expect(sanitizeHostname("ftp://example").hostname).toBe("example");
   });
 
+  it("strips every direct protocol scheme that previously escaped sanitization", () => {
+    for (const scheme of [
+      "ard",
+      "serial",
+      "raw",
+      "raw-tcp",
+      "raw-udp",
+      "winrm",
+      "wsman",
+      "powershell",
+      "anydesk",
+      "rustdesk",
+    ]) {
+      expect(sanitizeHostname(`${scheme}://example`).hostname, scheme).toBe(
+        "example",
+      );
+    }
+  });
+
+  it("sanitizes schemes on imported management identities", () => {
+    for (const scheme of [
+      "gcp",
+      "azure",
+      "ibm-csp",
+      "digital-ocean",
+      "heroku",
+      "scaleway",
+      "linode",
+      "ovhcloud",
+      "ilo",
+      "lenovo",
+      "supermicro",
+    ]) {
+      expect(sanitizeHostname(`${scheme}://example`).hostname, scheme).toBe(
+        "example",
+      );
+    }
+  });
+
   it("is case-insensitive on the scheme", () => {
     const r = sanitizeHostname("HTTPS://Example.COM");
     expect(r.hostname).toBe("Example.COM"); // host case preserved
@@ -89,7 +128,9 @@ describe("sanitizeHostname", () => {
   it("drops user-info from a URL paste", () => {
     // `alice@host:port/path` — auth fields are separate; the host
     // field should NOT carry credentials.
-    const r = sanitizeHostname("https://alice:secret@example.com:443/dashboard");
+    const r = sanitizeHostname(
+      "https://alice:secret@example.com:443/dashboard",
+    );
     expect(r.hostname).toBe("example.com");
     expect(r.port).toBe(443);
     expect(r.path).toBe("/dashboard");

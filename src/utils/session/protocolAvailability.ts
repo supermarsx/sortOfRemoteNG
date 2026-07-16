@@ -14,13 +14,12 @@ export type AuditedProtocol =
 export type ProtocolAvailabilityClass =
   | "fully-interactive"
   | "external-native-handoff"
-  | "management-panel"
+  | "management-only"
   | "genuinely-unsupported";
 
 export type ProtocolSessionEntry =
   | "client-owned"
   | "legacy-generic-timer"
-  | "management-host"
   | "none";
 
 export interface ProtocolAvailability {
@@ -32,6 +31,25 @@ export interface ProtocolAvailability {
   testPath: string | null;
   detail: string;
 }
+
+/**
+ * Persisted provider and hardware identities that have no saved-connection
+ * session host. They may back import metadata, typed hooks, or control-plane
+ * commands, but must never appear as selectable direct-session protocols.
+ */
+export const BUILT_IN_MANAGEMENT_PROTOCOLS = [
+  "gcp",
+  "azure",
+  "ibm-csp",
+  "digital-ocean",
+  "heroku",
+  "scaleway",
+  "linode",
+  "ovhcloud",
+  "ilo",
+  "lenovo",
+  "supermicro",
+] as const satisfies readonly BuiltInConnectionProtocol[];
 
 const capability = (value: ProtocolAvailability): ProtocolAvailability => value;
 
@@ -47,7 +65,7 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     sessionEntry: "client-owned",
     frontendPath: "src/components/rdp/RDPClient.tsx",
     backendPath: "src-tauri/crates/sorng-rdp",
-    testPath: "src/hooks/protocol/useSerialSession.test.tsx",
+    testPath: "tests/rdp/RDPClient.test.tsx",
     detail: "The RDP client owns connect, render, input, detach, and close.",
   }),
   ssh: capability({
@@ -95,9 +113,9 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     sessionEntry: "client-owned",
     frontendPath: "src/components/protocol/AnyDeskClient.tsx",
     backendPath: "src-tauri/crates/sorng-remote-mgmt/src/anydesk.rs",
-    testPath: "src/hooks/protocol/useAnyDeskClient.test.ts",
+    testPath: "tests/protocol/AnyDeskClient.test.tsx",
     detail:
-      "The app launches or hands off to the installed AnyDesk client and does not embed its remote framebuffer.",
+      "The app tracks only a launcher process it starts, or uses an untracked native URL handoff. Remote authentication and the framebuffer remain owned by AnyDesk.",
   }),
   http: capability({
     label: "HTTP",
@@ -267,137 +285,146 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   gcp: capability({
     label: "Google Cloud",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: "src-tauri/crates/sorng-gcp",
     testPath: null,
     detail:
-      "Use the provider management surface rather than a generic session tab.",
+      "Provider commands exist in full builds, but no saved-connection management panel or direct session route is registered.",
   }),
   azure: capability({
     label: "Azure",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: "src-tauri/crates/sorng-azure",
     testPath: null,
     detail:
-      "Use the provider management surface rather than a generic session tab.",
+      "Provider commands exist in full builds, but no saved-connection management panel or direct session route is registered.",
   }),
   "ibm-csp": capability({
     label: "IBM Cloud",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive IBM Cloud session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   "digital-ocean": capability({
     label: "DigitalOcean",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive DigitalOcean session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   heroku: capability({
     label: "Heroku",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive Heroku session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   scaleway: capability({
     label: "Scaleway",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive Scaleway session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   linode: capability({
     label: "Linode",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive Linode session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   ovhcloud: capability({
     label: "OVHcloud",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: null,
     testPath: null,
-    detail: "No direct interactive OVHcloud session is registered.",
+    detail:
+      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
   }),
   ilo: capability({
     label: "HP iLO",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: "src/hooks/hardware/useIlo.ts",
     backendPath: "src-tauri/crates/sorng-ilo",
     testPath: null,
-    detail: "iLO is a management panel, not a generic connected session.",
+    detail:
+      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
   }),
   lenovo: capability({
     label: "Lenovo XCC/IMM",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: "src/hooks/hardware/useLenovo.ts",
     backendPath: "src-tauri/crates/sorng-lenovo",
     testPath: null,
-    detail: "Lenovo BMC support is a management panel, not a generic session.",
+    detail:
+      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
   }),
   supermicro: capability({
     label: "Supermicro BMC",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: "src/hooks/hardware/useSupermicro.ts",
     backendPath: "src-tauri/crates/sorng-supermicro",
     testPath: null,
-    detail: "Supermicro support is a management panel, not a generic session.",
+    detail:
+      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
   }),
 } satisfies Record<BuiltInConnectionProtocol, ProtocolAvailability>;
 
 export const ADDITIONAL_PROTOCOL_AVAILABILITY = {
   mac: capability({
     label: "Linux MAC management",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: "src/hooks/protocol/useMacClient.ts",
     backendPath: "src-tauri/crates/sorng-mac",
     testPath: null,
     detail:
-      "SELinux/AppArmor operations are management APIs, not a terminal protocol.",
+      "SELinux/AppArmor operations are management APIs; no saved direct-session route is registered.",
   }),
   ipmi: capability({
     label: "IPMI",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: "src/hooks/protocol/useIPMIClient.ts",
     backendPath: "src-tauri/crates/sorng-ipmi",
     testPath: null,
     detail:
-      "IPMI exposes BMC management operations rather than a generic session viewer.",
+      "IPMI exposes BMC management operations; no saved direct-session route is registered.",
   }),
   k8s: capability({
     label: "Kubernetes",
-    classification: "management-panel",
-    sessionEntry: "management-host",
+    classification: "management-only",
+    sessionEntry: "none",
     frontendPath: null,
     backendPath: "src-tauri/crates/sorng-k8s",
     testPath: null,
     detail:
-      "Kubernetes is exposed through management/integration surfaces, not a generic session.",
+      "Kubernetes backend commands exist, but no saved direct-session route is registered.",
   }),
 } satisfies Record<AdditionalAuditedProtocol, ProtocolAvailability>;
 
@@ -444,8 +471,8 @@ export function getDirectSessionUnavailableMessage(
   if (!availability) {
     return `${protocol.toUpperCase()} has no registered frontend session runtime.`;
   }
-  if (availability.classification === "management-panel") {
-    return `${availability.label} is available through its management panel, not as a generic interactive session.`;
+  if (availability.classification === "management-only") {
+    return `${availability.label} is management-only and has no registered interactive saved-connection route. ${availability.detail}`;
   }
   if (availability.classification === "genuinely-unsupported") {
     return `${availability.label} does not have a wired direct session runtime. ${availability.detail}`;

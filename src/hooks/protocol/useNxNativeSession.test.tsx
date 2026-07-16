@@ -85,6 +85,15 @@ describe("useNxNativeSession", () => {
     expect(args.connectionService).toBe("nx");
   });
 
+  it("pins imported clipboard-off values to the portable enabled contract", () => {
+    expect(
+      buildNxNativeConnectArgs(
+        { ...connection, nxClipboardEnabled: false },
+        session,
+      ).clipboard,
+    ).toBe(true);
+  });
+
   it("maps every advertised session type to the exact wire value", () => {
     expect(
       [

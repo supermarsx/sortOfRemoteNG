@@ -34,29 +34,39 @@ export const buildSpiceNativeConnectRequest = (
   const saved = connection as SavedSpiceConnection;
   const host = (saved.hostname || session.hostname).trim();
   if (!host) throw new Error("A SPICE hostname is required.");
+  const requireTls = saved.spiceRequireTls ?? false;
+  const hasTlsMetadata = Boolean(
+    saved.spiceCaCertificatePath?.trim() || saved.spiceTlsHostSubject?.trim(),
+  );
   return {
     host,
     port: positivePort(saved.port, 5900),
     tlsPort:
       saved.spiceTlsPort === undefined
-        ? null
+        ? requireTls || hasTlsMetadata
+          ? 5901
+          : null
         : positivePort(saved.spiceTlsPort, 5901),
     password: saved.password ?? null,
     label: saved.name || null,
     nativeClientPath: saved.spiceNativeClientPath?.trim() || null,
     fullscreen: saved.spiceFullscreen ?? false,
     viewOnly: saved.spiceViewOnly ?? false,
-    shareClipboard: saved.spiceShareClipboard ?? true,
+    // remote-viewer's stdin connection-file contract cannot enforce
+    // clipboard-off, so legacy false values must not cross the IPC boundary.
+    shareClipboard: true,
     usbRedirection: saved.spiceUsbRedirection ?? false,
     audioPlayback: saved.spiceAudioPlayback ?? true,
     // remote-viewer's documented connection file cannot force a fixed size.
     preferredWidth: null,
     preferredHeight: null,
     proxy: saved.spiceProxyUri?.trim() || null,
-    requireTls: saved.spiceRequireTls ?? false,
+    requireTls,
     caCert: saved.spiceCaCertificatePath?.trim() || null,
     verifyHostname: saved.spiceTlsHostSubject?.trim() || null,
-    allowSelfSigned: saved.spiceAllowSelfSigned ?? false,
+    // Runtime fail-safe for imported/Quick Connect records that bypassed the
+    // persistence normalizer: unverified certificates are never supported.
+    allowSelfSigned: false,
   };
 };
 

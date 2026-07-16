@@ -4,8 +4,8 @@
 // and argument names match the Rust `#[tauri::command]` definitions exactly so
 // Tauri's camelCase arg mapping works without custom serializers.
 //
-// e20 owns the actual FileTransferManager integration; this hook exposes a
-// complete surface so the integration phase is purely glue code.
+// The saved-session browser and File Transfer host both use this complete
+// lifecycle and transfer surface.
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';

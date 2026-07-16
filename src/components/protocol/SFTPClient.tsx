@@ -1,8 +1,4 @@
-// SFTPClient — stub component wired to `useSFTPClient`.
-//
-// e20 owns the final FileTransferManager integration and any deep UX polish.
-// This component exists so the protocol registry has a real surface to mount
-// once aggregator e19 registers the backend commands.
+// Saved-session SFTP browser backed by the native sorng-sftp service.
 
 import React, { useCallback } from 'react';
 import {
@@ -171,8 +167,8 @@ export const SFTPClient: React.FC<SFTPClientProps> = ({
           </div>
         ) : !mgr.connected ? (
           <div className="flex items-center justify-center h-full text-[var(--color-textSecondary)] text-sm">
-            Not connected. (Full connection flow is handled by the File
-            Transfer host — see e20.)
+            This saved SFTP session is disconnected. Close it, correct the
+            connection settings, and open it again.
           </div>
         ) : (
           <table className="sor-data-table w-full">

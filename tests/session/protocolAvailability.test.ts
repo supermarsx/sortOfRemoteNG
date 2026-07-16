@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_OPTIONS } from "../../src/hooks/connection/useConnectionEditor";
-import type { BuiltInConnectionProtocol } from "../../src/types/connection/connection";
+import {
+  INTEGRATION_PROTOCOL_OPTIONS,
+  PROTOCOL_OPTIONS,
+} from "../../src/hooks/connection/useConnectionEditor";
+import {
+  isIntegrationConnectionProtocol,
+  type BuiltInConnectionProtocol,
+} from "../../src/types/connection/connection";
 import {
   ADDITIONAL_AUDITED_PROTOCOLS,
+  BUILT_IN_MANAGEMENT_PROTOCOLS,
   BUILT_IN_PROTOCOL_AVAILABILITY,
   PROTOCOL_AVAILABILITY,
   getDirectSessionUnavailableMessage,
@@ -64,6 +71,45 @@ describe("protocol availability contract", () => {
     }
   });
 
+  it("exposes every direct built-in exactly once and no management identity", () => {
+    const managementProtocols = new Set<string>(BUILT_IN_MANAGEMENT_PROTOCOLS);
+    const expectedDirectProtocols = BUILT_IN_PROTOCOLS.filter(
+      (protocol) => !managementProtocols.has(protocol),
+    ).sort();
+    const pickerProtocols = PROTOCOL_OPTIONS.map((option) => option.value);
+
+    expect([...pickerProtocols].sort()).toEqual(expectedDirectProtocols);
+    expect(new Set(pickerProtocols).size).toBe(pickerProtocols.length);
+
+    for (const protocol of BUILT_IN_MANAGEMENT_PROTOCOLS) {
+      const availability = getProtocolAvailability(protocol);
+      expect(pickerProtocols, protocol).not.toContain(protocol);
+      expect(availability?.classification, protocol).toBe("management-only");
+      expect(availability?.sessionEntry, protocol).toBe("none");
+      expect(availability?.detail, protocol).toMatch(
+        /no saved-connection panel|no saved-connection management panel/i,
+      );
+    }
+  });
+
+  it("routes every visible integration option through the integration host contract", () => {
+    for (const option of INTEGRATION_PROTOCOL_OPTIONS) {
+      expect(isIntegrationConnectionProtocol(option.value), option.value).toBe(
+        true,
+      );
+      expect(
+        getDirectSessionUnavailableMessage(option.value),
+        option.value,
+      ).toBeNull();
+    }
+  });
+
+  it("points RDP evidence at its dedicated client test", () => {
+    expect(BUILT_IN_PROTOCOL_AVAILABILITY.rdp.testPath).toBe(
+      "tests/rdp/RDPClient.test.tsx",
+    );
+  });
+
   it("routes every Quick Connect choice through a real client", () => {
     for (const protocol of ["rdp", "ssh", "vnc", "http", "https", "telnet"]) {
       expect(getProtocolAvailability(protocol)?.sessionEntry, protocol).toBe(
@@ -84,7 +130,7 @@ describe("protocol availability contract", () => {
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
     for (const protocol of ["ilo", "ipmi", "mac", "gcp", "k8s"]) {
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
-        /management panel/i,
+        /management-only.*no registered interactive saved-connection route/i,
       );
     }
     expect(getDirectSessionUnavailableMessage("future-protocol")).toMatch(

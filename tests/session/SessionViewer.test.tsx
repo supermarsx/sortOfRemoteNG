@@ -436,7 +436,7 @@ describe("SessionViewer", () => {
 
     expect(screen.getByText("Connection Failed")).toBeInTheDocument();
     expect(
-      screen.getByText(/available through its management panel/i),
+      screen.getByText(/management-only.*no registered interactive/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
   });

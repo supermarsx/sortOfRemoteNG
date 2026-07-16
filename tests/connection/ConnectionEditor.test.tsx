@@ -385,7 +385,7 @@ describe("ConnectionEditor", () => {
       await waitFor(() => expect(protocolToggle).toHaveFocus());
     });
 
-    it("should filter protocol labels and value tokens across groups", () => {
+    it("should filter reachable protocol and integration labels without advertising management identities", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       fireEvent.click(screen.getByTestId("editor-protocol"));
@@ -405,13 +405,10 @@ describe("ConnectionEditor", () => {
       ).not.toBeInTheDocument();
 
       fireEvent.change(searchInput, { target: { value: "digital-ocean" } });
-      expect(screen.getByRole("option", { name: /^DO/i })).toBeInTheDocument();
-      expect(
-        screen.getByRole("group", { name: "Cloud Providers" }),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByRole("group", { name: "Integrations" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No protocols found",
+      );
+      expect(screen.queryByRole("option", { name: /^DO/i })).toBeNull();
 
       fireEvent.change(searchInput, { target: { value: "integrations" } });
       expect(
@@ -422,12 +419,9 @@ describe("ConnectionEditor", () => {
       ).not.toBeInTheDocument();
 
       fireEvent.change(searchInput, { target: { value: "cloud providers" } });
-      expect(
-        screen.getByRole("group", { name: "Cloud Providers" }),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByRole("group", { name: "Integrations" }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No protocols found",
+      );
 
       fireEvent.change(searchInput, { target: { value: "postgres" } });
       expect(
@@ -436,6 +430,42 @@ describe("ConnectionEditor", () => {
       expect(
         screen.getByRole("group", { name: "Protocols" }),
       ).toBeInTheDocument();
+    });
+
+    it("shows an imported management identity without making it selectable", async () => {
+      renderWithProviders({
+        connection: {
+          ...mockConnection,
+          protocol: "gcp",
+          port: 22,
+          cloudProvider: { provider: "gcp", projectId: "project-1" },
+        },
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const protocolToggle = screen.getByTestId("editor-protocol");
+      await waitFor(() =>
+        expect(protocolToggle).toHaveTextContent(
+          /Google Cloud.*no direct session/i,
+        ),
+      );
+
+      fireEvent.click(protocolToggle);
+      fireEvent.change(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { target: { value: "gcp" } },
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No protocols found",
+      );
+
+      fireEvent.keyDown(
+        screen.getByRole("combobox", { name: "Search protocols" }),
+        { key: "Escape" },
+      );
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByTestId("cloud-options")).toBeInTheDocument();
     });
 
     it("finds Raw Socket, RLogin, and PowerShell Remoting with accurate defaults", () => {
