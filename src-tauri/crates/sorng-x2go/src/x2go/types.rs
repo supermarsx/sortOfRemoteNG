@@ -253,6 +253,12 @@ pub enum X2goSshAuth {
         key_path: String,
         passphrase: Option<String>,
     },
+    /// Inline private-key material. The native handoff stages this in an
+    /// owner-only temporary file and removes it when the client exits.
+    InlinePrivateKey {
+        private_key: String,
+        passphrase: Option<String>,
+    },
     /// SSH agent
     Agent,
     /// Kerberos/GSSAPI
@@ -347,6 +353,9 @@ pub struct X2goConfig {
     pub use_broker: bool,
     /// XDG session cookie.
     pub session_cookie: Option<String>,
+    /// Optional explicit path to the installed native X2Go Client binary.
+    /// When omitted, the backend searches PATH and platform install paths.
+    pub native_client_path: Option<String>,
 }
 
 impl Default for X2goConfig {
@@ -372,6 +381,7 @@ impl Default for X2goConfig {
             broker_url: None,
             use_broker: false,
             session_cookie: None,
+            native_client_path: None,
         }
     }
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::x2go::session::{SessionCommand, X2goSessionHandle};
+use crate::x2go::session::X2goSessionHandle;
 use crate::x2go::types::*;
 
 pub type X2goServiceState = Arc<Mutex<X2goService>>;
@@ -63,10 +63,11 @@ impl X2goService {
 
     /// Disconnect locally (session may keep running on server).
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), X2goError> {
-        let handle = self
-            .sessions
-            .remove(session_id)
-            .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
+        let Some(handle) = self.sessions.remove(session_id) else {
+            return Ok(());
+        };
+        // The native process may have exited between the status poll and this
+        // cleanup request. Treat that race as an already-disconnected success.
         let _ = handle.disconnect().await;
         Ok(())
     }
@@ -83,24 +84,19 @@ impl X2goService {
 
     /// Send clipboard data.
     pub async fn send_clipboard(&self, session_id: &str, data: String) -> Result<(), X2goError> {
-        let handle = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
-        handle
-            .send_command(SessionCommand::SendClipboard(data))
-            .await
+        let _ = (session_id, data);
+        Err(X2goError::new(
+            X2goErrorKind::ClipboardError,
+            "Clipboard forwarding is owned by the native X2Go Client window",
+        ))
     }
 
     /// Resize remote display.
     pub async fn resize(&self, session_id: &str, width: u32, height: u32) -> Result<(), X2goError> {
-        let handle = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
-        handle
-            .send_command(SessionCommand::Resize { width, height })
-            .await
+        let _ = (session_id, width, height);
+        Err(X2goError::invalid_config(
+            "Display resizing is owned by the native X2Go Client window",
+        ))
     }
 
     /// Mount a shared folder.
@@ -110,16 +106,11 @@ impl X2goService {
         local_path: String,
         remote_name: String,
     ) -> Result<(), X2goError> {
-        let handle = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
-        handle
-            .send_command(SessionCommand::MountFolder {
-                local_path,
-                remote_name,
-            })
-            .await
+        let _ = (session_id, local_path, remote_name);
+        Err(X2goError::new(
+            X2goErrorKind::FileSharingError,
+            "Folder sharing is configured before launch or in the native X2Go Client window",
+        ))
     }
 
     /// Unmount a shared folder.
@@ -128,13 +119,11 @@ impl X2goService {
         session_id: &str,
         remote_name: String,
     ) -> Result<(), X2goError> {
-        let handle = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| X2goError::not_found(format!("session '{}' not found", session_id)))?;
-        handle
-            .send_command(SessionCommand::UnmountFolder { remote_name })
-            .await
+        let _ = (session_id, remote_name);
+        Err(X2goError::new(
+            X2goErrorKind::FileSharingError,
+            "Folder sharing is controlled by the native X2Go Client window",
+        ))
     }
 
     /// Check if a session is connected.
@@ -172,6 +161,7 @@ impl X2goService {
             "gr_port": st.gr_port,
             "snd_port": st.snd_port,
             "fs_port": st.fs_port,
+            "native_client_pid": st.native_client_pid,
             "display_width": st.display_width,
             "display_height": st.display_height,
             "bytes_sent": st.bytes_sent,
@@ -180,6 +170,8 @@ impl X2goService {
             "mounted_folders": st.mounted_folders,
             "server_version": st.server_version,
             "last_activity": st.last_activity,
+            "runtime_mode": "native-x2goclient-handoff",
+            "remote_authentication_confirmed": false,
         }))
     }
 
@@ -195,6 +187,9 @@ impl X2goService {
                 "state": format!("{:?}", st.state),
                 "remote_session_id": st.remote_session_id,
                 "session_type": format!("{:?}", handle.config.session_type),
+                "native_client_pid": st.native_client_pid,
+                "runtime_mode": "native-x2goclient-handoff",
+                "remote_authentication_confirmed": false,
             }));
         }
         list
@@ -216,6 +211,8 @@ impl X2goService {
             "audio_active": st.audio_active,
             "mounted_folders": st.mounted_folders.len(),
             "last_activity": st.last_activity,
+            "runtime_mode": "native-x2goclient-handoff",
+            "remote_authentication_confirmed": false,
         }))
     }
 

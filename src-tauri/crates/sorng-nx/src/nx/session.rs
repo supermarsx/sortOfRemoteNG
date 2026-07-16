@@ -1,56 +1,47 @@
-//! NX session — async lifecycle: SSH → NX negotiation → nxproxy → event loop.
+//! Native NoMachine client session lifecycle.
+//!
+//! `Running` tracks the local `nxplayer` process only. Remote authentication,
+//! host trust, pixels, and input remain owned by the visible NoMachine window.
 
+use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
 
+use tokio::process::{Child, Command};
+use tokio::sync::{mpsc, Mutex};
+use zeroize::Zeroize;
+
+use crate::nx::native_client::{cleanup_temp_paths, prepare_native_launch};
 use crate::nx::types::*;
 
-// ── Commands & Events ───────────────────────────────────────────────────────
-
-/// Commands sent from the service to the session task.
 #[derive(Debug)]
 pub enum SessionCommand {
-    /// Send a key event.
     KeyEvent { keysym: u32, down: bool },
-    /// Send a pointer event.
     PointerEvent { x: i32, y: i32, button_mask: u8 },
-    /// Send clipboard text.
     SendClipboard(String),
-    /// Request display resize.
     Resize { width: u32, height: u32 },
-    /// Suspend the session (disconnect without terminating).
     Suspend,
-    /// Terminate the session.
     Terminate,
-    /// Disconnect gracefully.
     Disconnect,
 }
 
-/// Events emitted from the session task.
 #[derive(Debug)]
 pub enum SessionEvent {
-    /// Session is now connected and ready.
+    /// The local NoMachine client is running. This is deliberately not a
+    /// remote-authentication assertion.
     Connected {
         display: u32,
         width: u32,
         height: u32,
         server_session_id: String,
     },
-    /// Session state changed.
     StateChanged(NxSessionState),
-    /// Clipboard data from guest.
     Clipboard(String),
-    /// Session was suspended.
     Suspended,
-    /// Session was resumed.
     Resumed,
-    /// Session disconnected.
     Disconnected(Option<String>),
 }
 
-// ── Shared State ────────────────────────────────────────────────────────────
-
-/// Mutable state shared between session task and service.
 #[derive(Debug)]
 pub struct SharedSessionState {
     pub state: NxSessionState,
@@ -58,9 +49,11 @@ pub struct SharedSessionState {
     pub display_width: u32,
     pub display_height: u32,
     pub server_session_id: Option<String>,
+    pub native_client_pid: Option<u32>,
     pub bytes_sent: u64,
     pub bytes_received: u64,
     pub frame_count: u64,
+    pub started_at: String,
     pub last_activity: String,
     pub suspended_count: u32,
     pub resumed_count: u32,
@@ -68,9 +61,6 @@ pub struct SharedSessionState {
 
 pub type SharedState = Arc<Mutex<SharedSessionState>>;
 
-// ── Session Handle ──────────────────────────────────────────────────────────
-
-/// Handle to a running NX session.
 pub struct NxSessionHandle {
     pub id: String,
     pub config: NxConfig,
@@ -79,36 +69,82 @@ pub struct NxSessionHandle {
     pub state: SharedState,
 }
 
-impl NxSessionHandle {
-    /// Connect a new NX session.
-    pub async fn connect(id: String, config: NxConfig) -> Result<Self, NxError> {
-        let (cmd_tx, cmd_rx) = mpsc::channel(256);
-        let (event_tx, event_rx) = mpsc::channel(512);
+struct TempFilesGuard(Vec<PathBuf>);
 
+impl Drop for TempFilesGuard {
+    fn drop(&mut self) {
+        cleanup_temp_paths(&self.0);
+    }
+}
+
+impl NxSessionHandle {
+    pub async fn connect(id: String, mut config: NxConfig) -> Result<Self, NxError> {
+        let prepared = match prepare_native_launch(&config) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                strip_config_secrets(&mut config);
+                return Err(error);
+            }
+        };
+        strip_config_secrets(&mut config);
+        let temp_paths = prepared.temp_paths;
+        let mut command = Command::new(&prepared.executable);
+        command
+            .args(&prepared.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                cleanup_temp_paths(&temp_paths);
+                return Err(NxError::connection_failed(format!(
+                    "Failed to launch NoMachine Client: {error}"
+                )));
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                cleanup_temp_paths(&temp_paths);
+                return Err(NxError::connection_failed(format!(
+                    "NoMachine Client exited during startup ({status})"
+                )));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let _ = child.kill().await;
+                cleanup_temp_paths(&temp_paths);
+                return Err(NxError::connection_failed(format!(
+                    "Could not verify the NoMachine Client process: {error}"
+                )));
+            }
+        }
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (event_tx, event_rx) = mpsc::channel(32);
+        let now = chrono::Utc::now().to_rfc3339();
         let state = Arc::new(Mutex::new(SharedSessionState {
-            state: NxSessionState::Starting,
+            state: NxSessionState::Running,
             display: None,
             display_width: config.resolution_width.unwrap_or(1024),
             display_height: config.resolution_height.unwrap_or(768),
             server_session_id: None,
+            native_client_pid: child.id(),
             bytes_sent: 0,
             bytes_received: 0,
             frame_count: 0,
-            last_activity: chrono::Utc::now().to_rfc3339(),
+            started_at: now.clone(),
+            last_activity: now,
             suspended_count: 0,
             resumed_count: 0,
         }));
 
         let shared = state.clone();
-        let session_config = config.clone();
-
         tokio::spawn(async move {
-            let result = session_task(session_config, cmd_rx, event_tx.clone(), shared).await;
-            if let Err(e) = result {
-                let _ = event_tx
-                    .send(SessionEvent::Disconnected(Some(e.message)))
-                    .await;
-            }
+            native_process_task(child, cmd_rx, event_tx, shared, temp_paths).await;
         });
 
         Ok(Self {
@@ -120,201 +156,95 @@ impl NxSessionHandle {
         })
     }
 
-    /// Send a command to the session task.
-    pub async fn send_command(&self, cmd: SessionCommand) -> Result<(), NxError> {
+    pub async fn send_command(&self, command: SessionCommand) -> Result<(), NxError> {
         self.cmd_tx
-            .send(cmd)
+            .send(command)
             .await
-            .map_err(|_| NxError::disconnected("session task is gone"))
+            .map_err(|_| NxError::disconnected("NoMachine Client process is no longer tracked"))
     }
 
-    /// Request disconnect.
     pub async fn disconnect(&self) -> Result<(), NxError> {
         self.send_command(SessionCommand::Disconnect).await
     }
 
-    /// Request suspend.
     pub async fn suspend(&self) -> Result<(), NxError> {
-        self.send_command(SessionCommand::Suspend).await
+        Err(NxError::config(
+            "Suspend/resume is controlled by the native NoMachine Client window",
+        ))
     }
 }
 
-// ── Session Task ────────────────────────────────────────────────────────────
+fn strip_config_secrets(config: &mut NxConfig) {
+    if let Some(password) = &mut config.password {
+        password.zeroize();
+    }
+    config.password = None;
+    if let Some(private_key) = &mut config.private_key {
+        private_key.zeroize();
+    }
+    config.private_key = None;
+}
 
-async fn session_task(
-    config: NxConfig,
+async fn mark_ended(state: &SharedState, failed: bool) {
+    let mut session = state.lock().await;
+    session.state = if failed {
+        NxSessionState::Failed
+    } else {
+        NxSessionState::Terminated
+    };
+    session.native_client_pid = None;
+    session.last_activity = chrono::Utc::now().to_rfc3339();
+}
+
+async fn stop_child(child: &mut Child) {
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+}
+
+async fn native_process_task(
+    mut child: Child,
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     event_tx: mpsc::Sender<SessionEvent>,
     state: SharedState,
-) -> Result<(), NxError> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::net::TcpStream;
-    use tokio::time::{timeout, Duration};
-
-    let connect_timeout = Duration::from_secs(config.connect_timeout.unwrap_or(30) as u64);
-    let ssh_port = config.ssh_port.unwrap_or(22);
-
-    // 1. SSH connect (simplified — real impl would use an SSH library)
-    let addr = format!("{}:{}", config.host, ssh_port);
-    let stream = timeout(connect_timeout, TcpStream::connect(&addr))
-        .await
-        .map_err(|_| NxError::timeout("SSH connection timed out"))?
-        .map_err(NxError::from)?;
-
-    let (reader, mut writer) = tokio::io::split(stream);
-    let mut reader = BufReader::new(reader);
-
-    // 2. Wait for NX greeting
-    let mut line = String::new();
-    reader.read_line(&mut line).await.map_err(NxError::from)?;
-    {
-        let mut st = state.lock().await;
-        st.bytes_received += line.len() as u64;
-    }
-
-    if !line.contains("HELLO NXSERVER") && !line.contains("SSH") {
-        // Not an NX server, might be raw SSH — that's expected for real SSH tunnel
-    }
-
-    // 3. Send hello
-    let hello = format!("{}\n", crate::nx::protocol::NxCommand::hello("3.5.0"));
-    writer
-        .write_all(hello.as_bytes())
-        .await
-        .map_err(NxError::from)?;
-    {
-        let mut st = state.lock().await;
-        st.bytes_sent += hello.len() as u64;
-    }
-
-    // 4. Authentication
-    if let Some(ref username) = config.username {
-        let login_cmd = format!("{}\n", crate::nx::protocol::NxCommand::login(username));
-        writer
-            .write_all(login_cmd.as_bytes())
-            .await
-            .map_err(NxError::from)?;
-    }
-
-    if let Some(ref password) = config.password {
-        let pass_cmd = format!("{}\n", password);
-        writer
-            .write_all(pass_cmd.as_bytes())
-            .await
-            .map_err(NxError::from)?;
-    }
-
-    // 5. Start or resume session
-    let geometry = format!(
-        "{}x{}",
-        config.resolution_width.unwrap_or(1024),
-        config.resolution_height.unwrap_or(768)
-    );
-
-    let session_type = config
-        .session_type
-        .as_ref()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "unix-desktop".into());
-
-    let start_cmd = if let Some(ref resume_id) = config.resume_session_id {
-        crate::nx::protocol::NxCommand::resume_session(resume_id)
-    } else {
-        crate::nx::protocol::NxCommand::start_session(&session_type, &geometry, "adsl", "8M")
-    };
-
-    writer
-        .write_all(format!("{}\n", start_cmd).as_bytes())
-        .await
-        .map_err(NxError::from)?;
-
-    // 6. Mark running
-    {
-        let mut st = state.lock().await;
-        st.state = NxSessionState::Running;
-        st.last_activity = chrono::Utc::now().to_rfc3339();
-    }
-
+    temp_paths: Vec<PathBuf>,
+) {
+    let _temp_files = TempFilesGuard(temp_paths);
     let _ = event_tx
-        .send(SessionEvent::Connected {
-            display: 1001,
-            width: config.resolution_width.unwrap_or(1024),
-            height: config.resolution_height.unwrap_or(768),
-            server_session_id: "nx-session-placeholder".into(),
-        })
+        .send(SessionEvent::StateChanged(NxSessionState::Running))
         .await;
 
-    // 7. Main event loop
-    let mut read_buf = String::new();
     loop {
         tokio::select! {
-            result = reader.read_line(&mut read_buf) => {
-                match result {
-                    Ok(0) => {
-                        let mut st = state.lock().await;
-                        st.state = NxSessionState::Terminated;
-                        let _ = event_tx.send(SessionEvent::Disconnected(None)).await;
-                        break;
-                    }
-                    Ok(n) => {
-                        let mut st = state.lock().await;
-                        st.bytes_received += n as u64;
-                        st.frame_count += 1;
-                        st.last_activity = chrono::Utc::now().to_rfc3339();
-                        read_buf.clear();
-                    }
-                    Err(e) => {
-                        let mut st = state.lock().await;
-                        st.state = NxSessionState::Failed;
-                        let _ = event_tx.send(SessionEvent::Disconnected(Some(e.to_string()))).await;
-                        break;
-                    }
-                }
+            result = child.wait() => {
+                let failure = match result {
+                    Ok(status) if status.success() => None,
+                    Ok(status) => Some(format!("NoMachine Client exited with {status}")),
+                    Err(error) => Some(format!("NoMachine Client process error: {error}")),
+                };
+                mark_ended(&state, failure.is_some()).await;
+                let _ = event_tx.send(SessionEvent::Disconnected(failure)).await;
+                break;
             }
-
-            cmd = cmd_rx.recv() => {
-                match cmd {
+            command = cmd_rx.recv() => {
+                match command {
                     Some(SessionCommand::Disconnect) | None => {
-                        let bye = format!("{}\n", crate::nx::protocol::NxCommand::bye());
-                        let _ = writer.write_all(bye.as_bytes()).await;
-                        let mut st = state.lock().await;
-                        st.state = NxSessionState::Terminated;
+                        stop_child(&mut child).await;
+                        mark_ended(&state, false).await;
                         let _ = event_tx.send(SessionEvent::Disconnected(None)).await;
                         break;
                     }
-                    Some(SessionCommand::Suspend) => {
-                        let disc = format!("{}\n", crate::nx::protocol::NxCommand::disconnect());
-                        let _ = writer.write_all(disc.as_bytes()).await;
-                        let mut st = state.lock().await;
-                        st.state = NxSessionState::Suspended;
-                        st.suspended_count += 1;
-                        let _ = event_tx.send(SessionEvent::Suspended).await;
-                        break;
-                    }
-                    Some(SessionCommand::Terminate) => {
-                        if let Some(ref sid) = state.lock().await.server_session_id {
-                            let term = format!("{}\n", crate::nx::protocol::NxCommand::terminate_session(sid));
-                            let _ = writer.write_all(term.as_bytes()).await;
-                        }
-                        let mut st = state.lock().await;
-                        st.state = NxSessionState::Terminated;
-                        let _ = event_tx.send(SessionEvent::Disconnected(None)).await;
-                        break;
-                    }
-                    Some(SessionCommand::KeyEvent { .. }) |
-                    Some(SessionCommand::PointerEvent { .. }) |
-                    Some(SessionCommand::SendClipboard(_)) |
-                    Some(SessionCommand::Resize { .. }) => {
-                        // These would be forwarded via the nxproxy channel
-                        let mut st = state.lock().await;
-                        st.last_activity = chrono::Utc::now().to_rfc3339();
-                    }
+                    // Retained for registered-command compatibility. The
+                    // service rejects each unsupported operation explicitly.
+                    Some(SessionCommand::KeyEvent { .. })
+                    | Some(SessionCommand::PointerEvent { .. })
+                    | Some(SessionCommand::SendClipboard(_))
+                    | Some(SessionCommand::Resize { .. })
+                    | Some(SessionCommand::Suspend)
+                    | Some(SessionCommand::Terminate) => {}
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -322,41 +252,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn session_command_variants() {
+    fn native_state_never_invents_remote_pixels_or_session_id() {
+        let state = SharedSessionState {
+            state: NxSessionState::Running,
+            display: None,
+            display_width: 1024,
+            display_height: 768,
+            server_session_id: None,
+            native_client_pid: Some(42),
+            bytes_sent: 0,
+            bytes_received: 0,
+            frame_count: 0,
+            started_at: String::new(),
+            last_activity: String::new(),
+            suspended_count: 0,
+            resumed_count: 0,
+        };
+        assert!(state.display.is_none());
+        assert!(state.server_session_id.is_none());
+        assert_eq!(state.frame_count, 0);
+    }
+
+    #[test]
+    fn command_variants_remain_available_for_wire_compatibility() {
+        let _ = SessionCommand::Disconnect;
         let _ = SessionCommand::KeyEvent {
             keysym: 0x61,
             down: true,
         };
         let _ = SessionCommand::PointerEvent {
-            x: 100,
-            y: 200,
-            button_mask: 1,
+            x: 1,
+            y: 2,
+            button_mask: 0,
         };
-        let _ = SessionCommand::SendClipboard("test".into());
-        let _ = SessionCommand::Resize {
-            width: 1920,
-            height: 1080,
-        };
-        let _ = SessionCommand::Suspend;
-        let _ = SessionCommand::Terminate;
-        let _ = SessionCommand::Disconnect;
+        let _ = SessionCommand::SendClipboard("text".into());
     }
 
     #[test]
-    fn shared_state_default() {
-        let state = SharedSessionState {
-            state: NxSessionState::Starting,
-            display: None,
-            display_width: 1024,
-            display_height: 768,
-            server_session_id: None,
-            bytes_sent: 0,
-            bytes_received: 0,
-            frame_count: 0,
-            last_activity: String::new(),
-            suspended_count: 0,
-            resumed_count: 0,
+    fn retained_config_zeroizes_credentials() {
+        let mut config = NxConfig {
+            password: Some("secret".into()),
+            private_key: Some("private material".into()),
+            ..Default::default()
         };
-        assert_eq!(state.state, NxSessionState::Starting);
+        strip_config_secrets(&mut config);
+        assert!(config.password.is_none());
+        assert!(config.private_key.is_none());
     }
 }

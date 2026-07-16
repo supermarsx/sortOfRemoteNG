@@ -18,6 +18,7 @@ rand = { workspace = true }
 bytes = { workspace = true }
 byteorder = "1"
 which = "6.0"
+zeroize = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }

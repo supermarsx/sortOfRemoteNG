@@ -3,6 +3,31 @@
 use super::service::NxServiceState;
 use super::types::*;
 
+fn parse_session_type(value: Option<&str>) -> Result<Option<NxSessionType>, String> {
+    value
+        .map(|value| {
+            let parsed = match value {
+                "unix-desktop" => NxSessionType::UnixDesktop,
+                "unix-gnome" => NxSessionType::UnixGnome,
+                "unix-kde" => NxSessionType::UnixKde,
+                "unix-xfce" => NxSessionType::UnixXfce,
+                "unix-custom" => NxSessionType::UnixCustom,
+                "shadow" => NxSessionType::Shadow,
+                "windows" => NxSessionType::Windows,
+                "vnc" => NxSessionType::Vnc,
+                "application" => NxSessionType::Application,
+                "console" => NxSessionType::Console,
+                unknown => {
+                    return Err(format!(
+                        "Unsupported NoMachine session type '{unknown}'"
+                    ));
+                }
+            };
+            Ok(parsed)
+        })
+        .transpose()
+}
+
 // ── Connection management ───────────────────────────────────────────────
 
 #[tauri::command]
@@ -22,28 +47,31 @@ pub async fn connect_nx(
     clipboard: Option<bool>,
     audio_enabled: Option<bool>,
     resume_session_id: Option<String>,
+    connection_service: Option<String>,
+    native_client_path: Option<String>,
+    ssh_port: Option<u16>,
+    custom_command: Option<String>,
 ) -> Result<String, String> {
-    let st = session_type.as_deref().map(|s| match s {
-        "unix-gnome" => NxSessionType::UnixGnome,
-        "unix-kde" => NxSessionType::UnixKde,
-        "unix-xfce" => NxSessionType::UnixXfce,
-        "unix-custom" => NxSessionType::UnixCustom,
-        "shadow" => NxSessionType::Shadow,
-        "windows" => NxSessionType::Windows,
-        "vnc" => NxSessionType::Vnc,
-        "application" => NxSessionType::Application,
-        "console" => NxSessionType::Console,
-        _ => NxSessionType::UnixDesktop,
-    });
+    let st = parse_session_type(session_type.as_deref())?;
 
+    let effective_port = port.unwrap_or_else(|| {
+        if connection_service.as_deref() == Some("ssh") {
+            ssh_port.unwrap_or(22)
+        } else {
+            4000
+        }
+    });
     let config = NxConfig {
         host,
-        port: port.unwrap_or(4000),
+        port: effective_port,
         username,
         password,
         private_key,
         label,
+        connection_service,
+        native_client_path,
         session_type: st,
+        custom_command,
         resolution_width,
         resolution_height,
         fullscreen,
@@ -53,6 +81,7 @@ pub async fn connect_nx(
             ..NxAudioConfig::default()
         }),
         resume_session_id,
+        ssh_port,
         ..NxConfig::default()
     };
     let mut svc = state.lock().await;
@@ -214,19 +243,26 @@ mod tests {
 
     #[test]
     fn nx_session_type_parse() {
-        let types = vec![
+        let types = [
+            ("unix-desktop", NxSessionType::UnixDesktop),
             ("unix-gnome", NxSessionType::UnixGnome),
             ("unix-kde", NxSessionType::UnixKde),
+            ("unix-xfce", NxSessionType::UnixXfce),
+            ("unix-custom", NxSessionType::UnixCustom),
             ("shadow", NxSessionType::Shadow),
+            ("windows", NxSessionType::Windows),
+            ("vnc", NxSessionType::Vnc),
+            ("application", NxSessionType::Application),
+            ("console", NxSessionType::Console),
         ];
         for (name, expected) in types {
-            let parsed = match name {
-                "unix-gnome" => NxSessionType::UnixGnome,
-                "unix-kde" => NxSessionType::UnixKde,
-                "shadow" => NxSessionType::Shadow,
-                _ => NxSessionType::UnixDesktop,
-            };
-            assert_eq!(parsed, expected);
+            assert_eq!(parse_session_type(Some(name)).unwrap(), Some(expected));
         }
+    }
+
+    #[test]
+    fn unknown_nx_session_type_fails_closed() {
+        let error = parse_session_type(Some("future-made-up-type")).unwrap_err();
+        assert!(error.contains("Unsupported NoMachine session type"));
     }
 }

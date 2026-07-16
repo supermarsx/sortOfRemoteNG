@@ -17,3 +17,4 @@ base64 = { workspace = true }
 rand = { workspace = true }
 which = "6.0"
 regex = { workspace = true }
+zeroize = { workspace = true }

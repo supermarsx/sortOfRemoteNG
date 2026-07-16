@@ -10,39 +10,39 @@
 
 // ── Protocol & Session ──────────────────────────────────────────────────────
 
-export type NxVersion = 'V3' | 'V4' | 'V5';
+export type NxVersion = "V3" | "V4" | "V5";
 
 export type NxSessionType =
-  | 'UnixDesktop'
-  | 'UnixGnome'
-  | 'UnixKde'
-  | 'UnixXfce'
-  | 'UnixCustom'
-  | 'Shadow'
-  | 'Windows'
-  | 'Vnc'
-  | 'Application'
-  | 'Console';
+  | "UnixDesktop"
+  | "UnixGnome"
+  | "UnixKde"
+  | "UnixXfce"
+  | "UnixCustom"
+  | "Shadow"
+  | "Windows"
+  | "Vnc"
+  | "Application"
+  | "Console";
 
 export type NxSessionState =
-  | 'Starting'
-  | 'Running'
-  | 'Suspended'
-  | 'Resuming'
-  | 'Terminating'
-  | 'Terminated'
-  | 'Failed';
+  | "Starting"
+  | "Running"
+  | "Suspended"
+  | "Resuming"
+  | "Terminating"
+  | "Terminated"
+  | "Failed";
 
 // ── Compression & Quality ───────────────────────────────────────────────────
 
-export type NxCompression = 'None' | 'Zlib' | 'Jpeg' | 'Png' | 'Adaptive';
+export type NxCompression = "None" | "Zlib" | "Jpeg" | "Png" | "Adaptive";
 
 /** Compression level 0-9 (0 = no compression, 9 = maximum). */
 export type CompressionLevel = number;
 
-export type LinkSpeed = 'Modem' | 'Isdn' | 'Adsl' | 'Wan' | 'Lan';
+export type LinkSpeed = "Modem" | "Isdn" | "Adsl" | "Wan" | "Lan";
 
-export type ImageQuality = 'Low' | 'Medium' | 'High' | 'Lossless';
+export type ImageQuality = "Low" | "Medium" | "High" | "Lossless";
 
 // ── Keyboard ────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ export interface KeyboardLayout {
 
 // ── Audio ───────────────────────────────────────────────────────────────────
 
-export type NxAudioCodec = 'Pcm' | 'Esd' | 'Pulse' | 'Opus' | 'Mp3';
+export type NxAudioCodec = "Pcm" | "Esd" | "Pulse" | "Opus" | "Mp3";
 
 export interface NxAudioConfig {
   enabled: boolean;
@@ -67,7 +67,7 @@ export interface NxAudioConfig {
 
 // ── Printing ────────────────────────────────────────────────────────────────
 
-export type PrinterDriver = 'Cups' | 'PostScript' | 'Pdf' | 'Smb';
+export type PrinterDriver = "Cups" | "PostScript" | "Pdf" | "Smb";
 
 export interface NxPrintConfig {
   enabled: boolean;
@@ -85,6 +85,8 @@ export interface NxConfig {
   password?: string;
   private_key?: string;
   label?: string;
+  connection_service?: "nx" | "ssh";
+  native_client_path?: string;
 
   // Session
   session_type?: NxSessionType;
@@ -147,6 +149,7 @@ export interface NxSession {
   last_activity: string;
   suspended_at?: string;
   server_session_id?: string;
+  native_client_pid?: number;
 }
 
 // ── Statistics ──────────────────────────────────────────────────────────────
@@ -171,23 +174,23 @@ export interface NxStats {
 // ── Errors ──────────────────────────────────────────────────────────────────
 
 export type NxErrorKind =
-  | 'ConnectionFailed'
-  | 'AuthenticationFailed'
-  | 'SessionNotFound'
-  | 'SessionAlreadyExists'
-  | 'AlreadyConnected'
-  | 'ProxyError'
-  | 'ProtocolError'
-  | 'Timeout'
-  | 'SshError'
-  | 'DisplayError'
-  | 'AudioError'
-  | 'PrintError'
-  | 'Disconnected'
-  | 'ResumeError'
-  | 'ConfigError'
-  | 'IoError'
-  | 'Unknown';
+  | "ConnectionFailed"
+  | "AuthenticationFailed"
+  | "SessionNotFound"
+  | "SessionAlreadyExists"
+  | "AlreadyConnected"
+  | "ProxyError"
+  | "ProtocolError"
+  | "Timeout"
+  | "SshError"
+  | "DisplayError"
+  | "AudioError"
+  | "PrintError"
+  | "Disconnected"
+  | "ResumeError"
+  | "ConfigError"
+  | "IoError"
+  | "Unknown";
 
 export interface NxError {
   kind: NxErrorKind;

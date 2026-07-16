@@ -13,36 +13,42 @@
 // ── Session types ───────────────────────────────────────────────────────────
 
 export type X2goSessionType =
-  | 'Kde'
-  | 'Gnome'
-  | 'Xfce'
-  | 'Lxde'
-  | 'Lxqt'
-  | 'Mate'
-  | 'Cinnamon'
-  | 'Unity'
-  | 'Trinity'
-  | 'Custom'
-  | 'Application'
-  | 'Shadow'
-  | 'Rdp';
+  | "Kde"
+  | "Gnome"
+  | "Xfce"
+  | "Lxde"
+  | "Lxqt"
+  | "Mate"
+  | "Cinnamon"
+  | "Unity"
+  | "Trinity"
+  | "Custom"
+  | "Application"
+  | "Shadow"
+  | "Rdp";
 
 export type X2goSessionState =
-  | 'Connecting'
-  | 'Authenticating'
-  | 'Starting'
-  | 'Resuming'
-  | 'Running'
-  | 'Suspended'
-  | 'Terminating'
-  | 'Ended'
-  | 'Failed';
+  | "Connecting"
+  | "Authenticating"
+  | "Starting"
+  | "Resuming"
+  | "Running"
+  | "Suspended"
+  | "Terminating"
+  | "Ended"
+  | "Failed";
 
-export type X2goCompression = 'None' | 'Modem' | 'Isdn' | 'Adsl' | 'Wan' | 'Lan';
+export type X2goCompression =
+  | "None"
+  | "Modem"
+  | "Isdn"
+  | "Adsl"
+  | "Wan"
+  | "Lan";
 
 // ── Audio ───────────────────────────────────────────────────────────────────
 
-export type X2goAudioSystem = 'Pulse' | 'Esd' | 'Alsa' | 'None';
+export type X2goAudioSystem = "Pulse" | "Esd" | "Alsa" | "None";
 
 export interface X2goAudioConfig {
   system: X2goAudioSystem;
@@ -70,7 +76,7 @@ export interface X2goPrintConfig {
 
 export type X2goDisplayMode =
   | { Window: { width: number; height: number } }
-  | 'Fullscreen'
+  | "Fullscreen"
   | { SingleApplication: { command: string } };
 
 // ── Keyboard ────────────────────────────────────────────────────────────────
@@ -86,8 +92,9 @@ export interface X2goKeyboard {
 export type X2goSshAuth =
   | { Password: { password: string } }
   | { PrivateKey: { key_path: string; passphrase?: string } }
-  | 'Agent'
-  | 'Gssapi';
+  | { InlinePrivateKey: { private_key: string; passphrase?: string } }
+  | "Agent"
+  | "Gssapi";
 
 export interface X2goSshConfig {
   port: number;
@@ -102,10 +109,10 @@ export interface X2goSshConfig {
 // ── Clipboard ───────────────────────────────────────────────────────────────
 
 export type X2goClipboardMode =
-  | 'Both'
-  | 'ClientToServer'
-  | 'ServerToClient'
-  | 'None';
+  | "Both"
+  | "ClientToServer"
+  | "ServerToClient"
+  | "None";
 
 // ── Connection Config ───────────────────────────────────────────────────────
 
@@ -130,6 +137,7 @@ export interface X2goConfig {
   broker_url?: string;
   use_broker: boolean;
   session_cookie?: string;
+  native_client_path?: string;
 }
 
 // ── Remote session info ─────────────────────────────────────────────────────
@@ -167,6 +175,9 @@ export interface X2goSession {
   started_at: string;
   bytes_sent: number;
   bytes_received: number;
+  native_client_pid?: number;
+  runtime_mode?: "native-x2goclient-handoff";
+  remote_authentication_confirmed?: false;
 }
 
 // ── Statistics ──────────────────────────────────────────────────────────────
@@ -183,26 +194,26 @@ export interface X2goStats {
 // ── Errors ──────────────────────────────────────────────────────────────────
 
 export type X2goErrorKind =
-  | 'ConnectionFailed'
-  | 'AuthenticationFailed'
-  | 'SshError'
-  | 'SessionStartFailed'
-  | 'SessionResumeFailed'
-  | 'SessionSuspendFailed'
-  | 'SessionTerminateFailed'
-  | 'BrokerError'
-  | 'ProxyError'
-  | 'AudioError'
-  | 'PrintError'
-  | 'FileSharingError'
-  | 'ClipboardError'
-  | 'Timeout'
-  | 'NotFound'
-  | 'AlreadyExists'
-  | 'Disconnected'
-  | 'CommandFailed'
-  | 'InvalidConfig'
-  | 'PermissionDenied';
+  | "ConnectionFailed"
+  | "AuthenticationFailed"
+  | "SshError"
+  | "SessionStartFailed"
+  | "SessionResumeFailed"
+  | "SessionSuspendFailed"
+  | "SessionTerminateFailed"
+  | "BrokerError"
+  | "ProxyError"
+  | "AudioError"
+  | "PrintError"
+  | "FileSharingError"
+  | "ClipboardError"
+  | "Timeout"
+  | "NotFound"
+  | "AlreadyExists"
+  | "Disconnected"
+  | "CommandFailed"
+  | "InvalidConfig"
+  | "PermissionDenied";
 
 export interface X2goError {
   kind: X2goErrorKind;

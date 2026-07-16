@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::nx::session::{NxSessionHandle, SessionCommand};
+use crate::nx::session::NxSessionHandle;
 use crate::nx::types::*;
 
 /// Thread-safe wrapper for the NX service state.
@@ -55,10 +55,9 @@ impl NxService {
 
     /// Disconnect a session.
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), NxError> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| NxError::session_not_found(session_id))?;
+        let Some(session) = self.sessions.get(session_id) else {
+            return Ok(());
+        };
         session.disconnect().await?;
         let mut st = session.state.lock().await;
         st.state = NxSessionState::Terminated;
@@ -106,13 +105,10 @@ impl NxService {
         keysym: u32,
         down: bool,
     ) -> Result<(), NxError> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::KeyEvent { keysym, down })
-            .await
+        let _ = (session_id, keysym, down);
+        Err(NxError::config(
+            "Keyboard input is owned by the native NoMachine Client window",
+        ))
     }
 
     /// Send pointer event.
@@ -123,35 +119,26 @@ impl NxService {
         y: i32,
         button_mask: u8,
     ) -> Result<(), NxError> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::PointerEvent { x, y, button_mask })
-            .await
+        let _ = (session_id, x, y, button_mask);
+        Err(NxError::config(
+            "Pointer input is owned by the native NoMachine Client window",
+        ))
     }
 
     /// Send clipboard text.
     pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), NxError> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::SendClipboard(text))
-            .await
+        let _ = (session_id, text);
+        Err(NxError::config(
+            "Clipboard forwarding is owned by the native NoMachine Client window",
+        ))
     }
 
     /// Resize the display.
     pub async fn resize(&self, session_id: &str, width: u32, height: u32) -> Result<(), NxError> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| NxError::session_not_found(session_id))?;
-        session
-            .send_command(SessionCommand::Resize { width, height })
-            .await
+        let _ = (session_id, width, height);
+        Err(NxError::config(
+            "Display resizing is owned by the native NoMachine Client window",
+        ))
     }
 
     /// Check if a session is running.
@@ -171,11 +158,13 @@ impl NxService {
             .get(session_id)
             .ok_or_else(|| NxError::session_not_found(session_id))?;
         let st = session.state.lock().await;
-        Ok(NxSession::from_config(
-            &session.config,
-            session.id.clone(),
-            st.state,
-        ))
+        let mut info = NxSession::from_config(&session.config, session.id.clone(), st.state);
+        info.display = st.display;
+        info.connected_at = st.started_at.clone();
+        info.last_activity = st.last_activity.clone();
+        info.server_session_id = st.server_session_id.clone();
+        info.native_client_pid = st.native_client_pid;
+        Ok(info)
     }
 
     /// List all sessions.
@@ -183,11 +172,13 @@ impl NxService {
         let mut list = Vec::new();
         for session in self.sessions.values() {
             let st = session.state.lock().await;
-            list.push(NxSession::from_config(
-                &session.config,
-                session.id.clone(),
-                st.state,
-            ));
+            let mut info = NxSession::from_config(&session.config, session.id.clone(), st.state);
+            info.display = st.display;
+            info.connected_at = st.started_at.clone();
+            info.last_activity = st.last_activity.clone();
+            info.server_session_id = st.server_session_id.clone();
+            info.native_client_pid = st.native_client_pid;
+            list.push(info);
         }
         list
     }
@@ -204,7 +195,7 @@ impl NxService {
             bytes_sent: st.bytes_sent,
             bytes_received: st.bytes_received,
             frame_count: st.frame_count,
-            connected_at: st.last_activity.clone(),
+            connected_at: st.started_at.clone(),
             last_activity: st.last_activity.clone(),
             uptime_secs: 0,
             display_width: st.display_width,

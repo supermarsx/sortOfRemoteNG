@@ -1,6 +1,7 @@
 //! X2Go protocol modules.
 
 pub mod broker;
+pub mod native_client;
 pub mod printing;
 pub mod protocol;
 pub mod service;

@@ -290,6 +290,10 @@ pub struct NxConfig {
     pub password: Option<String>,
     pub private_key: Option<String>,
     pub label: Option<String>,
+    /// Native client transport: `nx` (default) or `ssh`.
+    pub connection_service: Option<String>,
+    /// Optional explicit path to the installed NoMachine `nxplayer` binary.
+    pub native_client_path: Option<String>,
 
     // Session
     pub session_type: Option<NxSessionType>,
@@ -344,6 +348,8 @@ impl Default for NxConfig {
             password: None,
             private_key: None,
             label: None,
+            connection_service: Some("nx".into()),
+            native_client_path: None,
             session_type: Some(NxSessionType::UnixDesktop),
             custom_command: None,
             version: Some(NxVersion::V3),
@@ -394,6 +400,9 @@ pub struct NxSession {
     pub last_activity: String,
     pub suspended_at: Option<String>,
     pub server_session_id: Option<String>,
+    /// Local native NoMachine client process. This is not proof that remote
+    /// authentication has completed; it only tracks the handoff lifecycle.
+    pub native_client_pid: Option<u32>,
 }
 
 impl NxSession {
@@ -417,6 +426,7 @@ impl NxSession {
             last_activity: chrono::Utc::now().to_rfc3339(),
             suspended_at: None,
             server_session_id: None,
+            native_client_pid: None,
         }
     }
 }
