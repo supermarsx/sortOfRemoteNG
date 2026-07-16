@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Connection,
@@ -151,6 +152,32 @@ beforeEach(() => {
 });
 
 describe("usePowerShellSession", () => {
+  it("ignores Strict Mode's stale cleanup and closes the backend exactly once", async () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>{children}</StrictMode>
+    );
+    const { result, unmount } = renderHook(
+      () => usePowerShellSession(frontendSession()),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await act(async () => Promise.resolve());
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "close_powershell_session",
+      ),
+    ).toHaveLength(0);
+
+    unmount();
+    await act(async () => Promise.resolve());
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "close_powershell_session",
+      ),
+    ).toEqual([["close_powershell_session", { sessionId: "backend-ps-1" }]]);
+  });
+
   it("opens the strict backend, receives sequenced streams, and controls a pipeline", async () => {
     const { result, unmount } = renderHook(() =>
       usePowerShellSession(frontendSession()),

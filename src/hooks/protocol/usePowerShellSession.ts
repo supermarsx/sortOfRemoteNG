@@ -81,7 +81,7 @@ export function usePowerShellSession(
   const channelGenerationRef = useRef(0);
   const initializedTokenRef = useRef<string | null>(null);
   const initializePromiseRef = useRef<Promise<void> | null>(null);
-  const cleanupGenerationRef = useRef(0);
+  const cleanupControllerRef = useRef<AbortController | null>(null);
 
   const updateFrontendSession = useCallback(
     (patch: Partial<ConnectionSession>) => {
@@ -314,7 +314,9 @@ export function usePowerShellSession(
       }
     };
     window.addEventListener("sorng:session-will-detach", preserveForDetach);
-    const generation = ++cleanupGenerationRef.current;
+    cleanupControllerRef.current?.abort();
+    const cleanupController = new AbortController();
+    cleanupControllerRef.current = cleanupController;
     return () => {
       mountedRef.current = false;
       window.removeEventListener(
@@ -324,7 +326,7 @@ export function usePowerShellSession(
       queueMicrotask(() => {
         if (
           mountedRef.current ||
-          cleanupGenerationRef.current !== generation ||
+          cleanupController.signal.aborted ||
           !backendRef.current
         ) {
           return;

@@ -92,7 +92,6 @@ export async function isPortFree(port) {
   // Order matters only for speed: check IPv6 dual-stack first since that's what
   // next dev binds and is the most common holder.
   for (const host of ["::", "0.0.0.0"]) {
-    // eslint-disable-next-line no-await-in-loop
     if (!(await tryBind(port, host))) return false;
   }
   return true;
@@ -203,7 +202,6 @@ export async function reclaimPort(port) {
 export async function waitForFree(port, timeoutMs = 3000) {
   const deadline = Date.now() + timeoutMs;
   let delay = 100;
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (await isPortFree(port)) return true;
     if (Date.now() >= deadline) return false;

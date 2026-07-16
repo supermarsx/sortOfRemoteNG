@@ -154,6 +154,10 @@ export function useWebTerminal(
   /* ── Recording & macro state ── */
   const terminalRecorder = useTerminalRecorder();
   const macroRecorder = useMacroRecorder();
+  const macroRecorderRef = useRef(macroRecorder);
+  useEffect(() => {
+    macroRecorderRef.current = macroRecorder;
+  }, [macroRecorder]);
   const [showMacroList, setShowMacroList] = useState(false);
   const [savedMacros, setSavedMacros] = useState<TerminalMacro[]>([]);
   const [replayingMacro, setReplayingMacro] = useState(false);
@@ -1234,7 +1238,10 @@ export function useWebTerminal(
           isConnecting.current
         )
           return;
-        if (macroRecorder.isRecording) macroRecorder.recordInput(data);
+        const currentMacroRecorder = macroRecorderRef.current;
+        if (currentMacroRecorder.isRecording) {
+          currentMacroRecorder.recordInput(data);
+        }
         try {
           await invoke("send_ssh_input", {
             sessionId: sshSessionId.current,
@@ -1246,7 +1253,6 @@ export function useWebTerminal(
         return;
       }
       safeWrite(data);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- macroRecorder accessed via ref pattern, safeWrite is memoized
     },
     [isSsh, safeWrite],
   );
