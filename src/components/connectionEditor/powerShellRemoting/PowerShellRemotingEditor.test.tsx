@@ -87,7 +87,7 @@ describe("PowerShellRemotingEditor", () => {
     ).toBeInTheDocument();
   });
 
-  it("blocks Basic over HTTP in both the field and page validation", () => {
+  it("blocks WSMan authentication over HTTP in both field and page validation", () => {
     const settings = createDefaultPowerShellRemotingSettings();
     settings.wsman.scheme = "http";
     settings.wsman.port = 5985;
@@ -95,7 +95,7 @@ describe("PowerShellRemotingEditor", () => {
     render(<Harness initial={settings} />);
 
     expect(
-      screen.getAllByText(/Basic authentication is blocked over HTTP/i).length,
+      screen.getAllByText(/WSMan authentication is blocked over HTTP/i).length,
     ).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole("alert")).toHaveTextContent(
       /blocking PowerShell setting/i,
