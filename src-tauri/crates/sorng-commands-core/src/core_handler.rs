@@ -2653,6 +2653,73 @@ mod tests {
         "launch_apple_account_screen_sharing",
     ];
 
+    const SPICE_COMMANDS: &[&str] = &[
+        "connect_spice",
+        "disconnect_spice",
+        "disconnect_all_spice",
+        "is_spice_connected",
+        "get_spice_session_info",
+        "list_spice_sessions",
+        "get_spice_session_stats",
+        "send_spice_key_event",
+        "send_spice_pointer_event",
+        "send_spice_clipboard",
+        "request_spice_update",
+        "set_spice_resolution",
+        "spice_redirect_usb",
+        "spice_unredirect_usb",
+        "prune_spice_sessions",
+        "get_spice_session_count",
+    ];
+
+    const XDMCP_COMMANDS: &[&str] = &[
+        "connect_xdmcp",
+        "disconnect_xdmcp",
+        "disconnect_all_xdmcp",
+        "discover_xdmcp",
+        "is_xdmcp_connected",
+        "get_xdmcp_session_info",
+        "list_xdmcp_sessions",
+        "get_xdmcp_session_stats",
+        "prune_xdmcp_sessions",
+        "get_xdmcp_session_count",
+    ];
+
+    const X2GO_COMMANDS: &[&str] = &[
+        "connect_x2go",
+        "suspend_x2go",
+        "terminate_x2go",
+        "disconnect_x2go",
+        "disconnect_all_x2go",
+        "is_x2go_connected",
+        "get_x2go_session_info",
+        "list_x2go_sessions",
+        "get_x2go_session_stats",
+        "send_x2go_clipboard",
+        "resize_x2go_display",
+        "mount_x2go_folder",
+        "unmount_x2go_folder",
+        "prune_x2go_sessions",
+        "get_x2go_session_count",
+    ];
+
+    const NX_COMMANDS: &[&str] = &[
+        "connect_nx",
+        "disconnect_nx",
+        "disconnect_all_nx",
+        "suspend_nx",
+        "is_nx_connected",
+        "get_nx_session_info",
+        "list_nx_sessions",
+        "get_nx_session_stats",
+        "send_nx_key_event",
+        "send_nx_pointer_event",
+        "send_nx_clipboard",
+        "resize_nx_display",
+        "prune_nx_sessions",
+        "get_nx_session_count",
+    ];
+
     #[cfg(feature = "ops")]
     const POWERSHELL_SESSION_COMMANDS: &[&str] = &[
         "open_powershell_session",
@@ -2689,6 +2756,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn advanced_native_protocol_command_recognition_matches_handler_registration() {
+        let source = include_str!("core_handler.rs");
+        for (module, commands) in [
+            ("spice_commands", SPICE_COMMANDS),
+            ("xdmcp_commands", XDMCP_COMMANDS),
+            ("x2go_commands", X2GO_COMMANDS),
+            ("nx_commands", NX_COMMANDS),
+        ] {
+            for command in commands {
+                assert!(is_command(command), "{command} missing from is_command");
+                let registration = format!("{module}::{command},");
+                assert!(
+                    source.contains(&registration),
+                    "{command} missing from generate_handler"
+                );
+            }
+        }
+        assert_eq!(SPICE_COMMANDS.len(), 16);
+        assert_eq!(XDMCP_COMMANDS.len(), 10);
+        assert_eq!(X2GO_COMMANDS.len(), 15);
+        assert_eq!(NX_COMMANDS.len(), 14);
     }
 
     #[cfg(feature = "ops")]

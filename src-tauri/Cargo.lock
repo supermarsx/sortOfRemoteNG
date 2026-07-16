@@ -873,6 +873,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bigdecimal"
+version = "0.4.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d6867f1565b3aad85681f1015055b087fcfd840d6aeee6eee7f2da317603695"
+dependencies = [
+ "autocfg",
+ "libm",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11179,6 +11192,7 @@ dependencies = [
  "tokio-test",
  "uuid",
  "which 6.0.3",
+ "zeroize",
 ]
 
 [[package]]
@@ -11443,6 +11457,8 @@ dependencies = [
 name = "sorng-postgres"
 version = "26.1.0"
 dependencies = [
+ "base64 0.21.7",
+ "bigdecimal",
  "chrono",
  "log",
  "serde",
@@ -11452,6 +11468,7 @@ dependencies = [
  "ssh2",
  "thiserror 1.0.69",
  "tokio",
+ "url",
  "uuid",
 ]
 
@@ -12011,8 +12028,10 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-test",
+ "url",
  "uuid",
  "which 6.0.3",
+ "zeroize",
 ]
 
 [[package]]
@@ -12647,6 +12666,7 @@ dependencies = [
  "tokio",
  "uuid",
  "which 6.0.3",
+ "zeroize",
 ]
 
 [[package]]
@@ -12783,6 +12803,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6798b1838b6a0f69c007c133b8df5866302197e404e8b6ee8ed3e3a5e68dc6"
 dependencies = [
  "base64 0.22.1",
+ "bigdecimal",
  "bytes",
  "chrono",
  "crc",
@@ -12810,6 +12831,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
+ "uuid",
  "webpki-roots 0.26.11",
 ]
 
@@ -12859,6 +12881,7 @@ checksum = "aa003f0038df784eb8fecbbac13affe3da23b45194bd57dba231c8f48199c526"
 dependencies = [
  "atoi",
  "base64 0.22.1",
+ "bigdecimal",
  "bitflags 2.11.1",
  "byteorder",
  "bytes",
@@ -12891,6 +12914,7 @@ dependencies = [
  "stringprep",
  "thiserror 2.0.18",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -12902,6 +12926,7 @@ checksum = "db58fcd5a53cf07c184b154801ff91347e4c30d17a3562a635ff028ad5deda46"
 dependencies = [
  "atoi",
  "base64 0.22.1",
+ "bigdecimal",
  "bitflags 2.11.1",
  "byteorder",
  "chrono",
@@ -12919,6 +12944,7 @@ dependencies = [
  "log",
  "md-5 0.10.6",
  "memchr",
+ "num-bigint",
  "once_cell",
  "rand 0.8.6",
  "serde",
@@ -12929,6 +12955,7 @@ dependencies = [
  "stringprep",
  "thiserror 2.0.18",
  "tracing",
+ "uuid",
  "whoami",
 ]
 
@@ -12955,6 +12982,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
