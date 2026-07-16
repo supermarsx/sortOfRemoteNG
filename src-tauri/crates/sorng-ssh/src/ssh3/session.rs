@@ -717,10 +717,11 @@ mod tests {
     use super::*;
 
     fn cfg(host: &str, port: u16) -> Ssh3ConnectionConfig {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = host.to_string();
-        c.port = port;
-        c
+        Ssh3ConnectionConfig {
+            host: host.to_string(),
+            port,
+            ..Default::default()
+        }
     }
 
     #[test]

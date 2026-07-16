@@ -190,31 +190,6 @@ fn remove_ts_inline_syntax(code: &str) -> String {
     r
 }
 
-#[cfg(test)]
-mod tests {
-    use super::remove_ts_inline_syntax;
-
-    #[test]
-    fn strips_return_types_without_dropping_javascript_delimiters() {
-        assert_eq!(
-            remove_ts_inline_syntax("function render(value: string): string { return value; }"),
-            "function render(value){ return value; }"
-        );
-        assert_eq!(
-            remove_ts_inline_syntax("const double = (value: number): number => value * 2;"),
-            "const double = (value)=> value * 2;"
-        );
-    }
-
-    #[test]
-    fn strips_parameter_types_without_dropping_parameter_delimiters() {
-        assert_eq!(
-            remove_ts_inline_syntax("function greet(name?: string, count: number) {}"),
-            "function greet(name, count) {}"
-        );
-    }
-}
-
 impl ScriptService {
     pub fn new(ssh_service: SshServiceState) -> ScriptServiceState {
         Arc::new(Mutex::new(ScriptService { ssh_service }))
@@ -423,5 +398,30 @@ impl ScriptService {
             }
             _ => Err(format!("Unsupported script type: {}", script_type)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remove_ts_inline_syntax;
+
+    #[test]
+    fn strips_return_types_without_dropping_javascript_delimiters() {
+        assert_eq!(
+            remove_ts_inline_syntax("function render(value: string): string { return value; }"),
+            "function render(value){ return value; }"
+        );
+        assert_eq!(
+            remove_ts_inline_syntax("const double = (value: number): number => value * 2;"),
+            "const double = (value)=> value * 2;"
+        );
+    }
+
+    #[test]
+    fn strips_parameter_types_without_dropping_parameter_delimiters() {
+        assert_eq!(
+            remove_ts_inline_syntax("function greet(name?: string, count: number) {}"),
+            "function greet(name, count) {}"
+        );
     }
 }
