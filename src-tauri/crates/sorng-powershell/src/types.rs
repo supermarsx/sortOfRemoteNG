@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
+use zeroize::Zeroize;
 
 // ─── Transport Protocol ──────────────────────────────────────────────────────
 
@@ -55,7 +57,7 @@ pub enum PsAuthMethod {
 }
 
 /// Credentials for PowerShell Remoting sessions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PsCredential {
     pub username: String,
@@ -78,10 +80,30 @@ pub struct PsCredential {
     pub ssh_key_path: Option<String>,
 }
 
+impl fmt::Debug for PsCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PsCredential")
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[redacted]"))
+            .field("domain", &self.domain)
+            .field("certificate_path", &self.certificate_path)
+            .field("certificate_thumbprint", &self.certificate_thumbprint)
+            .field("private_key_path", &self.private_key_path)
+            .field("ssh_key_path", &self.ssh_key_path)
+            .finish()
+    }
+}
+
+impl Drop for PsCredential {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 // ─── Connection Configuration ────────────────────────────────────────────────
 
 /// Complete configuration for a PowerShell Remoting connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PsRemotingConfig {
     /// Target hostname or IP address
@@ -133,6 +155,33 @@ pub struct PsRemotingConfig {
     /// Custom SOAP headers
     #[serde(default)]
     pub custom_headers: HashMap<String, String>,
+}
+
+impl fmt::Debug for PsRemotingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut custom_header_names = self.custom_headers.keys().collect::<Vec<_>>();
+        custom_header_names.sort();
+
+        f.debug_struct("PsRemotingConfig")
+            .field("computer_name", &self.computer_name)
+            .field("port", &self.port)
+            .field("transport", &self.transport)
+            .field("auth_method", &self.auth_method)
+            .field("credential", &self.credential)
+            .field("skip_ca_check", &self.skip_ca_check)
+            .field("skip_cn_check", &self.skip_cn_check)
+            .field("skip_revocation_check", &self.skip_revocation_check)
+            .field("use_ssl", &self.use_ssl)
+            .field("uri_path", &self.uri_path)
+            .field("connection_uri", &self.connection_uri)
+            .field("session_option", &self.session_option)
+            .field("configuration_name", &self.configuration_name)
+            .field("application_name", &self.application_name)
+            .field("enable_reconnect", &self.enable_reconnect)
+            .field("proxy", &self.proxy)
+            .field("custom_header_names", &custom_header_names)
+            .finish()
+    }
 }
 
 fn default_wsman_path() -> String {
@@ -282,10 +331,7 @@ fn canonical_wsman_path(uri_path: &str, application_name: &str) -> String {
 
 fn canonical_path(requested: &str) -> String {
     let mut segments: Vec<&str> = Vec::new();
-    for segment in requested
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-    {
+    for segment in requested.split('/').filter(|segment| !segment.is_empty()) {
         if segments
             .last()
             .is_some_and(|previous| previous.eq_ignore_ascii_case(segment))
@@ -1367,6 +1413,8 @@ mod endpoint_tests {
     use super::*;
     use serde_json::json;
 
+    const UNIQUE_SECRET: &str = "SORNG_PS_DEBUG_SECRET_7f4b61b2";
+
     fn config() -> PsRemotingConfig {
         serde_json::from_value(json!({
             "computerName": "server.example",
@@ -1494,5 +1542,23 @@ mod endpoint_tests {
 
         config.auth_method = PsAuthMethod::CredSsp;
         assert!(config.validate_security().unwrap_err().contains("CredSSP"));
+    }
+
+    #[test]
+    fn credential_and_remoting_config_debug_redact_secret_values() {
+        let mut config = config();
+        config.credential.password = Some(UNIQUE_SECRET.to_string());
+        config
+            .custom_headers
+            .insert("X-Admin-Token".to_string(), UNIQUE_SECRET.to_string());
+
+        let credential_debug = format!("{:?}", config.credential);
+        let config_debug = format!("{config:?}");
+
+        assert!(credential_debug.contains("[redacted]"));
+        assert!(!credential_debug.contains(UNIQUE_SECRET));
+        assert!(config_debug.contains("X-Admin-Token"));
+        assert!(config_debug.contains("[redacted]"));
+        assert!(!config_debug.contains(UNIQUE_SECRET));
     }
 }

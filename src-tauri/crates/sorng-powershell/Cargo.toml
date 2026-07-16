@@ -36,6 +36,7 @@ dirs = { workspace = true }
 psrp-rs = { path = "../../vendor/psrp-rs-core", default-features = false }
 russh = { version = "=0.49.2", default-features = false }
 ssh-key = { version = "0.6", features = ["ed25519", "encryption", "std"] }
+zeroize = { workspace = true }
 
 # Route WinRM/PowerShell TLS certificate decisions through the backend Trust
 # Center with TOFU as the default (replaces blind danger_accept_invalid_certs).

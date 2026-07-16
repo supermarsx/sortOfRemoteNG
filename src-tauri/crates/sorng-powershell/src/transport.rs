@@ -8,12 +8,13 @@ use crate::types::*;
 use log::{debug, error, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use std::collections::HashMap;
+use std::fmt;
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 // ─── Transport State ─────────────────────────────────────────────────────────
 
 /// Internal state for a WinRM HTTP transport connection.
-#[derive(Debug)]
 pub struct WinRmTransport {
     /// HTTP client for making requests
     client: reqwest::Client,
@@ -37,6 +38,68 @@ pub struct WinRmTransport {
     active_shells: Vec<String>,
     /// Request counter for debugging
     request_counter: u64,
+}
+
+impl fmt::Debug for WinRmTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut custom_header_names = self.custom_headers.keys().collect::<Vec<_>>();
+        custom_header_names.sort();
+        f.debug_struct("WinRmTransport")
+            .field("endpoint", &self.endpoint)
+            .field(
+                "auth_header",
+                &self.auth_header.as_ref().map(|_| "[redacted]"),
+            )
+            .field("skip_cert_validation", &self.skip_cert_validation)
+            .field("max_envelope_size", &self.max_envelope_size)
+            .field("operation_timeout", &self.operation_timeout)
+            .field("locale", &self.locale)
+            .field("custom_header_names", &custom_header_names)
+            .field("active_shells", &self.active_shells)
+            .field("request_counter", &self.request_counter)
+            .finish()
+    }
+}
+
+impl Drop for WinRmTransport {
+    fn drop(&mut self) {
+        self.auth_header.zeroize();
+        for value in self.custom_headers.values_mut() {
+            value.zeroize();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SoapMessageMetadata {
+    request_id: u64,
+    status: Option<u16>,
+    body_bytes: usize,
+}
+
+impl SoapMessageMetadata {
+    fn request(request_id: u64, body_bytes: usize) -> Self {
+        Self {
+            request_id,
+            status: None,
+            body_bytes,
+        }
+    }
+
+    fn response(request_id: u64, status: reqwest::StatusCode, body_bytes: usize) -> Self {
+        Self {
+            request_id,
+            status: Some(status.as_u16()),
+            body_bytes,
+        }
+    }
+}
+
+fn winrm_http_status_error(status: reqwest::StatusCode, body_bytes: usize) -> String {
+    format!(
+        "WinRM error (HTTP {}; remote response omitted; {} bytes)",
+        status, body_bytes
+    )
 }
 
 impl WinRmTransport {
@@ -82,7 +145,9 @@ impl WinRmTransport {
 
     /// Set the authentication header (e.g., Basic base64 or NTLM token).
     pub fn set_auth_header(&mut self, header: String) {
-        self.auth_header = Some(header);
+        if let Some(mut previous_header) = self.auth_header.replace(header) {
+            previous_header.zeroize();
+        }
     }
 
     /// Send a raw SOAP envelope and return the response body.
@@ -99,7 +164,8 @@ impl WinRmTransport {
         if let Some(ref auth) = self.auth_header {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(auth).map_err(|e| format!("Invalid auth header: {}", e))?,
+                HeaderValue::from_str(auth)
+                    .map_err(|_| "Invalid authentication header".to_string())?,
             );
         }
 
@@ -112,43 +178,42 @@ impl WinRmTransport {
             }
         }
 
-        debug!(
-            "WinRM request #{} to {} ({} bytes)",
-            req_id,
-            self.endpoint,
-            soap_body.len()
-        );
-        trace!("WinRM request #{} body:\n{}", req_id, soap_body);
+        let request_metadata = SoapMessageMetadata::request(req_id, soap_body.len());
+        debug!("WinRM request to {}: {request_metadata:?}", self.endpoint);
+        trace!("WinRM request metadata: {request_metadata:?}");
 
         let response = self
             .client
             .post(&self.endpoint)
             .headers(headers)
+            // reqwest takes ownership of its request-body allocation and does
+            // not expose that buffer for explicit zeroization. Callers in this
+            // crate keep the source command/envelope in `Zeroizing` storage;
+            // the transport-owned copy is the remaining library boundary.
             .body(soap_body.to_string())
             .send()
             .await
             .map_err(|e| format!("WinRM HTTP request failed: {}", e))?;
 
         let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read WinRM response body: {}", e))?;
-
-        trace!(
-            "WinRM response #{}: status={}, body:\n{}",
-            req_id,
-            status,
-            body
+        let body = Zeroizing::new(
+            response
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read WinRM response body: {}", e))?,
         );
 
+        let response_metadata = SoapMessageMetadata::response(req_id, status, body.len());
+        trace!("WinRM response metadata: {response_metadata:?}");
+
         if !status.is_success() {
-            let fault = parse_soap_fault(&body).unwrap_or_else(|| body.clone());
-            error!("WinRM request #{} failed: {} - {}", req_id, status, fault);
-            return Err(format!("WinRM error (HTTP {}): {}", status, fault));
+            error!("WinRM request failed: {response_metadata:?}");
+            return Err(winrm_http_status_error(status, body.len()));
         }
 
-        Ok(body)
+        // A successful response is intentionally handed to the caller. The
+        // transport copy is still zeroized immediately after this clone.
+        Ok(body.to_string())
     }
 
     // ─── Shell Management ────────────────────────────────────────────────
@@ -213,16 +278,16 @@ impl WinRmTransport {
         let message_id = Uuid::new_v4().to_string();
         let command_id = Uuid::new_v4().to_string().to_uppercase();
 
-        let envelope = build_command_envelope(
+        let envelope = Zeroizing::new(build_command_envelope(
             &self.endpoint,
             &message_id,
             shell_id,
             command,
             arguments,
             &self.operation_timeout,
-        );
+        ));
 
-        let response = self.send_message(&envelope).await?;
+        let response = self.send_message(envelope.as_str()).await?;
         let actual_command_id = extract_command_id(&response).unwrap_or(command_id);
 
         debug!(
@@ -241,23 +306,25 @@ impl WinRmTransport {
         script: &str,
     ) -> Result<String, String> {
         // Encode as UTF-16LE base64 (required by PowerShell -EncodedCommand)
-        let utf16: Vec<u8> = script
-            .encode_utf16()
-            .flat_map(|c| c.to_le_bytes())
-            .collect();
-        let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &utf16);
+        let utf16 = Zeroizing::new(
+            script
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        );
+        let encoded = Zeroizing::new(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            utf16.as_slice(),
+        ));
+        let arguments = Zeroizing::new(vec![
+            "-NoProfile".to_string(),
+            "-NonInteractive".to_string(),
+            "-EncodedCommand".to_string(),
+            encoded.to_string(),
+        ]);
 
-        self.execute_command(
-            shell_id,
-            "powershell.exe",
-            &[
-                "-NoProfile".to_string(),
-                "-NonInteractive".to_string(),
-                "-EncodedCommand".to_string(),
-                encoded,
-            ],
-        )
-        .await
+        self.execute_command(shell_id, "powershell.exe", arguments.as_slice())
+            .await
     }
 
     /// Receive output from a running command. Returns (stdout, stderr, is_done).
@@ -312,20 +379,22 @@ impl WinRmTransport {
     ) -> Result<(), String> {
         let message_id = Uuid::new_v4().to_string();
 
-        let encoded =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data.as_bytes());
+        let encoded = Zeroizing::new(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            data.as_bytes(),
+        ));
 
-        let envelope = build_send_envelope(
+        let envelope = Zeroizing::new(build_send_envelope(
             &self.endpoint,
             &message_id,
             shell_id,
             command_id,
-            &encoded,
+            encoded.as_str(),
             end_of_stream,
             &self.operation_timeout,
-        );
+        ));
 
-        self.send_message(&envelope).await?;
+        self.send_message(envelope.as_str()).await?;
         Ok(())
     }
 
@@ -996,6 +1065,8 @@ impl SshPsTransport {
 mod tests {
     use super::*;
 
+    const UNIQUE_SECRET: &str = "SORNG_WINRM_LOG_SECRET_c23e8914";
+
     #[tokio::test]
     async fn ssh_placeholder_fails_closed() {
         let credential = PsCredential {
@@ -1011,5 +1082,47 @@ mod tests {
         let error = transport.connect(&credential).await.unwrap_err();
         assert!(error.contains("not supported"));
         assert!(!transport.connected);
+    }
+
+    #[test]
+    fn soap_log_metadata_and_http_errors_never_include_message_bodies() {
+        let secret_body = format!("<s:Envelope><Password>{UNIQUE_SECRET}</Password></s:Envelope>");
+        let request_metadata = SoapMessageMetadata::request(41, secret_body.len());
+        let response_metadata =
+            SoapMessageMetadata::response(41, reqwest::StatusCode::UNAUTHORIZED, secret_body.len());
+        let request_debug = format!("{request_metadata:?}");
+        let response_debug = format!("{response_metadata:?}");
+        let error = winrm_http_status_error(reqwest::StatusCode::UNAUTHORIZED, secret_body.len());
+
+        assert!(request_debug.contains(&secret_body.len().to_string()));
+        assert!(response_debug.contains("401"));
+        assert!(!request_debug.contains(UNIQUE_SECRET));
+        assert!(!response_debug.contains(UNIQUE_SECRET));
+        assert!(error.contains("remote response omitted"));
+        assert!(!error.contains(UNIQUE_SECRET));
+    }
+
+    #[test]
+    fn transport_debug_redacts_auth_and_custom_header_values() {
+        let transport = WinRmTransport {
+            client: reqwest::Client::new(),
+            endpoint: "https://server.example:5986/wsman".to_string(),
+            auth_header: Some(format!("Basic {UNIQUE_SECRET}")),
+            skip_cert_validation: false,
+            max_envelope_size: 512_000,
+            operation_timeout: "PT180S".to_string(),
+            locale: "en-US".to_string(),
+            custom_headers: HashMap::from([(
+                "X-Admin-Token".to_string(),
+                UNIQUE_SECRET.to_string(),
+            )]),
+            active_shells: Vec::new(),
+            request_counter: 0,
+        };
+
+        let transport_debug = format!("{transport:?}");
+        assert!(transport_debug.contains("[redacted]"));
+        assert!(transport_debug.contains("X-Admin-Token"));
+        assert!(!transport_debug.contains(UNIQUE_SECRET));
     }
 }

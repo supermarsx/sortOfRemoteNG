@@ -1052,12 +1052,12 @@ fn md4_hash(data: &[u8]) -> Vec<u8> {
 
         let (aa, bb, cc, dd) = (a, b, c, d);
 
-        for i in 0..16 {
+        for (i, &word) in x.iter().enumerate() {
             match i % 4 {
-                0 => round1(&mut a, b, c, d, x[i], 3),
-                1 => round1(&mut d, a, b, c, x[i], 7),
-                2 => round1(&mut c, d, a, b, x[i], 11),
-                _ => round1(&mut b, c, d, a, x[i], 19),
+                0 => round1(&mut a, b, c, d, word, 3),
+                1 => round1(&mut d, a, b, c, word, 7),
+                2 => round1(&mut c, d, a, b, word, 11),
+                _ => round1(&mut b, c, d, a, word, 19),
             }
         }
 
