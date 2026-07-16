@@ -448,6 +448,7 @@ describe("connection editor search index", () => {
       isGroup: false,
       protocol: "ard",
       ardSettings: {
+        version: 3,
         authMode: "appleAccountNative",
         appleAccountIdentifier: "+44 7700 900123",
       },
@@ -483,6 +484,79 @@ describe("connection editor search index", () => {
         "apple-password-must-never-be-indexed",
       ),
     ).toEqual([]);
+
+    const fallbackIndex = buildIndex({
+      isGroup: false,
+      protocol: "ard",
+      ardSettings: {
+        version: 3,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
+      },
+      username: "portable-operator",
+      password: "fallback-password-must-never-be-indexed",
+    });
+    expect(
+      searchConnectionEditorIndex(fallbackIndex, "Windows")[0],
+    ).toMatchObject({
+      fieldId: "ard-cross-platform-fallback",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(fallbackIndex, "embedded ARD").find(
+        (entry) => entry.fieldId === "ard-fallback-auth-mode",
+      ),
+    ).toMatchObject({ protocolSubtabId: "authentication" });
+    expect(
+      searchConnectionEditorIndex(fallbackIndex, "portable-operator")[0],
+    ).toMatchObject({
+      fieldId: "ard-fallback-username",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(
+        fallbackIndex,
+        "fallback-password-must-never-be-indexed",
+      ),
+    ).toEqual([]);
+
+    const vncFallbackFields = buildIndex({
+      isGroup: false,
+      protocol: "ard",
+      ardSettings: {
+        version: 3,
+        authMode: "appleAccountNative",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "vncPassword",
+        },
+      },
+      username: "stale-username",
+    }).map((entry) => entry.fieldId);
+    expect(vncFallbackFields).toContain("ard-fallback-password");
+    expect(vncFallbackFields).not.toContain("ard-fallback-username");
+
+    const migratedV2Fields = buildIndex({
+      isGroup: false,
+      protocol: "ard",
+      ardSettings: {
+        version: 2,
+        authMode: "appleAccountNative",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
+      },
+      username: "stale-v2-username",
+    }).map((entry) => entry.fieldId);
+    expect(migratedV2Fields).toContain("ard-cross-platform-fallback");
+    expect(migratedV2Fields).not.toContain("ard-fallback-auth-mode");
+    expect(migratedV2Fields).not.toContain("ard-fallback-username");
+    expect(migratedV2Fields).not.toContain("ard-fallback-password");
 
     expect(
       buildIndex({ isGroup: false, protocol: "sftp" }).find(

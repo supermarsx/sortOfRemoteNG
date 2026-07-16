@@ -62,11 +62,19 @@ export function normalizeAdvancedProtocolConnection(
   ) {
     next.ardSettings = normalizeArdSettings(input.ardSettings);
     if (next.ardSettings.authMode === "appleAccountNative") {
-      // Authentication is owned entirely by Screen Sharing.app. Never carry
-      // an embedded credential through load/import/save normalization. Only
-      // the normalized, non-secret account identifier may remain in settings.
-      next.username = undefined;
-      next.password = undefined;
+      if (!next.ardSettings.crossPlatformFallback.enabled) {
+        // Authentication is owned entirely by Screen Sharing.app unless the
+        // user has explicitly enabled the embedded cross-platform route.
+        // Schema-v2 profiles migrate here and cannot accidentally reinterpret
+        // a stale generic password as an Apple Account or fallback secret.
+        next.username = undefined;
+        next.password = undefined;
+      } else if (
+        next.ardSettings.crossPlatformFallback.authMode === "vncPassword"
+      ) {
+        // Legacy VNC authentication has no username field.
+        next.username = undefined;
+      }
     } else if (next.ardSettings.authMode === "vncPassword") {
       next.username = undefined;
     }

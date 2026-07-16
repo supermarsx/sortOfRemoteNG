@@ -33,6 +33,10 @@ describe("normalizeArdSettings", () => {
       version: ARD_SETTINGS_VERSION,
       authMode: "appleAccountNative",
       appleAccountIdentifier: "owner@example.test",
+      crossPlatformFallback: {
+        enabled: false,
+        authMode: "macOsAccount",
+      },
       autoReconnect: false,
       curtainOnConnect: true,
       localCursor: false,
@@ -59,11 +63,70 @@ describe("normalizeArdSettings", () => {
   });
 
   it("drops native-only account metadata from embedded authentication modes", () => {
+    const normalized = normalizeArdSettings({
+      authMode: "macOsAccount",
+      appleAccountIdentifier: "owner@example.test",
+      crossPlatformFallback: { enabled: true, authMode: "vncPassword" },
+    });
+
+    expect(normalized).not.toHaveProperty("appleAccountIdentifier");
+    expect(normalized.crossPlatformFallback).toEqual({
+      enabled: false,
+      authMode: "vncPassword",
+    });
+  });
+
+  it("migrates schema-v2 Apple Account profiles to a disabled fallback", () => {
     expect(
       normalizeArdSettings({
-        authMode: "macOsAccount",
+        version: 2,
+        authMode: "appleAccountNative",
         appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "vncPassword",
+        },
       }),
-    ).not.toHaveProperty("appleAccountIdentifier");
+    ).toMatchObject({
+      version: ARD_SETTINGS_VERSION,
+      authMode: "appleAccountNative",
+      appleAccountIdentifier: "owner@example.test",
+      crossPlatformFallback: {
+        enabled: false,
+        authMode: "vncPassword",
+      },
+    });
+  });
+
+  it("normalizes an explicitly enabled embedded fallback", () => {
+    expect(
+      normalizeArdSettings({
+        version: ARD_SETTINGS_VERSION,
+        authMode: "appleAccountNative",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "vncPassword",
+        },
+      }).crossPlatformFallback,
+    ).toEqual({ enabled: true, authMode: "vncPassword" });
+
+    expect(
+      normalizeArdSettings({
+        version: ARD_SETTINGS_VERSION,
+        authMode: "appleAccountNative",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "appleAccountNative",
+        },
+      }).crossPlatformFallback,
+    ).toEqual({ enabled: false, authMode: "macOsAccount" });
+
+    expect(
+      normalizeArdSettings({
+        version: ARD_SETTINGS_VERSION,
+        authMode: "appleAccountNative",
+        crossPlatformFallback: { enabled: true },
+      }).crossPlatformFallback,
+    ).toEqual({ enabled: false, authMode: "macOsAccount" });
   });
 });

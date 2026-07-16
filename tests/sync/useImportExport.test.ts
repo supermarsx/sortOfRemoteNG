@@ -995,6 +995,67 @@ describe("useImportExport", () => {
     restoreBlob();
   });
 
+  it("exports Apple Account fallback credentials only when explicitly included", async () => {
+    const restoreBlob = stubReadableBlob();
+    const originalConnection = mockConnections[0];
+    mockConnections[0] = {
+      ...originalConnection,
+      protocol: "ard",
+      hostname: "portable-mac.example.test",
+      port: 5900,
+      username: "portable-operator",
+      password: "remote-mac-fallback-secret",
+      ardSettings: {
+        version: 3,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
+        autoReconnect: true,
+        curtainOnConnect: false,
+        localCursor: true,
+        viewOnly: false,
+      },
+    };
+
+    try {
+      const { result } = renderImportExport();
+      await act(async () => {
+        await result.current.handleExport();
+      });
+
+      let downloaded = await getLastDownloadedText();
+      let exportedConnection = JSON.parse(downloaded.text).connections[0];
+      expect(exportedConnection.ardSettings.crossPlatformFallback).toEqual({
+        enabled: true,
+        authMode: "macOsAccount",
+      });
+      expect(exportedConnection.ardSettings).not.toHaveProperty(
+        "appleAccountIdentifier",
+      );
+      expect(exportedConnection).not.toHaveProperty("username");
+      expect(exportedConnection).not.toHaveProperty("password");
+
+      act(() => result.current.setIncludePasswords(true));
+      await act(async () => {
+        await result.current.handleExport();
+      });
+
+      downloaded = await getLastDownloadedText();
+      exportedConnection = JSON.parse(downloaded.text).connections[0];
+      expect(exportedConnection.ardSettings.appleAccountIdentifier).toBe(
+        "owner@example.test",
+      );
+      expect(exportedConnection.username).toBe("portable-operator");
+      expect(exportedConnection.password).toBe("remote-mac-fallback-secret");
+    } finally {
+      mockConnections[0] = originalConnection;
+      restoreBlob();
+    }
+  });
+
   it("handleExport JSON filters protocols and keeps only needed folder ancestors", async () => {
     const restoreBlob = stubReadableBlob();
     const originalConnections = mockConnections.map((connection) => ({
@@ -2562,6 +2623,65 @@ describe("useImportExport", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("strips the Apple Account identity boundary from credential-free imports", async () => {
+    const importedConnection: Connection = {
+      id: "apple-portable",
+      name: "Portable Mac",
+      protocol: "ard",
+      hostname: "portable-mac.example.test",
+      port: 5900,
+      username: "portable-operator",
+      password: "remote-mac-fallback-secret",
+      isGroup: false,
+      tags: [],
+      createdAt: FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
+      ardSettings: {
+        version: 3,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
+        autoReconnect: true,
+        curtainOnConnect: false,
+        localCursor: true,
+        viewOnly: false,
+      },
+    };
+    mockImportConnections.mockResolvedValueOnce([importedConnection]);
+    const { result } = renderImportExport();
+    act(() =>
+      result.current.updateImportOptions({ includeCredentials: false }),
+    );
+
+    const file = new File(["data"], "apple-portable.json", {
+      type: "application/json",
+    });
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("apple-portable.json");
+    });
+
+    const addAction = mockDispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === "ADD_CONNECTION");
+    expect(addAction.payload.ardSettings.crossPlatformFallback).toEqual({
+      enabled: true,
+      authMode: "macOsAccount",
+    });
+    expect(addAction.payload.ardSettings).not.toHaveProperty(
+      "appleAccountIdentifier",
+    );
+    expect(addAction.payload).not.toHaveProperty("username");
+    expect(addAction.payload).not.toHaveProperty("password");
+  });
+
   it("confirmImport appends to a selected non-current database and can switch after import", async () => {
     const databases = [
       {
@@ -2869,6 +2989,113 @@ describe("useImportExport", () => {
     act(() => result.current.cancelImport());
     expect(result.current.importResult).toBeNull();
     expect(result.current.importFilename).toBe("");
+  });
+
+  it("clones Apple Account fallback credentials only when explicitly included", async () => {
+    const databases = [
+      {
+        id: "col-1",
+        name: "Default",
+        isEncrypted: false,
+        isCurrent: true,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-2",
+        name: "Archive",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+      {
+        id: "col-3",
+        name: "Target",
+        isEncrypted: false,
+        isCurrent: false,
+        isUnlocked: true,
+        isExportable: true,
+      },
+    ];
+    const appleConnection: Connection = {
+      id: "apple-portable",
+      name: "Portable Mac",
+      protocol: "ard",
+      hostname: "portable-mac.example.test",
+      port: 5900,
+      username: "portable-operator",
+      password: "remote-mac-fallback-secret",
+      isGroup: false,
+      tags: [],
+      createdAt: FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
+      ardSettings: {
+        version: 3,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
+        autoReconnect: true,
+        curtainOnConnect: false,
+        localCursor: true,
+        viewOnly: false,
+      },
+    };
+    mockGetExportableDatabases.mockResolvedValue(databases);
+    mockReadExportableSnapshot.mockImplementation(
+      async (databaseId: string) => ({
+        collection: {
+          id: databaseId,
+          name: databaseId === "col-2" ? "Archive" : "Target",
+          isEncrypted: false,
+        },
+        connections: databaseId === "col-2" ? [appleConnection] : [],
+        settings: {},
+        tabGroups: [],
+        colorTags: {},
+      }),
+    );
+
+    const { result } = renderImportExport({ initialTab: "clone" });
+    await waitFor(() => {
+      expect(result.current.cloneDatabaseOptions).toHaveLength(3);
+    });
+    act(() => {
+      result.current.setCloneSourceMode("selected");
+      result.current.setSelectedCloneSourceDatabaseIds(["col-2"]);
+      result.current.setCloneTargetDatabaseIds(["col-3"]);
+      result.current.setCloneIncludeCredentials(false);
+    });
+    await waitFor(() => {
+      expect(result.current.cloneSourceMode).toBe("selected");
+    });
+
+    await act(async () => {
+      await result.current.handleClone();
+    });
+    let cloned = mockAppendConnectionsToDatabase.mock.calls[0][1][0];
+    expect(cloned.ardSettings.crossPlatformFallback).toEqual({
+      enabled: true,
+      authMode: "macOsAccount",
+    });
+    expect(cloned.ardSettings).not.toHaveProperty("appleAccountIdentifier");
+    expect(cloned).not.toHaveProperty("username");
+    expect(cloned).not.toHaveProperty("password");
+
+    mockAppendConnectionsToDatabase.mockClear();
+    act(() => result.current.setCloneIncludeCredentials(true));
+    await act(async () => {
+      await result.current.handleClone();
+    });
+    cloned = mockAppendConnectionsToDatabase.mock.calls[0][1][0];
+    expect(cloned.ardSettings.appleAccountIdentifier).toBe(
+      "owner@example.test",
+    );
+    expect(cloned.username).toBe("portable-operator");
+    expect(cloned.password).toBe("remote-mac-fallback-secret");
   });
 
   it("handleClone filters qualified connection ids against each source database", async () => {

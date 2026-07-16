@@ -281,12 +281,16 @@ describe("advanced protocol portability", () => {
     const appleAccountConnection = baseConnection({
       protocol: "ard",
       port: 5900,
-      username: "must-not-survive-native-mode",
-      password: "must-not-survive-native-mode",
+      username: "portable-operator",
+      password: "remote-mac-fallback-secret",
       ardSettings: {
-        version: 2,
+        version: 3,
         authMode: "appleAccountNative",
         appleAccountIdentifier: "owner@example.test",
+        crossPlatformFallback: {
+          enabled: true,
+          authMode: "macOsAccount",
+        },
         autoReconnect: true,
         curtainOnConnect: false,
         localCursor: true,
@@ -300,8 +304,8 @@ describe("advanced protocol portability", () => {
     expect(fullAppleAccountExport.ardSettings?.appleAccountIdentifier).toBe(
       "owner@example.test",
     );
-    expect(fullAppleAccountExport.username).toBeUndefined();
-    expect(fullAppleAccountExport.password).toBeUndefined();
+    expect(fullAppleAccountExport.username).toBe("portable-operator");
+    expect(fullAppleAccountExport.password).toBe("remote-mac-fallback-secret");
 
     const credentialFreeAppleAccountExport = prepareConnectionForExport(
       appleAccountConnection,
@@ -310,6 +314,25 @@ describe("advanced protocol portability", () => {
     expect(
       credentialFreeAppleAccountExport.ardSettings?.appleAccountIdentifier,
     ).toBeUndefined();
+    expect(credentialFreeAppleAccountExport.username).toBeUndefined();
+    expect(credentialFreeAppleAccountExport.password).toBeUndefined();
+
+    const credentialFreeAppleAccountClone = prepareConnectionForClone(
+      appleAccountConnection,
+      false,
+    );
+    expect(
+      credentialFreeAppleAccountClone.ardSettings?.appleAccountIdentifier,
+    ).toBeUndefined();
+    expect(credentialFreeAppleAccountClone.username).toBeUndefined();
+    expect(credentialFreeAppleAccountClone.password).toBeUndefined();
+
+    const fullAppleAccountClone = prepareConnectionForClone(
+      appleAccountConnection,
+      true,
+    );
+    expect(fullAppleAccountClone.username).toBe("portable-operator");
+    expect(fullAppleAccountClone.password).toBe("remote-mac-fallback-secret");
   });
 
   it("deep-copies clones and always removes operational state", () => {

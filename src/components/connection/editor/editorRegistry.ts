@@ -9,6 +9,7 @@ import {
 import { RAW_SOCKET_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/rawSocket/searchMetadata";
 import { RLOGIN_CONNECTION_EDITOR_SEARCH_DESCRIPTORS } from "../../connectionEditor/rloginOptions/searchMetadata";
 import { POWERSHELL_REMOTING_CONNECTION_EDITOR_SEARCH_DESCRIPTOR } from "../../connectionEditor/powerShellRemoting/searchMetadata";
+import { normalizeArdSettings } from "../../../types/protocols/ard";
 
 export type ConnectionEditorTabId =
   | "general"
@@ -162,6 +163,19 @@ const showsExchangeOnPremisesFields = (formData: SearchFormData): boolean => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
+
+const getArdSettings = (formData: SearchFormData) =>
+  normalizeArdSettings(formData.ardSettings);
+
+const getArdCrossPlatformFallback = (formData: SearchFormData) =>
+  getArdSettings(formData).crossPlatformFallback;
+
+const usesAppleAccountNative = (formData: SearchFormData): boolean =>
+  getArdSettings(formData).authMode === "appleAccountNative";
+
+const usesArdCrossPlatformFallback = (formData: SearchFormData): boolean =>
+  usesAppleAccountNative(formData) &&
+  getArdCrossPlatformFallback(formData).enabled;
 
 const behaviorValueField = ({
   id,
@@ -1837,11 +1851,12 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Remote Mac username",
         protocols: ["ard"],
         protocolSubtabId: "authentication",
-        visibleWhen: (formData) =>
-          (formData.ardSettings as Record<string, unknown> | undefined)
-            ?.authMode !== "vncPassword" &&
-          (formData.ardSettings as Record<string, unknown> | undefined)
-            ?.authMode !== "appleAccountNative",
+        visibleWhen: (formData) => {
+          const authMode = getArdSettings(formData)?.authMode;
+          return (
+            authMode !== "vncPassword" && authMode !== "appleAccountNative"
+          );
+        },
         valuePaths: ["username"],
       },
       {
@@ -1849,9 +1864,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Apple Account identifier (saved reference)",
         protocols: ["ard"],
         protocolSubtabId: "authentication",
-        visibleWhen: (formData) =>
-          (formData.ardSettings as Record<string, unknown> | undefined)
-            ?.authMode === "appleAccountNative",
+        visibleWhen: usesAppleAccountNative,
         keywords: [
           "apple id",
           "email",
@@ -1873,9 +1886,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Remote Mac or VNC password",
         protocols: ["ard"],
         protocolSubtabId: "authentication",
-        visibleWhen: (formData) =>
-          (formData.ardSettings as Record<string, unknown> | undefined)
-            ?.authMode !== "appleAccountNative",
+        visibleWhen: (formData) => !usesAppleAccountNative(formData),
         keywords: ["credential", "remote mac", "vnc server"],
       },
       {
@@ -1883,14 +1894,69 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         label: "Apple Screen Sharing handoff",
         protocols: ["ard"],
         protocolSubtabId: "authentication",
-        visibleWhen: (formData) =>
-          (formData.ardSettings as Record<string, unknown> | undefined)
-            ?.authMode === "appleAccountNative",
+        visibleWhen: usesAppleAccountNative,
         copy: [
           "Sign in or approve in Screen Sharing.app",
           "No Apple Account password is stored or sent by this app",
           "Password entry, two-factor authentication, approval, and Keychain stay with Apple",
           "macOS only",
+        ],
+      },
+      {
+        id: "ard-cross-platform-fallback",
+        label: "Enable cross-platform fallback",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: usesAppleAccountNative,
+        keywords: [
+          "portable",
+          "windows",
+          "linux",
+          "embedded ard",
+          "embedded rfb",
+        ],
+        copy: [
+          "Connect to the same host on Windows or Linux",
+          "Use embedded ARD/RFB if macOS cannot open Screen Sharing",
+          "Separate remote-Mac credentials",
+          "Never an Apple Account password",
+        ],
+        valuePaths: ["ardSettings.crossPlatformFallback.enabled"],
+      },
+      {
+        id: "ard-fallback-auth-mode",
+        label: "Fallback authentication",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: usesArdCrossPlatformFallback,
+        optionText: [
+          "Remote Mac account (embedded ARD)",
+          "Legacy VNC password (embedded RFB)",
+        ],
+        valuePaths: ["ardSettings.crossPlatformFallback.authMode"],
+      },
+      {
+        id: "ard-fallback-username",
+        label: "Fallback remote Mac username",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) =>
+          usesArdCrossPlatformFallback(formData) &&
+          getArdCrossPlatformFallback(formData)?.authMode === "macOsAccount",
+        keywords: ["remote mac account", "portable username"],
+        valuePaths: ["username"],
+      },
+      {
+        id: "ard-fallback-password",
+        label: "Fallback remote Mac or VNC server password",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: usesArdCrossPlatformFallback,
+        keywords: ["credential", "remote mac", "vnc server"],
+        copy: [
+          "Credential for the remote Mac or its separately configured VNC server",
+          "Never enter your Apple Account password",
+          "Credential-free exports, imports, and clones remove this field",
         ],
       },
       {

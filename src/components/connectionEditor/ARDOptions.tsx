@@ -10,6 +10,7 @@ import type { Connection } from "../../types/connection/connection";
 import {
   normalizeArdSettings,
   type ArdAuthMode,
+  type ArdEmbeddedAuthMode,
 } from "../../types/protocols/ard";
 import { Checkbox, PasswordInput, Select } from "../ui/forms";
 
@@ -65,24 +66,81 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
       ardSettings: { ...normalizeArdSettings(previous.ardSettings), ...patch },
     }));
   const updateAuthMode = (authMode: ArdAuthMode) =>
-    setFormData((previous) => ({
-      ...previous,
-      // Native Screen Sharing performs authentication outside this app. Drop
-      // any embedded ARD credentials when selecting it so an Apple Account is
-      // never represented as a saved connection secret.
-      ...(authMode === "appleAccountNative"
-        ? { username: "", password: "" }
-        : authMode === "vncPassword"
+    setFormData((previous) => {
+      const previousSettings = normalizeArdSettings(previous.ardSettings);
+      if (previousSettings.authMode === authMode) return previous;
+      const previousEmbeddedMode =
+        previousSettings.authMode === "appleAccountNative"
+          ? previousSettings.crossPlatformFallback.authMode
+          : previousSettings.authMode;
+      const authModeChanged = previousSettings.authMode !== authMode;
+      return {
+        ...previous,
+        // Native Screen Sharing performs authentication outside this app.
+        // Start its portable fallback disabled so existing generic secrets can
+        // never be mistaken for Apple Account or fallback credentials.
+        ...(authModeChanged ? { password: "" } : {}),
+        ...(authMode === "appleAccountNative" || authMode === "vncPassword"
           ? { username: "" }
           : {}),
-      ardSettings: {
-        ...normalizeArdSettings(previous.ardSettings),
-        authMode,
-        ...(authMode === "appleAccountNative"
-          ? {}
-          : { appleAccountIdentifier: undefined }),
-      },
-    }));
+        ardSettings: {
+          ...previousSettings,
+          authMode,
+          crossPlatformFallback: {
+            enabled: false,
+            authMode:
+              authMode === "appleAccountNative"
+                ? previousEmbeddedMode
+                : previousSettings.crossPlatformFallback.authMode,
+          },
+          ...(authMode === "appleAccountNative"
+            ? {}
+            : { appleAccountIdentifier: undefined }),
+        },
+      };
+    });
+  const updateFallbackEnabled = (enabled: boolean) =>
+    setFormData((previous) => {
+      const previousSettings = normalizeArdSettings(previous.ardSettings);
+      if (previousSettings.crossPlatformFallback.enabled === enabled) {
+        return previous;
+      }
+      return {
+        ...previous,
+        // Treat enabling as a fresh opt-in as well: a stale generic secret
+        // from a migrated profile must never become a fallback credential.
+        username: "",
+        password: "",
+        ardSettings: {
+          ...previousSettings,
+          crossPlatformFallback: {
+            ...previousSettings.crossPlatformFallback,
+            enabled,
+          },
+        },
+      };
+    });
+  const updateFallbackAuthMode = (authMode: ArdEmbeddedAuthMode) =>
+    setFormData((previous) => {
+      const previousSettings = normalizeArdSettings(previous.ardSettings);
+      if (previousSettings.crossPlatformFallback.authMode === authMode) {
+        return previous;
+      }
+      return {
+        ...previous,
+        // Passwords are not interchangeable between a remote Mac account and
+        // a separately configured VNC server password.
+        password: "",
+        ...(authMode === "vncPassword" ? { username: "" } : {}),
+        ardSettings: {
+          ...previousSettings,
+          crossPlatformFallback: {
+            enabled: true,
+            authMode,
+          },
+        },
+      };
+    });
 
   if (formData.isGroup || formData.protocol !== "ard") return null;
 
@@ -255,6 +313,113 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
                     password.
                   </p>
                 </div>
+              </div>
+              <div
+                data-editor-search-field="ard-cross-platform-fallback"
+                className="space-y-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-3 py-2.5"
+              >
+                <Toggle
+                  checked={settings.crossPlatformFallback.enabled}
+                  onChange={updateFallbackEnabled}
+                  label="Enable cross-platform fallback"
+                  description="Use embedded ARD/RFB on Windows or Linux, or if macOS cannot open Screen Sharing, with separate remote-Mac credentials."
+                />
+
+                {settings.crossPlatformFallback.enabled && (
+                  <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+                    <Select
+                      id="ard-fallback-auth-mode"
+                      label="Fallback authentication"
+                      value={settings.crossPlatformFallback.authMode}
+                      onChange={(authMode) =>
+                        updateFallbackAuthMode(authMode as ArdEmbeddedAuthMode)
+                      }
+                      options={[
+                        {
+                          value: "macOsAccount",
+                          label: "Remote Mac account (embedded ARD)",
+                        },
+                        {
+                          value: "vncPassword",
+                          label: "Legacy VNC password (embedded RFB)",
+                        },
+                      ]}
+                      searchable
+                      variant="form-sm"
+                      className="w-full min-w-0"
+                    />
+
+                    {settings.crossPlatformFallback.authMode ===
+                    "macOsAccount" ? (
+                      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="min-w-0">
+                          <span className="sor-form-label">
+                            Fallback remote Mac username
+                          </span>
+                          <input
+                            id="ard-fallback-username"
+                            data-editor-search-field="ard-fallback-username"
+                            type="text"
+                            value={formData.username ?? ""}
+                            onChange={(event) =>
+                              setFormData((previous) => ({
+                                ...previous,
+                                username: event.target.value,
+                              }))
+                            }
+                            autoComplete="off"
+                            className="sor-form-input-sm w-full min-w-0"
+                          />
+                        </label>
+                        <label className="min-w-0">
+                          <span className="sor-form-label">
+                            Fallback remote Mac password
+                          </span>
+                          <PasswordInput
+                            id="ard-fallback-password"
+                            data-editor-search-field="ard-fallback-password"
+                            value={formData.password ?? ""}
+                            onChange={(event) =>
+                              setFormData((previous) => ({
+                                ...previous,
+                                password: event.target.value,
+                              }))
+                            }
+                            className="sor-form-input-sm w-full min-w-0"
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <label className="block min-w-0">
+                        <span className="sor-form-label">
+                          Fallback VNC server password
+                        </span>
+                        <PasswordInput
+                          id="ard-fallback-password"
+                          data-editor-search-field="ard-fallback-password"
+                          value={formData.password ?? ""}
+                          onChange={(event) =>
+                            setFormData((previous) => ({
+                              ...previous,
+                              password: event.target.value,
+                              username: "",
+                            }))
+                          }
+                          className="sor-form-input-sm w-full min-w-0"
+                          autoComplete="off"
+                        />
+                      </label>
+                    )}
+
+                    <p className="text-[11px] leading-4 text-warning">
+                      Use credentials for an account on the remote Mac or its
+                      separately configured VNC server. Never enter your Apple
+                      Account password here. Credential-free exports, imports,
+                      and clones remove these fields.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}

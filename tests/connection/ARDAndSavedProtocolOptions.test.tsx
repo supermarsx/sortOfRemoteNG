@@ -14,8 +14,12 @@ const ArdHarness = () => {
     username: "remote-mac-user",
     password: "embedded-ard-secret",
     ardSettings: {
-      version: 2,
+      version: 3,
       authMode: "macOsAccount",
+      crossPlatformFallback: {
+        enabled: false,
+        authMode: "macOsAccount",
+      },
       autoReconnect: true,
       curtainOnConnect: false,
       localCursor: true,
@@ -72,6 +76,9 @@ describe("ARDOptions", () => {
     expect(screen.getByTestId("ard-state")).toHaveTextContent('"username":""');
     expect(screen.getByTestId("ard-state")).toHaveTextContent('"password":""');
     expect(document.querySelector("#ard-password")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Fallback remote Mac username"),
+    ).not.toBeInTheDocument();
     const accountIdentifier = screen.getByLabelText(
       "Apple Account identifier (saved reference)",
     );
@@ -111,6 +118,152 @@ describe("ARDOptions", () => {
     expect(screen.getByTestId("ard-state")).not.toHaveTextContent(
       "appleAccountIdentifier",
     );
+  });
+
+  it("configures a distinct portable fallback and clears its credentials when disabled", () => {
+    render(<ArdHarness />);
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Authentication mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Apple Account via Screen Sharing.app",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Enable cross-platform fallback",
+      }),
+    );
+
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"crossPlatformFallback":{"enabled":true,"authMode":"macOsAccount"}',
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Fallback authentication" }),
+    ).toBeInTheDocument();
+    const fallbackUsername = screen.getByLabelText(
+      "Fallback remote Mac username",
+    );
+    const fallbackPassword = screen.getByLabelText(
+      "Fallback remote Mac password",
+    );
+    expect(fallbackUsername).toHaveAttribute("autocomplete", "off");
+    expect(fallbackPassword).toHaveAttribute("autocomplete", "off");
+    fireEvent.change(fallbackUsername, {
+      target: { value: "portable-operator" },
+    });
+    fireEvent.change(fallbackPassword, {
+      target: { value: "remote-mac-password" },
+    });
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"username":"portable-operator"',
+    );
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"password":"remote-mac-password"',
+    );
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Fallback authentication" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Remote Mac account (embedded ARD)",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Authentication mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Apple Account via Screen Sharing.app",
+      }),
+    );
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"crossPlatformFallback":{"enabled":true,"authMode":"macOsAccount"}',
+    );
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"username":"portable-operator"',
+    );
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"password":"remote-mac-password"',
+    );
+    expect(
+      screen.getByText(/never enter your Apple Account password here/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/if macOS cannot open Screen Sharing/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Fallback authentication" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Legacy VNC password (embedded RFB)",
+      }),
+    );
+
+    expect(
+      screen.queryByLabelText("Fallback remote Mac username"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Fallback VNC server password")).toHaveValue(
+      "",
+    );
+    expect(screen.getByTestId("ard-state")).toHaveTextContent('"username":""');
+    expect(screen.getByTestId("ard-state")).toHaveTextContent('"password":""');
+
+    fireEvent.change(screen.getByLabelText("Fallback VNC server password"), {
+      target: { value: "dedicated-vnc-password" },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Enable cross-platform fallback",
+      }),
+    );
+
+    expect(
+      screen.queryByRole("combobox", { name: "Fallback authentication" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("ard-state")).toHaveTextContent('"username":""');
+    expect(screen.getByTestId("ard-state")).toHaveTextContent('"password":""');
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"crossPlatformFallback":{"enabled":false,"authMode":"vncPassword"}',
+    );
+  });
+
+  it("does not reinterpret a fallback password when changing the primary authentication scheme", () => {
+    render(<ArdHarness />);
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Authentication mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Apple Account via Screen Sharing.app",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Enable cross-platform fallback",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Fallback remote Mac password"), {
+      target: { value: "fallback-only-password" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Authentication mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Remote Mac account (embedded ARD)",
+      }),
+    );
+
+    expect(screen.getByLabelText("Remote Mac password")).toHaveValue("");
+    expect(screen.getByTestId("ard-state")).toHaveTextContent('"password":""');
   });
 
   it("persists embedded display and input options independently", () => {

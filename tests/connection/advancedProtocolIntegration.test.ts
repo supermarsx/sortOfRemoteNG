@@ -72,9 +72,30 @@ describe("advanced protocol connection integration", () => {
     expect(normalized.username).toBeUndefined();
     expect(normalized.password).toBeUndefined();
     expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+
+    const invalidV3Fallback = normalizeAdvancedProtocolConnection(
+      connection({
+        protocol: "ard",
+        username: "stale-username",
+        password: "stale-password",
+        ardSettings: {
+          version: 3,
+          authMode: "appleAccountNative",
+          crossPlatformFallback: {
+            enabled: true,
+            authMode: "appleAccountNative",
+          },
+        } as never,
+      }),
+    );
+    expect(invalidV3Fallback.ardSettings?.crossPlatformFallback.enabled).toBe(
+      false,
+    );
+    expect(invalidV3Fallback.username).toBeUndefined();
+    expect(invalidV3Fallback.password).toBeUndefined();
   });
 
-  it("normalizes ARD settings without persisting Apple Account credentials", () => {
+  it("migrates ARD v2 settings without persisting Apple Account credentials", () => {
     const normalized = normalizeAdvancedProtocolConnection(
       connection({
         protocol: "ard",
@@ -85,6 +106,48 @@ describe("advanced protocol connection integration", () => {
           version: 2,
           authMode: "appleAccountNative",
           appleAccountIdentifier: " \u0000owner\n@example.test\u007f ",
+          crossPlatformFallback: {
+            enabled: true,
+            authMode: "macOsAccount",
+          },
+          autoReconnect: true,
+          curtainOnConnect: false,
+          localCursor: true,
+          viewOnly: false,
+        } as never,
+      }),
+    );
+
+    expect(normalized.ardSettings).toMatchObject({
+      version: 3,
+      authMode: "appleAccountNative",
+      appleAccountIdentifier: "owner@example.test",
+      crossPlatformFallback: {
+        enabled: false,
+        authMode: "macOsAccount",
+      },
+      autoReconnect: true,
+    });
+    expect(normalized.username).toBeUndefined();
+    expect(normalized.password).toBeUndefined();
+    expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+  });
+
+  it("preserves only explicitly enabled cross-platform fallback credentials", () => {
+    const remoteMacFallback = normalizeAdvancedProtocolConnection(
+      connection({
+        protocol: "ard",
+        port: 5900,
+        username: "portable-operator",
+        password: "remote-mac-password",
+        ardSettings: {
+          version: 3,
+          authMode: "appleAccountNative",
+          appleAccountIdentifier: "owner@example.test",
+          crossPlatformFallback: {
+            enabled: true,
+            authMode: "macOsAccount",
+          },
           autoReconnect: true,
           curtainOnConnect: false,
           localCursor: true,
@@ -93,15 +156,28 @@ describe("advanced protocol connection integration", () => {
       }),
     );
 
-    expect(normalized.ardSettings).toMatchObject({
-      version: 2,
-      authMode: "appleAccountNative",
-      appleAccountIdentifier: "owner@example.test",
-      autoReconnect: true,
-    });
-    expect(normalized.username).toBeUndefined();
-    expect(normalized.password).toBeUndefined();
-    expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+    expect(remoteMacFallback.username).toBe("portable-operator");
+    expect(remoteMacFallback.password).toBe("remote-mac-password");
+    expect(normalizeAdvancedProtocolConnection(remoteMacFallback)).toEqual(
+      remoteMacFallback,
+    );
+
+    const vncFallback = normalizeAdvancedProtocolConnection(
+      connection({
+        ...remoteMacFallback,
+        username: "must-not-survive-vnc-mode",
+        password: "dedicated-vnc-password",
+        ardSettings: {
+          ...remoteMacFallback.ardSettings!,
+          crossPlatformFallback: {
+            enabled: true,
+            authMode: "vncPassword",
+          },
+        },
+      }),
+    );
+    expect(vncFallback.username).toBeUndefined();
+    expect(vncFallback.password).toBe("dedicated-vnc-password");
   });
 
   it("migrates WinRM-shaped settings into versioned PowerShell Remoting settings", () => {

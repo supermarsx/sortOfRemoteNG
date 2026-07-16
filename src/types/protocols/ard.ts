@@ -1,6 +1,6 @@
-/** Canonical frontend contract for the native Apple Remote Desktop runtime. */
+/** Canonical frontend contract for cross-platform Apple Remote Desktop profiles. */
 
-export const ARD_SETTINGS_VERSION = 2 as const;
+export const ARD_SETTINGS_VERSION = 3 as const;
 export const ARD_APPLE_ACCOUNT_IDENTIFIER_MAX_LENGTH = 320 as const;
 
 /**
@@ -13,6 +13,20 @@ export const ARD_APPLE_ACCOUNT_IDENTIFIER_MAX_LENGTH = 320 as const;
  */
 export type ArdAuthMode = "macOsAccount" | "vncPassword" | "appleAccountNative";
 
+export type ArdEmbeddedAuthMode = Exclude<ArdAuthMode, "appleAccountNative">;
+
+/**
+ * Optional embedded-RFB route for Apple Account profiles on platforms where
+ * Apple's Screen Sharing app is unavailable. The associated username and
+ * password remain in the connection's generic credential fields; they are
+ * credentials for the remote Mac or its VNC server, never for an Apple
+ * Account.
+ */
+export interface ArdCrossPlatformFallback {
+  enabled: boolean;
+  authMode: ArdEmbeddedAuthMode;
+}
+
 export interface ArdSettings {
   version: typeof ARD_SETTINGS_VERSION;
   authMode: ArdAuthMode;
@@ -22,15 +36,23 @@ export interface ArdSettings {
    * Apple or the embedded RFB engine.
    */
   appleAccountIdentifier?: string;
+  crossPlatformFallback: ArdCrossPlatformFallback;
   autoReconnect: boolean;
   curtainOnConnect: boolean;
   localCursor: boolean;
   viewOnly: boolean;
 }
 
+export const DEFAULT_ARD_CROSS_PLATFORM_FALLBACK: Readonly<ArdCrossPlatformFallback> =
+  Object.freeze({
+    enabled: false,
+    authMode: "macOsAccount",
+  });
+
 export const DEFAULT_ARD_SETTINGS: Readonly<ArdSettings> = Object.freeze({
   version: ARD_SETTINGS_VERSION,
   authMode: "macOsAccount",
+  crossPlatformFallback: DEFAULT_ARD_CROSS_PLATFORM_FALLBACK,
   autoReconnect: true,
   curtainOnConnect: false,
   localCursor: true,
@@ -44,6 +66,11 @@ const isArdAuthMode = (value: unknown): value is ArdAuthMode =>
   value === "macOsAccount" ||
   value === "vncPassword" ||
   value === "appleAccountNative";
+
+export const isArdEmbeddedAuthMode = (
+  value: unknown,
+): value is ArdEmbeddedAuthMode =>
+  value === "macOsAccount" || value === "vncPassword";
 
 const isControlCharacter = (character: string): boolean => {
   const codePoint = character.codePointAt(0) ?? 0;
@@ -71,10 +98,27 @@ export function normalizeArdSettings(value: unknown): ArdSettings {
     authMode === "appleAccountNative"
       ? normalizeAppleAccountIdentifier(input.appleAccountIdentifier)
       : undefined;
+  const fallbackInput = isRecord(input.crossPlatformFallback)
+    ? input.crossPlatformFallback
+    : {};
+  const crossPlatformFallback: ArdCrossPlatformFallback = {
+    // The fallback has no meaning for already-embedded profiles. Requiring an
+    // explicit true also migrates all schema-v2 Apple Account profiles to the
+    // safe, credential-free default.
+    enabled:
+      input.version === ARD_SETTINGS_VERSION &&
+      authMode === "appleAccountNative" &&
+      fallbackInput.enabled === true &&
+      isArdEmbeddedAuthMode(fallbackInput.authMode),
+    authMode: isArdEmbeddedAuthMode(fallbackInput.authMode)
+      ? fallbackInput.authMode
+      : DEFAULT_ARD_CROSS_PLATFORM_FALLBACK.authMode,
+  };
   return {
     version: ARD_SETTINGS_VERSION,
     authMode,
     ...(appleAccountIdentifier ? { appleAccountIdentifier } : {}),
+    crossPlatformFallback,
     autoReconnect:
       typeof input.autoReconnect === "boolean"
         ? input.autoReconnect
@@ -100,7 +144,7 @@ export interface ArdConnectionConfig {
   username: string;
   password: string;
   connectionId?: string;
-  authenticationMode: ArdAuthMode;
+  authenticationMode: ArdEmbeddedAuthMode;
   autoReconnect?: boolean;
   curtainOnConnect?: boolean;
   localCursor?: boolean;
@@ -108,7 +152,7 @@ export interface ArdConnectionConfig {
 
 export interface ArdEmbeddedRuntimeCapabilities {
   available: boolean;
-  authenticationModes: Array<Exclude<ArdAuthMode, "appleAccountNative">>;
+  authenticationModes: ArdEmbeddedAuthMode[];
   acceptsAppleAccountCredentials: false;
   supportsNetworkPath: false;
   networkPathReason: string;
@@ -151,7 +195,7 @@ export interface ArdSessionInfo {
   host: string;
   port: number;
   username: string;
-  authenticationMode: ArdAuthMode;
+  authenticationMode: ArdEmbeddedAuthMode;
   connectedAt: string;
   stats: ArdSessionStats;
 }

@@ -257,12 +257,40 @@ const resetLocalConsent = (connection: Connection): Connection => {
   return copy;
 };
 
+/**
+ * Apple Account metadata and embedded fallback credentials form one portable
+ * identity boundary. Credential-free exports/clones omit the entire boundary
+ * instead of retaining a username or a password placeholder that could be
+ * mistaken for Apple Account authentication data.
+ */
+export function stripArdAppleAccountCredentials(
+  connection: Connection,
+): Connection {
+  if (
+    connection.protocol !== "ard" ||
+    connection.ardSettings?.authMode !== "appleAccountNative"
+  ) {
+    return connection;
+  }
+
+  const stripped: Connection = {
+    ...connection,
+    ardSettings: { ...connection.ardSettings },
+  };
+  delete stripped.username;
+  delete stripped.password;
+  delete stripped.ardSettings?.appleAccountIdentifier;
+  return stripped;
+}
+
 /** Redact credentials while retaining all non-secret settings for export. */
 export function redactConnectionSecretsForExport(
   connection: Connection,
 ): Connection {
   const reset = resetLocalConsent(connection);
-  return sanitizeValue(reset, "redact") ?? reset;
+  return stripArdAppleAccountCredentials(
+    sanitizeValue(reset, "redact") ?? reset,
+  );
 }
 
 export function prepareConnectionForExport(
@@ -270,16 +298,20 @@ export function prepareConnectionForExport(
   includeCredentials: boolean,
 ): Connection {
   const normalized = normalizeImportedAdvancedProtocolConnection(connection);
-  return (
+  const prepared =
     sanitizeValue(normalized, includeCredentials ? "preserve" : "redact") ??
-    normalized
-  );
+    normalized;
+  return includeCredentials
+    ? prepared
+    : stripArdAppleAccountCredentials(prepared);
 }
 
 /** Remove credentials and sensitive references at import/clone boundaries. */
 export function stripConnectionCredentials(connection: Connection): Connection {
   const reset = resetLocalConsent(connection);
-  return sanitizeValue(reset, "strip") ?? reset;
+  return stripArdAppleAccountCredentials(
+    sanitizeValue(reset, "strip") ?? reset,
+  );
 }
 
 /**
@@ -292,10 +324,12 @@ export function prepareConnectionForClone(
   includeCredentials: boolean,
 ): Connection {
   const normalized = normalizeImportedAdvancedProtocolConnection(connection);
-  return (
+  const prepared =
     sanitizeValue(normalized, includeCredentials ? "preserve" : "strip") ??
-    normalized
-  );
+    normalized;
+  return includeCredentials
+    ? prepared
+    : stripArdAppleAccountCredentials(prepared);
 }
 
 const stringifySetting = (value: unknown): string =>

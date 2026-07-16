@@ -75,6 +75,7 @@ import {
   prepareConnectionForExport,
   serializeConnectionsToNativeXml,
   serializeDatasetsToNativeCsv,
+  stripArdAppleAccountCredentials,
 } from "../../components/ImportExport/advancedProtocolPortability";
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
@@ -473,7 +474,9 @@ const redactSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
 const redactConnectionSecretsForExport = (
   connection: Connection,
 ): Connection => {
-  return redactSecretFields(connection) ?? { ...connection };
+  return stripArdAppleAccountCredentials(
+    redactSecretFields(connection) ?? { ...connection },
+  );
 };
 
 const stripSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
@@ -520,7 +523,9 @@ const stripSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
 };
 
 const stripConnectionCredentials = (connection: Connection): Connection =>
-  stripSecretFields(connection) ?? { ...connection };
+  stripArdAppleAccountCredentials(
+    stripSecretFields(connection) ?? { ...connection },
+  );
 
 const connectionEndpointKey = (connection: Connection): string =>
   [
