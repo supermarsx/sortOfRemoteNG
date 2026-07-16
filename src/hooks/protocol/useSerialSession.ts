@@ -208,7 +208,7 @@ export function useSerialSession(session: ConnectionSession) {
 
   useEffect(() => {
     const generation = ++generationRef.current;
-    let unlisteners: UnlistenFn[] = [];
+    const unlisteners: UnlistenFn[] = [];
 
     const appendEventOutput = (payload: SerialOutputEvent) => {
       if (payload.sessionId !== backendRef.current) return;
