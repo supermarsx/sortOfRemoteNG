@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use url::Url;
+use zeroize::Zeroize;
 
 // ── Row alias ───────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ impl PgError {
 
 // ── SSH / TLS ───────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SshTunnelConfig {
     pub host: String,
     pub port: u16,
@@ -74,6 +75,29 @@ pub struct SshTunnelConfig {
     pub password: Option<String>,
     pub private_key_path: Option<String>,
     pub passphrase: Option<String>,
+}
+
+impl fmt::Debug for SshTunnelConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SshTunnelConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[redacted]"))
+            .field("private_key_path", &self.private_key_path)
+            .field(
+                "passphrase",
+                &self.passphrase.as_ref().map(|_| "[redacted]"),
+            )
+            .finish()
+    }
+}
+
+impl Drop for SshTunnelConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+        self.passphrase.zeroize();
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,7 +110,7 @@ pub struct TlsConfig {
 
 // ── Connection config ───────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PgConnectionConfig {
     pub host: String,
     pub port: u16,
@@ -98,6 +122,34 @@ pub struct PgConnectionConfig {
     pub ssh_tunnel: Option<SshTunnelConfig>,
     pub tls: Option<TlsConfig>,
     pub extra_params: Option<HashMap<String, String>>,
+}
+
+impl fmt::Debug for PgConnectionConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let extra_param_keys = self.extra_params.as_ref().map(|params| {
+            let mut keys = params.keys().collect::<Vec<_>>();
+            keys.sort();
+            keys
+        });
+        f.debug_struct("PgConnectionConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[redacted]"))
+            .field("database", &self.database)
+            .field("application_name", &self.application_name)
+            .field("connection_timeout_secs", &self.connection_timeout_secs)
+            .field("ssh_tunnel", &self.ssh_tunnel)
+            .field("tls", &self.tls)
+            .field("extra_param_keys", &extra_param_keys)
+            .finish()
+    }
+}
+
+impl Drop for PgConnectionConfig {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 impl PgConnectionConfig {
@@ -495,6 +547,36 @@ mod tests {
             .with_database("mydb");
         assert_eq!(c.password.as_deref(), Some("secret"));
         assert_eq!(c.database.as_deref(), Some("mydb"));
+    }
+
+    #[test]
+    fn connection_config_debug_redacts_database_and_ssh_secrets() {
+        let mut config =
+            PgConnectionConfig::new("db.host", 5432, "admin").with_password("database-secret");
+        config.ssh_tunnel = Some(SshTunnelConfig {
+            host: "jump.host".to_string(),
+            port: 22,
+            username: "jump-user".to_string(),
+            password: Some("ssh-secret".to_string()),
+            private_key_path: Some("/keys/id_ed25519".to_string()),
+            passphrase: Some("key-secret".to_string()),
+        });
+        config.extra_params = Some(HashMap::from([(
+            "options".to_string(),
+            "driver-controlled-secret".to_string(),
+        )]));
+
+        let debug = format!("{config:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(debug.contains("options"));
+        for secret in [
+            "database-secret",
+            "ssh-secret",
+            "key-secret",
+            "driver-controlled-secret",
+        ] {
+            assert!(!debug.contains(secret));
+        }
     }
 
     #[test]

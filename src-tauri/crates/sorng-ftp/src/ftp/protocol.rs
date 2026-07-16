@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
+use zeroize::Zeroizing;
 
 /// Abstraction over plain TCP or TLS-wrapped read half.
 pub enum ReadHalf {
@@ -51,7 +52,9 @@ impl FtpCodec {
 
     /// Send a raw FTP command (without trailing CRLF — we add it).
     pub async fn send_command(&mut self, cmd: &str) -> FtpResult<()> {
-        let line = format!("{}\r\n", cmd);
+        // Commands can contain credentials (PASS/ACCT). Scrub the wire-format
+        // allocation after the async write regardless of success or failure.
+        let line = Zeroizing::new(format!("{}\r\n", cmd));
         match &mut self.writer {
             WriteHalf::Plain(w) => w.write_all(line.as_bytes()).await?,
             WriteHalf::Tls(w) => w.write_all(line.as_bytes()).await?,

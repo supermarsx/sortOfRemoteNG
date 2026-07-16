@@ -108,11 +108,9 @@ impl FtpService {
         // Apply sort
         if let Some(ref sort_by) = opts.sort_by {
             match sort_by {
-                FtpSortField::Name => {
-                    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                }
-                FtpSortField::Size => entries.sort_by(|a, b| a.size.cmp(&b.size)),
-                FtpSortField::Modified => entries.sort_by(|a, b| a.modified.cmp(&b.modified)),
+                FtpSortField::Name => entries.sort_by_key(|entry| entry.name.to_lowercase()),
+                FtpSortField::Size => entries.sort_by_key(|entry| entry.size),
+                FtpSortField::Modified => entries.sort_by_key(|entry| entry.modified),
                 FtpSortField::Kind => {
                     entries.sort_by(|a, b| format!("{:?}", a.kind).cmp(&format!("{:?}", b.kind)))
                 }

@@ -17,6 +17,7 @@ use chrono::Utc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// A connected FTP client session.
 pub struct FtpClient {
@@ -30,7 +31,12 @@ pub struct FtpClient {
 
 impl FtpClient {
     /// Establish a new FTP session.
-    pub async fn connect(config: FtpConnectionConfig) -> FtpResult<Self> {
+    pub async fn connect(mut config: FtpConnectionConfig) -> FtpResult<Self> {
+        // Move the password into a zeroizing guard before any fallible work.
+        // The retained session config is non-secret from this point onward,
+        // and every early-return path scrubs the authentication allocation.
+        let password = Zeroizing::new(std::mem::take(&mut config.password));
+
         if config.host.is_empty() {
             return Err(FtpError::invalid_config("Host must not be empty"));
         }
@@ -59,12 +65,14 @@ impl FtpClient {
         let user_resp = codec.execute(&format!("USER {}", config.username)).await?;
         if user_resp.code == 331 {
             // Server wants a password
-            let pass_resp = codec.execute(&format!("PASS {}", config.password)).await?;
+            let pass_command = Zeroizing::new(format!("PASS {}", password.as_str()));
+            let pass_resp = codec.execute(pass_command.as_str()).await?;
             if !pass_resp.is_success() {
-                return Err(FtpError::auth_failed(format!(
-                    "Login failed: {}",
-                    pass_resp.text()
-                )));
+                // A hostile server can echo the submitted command in its
+                // response. Preserve only the status code so credentials can
+                // never cross the command/error boundary.
+                return Err(FtpError::auth_failed("FTP password authentication failed")
+                    .with_code(pass_resp.code));
             }
         } else if !user_resp.is_success() {
             return Err(FtpError::auth_failed(format!(
@@ -72,6 +80,9 @@ impl FtpClient {
                 user_resp.text()
             )));
         }
+        // Authentication is complete. Do not retain the password while
+        // probing features or preparing the long-lived client state.
+        drop(password);
 
         // ── FEAT ─────────────────────────────────────────────────
         let features = Self::probe_features(&mut codec).await;
@@ -419,4 +430,135 @@ async fn read_data_stream_to_string(ds: DataStream) -> FtpResult<String> {
         }
     }
     String::from_utf8(buf).map_err(|e| FtpError::protocol_error(format!("Data not UTF-8: {}", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn expect_command(
+        reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+        writer: &mut tokio::net::tcp::OwnedWriteHalf,
+        expected: &str,
+        reply: &str,
+    ) {
+        let mut command = String::new();
+        reader.read_line(&mut command).await.unwrap();
+        assert_eq!(command.trim_end_matches(['\r', '\n']), expected);
+        writer.write_all(reply.as_bytes()).await.unwrap();
+    }
+
+    async fn accept_plain_client(listener: TcpListener) -> (TcpStream, std::net::SocketAddr) {
+        listener.accept().await.unwrap()
+    }
+
+    fn local_config(port: u16, password: &str) -> FtpConnectionConfig {
+        FtpConnectionConfig {
+            host: "127.0.0.1".to_string(),
+            port,
+            username: "test-user".to_string(),
+            password: password.to_string(),
+            keepalive_interval_sec: 0,
+            ..FtpConnectionConfig::default()
+        }
+    }
+
+    #[test]
+    fn connection_config_debug_redacts_password() {
+        let config = local_config(21, "debug-secret");
+        let debug = format!("{config:?}");
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("debug-secret"));
+    }
+
+    #[tokio::test]
+    async fn successful_login_does_not_retain_the_password() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = accept_plain_client(listener).await;
+            let (read_half, mut write_half) = stream.into_split();
+            let mut reader = BufReader::new(read_half);
+            write_half.write_all(b"220 test server\r\n").await.unwrap();
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "USER test-user",
+                "331 password required\r\n",
+            )
+            .await;
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "PASS retained-secret",
+                "230 logged in\r\n",
+            )
+            .await;
+            expect_command(&mut reader, &mut write_half, "FEAT", "500 no features\r\n").await;
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "SYST",
+                "215 UNIX Type: L8\r\n",
+            )
+            .await;
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "PWD",
+                "257 \"/\" is current directory\r\n",
+            )
+            .await;
+            expect_command(&mut reader, &mut write_half, "TYPE I", "200 type set\r\n").await;
+        });
+
+        let client = FtpClient::connect(local_config(port, "retained-secret"))
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        assert!(client.config.password.is_empty());
+        let debug = format!("{:?}", client.config);
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("retained-secret"));
+    }
+
+    #[tokio::test]
+    async fn password_rejection_does_not_echo_server_controlled_secret_text() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = accept_plain_client(listener).await;
+            let (read_half, mut write_half) = stream.into_split();
+            let mut reader = BufReader::new(read_half);
+            write_half.write_all(b"220 test server\r\n").await.unwrap();
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "USER test-user",
+                "331 password required\r\n",
+            )
+            .await;
+            expect_command(
+                &mut reader,
+                &mut write_half,
+                "PASS rejected-secret",
+                "530 PASS rejected-secret rejected\r\n",
+            )
+            .await;
+        });
+
+        let error = match FtpClient::connect(local_config(port, "rejected-secret")).await {
+            Ok(_) => panic!("password rejection unexpectedly connected"),
+            Err(error) => error,
+        };
+        server.await.unwrap();
+
+        assert_eq!(error.kind, crate::ftp::error::FtpErrorKind::AuthFailed);
+        assert_eq!(error.code, Some(530));
+        assert!(!error.message.contains("rejected-secret"));
+        assert!(!error.to_string().contains("rejected-secret"));
+    }
 }

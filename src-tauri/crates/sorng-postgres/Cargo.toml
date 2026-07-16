@@ -14,11 +14,11 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 sqlx = { workspace = true, features = ["postgres", "runtime-tokio", "tls-rustls", "chrono", "json", "uuid", "bigdecimal"] }
-ssh2 = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 base64 = { workspace = true }
 bigdecimal = "0.4"
+zeroize = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

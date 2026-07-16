@@ -7,9 +7,9 @@ use log::{info, warn};
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::{Column, Executor, Row};
 use std::collections::HashMap;
-use std::net::TcpListener;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::{Zeroize, Zeroizing};
 
 pub type PostgresServiceState = Arc<Mutex<PostgresService>>;
 
@@ -17,13 +17,7 @@ pub type PostgresServiceState = Arc<Mutex<PostgresService>>;
 
 struct PgSession {
     pool: PgPool,
-    #[allow(dead_code)]
-    config: PgConnectionConfig,
     info: SessionInfo,
-    #[allow(dead_code)]
-    ssh_session: Option<ssh2::Session>,
-    #[allow(dead_code)]
-    local_port: Option<u16>,
 }
 
 // ── Service ─────────────────────────────────────────────────────────
@@ -115,81 +109,58 @@ impl PostgresService {
             .ok_or_else(|| PgError::session_not_found(id))
     }
 
-    fn free_port() -> Result<u16, PgError> {
-        TcpListener::bind("127.0.0.1:0")
-            .and_then(|l| l.local_addr())
-            .map(|a| a.port())
-            .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("No free port: {e}")))
-    }
-
-    // ── SSH tunnel ──────────────────────────────────────────────
-
-    fn setup_ssh_tunnel(
-        cfg: &SshTunnelConfig,
-        remote_host: &str,
-        remote_port: u16,
-    ) -> Result<(ssh2::Session, u16), PgError> {
-        use std::net::TcpStream;
-        let local_port = Self::free_port()?;
-        let tcp = TcpStream::connect(format!("{}:{}", cfg.host, cfg.port)).map_err(|e| {
-            PgError::new(
-                PgErrorKind::SshTunnelFailed,
-                format!("SSH TCP connect: {e}"),
-            )
-        })?;
-        let mut sess = ssh2::Session::new().map_err(|e| {
-            PgError::new(
-                PgErrorKind::SshTunnelFailed,
-                format!("SSH session new: {e}"),
-            )
-        })?;
-        sess.set_tcp_stream(tcp);
-        sess.handshake().map_err(|e| {
-            PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH handshake: {e}"))
-        })?;
-        if let Some(ref key_path) = cfg.private_key_path {
-            sess.userauth_pubkey_file(
-                &cfg.username,
-                None,
-                std::path::Path::new(key_path),
-                cfg.passphrase.as_deref(),
-            )
-            .map_err(|e| {
-                PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH key auth: {e}"))
-            })?;
-        } else if let Some(ref pw) = cfg.password {
-            sess.userauth_password(&cfg.username, pw).map_err(|e| {
+    /// Convert a transport failure into a useful but credential-free error.
+    ///
+    /// `sqlx::Error` may wrap driver- or server-controlled text. Do not return
+    /// that text across the Tauri boundary because it can include a connection
+    /// URL or values echoed by an untrusted endpoint.
+    fn safe_connection_error(error: &sqlx::Error) -> PgError {
+        match error {
+            sqlx::Error::PoolTimedOut => PgError::new(
+                PgErrorKind::Timeout,
+                "PostgreSQL connection timed out; verify the target and timeout settings",
+            ),
+            sqlx::Error::Tls(_) => PgError::new(
+                PgErrorKind::TlsError,
+                "PostgreSQL TLS negotiation failed; verify the SSL mode and certificate paths",
+            ),
+            sqlx::Error::Database(database_error)
+                if database_error
+                    .code()
+                    .as_deref()
+                    .is_some_and(|code| code.starts_with("28")) =>
+            {
                 PgError::new(
-                    PgErrorKind::SshTunnelFailed,
-                    format!("SSH password auth: {e}"),
+                    PgErrorKind::AuthenticationFailed,
+                    "PostgreSQL authentication failed",
                 )
-            })?;
-        } else {
-            return Err(PgError::new(
-                PgErrorKind::SshTunnelFailed,
-                "No SSH credentials",
-            ));
+            }
+            _ => PgError::new(
+                PgErrorKind::ConnectionFailed,
+                "PostgreSQL connection failed; verify the target, TLS policy, credentials, and server status",
+            ),
         }
-        let _channel = sess
-            .channel_direct_tcpip(remote_host, remote_port, None)
-            .map_err(|e| PgError::new(PgErrorKind::SshTunnelFailed, format!("SSH tunnel: {e}")))?;
-        info!("SSH tunnel established on local port {local_port} → {remote_host}:{remote_port}");
-        Ok((sess, local_port))
     }
 
     // ── connect / disconnect ────────────────────────────────────
 
-    pub async fn connect(&mut self, config: PgConnectionConfig) -> Result<String, PgError> {
+    pub async fn connect(&mut self, mut config: PgConnectionConfig) -> Result<String, PgError> {
+        // The crate previously opened one direct-tcpip channel and then
+        // returned an unrelated, unbound local port. That is not a tunnel and
+        // could only fail later after credentials had already been sent.
+        // Reject this DTO surface until a real listener/forwarder exists.
+        if config.ssh_tunnel.is_some() {
+            return Err(PgError::new(
+                PgErrorKind::SshTunnelFailed,
+                "PostgreSQL SSH tunnelling is not available in this runtime; use a direct target",
+            ));
+        }
+
         let session_id = uuid::Uuid::new_v4().to_string();
-
-        let (ssh_session, local_port) = if let Some(ref ssh_cfg) = config.ssh_tunnel {
-            let (s, p) = Self::setup_ssh_tunnel(ssh_cfg, &config.host, config.port)?;
-            (Some(s), Some(p))
-        } else {
-            (None, None)
-        };
-
-        let url = config.to_url(local_port)?;
+        // The URL is the one unavoidable transport representation containing
+        // the database password. Scrub its allocation immediately after SQLx
+        // has parsed it instead of leaving another plaintext copy behind.
+        let url = Zeroizing::new(config.to_url(None)?);
         let pool = PgPoolOptions::new()
             // A UI session must retain PostgreSQL connection-local state
             // (transactions, temporary tables, SET values, advisory locks).
@@ -199,9 +170,11 @@ impl PostgresService {
             .acquire_timeout(std::time::Duration::from_secs(
                 config.connection_timeout_secs.unwrap_or(10),
             ))
-            .connect(&url)
+            .connect(url.as_str())
             .await
-            .map_err(|e| PgError::new(PgErrorKind::ConnectionFailed, format!("PG connect: {e}")))?;
+            .map_err(|error| Self::safe_connection_error(&error))?;
+        drop(url);
+        config.password.zeroize();
 
         // detect version
         let version: String = sqlx::query_scalar("SELECT version()")
@@ -220,19 +193,11 @@ impl PostgresService {
             connected_at: Some(Utc::now().to_rfc3339()),
             queries_executed: 0,
             total_rows_fetched: 0,
-            via_ssh_tunnel: ssh_session.is_some(),
+            via_ssh_tunnel: false,
         };
 
-        self.sessions.insert(
-            session_id.clone(),
-            PgSession {
-                pool,
-                config,
-                info,
-                ssh_session,
-                local_port,
-            },
-        );
+        self.sessions
+            .insert(session_id.clone(), PgSession { pool, info });
         info!("PostgreSQL session {session_id} connected");
         Ok(session_id)
     }
@@ -267,11 +232,13 @@ impl PostgresService {
             .ok_or_else(|| PgError::session_not_found(id))
     }
 
-    pub fn ping(&self, id: &str) -> Result<bool, PgError> {
-        self.sessions
-            .get(id)
-            .map(|_| true)
-            .ok_or_else(|| PgError::session_not_found(id))
+    pub async fn ping(&self, id: &str) -> Result<bool, PgError> {
+        let pool = self.get_pool(id)?;
+        let probe = sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(pool);
+        match tokio::time::timeout(std::time::Duration::from_secs(5), probe).await {
+            Ok(Ok(1)) => Ok(true),
+            Ok(Ok(_)) | Ok(Err(_)) | Err(_) => Ok(false),
+        }
     }
 
     // ── Queries ─────────────────────────────────────────────────
@@ -1535,11 +1502,75 @@ mod tests {
         assert!(matches!(err.kind, PgErrorKind::SessionNotFound));
     }
 
-    #[test]
-    fn ping_not_found() {
+    #[tokio::test]
+    async fn ping_not_found() {
         let svc = PostgresService::new();
-        let err = svc.ping("xx").unwrap_err();
+        let err = svc.ping("xx").await.unwrap_err();
         assert!(err.message.contains("xx"));
+    }
+
+    #[tokio::test]
+    async fn ping_probes_the_pool_instead_of_only_checking_registration() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://postgres@localhost/postgres")
+            .unwrap();
+        pool.close().await;
+
+        let mut svc = PostgresService::new();
+        svc.sessions.insert(
+            "closed".to_string(),
+            PgSession {
+                pool,
+                info: SessionInfo {
+                    id: "closed".to_string(),
+                    host: "localhost".to_string(),
+                    port: 5432,
+                    username: "postgres".to_string(),
+                    database: Some("postgres".to_string()),
+                    status: ConnectionStatus::Connected,
+                    server_version: None,
+                    connected_at: None,
+                    queries_executed: 0,
+                    total_rows_fetched: 0,
+                    via_ssh_tunnel: false,
+                },
+            },
+        );
+
+        assert!(!svc.ping("closed").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn ssh_tunnel_config_is_rejected_before_any_connection_attempt() {
+        let mut config = PgConnectionConfig::new("198.51.100.1", 5432, "db-user")
+            .with_password("database-secret");
+        config.ssh_tunnel = Some(SshTunnelConfig {
+            host: "203.0.113.1".to_string(),
+            port: 22,
+            username: "ssh-user".to_string(),
+            password: Some("ssh-secret".to_string()),
+            private_key_path: None,
+            passphrase: Some("key-secret".to_string()),
+        });
+
+        let mut svc = PostgresService::new();
+        let error = svc.connect(config).await.unwrap_err();
+        assert!(matches!(error.kind, PgErrorKind::SshTunnelFailed));
+        assert!(error.message.contains("not available"));
+        for secret in ["database-secret", "ssh-secret", "key-secret"] {
+            assert!(!error.message.contains(secret));
+        }
+    }
+
+    #[test]
+    fn connection_errors_do_not_return_driver_controlled_secret_text() {
+        let error = sqlx::Error::Protocol(
+            "postgres://user:database-secret@example.invalid/database".to_string(),
+        );
+        let safe = PostgresService::safe_connection_error(&error);
+        assert!(matches!(safe.kind, PgErrorKind::ConnectionFailed));
+        assert!(!safe.message.contains("database-secret"));
+        assert!(!safe.message.contains("postgres://"));
     }
 
     #[tokio::test]
@@ -1554,19 +1585,5 @@ mod tests {
         let mut svc = PostgresService::new();
         svc.disconnect_all().await;
         assert!(svc.list_sessions().is_empty());
-    }
-
-    #[test]
-    fn free_port_works() {
-        let port = PostgresService::free_port().unwrap();
-        assert!(port > 0);
-    }
-
-    #[test]
-    fn free_port_unique() {
-        let p1 = PostgresService::free_port().unwrap();
-        let p2 = PostgresService::free_port().unwrap();
-        // Ports should generally differ (not guaranteed but very likely)
-        assert!(p1 > 0 && p2 > 0);
     }
 }

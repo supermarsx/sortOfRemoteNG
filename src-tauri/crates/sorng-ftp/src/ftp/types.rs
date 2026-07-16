@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 // ─── Connection / Session ────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ pub enum DataChannelMode {
 }
 
 /// Configuration for a single FTP connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FtpConnectionConfig {
     pub host: String,
@@ -82,6 +83,28 @@ pub struct FtpConnectionConfig {
     /// Friendly label shown in the UI.
     #[serde(default)]
     pub label: Option<String>,
+}
+
+impl fmt::Debug for FtpConnectionConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FtpConnectionConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &"[redacted]")
+            .field("security", &self.security)
+            .field("transfer_type", &self.transfer_type)
+            .field("data_channel_mode", &self.data_channel_mode)
+            .field("initial_directory", &self.initial_directory)
+            .field("connect_timeout_sec", &self.connect_timeout_sec)
+            .field("data_timeout_sec", &self.data_timeout_sec)
+            .field("keepalive_interval_sec", &self.keepalive_interval_sec)
+            .field("accept_invalid_certs", &self.accept_invalid_certs)
+            .field("utf8", &self.utf8)
+            .field("active_bind_address", &self.active_bind_address)
+            .field("label", &self.label)
+            .finish()
+    }
 }
 
 fn default_connect_timeout() -> u64 {
