@@ -44,6 +44,7 @@ const SECRET_FIELD_NAMES = new Set([
 ]);
 
 const SENSITIVE_REFERENCE_FIELD_NAMES = new Set([
+  "appleaccountidentifier",
   "savedcredentialid",
   "vaultref",
   "clientcertificateref",

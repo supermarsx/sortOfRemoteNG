@@ -277,6 +277,39 @@ describe("advanced protocol portability", () => {
     expect(
       exportedRlogin.rloginSettings?.plaintextAcknowledgement.acknowledged,
     ).toBe(false);
+
+    const appleAccountConnection = baseConnection({
+      protocol: "ard",
+      port: 5900,
+      username: "must-not-survive-native-mode",
+      password: "must-not-survive-native-mode",
+      ardSettings: {
+        version: 2,
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "owner@example.test",
+        autoReconnect: true,
+        curtainOnConnect: false,
+        localCursor: true,
+        viewOnly: false,
+      },
+    });
+    const fullAppleAccountExport = prepareConnectionForExport(
+      appleAccountConnection,
+      true,
+    );
+    expect(fullAppleAccountExport.ardSettings?.appleAccountIdentifier).toBe(
+      "owner@example.test",
+    );
+    expect(fullAppleAccountExport.username).toBeUndefined();
+    expect(fullAppleAccountExport.password).toBeUndefined();
+
+    const credentialFreeAppleAccountExport = prepareConnectionForExport(
+      appleAccountConnection,
+      false,
+    );
+    expect(
+      credentialFreeAppleAccountExport.ardSettings?.appleAccountIdentifier,
+    ).toBeUndefined();
   });
 
   it("deep-copies clones and always removes operational state", () => {

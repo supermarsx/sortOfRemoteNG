@@ -63,7 +63,8 @@ export function normalizeAdvancedProtocolConnection(
     next.ardSettings = normalizeArdSettings(input.ardSettings);
     if (next.ardSettings.authMode === "appleAccountNative") {
       // Authentication is owned entirely by Screen Sharing.app. Never carry
-      // an embedded credential through load/import/save normalization.
+      // an embedded credential through load/import/save normalization. Only
+      // the normalized, non-secret account identifier may remain in settings.
       next.username = undefined;
       next.password = undefined;
     } else if (next.ardSettings.authMode === "vncPassword") {

@@ -82,8 +82,9 @@ describe("advanced protocol connection integration", () => {
         username: "apple-account@example.test",
         password: "must-not-be-an-embedded-ard-secret",
         ardSettings: {
-          version: 1,
+          version: 2,
           authMode: "appleAccountNative",
+          appleAccountIdentifier: " \u0000owner\n@example.test\u007f ",
           autoReconnect: true,
           curtainOnConnect: false,
           localCursor: true,
@@ -93,8 +94,9 @@ describe("advanced protocol connection integration", () => {
     );
 
     expect(normalized.ardSettings).toMatchObject({
-      version: 1,
+      version: 2,
       authMode: "appleAccountNative",
+      appleAccountIdentifier: "owner@example.test",
       autoReconnect: true,
     });
     expect(normalized.username).toBeUndefined();

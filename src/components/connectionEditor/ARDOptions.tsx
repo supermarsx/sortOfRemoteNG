@@ -78,6 +78,9 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
       ardSettings: {
         ...normalizeArdSettings(previous.ardSettings),
         authMode,
+        ...(authMode === "appleAccountNative"
+          ? {}
+          : { appleAccountIdentifier: undefined }),
       },
     }));
 
@@ -205,18 +208,53 @@ export const ARDOptions: React.FC<ARDOptionsProps> = ({
           )}
 
           {settings.authMode === "appleAccountNative" && (
-            <div
-              data-editor-search-field="ard-native-handoff"
-              className="rounded-md border border-info/30 bg-info/10 px-3 py-2 text-[11px] leading-4 text-[var(--color-textSecondary)]"
-            >
-              <div className="flex items-start gap-2">
-                <ExternalLink size={14} className="mt-0.5 shrink-0 text-info" />
-                <p>
-                  Opens Apple's Screen Sharing app on macOS. Sign in or approve
-                  the connection there. This app does not collect, store, or
-                  send an Apple Account password, and macOS does not provide a
-                  documented target-prefill API for this handoff.
-                </p>
+            <div className="space-y-3">
+              <label className="block min-w-0">
+                <span className="sor-form-label">
+                  Apple Account identifier (saved reference)
+                </span>
+                <input
+                  id="ard-apple-account-identifier"
+                  data-editor-search-field="ard-apple-account-identifier"
+                  aria-label="Apple Account identifier (saved reference)"
+                  type="text"
+                  maxLength={320}
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={settings.appleAccountIdentifier ?? ""}
+                  onChange={(event) =>
+                    updateSettings({
+                      appleAccountIdentifier: event.target.value,
+                    })
+                  }
+                  placeholder="name@example.com or +44…"
+                  className="sor-form-input-sm w-full min-w-0"
+                />
+                <span className="mt-1 block text-[11px] leading-4 text-[var(--color-textMuted)]">
+                  Saved with this connection as account metadata. Use an
+                  encrypted collection to protect it at rest. It is an email
+                  address or phone number, is removed from credential-free
+                  exports, and is not sent to Apple or prefilled into Screen
+                  Sharing.app.
+                </span>
+              </label>
+              <div
+                data-editor-search-field="ard-native-handoff"
+                className="rounded-md border border-info/30 bg-info/10 px-3 py-2 text-[11px] leading-4 text-[var(--color-textSecondary)]"
+              >
+                <div className="flex items-start gap-2">
+                  <ExternalLink
+                    size={14}
+                    className="mt-0.5 shrink-0 text-info"
+                  />
+                  <p>
+                    Opens Apple's Screen Sharing app on macOS. Screen
+                    Sharing.app owns password entry, two-factor authentication,
+                    connection approval, and Keychain access. SortOfRemoteNG
+                    never collects, stores, or forwards the Apple Account
+                    password.
+                  </p>
+                </div>
               </div>
             </div>
           )}

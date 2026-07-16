@@ -1,6 +1,7 @@
 /** Canonical frontend contract for the native Apple Remote Desktop runtime. */
 
-export const ARD_SETTINGS_VERSION = 1 as const;
+export const ARD_SETTINGS_VERSION = 2 as const;
+export const ARD_APPLE_ACCOUNT_IDENTIFIER_MAX_LENGTH = 320 as const;
 
 /**
  * `macOsAccount` is an account on the remote Mac and maps to RFB security type
@@ -15,6 +16,12 @@ export type ArdAuthMode = "macOsAccount" | "vncPassword" | "appleAccountNative";
 export interface ArdSettings {
   version: typeof ARD_SETTINGS_VERSION;
   authMode: ArdAuthMode;
+  /**
+   * Optional account metadata shown only for the native Screen Sharing
+   * handoff. It is never an authentication credential and is not sent to
+   * Apple or the embedded RFB engine.
+   */
+  appleAccountIdentifier?: string;
   autoReconnect: boolean;
   curtainOnConnect: boolean;
   localCursor: boolean;
@@ -38,13 +45,36 @@ const isArdAuthMode = (value: unknown): value is ArdAuthMode =>
   value === "vncPassword" ||
   value === "appleAccountNative";
 
+const isControlCharacter = (character: string): boolean => {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+};
+
+export function normalizeAppleAccountIdentifier(
+  value: unknown,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = Array.from(value)
+    .filter((character) => !isControlCharacter(character))
+    .join("")
+    .trim()
+    .slice(0, ARD_APPLE_ACCOUNT_IDENTIFIER_MAX_LENGTH);
+  return normalized || undefined;
+}
+
 export function normalizeArdSettings(value: unknown): ArdSettings {
   const input = isRecord(value) ? value : {};
+  const authMode = isArdAuthMode(input.authMode)
+    ? input.authMode
+    : DEFAULT_ARD_SETTINGS.authMode;
+  const appleAccountIdentifier =
+    authMode === "appleAccountNative"
+      ? normalizeAppleAccountIdentifier(input.appleAccountIdentifier)
+      : undefined;
   return {
     version: ARD_SETTINGS_VERSION,
-    authMode: isArdAuthMode(input.authMode)
-      ? input.authMode
-      : DEFAULT_ARD_SETTINGS.authMode,
+    authMode,
+    ...(appleAccountIdentifier ? { appleAccountIdentifier } : {}),
     autoReconnect:
       typeof input.autoReconnect === "boolean"
         ? input.autoReconnect
@@ -90,6 +120,16 @@ export interface ArdAppleAccountNativeCapabilities {
   acceptsPassword: false;
   targetPrefillSupported: false;
   reason: string;
+}
+
+/** Verified boundary returned after macOS accepts the native app handoff. */
+export interface ArdNativeHandoffResult {
+  applicationOpened: true;
+  application: "Screen Sharing";
+  platform: "macos";
+  connectionEstablished: false;
+  acceptsPassword: false;
+  targetPrefilled: false;
 }
 
 export interface ArdRuntimeCapabilities {

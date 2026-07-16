@@ -1845,8 +1845,32 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         valuePaths: ["username"],
       },
       {
+        id: "ard-apple-account-identifier",
+        label: "Apple Account identifier (saved reference)",
+        protocols: ["ard"],
+        protocolSubtabId: "authentication",
+        visibleWhen: (formData) =>
+          (formData.ardSettings as Record<string, unknown> | undefined)
+            ?.authMode === "appleAccountNative",
+        keywords: [
+          "apple id",
+          "email",
+          "phone number",
+          "telephone",
+          "account identifier",
+          "saved reference",
+        ],
+        copy: [
+          "Apple Account email address or phone number",
+          "Account metadata omitted from credential-free exports",
+          "Use an encrypted collection to protect the saved reference at rest",
+          "Not sent to Apple or prefilled into Screen Sharing.app",
+        ],
+        valuePaths: ["ardSettings.appleAccountIdentifier"],
+      },
+      {
         id: "ard-password",
-        label: "ARD or VNC password",
+        label: "Remote Mac or VNC password",
         protocols: ["ard"],
         protocolSubtabId: "authentication",
         visibleWhen: (formData) =>
@@ -1865,6 +1889,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
         copy: [
           "Sign in or approve in Screen Sharing.app",
           "No Apple Account password is stored or sent by this app",
+          "Password entry, two-factor authentication, approval, and Keychain stay with Apple",
           "macOS only",
         ],
       },

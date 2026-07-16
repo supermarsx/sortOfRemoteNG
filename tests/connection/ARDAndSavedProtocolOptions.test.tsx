@@ -14,7 +14,7 @@ const ArdHarness = () => {
     username: "remote-mac-user",
     password: "embedded-ard-secret",
     ardSettings: {
-      version: 1,
+      version: 2,
       authMode: "macOsAccount",
       autoReconnect: true,
       curtainOnConnect: false,
@@ -72,11 +72,45 @@ describe("ARDOptions", () => {
     expect(screen.getByTestId("ard-state")).toHaveTextContent('"username":""');
     expect(screen.getByTestId("ard-state")).toHaveTextContent('"password":""');
     expect(document.querySelector("#ard-password")).not.toBeInTheDocument();
+    const accountIdentifier = screen.getByLabelText(
+      "Apple Account identifier (saved reference)",
+    );
+    expect(accountIdentifier).toHaveAttribute("type", "text");
+    expect(accountIdentifier).toHaveAttribute("autocomplete", "off");
+    fireEvent.change(accountIdentifier, {
+      target: { value: "+44 7700 900123" },
+    });
+    expect(screen.getByTestId("ard-state")).toHaveTextContent(
+      '"appleAccountIdentifier":"+44 7700 900123"',
+    );
     expect(
       screen.getByText(
-        /does not collect, store, or send an Apple Account password/i,
+        /never collects, stores, or forwards the Apple Account password/i,
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/two-factor authentication/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/removed from credential-free exports/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/encrypted collection/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/email address or phone number/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "Authentication mode" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", {
+        name: "Remote Mac account (embedded ARD)",
+      }),
+    );
+    expect(
+      screen.queryByLabelText("Apple Account identifier (saved reference)"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("ard-state")).not.toHaveTextContent(
+      "appleAccountIdentifier",
+    );
   });
 
   it("persists embedded display and input options independently", () => {

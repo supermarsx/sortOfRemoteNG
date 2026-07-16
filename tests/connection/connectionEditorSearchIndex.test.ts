@@ -447,7 +447,10 @@ describe("connection editor search index", () => {
     const ardIndex = buildIndex({
       isGroup: false,
       protocol: "ard",
-      ardSettings: { authMode: "appleAccountNative" },
+      ardSettings: {
+        authMode: "appleAccountNative",
+        appleAccountIdentifier: "+44 7700 900123",
+      },
       username: "not-an-apple-account-field",
       password: "apple-password-must-never-be-indexed",
     });
@@ -457,6 +460,15 @@ describe("connection editor search index", () => {
       fieldId: "ard-native-handoff",
       protocolSubtabId: "authentication",
     });
+    expect(
+      searchConnectionEditorIndex(ardIndex, "+44 7700 900123")[0],
+    ).toMatchObject({
+      fieldId: "ard-apple-account-identifier",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(ardIndex, "phone number")[0],
+    ).toMatchObject({ fieldId: "ard-apple-account-identifier" });
     expect(
       searchConnectionEditorIndex(ardIndex, "ARD display and input")[0],
     ).toMatchObject({
