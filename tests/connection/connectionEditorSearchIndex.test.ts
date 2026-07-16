@@ -306,6 +306,92 @@ describe("connection editor search index", () => {
     ).toMatchObject({ protocolSubtabId: "authentication" });
   });
 
+  it("indexes every native-display setting on its exact subtab without indexing secrets", () => {
+    const spice = buildIndex({
+      isGroup: false,
+      protocol: "spice",
+      spiceProxyUri: "http://display-proxy.example:3128",
+      spiceTlsPort: 5901,
+      spiceCaCertificatePath: "C:\\certs\\spice-ca.pem",
+      password: "spice-ticket-never-searchable",
+    });
+    expect(
+      searchConnectionEditorIndex(spice, "display-proxy.example")[0],
+    ).toMatchObject({
+      fieldId: "spice-proxy-uri",
+      protocolSubtabId: "connection",
+    });
+    expect(searchConnectionEditorIndex(spice, "spice-ca.pem")[0]).toMatchObject(
+      {
+        fieldId: "spice-ca-certificate",
+        protocolSubtabId: "security",
+      },
+    );
+    expect(
+      searchConnectionEditorIndex(spice, "spice-ticket-never-searchable"),
+    ).toEqual([]);
+
+    const xdmcp = buildIndex({
+      isGroup: false,
+      protocol: "xdmcp",
+      xdmcpQueryType: "Indirect",
+      xdmcpAcknowledgeInsecureTransport: true,
+      xdmcpXServerPath: "C:\\XServers\\vcxsrv.exe",
+    });
+    expect(
+      searchConnectionEditorIndex(xdmcp, "unauthenticated")[0],
+    ).toMatchObject({
+      fieldId: "xdmcp-insecure-warning",
+      protocolSubtabId: "security",
+    });
+    expect(searchConnectionEditorIndex(xdmcp, "vcxsrv.exe")[0]).toMatchObject({
+      fieldId: "xdmcp-x-server-path",
+      protocolSubtabId: "advanced",
+    });
+
+    const x2go = buildIndex({
+      isGroup: false,
+      protocol: "x2go",
+      username: "display-user",
+      x2goSessionType: "Custom",
+      x2goCommand: "start-special-desktop",
+      privateKey: "x2go-private-key-never-searchable",
+    });
+    expect(
+      searchConnectionEditorIndex(x2go, "start-special-desktop")[0],
+    ).toMatchObject({
+      fieldId: "x2go-command",
+      protocolSubtabId: "connection",
+    });
+    expect(searchConnectionEditorIndex(x2go, "display-user")[0]).toMatchObject({
+      fieldId: "x2go-username",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(x2go, "x2go-private-key-never-searchable"),
+    ).toEqual([]);
+
+    const nx = buildIndex({
+      isGroup: false,
+      protocol: "nx",
+      nxConnectionService: "ssh",
+      nxSessionType: "Application",
+      nxCustomCommand: "launch-special-app",
+    });
+    expect(
+      searchConnectionEditorIndex(nx, "launch-special-app")[0],
+    ).toMatchObject({
+      fieldId: "nx-command",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(nx, "clipboard remains enabled")[0],
+    ).toMatchObject({
+      fieldId: "nx-native-input",
+      protocolSubtabId: "display-input",
+    });
+  });
+
   it("indexes Serial framing, terminal, and driver settings on exact subtabs", () => {
     const serialIndex = buildIndex({
       isGroup: false,

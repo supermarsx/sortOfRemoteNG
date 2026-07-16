@@ -94,6 +94,10 @@ const ProtocolSubtabContent: React.FC<{
       "scp",
       "mysql",
       "postgresql",
+      "spice",
+      "xdmcp",
+      "x2go",
+      "nx",
       "smb",
       "rustdesk",
     ].includes(protocol)
@@ -103,8 +107,19 @@ const ProtocolSubtabContent: React.FC<{
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         section={
-          ["authentication", "security", "advanced"].includes(subtabId)
-            ? (subtabId as "authentication" | "security" | "advanced")
+          [
+            "authentication",
+            "security",
+            "display-input",
+            "resources",
+            "advanced",
+          ].includes(subtabId)
+            ? (subtabId as
+                | "authentication"
+                | "security"
+                | "display-input"
+                | "resources"
+                | "advanced")
             : "connection"
         }
       />

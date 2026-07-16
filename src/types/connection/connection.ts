@@ -16,6 +16,10 @@ import type { SerialSettingsV1 } from "../protocols/serial";
 import type { PowerShellRemotingSettings } from "../powershellRemoting";
 import type { FtpSavedConnectionOptions } from "../ftp";
 import type { PostgreSQLSavedConnectionOptions } from "../postgresql";
+import type { SpiceSavedConnectionOptions } from "../protocols/spice";
+import type { XdmcpSavedConnectionOptions } from "../protocols/xdmcp";
+import type { X2goNativeSavedOptions } from "../protocols/x2goNative";
+import type { NxNativeSavedOptions } from "../protocols/nxNative";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -55,6 +59,10 @@ export type BuiltInConnectionProtocol =
   | "rlogin"
   | "mysql"
   | "postgresql"
+  | "spice"
+  | "xdmcp"
+  | "x2go"
+  | "nx"
   | "ftp"
   | "sftp"
   | "scp"
@@ -108,7 +116,13 @@ export interface IntegrationConnectionSettings {
 }
 
 export interface Connection
-  extends FtpSavedConnectionOptions, PostgreSQLSavedConnectionOptions {
+  extends
+    FtpSavedConnectionOptions,
+    PostgreSQLSavedConnectionOptions,
+    SpiceSavedConnectionOptions,
+    XdmcpSavedConnectionOptions,
+    X2goNativeSavedOptions,
+    NxNativeSavedOptions {
   id: string;
   name: string;
   protocol: ConnectionProtocol;

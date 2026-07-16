@@ -24,6 +24,10 @@ export const DEFAULT_PORTS: Record<string, number> = {
   scp: 22,
   mysql: 3306,
   postgresql: 5432,
+  spice: 5900,
+  xdmcp: 177,
+  x2go: 22,
+  nx: 4000,
   smb: 445,
   // RustDesk saved connections primarily address a remote ID; 21116 is the
   // standard rendezvous/relay control port used when a numeric port is needed.

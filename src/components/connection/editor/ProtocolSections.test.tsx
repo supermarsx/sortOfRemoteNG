@@ -290,6 +290,29 @@ describe("ProtocolSections", () => {
       "advanced",
       "recovery",
     ]);
+    expect(idsFor({ protocol: "spice" })).toEqual([
+      "connection",
+      "authentication",
+      "security",
+      "display-input",
+      "resources",
+      "advanced",
+    ]);
+    expect(idsFor({ protocol: "xdmcp" })).toEqual([
+      "connection",
+      "security",
+      "display-input",
+      "advanced",
+    ]);
+    for (const protocol of ["x2go", "nx"] as const) {
+      expect(idsFor({ protocol })).toEqual([
+        "connection",
+        "authentication",
+        "display-input",
+        "resources",
+        "advanced",
+      ]);
+    }
     for (const protocol of ["telnet", "mysql", "smb", "rustdesk"] as const) {
       expect(idsFor({ protocol })).toEqual(["connection", "recovery"]);
     }
@@ -522,6 +545,65 @@ describe("ProtocolSections", () => {
       );
     }
   });
+
+  it.each([
+    [
+      "spice",
+      [
+        ["Connection", "connection"],
+        ["Authentication", "authentication"],
+        ["Security", "security"],
+        ["Display & Input", "display-input"],
+        ["Resources", "resources"],
+        ["Advanced", "advanced"],
+      ],
+    ],
+    [
+      "xdmcp",
+      [
+        ["Connection", "connection"],
+        ["Security", "security"],
+        ["Display & Input", "display-input"],
+        ["Advanced", "advanced"],
+      ],
+    ],
+    [
+      "x2go",
+      [
+        ["Connection", "connection"],
+        ["Authentication", "authentication"],
+        ["Display & Input", "display-input"],
+        ["Resources", "resources"],
+        ["Advanced", "advanced"],
+      ],
+    ],
+    [
+      "nx",
+      [
+        ["Connection", "connection"],
+        ["Authentication", "authentication"],
+        ["Display & Input", "display-input"],
+        ["Resources", "resources"],
+        ["Advanced", "advanced"],
+      ],
+    ],
+  ] as const)(
+    "routes every populated %s native-display subtab to its editor section",
+    (protocol, tabs) => {
+      render(<Harness initial={{ protocol, isGroup: false }} />);
+      for (const [tabLabel, expectedSection] of tabs) {
+        fireEvent.click(screen.getByRole("tab", { name: tabLabel }));
+        expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+          "data-protocol",
+          protocol,
+        );
+        expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+          "data-section",
+          expectedSection,
+        );
+      }
+    },
+  );
 
   it("uses roving focus with Arrow, Home, and End navigation", async () => {
     render(<Harness initial={{ protocol: "https", isGroup: false }} />);

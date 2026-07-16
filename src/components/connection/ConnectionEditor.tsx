@@ -1208,6 +1208,10 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         "sftp",
         "scp",
         "postgresql",
+        "spice",
+        "xdmcp",
+        "x2go",
+        "nx",
       ].includes(p) && (
         <div className="grid grid-cols-2 gap-2">
           <div>

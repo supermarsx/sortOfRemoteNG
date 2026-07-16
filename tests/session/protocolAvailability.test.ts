@@ -23,6 +23,10 @@ const BUILT_IN_PROTOCOLS = [
   "rlogin",
   "mysql",
   "postgresql",
+  "spice",
+  "xdmcp",
+  "x2go",
+  "nx",
   "ftp",
   "sftp",
   "scp",
@@ -78,11 +82,6 @@ describe("protocol availability contract", () => {
   });
 
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
-    for (const protocol of ["spice", "x2go"]) {
-      expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
-        /does not have a wired direct session runtime/i,
-      );
-    }
     for (const protocol of ["ilo", "ipmi", "mac", "gcp", "k8s"]) {
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
         /management panel/i,
@@ -91,6 +90,20 @@ describe("protocol availability contract", () => {
     expect(getDirectSessionUnavailableMessage("future-protocol")).toMatch(
       /no registered frontend session runtime/i,
     );
+  });
+
+  it("records every native display process handoff without claiming embedded pixels", () => {
+    for (const protocol of ["spice", "xdmcp", "x2go", "nx"] as const) {
+      const availability = getProtocolAvailability(protocol);
+      expect(availability?.classification, protocol).toBe(
+        "external-native-handoff",
+      );
+      expect(availability?.sessionEntry, protocol).toBe("client-owned");
+      expect(availability?.frontendPath, protocol).toMatch(/Client\.tsx$/);
+      expect(availability?.testPath, protocol).toMatch(/\.test\.tsx$/);
+      expect(availability?.detail, protocol).toMatch(/local|native|installed/i);
+      expect(getDirectSessionUnavailableMessage(protocol), protocol).toBeNull();
+    }
   });
 
   it("records the bounded direct FTP and SCP file-transfer runtimes", () => {

@@ -326,4 +326,188 @@ describe("SavedProtocolOptions", () => {
       screen.getByText(/rejected before credentials are sent/i),
     ).toBeInTheDocument();
   });
+
+  it("keeps SPICE TLS settings coherent and exposes only enforceable trust controls", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "spice", isGroup: false }}
+        section="security"
+      />,
+    );
+
+    expect(
+      screen.queryByLabelText(/allow an unverified certificate/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("CA certificate path (optional)"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /require a tls spice transport/i }),
+    );
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"spiceRequireTls":true',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"spiceTlsPort":5901',
+    );
+    expect(
+      screen.getByLabelText("CA certificate path (optional)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /unverified spice certificates are intentionally unsupported/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("passes a saved SPICE ticket by the protocol-owned field and does not offer clipboard-off", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "spice", isGroup: false }}
+        section="authentication"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("SPICE ticket (optional)"), {
+      target: { value: "temporary-ticket" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"password":"temporary-ticket"',
+    );
+    expect(
+      screen.getByText(/standard input connection file/i),
+    ).toBeInTheDocument();
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "spice", isGroup: false }}
+        section="display-input"
+      />,
+    );
+    expect(
+      screen.queryByRole("checkbox", { name: /clipboard/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/clipboard follows remote-viewer's supported default/i),
+    ).toBeInTheDocument();
+  });
+
+  it("requires an explicit XDMCP plaintext-risk acknowledgement", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "xdmcp", isGroup: false }}
+        section="security"
+      />,
+    );
+
+    expect(
+      screen.getByText(/xdmcp is unauthenticated and unencrypted/i),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /understand and accept the xdmcp transport risk/i,
+      }),
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"xdmcpAcknowledgeInsecureTransport":true',
+    );
+  });
+
+  it("keeps XDMCP on its enforceable 24-bit native-display default", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "xdmcp", isGroup: false }}
+        section="display-input"
+      />,
+    );
+
+    expect(
+      screen.queryByRole("combobox", { name: /color depth/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/supported 24-bit display default/i),
+    ).toBeInTheDocument();
+  });
+
+  it("configures X2Go native authentication without collecting a password or passphrase", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "x2go", isGroup: false }}
+        section="authentication"
+      />,
+    );
+
+    expect(screen.queryByLabelText(/^Password$/i)).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "SSH authentication" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Private key or key path" }),
+    );
+    fireEvent.change(screen.getByLabelText("Private key or local key path"), {
+      target: { value: "C:\\Users\\me\\.ssh\\id_ed25519" },
+    });
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"x2goAuthMode":"privateKey"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"privateKey":"C:\\\\Users\\\\me\\\\.ssh\\\\id_ed25519"',
+    );
+    expect(screen.queryByLabelText(/passphrase/i)).not.toBeInTheDocument();
+  });
+
+  it("serializes X2Go shared folders as local auto-mount paths only", () => {
+    render(
+      <SavedHarness
+        initial={{ protocol: "x2go", isGroup: false }}
+        section="resources"
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByLabelText("Shared local folders (one path per line)"),
+      { target: { value: "C:\\Work\nC:\\Logs\nC:\\Work" } },
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"remote_name":""',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"auto_mount":true',
+    );
+    expect(
+      screen.getByTestId("saved-state").textContent?.match(/local_path/g),
+    ).toHaveLength(2);
+  });
+
+  it("switches NoMachine transport defaults without exposing unsupported clipboard disable", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "nx", port: 4000, isGroup: false }}
+        section="connection"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("combobox", { name: "NoMachine transport" }),
+    );
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "NoMachine over SSH (port 22)" }),
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"nxConnectionService":"ssh"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent('"port":22');
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "nx", isGroup: false }}
+        section="display-input"
+      />,
+    );
+    expect(
+      screen.queryByRole("checkbox", { name: /clipboard/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/clipboard is left enabled/i)).toBeInTheDocument();
+  });
 });

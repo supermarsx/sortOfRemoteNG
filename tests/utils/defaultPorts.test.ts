@@ -25,6 +25,10 @@ describe("defaultPorts", () => {
     expect(DEFAULT_PORTS.scp).toBe(22);
     expect(DEFAULT_PORTS.mysql).toBe(3306);
     expect(DEFAULT_PORTS.postgresql).toBe(5432);
+    expect(DEFAULT_PORTS.spice).toBe(5900);
+    expect(DEFAULT_PORTS.xdmcp).toBe(177);
+    expect(DEFAULT_PORTS.x2go).toBe(22);
+    expect(DEFAULT_PORTS.nx).toBe(4000);
     expect(DEFAULT_PORTS.smb).toBe(445);
     expect(DEFAULT_PORTS.rustdesk).toBe(21116);
   });
@@ -45,6 +49,10 @@ describe("defaultPorts", () => {
       expect(getDefaultPort("scp")).toBe(22);
       expect(getDefaultPort("mysql")).toBe(3306);
       expect(getDefaultPort("postgresql")).toBe(5432);
+      expect(getDefaultPort("spice")).toBe(5900);
+      expect(getDefaultPort("xdmcp")).toBe(177);
+      expect(getDefaultPort("x2go")).toBe(22);
+      expect(getDefaultPort("nx")).toBe(4000);
       expect(getDefaultPort("smb")).toBe(445);
     });
 

@@ -106,6 +106,10 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
       sftp: 22,
       mysql: 3306,
       postgresql: 5432,
+      spice: 5900,
+      xdmcp: 177,
+      x2go: 22,
+      nx: 4000,
       smb: 445,
       rustdesk: 21116,
     };
@@ -327,6 +331,32 @@ describe("ConnectionEditor", () => {
         screen.getByText(/rejected before credentials are sent/i),
       ).toBeInTheDocument();
     });
+
+    it.each([
+      ["SPICE", "spice", 5900],
+      ["XDMCP", "xdmcp", 177],
+      ["X2Go", "x2go", 22],
+      ["NX / NoMachine", "nx", 4000],
+    ] as const)(
+      "offers the %s native handoff with its real default port and no generic password fields",
+      (label, value, port) => {
+        renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+        fireEvent.click(screen.getByTestId("editor-protocol"));
+        fireEvent.change(
+          screen.getByRole("combobox", { name: "Search protocols" }),
+          { target: { value } },
+        );
+        fireEvent.click(
+          screen.getByRole("option", { name: new RegExp(`^${label}`, "i") }),
+        );
+
+        expect(screen.getByTestId("editor-protocol")).toHaveTextContent(label);
+        expect(screen.getByTestId("editor-port")).toHaveValue(port);
+        expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+      },
+    );
 
     it("should search protocol names and descriptions, then select with the keyboard", async () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });

@@ -25,6 +25,10 @@ const mockState = vi.hoisted(() => ({
   rustDeskClientProps: vi.fn(),
   mySqlClientProps: vi.fn(),
   postgreSqlClientProps: vi.fn(),
+  spiceClientProps: vi.fn(),
+  xdmcpClientProps: vi.fn(),
+  x2goNativeClientProps: vi.fn(),
+  nxNativeClientProps: vi.fn(),
   smbClientProps: vi.fn(),
 }));
 
@@ -164,6 +168,34 @@ vi.mock("../../src/components/protocol/PostgreSQLClient", () => ({
   PostgreSQLClient: (props: any) => {
     mockState.postgreSqlClientProps(props);
     return <div data-testid="mock-postgresql-client">PostgreSQL Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/SpiceClient", () => ({
+  SpiceClient: (props: any) => {
+    mockState.spiceClientProps(props);
+    return <div data-testid="mock-spice-client">SPICE native handoff</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/XdmcpClient", () => ({
+  XdmcpClient: (props: any) => {
+    mockState.xdmcpClientProps(props);
+    return <div data-testid="mock-xdmcp-client">XDMCP native handoff</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/X2goNativeClient", () => ({
+  X2goNativeClient: (props: any) => {
+    mockState.x2goNativeClientProps(props);
+    return <div data-testid="mock-x2go-client">X2Go native handoff</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/NxNativeClient", () => ({
+  NxNativeClient: (props: any) => {
+    mockState.nxNativeClientProps(props);
+    return <div data-testid="mock-nx-client">NoMachine native handoff</div>;
   },
 }));
 
@@ -369,6 +401,10 @@ describe("SessionViewer", () => {
     ["rustdesk", "mock-rustdesk-client"],
     ["mysql", "mock-mysql-client"],
     ["postgresql", "mock-postgresql-client"],
+    ["spice", "mock-spice-client"],
+    ["xdmcp", "mock-xdmcp-client"],
+    ["x2go", "mock-x2go-client"],
+    ["nx", "mock-nx-client"],
     ["smb", "mock-smb-client"],
   ])(
     "mounts the %s protocol client while the real connection is pending",

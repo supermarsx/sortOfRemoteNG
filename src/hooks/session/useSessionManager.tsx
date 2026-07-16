@@ -858,6 +858,46 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "spice" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_spice", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to stop SPICE remote-viewer process:", error);
+      }
+    }
+
+    if (session.protocol === "xdmcp" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_xdmcp", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to stop XDMCP X server process:", error);
+      }
+    }
+
+    if (session.protocol === "x2go" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_x2go", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to stop X2Go Client process:", error);
+      }
+    }
+
+    if (session.protocol === "nx" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_nx", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to stop NoMachine Client process:", error);
+      }
+    }
+
     // Notify detached windows that this session has been closed from main window
     const isTauri =
       typeof window !== "undefined" &&

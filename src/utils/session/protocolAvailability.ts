@@ -3,15 +3,7 @@ import {
   type BuiltInConnectionProtocol,
 } from "../../types/connection/connection";
 
-export const ADDITIONAL_AUDITED_PROTOCOLS = [
-  "spice",
-  "x2go",
-  "nx",
-  "xdmcp",
-  "mac",
-  "ipmi",
-  "k8s",
-] as const;
+export const ADDITIONAL_AUDITED_PROTOCOLS = ["mac", "ipmi", "k8s"] as const;
 
 export type AdditionalAuditedProtocol =
   (typeof ADDITIONAL_AUDITED_PROTOCOLS)[number];
@@ -172,6 +164,46 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     testPath: "src/hooks/protocol/usePostgreSQLClient.test.tsx",
     detail:
       "The native query workbench owns an isolated direct database session with explicit SQLx SSL modes and certificate paths. Proxy, VPN, SSH-hop, and tunnel-chain routes fail closed.",
+  }),
+  spice: capability({
+    label: "SPICE",
+    classification: "external-native-handoff",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/SpiceClient.tsx",
+    backendPath: "src-tauri/crates/sorng-spice",
+    testPath: "src/hooks/protocol/useSpiceClient.test.tsx",
+    detail:
+      "The saved session launches installed virt-viewer remote-viewer with an in-memory stdin connection file and monitors only the local process lifecycle. Authentication, framebuffer, and input remain in its native window.",
+  }),
+  xdmcp: capability({
+    label: "XDMCP",
+    classification: "external-native-handoff",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/XdmcpClient.tsx",
+    backendPath: "src-tauri/crates/sorng-xdmcp",
+    testPath: "src/hooks/protocol/useXdmcpClient.test.tsx",
+    detail:
+      "The saved session launches and monitors an installed local X server. XDMCP is unauthenticated and unencrypted, requires explicit acknowledgement, and never reports remote login or display readiness.",
+  }),
+  x2go: capability({
+    label: "X2Go",
+    classification: "external-native-handoff",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/X2goNativeClient.tsx",
+    backendPath: "src-tauri/crates/sorng-x2go",
+    testPath: "src/hooks/protocol/useX2goNativeSession.test.tsx",
+    detail:
+      "The saved session launches and monitors installed X2Go Client. Native prompts own passwords, passphrases, host trust, and MFA; the app does not claim remote authentication or an embedded framebuffer.",
+  }),
+  nx: capability({
+    label: "NX / NoMachine",
+    classification: "external-native-handoff",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/NxNativeClient.tsx",
+    backendPath: "src-tauri/crates/sorng-nx",
+    testPath: "src/hooks/protocol/useNxNativeSession.test.tsx",
+    detail:
+      "The saved session launches and monitors installed NoMachine Client. Native prompts own authentication, host trust, and MFA; the app does not claim remote authentication or an embedded framebuffer.",
   }),
   ftp: capability({
     label: "FTP",
@@ -337,42 +369,6 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
 } satisfies Record<BuiltInConnectionProtocol, ProtocolAvailability>;
 
 export const ADDITIONAL_PROTOCOL_AVAILABILITY = {
-  spice: capability({
-    label: "SPICE",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/protocol/useSpiceClient.ts",
-    backendPath: "src-tauri/crates/sorng-spice",
-    testPath: null,
-    detail: "A backend hook exists, but no saved-session viewer is registered.",
-  }),
-  x2go: capability({
-    label: "X2Go",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/protocol/useX2goClient.ts",
-    backendPath: "src-tauri/crates/sorng-x2go",
-    testPath: null,
-    detail: "A backend hook exists, but no saved-session viewer is registered.",
-  }),
-  nx: capability({
-    label: "NX / NoMachine",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/protocol/useNxClient.ts",
-    backendPath: "src-tauri/crates/sorng-nx",
-    testPath: null,
-    detail: "A backend hook exists, but no saved-session viewer is registered.",
-  }),
-  xdmcp: capability({
-    label: "XDMCP",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/protocol/useXdmcpClient.ts",
-    backendPath: "src-tauri/crates/sorng-xdmcp",
-    testPath: null,
-    detail: "A backend hook exists, but no saved-session viewer is registered.",
-  }),
   mac: capability({
     label: "Linux MAC management",
     classification: "management-panel",

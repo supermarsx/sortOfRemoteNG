@@ -122,14 +122,19 @@ describe("useSessionManager settings effects", () => {
     expect(usesGenericSessionTimer("scp")).toBe(false);
     expect(usesGenericSessionTimer("mysql")).toBe(false);
     expect(usesGenericSessionTimer("postgresql")).toBe(false);
+    expect(usesGenericSessionTimer("spice")).toBe(false);
+    expect(usesGenericSessionTimer("xdmcp")).toBe(false);
+    expect(usesGenericSessionTimer("x2go")).toBe(false);
+    expect(usesGenericSessionTimer("nx")).toBe(false);
     expect(usesGenericSessionTimer("smb")).toBe(false);
     expect(usesGenericSessionTimer("rustdesk")).toBe(false);
   });
 
   it("fails closed for unsupported and management-only protocols", () => {
-    expect(getUnsupportedDirectSessionMessage("spice")).toMatch(
-      /does not have a wired direct session runtime/i,
-    );
+    expect(getUnsupportedDirectSessionMessage("spice")).toBeNull();
+    expect(getUnsupportedDirectSessionMessage("xdmcp")).toBeNull();
+    expect(getUnsupportedDirectSessionMessage("x2go")).toBeNull();
+    expect(getUnsupportedDirectSessionMessage("nx")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("ilo")).toMatch(
       /management panel/i,
     );
@@ -143,6 +148,10 @@ describe("useSessionManager settings effects", () => {
     ["ftp", "ftp_disconnect"],
     ["scp", "scp_disconnect"],
     ["postgresql", "pg_disconnect"],
+    ["spice", "disconnect_spice"],
+    ["xdmcp", "disconnect_xdmcp"],
+    ["x2go", "disconnect_x2go"],
+    ["nx", "disconnect_nx"],
   ] as const)(
     "final-close owns the native %s disconnect and then removes the session",
     async (protocol, command) => {

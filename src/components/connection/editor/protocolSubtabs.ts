@@ -192,6 +192,36 @@ export function getProtocolSubtabs(
     ]);
   }
 
+  if (protocol === "spice") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "display-input",
+      "resources",
+      "advanced",
+    ]);
+  }
+
+  if (protocol === "xdmcp") {
+    return selectSubtabs([
+      "connection",
+      "security",
+      "display-input",
+      "advanced",
+    ]);
+  }
+
+  if (protocol === "x2go" || protocol === "nx") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "display-input",
+      "resources",
+      "advanced",
+    ]);
+  }
+
   if (["telnet", "mysql", "smb", "rustdesk"].includes(protocol)) {
     return selectSubtabs(["connection", "recovery"]);
   }

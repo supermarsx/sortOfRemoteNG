@@ -37,15 +37,15 @@ The project is under active development. Features that depend on an external ser
 
 ## What works today
 
-| Area            | Current capability                                                                                                                                                                                   |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, PostgreSQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk and RustDesk |
-| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                            |
-| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                            |
-| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                              |
-| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                  |
-| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                  |
-| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                    |
+| Area            | Current capability                                                                                                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, PostgreSQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk, RustDesk, SPICE, X2Go, NoMachine, and XDMCP |
+| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                                                            |
+| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                                                            |
+| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                                                              |
+| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                                                  |
+| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                                                  |
+| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                                                    |
 
 ### Capability boundaries
 
@@ -57,6 +57,10 @@ The saved-session matrix is source-backed and tested, but “supported” still 
 - **PostgreSQL** opens an isolated native query session with catalog browsing, SQL query/statement results, explicit SSL modes, CA and mutual-TLS certificate paths, and deterministic disconnect. It currently supports direct targets only and rejects configured proxy, VPN, SSH-hop, or tunnel-chain routes before credentials are sent.
 - **VNC** requires a WebSocket-capable endpoint or trusted WebSocket proxy because the app does not provide a raw-TCP RFB bridge.
 - **AnyDesk** and **RustDesk** are installed-client handoffs. The app launches and monitors the native client; it does not embed either product's framebuffer.
+- **SPICE** launches the installed virt-viewer `remote-viewer` and supplies its standard connection file through stdin, so a saved ticket is not placed in process arguments or a persistent profile. The app verifies the local process only; remote authentication, pixels, and input remain in the native window.
+- **X2Go** and **NX / NoMachine** launch the installed `x2goclient` or `nxplayer`. Password, key-passphrase, host-trust, and MFA prompts stay in the native client, and a running local process is not reported as confirmed remote authentication.
+- **XDMCP** launches an installed local X server such as VcXsrv, Xephyr, or Xming. XDMCP is unauthenticated and unencrypted, so every saved connection requires an explicit risk acknowledgement and should be used only on a trusted isolated network. A running X server does not prove that a remote login screen is usable.
+- These four native-display handoffs reject unsupported app proxy, VPN, SSH-hop, and tunnel-chain settings instead of silently bypassing them. SPICE supports only its dedicated credential-free HTTP CONNECT proxy field.
 - **FTP/FTPS** supports passive PASV/EPSV sessions; active mode, routes, queue execution, resume, and live progress are not exposed. **SCP** enforces its host-key policy and known_hosts path, while routes, interactive host-key prompts, cancellation/progress, resume, and agent authentication remain unavailable. Both fail closed for configured proxy/VPN/tunnel routes.
 - Automated tests verify application contracts and local simulated transports. A real connection still requires a reachable target, valid credentials, and any applicable native client, driver, or server configuration.
 - An entry in an import format, backend crate, or settings screen does not by itself prove a complete session path. The maintained [protocol matrix](docs/protocols.md) is the authority.

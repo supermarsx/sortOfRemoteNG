@@ -409,6 +409,636 @@ const getBehaviorAutomationFields = (
   return fields;
 };
 
+const nativeDisplayField = (
+  protocol: "spice" | "xdmcp" | "x2go" | "nx",
+  id: string,
+  label: string,
+  protocolSubtabId: ConnectionEditorProtocolSubtabId,
+  options: Omit<
+    ConnectionEditorSearchFieldDescriptor,
+    "id" | "label" | "protocols" | "protocolSubtabId"
+  > = {},
+): ConnectionEditorSearchFieldDescriptor => ({
+  id,
+  label,
+  protocols: [protocol],
+  protocolSubtabId,
+  ...options,
+});
+
+const NATIVE_DISPLAY_CONNECTION_EDITOR_FIELDS = [
+  nativeDisplayField(
+    "spice",
+    "spice-proxy-uri",
+    "SPICE HTTP CONNECT proxy URI",
+    "connection",
+    {
+      keywords: ["proxy", "http connect", "dedicated spice proxy"],
+      valuePaths: ["spiceProxyUri"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-native-window",
+    "Native SPICE viewer boundary",
+    "connection",
+    {
+      keywords: [
+        "remote-viewer",
+        "virt-viewer",
+        "external window",
+        "fail closed",
+      ],
+      copy: [
+        "Running local viewer process",
+        "Remote authentication and display are not confirmed",
+        "Generic proxy, VPN, SSH-hop, and tunnel-chain routes fail closed",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-ticket",
+    "SPICE ticket",
+    "authentication",
+    {
+      keywords: ["password", "credential", "stdin connection file"],
+      copy: ["Never placed in process arguments or a persistent profile"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-require-tls",
+    "Require TLS SPICE transport",
+    "security",
+    {
+      keywords: ["encryption", "tls", "secure"],
+      valuePaths: ["spiceRequireTls"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-tls-port-enabled",
+    "Separate SPICE TLS port",
+    "security",
+    {
+      keywords: ["tls-port", "remote-viewer"],
+      valuePaths: ["spiceTlsPort"],
+    },
+  ),
+  nativeDisplayField("spice", "spice-tls-port", "SPICE TLS port", "security", {
+    valuePaths: ["spiceTlsPort"],
+    visibleWhen: (formData) => formData.spiceTlsPort !== undefined,
+  }),
+  nativeDisplayField(
+    "spice",
+    "spice-ca-certificate",
+    "SPICE CA certificate path",
+    "security",
+    {
+      keywords: ["certificate", "trust", "ca"],
+      valuePaths: ["spiceCaCertificatePath"],
+      visibleWhen: (formData) => formData.spiceTlsPort !== undefined,
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-host-subject",
+    "Expected SPICE certificate subject",
+    "security",
+    {
+      keywords: ["host-subject", "certificate name", "hostname verification"],
+      valuePaths: ["spiceTlsHostSubject"],
+      visibleWhen: (formData) => formData.spiceTlsPort !== undefined,
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-verified-certificates",
+    "Verified SPICE certificates",
+    "security",
+    {
+      keywords: ["self-signed", "unverified", "certificate trust"],
+      copy: [
+        "Unverified SPICE certificates are intentionally unsupported",
+        "Use system trust or provide the issuing CA certificate",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-fullscreen",
+    "SPICE fullscreen",
+    "display-input",
+    {
+      valuePaths: ["spiceFullscreen"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-view-only",
+    "SPICE view only",
+    "display-input",
+    {
+      keywords: ["disable input", "keyboard", "pointer"],
+      valuePaths: ["spiceViewOnly"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-clipboard-boundary",
+    "SPICE clipboard boundary",
+    "display-input",
+    {
+      keywords: ["clipboard", "remote-viewer default"],
+      copy: [
+        "Disabling clipboard is not exposed because the native handoff cannot enforce it",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-audio",
+    "SPICE audio playback",
+    "resources",
+    {
+      valuePaths: ["spiceAudioPlayback"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-usb-redirection",
+    "SPICE USB redirection",
+    "resources",
+    {
+      keywords: ["device redirection", "usb"],
+      valuePaths: ["spiceUsbRedirection"],
+    },
+  ),
+  nativeDisplayField(
+    "spice",
+    "spice-native-client",
+    "remote-viewer executable path",
+    "advanced",
+    {
+      keywords: ["virt-viewer", "binary", "installed client", "PATH"],
+      valuePaths: ["spiceNativeClientPath"],
+    },
+  ),
+
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-query-type",
+    "XDMCP query type",
+    "connection",
+    {
+      optionText: ["Direct query", "Broadcast query", "Indirect chooser query"],
+      valuePaths: ["xdmcpQueryType"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-display-number",
+    "XDMCP local display number",
+    "connection",
+    {
+      keywords: ["X display", "display number"],
+      valuePaths: ["xdmcpDisplayNumber"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-insecure-warning",
+    "XDMCP is unauthenticated and unencrypted",
+    "security",
+    {
+      keywords: ["plaintext", "insecure transport", "trusted isolated network"],
+      copy: [
+        "Hosts on the path can observe or alter the login display and session traffic",
+        "Proxy, VPN, SSH-hop, and tunnel-chain settings are rejected",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-insecure-acknowledgement",
+    "Accept XDMCP transport risk",
+    "security",
+    {
+      keywords: ["required acknowledgement", "unsafe"],
+      valuePaths: ["xdmcpAcknowledgeInsecureTransport"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-width",
+    "XDMCP window width",
+    "display-input",
+    {
+      valuePaths: ["xdmcpResolutionWidth"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-height",
+    "XDMCP window height",
+    "display-input",
+    {
+      valuePaths: ["xdmcpResolutionHeight"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-color-depth",
+    "XDMCP color depth",
+    "display-input",
+    {
+      keywords: ["24-bit", "native X server default"],
+      copy: [
+        "Alternative depth values are not exposed because they cannot be applied consistently",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-fullscreen",
+    "XDMCP fullscreen",
+    "display-input",
+    {
+      valuePaths: ["xdmcpFullscreen"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-x-server-type",
+    "Local X server",
+    "advanced",
+    {
+      optionText: ["Platform default", "VcXsrv", "Xephyr", "Xming"],
+      valuePaths: ["xdmcpXServerType"],
+    },
+  ),
+  nativeDisplayField(
+    "xdmcp",
+    "xdmcp-x-server-path",
+    "X server executable path",
+    "advanced",
+    {
+      keywords: ["binary", "installed X server", "PATH"],
+      valuePaths: ["xdmcpXServerPath"],
+    },
+  ),
+
+  nativeDisplayField(
+    "x2go",
+    "x2go-session-type",
+    "X2Go desktop or session type",
+    "connection",
+    {
+      optionText: [
+        "XFCE",
+        "KDE",
+        "GNOME",
+        "LXDE",
+        "LXQt",
+        "MATE",
+        "Cinnamon",
+        "Unity",
+        "Trinity",
+        "Shadow",
+        "RDP",
+        "Custom desktop command",
+        "Single application",
+      ],
+      valuePaths: ["x2goSessionType"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-command",
+    "X2Go remote command",
+    "connection",
+    {
+      keywords: ["custom desktop", "single application"],
+      valuePaths: ["x2goCommand"],
+      visibleWhen: (formData) =>
+        ["Custom", "Application"].includes(String(formData.x2goSessionType)),
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-username",
+    "X2Go username",
+    "authentication",
+    {
+      valuePaths: ["username"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-auth-mode",
+    "X2Go SSH authentication",
+    "authentication",
+    {
+      optionText: [
+        "Native password prompt",
+        "Private key or key path",
+        "SSH agent",
+        "GSSAPI / Kerberos",
+      ],
+      valuePaths: ["x2goAuthMode"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-private-key",
+    "X2Go private key or local key path",
+    "authentication",
+    {
+      keywords: ["inline key", "ssh key"],
+      visibleWhen: (formData) => formData.x2goAuthMode === "privateKey",
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-fullscreen",
+    "X2Go fullscreen",
+    "display-input",
+    {
+      valuePaths: ["x2goFullscreen"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-width",
+    "X2Go window width",
+    "display-input",
+    {
+      valuePaths: ["x2goWidth"],
+      visibleWhen: (formData) => formData.x2goFullscreen !== true,
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-height",
+    "X2Go window height",
+    "display-input",
+    {
+      valuePaths: ["x2goHeight"],
+      visibleWhen: (formData) => formData.x2goFullscreen !== true,
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-keyboard-layout",
+    "X2Go keyboard layout",
+    "display-input",
+    {
+      valuePaths: ["x2goKeyboardLayout"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-keyboard-model",
+    "X2Go keyboard model",
+    "display-input",
+    {
+      valuePaths: ["x2goKeyboardModel"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-clipboard",
+    "X2Go clipboard direction",
+    "display-input",
+    {
+      optionText: [
+        "Both directions",
+        "Client to server",
+        "Server to client",
+        "Disabled",
+      ],
+      valuePaths: ["x2goClipboard"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-audio",
+    "X2Go PulseAudio forwarding",
+    "resources",
+    {
+      valuePaths: ["x2goAudioEnabled"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-printing",
+    "X2Go client-side printing",
+    "resources",
+    {
+      valuePaths: ["x2goPrintingEnabled"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-shared-folders",
+    "X2Go shared local folders",
+    "resources",
+    {
+      keywords: ["file sharing", "mount", "local path"],
+      copy: ["One path per line", "Custom remote folder names are not exposed"],
+      valuePaths: ["x2goSharedFolders"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-compression",
+    "X2Go link profile",
+    "advanced",
+    {
+      optionText: ["Modem", "ISDN", "ADSL", "WAN", "LAN"],
+      valuePaths: ["x2goCompression"],
+    },
+  ),
+  nativeDisplayField("x2go", "x2go-dpi", "X2Go DPI", "advanced", {
+    valuePaths: ["x2goDpi"],
+  }),
+  nativeDisplayField(
+    "x2go",
+    "x2go-rootless",
+    "X2Go rootless window mode",
+    "advanced",
+    {
+      valuePaths: ["x2goRootless"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-published-applications",
+    "X2Go published applications",
+    "advanced",
+    {
+      valuePaths: ["x2goPublishedApplications"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-native-client",
+    "x2goclient executable path",
+    "advanced",
+    {
+      keywords: ["installed client", "binary", "PATH"],
+      valuePaths: ["x2goNativeClientPath"],
+    },
+  ),
+  nativeDisplayField(
+    "x2go",
+    "x2go-native-window",
+    "Native X2Go Client boundary",
+    "advanced",
+    {
+      copy: [
+        "Running local process only",
+        "Native prompt owns password, passphrase, host trust, and MFA",
+        "Remote authentication, pixels, and input are not confirmed",
+        "App routes fail closed",
+      ],
+    },
+  ),
+
+  nativeDisplayField(
+    "nx",
+    "nx-connection-service",
+    "NoMachine transport",
+    "connection",
+    {
+      optionText: ["NX service (port 4000)", "NoMachine over SSH (port 22)"],
+      valuePaths: ["nxConnectionService"],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-session-type",
+    "NoMachine desktop or session type",
+    "connection",
+    {
+      optionText: [
+        "Default Unix desktop",
+        "GNOME",
+        "KDE",
+        "XFCE",
+        "Console session",
+        "Physical desktop chooser",
+        "Custom Unix command",
+        "Single application",
+      ],
+      valuePaths: ["nxSessionType"],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-command",
+    "NoMachine remote command",
+    "connection",
+    {
+      keywords: ["custom unix", "single application"],
+      valuePaths: ["nxCustomCommand"],
+      visibleWhen: (formData) =>
+        ["UnixCustom", "Application"].includes(String(formData.nxSessionType)),
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-username",
+    "NoMachine username",
+    "authentication",
+    {
+      valuePaths: ["username"],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-private-key",
+    "NoMachine private key or local key path",
+    "authentication",
+    {
+      keywords: ["native password prompt", "ssh key", "inline key"],
+      copy: [
+        "Native Client owns password, key-passphrase, host-trust, and MFA prompts",
+      ],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-fullscreen",
+    "NoMachine fullscreen",
+    "display-input",
+    {
+      valuePaths: ["nxFullscreen"],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-width",
+    "NoMachine window width",
+    "display-input",
+    {
+      valuePaths: ["nxWidth"],
+      visibleWhen: (formData) => formData.nxFullscreen !== true,
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-height",
+    "NoMachine window height",
+    "display-input",
+    {
+      valuePaths: ["nxHeight"],
+      visibleWhen: (formData) => formData.nxFullscreen !== true,
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-native-input",
+    "NoMachine native input and clipboard boundary",
+    "display-input",
+    {
+      keywords: ["keyboard", "pointer", "clipboard"],
+      copy: [
+        "Clipboard remains enabled",
+        "Input is owned by the native NoMachine window",
+      ],
+    },
+  ),
+  nativeDisplayField("nx", "nx-audio", "NoMachine audio", "resources", {
+    valuePaths: ["nxAudioEnabled"],
+  }),
+  nativeDisplayField(
+    "nx",
+    "nx-native-client",
+    "nxplayer executable path",
+    "advanced",
+    {
+      keywords: ["NoMachine Client", "binary", "PATH"],
+      valuePaths: ["nxNativeClientPath"],
+    },
+  ),
+  nativeDisplayField(
+    "nx",
+    "nx-native-window",
+    "Native NoMachine Client boundary",
+    "advanced",
+    {
+      copy: [
+        "Running local process only",
+        "Native prompt owns authentication, host trust, and MFA",
+        "Remote authentication, pixels, and input are not confirmed",
+        "App routes fail closed",
+      ],
+    },
+  ),
+] satisfies readonly ConnectionEditorSearchFieldDescriptor[];
+
 export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
   {
     id: "general-basics",
@@ -502,6 +1132,10 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "rustdesk",
           "serial",
           "postgresql",
+          "spice",
+          "xdmcp",
+          "x2go",
+          "nx",
           "integration:exchange",
         ],
         valuePaths: ["username", "integration.username"],
@@ -524,6 +1158,10 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "rustdesk",
           "serial",
           "postgresql",
+          "spice",
+          "xdmcp",
+          "x2go",
+          "nx",
           "integration:exchange",
         ],
       },
@@ -693,6 +1331,14 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
       "postgresql",
       "postgres",
       "pgsql",
+      "spice",
+      "remote-viewer",
+      "virt-viewer",
+      "xdmcp",
+      "x server",
+      "x2go",
+      "nomachine",
+      "nx",
       "smb",
       "samba",
       "rustdesk",
@@ -1130,6 +1776,7 @@ export const CONNECTION_EDITOR_SEARCH_DESCRIPTORS = [
           "Configured proxy, VPN, SSH hop, or tunnel chain is rejected before credentials are sent.",
         ],
       },
+      ...NATIVE_DISPLAY_CONNECTION_EDITOR_FIELDS,
       {
         id: "smb-share",
         label: "Share name",

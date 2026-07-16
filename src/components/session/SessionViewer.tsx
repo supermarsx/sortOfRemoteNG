@@ -78,6 +78,28 @@ const PostgreSQLClient = dynamic(
     ),
   { ssr: false },
 );
+const SpiceClient = dynamic(
+  () => import("../protocol/SpiceClient").then((module) => module.SpiceClient),
+  { ssr: false },
+);
+const XdmcpClient = dynamic(
+  () => import("../protocol/XdmcpClient").then((module) => module.XdmcpClient),
+  { ssr: false },
+);
+const X2goNativeClient = dynamic(
+  () =>
+    import("../protocol/X2goNativeClient").then(
+      (module) => module.X2goNativeClient,
+    ),
+  { ssr: false },
+);
+const NxNativeClient = dynamic(
+  () =>
+    import("../protocol/NxNativeClient").then(
+      (module) => module.NxNativeClient,
+    ),
+  { ssr: false },
+);
 const SMBClient = dynamic(
   () => import("../protocol/SMBClient").then((module) => module.SMBClient),
   { ssr: false },
@@ -372,6 +394,42 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <PostgreSQLClient session={session} />;
+    }
+
+    if (
+      session.protocol === "spice" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <SpiceClient session={session} />;
+    }
+
+    if (
+      session.protocol === "xdmcp" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <XdmcpClient session={session} />;
+    }
+
+    if (
+      session.protocol === "x2go" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <X2goNativeClient session={session} />;
+    }
+
+    if (
+      session.protocol === "nx" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <NxNativeClient session={session} />;
     }
 
     if (

@@ -301,7 +301,10 @@ async function checkProtocolSupportDocumentation() {
     ["FTP / FTPS", "●"],
     ["SCP", "●"],
     ["PostgreSQL", "●"],
-    ["Spice / NX / x2go / XDMCP", "○"],
+    ["SPICE", "◐"],
+    ["X2Go", "◐"],
+    ["NX / NoMachine", "◐"],
+    ["XDMCP", "◐"],
   ];
   for (const [label, status] of architectureStatuses) {
     const row = markdownTableRow(architecture, label);
@@ -329,6 +332,10 @@ async function checkProtocolSupportDocumentation() {
     ["FTP / FTPS", "Interactive client, direct-route only"],
     ["SCP", "Interactive client, direct-route only"],
     ["PostgreSQL", "Interactive client, direct-route only"],
+    ["SPICE", "External handoff"],
+    ["XDMCP", "External handoff, insecure transport"],
+    ["X2Go", "External handoff"],
+    ["NX / NoMachine", "External handoff"],
   ];
   for (const [label, status] of protocolStatuses) {
     const row = markdownTableRow(protocols, label);
@@ -353,6 +360,10 @@ async function checkProtocolSupportDocumentation() {
     ["ftp", "fully-interactive"],
     ["scp", "fully-interactive"],
     ["postgresql", "fully-interactive"],
+    ["spice", "external-native-handoff"],
+    ["xdmcp", "external-native-handoff"],
+    ["x2go", "external-native-handoff"],
+    ["nx", "external-native-handoff"],
   ];
   for (const [protocol, classification] of capabilityContracts) {
     const marker = `  ${protocol}: capability({`;

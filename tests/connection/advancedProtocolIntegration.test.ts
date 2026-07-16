@@ -158,10 +158,63 @@ describe("advanced protocol connection integration", () => {
     expect(getDefaultPort("winrm")).toBe(5985);
     expect(getDefaultPort("ard")).toBe(5900);
     expect(getDefaultPort("postgresql")).toBe(5432);
+    expect(getDefaultPort("spice")).toBe(5900);
+    expect(getDefaultPort("xdmcp")).toBe(177);
+    expect(getDefaultPort("x2go")).toBe(22);
+    expect(getDefaultPort("nx")).toBe(4000);
     expect(getProtocolDefaultIconKey("raw")).toBe("cable");
     expect(getProtocolDefaultIconKey("rlogin")).toBe("phone");
     expect(getProtocolDefaultIconKey("winrm")).toBe("server");
     expect(getProtocolDefaultIconKey("ard")).toBe("eye");
     expect(getProtocolDefaultIconKey("postgresql")).toBe("database");
+    expect(getProtocolDefaultIconKey("spice")).toBe("monitor");
+    expect(getProtocolDefaultIconKey("xdmcp")).toBe("monitor");
+    expect(getProtocolDefaultIconKey("x2go")).toBe("monitor");
+    expect(getProtocolDefaultIconKey("nx")).toBe("monitor");
+  });
+
+  it("initializes native display handoffs with only supported safe defaults", () => {
+    expect(
+      normalizeAdvancedProtocolConnection(
+        connection({
+          protocol: "spice",
+          port: 0,
+          spiceAllowSelfSigned: true,
+          spiceShareClipboard: false,
+        }),
+      ),
+    ).toMatchObject({
+      port: 5900,
+      spiceAllowSelfSigned: false,
+      spiceShareClipboard: true,
+    });
+    expect(
+      normalizeAdvancedProtocolConnection(
+        connection({
+          protocol: "xdmcp",
+          port: 0,
+          xdmcpColorDepth: 8,
+          password: "must-be-cleared",
+        }),
+      ),
+    ).toMatchObject({
+      port: 177,
+      xdmcpColorDepth: 24,
+      xdmcpAcknowledgeInsecureTransport: false,
+    });
+    expect(
+      normalizeAdvancedProtocolConnection(
+        connection({ protocol: "x2go", port: 0, password: "must-be-cleared" }),
+      ),
+    ).toMatchObject({ port: 22, x2goSessionType: "Xfce" });
+    expect(
+      normalizeAdvancedProtocolConnection(
+        connection({ protocol: "nx", port: 0, password: "must-be-cleared" }),
+      ),
+    ).toMatchObject({
+      port: 4000,
+      nxConnectionService: "nx",
+      nxClipboardEnabled: true,
+    });
   });
 });
