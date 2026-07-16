@@ -24,14 +24,14 @@ pub async fn get_anydesk_session(
     session_id: String,
     anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<Option<AnyDeskSession>, String> {
-    let service = anydesk_service.lock().await;
-    Ok(service.get_anydesk_session(&session_id))
+    let mut service = anydesk_service.lock().await;
+    service.get_anydesk_session(&session_id)
 }
 
 #[tauri::command]
 pub async fn list_anydesk_sessions(
     anydesk_service: tauri::State<'_, AnyDeskServiceState>,
 ) -> Result<Vec<AnyDeskSession>, String> {
-    let service = anydesk_service.lock().await;
-    Ok(service.get_anydesk_sessions().await)
+    let mut service = anydesk_service.lock().await;
+    service.get_anydesk_sessions()
 }

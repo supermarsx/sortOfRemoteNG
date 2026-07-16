@@ -24,6 +24,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
     isLaunching,
     isDisconnecting,
     error,
+    processStatusMessage,
     canLaunch,
     launch,
     disconnect,
@@ -58,10 +59,10 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
         </div>
         <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs text-[var(--color-textSecondary)]">
           <span
-            className={`h-2 w-2 rounded-full ${backendSession?.connected ? "bg-success" : launchMode === "external" ? "bg-warning" : "bg-[var(--color-textMuted)]"}`}
+            className={`h-2 w-2 rounded-full ${backendSession?.process_running ? "bg-warning" : launchMode === "external" ? "bg-warning" : "bg-[var(--color-textMuted)]"}`}
           />
-          {backendSession?.connected
-            ? "Managed session active"
+          {backendSession?.process_running
+            ? "Local process running"
             : launchMode === "external"
               ? "External handoff"
               : "Ready to launch"}
@@ -97,7 +98,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
               </div>
               <p className="text-sm text-[var(--color-textSecondary)]">
                 {launchMode === "managed"
-                  ? "Managed backend session"
+                  ? "Tracked native launcher"
                   : launchMode === "external"
                     ? "External URL handoff"
                     : "Idle"}
@@ -109,8 +110,8 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
                 Session State
               </div>
               <p className="text-sm text-[var(--color-textSecondary)]">
-                {backendSession?.connected
-                  ? "Connected"
+                {backendSession?.process_running
+                  ? "Native client open"
                   : backendSession || session.backendSessionId
                     ? "Registered"
                     : "Not started"}
@@ -121,7 +122,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
           {backendSession && (
             <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 text-left text-sm text-[var(--color-textSecondary)]">
               <div className="mb-2 font-medium text-[var(--color-text)]">
-                Managed Session Details
+                Launcher Process Details
               </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <div>
@@ -143,9 +144,9 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
                   </span>
                 </div>
                 <div>
-                  Password sent:{" "}
+                  Remote authentication:{" "}
                   <span className="text-[var(--color-text)]">
-                    {backendSession.password ? "Yes" : "No"}
+                    Native client owned
                   </span>
                 </div>
               </div>
@@ -161,8 +162,8 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
               <ExternalLink className="mr-2 h-5 w-5" />
               {isLaunching
                 ? "Launching AnyDesk..."
-                : backendSession?.connected
-                  ? "Reconnect AnyDesk"
+                : backendSession?.process_running
+                  ? "Relaunch AnyDesk"
                   : "Launch AnyDesk"}
             </button>
             <button
@@ -197,10 +198,16 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
             </div>
           )}
 
+          {processStatusMessage && (
+            <div className="mt-6 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-[var(--color-textSecondary)]">
+              {processStatusMessage}
+            </div>
+          )}
+
           <div className="mt-6 grid gap-2 text-left text-xs text-[var(--color-textMuted)] md:grid-cols-2">
             <p>
-              Native launches use the Tauri command bridge and can track a
-              backend session ID for cleanup.
+              Native launches track only the local launcher process for status
+              and cleanup; they never prove remote authentication.
             </p>
             <p>
               If native launch fails, the client falls back to the URL scheme so

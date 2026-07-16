@@ -5,6 +5,7 @@ import {
   useSessionManager,
   usesGenericSessionTimer,
 } from "../../src/hooks/session/useSessionManager";
+import { PROTOCOL_OPTIONS } from "../../src/hooks/connection/useConnectionEditor";
 import type {
   Connection,
   ConnectionSession,
@@ -113,21 +114,9 @@ describe("useSessionManager settings effects", () => {
   });
 
   it("keeps real protocol clients out of the simulated timer/metrics path", () => {
-    expect(usesGenericSessionTimer("raw")).toBe(false);
-    expect(usesGenericSessionTimer("rlogin")).toBe(false);
-    expect(usesGenericSessionTimer("telnet")).toBe(false);
-    expect(usesGenericSessionTimer("vnc")).toBe(false);
-    expect(usesGenericSessionTimer("sftp")).toBe(false);
-    expect(usesGenericSessionTimer("ftp")).toBe(false);
-    expect(usesGenericSessionTimer("scp")).toBe(false);
-    expect(usesGenericSessionTimer("mysql")).toBe(false);
-    expect(usesGenericSessionTimer("postgresql")).toBe(false);
-    expect(usesGenericSessionTimer("spice")).toBe(false);
-    expect(usesGenericSessionTimer("xdmcp")).toBe(false);
-    expect(usesGenericSessionTimer("x2go")).toBe(false);
-    expect(usesGenericSessionTimer("nx")).toBe(false);
-    expect(usesGenericSessionTimer("smb")).toBe(false);
-    expect(usesGenericSessionTimer("rustdesk")).toBe(false);
+    for (const option of PROTOCOL_OPTIONS) {
+      expect(usesGenericSessionTimer(option.value), option.value).toBe(false);
+    }
   });
 
   it("fails closed for unsupported and management-only protocols", () => {
@@ -136,7 +125,7 @@ describe("useSessionManager settings effects", () => {
     expect(getUnsupportedDirectSessionMessage("x2go")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("nx")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("ilo")).toMatch(
-      /management panel/i,
+      /management-only.*no registered interactive saved-connection route/i,
     );
     expect(getUnsupportedDirectSessionMessage("unknown-protocol")).toMatch(
       /no registered frontend session runtime/i,
@@ -145,8 +134,19 @@ describe("useSessionManager settings effects", () => {
   });
 
   it.each([
+    ["ssh", "disconnect_ssh"],
+    ["ard", "disconnect_ard"],
+    ["serial", "serial_disconnect"],
+    ["raw", "disconnect_raw_socket"],
+    ["rlogin", "disconnect_rlogin"],
+    ["winrm", "close_powershell_session"],
+    ["telnet", "disconnect_telnet"],
+    ["sftp", "sftp_disconnect"],
     ["ftp", "ftp_disconnect"],
     ["scp", "scp_disconnect"],
+    ["anydesk", "disconnect_anydesk"],
+    ["rustdesk", "rustdesk_disconnect"],
+    ["smb", "smb_disconnect"],
     ["postgresql", "pg_disconnect"],
     ["spice", "disconnect_spice"],
     ["xdmcp", "disconnect_xdmcp"],

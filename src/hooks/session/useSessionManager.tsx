@@ -820,6 +820,16 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "anydesk" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_anydesk", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to stop AnyDesk launcher process:", error);
+      }
+    }
+
     if (session.protocol === "rustdesk" && session.backendSessionId) {
       try {
         await invoke("rustdesk_disconnect", {

@@ -585,7 +585,7 @@ mod tests {
             .unwrap();
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
-        assert!(result.as_array().unwrap().len() > 0);
+        assert!(!result.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
