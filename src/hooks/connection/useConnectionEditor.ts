@@ -119,6 +119,13 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "blue",
   },
   {
+    value: "serial",
+    label: "Serial / RS-232",
+    desc: "Local COM or tty terminal",
+    icon: Cable,
+    color: "cyan",
+  },
+  {
     value: "raw",
     label: "Raw Socket",
     desc: "TCP / UDP Payload Client",

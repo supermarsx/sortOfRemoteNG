@@ -16,6 +16,7 @@ const mockState = vi.hoisted(() => ({
   rawSocketClientProps: vi.fn(),
   rloginClientProps: vi.fn(),
   ardClientProps: vi.fn(),
+  serialClientProps: vi.fn(),
   telnetClientProps: vi.fn(),
   vncClientProps: vi.fn(),
   sftpClientProps: vi.fn(),
@@ -97,6 +98,13 @@ vi.mock("../../src/components/protocol/ArdClient", () => ({
   ArdClient: (props: any) => {
     mockState.ardClientProps(props);
     return <div data-testid="mock-ard-client">ARD Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/SerialClient", () => ({
+  SerialClient: (props: any) => {
+    mockState.serialClientProps(props);
+    return <div data-testid="mock-serial-client">Serial Client</div>;
   },
 }));
 
@@ -328,6 +336,7 @@ describe("SessionViewer", () => {
 
   it.each([
     ["ard", "mock-ard-client"],
+    ["serial", "mock-serial-client"],
     ["telnet", "mock-telnet-client"],
     ["vnc", "mock-vnc-client"],
     ["sftp", "mock-sftp-client"],

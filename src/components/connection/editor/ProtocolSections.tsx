@@ -7,6 +7,7 @@ import HTTPOptions from "../../connectionEditor/HTTPOptions";
 import RDPOptions from "../../connectionEditor/RDPOptions";
 import RloginOptions from "../../connectionEditor/RloginOptions";
 import SavedProtocolOptions from "../../connectionEditor/SavedProtocolOptions";
+import { SerialOptions } from "../../connectionEditor/SerialOptions";
 import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
 import { PowerShellRemotingEditor } from "../../connectionEditor/powerShellRemoting/PowerShellRemotingEditor";
 import RecoveryInfoSection from "../../connectionEditor/RecoveryInfoSection";
@@ -62,6 +63,22 @@ const ProtocolSubtabContent: React.FC<{
           : "connection";
     return (
       <ARDOptions
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        sections={[section]}
+      />
+    );
+  }
+
+  if (protocol === "serial") {
+    const section =
+      subtabId === "terminal"
+        ? "terminal"
+        : subtabId === "advanced"
+          ? "advanced"
+          : "connection";
+    return (
+      <SerialOptions
         formData={mgr.formData}
         setFormData={mgr.setFormData}
         sections={[section]}

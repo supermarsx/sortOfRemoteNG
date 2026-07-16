@@ -14,6 +14,7 @@ export * from "./useSpiceClient";
 export * from "./useX2goClient";
 export * from "./useArdClient";
 export * from "./useTelnetSession";
+export * from "./useSerialSession";
 export * from "./useNxClient";
 export * from "./useXdmcpClient";
 export * from "./useMacClient";

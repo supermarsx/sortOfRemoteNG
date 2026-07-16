@@ -18,6 +18,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   rdp: "monitor",
   ssh: "terminal",
   ard: "eye",
+  serial: "cable",
   vnc: "eye",
   anydesk: "monitor",
   http: "globe",

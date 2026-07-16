@@ -164,6 +164,10 @@ export function getProtocolSubtabs(
     ]);
   }
 
+  if (protocol === "serial") {
+    return selectSubtabs(["connection", "terminal", "advanced"]);
+  }
+
   if (protocol === "sftp") {
     return selectSubtabs(["authentication", "recovery"]);
   }

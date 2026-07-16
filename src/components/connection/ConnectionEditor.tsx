@@ -1152,7 +1152,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   if (isIntegrationConnectionProtocol(p)) {
     return <IntegrationConnectionFields mgr={mgr} />;
   }
-  if (p === "rustdesk") return null;
+  if (p === "rustdesk" || p === "serial") return null;
 
   return (
     <div className="space-y-2">

@@ -750,6 +750,16 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "serial" && session.backendSessionId) {
+      try {
+        await invoke("serial_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect Serial session:", error);
+      }
+    }
+
     if (session.protocol === "rlogin" && session.backendSessionId) {
       try {
         await invoke("disconnect_rlogin", {

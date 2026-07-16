@@ -4,6 +4,7 @@ import {
   normalizeRawSocketSettings,
 } from "../../types/protocols/rawSocket";
 import { normalizeArdSettings } from "../../types/protocols/ard";
+import { normalizeSerialSettings } from "../../types/protocols/serial";
 import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowerShellRemoting";
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
 
@@ -66,6 +67,15 @@ export function normalizeAdvancedProtocolConnection(
   }
 
   if (
+    input.serialSettings !== undefined ||
+    (canInitialize && protocol === "serial")
+  ) {
+    next.serialSettings = normalizeSerialSettings(
+      input.serialSettings ?? { portName: input.hostname },
+    );
+  }
+
+  if (
     input.rloginSettings !== undefined ||
     (canInitialize && protocol === "rlogin")
   ) {
@@ -89,7 +99,11 @@ export function normalizeAdvancedProtocolConnection(
       normalizePowerShellRemotingSettings(legacySeed).settings;
   }
 
-  if (protocol === "raw" || protocol === "rlogin") {
+  if (protocol === "raw" || protocol === "rlogin" || protocol === "serial") {
+    if (protocol === "serial" && next.serialSettings) {
+      next.hostname = next.serialSettings.portName;
+      next.port = 0;
+    }
     next.username = undefined;
     next.password = undefined;
     next.domain = undefined;

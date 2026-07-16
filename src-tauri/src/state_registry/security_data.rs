@@ -1,6 +1,11 @@
 use super::*;
+use sorng_core::events::DynEventEmitter;
 
-pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
+pub(crate) fn register(
+    app: &mut tauri::App<tauri::Wry>,
+    app_dir: &std::path::Path,
+    emitter: DynEventEmitter,
+) {
     let cert_auth_service = CertAuthService::new("certificates.db".to_string());
     app.manage(cert_auth_service.clone());
 
@@ -37,7 +42,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let telnet_service = TelnetService::new();
     app.manage(telnet_service.clone());
 
-    let serial_service = SerialService::new();
+    let serial_service = SerialService::new_with_emitter(emitter);
     app.manage(serial_service.clone());
 
     let rlogin_service = RloginService::new();

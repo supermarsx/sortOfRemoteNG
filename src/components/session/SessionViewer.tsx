@@ -54,6 +54,11 @@ const TelnetClient = dynamic(
     import("../protocol/TelnetClient").then((module) => module.TelnetClient),
   { ssr: false },
 );
+const SerialClient = dynamic(
+  () =>
+    import("../protocol/SerialClient").then((module) => module.SerialClient),
+  { ssr: false },
+);
 const MySQLClient = dynamic(
   () => import("../protocol/MySQLClient").then((module) => module.MySQLClient),
   { ssr: false },
@@ -226,6 +231,15 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <ArdClient session={session} />;
+    }
+
+    if (
+      session.protocol === "serial" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <SerialClient session={session} />;
     }
 
     if (

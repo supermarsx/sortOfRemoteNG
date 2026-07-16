@@ -245,7 +245,15 @@ export const CONNECTION_ICON_CATALOG = [
   ]),
   defineIcon("router", "Router", "network", Router, ["gateway", "appliance"]),
   defineIcon("wifi", "Wireless", "network", Wifi, ["wifi", "wlan"]),
-  defineIcon("cable", "Wired network", "network", Cable, ["ethernet", "wired"]),
+  defineIcon("cable", "Wired connection", "network", Cable, [
+    "ethernet",
+    "wired",
+    "serial",
+    "rs-232",
+    "com port",
+    "tty",
+    "console cable",
+  ]),
   defineIcon("waypoints", "Route", "network", Waypoints, [
     "proxy",
     "traefik",

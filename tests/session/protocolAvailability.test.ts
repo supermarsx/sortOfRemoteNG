@@ -52,18 +52,10 @@ describe("protocol availability contract", () => {
     for (const option of PROTOCOL_OPTIONS) {
       const availability = getProtocolAvailability(option.value);
       expect(availability, option.value).toBeDefined();
-      if (option.value === "serial") {
-        expect(availability?.sessionEntry).toBe("none");
-        expect(availability?.classification).toBe("genuinely-unsupported");
-        expect(getDirectSessionUnavailableMessage(option.value)).toMatch(
-          /no frontend viewer/i,
-        );
-      } else {
-        expect(availability?.sessionEntry, option.value).toBe("client-owned");
-        expect(availability?.classification, option.value).not.toBe(
-          "genuinely-unsupported",
-        );
-      }
+      expect(availability?.sessionEntry, option.value).toBe("client-owned");
+      expect(availability?.classification, option.value).not.toBe(
+        "genuinely-unsupported",
+      );
     }
   });
 
@@ -85,7 +77,7 @@ describe("protocol availability contract", () => {
   });
 
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
-    for (const protocol of ["ftp", "scp", "serial", "spice", "x2go"]) {
+    for (const protocol of ["ftp", "scp", "spice", "x2go"]) {
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
         /does not have a wired direct session runtime/i,
       );

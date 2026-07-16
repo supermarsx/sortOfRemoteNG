@@ -56,7 +56,7 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     sessionEntry: "client-owned",
     frontendPath: "src/components/rdp/RDPClient.tsx",
     backendPath: "src-tauri/crates/sorng-rdp",
-    testPath: "tests/session/SessionViewer.test.tsx",
+    testPath: "src/hooks/protocol/useSerialSession.test.tsx",
     detail: "The RDP client owns connect, render, input, detach, and close.",
   }),
   ssh: capability({
@@ -80,13 +80,13 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   serial: capability({
     label: "Serial",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/SerialClient.tsx",
     backendPath: "src-tauri/crates/sorng-serial",
-    testPath: null,
+    testPath: "tests/session/SessionViewer.test.tsx",
     detail:
-      "Native commands and persisted settings exist, but no frontend viewer, invoke hook, or event consumer is registered.",
+      "The terminal owns native port enumeration, connect, byte streaming, line controls, reconnect status, and disconnect.",
   }),
   vnc: capability({
     label: "VNC",

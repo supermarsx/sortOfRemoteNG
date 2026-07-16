@@ -101,6 +101,17 @@ vi.mock("../../connectionEditor/ARDOptions", () => ({
   ),
 }));
 
+vi.mock("../../connectionEditor/SerialOptions", () => ({
+  SerialOptions: ({ sections }: any) => (
+    <div
+      data-testid="serial-options"
+      data-sections={sections?.join(",") ?? "all"}
+    >
+      Serial: {sections?.join(",") ?? "all"}
+    </div>
+  ),
+}));
+
 vi.mock("../../connectionEditor/SavedProtocolOptions", () => ({
   default: ({ formData, section }: any) => (
     <div
@@ -254,6 +265,11 @@ describe("ProtocolSections", () => {
       "display-input",
       "recovery",
     ]);
+    expect(idsFor({ protocol: "serial" })).toEqual([
+      "connection",
+      "terminal",
+      "advanced",
+    ]);
     expect(idsFor({ protocol: "sftp" })).toEqual([
       "authentication",
       "recovery",
@@ -374,6 +390,25 @@ describe("ProtocolSections", () => {
     expect(screen.getByTestId("powershell-options")).toHaveAttribute(
       "data-sections",
       "ssh,session,windows-tools",
+    );
+  });
+
+  it("mounts Serial settings on connection, terminal, and advanced subtabs", () => {
+    render(<Harness initial={{ protocol: "serial", isGroup: false }} />);
+
+    expect(screen.getByTestId("serial-options")).toHaveAttribute(
+      "data-sections",
+      "connection",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Terminal" }));
+    expect(screen.getByTestId("serial-options")).toHaveAttribute(
+      "data-sections",
+      "terminal",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+    expect(screen.getByTestId("serial-options")).toHaveAttribute(
+      "data-sections",
+      "advanced",
     );
   });
 

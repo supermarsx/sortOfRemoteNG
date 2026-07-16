@@ -12,6 +12,8 @@ export const DEFAULT_PORTS: Record<string, number> = {
   rdp: 3389,
   ssh: 22,
   ard: 5900,
+  // Serial is a local COM/tty device, not a TCP endpoint.
+  serial: 0,
   vnc: 5900,
   http: 80,
   https: 443,

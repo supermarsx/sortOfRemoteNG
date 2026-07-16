@@ -238,11 +238,17 @@ impl SessionRunner {
                 Some(cmd) = cmd_rx.recv() => {
                     match cmd {
                         SessionCommand::SendRaw(data) => {
-                            if let Err(e) = self.handle_send_raw(&data).await {
-                                let _ = self.event_tx.send(SessionEvent::Error {
-                                    message: e,
-                                    recoverable: true,
-                                }).await;
+                            match self.handle_send_raw(&data).await {
+                                Ok(()) if self.config.local_echo => {
+                                    let _ = self.event_tx.send(SessionEvent::Echo(data)).await;
+                                }
+                                Ok(()) => {}
+                                Err(e) => {
+                                    let _ = self.event_tx.send(SessionEvent::Error {
+                                        message: e,
+                                        recoverable: true,
+                                    }).await;
+                                }
                             }
                         }
                         SessionCommand::SendLine(line) => {
@@ -464,11 +470,55 @@ mod tests {
         let tx_data = t.drain_tx().await;
         assert_eq!(tx_data, b"hello");
 
+        let mut rx = handle.event_rx.lock().await;
+        let echo_count = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|event| matches!(event, SessionEvent::Echo(_)))
+            .count();
+        drop(rx);
+        assert_eq!(echo_count, 0, "local echo is disabled by default");
+
         handle
             .send_command(SessionCommand::Disconnect)
             .await
             .unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_session_send_raw_emits_one_echo_after_successful_write() {
+        let transport = SimulatedTransport::new("COM1");
+        let config = SerialConfig {
+            port_name: "COM1".to_string(),
+            local_echo: true,
+            ..Default::default()
+        };
+        let t = transport.clone();
+        let handle = create_session("sess-raw-echo".to_string(), transport, config)
+            .await
+            .unwrap();
+
+        handle
+            .send_command(SessionCommand::SendRaw(b"hello".to_vec()))
+            .await
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // The runner emits Echo only from the successful write branch.
+        assert_eq!(t.drain_tx().await, b"hello");
+        let mut rx = handle.event_rx.lock().await;
+        let echoes: Vec<Vec<u8>> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|event| match event {
+                SessionEvent::Echo(data) => Some(data),
+                _ => None,
+            })
+            .collect();
+        drop(rx);
+        assert_eq!(echoes, vec![b"hello".to_vec()]);
+
+        handle
+            .send_command(SessionCommand::Disconnect)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

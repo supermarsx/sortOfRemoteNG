@@ -265,6 +265,57 @@ describe("connection editor search index", () => {
     ).toMatchObject({ protocolSubtabId: "authentication" });
   });
 
+  it("indexes Serial framing, terminal, and driver settings on exact subtabs", () => {
+    const serialIndex = buildIndex({
+      isGroup: false,
+      protocol: "serial",
+      hostname: "COM9",
+      serialSettings: {
+        version: 1,
+        portName: "COM9",
+        baudRate: 115200,
+        dataBits: "8",
+        parity: "even",
+        stopBits: "1",
+        flowControl: "rtsCts",
+        readTimeoutMs: 100,
+        writeTimeoutMs: 1000,
+        rxBufferSize: 4096,
+        txBufferSize: 4096,
+        dtrOnOpen: true,
+        rtsOnOpen: true,
+        lineEnding: "crLf",
+        charDelayMs: 0,
+        localEcho: false,
+      },
+    });
+
+    expect(searchConnectionEditorIndex(serialIndex, "COM9")[0]).toMatchObject({
+      fieldId: "serial-device",
+      protocolSubtabId: "connection",
+    });
+    expect(searchConnectionEditorIndex(serialIndex, "115200")[0]).toMatchObject(
+      {
+        fieldId: "serial-baud-rate",
+        protocolSubtabId: "connection",
+      },
+    );
+    expect(
+      searchConnectionEditorIndex(serialIndex, "CRLF").find(
+        (entry) => entry.fieldId === "serial-line-ending",
+      ),
+    ).toMatchObject({ protocolSubtabId: "terminal" });
+    expect(
+      searchConnectionEditorIndex(serialIndex, "receive buffer").find(
+        (entry) => entry.fieldId === "serial-buffers",
+      ),
+    ).toMatchObject({ protocolSubtabId: "advanced" });
+    expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("hostname");
+    expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("port");
+    expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("username");
+    expect(serialIndex.map((entry) => entry.fieldId)).not.toContain("password");
+  });
+
   it("indexes ARD and saved-protocol settings on their truthful subtabs", () => {
     const ardIndex = buildIndex({
       isGroup: false,

@@ -451,8 +451,8 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
         app.manage(opkssh_state);
     }
 
-    let api_handles = connectivity::register(app, ssh_service.clone(), emitter);
-    security_data::register(app, &app_dir);
+    let api_handles = connectivity::register(app, ssh_service.clone(), emitter.clone());
+    security_data::register(app, &app_dir, emitter);
 
     access::register(app);
 
