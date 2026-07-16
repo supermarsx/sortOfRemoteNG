@@ -87,9 +87,16 @@ const ProtocolSubtabContent: React.FC<{
   }
 
   if (
-    ["telnet", "ftp", "sftp", "scp", "mysql", "smb", "rustdesk"].includes(
-      protocol,
-    )
+    [
+      "telnet",
+      "ftp",
+      "sftp",
+      "scp",
+      "mysql",
+      "postgresql",
+      "smb",
+      "rustdesk",
+    ].includes(protocol)
   ) {
     return (
       <SavedProtocolOptions

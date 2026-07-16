@@ -135,14 +135,33 @@ describe("advanced protocol connection integration", () => {
     expect(normalized.rloginSettings).toBeUndefined();
   });
 
+  it("canonicalizes the legacy postgres alias for saved query sessions", () => {
+    const normalized = normalizeAdvancedProtocolConnection(
+      connection({
+        protocol: "postgres" as Connection["protocol"],
+        port: 5432,
+        database: "inventory",
+      }),
+    );
+
+    expect(normalized).toMatchObject({
+      protocol: "postgresql",
+      port: 5432,
+      database: "inventory",
+    });
+    expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+  });
+
   it("publishes stable picker defaults for all advanced protocol families", () => {
     expect(getDefaultPort("raw")).toBe(23);
     expect(getDefaultPort("rlogin")).toBe(513);
     expect(getDefaultPort("winrm")).toBe(5985);
     expect(getDefaultPort("ard")).toBe(5900);
+    expect(getDefaultPort("postgresql")).toBe(5432);
     expect(getProtocolDefaultIconKey("raw")).toBe("cable");
     expect(getProtocolDefaultIconKey("rlogin")).toBe("phone");
     expect(getProtocolDefaultIconKey("winrm")).toBe("server");
     expect(getProtocolDefaultIconKey("ard")).toBe("eye");
+    expect(getProtocolDefaultIconKey("postgresql")).toBe("database");
   });
 });

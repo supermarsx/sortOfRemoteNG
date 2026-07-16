@@ -37,15 +37,15 @@ The project is under active development. Features that depend on an external ser
 
 ## What works today
 
-| Area            | Current capability                                                                                                                                                                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk and RustDesk |
-| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                |
-| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                |
-| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                  |
-| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                      |
-| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                      |
-| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                        |
+| Area            | Current capability                                                                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Remote sessions | Embedded SSH, RDP, ARD, PowerShell Remoting, Telnet, Raw Socket, RLogin, Serial, HTTP/HTTPS, MySQL, PostgreSQL, and SMB clients; constrained VNC; installed-client handoffs for AnyDesk and RustDesk |
+| Files           | Native SFTP, passive FTP/FTPS, and SCP sessions with saved authentication, directory browsing, and direct file operations                                                                            |
+| Workspace       | Collections, folders, tags, favorites, tab groups, tiled layouts, detached windows, and connection search                                                                                            |
+| Portability     | Guided import, export, and connection cloning workflows, including mRemoteNG-oriented migration support                                                                                              |
+| Operations      | Network discovery, connection diagnostics, Wake-on-LAN, status checks, SSH utilities, and Windows management panels                                                                                  |
+| Automation      | Saved scripts, macros, recordings, reconnect policies, notifications, and connection behavior rules                                                                                                  |
+| Extensibility   | Integration panels, optional AI providers, and an opt-in local REST API for controlled automation                                                                                                    |
 
 ### Capability boundaries
 
@@ -54,6 +54,7 @@ The saved-session matrix is source-backed and tested, but “supported” still 
 - **Raw Socket**, **RLogin**, **PowerShell Remoting**, **ARD**, **Telnet**, and **Serial** now have dedicated interactive clients. Raw Socket supplies exact binary TCP/UDP payload I/O rather than a shell; Telnet and RLogin are plaintext; and Serial depends on a local device, its driver, and operating-system permissions.
 - Embedded **ARD** uses a remote Mac account or dedicated VNC password. Apple Account mode is a macOS-only handoff to Screen Sharing.app; sortOfRemoteNG does not collect or send the Apple Account password.
 - **FTP/FTPS**, **SFTP**, **SCP**, **MySQL/MariaDB**, and **SMB** connect from saved settings before their file or query surfaces load. FTP and SCP currently support direct targets only; the current MySQL backend is process-wide, so independent concurrent MySQL tabs are not yet isolated.
+- **PostgreSQL** opens an isolated native query session with catalog browsing, SQL query/statement results, explicit SSL modes, CA and mutual-TLS certificate paths, and deterministic disconnect. It currently supports direct targets only and rejects configured proxy, VPN, SSH-hop, or tunnel-chain routes before credentials are sent.
 - **VNC** requires a WebSocket-capable endpoint or trusted WebSocket proxy because the app does not provide a raw-TCP RFB bridge.
 - **AnyDesk** and **RustDesk** are installed-client handoffs. The app launches and monitors the native client; it does not embed either product's framebuffer.
 - **FTP/FTPS** supports passive PASV/EPSV sessions; active mode, routes, queue execution, resume, and live progress are not exposed. **SCP** enforces its host-key policy and known_hosts path, while routes, interactive host-key prompts, cancellation/progress, resume, and agent authentication remain unavailable. Both fail closed for configured proxy/VPN/tunnel routes.

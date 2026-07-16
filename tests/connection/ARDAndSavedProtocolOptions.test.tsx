@@ -245,4 +245,85 @@ describe("SavedProtocolOptions", () => {
       '"hostname":"123 456 789"',
     );
   });
+
+  it("persists PostgreSQL database credentials only in protocol-owned fields", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "postgresql", isGroup: false }}
+        section="connection"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Default database"), {
+      target: { value: "analytics" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"database":"analytics"',
+    );
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "postgresql", isGroup: false }}
+        section="authentication"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "report_reader" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "postgres-secret" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"username":"report_reader"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"password":"postgres-secret"',
+    );
+  });
+
+  it("persists PostgreSQL SSL and timeout settings with truthful direct-route copy", () => {
+    const { rerender } = render(
+      <SavedHarness
+        initial={{ protocol: "postgresql", isGroup: false }}
+        section="security"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("combobox", { name: "SSL mode" }));
+    fireEvent.mouseDown(
+      screen.getByRole("option", { name: "Verify CA and hostname" }),
+    );
+    fireEvent.change(screen.getByLabelText("CA certificate path"), {
+      target: { value: "C:\\certs\\postgres-root.pem" },
+    });
+    fireEvent.change(screen.getByLabelText("Client certificate path"), {
+      target: { value: "C:\\certs\\client.pem" },
+    });
+    fireEvent.change(screen.getByLabelText("Client key path"), {
+      target: { value: "C:\\certs\\client-key.pem" },
+    });
+
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"postgresSslMode":"verify-full"',
+    );
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"postgresCaCertificatePath":"C:\\\\certs\\\\postgres-root.pem"',
+    );
+
+    rerender(
+      <SavedHarness
+        initial={{ protocol: "postgresql", isGroup: false }}
+        section="advanced"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Connect timeout (seconds)"), {
+      target: { value: "25" },
+    });
+    expect(screen.getByTestId("saved-state")).toHaveTextContent(
+      '"postgresConnectionTimeoutSecs":25',
+    );
+    expect(
+      screen.getByText(/rejected before credentials are sent/i),
+    ).toBeInTheDocument();
+  });
 });

@@ -182,6 +182,16 @@ export function getProtocolSubtabs(
     ]);
   }
 
+  if (protocol === "postgresql") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+      "recovery",
+    ]);
+  }
+
   if (["telnet", "mysql", "smb", "rustdesk"].includes(protocol)) {
     return selectSubtabs(["connection", "recovery"]);
   }

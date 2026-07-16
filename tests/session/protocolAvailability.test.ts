@@ -22,6 +22,7 @@ const BUILT_IN_PROTOCOLS = [
   "raw",
   "rlogin",
   "mysql",
+  "postgresql",
   "ftp",
   "sftp",
   "scp",
@@ -101,6 +102,18 @@ describe("protocol availability contract", () => {
       expect(availability?.testPath, protocol).toMatch(/\.test\.tsx$/);
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toBeNull();
     }
+  });
+
+  it("records the isolated direct PostgreSQL query runtime", () => {
+    const availability = getProtocolAvailability("postgresql");
+    expect(availability?.classification).toBe("fully-interactive");
+    expect(availability?.sessionEntry).toBe("client-owned");
+    expect(availability?.frontendPath).toBe(
+      "src/components/protocol/PostgreSQLClient.tsx",
+    );
+    expect(availability?.testPath).toMatch(/usePostgreSQLClient\.test\.tsx$/);
+    expect(getProtocolAvailability("postgres")).toBe(availability);
+    expect(getDirectSessionUnavailableMessage("postgresql")).toBeNull();
   });
 
   it("keeps the non-persisted client audit list represented", () => {

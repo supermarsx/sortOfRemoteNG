@@ -10,7 +10,6 @@ export const ADDITIONAL_AUDITED_PROTOCOLS = [
   "xdmcp",
   "mac",
   "ipmi",
-  "postgresql",
   "k8s",
 ] as const;
 
@@ -163,6 +162,16 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
     testPath: "tests/protocol/useMySQLClient.test.ts",
     detail:
       "The query workbench connects from the saved connection before loading schemas; the backend currently exposes one process-wide database connection.",
+  }),
+  postgresql: capability({
+    label: "PostgreSQL",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/protocol/PostgreSQLClient.tsx",
+    backendPath: "src-tauri/crates/sorng-postgres",
+    testPath: "src/hooks/protocol/usePostgreSQLClient.test.tsx",
+    detail:
+      "The native query workbench owns an isolated direct database session with explicit SQLx SSL modes and certificate paths. Proxy, VPN, SSH-hop, and tunnel-chain routes fail closed.",
   }),
   ftp: capability({
     label: "FTP",
@@ -383,15 +392,6 @@ export const ADDITIONAL_PROTOCOL_AVAILABILITY = {
     testPath: null,
     detail:
       "IPMI exposes BMC management operations rather than a generic session viewer.",
-  }),
-  postgresql: capability({
-    label: "PostgreSQL",
-    classification: "genuinely-unsupported",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: "src-tauri/crates/sorng-postgres",
-    testPath: null,
-    detail: "A connection template exists without a direct session viewer.",
   }),
   k8s: capability({
     label: "Kubernetes",

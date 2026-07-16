@@ -27,6 +27,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   raw: "cable",
   rlogin: "phone",
   mysql: "database",
+  postgresql: "database",
   ftp: "folder",
   sftp: "folder",
   scp: "folder",

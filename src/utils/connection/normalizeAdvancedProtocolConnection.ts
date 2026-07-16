@@ -37,7 +37,9 @@ export function normalizeAdvancedProtocolConnection(
     sourceProtocol,
     input.rawSocketSettings,
   );
-  const protocol = rawMigration?.protocol ?? input.protocol;
+  const protocol =
+    rawMigration?.protocol ??
+    (sourceProtocol === "postgres" ? "postgresql" : input.protocol);
   const next: AdvancedProtocolConnectionInput = { ...input, protocol };
   const canInitialize = input.isGroup !== true;
 
@@ -97,6 +99,16 @@ export function normalizeAdvancedProtocolConnection(
       } as Record<string, unknown>);
     next.powerShellRemoting =
       normalizePowerShellRemotingSettings(legacySeed).settings;
+  }
+
+  if (canInitialize && protocol === "postgresql") {
+    next.port = input.port && input.port > 0 ? input.port : 5432;
+    next.username = input.username?.trim() || "postgres";
+    next.database = input.database?.trim() || "postgres";
+    next.postgresSslMode = input.postgresSslMode ?? "prefer";
+    next.postgresConnectionTimeoutSecs =
+      input.postgresConnectionTimeoutSecs ??
+      (input.timeout && input.timeout > 0 ? input.timeout : 10);
   }
 
   if (protocol === "raw" || protocol === "rlogin" || protocol === "serial") {

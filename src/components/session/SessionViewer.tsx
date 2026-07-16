@@ -71,6 +71,13 @@ const MySQLClient = dynamic(
   () => import("../protocol/MySQLClient").then((module) => module.MySQLClient),
   { ssr: false },
 );
+const PostgreSQLClient = dynamic(
+  () =>
+    import("../protocol/PostgreSQLClient").then(
+      (module) => module.PostgreSQLClient,
+    ),
+  { ssr: false },
+);
 const SMBClient = dynamic(
   () => import("../protocol/SMBClient").then((module) => module.SMBClient),
   { ssr: false },
@@ -356,6 +363,15 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
         session.status === "reconnecting")
     ) {
       return <MySQLClient session={session} />;
+    }
+
+    if (
+      session.protocol === "postgresql" &&
+      (session.status === "connecting" ||
+        session.status === "connected" ||
+        session.status === "reconnecting")
+    ) {
+      return <PostgreSQLClient session={session} />;
     }
 
     if (

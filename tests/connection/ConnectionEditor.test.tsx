@@ -105,6 +105,7 @@ vi.mock("../../src/utils/discovery/defaultPorts", () => ({
       telnet: 23,
       sftp: 22,
       mysql: 3306,
+      postgresql: 5432,
       smb: 445,
       rustdesk: 21116,
     };
@@ -296,6 +297,37 @@ describe("ConnectionEditor", () => {
       expect(screen.getByTestId("editor-protocol")).toHaveTextContent(/SSH/);
     });
 
+    it("owns PostgreSQL credentials and defaults in populated protocol subtabs", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      fireEvent.click(screen.getByRole("option", { name: /^PostgreSQL/i }));
+
+      expect(screen.getByTestId("editor-port")).toHaveValue(5432);
+      expect(screen.queryByTestId("editor-username")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-password")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("connection-editor-tab-protocol"));
+      expect(screen.getByLabelText("Default database")).toHaveValue("postgres");
+
+      fireEvent.click(screen.getByRole("tab", { name: "Authentication" }));
+      expect(screen.getByLabelText("Username")).toHaveValue("postgres");
+      expect(screen.getByLabelText("Password")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Security" }));
+      expect(
+        screen.getByRole("combobox", { name: "SSL mode" }),
+      ).toHaveTextContent(/Prefer/i);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+      expect(screen.getByLabelText("Connect timeout (seconds)")).toHaveValue(
+        10,
+      );
+      expect(
+        screen.getByText(/rejected before credentials are sent/i),
+      ).toBeInTheDocument();
+    });
+
     it("should search protocol names and descriptions, then select with the keyboard", async () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
@@ -366,6 +398,14 @@ describe("ConnectionEditor", () => {
       expect(
         screen.queryByRole("group", { name: "Integrations" }),
       ).not.toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: "postgres" } });
+      expect(
+        screen.getByRole("option", { name: /^PostgreSQL/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Protocols" }),
+      ).toBeInTheDocument();
     });
 
     it("finds Raw Socket, RLogin, and PowerShell Remoting with accurate defaults", () => {

@@ -121,6 +121,7 @@ describe("useSessionManager settings effects", () => {
     expect(usesGenericSessionTimer("ftp")).toBe(false);
     expect(usesGenericSessionTimer("scp")).toBe(false);
     expect(usesGenericSessionTimer("mysql")).toBe(false);
+    expect(usesGenericSessionTimer("postgresql")).toBe(false);
     expect(usesGenericSessionTimer("smb")).toBe(false);
     expect(usesGenericSessionTimer("rustdesk")).toBe(false);
   });
@@ -141,6 +142,7 @@ describe("useSessionManager settings effects", () => {
   it.each([
     ["ftp", "ftp_disconnect"],
     ["scp", "scp_disconnect"],
+    ["postgresql", "pg_disconnect"],
   ] as const)(
     "final-close owns the native %s disconnect and then removes the session",
     async (protocol, command) => {

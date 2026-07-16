@@ -848,6 +848,16 @@ export const useSessionManager = () => {
       }
     }
 
+    if (session.protocol === "postgresql" && session.backendSessionId) {
+      try {
+        await invoke("pg_disconnect", {
+          sessionId: session.backendSessionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect PostgreSQL session:", error);
+      }
+    }
+
     // Notify detached windows that this session has been closed from main window
     const isTauri =
       typeof window !== "undefined" &&

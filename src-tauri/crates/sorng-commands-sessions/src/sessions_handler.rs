@@ -816,3 +816,34 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // Hyper-V commands — Config / Module
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_command;
+
+    const POSTGRESQL_CLIENT_SOURCE: &str =
+        include_str!("../../../../src/hooks/protocol/usePostgreSQLClient.ts");
+    const SESSION_HANDLER_SOURCE: &str = include_str!("sessions_handler.rs");
+
+    #[test]
+    fn postgresql_client_commands_are_recognized_and_generated() {
+        let commands = POSTGRESQL_CLIENT_SOURCE
+            .split('"')
+            .filter(|value| value.starts_with("pg_"))
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(
+            commands.len(),
+            10,
+            "update this command-registration contract when the PostgreSQL client API changes"
+        );
+
+        for command in commands {
+            assert!(is_command(command), "{command} is missing from is_command");
+            assert!(
+                SESSION_HANDLER_SOURCE.contains(&format!("postgres_commands::{command},")),
+                "{command} is missing from tauri::generate_handler!"
+            );
+        }
+    }
+}

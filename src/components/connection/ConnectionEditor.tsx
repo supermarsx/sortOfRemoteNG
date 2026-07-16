@@ -1199,7 +1199,16 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           />
         </div>
       </div>
-      {!["ssh", "raw", "rlogin", "ard", "ftp", "sftp", "scp"].includes(p) && (
+      {![
+        "ssh",
+        "raw",
+        "rlogin",
+        "ard",
+        "ftp",
+        "sftp",
+        "scp",
+        "postgresql",
+      ].includes(p) && (
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">

@@ -175,6 +175,13 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     color: "blue",
   },
   {
+    value: "postgresql",
+    label: "PostgreSQL",
+    desc: "Native PostgreSQL query client",
+    icon: Database,
+    color: "blue",
+  },
+  {
     value: "smb",
     label: "SMB",
     desc: "Windows and Samba file shares",

@@ -24,6 +24,7 @@ const mockState = vi.hoisted(() => ({
   scpClientProps: vi.fn(),
   rustDeskClientProps: vi.fn(),
   mySqlClientProps: vi.fn(),
+  postgreSqlClientProps: vi.fn(),
   smbClientProps: vi.fn(),
 }));
 
@@ -156,6 +157,13 @@ vi.mock("../../src/components/protocol/MySQLClient", () => ({
   MySQLClient: (props: any) => {
     mockState.mySqlClientProps(props);
     return <div data-testid="mock-mysql-client">MySQL Client</div>;
+  },
+}));
+
+vi.mock("../../src/components/protocol/PostgreSQLClient", () => ({
+  PostgreSQLClient: (props: any) => {
+    mockState.postgreSqlClientProps(props);
+    return <div data-testid="mock-postgresql-client">PostgreSQL Client</div>;
   },
 }));
 
@@ -360,6 +368,7 @@ describe("SessionViewer", () => {
     ["scp", "mock-scp-client"],
     ["rustdesk", "mock-rustdesk-client"],
     ["mysql", "mock-mysql-client"],
+    ["postgresql", "mock-postgresql-client"],
     ["smb", "mock-smb-client"],
   ])(
     "mounts the %s protocol client while the real connection is pending",

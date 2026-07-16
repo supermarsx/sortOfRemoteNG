@@ -564,6 +564,239 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
     );
   }
 
+  if (protocol === "postgresql" && section === "connection") {
+    return (
+      <section
+        data-editor-search-section="postgresql-options"
+        className={cardClass}
+      >
+        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text)]">
+          <Database size={15} className="text-primary" />
+          Database target
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="postgresql-database"
+        >
+          <span className="sor-form-label">Default database</span>
+          <input
+            id="postgresql-database"
+            type="text"
+            value={formData.database ?? "postgres"}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                database: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0"
+            placeholder="postgres"
+          />
+        </label>
+        <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+          The native PostgreSQL workbench opens an isolated database session for
+          this tab.
+        </p>
+      </section>
+    );
+  }
+
+  if (protocol === "postgresql" && section === "authentication") {
+    return (
+      <section
+        data-editor-search-section="postgresql-options"
+        className={cardClass}
+      >
+        <label
+          className="block min-w-0"
+          data-editor-search-field="postgresql-username"
+        >
+          <span className="sor-form-label">Username</span>
+          <input
+            id="postgresql-username"
+            type="text"
+            value={formData.username ?? "postgres"}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                username: event.target.value,
+              }))
+            }
+            autoComplete="username"
+            className="sor-form-input-sm w-full min-w-0"
+            placeholder="postgres"
+          />
+        </label>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="postgresql-password"
+        >
+          <span className="sor-form-label">Password</span>
+          <PasswordInput
+            id="postgresql-password"
+            value={formData.password ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                password: event.target.value,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0"
+            autoComplete="current-password"
+          />
+        </label>
+      </section>
+    );
+  }
+
+  if (protocol === "postgresql" && section === "security") {
+    const sslMode = formData.postgresSslMode ?? "prefer";
+    return (
+      <section
+        data-editor-search-section="postgresql-options"
+        className={cardClass}
+      >
+        <div data-editor-search-field="postgresql-ssl-mode">
+          <Select
+            id="postgresql-ssl-mode"
+            label="SSL mode"
+            value={sslMode}
+            onChange={(postgresSslMode) =>
+              setFormData((previous) => ({
+                ...previous,
+                postgresSslMode: postgresSslMode as
+                  | "disable"
+                  | "allow"
+                  | "prefer"
+                  | "require"
+                  | "verify-ca"
+                  | "verify-full",
+              }))
+            }
+            options={[
+              { value: "disable", label: "Disable" },
+              { value: "allow", label: "Allow" },
+              { value: "prefer", label: "Prefer (default)" },
+              { value: "require", label: "Require encryption" },
+              { value: "verify-ca", label: "Verify CA" },
+              { value: "verify-full", label: "Verify CA and hostname" },
+            ]}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </div>
+        <label
+          className="block min-w-0"
+          data-editor-search-field="postgresql-ca-certificate"
+        >
+          <span className="sor-form-label">CA certificate path</span>
+          <input
+            id="postgresql-ca-certificate"
+            type="text"
+            value={formData.postgresCaCertificatePath ?? ""}
+            onChange={(event) =>
+              setFormData((previous) => ({
+                ...previous,
+                postgresCaCertificatePath: event.target.value || undefined,
+              }))
+            }
+            className="sor-form-input-sm w-full min-w-0 font-mono"
+            placeholder="Required only for Verify CA / Verify Full"
+          />
+        </label>
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+          <label
+            className="min-w-0"
+            data-editor-search-field="postgresql-client-certificate"
+          >
+            <span className="sor-form-label">Client certificate path</span>
+            <input
+              id="postgresql-client-certificate"
+              type="text"
+              value={formData.postgresClientCertificatePath ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  postgresClientCertificatePath:
+                    event.target.value || undefined,
+                }))
+              }
+              className="sor-form-input-sm w-full min-w-0 font-mono"
+              placeholder="Optional mTLS certificate"
+            />
+          </label>
+          <label
+            className="min-w-0"
+            data-editor-search-field="postgresql-client-key"
+          >
+            <span className="sor-form-label">Client key path</span>
+            <input
+              id="postgresql-client-key"
+              type="text"
+              value={formData.postgresClientKeyPath ?? ""}
+              onChange={(event) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  postgresClientKeyPath: event.target.value || undefined,
+                }))
+              }
+              className="sor-form-input-sm w-full min-w-0 font-mono"
+              placeholder="Required with a client certificate"
+            />
+          </label>
+        </div>
+        {["disable", "allow", "prefer"].includes(sslMode) && (
+          <div className="flex items-start gap-2 rounded-md border border-warning/35 bg-warning/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
+            This SSL mode can use an unencrypted connection. Choose Require or a
+            verification mode when transport confidentiality is mandatory.
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (protocol === "postgresql" && section === "advanced") {
+    return (
+      <section
+        data-editor-search-section="postgresql-options"
+        className={cardClass}
+      >
+        <label
+          className="block min-w-0"
+          data-editor-search-field="postgresql-connect-timeout"
+        >
+          <span className="sor-form-label">Connect timeout (seconds)</span>
+          <NumberInput
+            id="postgresql-connect-timeout"
+            value={
+              formData.postgresConnectionTimeoutSecs ?? formData.timeout ?? 10
+            }
+            onChange={(postgresConnectionTimeoutSecs) =>
+              setFormData((previous) => ({
+                ...previous,
+                postgresConnectionTimeoutSecs,
+              }))
+            }
+            min={1}
+            max={600}
+            variant="form-sm"
+            className="w-full min-w-0"
+          />
+        </label>
+        <div
+          data-editor-search-field="postgresql-direct-route"
+          className="flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/40 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]"
+        >
+          <ShieldCheck size={14} className="mt-0.5 shrink-0 text-primary" />
+          PostgreSQL currently supports direct connections only. A configured
+          proxy, VPN, SSH hop, or tunnel chain is rejected before credentials
+          are sent.
+        </div>
+      </section>
+    );
+  }
+
   if (protocol === "smb" && section === "connection") {
     return (
       <section data-editor-search-section="smb-options" className={cardClass}>

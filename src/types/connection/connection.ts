@@ -15,6 +15,7 @@ import type { ArdSettings } from "../protocols/ard";
 import type { SerialSettingsV1 } from "../protocols/serial";
 import type { PowerShellRemotingSettings } from "../powershellRemoting";
 import type { FtpSavedConnectionOptions } from "../ftp";
+import type { PostgreSQLSavedConnectionOptions } from "../postgresql";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -53,6 +54,7 @@ export type BuiltInConnectionProtocol =
   | "raw"
   | "rlogin"
   | "mysql"
+  | "postgresql"
   | "ftp"
   | "sftp"
   | "scp"
@@ -105,7 +107,8 @@ export interface IntegrationConnectionSettings {
   providerFields?: IntegrationProviderFields;
 }
 
-export interface Connection extends FtpSavedConnectionOptions {
+export interface Connection
+  extends FtpSavedConnectionOptions, PostgreSQLSavedConnectionOptions {
   id: string;
   name: string;
   protocol: ConnectionProtocol;

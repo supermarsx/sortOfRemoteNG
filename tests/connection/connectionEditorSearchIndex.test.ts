@@ -218,6 +218,47 @@ describe("connection editor search index", () => {
       sectionId: "raw-socket-options",
       protocolSubtabId: "connection",
     });
+    const postgresqlIndex = buildIndex({
+      isGroup: false,
+      protocol: "postgresql",
+      username: "report_reader",
+      database: "analytics",
+      postgresSslMode: "verify-full",
+      postgresCaCertificatePath: "C:\\certs\\postgres-root.pem",
+      postgresConnectionTimeoutSecs: 20,
+    });
+    expect(
+      searchConnectionEditorIndex(postgresqlIndex, "analytics")[0],
+    ).toMatchObject({
+      fieldId: "postgresql-database",
+      protocolSubtabId: "connection",
+    });
+    expect(
+      searchConnectionEditorIndex(postgresqlIndex, "report_reader")[0],
+    ).toMatchObject({
+      fieldId: "postgresql-username",
+      protocolSubtabId: "authentication",
+    });
+    expect(
+      searchConnectionEditorIndex(postgresqlIndex, "verify-full")[0],
+    ).toMatchObject({
+      fieldId: "postgresql-ssl-mode",
+      protocolSubtabId: "security",
+    });
+    expect(
+      searchConnectionEditorIndex(postgresqlIndex, "tunnel chain")[0],
+    ).toMatchObject({
+      fieldId: "postgresql-direct-route",
+      protocolSubtabId: "advanced",
+    });
+    expect(
+      postgresqlIndex.filter(
+        (entry) => entry.fieldId === "postgresql-username",
+      ),
+    ).toHaveLength(1);
+    expect(
+      postgresqlIndex.filter((entry) => entry.fieldId === "username"),
+    ).toHaveLength(0);
     expect(
       searchConnectionEditorIndex(rawIndex, "base64").find(
         (entry) => entry.fieldId === "raw-socket-display-encoding",

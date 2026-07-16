@@ -300,6 +300,7 @@ async function checkProtocolSupportDocumentation() {
     ["RustDesk", "◐"],
     ["FTP / FTPS", "●"],
     ["SCP", "●"],
+    ["PostgreSQL", "●"],
     ["Spice / NX / x2go / XDMCP", "○"],
   ];
   for (const [label, status] of architectureStatuses) {
@@ -327,6 +328,7 @@ async function checkProtocolSupportDocumentation() {
     ["RustDesk", "External handoff"],
     ["FTP / FTPS", "Interactive client, direct-route only"],
     ["SCP", "Interactive client, direct-route only"],
+    ["PostgreSQL", "Interactive client, direct-route only"],
   ];
   for (const [label, status] of protocolStatuses) {
     const row = markdownTableRow(protocols, label);
@@ -350,6 +352,7 @@ async function checkProtocolSupportDocumentation() {
     ["rustdesk", "external-native-handoff"],
     ["ftp", "fully-interactive"],
     ["scp", "fully-interactive"],
+    ["postgresql", "fully-interactive"],
   ];
   for (const [protocol, classification] of capabilityContracts) {
     const marker = `  ${protocol}: capability({`;
@@ -375,6 +378,9 @@ async function checkProtocolSupportDocumentation() {
     normalizedProtocols.includes("raw variants map to raw") &&
     normalizedProtocols.includes("rlogin maps to rlogin") &&
     normalizedProtocols.includes("powershell-like entries map to winrm") &&
+    normalizedProtocols.includes(
+      "legacy postgres alias to canonical postgresql",
+    ) &&
     normalizedProtocols.includes(
       "imported ftp remains passive/epsv and direct-route only",
     ) &&
