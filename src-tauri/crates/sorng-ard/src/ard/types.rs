@@ -8,10 +8,83 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+/// Authentication path selected by the user for an ARD connection.
+///
+/// `MacOsAccount` is the remote Mac's local/network account carried by the
+/// Apple RFB security-type-30 exchange. It is not an Apple Account. Apple
+/// Account connections are delegated to the native Screen Sharing app and are
+/// never passed through the embedded RFB engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ArdAuthenticationMode {
+    #[default]
+    MacOsAccount,
+    VncPassword,
+    AppleAccountNative,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArdEmbeddedRuntimeCapabilities {
+    pub available: bool,
+    pub authentication_modes: Vec<ArdAuthenticationMode>,
+    pub accepts_apple_account_credentials: bool,
+    pub supports_network_path: bool,
+    pub network_path_reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArdAppleAccountNativeCapabilities {
+    pub available: bool,
+    pub requires_mac_os: bool,
+    pub accepts_password: bool,
+    pub target_prefill_supported: bool,
+    pub reason: String,
+}
+
+/// Static capabilities of this build's two distinct ARD/Screen Sharing paths.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArdRuntimeCapabilities {
+    pub embedded_rfb: ArdEmbeddedRuntimeCapabilities,
+    pub apple_account_native: ArdAppleAccountNativeCapabilities,
+}
+
+impl ArdRuntimeCapabilities {
+    pub fn current() -> Self {
+        let native_available = cfg!(target_os = "macos");
+        Self {
+            embedded_rfb: ArdEmbeddedRuntimeCapabilities {
+                available: true,
+                authentication_modes: vec![
+                    ArdAuthenticationMode::MacOsAccount,
+                    ArdAuthenticationMode::VncPassword,
+                ],
+                accepts_apple_account_credentials: false,
+                supports_network_path: false,
+                network_path_reason: "The embedded ARD engine currently opens a direct TCP connection and cannot consume proxy-chain or SSH-tunnel routes.".into(),
+            },
+            apple_account_native: ArdAppleAccountNativeCapabilities {
+                available: native_available,
+                requires_mac_os: true,
+                accepts_password: false,
+                target_prefill_supported: false,
+                reason: if native_available {
+                    "Apple Account connections open Apple's Screen Sharing app; authentication and approval remain in macOS. No documented target-prefill interface is used.".into()
+                } else {
+                    "Apple Account Screen Sharing requires Apple's Screen Sharing app on macOS.".into()
+                },
+            },
+        }
+    }
+}
+
 /// Capabilities reported after connecting to an ARD server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArdCapabilities {
+    pub authentication_mode: ArdAuthenticationMode,
     pub rfb_version: String,
     pub security_type: u8,
     pub supports_clipboard: bool,
@@ -130,9 +203,33 @@ pub struct ArdActiveConnection {
     pub host: String,
     pub port: u16,
     pub username: String,
+    pub authentication_mode: ArdAuthenticationMode,
     pub connected_at: String,
     pub command_tx: mpsc::Sender<ArdCommand>,
     pub stats: Arc<ArdSessionStats>,
+}
+
+/// Metadata paired with one raw RGBA rectangle sent over a Tauri IPC channel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum ArdFrameKind {
+    Framebuffer,
+    CopyRect { source_x: u16, source_y: u16 },
+    Cursor,
+    DesktopSize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArdFrameMetadata {
+    pub session_id: String,
+    pub sequence: u64,
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+    pub byte_length: usize,
+    pub kind: ArdFrameKind,
 }
 
 impl std::fmt::Debug for ArdActiveConnection {
@@ -227,5 +324,38 @@ mod tests {
         };
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains("hello"));
+    }
+
+    #[test]
+    fn runtime_capabilities_keep_apple_account_out_of_rfb() {
+        let capabilities = ArdRuntimeCapabilities::current();
+        assert!(capabilities.embedded_rfb.available);
+        assert!(!capabilities.embedded_rfb.accepts_apple_account_credentials);
+        assert!(!capabilities.embedded_rfb.supports_network_path);
+        assert_eq!(
+            capabilities.embedded_rfb.authentication_modes,
+            vec![
+                ArdAuthenticationMode::MacOsAccount,
+                ArdAuthenticationMode::VncPassword,
+            ]
+        );
+        assert!(!capabilities.apple_account_native.accepts_password);
+        assert!(!capabilities.apple_account_native.target_prefill_supported);
+        assert_eq!(
+            capabilities.apple_account_native.available,
+            cfg!(target_os = "macos")
+        );
+    }
+
+    #[test]
+    fn authentication_modes_have_unambiguous_wire_names() {
+        assert_eq!(
+            serde_json::to_string(&ArdAuthenticationMode::MacOsAccount).unwrap(),
+            "\"macOsAccount\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ArdAuthenticationMode::AppleAccountNative).unwrap(),
+            "\"appleAccountNative\""
+        );
     }
 }

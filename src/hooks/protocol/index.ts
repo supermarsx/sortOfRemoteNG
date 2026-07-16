@@ -13,6 +13,7 @@ export * from "./useWebBrowser";
 export * from "./useSpiceClient";
 export * from "./useX2goClient";
 export * from "./useArdClient";
+export * from "./useTelnetSession";
 export * from "./useNxClient";
 export * from "./useXdmcpClient";
 export * from "./useMacClient";

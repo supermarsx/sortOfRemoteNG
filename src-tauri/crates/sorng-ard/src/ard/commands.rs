@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use chrono::Utc;
-use tauri::AppHandle;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use uuid::Uuid;
 
 use super::session_runner::{self, SessionConfig};
@@ -24,19 +24,38 @@ use super::ArdServiceState;
 #[allow(clippy::too_many_arguments)]
 pub async fn connect_ard(
     state: tauri::State<'_, ArdServiceState>,
-    _app_handle: AppHandle,
     host: String,
     port: Option<u16>,
     username: String,
     password: String,
     connection_id: Option<String>,
+    authentication_mode: Option<ArdAuthenticationMode>,
     auto_reconnect: Option<bool>,
     curtain_on_connect: Option<bool>,
+    local_cursor: Option<bool>,
+    frame_data_channel: Channel<InvokeResponseBody>,
+    frame_metadata_channel: Channel<ArdFrameMetadata>,
+    status_channel: Channel<ArdStatusEvent>,
 ) -> Result<String, String> {
     let ard_port = port.unwrap_or(session_runner::DEFAULT_ARD_PORT);
+    let auth_mode = authentication_mode.unwrap_or_default();
     let conn_id = connection_id
         .clone()
         .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let config = SessionConfig {
+        host: host.clone(),
+        port: ard_port,
+        username: username.clone(),
+        password,
+        connection_id: conn_id.clone(),
+        authentication_mode: auth_mode,
+        auto_reconnect: auto_reconnect.unwrap_or(true),
+        curtain_on_connect: curtain_on_connect.unwrap_or(false),
+        local_cursor: local_cursor.unwrap_or(true),
+        ..Default::default()
+    };
+    session_runner::validate_session_config(&config).map_err(|error| error.to_string())?;
 
     // Evict any existing session for this connection slot.
     {
@@ -60,19 +79,16 @@ pub async fn connect_ard(
         }
     }
 
-    let config = SessionConfig {
-        host: host.clone(),
-        port: ard_port,
-        username: username.clone(),
-        password,
-        connection_id: conn_id.clone(),
-        auto_reconnect: auto_reconnect.unwrap_or(true),
-        curtain_on_connect: curtain_on_connect.unwrap_or(false),
-        ..Default::default()
-    };
-
     let handle = session_runner::launch_session(config);
     let session_id = handle.session_id.clone();
+    let session_runner::SessionHandle {
+        session_id: _,
+        command_tx,
+        mut event_rx,
+        mut frame_rx,
+        stats,
+        join_handle,
+    } = handle;
 
     // Register in global state.
     {
@@ -85,9 +101,10 @@ pub async fn connect_ard(
                 host: host.clone(),
                 port: ard_port,
                 username: username.clone(),
+                authentication_mode: auth_mode,
                 connected_at: Utc::now().to_rfc3339(),
-                command_tx: handle.command_tx,
-                stats: handle.stats,
+                command_tx,
+                stats,
             },
         );
         service.push_log(
@@ -96,6 +113,65 @@ pub async fn connect_ard(
             Some(session_id.clone()),
         );
     }
+
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            if status_channel.send(event).is_err() {
+                break;
+            }
+        }
+    });
+
+    let frame_session_id = session_id.clone();
+    tokio::spawn(async move {
+        let mut sequence = 0u64;
+        while let Some(rectangles) = frame_rx.recv().await {
+            for rectangle in rectangles {
+                sequence = sequence.saturating_add(1);
+                let kind = match rectangle.kind {
+                    session_runner::DecodedRectKind::Framebuffer => ArdFrameKind::Framebuffer,
+                    session_runner::DecodedRectKind::CopyRect { source_x, source_y } => {
+                        ArdFrameKind::CopyRect { source_x, source_y }
+                    }
+                    session_runner::DecodedRectKind::Cursor => ArdFrameKind::Cursor,
+                    session_runner::DecodedRectKind::DesktopSize => ArdFrameKind::DesktopSize,
+                };
+                let metadata = ArdFrameMetadata {
+                    session_id: frame_session_id.clone(),
+                    sequence,
+                    x: rectangle.x,
+                    y: rectangle.y,
+                    width: rectangle.width,
+                    height: rectangle.height,
+                    byte_length: rectangle.pixels.len(),
+                    kind,
+                };
+                if frame_data_channel
+                    .send(InvokeResponseBody::Raw(rectangle.pixels))
+                    .is_err()
+                {
+                    return;
+                }
+                if frame_metadata_channel.send(metadata).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+
+    let cleanup_state = state.inner().clone();
+    let cleanup_session_id = session_id.clone();
+    tokio::spawn(async move {
+        let _ = join_handle.await;
+        let mut service = cleanup_state.lock().await;
+        if service.connections.remove(&cleanup_session_id).is_some() {
+            service.push_log(
+                "info",
+                format!("ARD session {cleanup_session_id} ended"),
+                Some(cleanup_session_id),
+            );
+        }
+    });
 
     Ok(session_id)
 }
@@ -125,6 +201,35 @@ pub async fn disconnect_ard(
     }
 
     Ok(())
+}
+
+/// Disconnect every active ARD session and return the number signalled.
+#[tauri::command]
+pub async fn disconnect_all_ard(state: tauri::State<'_, ArdServiceState>) -> Result<usize, String> {
+    let connections = {
+        let mut service = state.lock().await;
+        service
+            .connections
+            .drain()
+            .map(|(_, connection)| connection)
+            .collect::<Vec<_>>()
+    };
+    let count = connections.len();
+    for connection in connections {
+        let _ = connection.command_tx.send(ArdCommand::Shutdown).await;
+    }
+    Ok(count)
+}
+
+/// Report whether a session or saved connection currently has a live runner.
+#[tauri::command]
+pub async fn is_ard_connected(
+    state: tauri::State<'_, ArdServiceState>,
+    session_id: Option<String>,
+    connection_id: Option<String>,
+) -> Result<bool, String> {
+    let service = state.lock().await;
+    Ok(resolve_session_id(&service, session_id.as_deref(), connection_id.as_deref()).is_some())
 }
 
 // ── Input ────────────────────────────────────────────────────────────────
@@ -295,6 +400,7 @@ pub async fn get_ard_session_info(
         host: conn.host.clone(),
         port: conn.port,
         username: conn.username.clone(),
+        authentication_mode: conn.authentication_mode,
         connected_at: conn.connected_at.clone(),
         stats: ArdStatsSnapshot {
             bytes_sent: conn.stats.bytes_sent.load(Ordering::Relaxed),
@@ -321,6 +427,7 @@ pub async fn list_ard_sessions(
             host: conn.host.clone(),
             port: conn.port,
             username: conn.username.clone(),
+            authentication_mode: conn.authentication_mode,
             connected_at: conn.connected_at.clone(),
             stats: ArdStatsSnapshot {
                 bytes_sent: conn.stats.bytes_sent.load(Ordering::Relaxed),
@@ -386,6 +493,36 @@ pub async fn reconnect_ard(
         .map_err(|_| "Session command channel closed".to_string())
 }
 
+/// Return build/platform capabilities without accepting any credentials.
+#[tauri::command]
+pub async fn get_ard_runtime_capabilities() -> Result<ArdRuntimeCapabilities, String> {
+    Ok(ArdRuntimeCapabilities::current())
+}
+
+/// Hand Apple Account Screen Sharing off to Apple's native macOS app.
+///
+/// No Apple Account identifier or password is accepted by this command. The
+/// user completes identity selection, authentication, and approval inside
+/// Screen Sharing.app.
+#[tauri::command]
+pub async fn launch_apple_account_screen_sharing() -> Result<(), String> {
+    launch_native_screen_sharing()
+}
+
+#[cfg(target_os = "macos")]
+fn launch_native_screen_sharing() -> Result<(), String> {
+    std::process::Command::new("open")
+        .args(["-a", "Screen Sharing"])
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not open Apple's Screen Sharing app: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_native_screen_sharing() -> Result<(), String> {
+    Err("Apple Account Screen Sharing is available only through Apple's Screen Sharing app on macOS. Use remote macOS account or dedicated VNC-password authentication for the embedded ARD viewer on this platform.".into())
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /// Resolve a session by explicit session_id or by connection_id lookup.
@@ -418,6 +555,7 @@ pub struct ArdSessionInfo {
     pub host: String,
     pub port: u16,
     pub username: String,
+    pub authentication_mode: ArdAuthenticationMode,
     pub connected_at: String,
     pub stats: ArdStatsSnapshot,
 }
@@ -431,4 +569,24 @@ pub struct ArdStatsSnapshot {
     pub frames_decoded: u64,
     pub key_events_sent: u64,
     pub pointer_events_sent: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_capability_command_never_accepts_apple_account_passwords() {
+        let capabilities = ArdRuntimeCapabilities::current();
+        assert!(!capabilities.embedded_rfb.accepts_apple_account_credentials);
+        assert!(!capabilities.apple_account_native.accepts_password);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn native_apple_account_handoff_fails_explicitly_off_macos() {
+        let error = launch_native_screen_sharing().unwrap_err();
+        assert!(error.contains("only"));
+        assert!(error.contains("macOS"));
+    }
 }

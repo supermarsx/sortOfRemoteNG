@@ -3,6 +3,7 @@ import {
   migrateRawSocketProtocol,
   normalizeRawSocketSettings,
 } from "../../types/protocols/rawSocket";
+import { normalizeArdSettings } from "../../types/protocols/ard";
 import { normalizePowerShellRemotingSettings } from "../powershell/normalizePowerShellRemoting";
 import { normalizeRloginSettings } from "../rlogin/rloginSettings";
 
@@ -47,6 +48,21 @@ export function normalizeAdvancedProtocolConnection(
     next.rawSocketSettings =
       rawMigration?.settings ??
       normalizeRawSocketSettings(input.rawSocketSettings);
+  }
+
+  if (
+    input.ardSettings !== undefined ||
+    (canInitialize && protocol === "ard")
+  ) {
+    next.ardSettings = normalizeArdSettings(input.ardSettings);
+    if (next.ardSettings.authMode === "appleAccountNative") {
+      // Authentication is owned entirely by Screen Sharing.app. Never carry
+      // an embedded credential through load/import/save normalization.
+      next.username = undefined;
+      next.password = undefined;
+    } else if (next.ardSettings.authMode === "vncPassword") {
+      next.username = undefined;
+    }
   }
 
   if (

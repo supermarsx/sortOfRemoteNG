@@ -11,6 +11,7 @@ import type {
 import type { ConnectionBehaviorAutomationV1 } from "./behavior";
 import type { RloginSettings } from "./rloginSettings";
 import type { RawSocketSettingsV1 } from "../protocols/rawSocket";
+import type { ArdSettings } from "../protocols/ard";
 import type { PowerShellRemotingSettings } from "../powershellRemoting";
 
 /** A single bookmark or a folder containing bookmarks. */
@@ -40,6 +41,7 @@ export const INTEGRATION_PROTOCOL_PREFIX = "integration:" as const;
 export type BuiltInConnectionProtocol =
   | "rdp"
   | "ssh"
+  | "ard"
   | "vnc"
   | "anydesk"
   | "http"
@@ -343,6 +345,9 @@ export interface Connection {
 
   /** Versioned netcat-style TCP/UDP application-payload settings. */
   rawSocketSettings?: RawSocketSettingsV1;
+
+  /** Versioned Apple Remote Desktop / macOS Screen Sharing settings. */
+  ardSettings?: ArdSettings;
 
   /** Versioned RFC 1282 RLogin settings. No password is stored here. */
   rloginSettings?: RloginSettings;

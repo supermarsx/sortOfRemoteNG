@@ -21,8 +21,10 @@ pub mod types;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 pub use types::{
-    ArdActiveConnection, ArdCapabilities, ArdCommand, ArdInputAction, ArdLogEntry, ArdService,
-    ArdSession, ArdSessionStats, ArdStatsEvent, ArdStatusEvent,
+    ArdActiveConnection, ArdAppleAccountNativeCapabilities, ArdAuthenticationMode, ArdCapabilities,
+    ArdCommand, ArdEmbeddedRuntimeCapabilities, ArdFrameKind, ArdFrameMetadata, ArdInputAction,
+    ArdLogEntry, ArdRuntimeCapabilities, ArdService, ArdSession, ArdSessionStats, ArdStatsEvent,
+    ArdStatusEvent,
 };
 
 /// Global ARD service state, managed by Tauri.

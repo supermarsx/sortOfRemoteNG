@@ -1,7 +1,6 @@
 //! ARD / VNC authentication methods.
 //!
 //! Supports:
-//! - **None** (security type 1)
 //! - **VNC Auth** (security type 2): DES challenge-response
 //! - **ARD Auth** (security type 30): Diffie-Hellman key exchange + AES-128-CBC
 //!   encrypted credentials
@@ -11,11 +10,6 @@ use rand::RngCore;
 
 use super::errors::ArdError;
 use super::rfb::RfbConnection;
-
-/// No authentication.
-pub fn auth_none(_conn: &mut RfbConnection) -> Result<(), ArdError> {
-    Ok(())
-}
 
 /// VNC DES challenge-response authentication.
 pub fn auth_vnc(conn: &mut RfbConnection, password: &str) -> Result<(), ArdError> {

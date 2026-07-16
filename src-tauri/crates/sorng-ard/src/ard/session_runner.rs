@@ -14,14 +14,16 @@ use uuid::Uuid;
 
 use super::auth;
 use super::clipboard::{self, ClipboardContent};
-use super::encoding::{self, DecodedRect, EncodingDecoder};
+use super::encoding::{self, EncodingDecoder};
+pub use super::encoding::{DecodedRect, DecodedRectKind};
 use super::errors::ArdError;
 use super::file_transfer;
 use super::input::{self, PointerState};
 use super::pixel_format::PixelFormat;
 use super::rfb::{self, RfbConnection, RfbVersion, ServerInit};
 use super::types::{
-    ArdCapabilities, ArdCommand, ArdInputAction, ArdSession, ArdSessionStats, ArdStatusEvent,
+    ArdAuthenticationMode, ArdCapabilities, ArdCommand, ArdInputAction, ArdSession,
+    ArdSessionStats, ArdStatusEvent,
 };
 
 /// Default Remote Desktop port used by ARD / macOS Screen Sharing.
@@ -53,6 +55,7 @@ pub struct SessionConfig {
     pub username: String,
     pub password: String,
     pub connection_id: String,
+    pub authentication_mode: ArdAuthenticationMode,
     /// Preferred pixel format (or None to use server default).
     pub pixel_format: Option<PixelFormat>,
     /// Whether to request cursor pseudo-encoding.
@@ -71,12 +74,52 @@ impl Default for SessionConfig {
             username: String::new(),
             password: String::new(),
             connection_id: String::new(),
+            authentication_mode: ArdAuthenticationMode::MacOsAccount,
             pixel_format: None,
             local_cursor: true,
             curtain_on_connect: false,
             auto_reconnect: true,
         }
     }
+}
+
+/// Validate connection intent before a background task is launched.
+pub fn validate_session_config(config: &SessionConfig) -> Result<(), ArdError> {
+    if config.host.trim().is_empty() {
+        return Err(ArdError::Protocol("ARD host must not be empty".into()));
+    }
+    if config.port == 0 {
+        return Err(ArdError::Protocol(
+            "ARD port must be between 1 and 65535".into(),
+        ));
+    }
+    match config.authentication_mode {
+        ArdAuthenticationMode::MacOsAccount => {
+            if config.username.trim().is_empty() {
+                return Err(ArdError::Auth(
+                    "macOS account authentication requires the username of an account on the remote Mac".into(),
+                ));
+            }
+            if config.password.is_empty() {
+                return Err(ArdError::Auth(
+                    "macOS account authentication requires the remote Mac account password".into(),
+                ));
+            }
+        }
+        ArdAuthenticationMode::VncPassword => {
+            if config.password.is_empty() {
+                return Err(ArdError::Auth(
+                    "VNC authentication requires the dedicated Screen Sharing VNC password".into(),
+                ));
+            }
+        }
+        ArdAuthenticationMode::AppleAccountNative => {
+            return Err(ArdError::Auth(
+                "Apple Account identity is not an ARD/RFB credential. Open Apple's Screen Sharing app with launch_apple_account_screen_sharing instead; this application never collects or forwards an Apple Account password.".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Handle returned to the caller after launching a session.
@@ -220,6 +263,7 @@ async fn run_session(
     frame_tx: &mpsc::Sender<Vec<DecodedRect>>,
     stats: &Arc<ArdSessionStats>,
 ) -> Result<(), ArdError> {
+    validate_session_config(config)?;
     // ── TCP connect ──────────────────────────────────────────────────
     let addr = format!("{}:{}", config.host, config.port);
     let stream = tokio::time::timeout(
@@ -242,7 +286,8 @@ async fn run_session(
     let server_version = conn.read_version()?;
     let client_version = match server_version {
         RfbVersion::V3_3 => RfbVersion::V3_3,
-        RfbVersion::V3_7 | RfbVersion::V3_8 => RfbVersion::V3_8,
+        RfbVersion::V3_7 => RfbVersion::V3_7,
+        RfbVersion::V3_8 => RfbVersion::V3_8,
     };
     conn.write_version(&client_version)?;
 
@@ -251,14 +296,11 @@ async fn run_session(
     );
 
     // ── Security negotiation ─────────────────────────────────────────
-    let security_type = negotiate_security(&mut conn, &client_version)?;
+    let security_type = negotiate_security(&mut conn, &client_version, config.authentication_mode)?;
     log::info!("[ARD {session_id}] Security type: {security_type}");
 
     // ── Authentication ───────────────────────────────────────────────
     match security_type {
-        rfb::security::NONE => {
-            auth::auth_none(&mut conn)?;
-        }
         rfb::security::VNC_AUTH => {
             auth::auth_vnc(&mut conn, &config.password)?;
         }
@@ -270,13 +312,17 @@ async fn run_session(
         }
     }
 
-    // Read security result (for versions >= 3.8).
-    if matches!(client_version, RfbVersion::V3_8) {
-        let result = conn.read_u32()?;
-        if result != 0 {
+    // Authenticated RFB 3.3, 3.7, and 3.8 sessions all return a
+    // SecurityResult. Only 3.8 guarantees a length-prefixed failure reason.
+    let result = conn.read_u32()?;
+    if result != 0 {
+        let reason = if matches!(client_version, RfbVersion::V3_8) {
             let reason = read_failure_reason(&mut conn);
-            return Err(ArdError::Auth(format!("Authentication failed: {reason}")));
-        }
+            reason
+        } else {
+            format!("server returned security result {result}")
+        };
+        return Err(ArdError::Auth(format!("Authentication failed: {reason}")));
     }
 
     let _ = evt_tx
@@ -306,8 +352,14 @@ async fn run_session(
     conn.send_set_pixel_format(&pf)?;
 
     // ── Set encodings ────────────────────────────────────────────────
-    let encodings = encoding::preferred_encodings();
+    let mut encodings = encoding::preferred_encodings();
+    if !config.local_cursor {
+        encodings.retain(|encoding| *encoding != rfb::encoding::CURSOR);
+    }
     conn.send_set_encodings(&encodings)?;
+    if config.curtain_on_connect {
+        send_curtain_mode(&mut conn, true)?;
+    }
 
     let _ = evt_tx
         .send(ArdStatusEvent {
@@ -337,12 +389,17 @@ async fn run_session(
 }
 
 /// Negotiate security type with the server.
-fn negotiate_security(conn: &mut RfbConnection, version: &RfbVersion) -> Result<u8, ArdError> {
+fn negotiate_security(
+    conn: &mut RfbConnection,
+    version: &RfbVersion,
+    authentication_mode: ArdAuthenticationMode,
+) -> Result<u8, ArdError> {
     match version {
         RfbVersion::V3_3 => {
             // Server selects security type.
-            let sec = conn.read_u32()?;
-            Ok(sec as u8)
+            let security_type = conn.read_u32()? as u8;
+            ensure_security_matches_mode(security_type, authentication_mode)?;
+            Ok(security_type)
         }
         _ => {
             // Read list of supported types.
@@ -358,21 +415,59 @@ fn negotiate_security(conn: &mut RfbConnection, version: &RfbVersion) -> Result<
                 types.push(conn.read_u8()?);
             }
 
-            // Prefer ARD auth, then VNC, then None.
-            let preferred = [
-                rfb::security::ARD_AUTH,
-                rfb::security::VNC_AUTH,
-                rfb::security::NONE,
-            ];
-            for &pref in &preferred {
-                if types.contains(&pref) {
-                    conn.write_all(&[pref])?;
-                    return Ok(pref);
-                }
-            }
-
-            Err(ArdError::UnsupportedSecurity(types[0]))
+            let selected = select_security_type(&types, authentication_mode)?;
+            conn.write_all(&[selected])?;
+            Ok(selected)
         }
+    }
+}
+
+fn select_security_type(
+    offered: &[u8],
+    authentication_mode: ArdAuthenticationMode,
+) -> Result<u8, ArdError> {
+    let required = required_security_type(authentication_mode)?;
+    if offered.contains(&required) {
+        Ok(required)
+    } else {
+        Err(ArdError::Auth(format!(
+            "The server does not offer the selected {} authentication mode (required RFB security type {required}; offered {offered:?})",
+            authentication_mode_label(authentication_mode)
+        )))
+    }
+}
+
+fn ensure_security_matches_mode(
+    security_type: u8,
+    authentication_mode: ArdAuthenticationMode,
+) -> Result<(), ArdError> {
+    let required = required_security_type(authentication_mode)?;
+    if security_type == required {
+        Ok(())
+    } else {
+        Err(ArdError::Auth(format!(
+            "The RFB 3.3 server selected security type {security_type}, but {} requires security type {required}",
+            authentication_mode_label(authentication_mode)
+        )))
+    }
+}
+
+fn required_security_type(authentication_mode: ArdAuthenticationMode) -> Result<u8, ArdError> {
+    match authentication_mode {
+        ArdAuthenticationMode::MacOsAccount => Ok(rfb::security::ARD_AUTH),
+        ArdAuthenticationMode::VncPassword => Ok(rfb::security::VNC_AUTH),
+        ArdAuthenticationMode::AppleAccountNative => Err(ArdError::Auth(
+            "Apple Account identity is available only through Apple's native Screen Sharing app"
+                .into(),
+        )),
+    }
+}
+
+fn authentication_mode_label(authentication_mode: ArdAuthenticationMode) -> &'static str {
+    match authentication_mode {
+        ArdAuthenticationMode::MacOsAccount => "remote macOS account",
+        ArdAuthenticationMode::VncPassword => "dedicated VNC password",
+        ArdAuthenticationMode::AppleAccountNative => "native Apple Account",
     }
 }
 
@@ -818,12 +913,16 @@ pub fn build_session_snapshot(
         reconnect_attempts: 0,
         max_reconnect_attempts: MAX_RECONNECT_ATTEMPTS,
         capabilities: ArdCapabilities {
+            authentication_mode: config.authentication_mode,
             rfb_version: "3.8".into(),
-            security_type: rfb::security::ARD_AUTH,
+            security_type: required_security_type(config.authentication_mode).unwrap_or(0),
             supports_clipboard: true,
-            supports_file_transfer: true,
-            supports_curtain_mode: true,
-            supports_retina: true,
+            // These extensions are requested, but the current handshake has no
+            // positive server capability acknowledgement. Do not advertise
+            // them as negotiated merely because decoder/encoder code exists.
+            supports_file_transfer: false,
+            supports_curtain_mode: false,
+            supports_retina: false,
             pixel_format: pixel_format.label(),
             framebuffer_width: server_init.width,
             framebuffer_height: server_init.height,
@@ -891,6 +990,62 @@ mod tests {
         assert_eq!(snap.desktop_height, 1080);
         assert!(snap.connected);
         assert!(snap.capabilities.supports_clipboard);
-        assert!(snap.capabilities.supports_file_transfer);
+        assert!(!snap.capabilities.supports_file_transfer);
+    }
+
+    #[test]
+    fn security_selection_is_explicit_and_fail_closed() {
+        let offered = [
+            rfb::security::NONE,
+            rfb::security::VNC_AUTH,
+            rfb::security::ARD_AUTH,
+        ];
+        assert_eq!(
+            select_security_type(&offered, ArdAuthenticationMode::MacOsAccount).unwrap(),
+            rfb::security::ARD_AUTH
+        );
+        assert_eq!(
+            select_security_type(&offered, ArdAuthenticationMode::VncPassword).unwrap(),
+            rfb::security::VNC_AUTH
+        );
+        assert!(
+            select_security_type(&[rfb::security::NONE], ArdAuthenticationMode::MacOsAccount)
+                .is_err()
+        );
+        assert!(select_security_type(&offered, ArdAuthenticationMode::AppleAccountNative).is_err());
+    }
+
+    #[test]
+    fn apple_account_is_rejected_before_embedded_network_access() {
+        let config = SessionConfig {
+            host: "mac.example".into(),
+            username: "person@example.com".into(),
+            password: "must-not-be-forwarded".into(),
+            authentication_mode: ArdAuthenticationMode::AppleAccountNative,
+            ..Default::default()
+        };
+        let error = validate_session_config(&config).unwrap_err().to_string();
+        assert!(error.contains("not an ARD/RFB credential"));
+        assert!(error.contains("never collects or forwards"));
+    }
+
+    #[test]
+    fn embedded_modes_validate_their_own_credentials() {
+        let mac_os = SessionConfig {
+            host: "mac.example".into(),
+            username: "alice".into(),
+            password: "secret".into(),
+            authentication_mode: ArdAuthenticationMode::MacOsAccount,
+            ..Default::default()
+        };
+        assert!(validate_session_config(&mac_os).is_ok());
+
+        let vnc = SessionConfig {
+            host: "mac.example".into(),
+            password: "vnc-secret".into(),
+            authentication_mode: ArdAuthenticationMode::VncPassword,
+            ..Default::default()
+        };
+        assert!(validate_session_config(&vnc).is_ok());
     }
 }

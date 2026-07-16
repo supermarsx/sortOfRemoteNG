@@ -854,9 +854,11 @@ pub fn is_command(command: &str) -> bool {
             | "unmount_x2go_folder"
             | "prune_x2go_sessions"
             | "get_x2go_session_count"
-            // ── ARD (14) – t3-e55 ───────────────────────────────────
+            // ── ARD (18) – embedded RFB plus native macOS handoff ───
             | "connect_ard"
             | "disconnect_ard"
+            | "disconnect_all_ard"
+            | "is_ard_connected"
             | "send_ard_input"
             | "set_ard_clipboard"
             | "get_ard_clipboard"
@@ -869,6 +871,8 @@ pub fn is_command(command: &str) -> bool {
             | "get_ard_stats"
             | "get_ard_logs"
             | "reconnect_ard"
+            | "get_ard_runtime_capabilities"
+            | "launch_apple_account_screen_sharing"
             // ── NX (14) – t3-e55 ────────────────────────────────────
             | "connect_nx"
             | "disconnect_nx"
@@ -2228,9 +2232,11 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         x2go_commands::unmount_x2go_folder,
         x2go_commands::prune_x2go_sessions,
         x2go_commands::get_x2go_session_count,
-        // ── ARD (14) – t3-e55 ────────────────────────────────────
+        // ── ARD (18) – embedded RFB plus native macOS handoff ───
         ard_commands::connect_ard,
         ard_commands::disconnect_ard,
+        ard_commands::disconnect_all_ard,
+        ard_commands::is_ard_connected,
         ard_commands::send_ard_input,
         ard_commands::set_ard_clipboard,
         ard_commands::get_ard_clipboard,
@@ -2243,6 +2249,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         ard_commands::get_ard_stats,
         ard_commands::get_ard_logs,
         ard_commands::reconnect_ard,
+        ard_commands::get_ard_runtime_capabilities,
+        ard_commands::launch_apple_account_screen_sharing,
         // ── NX (14) – t3-e55 ─────────────────────────────────────
         nx_commands::connect_nx,
         nx_commands::disconnect_nx,
@@ -2624,6 +2632,27 @@ mod tests {
         "list_raw_socket_sessions",
     ];
 
+    const ARD_COMMANDS: &[&str] = &[
+        "connect_ard",
+        "disconnect_ard",
+        "disconnect_all_ard",
+        "is_ard_connected",
+        "send_ard_input",
+        "set_ard_clipboard",
+        "get_ard_clipboard",
+        "set_ard_curtain_mode",
+        "upload_ard_file",
+        "download_ard_file",
+        "list_ard_remote_dir",
+        "get_ard_session_info",
+        "list_ard_sessions",
+        "get_ard_stats",
+        "get_ard_logs",
+        "reconnect_ard",
+        "get_ard_runtime_capabilities",
+        "launch_apple_account_screen_sharing",
+    ];
+
     #[cfg(feature = "ops")]
     const POWERSHELL_SESSION_COMMANDS: &[&str] = &[
         "open_powershell_session",
@@ -2644,11 +2673,12 @@ mod tests {
     ];
 
     #[test]
-    fn raw_and_rlogin_command_recognition_matches_handler_registration() {
+    fn raw_rlogin_and_ard_command_recognition_matches_handler_registration() {
         let source = include_str!("core_handler.rs");
         for (module, commands) in [
             ("rlogin_commands", RLOGIN_COMMANDS),
             ("raw_socket_commands", RAW_SOCKET_COMMANDS),
+            ("ard_commands", ARD_COMMANDS),
         ] {
             for command in commands {
                 assert!(is_command(command), "{command} missing from is_command");

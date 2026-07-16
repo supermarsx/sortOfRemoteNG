@@ -12,8 +12,17 @@ use super::pixel_format::PixelFormat;
 use super::rfb::{self, RectHeader};
 
 /// A decoded rectangle ready to be composited onto the framebuffer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodedRectKind {
+    Framebuffer,
+    CopyRect { source_x: u16, source_y: u16 },
+    Cursor,
+    DesktopSize,
+}
+
 #[derive(Debug, Clone)]
 pub struct DecodedRect {
+    pub kind: DecodedRectKind,
     pub x: u16,
     pub y: u16,
     pub width: u16,
@@ -78,6 +87,7 @@ impl EncodingDecoder {
 
         let pixels = self.pixel_format.convert_to_rgba(&raw, pixel_count);
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -97,16 +107,15 @@ impl EncodingDecoder {
         let src_y = conn.read_u16()?;
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::CopyRect {
+                source_x: src_x,
+                source_y: src_y,
+            },
             x: header.x,
             y: header.y,
             width: header.width,
             height: header.height,
-            pixels: vec![
-                (src_x >> 8) as u8,
-                (src_x & 0xFF) as u8,
-                (src_y >> 8) as u8,
-                (src_y & 0xFF) as u8,
-            ],
+            pixels: Vec::new(),
         })
     }
 
@@ -161,6 +170,7 @@ impl EncodingDecoder {
         }
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -278,6 +288,7 @@ impl EncodingDecoder {
         }
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -460,6 +471,7 @@ impl EncodingDecoder {
         }
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -490,6 +502,7 @@ impl EncodingDecoder {
         let pixels = self.pixel_format.convert_to_rgba(&raw, pixel_count);
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -528,6 +541,7 @@ impl EncodingDecoder {
         };
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -541,6 +555,7 @@ impl EncodingDecoder {
     fn handle_desktop_size(&self, header: &RectHeader) -> Result<DecodedRect, ArdError> {
         log::info!("Desktop resize → {}x{}", header.width, header.height);
         Ok(DecodedRect {
+            kind: DecodedRectKind::DesktopSize,
             x: 0,
             y: 0,
             width: header.width,
@@ -580,6 +595,7 @@ impl EncodingDecoder {
         }
 
         Ok(DecodedRect {
+            kind: DecodedRectKind::Cursor,
             x: header.x,
             y: header.y,
             width: header.width,
@@ -699,6 +715,7 @@ mod tests {
     #[test]
     fn decoded_rect_creation() {
         let rect = DecodedRect {
+            kind: DecodedRectKind::Framebuffer,
             x: 10,
             y: 20,
             width: 100,
