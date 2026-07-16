@@ -1,5 +1,7 @@
 export interface ScrollWithinContainerOptions {
   padding?: number;
+  /** Limit movement to one axis when the caller owns only that scroll lane. */
+  axis?: "both" | "horizontal" | "vertical";
 }
 
 export interface ScrollWithinContainerResult {
@@ -17,6 +19,15 @@ const nearestAxisDelta = (
   viewportStart: number,
   viewportEnd: number,
 ) => {
+  const targetSize = targetEnd - targetStart;
+  const viewportSize = viewportEnd - viewportStart;
+  if (targetSize > viewportSize) {
+    // An oversized target can never fit completely. If it already intersects
+    // the viewport, keep the current stable position; otherwise reveal its
+    // leading edge. This avoids resize/observer ping-pong between both edges.
+    if (targetEnd >= viewportStart && targetStart <= viewportEnd) return 0;
+    return targetStart - viewportStart;
+  }
   if (targetStart < viewportStart) return targetStart - viewportStart;
   if (targetEnd > viewportEnd) return targetEnd - viewportEnd;
   return 0;
@@ -29,7 +40,7 @@ const nearestAxisDelta = (
 export function scrollElementWithinContainer(
   scrollContainer: HTMLElement,
   target: HTMLElement,
-  { padding = 0 }: ScrollWithinContainerOptions = {},
+  { padding = 0, axis = "both" }: ScrollWithinContainerOptions = {},
 ): ScrollWithinContainerResult | undefined {
   if (!scrollContainer.contains(target)) return undefined;
 
@@ -53,28 +64,40 @@ export function scrollElementWithinContainer(
     containerRect.bottom - safePadding,
   );
 
-  const left = clamp(
-    scrollContainer.scrollLeft +
-      nearestAxisDelta(
-        targetRect.left,
-        targetRect.right,
-        viewportLeft,
-        viewportRight,
-      ),
-    0,
-    Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth),
-  );
-  const top = clamp(
-    scrollContainer.scrollTop +
-      nearestAxisDelta(
-        targetRect.top,
-        targetRect.bottom,
-        viewportTop,
-        viewportBottom,
-      ),
-    0,
-    Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight),
-  );
+  const left =
+    axis === "vertical"
+      ? scrollContainer.scrollLeft
+      : clamp(
+          scrollContainer.scrollLeft +
+            nearestAxisDelta(
+              targetRect.left,
+              targetRect.right,
+              viewportLeft,
+              viewportRight,
+            ),
+          0,
+          Math.max(
+            0,
+            scrollContainer.scrollWidth - scrollContainer.clientWidth,
+          ),
+        );
+  const top =
+    axis === "horizontal"
+      ? scrollContainer.scrollTop
+      : clamp(
+          scrollContainer.scrollTop +
+            nearestAxisDelta(
+              targetRect.top,
+              targetRect.bottom,
+              viewportTop,
+              viewportBottom,
+            ),
+          0,
+          Math.max(
+            0,
+            scrollContainer.scrollHeight - scrollContainer.clientHeight,
+          ),
+        );
   const changed =
     left !== scrollContainer.scrollLeft || top !== scrollContainer.scrollTop;
 

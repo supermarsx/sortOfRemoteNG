@@ -97,6 +97,29 @@ describe("scrollElementWithinContainer", () => {
     );
   });
 
+  it("can reserve horizontal position for a vertically owned scroll lane", () => {
+    const { pane, target } = makeFixture();
+    target.getBoundingClientRect = vi.fn(() => rect(700, 520, 900, 560));
+
+    expect(
+      scrollElementWithinContainer(pane, target, {
+        padding: 16,
+        axis: "vertical",
+      }),
+    ).toEqual({ changed: true, left: 200, top: 326 });
+    expect(pane.scrollLeft).toBe(200);
+  });
+
+  it("keeps an intersecting oversized target stable instead of bouncing between edges", () => {
+    const { pane, target } = makeFixture();
+    target.getBoundingClientRect = vi.fn(() => rect(80, 50, 280, 700));
+
+    expect(scrollElementWithinContainer(pane, target, { padding: 16 })).toEqual(
+      { changed: false, left: 200, top: 250 },
+    );
+    expect(pane.scrollTop).toBe(250);
+  });
+
   it("leaves an already visible target and its pane unchanged", () => {
     const { pane, target } = makeFixture();
     target.getBoundingClientRect = vi.fn(() => rect(120, 180, 320, 220));

@@ -187,7 +187,16 @@ export function scrollConnectionEditorSearchTargetIntoView(
   const pane =
     target.closest<HTMLElement>("[data-editor-scroll-pane]") ??
     container.closest<HTMLElement>("[data-editor-scroll-pane]");
-  return !!pane && !!scrollElementWithinContainer(pane, target, { padding });
+  return (
+    !!pane &&
+    !!scrollElementWithinContainer(pane, target, {
+      padding,
+      // The editor clips inline overflow. Changing scrollLeft can still shift
+      // clipped content off-screen, so settings search owns only the vertical
+      // scroll lane.
+      axis: "vertical",
+    })
+  );
 }
 
 function focusAndHighlightSearchTarget({
@@ -219,8 +228,15 @@ function focusAndHighlightSearchTarget({
 
   const tabScope =
     section.closest<HTMLElement>("[data-editor-search-tab]") ?? section;
-  const explicitTarget = findExplicitTarget(tabScope, fieldId);
-  const labelTarget = findLabelTarget(tabScope, fieldLabel);
+  // Prefer the registered section. The wider tab fallback is intentional for
+  // legacy sibling fields, but must not win when two subtabs use the same
+  // visible label (for example Port or Domain).
+  const explicitTarget =
+    findExplicitTarget(section, fieldId) ??
+    (tabScope === section ? undefined : findExplicitTarget(tabScope, fieldId));
+  const labelTarget =
+    findLabelTarget(section, fieldLabel) ??
+    (tabScope === section ? undefined : findLabelTarget(tabScope, fieldLabel));
   const highlightTarget =
     labelTarget ??
     explicitTarget?.closest<HTMLElement>("[data-editor-search-field]") ??
