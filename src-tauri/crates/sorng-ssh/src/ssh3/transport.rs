@@ -521,16 +521,20 @@ mod tests {
 
     #[test]
     fn rustls_config_sets_h3_alpn_with_verify() {
-        let mut config = Ssh3ConnectionConfig::default();
-        config.verify_server_cert = true;
+        let config = Ssh3ConnectionConfig {
+            verify_server_cert: true,
+            ..Default::default()
+        };
         let tls = build_rustls_client_config(&config).expect("config builds");
         assert_eq!(tls.alpn_protocols, vec![b"h3".to_vec()]);
     }
 
     #[test]
     fn rustls_config_skip_verify_builds() {
-        let mut config = Ssh3ConnectionConfig::default();
-        config.verify_server_cert = false;
+        let config = Ssh3ConnectionConfig {
+            verify_server_cert: false,
+            ..Default::default()
+        };
         let tls = build_rustls_client_config(&config).expect("skip-verify config builds");
         assert_eq!(tls.alpn_protocols, vec![b"h3".to_vec()]);
     }
@@ -581,10 +585,12 @@ mod tests {
         // cert file holds only the certificate chain), the rustls config still
         // builds with mTLS client auth presented.
         let (_dir, cert_path, key_path) = write_client_cert_and_key_files();
-        let mut config = Ssh3ConnectionConfig::default();
-        config.verify_server_cert = false; // independent of mTLS
-        config.client_cert_path = Some(cert_path.to_string_lossy().into_owned());
-        config.client_key_path = Some(key_path.to_string_lossy().into_owned());
+        let config = Ssh3ConnectionConfig {
+            verify_server_cert: false, // independent of mTLS
+            client_cert_path: Some(cert_path.to_string_lossy().into_owned()),
+            client_key_path: Some(key_path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
         let tls = build_rustls_client_config(&config)
             .expect("mTLS client config builds from separate cert + key files");
         assert_eq!(tls.alpn_protocols, vec![b"h3".to_vec()]);
@@ -600,9 +606,11 @@ mod tests {
         // When client_key_path is set but the key file is missing, fail cleanly
         // (and the error references the key path, not the cert).
         let (_dir, cert_path, _key_path) = write_client_cert_and_key_files();
-        let mut config = Ssh3ConnectionConfig::default();
-        config.client_cert_path = Some(cert_path.to_string_lossy().into_owned());
-        config.client_key_path = Some("/no/such/client-key.pem".to_string());
+        let config = Ssh3ConnectionConfig {
+            client_cert_path: Some(cert_path.to_string_lossy().into_owned()),
+            client_key_path: Some("/no/such/client-key.pem".to_string()),
+            ..Default::default()
+        };
         let err = build_rustls_client_config(&config).unwrap_err();
         assert!(
             err.contains("could not read client private key"),
@@ -615,9 +623,11 @@ mod tests {
         // t23-e7: when client_cert_path points at a PEM bundle with the cert
         // chain + key, the rustls config builds with mTLS client auth presented.
         let (_dir, path) = write_client_cert_bundle();
-        let mut config = Ssh3ConnectionConfig::default();
-        config.verify_server_cert = false; // independent of mTLS
-        config.client_cert_path = Some(path.to_string_lossy().into_owned());
+        let config = Ssh3ConnectionConfig {
+            verify_server_cert: false, // independent of mTLS
+            client_cert_path: Some(path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
         let tls = build_rustls_client_config(&config)
             .expect("mTLS client config builds from cert+key bundle");
         assert_eq!(tls.alpn_protocols, vec![b"h3".to_vec()]);
@@ -632,17 +642,21 @@ mod tests {
     fn mtls_config_builds_with_server_verification_on() {
         // mTLS must compose with normal server verification (the common case).
         let (_dir, path) = write_client_cert_bundle();
-        let mut config = Ssh3ConnectionConfig::default();
-        config.verify_server_cert = true;
-        config.client_cert_path = Some(path.to_string_lossy().into_owned());
+        let config = Ssh3ConnectionConfig {
+            verify_server_cert: true,
+            client_cert_path: Some(path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
         let tls = build_rustls_client_config(&config).expect("mTLS + verify builds");
         assert!(tls.client_auth_cert_resolver.has_certs());
     }
 
     #[test]
     fn mtls_config_errors_on_missing_cert_file() {
-        let mut config = Ssh3ConnectionConfig::default();
-        config.client_cert_path = Some("/no/such/client.pem".to_string());
+        let config = Ssh3ConnectionConfig {
+            client_cert_path: Some("/no/such/client.pem".to_string()),
+            ..Default::default()
+        };
         let err = build_rustls_client_config(&config).unwrap_err();
         assert!(err.contains("could not read client certificate"), "got: {err}");
     }
@@ -655,8 +669,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cert-only.pem");
         std::fs::write(&path, cert.serialize_pem().unwrap().as_bytes()).unwrap();
-        let mut config = Ssh3ConnectionConfig::default();
-        config.client_cert_path = Some(path.to_string_lossy().into_owned());
+        let config = Ssh3ConnectionConfig {
+            client_cert_path: Some(path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
         let err = build_rustls_client_config(&config).unwrap_err();
         assert!(err.contains("no PRIVATE KEY"), "got: {err}");
     }
@@ -700,11 +716,13 @@ mod tests {
         // wired end-to-end (endpoint -> resolve -> quinn connect) and surfaces a
         // real error/timeout rather than fabricating success. Use a short
         // timeout so the test stays fast.
-        let mut config = Ssh3ConnectionConfig::default();
-        config.host = "127.0.0.1".to_string();
-        config.port = 1; // nothing listening
-        config.verify_server_cert = false;
-        config.connect_timeout = Some(2);
+        let config = Ssh3ConnectionConfig {
+            host: "127.0.0.1".to_string(),
+            port: 1, // nothing listening
+            verify_server_cert: false,
+            connect_timeout: Some(2),
+            ..Default::default()
+        };
         assert!(
             Ssh3Transport::connect(&config).await.is_err(),
             "expected dial to a dead port to fail"

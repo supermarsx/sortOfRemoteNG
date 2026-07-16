@@ -3922,17 +3922,18 @@ mod host_key_prompt_tests {
 
         wait_for_pending_prompt("session-accept-save").await;
 
-        let events = emitter
-            .events
-            .lock()
-            .expect("recording emitter mutex poisoned");
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].0, "ssh://host-key-prompt");
-        assert_eq!(events[0].1["session_id"], "session-accept-save");
-        assert_eq!(events[0].1["host"], "example.com");
-        assert_eq!(events[0].1["status"], "first_use");
-        assert_eq!(events[0].1["fingerprint"], "SHA256:test-fingerprint");
-        drop(events);
+        {
+            let events = emitter
+                .events
+                .lock()
+                .expect("recording emitter mutex poisoned");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].0, "ssh://host-key-prompt");
+            assert_eq!(events[0].1["session_id"], "session-accept-save");
+            assert_eq!(events[0].1["host"], "example.com");
+            assert_eq!(events[0].1["status"], "first_use");
+            assert_eq!(events[0].1["fingerprint"], "SHA256:test-fingerprint");
+        }
 
         respond_to_prompt(
             "session-accept-save",
@@ -4140,7 +4141,7 @@ mod tests {
 
     #[test]
     fn shell_socket_timeout_message_is_treated_as_transient() {
-        let error = std::io::Error::new(std::io::ErrorKind::Other, "Timed out waiting on socket");
+        let error = std::io::Error::other("Timed out waiting on socket");
         assert!(super::is_transient_shell_io_error(&error));
     }
 

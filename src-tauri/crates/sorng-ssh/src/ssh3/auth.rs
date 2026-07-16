@@ -559,57 +559,71 @@ mod tests {
 
     #[test]
     fn select_method_prefers_pubkey() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.private_key_path = Some("/k".into());
-        c.password = Some("p".into());
+        let c = Ssh3ConnectionConfig {
+            private_key_path: Some("/k".into()),
+            password: Some("p".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::PublicKey);
     }
 
     #[test]
     fn select_method_falls_back_to_password() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.password = Some("p".into());
+        let c = Ssh3ConnectionConfig {
+            password: Some("p".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::Password);
     }
 
     #[test]
     fn select_method_picks_bearer_when_token_present() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.bearer_token = Some("tok".into());
+        let c = Ssh3ConnectionConfig {
+            bearer_token: Some("tok".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::BearerToken);
     }
 
     #[test]
     fn select_method_bearer_beats_password() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.bearer_token = Some("tok".into());
-        c.password = Some("p".into());
+        let c = Ssh3ConnectionConfig {
+            bearer_token: Some("tok".into()),
+            password: Some("p".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::BearerToken);
     }
 
     #[test]
     fn select_method_honours_explicit_override() {
-        let mut c = Ssh3ConnectionConfig::default();
         // Both a key and a password are present, but the override forces password.
-        c.private_key_path = Some("/k".into());
-        c.password = Some("p".into());
-        c.auth_method = Some("password".into());
+        let c = Ssh3ConnectionConfig {
+            private_key_path: Some("/k".into()),
+            password: Some("p".into()),
+            auth_method: Some("password".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::Password);
     }
 
     #[test]
     fn select_method_override_oidc_alias_maps_to_bearer() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.bearer_token = Some("tok".into());
-        c.auth_method = Some("OIDC".into());
+        let c = Ssh3ConnectionConfig {
+            bearer_token: Some("tok".into()),
+            auth_method: Some("OIDC".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::BearerToken);
     }
 
     #[test]
     fn select_method_unknown_override_falls_back_to_inference() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.password = Some("p".into());
-        c.auth_method = Some("not-a-method".into());
+        let c = Ssh3ConnectionConfig {
+            password: Some("p".into()),
+            auth_method: Some("not-a-method".into()),
+            ..Default::default()
+        };
         assert_eq!(select_method(&c).unwrap(), Ssh3AuthMethod::Password);
     }
 
@@ -637,9 +651,11 @@ mod tests {
 
     #[test]
     fn build_authorization_header_password() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.username = "user".into();
-        c.password = Some("pass".into());
+        let c = Ssh3ConnectionConfig {
+            username: "user".into(),
+            password: Some("pass".into()),
+            ..Default::default()
+        };
         let h = build_authorization_header(Ssh3AuthMethod::Password, &c, &ZERO_CONVID).unwrap();
         assert_eq!(h, "Basic dXNlcjpwYXNz");
     }
@@ -652,8 +668,10 @@ mod tests {
 
     #[test]
     fn build_authorization_header_bearer() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.bearer_token = Some("my.jwt.token".into());
+        let c = Ssh3ConnectionConfig {
+            bearer_token: Some("my.jwt.token".into()),
+            ..Default::default()
+        };
         let h = build_authorization_header(Ssh3AuthMethod::BearerToken, &c, &ZERO_CONVID).unwrap();
         assert_eq!(h, "Bearer my.jwt.token");
     }
@@ -687,8 +705,10 @@ mod tests {
     fn build_authorization_header_certificate_yields_no_header_value() {
         // t23-e7: with a client cert configured, cert auth produces NO
         // Authorization header — the credential rides the TLS (mTLS) layer.
-        let mut c = Ssh3ConnectionConfig::default();
-        c.client_cert_path = Some("/path/to/client.pem".into());
+        let c = Ssh3ConnectionConfig {
+            client_cert_path: Some("/path/to/client.pem".into()),
+            ..Default::default()
+        };
         let v = build_authorization_header(Ssh3AuthMethod::Certificate, &c, &ZERO_CONVID).unwrap();
         assert!(v.is_empty(), "cert auth must not build an Authorization header");
     }
@@ -696,9 +716,11 @@ mod tests {
     #[test]
     fn connect_request_omits_authorization_for_mtls() {
         // An empty authorization (mTLS) must NOT add an Authorization header.
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = "example.com".into();
-        c.port = 443;
+        let c = Ssh3ConnectionConfig {
+            host: "example.com".into(),
+            port: 443,
+            ..Default::default()
+        };
         let req = build_connect_request(&c, "").expect("request builds");
         assert!(req.headers().get(http::header::AUTHORIZATION).is_none());
         // …but it still carries the extended-CONNECT protocol so the server routes it.
@@ -850,10 +872,12 @@ mod tests {
 
     #[test]
     fn connect_request_targets_url_path_and_authority() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = "example.com".into();
-        c.port = 443;
-        c.username = "alice".into();
+        let c = Ssh3ConnectionConfig {
+            host: "example.com".into(),
+            port: 443,
+            username: "alice".into(),
+            ..Default::default()
+        };
         let req = build_connect_request(&c, "Basic xxx").expect("request builds");
         assert_eq!(req.method(), Method::CONNECT);
         assert_eq!(req.uri().path(), DEFAULT_SSH3_URL_PATH);
@@ -865,9 +889,11 @@ mod tests {
 
     #[test]
     fn connect_request_includes_nonstandard_port_in_authority() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = "example.com".into();
-        c.port = 8443;
+        let c = Ssh3ConnectionConfig {
+            host: "example.com".into(),
+            port: 8443,
+            ..Default::default()
+        };
         let req = build_connect_request(&c, "Basic xxx").expect("request builds");
         assert_eq!(
             req.uri().authority().map(|a| a.as_str()),
@@ -877,10 +903,12 @@ mod tests {
 
     #[test]
     fn connect_request_percent_encodes_username() {
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = "h".into();
-        c.port = 443;
-        c.username = "a b@c".into();
+        let c = Ssh3ConnectionConfig {
+            host: "h".into(),
+            port: 443,
+            username: "a b@c".into(),
+            ..Default::default()
+        };
         let req = build_connect_request(&c, "Basic xxx").expect("request builds");
         assert_eq!(req.uri().query(), Some("user=a%20b%40c"));
     }
@@ -891,9 +919,11 @@ mod tests {
         // pseudo-header (via the patched h3 `Protocol` in the request
         // extensions). This is what makes a real `ssh3` server route the
         // conversation — a plain CONNECT can never reach the path-routed handler.
-        let mut c = Ssh3ConnectionConfig::default();
-        c.host = "example.com".into();
-        c.port = 443;
+        let c = Ssh3ConnectionConfig {
+            host: "example.com".into(),
+            port: 443,
+            ..Default::default()
+        };
         let req = build_connect_request(&c, "Basic xxx").expect("request builds");
         let proto = req
             .extensions()
