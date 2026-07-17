@@ -20,8 +20,9 @@ import { useTranslation } from "react-i18next";
 import type { Mgr } from "./types";
 import type { ConnectionDatabase } from "../../../types/connection/connection";
 import { Checkbox, PasswordInput, Textarea } from "../../ui/forms";
-import { EmptyState } from "../../ui/display";
+import { EmptyState, LoadingElement } from "../../ui/display";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
+import { useSettings } from "../../../contexts/SettingsContext";
 
 interface DatabaseListProps {
   mgr: Mgr;
@@ -69,6 +70,15 @@ function DatabaseList({ mgr }: DatabaseListProps) {
     return { total, encrypted };
   }, [mgr.collections]);
 
+  // One announcement for the whole list, not one per row: a switch lights up
+  // two rows (incoming + outgoing) and per-row regions would announce twice.
+  const loading = mgr.loadingCollection;
+  const loadingAnnouncement = loading
+    ? (t(`databaseCenter.collections.loading.${loading.mode}`, {
+        name: loading.name,
+      }) as string)
+    : "";
+
   const anyFormOpen =
     mgr.showCreateForm ||
     mgr.showImportForm ||
@@ -78,6 +88,15 @@ function DatabaseList({ mgr }: DatabaseListProps) {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
+      <div
+        role="status"
+        aria-live="polite"
+        className="sr-only"
+        data-testid="database-loading-announcement"
+      >
+        {loadingAnnouncement}
+      </div>
+
       {/* Heading + primary action */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
@@ -128,7 +147,12 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}
           className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-          placeholder={t("databaseCenter.searchPlaceholder", "Search databases...") as string}
+          placeholder={
+            t(
+              "databaseCenter.searchPlaceholder",
+              "Search databases...",
+            ) as string
+          }
         />
       </div>
 
@@ -181,7 +205,10 @@ function DatabaseList({ mgr }: DatabaseListProps) {
           message={
             mgr.collections.length === 0
               ? t("databaseCenter.collections.emptyTitle")
-              : t("databaseCenter.noResults", "No databases match your search.") as string
+              : (t(
+                  "databaseCenter.noResults",
+                  "No databases match your search.",
+                ) as string)
           }
           hint={
             mgr.collections.length === 0
@@ -260,6 +287,34 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
   onDelete,
 }) => {
   const { t } = useTranslation();
+  const { settings } = useSettings();
+  // Gates motion only. The mode copy, aria-busy, the announcement and the
+  // disabled siblings must survive with animations off.
+  const animEnabled = settings.animationsEnabled;
+
+  const loading = mgr.loadingCollection;
+  const isLoadingThis = loading?.id === collection.id;
+  // The row being handed away during a switch — dims and settles back while
+  // the incoming row loads.
+  const isHandoff =
+    loading?.mode === "switch" &&
+    mgr.isCurrentDatabase(collection.id) &&
+    !isLoadingThis;
+  // Rows with no part in the load. Dimming them is the visual half of the
+  // hook's re-entrancy guard: a click that can't happen needs no explaining.
+  const isBystander = loading !== null && !isLoadingThis && !isHandoff;
+
+  const loadingCopy = isHandoff
+    ? (t("databaseCenter.collections.loading.handoff", {
+        name: collection.name,
+      }) as string)
+    : isLoadingThis && loading
+      ? // The name comes off the loading state, not the row: the collection
+        // can drop out of the list mid-load and the copy still resolves.
+        (t(`databaseCenter.collections.loading.${loading.mode}`, {
+          name: loading.name,
+        }) as string)
+      : null;
 
   const openLabel = collection.isEncrypted
     ? t("databaseCenter.actions.unlock")
@@ -279,23 +334,44 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
 
   return (
     <div
-      className={`rounded-lg border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary group ${
+      aria-busy={isLoadingThis}
+      className={`relative overflow-hidden rounded-lg border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary group ${
         highlighted
           ? "border-primary/60 bg-primary/5"
           : "border-[var(--color-border)] bg-[var(--color-border)]/30 hover:bg-[var(--color-border)]/50"
+      } ${isBystander ? "opacity-50 pointer-events-none" : ""} ${
+        isHandoff && animEnabled ? "animate-row-handoff" : ""
       }`}
     >
+      {/* Carries its own absolute inset-0 gradient overlay; needs the
+          relative + overflow-hidden container above to stay in the row. */}
+      {isLoadingThis && animEnabled && (
+        <span className="animate-row-sweep" aria-hidden="true" />
+      )}
       <div className="flex items-center gap-3 p-3">
         <button
           type="button"
           onClick={() => void mgr.handleSelectCollection(collection)}
+          disabled={loading !== null}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
-          aria-label={t("databaseCenter.collections.openCollectionLabel", {
-            name: collection.name,
-          }) as string}
+          aria-label={
+            t("databaseCenter.collections.openCollectionLabel", {
+              name: collection.name,
+            }) as string
+          }
         >
           <div className="relative flex-shrink-0">
-            <Database size={20} className="text-primary" />
+            {isLoadingThis ? (
+              // `ring` is the only variant that belongs in a 20px icon slot:
+              // boundsBleed 0 so it fills the box exactly, and it stays legible
+              // down to 12px. aria-hidden because the variant root carries
+              // role="status" — a second live region would announce twice.
+              <span aria-hidden="true" className="inline-flex">
+                <LoadingElement type="ring" size={20} />
+              </span>
+            ) : (
+              <Database size={20} className="text-primary" />
+            )}
             {collection.isEncrypted && (
               <Lock
                 size={10}
@@ -319,10 +395,14 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
                 {collection.description}
               </p>
             )}
-            <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">
-              {t("databaseCenter.collections.lastAccessed")}:{" "}
-              {new Date(collection.lastAccessed).toLocaleDateString()}
-            </p>
+            {loadingCopy ? (
+              <p className="text-[10px] text-primary mt-0.5">{loadingCopy}</p>
+            ) : (
+              <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">
+                {t("databaseCenter.collections.lastAccessed")}:{" "}
+                {new Date(collection.lastAccessed).toLocaleDateString()}
+              </p>
+            )}
           </div>
         </button>
 
@@ -330,6 +410,7 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
           <button
             type="button"
             onClick={() => void mgr.handleSelectCollection(collection)}
+            disabled={loading !== null}
             className="sor-icon-btn-sm"
             title={openLabel}
             aria-label={openLabel}
@@ -484,7 +565,9 @@ const CreateDatabaseCard: React.FC<{ mgr: Mgr; onClose: () => void }> = ({
             mgr.setNewCollection({ ...mgr.newCollection, name: e.target.value })
           }
           className="sor-form-input-xs w-full"
-          placeholder={t("databaseCenter.collections.namePlaceholder") as string}
+          placeholder={
+            t("databaseCenter.collections.namePlaceholder") as string
+          }
           data-testid="database-name"
           autoFocus
         />
