@@ -1,69 +1,113 @@
 import { Mgr } from "./types";
 import { Edit, Edit2, Play, Plus, Square, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 function TunnelsTab({ mgr }: { mgr: Mgr }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-[var(--color-text)]">
-          SSH Tunnels
+          {t("proxyChainMenu.tunnels.title", "SSH Tunnels")}
         </h3>
-        <button
-          onClick={mgr.handleNewTunnel}
-          className="sor-btn-primary-sm"
-        >
+        <button onClick={mgr.handleNewTunnel} className="sor-btn-primary-sm">
           <Plus size={14} />
-          New Tunnel
+          {t("proxyChainMenu.tunnels.newTunnel", "New Tunnel")}
         </button>
       </div>
 
       <div className="text-sm text-[var(--color-textSecondary)]">
-        Create SSH tunnels using existing SSH connections to forward ports
-        securely.
+        {t(
+          "proxyChainMenu.tunnels.description",
+          "Create SSH tunnels using existing SSH connections to forward ports securely.",
+        )}
       </div>
 
       <div className="space-y-2">
         {mgr.sshTunnels.length === 0 ? (
           <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
-            No SSH tunnels configured. Click "New Tunnel" to create one.
+            {t(
+              "proxyChainMenu.tunnels.empty",
+              'No SSH tunnels configured. Click "New Tunnel" to create one.',
+            )}
           </div>
         ) : (
           mgr.sshTunnels.map((tunnel) => {
             const sshConn = mgr.connections.find(
               (c) => c.id === tunnel.sshConnectionId,
             );
-            const localPort =
-              tunnel.actualLocalPort || tunnel.localPort || "?";
+            const localPort = tunnel.actualLocalPort || tunnel.localPort || "?";
 
             const getTunnelInfo = () => {
               switch (tunnel.type) {
                 case "dynamic":
-                  return `SOCKS5 proxy on localhost:${localPort}`;
+                  return t(
+                    "proxyChainMenu.tunnels.info.dynamic",
+                    "SOCKS5 proxy on localhost:{{localPort}}",
+                    { localPort },
+                  );
                 case "remote":
-                  return `${tunnel.remoteHost}:${tunnel.remotePort} → localhost:${localPort}`;
+                  return t(
+                    "proxyChainMenu.tunnels.info.remote",
+                    "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}",
+                    {
+                      remoteHost: tunnel.remoteHost,
+                      remotePort: tunnel.remotePort,
+                      localPort,
+                    },
+                  );
                 case "local":
                 default:
-                  return `localhost:${localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
+                  return t(
+                    "proxyChainMenu.tunnels.info.local",
+                    "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+                    {
+                      localPort,
+                      remoteHost: tunnel.remoteHost,
+                      remotePort: tunnel.remotePort,
+                    },
+                  );
               }
             };
 
             const getTypeLabel = () => {
               switch (tunnel.type) {
                 case "dynamic":
-                  return "Dynamic";
+                  return t("proxyChainMenu.tunnels.type.dynamic", "Dynamic");
                 case "remote":
-                  return "Remote";
+                  return t("proxyChainMenu.tunnels.type.remote", "Remote");
                 case "local":
                 default:
-                  return "Local";
+                  return t("proxyChainMenu.tunnels.type.local", "Local");
+              }
+            };
+
+            const getStatusLabel = () => {
+              switch (tunnel.status) {
+                case "connected":
+                  return t(
+                    "proxyChainMenu.tunnels.status.connected",
+                    "Connected",
+                  );
+                case "connecting":
+                  return t(
+                    "proxyChainMenu.tunnels.status.connecting",
+                    "Connecting...",
+                  );
+                case "error":
+                  return t("proxyChainMenu.tunnels.status.error", "Error");
+                case "disconnected":
+                  return t(
+                    "proxyChainMenu.tunnels.status.disconnected",
+                    "Disconnected",
+                  );
+                default:
+                  return tunnel.status;
               }
             };
 
             return (
-              <div
-                key={tunnel.id}
-                className="sor-selection-row"
-              >
+              <div key={tunnel.id} className="sor-selection-row">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <div className="text-sm font-medium text-[var(--color-text)]">
@@ -83,12 +127,15 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                               : "bg-[var(--color-secondary)]/20 text-[var(--color-textSecondary)]"
                       }`}
                     >
-                      {tunnel.status}
+                      {getStatusLabel()}
                     </span>
                   </div>
                   <div className="text-xs text-[var(--color-textSecondary)] mt-1">
-                    <span className="text-[var(--color-textMuted)]">via</span>{" "}
-                    {sshConn?.name || "Unknown SSH"}
+                    <span className="text-[var(--color-textMuted)]">
+                      {t("proxyChainMenu.tunnels.via", "via")}
+                    </span>{" "}
+                    {sshConn?.name ||
+                      t("proxyChainMenu.tunnels.unknownSsh", "Unknown SSH")}
                   </div>
                   <div className="text-xs text-[var(--color-textSecondary)] mt-0.5 font-mono">
                     {getTunnelInfo()}
@@ -104,7 +151,10 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     <button
                       onClick={() => mgr.handleDisconnectTunnel(tunnel.id)}
                       className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-md"
-                      title="Disconnect"
+                      title={t(
+                        "proxyChainMenu.common.disconnect",
+                        "Disconnect",
+                      )}
                     >
                       <Square size={14} />
                     </button>
@@ -113,7 +163,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                       onClick={() => mgr.handleConnectTunnel(tunnel.id)}
                       disabled={tunnel.status === "connecting"}
                       className="p-2 text-[var(--color-textSecondary)] hover:text-success hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                      title="Connect"
+                      title={t("proxyChainMenu.common.connect", "Connect")}
                     >
                       <Play size={14} />
                     </button>
@@ -122,7 +172,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     onClick={() => mgr.handleEditTunnel(tunnel)}
                     disabled={tunnel.status === "connected"}
                     className="p-2 text-[var(--color-textSecondary)] hover:text-primary hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                    title="Edit"
+                    title={t("proxyChainMenu.common.edit", "Edit")}
                   >
                     <Edit2 size={14} />
                   </button>
@@ -130,7 +180,7 @@ function TunnelsTab({ mgr }: { mgr: Mgr }) {
                     onClick={() => mgr.handleDeleteTunnel(tunnel.id)}
                     disabled={tunnel.status === "connected"}
                     className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                    title="Delete"
+                    title={t("proxyChainMenu.common.delete", "Delete")}
                   >
                     <Trash2 size={14} />
                   </button>

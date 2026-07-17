@@ -1,43 +1,53 @@
 import { Mgr } from "./types";
-import { Copy, Download, Edit, Edit2, Plus, Search, Trash2, Upload } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Edit,
+  Edit2,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 function ProfilesTab({ mgr }: { mgr: Mgr }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-[var(--color-text)]">
-          Saved Proxy Profiles
+          {t("proxyChainMenu.profiles.title", "Saved Proxy Profiles")}
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={mgr.handleImportProfiles}
             className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
-            title="Import Profiles"
+            title={t("proxyChainMenu.profiles.importTitle", "Import Profiles")}
           >
             <Upload size={12} />
-            Import
+            {t("proxyChainMenu.profiles.import", "Import")}
           </button>
           <button
             onClick={mgr.handleExportProfiles}
             className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
-            title="Export Profiles"
+            title={t("proxyChainMenu.profiles.exportTitle", "Export Profiles")}
           >
             <Download size={12} />
-            Export
+            {t("proxyChainMenu.profiles.export", "Export")}
           </button>
-          <button
-            onClick={mgr.handleNewProfile}
-            className="sor-btn-primary-sm"
-          >
+          <button onClick={mgr.handleNewProfile} className="sor-btn-primary-sm">
             <Plus size={14} />
-            New Profile
+            {t("proxyChainMenu.profiles.newProfile", "New Profile")}
           </button>
         </div>
       </div>
 
       <div className="text-sm text-[var(--color-textSecondary)]">
-        Create and manage reusable proxy configurations that can be used across
-        connections and chains.
+        {t(
+          "proxyChainMenu.profiles.description",
+          "Create and manage reusable proxy configurations that can be used across connections and chains.",
+        )}
       </div>
 
       {/* Search */}
@@ -47,7 +57,10 @@ function ProfilesTab({ mgr }: { mgr: Mgr }) {
           type="text"
           value={mgr.profileSearch}
           onChange={(e) => mgr.setProfileSearch(e.target.value)}
-          placeholder="Search profiles..."
+          placeholder={t(
+            "proxyChainMenu.profiles.searchPlaceholder",
+            "Search profiles...",
+          )}
           className="sor-search-input"
         />
       </div>
@@ -57,15 +70,18 @@ function ProfilesTab({ mgr }: { mgr: Mgr }) {
         {mgr.filteredProfiles.length === 0 ? (
           <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
             {mgr.profileSearch
-              ? "No profiles match your search."
-              : 'No proxy profiles saved. Click "New Profile" to create one.'}
+              ? t(
+                  "proxyChainMenu.profiles.noMatches",
+                  "No profiles match your search.",
+                )
+              : t(
+                  "proxyChainMenu.profiles.empty",
+                  'No proxy profiles saved. Click "New Profile" to create one.',
+                )}
           </div>
         ) : (
           mgr.filteredProfiles.map((profile) => (
-            <div
-              key={profile.id}
-              className="sor-selection-row"
-            >
+            <div key={profile.id} className="sor-selection-row">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-medium text-[var(--color-text)]">
@@ -76,14 +92,14 @@ function ProfilesTab({ mgr }: { mgr: Mgr }) {
                   </span>
                   {profile.isDefault && (
                     <span className="sor-badge sor-badge-yellow">
-                      Default
+                      {t("proxyChainMenu.profiles.defaultBadge", "Default")}
                     </span>
                   )}
                 </div>
                 <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                   {profile.config.host}:{profile.config.port}
                   {profile.config.username &&
-                    ` (${profile.config.username})`}
+                    ` ${t("proxyChainMenu.profiles.usernameSuffix", "({{username}})", { username: profile.config.username })}`}
                 </div>
                 {profile.description && (
                   <div className="text-xs text-[var(--color-textMuted)] mt-1">
@@ -93,10 +109,7 @@ function ProfilesTab({ mgr }: { mgr: Mgr }) {
                 {profile.tags && profile.tags.length > 0 && (
                   <div className="flex gap-1 mt-2">
                     {profile.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="sor-badge sor-badge-blue"
-                      >
+                      <span key={tag} className="sor-badge sor-badge-blue">
                         {tag}
                       </span>
                     ))}
@@ -107,21 +120,21 @@ function ProfilesTab({ mgr }: { mgr: Mgr }) {
                 <button
                   onClick={() => mgr.handleDuplicateProfile(profile.id)}
                   className="sor-icon-btn"
-                  title="Duplicate"
+                  title={t("proxyChainMenu.common.duplicate", "Duplicate")}
                 >
                   <Copy size={14} />
                 </button>
                 <button
                   onClick={() => mgr.handleEditProfile(profile)}
                   className="sor-icon-btn"
-                  title="Edit"
+                  title={t("proxyChainMenu.common.edit", "Edit")}
                 >
                   <Edit2 size={14} />
                 </button>
                 <button
                   onClick={() => mgr.handleDeleteProfile(profile.id)}
                   className="sor-icon-btn-danger"
-                  title="Delete"
+                  title={t("proxyChainMenu.common.delete", "Delete")}
                 >
                   <Trash2 size={14} />
                 </button>
