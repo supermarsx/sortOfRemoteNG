@@ -67,7 +67,7 @@ export function SidebarTabs<Id extends string>({
       role="tablist"
       aria-orientation="vertical"
       aria-label={ariaLabel}
-      className="w-56 border-r border-[var(--color-border)] p-4 space-y-2"
+      className="w-56 border-r border-[var(--color-border)] p-4 space-y-2 overflow-y-auto"
     >
       {tabs.map((tab, index) => {
         const Icon = tab.icon;
