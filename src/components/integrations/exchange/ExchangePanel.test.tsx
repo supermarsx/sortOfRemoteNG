@@ -90,7 +90,7 @@ describe("useExchangeConnection", () => {
 describe("exchangeDescriptor", () => {
   it("registers as an app-service integration with a lazy panel import", async () => {
     expect(exchangeDescriptor.key).toBe("exchange");
-    expect(exchangeDescriptor.category).toBe("app-service");
+    expect(exchangeDescriptor.category).toBe("mail-server");
     const mod = await exchangeDescriptor.importPanel();
     expect(mod.default).toBeTypeOf("function");
   });

@@ -75,7 +75,7 @@ describe("NginxPanel", () => {
 
   it("exposes a well-formed web descriptor", () => {
     expect(nginxDescriptor.key).toBe("nginx");
-    expect(nginxDescriptor.category).toBe("web");
+    expect(nginxDescriptor.category).toBe("web-server");
     expect(typeof nginxDescriptor.importPanel).toBe("function");
   });
 

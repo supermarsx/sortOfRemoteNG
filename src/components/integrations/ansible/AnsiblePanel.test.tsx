@@ -35,7 +35,7 @@ beforeEach(() => {
 describe("AnsiblePanel (shell)", () => {
   it("exports an infra descriptor keyed 'ansible'", () => {
     expect(ansibleDescriptor.key).toBe("ansible");
-    expect(ansibleDescriptor.category).toBe("infra");
+    expect(ansibleDescriptor.category).toBe("management");
     expect(typeof ansibleDescriptor.importPanel).toBe("function");
   });
 

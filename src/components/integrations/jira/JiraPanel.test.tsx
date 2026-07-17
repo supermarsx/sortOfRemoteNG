@@ -122,7 +122,7 @@ describe("JiraPanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(jiraDescriptor.key).toBe("jira");
-    expect(jiraDescriptor.category).toBe("app-service");
+    expect(jiraDescriptor.category).toBe("business-app");
     expect(typeof jiraDescriptor.importPanel).toBe("function");
   });
 

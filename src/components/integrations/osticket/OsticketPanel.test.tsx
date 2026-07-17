@@ -123,7 +123,7 @@ describe("OsticketPanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(osticketDescriptor.key).toBe("osticket");
-    expect(osticketDescriptor.category).toBe("app-service");
+    expect(osticketDescriptor.category).toBe("business-app");
     expect(typeof osticketDescriptor.importPanel).toBe("function");
   });
 

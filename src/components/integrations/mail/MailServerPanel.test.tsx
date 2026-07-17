@@ -42,7 +42,7 @@ describe("MailServerPanel", () => {
 
   it("exposes a well-formed mail descriptor", () => {
     expect(mailDescriptor.key).toBe("mail");
-    expect(mailDescriptor.category).toBe("mail");
+    expect(mailDescriptor.category).toBe("mail-server");
     expect(mailDescriptor.label).toBe("Mail Server");
     expect(typeof mailDescriptor.importPanel).toBe("function");
   });

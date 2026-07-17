@@ -73,7 +73,7 @@ describe("CaddyPanel", () => {
 
   it("exposes a well-formed web-category descriptor", () => {
     expect(caddyDescriptor.key).toBe("caddy");
-    expect(caddyDescriptor.category).toBe("web");
+    expect(caddyDescriptor.category).toBe("web-server");
     expect(typeof caddyDescriptor.importPanel).toBe("function");
   });
 

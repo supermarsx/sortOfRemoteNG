@@ -77,7 +77,7 @@ describe("GrafanaPanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(grafanaDescriptor.key).toBe("grafana");
-    expect(grafanaDescriptor.category).toBe("app-service");
+    expect(grafanaDescriptor.category).toBe("monitoring");
     expect(typeof grafanaDescriptor.importPanel).toBe("function");
   });
 

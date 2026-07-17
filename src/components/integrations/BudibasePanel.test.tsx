@@ -80,7 +80,7 @@ describe("BudibasePanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(budibaseDescriptor.key).toBe("budibase");
-    expect(budibaseDescriptor.category).toBe("app-service");
+    expect(budibaseDescriptor.category).toBe("business-app");
     expect(typeof budibaseDescriptor.importPanel).toBe("function");
   });
 

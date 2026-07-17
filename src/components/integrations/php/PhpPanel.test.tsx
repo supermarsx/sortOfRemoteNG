@@ -126,7 +126,7 @@ describe("PhpPanel", () => {
 
   it("exposes a well-formed web descriptor", () => {
     expect(phpDescriptor.key).toBe("php");
-    expect(phpDescriptor.category).toBe("web");
+    expect(phpDescriptor.category).toBe("web-server");
     expect(typeof phpDescriptor.importPanel).toBe("function");
   });
 

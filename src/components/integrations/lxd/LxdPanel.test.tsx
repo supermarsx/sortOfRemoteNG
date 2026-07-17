@@ -35,7 +35,7 @@ beforeEach(() => {
 describe("lxdDescriptor", () => {
   it("registers under the infra category with a lazy panel import", async () => {
     expect(lxdDescriptor.key).toBe("lxd");
-    expect(lxdDescriptor.category).toBe("infra");
+    expect(lxdDescriptor.category).toBe("virtualization");
     const mod = await lxdDescriptor.importPanel();
     expect(mod.default).toBeTypeOf("function");
   });

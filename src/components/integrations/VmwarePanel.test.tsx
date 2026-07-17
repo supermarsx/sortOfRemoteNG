@@ -103,7 +103,7 @@ describe("VmwarePanel", () => {
 
   it("exposes a well-formed infra descriptor", () => {
     expect(vmwareDescriptor.key).toBe("vmware");
-    expect(vmwareDescriptor.category).toBe("infra");
+    expect(vmwareDescriptor.category).toBe("virtualization");
     expect(typeof vmwareDescriptor.importPanel).toBe("function");
   });
 

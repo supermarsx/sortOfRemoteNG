@@ -110,7 +110,7 @@ describe("GdrivePanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(gdriveDescriptor.key).toBe("gdrive");
-    expect(gdriveDescriptor.category).toBe("app-service");
+    expect(gdriveDescriptor.category).toBe("file-storage");
     expect(gdriveDescriptor.label).toBe("Google Drive");
     expect(typeof gdriveDescriptor.importPanel).toBe("function");
   });

@@ -35,7 +35,7 @@ beforeEach(() => {
 describe("PfsensePanel (shell)", () => {
   it("exports an infra descriptor keyed 'pfsense'", () => {
     expect(pfsenseDescriptor.key).toBe("pfsense");
-    expect(pfsenseDescriptor.category).toBe("infra");
+    expect(pfsenseDescriptor.category).toBe("networking");
     expect(typeof pfsenseDescriptor.importPanel).toBe("function");
   });
 

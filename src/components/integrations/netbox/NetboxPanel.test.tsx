@@ -92,7 +92,7 @@ describe("useNetboxConnection", () => {
 describe("netboxDescriptor", () => {
   it("registers as an infra integration with a lazy panel import", async () => {
     expect(netboxDescriptor.key).toBe("netbox");
-    expect(netboxDescriptor.category).toBe("infra");
+    expect(netboxDescriptor.category).toBe("networking");
     const mod = await netboxDescriptor.importPanel();
     expect(mod.default).toBeTypeOf("function");
   });

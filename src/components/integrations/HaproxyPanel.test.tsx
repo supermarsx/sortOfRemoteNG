@@ -77,7 +77,7 @@ describe("HaproxyPanel", () => {
 
   it("exposes a well-formed web-category descriptor", () => {
     expect(haproxyDescriptor.key).toBe("haproxy");
-    expect(haproxyDescriptor.category).toBe("web");
+    expect(haproxyDescriptor.category).toBe("web-server");
     expect(typeof haproxyDescriptor.importPanel).toBe("function");
   });
 

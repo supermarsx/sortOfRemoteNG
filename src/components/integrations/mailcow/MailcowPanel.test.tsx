@@ -82,7 +82,7 @@ describe("useMailcowConnection", () => {
 describe("mailcowDescriptor", () => {
   it("registers as an app-service integration with a lazy panel import", async () => {
     expect(mailcowDescriptor.key).toBe("mailcow");
-    expect(mailcowDescriptor.category).toBe("app-service");
+    expect(mailcowDescriptor.category).toBe("mail-server");
     const mod = await mailcowDescriptor.importPanel();
     expect(mod.default).toBeTypeOf("function");
   });

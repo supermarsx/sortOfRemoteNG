@@ -72,7 +72,7 @@ describe("PrometheusPanel", () => {
 
   it("exposes a well-formed app-service descriptor", () => {
     expect(prometheusDescriptor.key).toBe("prometheus");
-    expect(prometheusDescriptor.category).toBe("app-service");
+    expect(prometheusDescriptor.category).toBe("monitoring");
     expect(typeof prometheusDescriptor.importPanel).toBe("function");
   });
 

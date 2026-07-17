@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("VmwareDesktopPanel", () => {
   it("exports an infra-category descriptor keyed vmwareDesktop", () => {
     expect(vmwareDesktopDescriptor.key).toBe("vmwareDesktop");
-    expect(vmwareDesktopDescriptor.category).toBe("infra");
+    expect(vmwareDesktopDescriptor.category).toBe("virtualization");
     expect(typeof vmwareDesktopDescriptor.importPanel).toBe("function");
   });
 

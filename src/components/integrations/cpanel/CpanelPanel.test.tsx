@@ -132,7 +132,7 @@ describe("CpanelPanel", () => {
 
   it("exposes a well-formed infra descriptor", () => {
     expect(cpanelDescriptor.key).toBe("cpanel");
-    expect(cpanelDescriptor.category).toBe("infra");
+    expect(cpanelDescriptor.category).toBe("management");
     expect(typeof cpanelDescriptor.importPanel).toBe("function");
   });
 

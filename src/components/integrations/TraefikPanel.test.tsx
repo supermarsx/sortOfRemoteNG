@@ -75,7 +75,7 @@ describe("TraefikPanel", () => {
 
   it("exposes a well-formed web descriptor", () => {
     expect(traefikDescriptor.key).toBe("traefik");
-    expect(traefikDescriptor.category).toBe("web");
+    expect(traefikDescriptor.category).toBe("web-server");
     expect(typeof traefikDescriptor.importPanel).toBe("function");
   });
 
