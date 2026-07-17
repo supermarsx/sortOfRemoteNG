@@ -1808,7 +1808,7 @@ export default GrafanaPanel;
 export const grafanaDescriptor: IntegrationDescriptor = {
   key: "grafana",
   label: "Grafana",
-  category: "app-service",
+  category: "monitoring",
   icon: BarChart3,
   importPanel: () => import("./GrafanaPanel"),
 };

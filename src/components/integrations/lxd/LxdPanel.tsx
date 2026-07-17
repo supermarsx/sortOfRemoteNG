@@ -551,7 +551,7 @@ const LxdTabBar: React.FC<LxdTabBarProps> = ({
 export const lxdDescriptor: IntegrationDescriptor = {
   key: "lxd",
   label: "LXD / Incus",
-  category: "infra",
+  category: "virtualization",
   icon: Boxes,
   importPanel: () => import("./LxdPanel"),
 };

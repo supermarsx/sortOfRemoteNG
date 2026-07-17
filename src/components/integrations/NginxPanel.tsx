@@ -1448,7 +1448,7 @@ export default NginxPanel;
 export const nginxDescriptor: IntegrationDescriptor = {
   key: "nginx",
   label: "Nginx",
-  category: "web",
+  category: "web-server",
   icon: Server,
   importPanel: () => import("./NginxPanel"),
 };

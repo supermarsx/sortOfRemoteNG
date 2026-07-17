@@ -435,7 +435,7 @@ export default VmwareDesktopPanel;
 export const vmwareDesktopDescriptor: IntegrationDescriptor = {
   key: INTEGRATION_KEY,
   label: "VMware Workstation",
-  category: "infra",
+  category: "virtualization",
   icon: MonitorPlay,
   importPanel: () => import("./VmwareDesktopPanel"),
 };

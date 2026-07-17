@@ -1764,7 +1764,7 @@ export default BudibasePanel;
 export const budibaseDescriptor: IntegrationDescriptor = {
   key: "budibase",
   label: "Budibase",
-  category: "app-service",
+  category: "business-app",
   icon: Boxes,
   importPanel: () => import("./BudibasePanel"),
 };

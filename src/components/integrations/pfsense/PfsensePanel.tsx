@@ -406,7 +406,7 @@ export default PfsensePanel;
 export const pfsenseDescriptor: IntegrationDescriptor = {
   key: "pfsense",
   label: "pfSense",
-  category: "infra",
+  category: "networking",
   icon: ShieldCheck,
   importPanel: () => import("./PfsensePanel"),
 };

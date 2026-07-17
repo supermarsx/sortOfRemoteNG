@@ -1668,7 +1668,7 @@ export default HaproxyPanel;
 export const haproxyDescriptor: IntegrationDescriptor = {
   key: "haproxy",
   label: "HAProxy",
-  category: "web",
+  category: "web-server",
   icon: Network,
   importPanel: () => import("./HaproxyPanel"),
 };

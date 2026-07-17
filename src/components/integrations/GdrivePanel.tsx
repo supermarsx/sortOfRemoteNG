@@ -1340,7 +1340,7 @@ export default GdrivePanel;
 export const gdriveDescriptor: IntegrationDescriptor = {
   key: "gdrive",
   label: "Google Drive",
-  category: "app-service",
+  category: "file-storage",
   icon: HardDrive,
   importPanel: () => import("./GdrivePanel"),
 };

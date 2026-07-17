@@ -1087,7 +1087,7 @@ export default TraefikPanel;
 export const traefikDescriptor: IntegrationDescriptor = {
   key: "traefik",
   label: "Traefik",
-  category: "web",
+  category: "web-server",
   icon: Waypoints,
   importPanel: () => import("./TraefikPanel"),
 };

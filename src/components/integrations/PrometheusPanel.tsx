@@ -1142,7 +1142,7 @@ export default PrometheusPanel;
 export const prometheusDescriptor: IntegrationDescriptor = {
   key: "prometheus",
   label: "Prometheus",
-  category: "app-service",
+  category: "monitoring",
   icon: Activity,
   importPanel: () => import("./PrometheusPanel"),
 };

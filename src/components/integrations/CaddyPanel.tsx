@@ -1373,7 +1373,7 @@ export default CaddyPanel;
 export const caddyDescriptor: IntegrationDescriptor = {
   key: "caddy",
   label: "Caddy",
-  category: "web",
+  category: "web-server",
   icon: Boxes,
   importPanel: () => import("./CaddyPanel"),
 };

@@ -1126,7 +1126,7 @@ export default VmwarePanel;
 export const vmwareDescriptor: IntegrationDescriptor = {
   key: "vmware",
   label: "VMware vSphere",
-  category: "infra",
+  category: "virtualization",
   icon: Server,
   importPanel: () => import("./VmwarePanel"),
 };
