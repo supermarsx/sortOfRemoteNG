@@ -296,6 +296,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
             )}
             isOpen
             onClose={onClose}
+            onConnect={onReconnect}
           />
         </FeatureErrorBoundary>
       )}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Save,
   Check,
@@ -66,6 +67,7 @@ interface ConnectionEditorProps {
   connection?: Connection;
   isOpen: boolean;
   onClose: () => void;
+  onConnect?: (connection: Connection) => void;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -75,96 +77,118 @@ interface ConnectionEditorProps {
 const EditorHeader: React.FC<{
   mgr: ConnectionEditorMgr;
   onClose: () => void;
+  onConnect?: (connection: Connection) => void;
   searchBar: React.ReactNode;
-}> = ({ mgr, onClose, searchBar }) => (
-  <div
-    className="relative min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] px-5 py-3"
-    style={{
-      background: mgr.isNewConnection
-        ? "linear-gradient(to right, rgb(var(--color-success-rgb) / 0.15), var(--color-surface))"
-        : "linear-gradient(to right, rgb(var(--color-primary-rgb) / 0.15), var(--color-surface))",
-    }}
-  >
-    <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div
-          className={`p-2 rounded-lg ${
-            mgr.isNewConnection ? "bg-success/20" : "bg-primary/20"
-          }`}
-        >
-          {mgr.isNewConnection ? (
-            <Plus size={18} className="text-success" />
-          ) : (
-            <Settings2 size={18} className="text-primary" />
-          )}
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
-            {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
-            {mgr.isNewConnection && (
-              <Sparkles size={14} className="text-success" />
-            )}
-          </h2>
-          <p className="truncate text-xs text-[var(--color-textSecondary)]">
-            {mgr.isNewConnection
-              ? "Add a new server or service"
-              : `Editing "${mgr.formData.name || "connection"}"`}
-          </p>
-        </div>
-      </div>
-      <div className="flex min-w-0 max-w-full flex-1 flex-wrap items-center justify-end gap-2">
-        {searchBar}
-        {mgr.connection && mgr.settings.autoSaveEnabled && (
-          <div className="flex items-center gap-1.5 text-xs mr-2">
-            {mgr.autoSaveStatus === "pending" && (
-              <span className="text-warning flex items-center gap-1 bg-warning/10 px-2 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
-                Saving...
-              </span>
-            )}
-            {mgr.autoSaveStatus === "saved" && (
-              <span className="text-success flex items-center gap-1 bg-success/10 px-2 py-1 rounded-full">
-                <Check size={12} />
-                Saved
-              </span>
+}> = ({ mgr, onClose, onConnect, searchBar }) => {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="relative min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] px-5 py-3"
+      style={{
+        background: mgr.isNewConnection
+          ? "linear-gradient(to right, rgb(var(--color-success-rgb) / 0.15), var(--color-surface))"
+          : "linear-gradient(to right, rgb(var(--color-primary-rgb) / 0.15), var(--color-surface))",
+      }}
+    >
+      <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div
+            className={`p-2 rounded-lg ${
+              mgr.isNewConnection ? "bg-success/20" : "bg-primary/20"
+            }`}
+          >
+            {mgr.isNewConnection ? (
+              <Plus size={18} className="text-success" />
+            ) : (
+              <Settings2 size={18} className="text-primary" />
             )}
           </div>
-        )}
-        {!mgr.isNewConnection && (
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
+              {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
+              {mgr.isNewConnection && (
+                <Sparkles size={14} className="text-success" />
+              )}
+            </h2>
+            <p className="truncate text-xs text-[var(--color-textSecondary)]">
+              {mgr.isNewConnection
+                ? "Add a new server or service"
+                : `Editing "${mgr.formData.name || "connection"}"`}
+            </p>
+          </div>
+        </div>
+        <div className="flex min-w-0 max-w-full flex-1 flex-wrap items-center justify-end gap-2">
+          {searchBar}
+          {mgr.connection && mgr.settings.autoSaveEnabled && (
+            <div className="flex items-center gap-1.5 text-xs mr-2">
+              {mgr.autoSaveStatus === "pending" && (
+                <span className="text-warning flex items-center gap-1 bg-warning/10 px-2 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
+                  Saving...
+                </span>
+              )}
+              {mgr.autoSaveStatus === "saved" && (
+                <span className="text-success flex items-center gap-1 bg-success/10 px-2 py-1 rounded-full">
+                  <Check size={12} />
+                  Saved
+                </span>
+              )}
+            </div>
+          )}
+          {mgr.connection && !mgr.formData.isGroup && onConnect && (
+            <button
+              type="button"
+              data-testid="editor-connect"
+              onClick={() => {
+                const target = mgr.saveNow();
+                if (target) onConnect(target);
+              }}
+              className="h-9 px-3 rounded-lg font-medium transition-all flex items-center gap-2 border border-success/40 bg-success/10 hover:bg-success/20 text-success"
+              title={t(
+                "connectionEditor.connect.title",
+                "Save changes and connect to this connection",
+              )}
+            >
+              <Zap size={16} />
+              {t("connectionEditor.connect.label", "Connect")}
+            </button>
+          )}
+          {!mgr.isNewConnection && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
+                  )
+                ) {
+                  mgr.handleResetToDefaults();
+                }
+              }}
+              className="px-3 h-9 rounded-lg font-medium transition-all flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              title="Reset to Defaults"
+            >
+              <RotateCcw size={16} />
+              Reset
+            </button>
+          )}
           <button
-            type="button"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
-                )
-              ) {
-                mgr.handleResetToDefaults();
-              }
-            }}
-            className="px-3 py-2 rounded-lg font-medium transition-all flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-            title="Reset to Defaults"
+            type="submit"
+            data-testid="editor-save"
+            className={`px-4 h-9 rounded-lg font-medium transition-all flex items-center gap-2 ${
+              mgr.isNewConnection
+                ? "bg-success hover:bg-success/80 text-[var(--color-text)] shadow-lg shadow-success/20"
+                : "bg-primary hover:bg-primary/80 text-[var(--color-text)] shadow-lg shadow-primary/20"
+            }`}
           >
-            <RotateCcw size={16} />
-            Reset
+            <Save size={16} />
+            {mgr.isNewConnection ? "Create" : "Save"}
           </button>
-        )}
-        <button
-          type="submit"
-          data-testid="editor-save"
-          className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
-            mgr.isNewConnection
-              ? "bg-success hover:bg-success/80 text-[var(--color-text)] shadow-lg shadow-success/20"
-              : "bg-primary hover:bg-primary/80 text-[var(--color-text)] shadow-lg shadow-primary/20"
-          }`}
-        >
-          <Save size={16} />
-          {mgr.isNewConnection ? "Create" : "Save"}
-        </button>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    QuickToggles — Group / Favorite toggle chips
@@ -1369,6 +1393,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   connection,
   isOpen,
   onClose,
+  onConnect,
 }) => {
   const mgr = useConnectionEditor(connection, isOpen, onClose);
   const [activeTab, setActiveTab] = useState<ConnectionEditorTabId>("general");
@@ -1454,6 +1479,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       <EditorHeader
         mgr={mgr}
         onClose={onClose}
+        onConnect={onConnect}
         searchBar={
           <ConnectionEditorSearchBar
             query={query}
