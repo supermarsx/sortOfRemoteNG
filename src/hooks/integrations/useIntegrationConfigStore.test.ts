@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  renderHook,
-  act,
-} from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 
 // Hoisted so the module-mock factory (hoisted above imports) can see it.
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
@@ -20,19 +14,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
 }));
 
-// No i18n provider under vitest — return the inline English default.
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
-}));
-
-import { IntegrationsHub } from "./IntegrationsHub";
 import {
   useIntegrationConfigStore,
   INTEGRATION_CONFIG_KEY,
   INTEGRATION_VAULT_SERVICE,
-} from "../../hooks/integrations/useIntegrationConfigStore";
-import { getToolKeyFromProtocol } from "../app/toolSession";
-import { integrationRegistry } from "../../types/integrations/registry";
+} from "./useIntegrationConfigStore";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -48,31 +34,6 @@ beforeEach(() => {
         invokeMock(cmd, args)) as unknown as typeof invokeMock,
     },
   };
-});
-
-describe("IntegrationsHub", () => {
-  it("renders registered integrations from the registry", async () => {
-    // Wave-0 shipped an empty registry; Wave 1+ populates it. This asserts the
-    // hub renders whatever is registered (generic — not coupled to any one
-    // integration) rather than the empty state.
-    expect(integrationRegistry.length).toBeGreaterThan(0);
-    invokeMock.mockResolvedValue(null); // read_app_data -> no instances
-
-    render(<IntegrationsHub isOpen onClose={() => {}} />);
-
-    await waitFor(() =>
-      expect(
-        screen.queryByTestId("integrations-empty"),
-      ).not.toBeInTheDocument(),
-    );
-    expect(screen.getAllByTestId(/^integration-card-/).length).toBeGreaterThan(
-      0,
-    );
-  });
-
-  it("is not wired as a standalone Tool-surface tab", () => {
-    expect(getToolKeyFromProtocol("tool:integrations")).toBeNull();
-  });
 });
 
 describe("useIntegrationConfigStore (R1: encrypted cred persistence)", () => {
