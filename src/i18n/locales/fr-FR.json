@@ -271,7 +271,23 @@
     "hostnameOverride": "Remplacer le nom d'onglet par le nom d'hôte",
     "statusCheck": "Vérification d'état",
     "statusCheckInterval": "Intervalle de vérification (secondes)",
-    "statusCheckMethod": "Méthode de vérification"
+    "statusCheckMethod": "Méthode de vérification",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Ne peut pas être son propre parent",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Exportez vos thèmes personnalisés et vos jeux de couleurs pour les partager ou les sauvegarder. L'importation ignorera les éléments existants, sauf si vous les supprimez au préalable."
   },
   "integrations": {
-    "title": "Intégrations",
-    "subtitle": "Connectez et gérez des services externes",
-    "empty": "Aucune intégration disponible pour l'instant",
-    "emptyHint": "Les intégrations apparaîtront ici au fur et à mesure de leur ajout.",
-    "addInstance": "Ajouter une instance",
-    "back": "Retour aux intégrations",
     "notFound": "Cette intégration n'est plus disponible.",
     "panelCrashed": "Le panneau d'intégration a planté",
     "panelCrashedDescription": "Ce panneau d'intégration a rencontré une erreur de rendu. Vous pouvez réessayer sans redémarrer l'application.",
-    "category": {
-      "infra": "Infrastructure",
-      "web": "Serveurs web",
-      "database": "Bases de données",
-      "appService": "Services d'application",
-      "mail": "Messagerie",
-      "vault": "Coffres-forts"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Images",

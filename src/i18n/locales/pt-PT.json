@@ -271,7 +271,23 @@
     "hostnameOverride": "Substituir nome do separador pelo hostname",
     "statusCheck": "Verificação de estado",
     "statusCheckInterval": "Intervalo de verificação (segundos)",
-    "statusCheckMethod": "Método de verificação"
+    "statusCheckMethod": "Método de verificação",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Não pode ser o seu próprio pai",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Exporte seus temas e esquemas de cores personalizados para compartilhar ou fazer backup. A importação ignorará os itens existentes, a menos que você os exclua primeiro."
   },
   "integrations": {
-    "title": "Integrações",
-    "subtitle": "Ligue e faça a gestão de serviços externos",
-    "empty": "Ainda não há integrações disponíveis",
-    "emptyHint": "As integrações aparecerão aqui à medida que forem adicionadas.",
-    "addInstance": "Adicionar instância",
-    "back": "Voltar às integrações",
     "notFound": "Esta integração já não está disponível.",
     "panelCrashed": "O painel de integração falhou",
     "panelCrashedDescription": "Este painel de integração teve um erro de renderização. Pode tentar novamente sem reiniciar a aplicação.",
-    "category": {
-      "infra": "Infraestrutura",
-      "web": "Servidores web",
-      "database": "Bases de dados",
-      "appService": "Serviços de aplicações",
-      "mail": "Correio",
-      "vault": "Cofres"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Imagens",

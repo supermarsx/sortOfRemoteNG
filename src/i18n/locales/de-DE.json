@@ -271,7 +271,23 @@
     "hostnameOverride": "Tab-Name mit Hostname ueberschreiben",
     "statusCheck": "Statuspruefung",
     "statusCheckInterval": "Pruefintervall (Sekunden)",
-    "statusCheckMethod": "Pruefmethode"
+    "statusCheckMethod": "Pruefmethode",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Kann nicht sein eigener uebergeordneter Eintrag sein",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Exportieren Sie Ihre benutzerdefinierten Designs und Farbschemata zum Teilen oder Sichern. Beim Import werden vorhandene Elemente übersprungen, es sei denn, Sie löschen sie zuerst."
   },
   "integrations": {
-    "title": "Integrationen",
-    "subtitle": "Externe Dienste verbinden und verwalten",
-    "empty": "Noch keine Integrationen verfügbar",
-    "emptyHint": "Integrationen erscheinen hier, sobald sie hinzugefügt werden.",
-    "addInstance": "Instanz hinzufügen",
-    "back": "Zurück zu Integrationen",
     "notFound": "Diese Integration ist nicht mehr verfügbar.",
     "panelCrashed": "Integrationsbereich abgestürzt",
     "panelCrashedDescription": "Dieser Integrationsbereich hatte einen Renderfehler. Sie können es erneut versuchen, ohne die App neu zu starten.",
-    "category": {
-      "infra": "Infrastruktur",
-      "web": "Webserver",
-      "database": "Datenbanken",
-      "appService": "App-Dienste",
-      "mail": "E-Mail",
-      "vault": "Tresore"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Abbilder",

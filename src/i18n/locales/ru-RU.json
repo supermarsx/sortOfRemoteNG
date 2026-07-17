@@ -271,7 +271,23 @@
     "hostnameOverride": "Использовать имя хоста вместо имени вкладки",
     "statusCheck": "Проверка состояния",
     "statusCheckInterval": "Интервал проверки (сек.)",
-    "statusCheckMethod": "Метод проверки"
+    "statusCheckMethod": "Метод проверки",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Не может быть родителем самого себя",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Экспортируйте свои собственные темы и цветовые схемы, чтобы поделиться ими или сделать резер��ную копию. При импорте существующие элементы будут пропущены, если вы предварительно не удалите их."
   },
   "integrations": {
-    "title": "Интеграции",
-    "subtitle": "Подключайте и управляйте внешними сервисами",
-    "empty": "Пока нет доступных интеграций",
-    "emptyHint": "Интеграции появятся здесь по мере добавления.",
-    "addInstance": "Добавить экземпляр",
-    "back": "Назад к интеграциям",
     "notFound": "Эта интеграция больше недоступна.",
     "panelCrashed": "Панель интеграции аварийно завершилась",
     "panelCrashedDescription": "В этой панели интеграции произошла ошибка отрисовки. Вы можете повторить попытку без перезапуска приложения.",
-    "category": {
-      "infra": "Инфраструктура",
-      "web": "Веб-серверы",
-      "database": "Базы данных",
-      "appService": "Сервисы приложений",
-      "mail": "Почта",
-      "vault": "Хранилища"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Образы",

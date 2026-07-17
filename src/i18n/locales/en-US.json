@@ -271,7 +271,23 @@
     "hostnameOverride": "Override tab name with hostname",
     "statusCheck": "Status Check",
     "statusCheckInterval": "Check Interval (seconds)",
-    "statusCheckMethod": "Check Method"
+    "statusCheckMethod": "Check Method",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Cannot be its own parent",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Export your custom themes and color schemes to share or backup. Import will skip existing items unless you delete them first."
   },
   "integrations": {
-    "title": "Integrations",
-    "subtitle": "Connect and manage external services",
-    "empty": "No integrations available yet",
-    "emptyHint": "Integrations will appear here as they are added.",
-    "addInstance": "Add instance",
-    "back": "Back to integrations",
     "notFound": "This integration is no longer available.",
     "panelCrashed": "Integration panel crashed",
     "panelCrashedDescription": "This integration panel hit a render error. You can retry without restarting the app.",
-    "category": {
-      "infra": "Infrastructure",
-      "web": "Web Servers",
-      "database": "Databases",
-      "appService": "App Services",
-      "mail": "Mail",
-      "vault": "Vaults"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Images",

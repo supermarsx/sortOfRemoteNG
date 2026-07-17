@@ -271,7 +271,23 @@
     "hostnameOverride": "使用主机名覆盖选项卡名称",
     "statusCheck": "状态检查",
     "statusCheckInterval": "检查间隔（秒）",
-    "statusCheckMethod": "检查方法"
+    "statusCheckMethod": "检查方法",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "不能是自己的父级",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "导出您的自定义主题和配色方案以共享或备份。导入将跳过现有项目，除非您先删除它们。"
   },
   "integrations": {
-    "title": "集成",
-    "subtitle": "连接并管理外部服务",
-    "empty": "暂无可用集成",
-    "emptyHint": "集成添加后将显示在此处。",
-    "addInstance": "添加实例",
-    "back": "返回集成",
     "notFound": "此集成不再可用。",
     "panelCrashed": "集成面板崩溃",
     "panelCrashedDescription": "此集成面板发生渲染错误。您可以重试，无需重启应用。",
-    "category": {
-      "infra": "基础设施",
-      "web": "Web 服务器",
-      "database": "数据库",
-      "appService": "应用服务",
-      "mail": "邮件",
-      "vault": "保险库"
-    },
     "lxd": {
       "images": {
         "sectionImages": "镜像",

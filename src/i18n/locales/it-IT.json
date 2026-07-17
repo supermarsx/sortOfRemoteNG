@@ -271,7 +271,23 @@
     "hostnameOverride": "Sostituisci il nome della scheda con l’hostname",
     "statusCheck": "Verifica stato",
     "statusCheckInterval": "Intervallo di verifica (secondi)",
-    "statusCheckMethod": "Metodo di verifica"
+    "statusCheckMethod": "Metodo di verifica",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "Non può essere il padre di se stesso",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Esporta i tuoi temi e combinazioni di colori personalizzati per condividerli o eseguirne il backup. L'importazione salterà gli elementi esistenti a meno che non li elimini prima."
   },
   "integrations": {
-    "title": "Integrazioni",
-    "subtitle": "Connetti e gestisci servizi esterni",
-    "empty": "Nessuna integrazione disponibile",
-    "emptyHint": "Le integrazioni appariranno qui man mano che vengono aggiunte.",
-    "addInstance": "Aggiungi istanza",
-    "back": "Torna alle integrazioni",
     "notFound": "Questa integrazione non è più disponibile.",
     "panelCrashed": "Il pannello di integrazione si è arrestato in modo anomalo",
     "panelCrashedDescription": "Questo pannello di integrazione ha riscontrato un errore di rendering. Puoi riprovare senza riavviare l'app.",
-    "category": {
-      "infra": "Infrastruttura",
-      "web": "Server web",
-      "database": "Database",
-      "appService": "Servizi applicativi",
-      "mail": "Posta",
-      "vault": "Cassaforti"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Immagini",

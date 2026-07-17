@@ -271,7 +271,23 @@
     "hostnameOverride": "Sobrescribir nombre de pestaña con hostname",
     "statusCheck": "Comprobación de estado",
     "statusCheckInterval": "Intervalo de comprobación (segundos)",
-    "statusCheckMethod": "Método de comprobación"
+    "statusCheckMethod": "Método de comprobación",
+    "protocolCategory": {
+      "remote-desktop": "Remote Desktops",
+      "console": "Consoles & Terminals",
+      "lights-out": "Lights-Out & BMC",
+      "virtualization": "Virtualization & Containers",
+      "networking": "Networking",
+      "web-server": "Web Servers & Proxies",
+      "mail-server": "Mail Servers",
+      "database": "Databases",
+      "file-storage": "File Transfer & Storage",
+      "cloud": "Cloud Platforms",
+      "monitoring": "Monitoring & Metrics",
+      "vault": "Secrets & Vaults",
+      "management": "Management & Automation",
+      "business-app": "Business Applications"
+    }
   },
   "connectionEditor": {
     "cannotBeOwnParent": "No puede ser su propio padre",
@@ -3203,23 +3219,9 @@
     "importExportDescription": "Exporte sus temas personalizados y combinaciones de colores para compartirlos o realizar una copia de seguridad. La importación omitirá los elementos existentes a menos que los elimine primero."
   },
   "integrations": {
-    "title": "Integraciones",
-    "subtitle": "Conecta y gestiona servicios externos",
-    "empty": "Aún no hay integraciones disponibles",
-    "emptyHint": "Las integraciones aparecerán aquí a medida que se añadan.",
-    "addInstance": "Añadir instancia",
-    "back": "Volver a integraciones",
     "notFound": "Esta integración ya no está disponible.",
     "panelCrashed": "El panel de integración falló",
     "panelCrashedDescription": "Este panel de integración tuvo un error de renderizado. Puedes reintentar sin reiniciar la aplicación.",
-    "category": {
-      "infra": "Infraestructura",
-      "web": "Servidores web",
-      "database": "Bases de datos",
-      "appService": "Servicios de aplicaciones",
-      "mail": "Correo",
-      "vault": "Bóvedas"
-    },
     "lxd": {
       "images": {
         "sectionImages": "Imágenes",
