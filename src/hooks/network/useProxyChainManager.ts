@@ -8,7 +8,10 @@ import {
   SSHTunnelConfig,
   SSHTunnelCreateParams,
 } from "../../utils/ssh/sshTunnelService";
-import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
+import {
+  SavedProxyProfile,
+  SavedProxyChain,
+} from "../../types/settings/settings";
 import { createToolSession } from "../../components/app/toolSession";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -27,7 +30,15 @@ export interface ProxyChainSummary {
   layers: Array<unknown>;
 }
 
-export type ProxyTab = "profiles" | "chains" | "tunnels" | "vpnConnections" | "tunnelChains" | "associations";
+export type ProxyTab =
+  | "profiles"
+  | "chains"
+  | "unifiedChains"
+  | "tunnelChains"
+  | "layerProfiles"
+  | "tunnels"
+  | "vpnConnections"
+  | "associations";
 
 // ─── Hook ──────────────────────────────────────────────────────────
 
@@ -195,8 +206,10 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   };
 
   const handleNewTunnel = () => {
-    const session = createToolSession('sshTunnelEditor', { name: 'New SSH Tunnel' });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    const session = createToolSession("sshTunnelEditor", {
+      name: "New SSH Tunnel",
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
   };
 
   const handleDeleteTunnel = async (tunnelId: string) => {
@@ -229,13 +242,17 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   // ─── Proxy Profile handlers ────────────────────────────────────
 
   const handleNewVpn = useCallback(() => {
-    const session = createToolSession('vpnEditor', { name: 'New VPN Connection' });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    const session = createToolSession("vpnEditor", {
+      name: "New VPN Connection",
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
   }, [dispatch]);
 
   const handleNewProfile = () => {
-    const session = createToolSession('proxyProfileEditor', { name: 'New Proxy Profile' });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    const session = createToolSession("proxyProfileEditor", {
+      name: "New Proxy Profile",
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
   };
 
   const handleEditProfile = (profile: SavedProxyProfile) => {
@@ -334,13 +351,18 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
   // ─── Saved Chain handlers ─────────────────────────────────────
 
   const handleNewChain = () => {
-    const session = createToolSession('proxyChainEditor', { name: 'New Proxy Chain' });
-    dispatch({ type: 'ADD_SESSION', payload: session });
+    const session = createToolSession("proxyChainEditor", {
+      name: "New Proxy Chain",
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
   };
 
   const handleEditChain = (chain: SavedProxyChain) => {
-    setEditingChain(chain);
-    setShowChainEditor(true);
+    const session = createToolSession("proxyChainEditor", {
+      connectionId: chain.id,
+      name: `Edit: ${chain.name}`,
+    });
+    dispatch({ type: "ADD_SESSION", payload: session });
   };
 
   const handleSaveChain = async (
@@ -460,7 +482,10 @@ export function useProxyChainManager(isOpen: boolean, onClose: () => void) {
     });
   };
 
-  const applyTunnelChain = (connectionId: string, layers: import("../../types/connection/connection").TunnelChainLayer[]) => {
+  const applyTunnelChain = (
+    connectionId: string,
+    layers: import("../../types/connection/connection").TunnelChainLayer[],
+  ) => {
     const connection = state.connections.find(
       (conn) => conn.id === connectionId,
     );
