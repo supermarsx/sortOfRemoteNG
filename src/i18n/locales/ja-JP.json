@@ -321,7 +321,11 @@
     "portLabel": "ポート",
     "portError": "ポートは 1 から 65535 の間でなければなりません",
     "domainLabel": "ドメイン",
-    "domainPlaceholder": "ドメイン（任意）"
+    "domainPlaceholder": "ドメイン（任意）",
+    "connect": {
+      "label": "Connect",
+      "title": "Save changes and connect to this connection"
+    }
   },
   "session": {
     "connecting": "接続中...",
@@ -8376,6 +8380,11 @@
         "connecting": "接続中...",
         "disconnecting": "切断中...",
         "error": "エラー"
+      },
+      "blockReason": {
+        "noEnabledLayers": "No enabled layers in this chain.",
+        "unsupportedAdHoc": "Ad-hoc Connect is not available for {{types}} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.",
+        "noConnectableLayers": "No independently connectable layers in this chain."
       }
     },
     "tunnelChainEditor": {

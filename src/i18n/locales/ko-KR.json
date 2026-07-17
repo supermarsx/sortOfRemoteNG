@@ -321,7 +321,11 @@
     "portLabel": "포트",
     "portError": "포트는 1에서 65535 사이여야 합니다",
     "domainLabel": "도메인",
-    "domainPlaceholder": "도메인 (선택 사항)"
+    "domainPlaceholder": "도메인 (선택 사항)",
+    "connect": {
+      "label": "Connect",
+      "title": "Save changes and connect to this connection"
+    }
   },
   "session": {
     "connecting": "연결 중...",
@@ -8376,6 +8380,11 @@
         "connecting": "연결 중...",
         "disconnecting": "연결 해제 중...",
         "error": "오류"
+      },
+      "blockReason": {
+        "noEnabledLayers": "No enabled layers in this chain.",
+        "unsupportedAdHoc": "Ad-hoc Connect is not available for {{types}} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.",
+        "noConnectableLayers": "No independently connectable layers in this chain."
       }
     },
     "tunnelChainEditor": {

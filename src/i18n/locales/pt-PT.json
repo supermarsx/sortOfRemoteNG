@@ -321,7 +321,11 @@
     "portLabel": "Porta",
     "portError": "A porta deve estar entre 1 e 65535",
     "domainLabel": "Domínio",
-    "domainPlaceholder": "Domínio (opcional)"
+    "domainPlaceholder": "Domínio (opcional)",
+    "connect": {
+      "label": "Connect",
+      "title": "Save changes and connect to this connection"
+    }
   },
   "session": {
     "connecting": "A ligar...",
@@ -8376,6 +8380,11 @@
         "connecting": "A ligar...",
         "disconnecting": "A desligar...",
         "error": "Erro"
+      },
+      "blockReason": {
+        "noEnabledLayers": "No enabled layers in this chain.",
+        "unsupportedAdHoc": "Ad-hoc Connect is not available for {{types}} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.",
+        "noConnectableLayers": "No independently connectable layers in this chain."
       }
     },
     "tunnelChainEditor": {

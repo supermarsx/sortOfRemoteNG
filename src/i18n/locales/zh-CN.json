@@ -321,7 +321,11 @@
     "portLabel": "端口",
     "portError": "端口必须在 1 到 65535 之间",
     "domainLabel": "域",
-    "domainPlaceholder": "域（可选）"
+    "domainPlaceholder": "域（可选）",
+    "connect": {
+      "label": "Connect",
+      "title": "Save changes and connect to this connection"
+    }
   },
   "session": {
     "connecting": "连接中...",
@@ -8376,6 +8380,11 @@
         "connecting": "正在连接...",
         "disconnecting": "正在断开连接...",
         "error": "错误"
+      },
+      "blockReason": {
+        "noEnabledLayers": "No enabled layers in this chain.",
+        "unsupportedAdHoc": "Ad-hoc Connect is not available for {{types}} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.",
+        "noConnectableLayers": "No independently connectable layers in this chain."
       }
     },
     "tunnelChainEditor": {
