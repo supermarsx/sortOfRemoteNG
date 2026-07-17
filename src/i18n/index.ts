@@ -2,7 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 
-import en from "./locales/en.json";
+import enUS from "./locales/en-US.json";
 import {
   SUPPORTED_LANGUAGES,
   getBaseLanguage,
@@ -10,34 +10,39 @@ import {
 } from "./languages";
 
 const resources = {
-  en: { translation: en },
+  "en-US": { translation: enUS },
 };
 
 const languageLoaders: Record<string, () => Promise<any>> = {
-  es: () => import("./locales/es.json"),
-  fr: () => import("./locales/fr.json"),
-  de: () => import("./locales/de.json"),
+  "es-ES": () => import("./locales/es-ES.json"),
+  "fr-FR": () => import("./locales/fr-FR.json"),
+  "de-DE": () => import("./locales/de-DE.json"),
   "pt-PT": () => import("./locales/pt-PT.json"),
   "zh-CN": () => import("./locales/zh-CN.json"),
-  ja: () => import("./locales/ja.json"),
-  ko: () => import("./locales/ko.json"),
-  it: () => import("./locales/it.json"),
-  ru: () => import("./locales/ru.json"),
+  "ja-JP": () => import("./locales/ja-JP.json"),
+  "ko-KR": () => import("./locales/ko-KR.json"),
+  "it-IT": () => import("./locales/it-IT.json"),
+  "ru-RU": () => import("./locales/ru-RU.json"),
 };
 
-
+/**
+ * Load a locale bundle. Locale files are keyed by their full BCP-47 tag
+ * ("fr-FR"), but callers may pass an unresolved value — a legacy stored
+ * setting ("fr") or an OS locale ("fr-CA"). Resolve through the supported
+ * list so those still find the shipped bundle; without this a bare "fr"
+ * would match no loader and silently render untranslated.
+ *
+ * The bundle is registered under the *requested* tag, because callers pass
+ * that same value to `changeLanguage` and i18next resolves the key directly
+ * rather than walking down from a base language.
+ */
 const loadLanguage = async (lng: string) => {
-  let language = lng;
-  let loader = languageLoaders[language];
-
-  if (!loader) {
-    language = getBaseLanguage(language);
-    loader = languageLoaders[language];
-  }
+  const loader =
+    languageLoaders[lng] ?? languageLoaders[resolveSupportedLanguage(lng)];
 
   if (loader) {
     const { default: translations } = await loader();
-    i18n.addResourceBundle(language, "translation", translations, true, true);
+    i18n.addResourceBundle(lng, "translation", translations, true, true);
   }
 };
 
@@ -46,7 +51,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: "en",
+    fallbackLng: "en-US",
     debug: false,
     interpolation: {
       escapeValue: false,

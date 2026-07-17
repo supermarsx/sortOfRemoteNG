@@ -16,13 +16,13 @@ const renderWithProviders = () =>
 
 describe("NetworkDiscovery i18n", () => {
   it("renders translated text when switching locales", async () => {
-    await i18n.changeLanguage("en");
+    await i18n.changeLanguage("en-US");
     const { rerender } = renderWithProviders();
     expect(await screen.findByText("Network Discovery")).toBeInTheDocument();
 
     await act(async () => {
-      await loadLanguage("es");
-      await i18n.changeLanguage("es");
+      await loadLanguage("es-ES");
+      await i18n.changeLanguage("es-ES");
     });
     rerender(
       <I18nextProvider i18n={i18n}>
@@ -36,8 +36,8 @@ describe("NetworkDiscovery i18n", () => {
     ).toBeInTheDocument();
 
     await act(async () => {
-      await loadLanguage("fr");
-      await i18n.changeLanguage("fr");
+      await loadLanguage("fr-FR");
+      await i18n.changeLanguage("fr-FR");
     });
     rerender(
       <I18nextProvider i18n={i18n}>

@@ -206,7 +206,8 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
           )
         : settings.language;
       if (effectiveLanguage !== i18n.language) {
-        if (effectiveLanguage !== "en") await loadLanguage(effectiveLanguage);
+        if (effectiveLanguage !== "en-US")
+          await loadLanguage(effectiveLanguage);
         await i18n.changeLanguage(effectiveLanguage);
       }
       if (typeof document !== "undefined") {
@@ -294,7 +295,7 @@ export function useSettingsDialog(isOpen: boolean, onClose: () => void) {
       setSettings(newSettings);
 
       if (updates.language && updates.language !== i18n.language) {
-        if (updates.language !== "en") await loadLanguage(updates.language);
+        if (updates.language !== "en-US") await loadLanguage(updates.language);
         await i18n.changeLanguage(updates.language);
       }
 

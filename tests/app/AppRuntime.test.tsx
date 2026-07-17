@@ -932,7 +932,7 @@ describe("Utility modules runtime", () => {
     it("getSettings returns an object with required defaults", () => {
       const settings = SettingsManager.getInstance().getSettings();
       expect(settings).toBeDefined();
-      expect(settings.language).toBe("en");
+      expect(settings.language).toBe("en-US");
       expect(settings.theme).toBe("dark");
       expect(settings.colorScheme).toBe("blue");
       expect(typeof settings.autoSaveEnabled).toBe("boolean");

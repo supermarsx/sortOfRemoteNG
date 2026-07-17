@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import en from "../../src/i18n/locales/en.json";
-import de from "../../src/i18n/locales/de.json";
-import es from "../../src/i18n/locales/es.json";
-import fr from "../../src/i18n/locales/fr.json";
-import itLocale from "../../src/i18n/locales/it.json";
-import ja from "../../src/i18n/locales/ja.json";
-import ko from "../../src/i18n/locales/ko.json";
+import enUS from "../../src/i18n/locales/en-US.json";
+import de from "../../src/i18n/locales/de-DE.json";
+import es from "../../src/i18n/locales/es-ES.json";
+import fr from "../../src/i18n/locales/fr-FR.json";
+import itLocale from "../../src/i18n/locales/it-IT.json";
+import ja from "../../src/i18n/locales/ja-JP.json";
+import ko from "../../src/i18n/locales/ko-KR.json";
 import ptPT from "../../src/i18n/locales/pt-PT.json";
-import ru from "../../src/i18n/locales/ru.json";
+import ru from "../../src/i18n/locales/ru-RU.json";
 import zhCN from "../../src/i18n/locales/zh-CN.json";
 
 function collectLeafPaths(value: unknown, prefix = ""): string[] {
@@ -47,18 +47,18 @@ function interpolations(source: string): string[] {
 
 describe("proxyChainMenu locale parity", () => {
   const locales = {
-    de,
-    es,
-    fr,
-    it: itLocale,
-    ja,
-    ko,
+    "de-DE": de,
+    "es-ES": es,
+    "fr-FR": fr,
+    "it-IT": itLocale,
+    "ja-JP": ja,
+    "ko-KR": ko,
     "pt-PT": ptPT,
-    ru,
+    "ru-RU": ru,
     "zh-CN": zhCN,
   } as const;
 
-  const expectedLeafPaths = collectLeafPaths((en as any).proxyChainMenu);
+  const expectedLeafPaths = collectLeafPaths((enUS as any).proxyChainMenu);
 
   it("ships a non-empty proxyChainMenu namespace in en", () => {
     expect(expectedLeafPaths.length).toBeGreaterThan(0);
@@ -75,7 +75,7 @@ describe("proxyChainMenu locale parity", () => {
 
   it("preserves every {{interpolation}} token in every locale", () => {
     const expected = new Map(
-      collectLeafEntries((en as any).proxyChainMenu).map(([key, value]) => [
+      collectLeafEntries((enUS as any).proxyChainMenu).map(([key, value]) => [
         key,
         interpolations(value),
       ]),
@@ -103,7 +103,7 @@ describe("proxyChainMenu locale parity", () => {
   });
 
   it("reuses the frozen proxyChainMenu.common.* verbs in every locale", () => {
-    const commonKeys = collectLeafPaths((en as any).proxyChainMenu.common);
+    const commonKeys = collectLeafPaths((enUS as any).proxyChainMenu.common);
     expect(commonKeys).toContain("connect");
     expect(commonKeys).toContain("delete");
 

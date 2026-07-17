@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import en from "../../src/i18n/locales/en.json";
+import en from "../../src/i18n/locales/en-US.json";
 import type { Mgr } from "../../src/components/database/list/types";
 import type { ConnectionDatabase } from "../../src/types/connection/connection";
 import type { LoadingCollection } from "../../src/hooks/connection/useDatabaseSelector";

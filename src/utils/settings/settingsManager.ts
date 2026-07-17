@@ -117,7 +117,7 @@ const delay = (ms: number): Promise<void> =>
  * fall back to these defaults.
  */
 const DEFAULT_SETTINGS: GlobalSettings = {
-  language: "en",
+  language: "en-US",
   autoDetectOsLanguage: true,
   region: "auto",
   timeFormat: "auto",

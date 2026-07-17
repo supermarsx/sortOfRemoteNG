@@ -29,7 +29,7 @@ interface SettingsContextType {
 }
 
 export const defaultSettings: GlobalSettings = {
-  language: "en",
+  language: "en-US",
   autoDetectOsLanguage: true,
   region: "auto",
   timeFormat: "auto",

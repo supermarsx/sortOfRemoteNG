@@ -348,7 +348,7 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
    ═══════════════════════════════════════════════════════════════ */
 
 export const DEFAULT_VALUES: Partial<GlobalSettings> = {
-  language: "en",
+  language: "en-US",
   theme: "dark",
   colorScheme: "blue",
   primaryAccentColor: "#3b82f6",

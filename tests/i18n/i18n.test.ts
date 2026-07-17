@@ -2,15 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import i18n, { loadLanguage } from "../../src/i18n";
 
 // Mock the dynamic imports
-vi.mock("../../src/i18n/locales/es.json", () => ({
+vi.mock("../../src/i18n/locales/es-ES.json", () => ({
   default: { test: "prueba" },
 }));
 
-vi.mock("../../src/i18n/locales/fr.json", () => ({
-  default: { test: "test" },
+vi.mock("../../src/i18n/locales/fr-FR.json", () => ({
+  default: { test: "essai" },
 }));
 
-vi.mock("../../src/i18n/locales/de.json", () => ({
+vi.mock("../../src/i18n/locales/de-DE.json", () => ({
   default: { test: "prüfung" },
 }));
 
@@ -21,22 +21,22 @@ vi.mock("../../src/i18n/locales/pt-PT.json", () => ({
 describe("Translation Loader", () => {
   beforeEach(async () => {
     // Reset i18n to initial state
-    await i18n.changeLanguage("en");
+    await i18n.changeLanguage("en-US");
   });
 
   it("should load Spanish translations", async () => {
-    await loadLanguage("es");
-    expect(i18n.hasResourceBundle("es", "translation")).toBe(true);
+    await loadLanguage("es-ES");
+    expect(i18n.hasResourceBundle("es-ES", "translation")).toBe(true);
   });
 
   it("should load French translations", async () => {
-    await loadLanguage("fr");
-    expect(i18n.hasResourceBundle("fr", "translation")).toBe(true);
+    await loadLanguage("fr-FR");
+    expect(i18n.hasResourceBundle("fr-FR", "translation")).toBe(true);
   });
 
   it("should load German translations", async () => {
-    await loadLanguage("de");
-    expect(i18n.hasResourceBundle("de", "translation")).toBe(true);
+    await loadLanguage("de-DE");
+    expect(i18n.hasResourceBundle("de-DE", "translation")).toBe(true);
   });
 
   it("should load Portuguese translations", async () => {
@@ -44,10 +44,21 @@ describe("Translation Loader", () => {
     expect(i18n.hasResourceBundle("pt-PT", "translation")).toBe(true);
   });
 
-  it("should handle base language fallback", async () => {
-    await loadLanguage("pt-BR"); // Should fall back to pt, but we only have pt-PT
-    // Since we don't have a "pt" loader, it won't load anything
-    expect(i18n.hasResourceBundle("pt", "translation")).toBe(false);
+  // Locale files are keyed by full BCP-47 tag ("fr-FR"), but a legacy stored
+  // setting still holds a bare "fr". If the loader stopped resolving those,
+  // the app would render untranslated instead of failing loudly.
+  it("should load a regioned bundle for a bare base language", async () => {
+    await loadLanguage("fr");
+    expect(i18n.hasResourceBundle("fr", "translation")).toBe(true);
+    await i18n.changeLanguage("fr");
+    expect(i18n.t("test")).toBe("essai");
+  });
+
+  it("should resolve an unshipped regional variant to its closest locale", async () => {
+    await loadLanguage("pt-BR"); // pt-PT is the only Portuguese we ship
+    expect(i18n.hasResourceBundle("pt-BR", "translation")).toBe(true);
+    await i18n.changeLanguage("pt-BR");
+    expect(i18n.t("test")).toBe("teste");
   });
 
   it("should not load unsupported languages", async () => {
@@ -56,9 +67,9 @@ describe("Translation Loader", () => {
   });
 
   it("should change language successfully", async () => {
-    await loadLanguage("es");
-    await i18n.changeLanguage("es");
-    expect(i18n.language).toBe("es");
+    await loadLanguage("es-ES");
+    await i18n.changeLanguage("es-ES");
+    expect(i18n.language).toBe("es-ES");
   });
 
   it("should handle changeLanguage errors gracefully", async () => {
