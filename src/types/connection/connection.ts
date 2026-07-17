@@ -20,6 +20,7 @@ import type { SpiceSavedConnectionOptions } from "../protocols/spice";
 import type { XdmcpSavedConnectionOptions } from "../protocols/xdmcp";
 import type { X2goNativeSavedOptions } from "../protocols/x2goNative";
 import type { NxNativeSavedOptions } from "../protocols/nxNative";
+import type { ConnectionTypeCategory } from "../integrations/registry";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -102,7 +103,17 @@ export type IntegrationProviderFields = Record<
 export interface IntegrationConnectionSettings {
   descriptorKey: string;
   descriptorLabel?: string;
-  category?: "infra" | "web" | "database" | "app-service" | "mail" | "vault";
+  /**
+   * Denormalized display-only category for this integration connection.
+   * Autocompletes to the 14 real {@link ConnectionTypeCategory} values, but the
+   * `& {}` half keeps it read-permissive for legacy persisted JSON that still
+   * holds the retired category strings (`"infra"`, `"app-service"`, `"web"`,
+   * `"mail"`, …). Per the "clean rename, no migration" decision, old saved
+   * connections on disk must still parse — do NOT tighten this to a strict
+   * union. Nothing routes on this value; the live category is always
+   * re-resolved from the descriptor via `findDescriptor(descriptorKey)`.
+   */
+  category?: ConnectionTypeCategory | (string & {});
   instanceId?: string;
   instanceName?: string;
   credentialRefId?: string;
