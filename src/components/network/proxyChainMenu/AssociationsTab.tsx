@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Mgr } from "./types";
-import type { Connection, TunnelType } from "../../../types/connection/connection";
+import type {
+  Connection,
+  TunnelType,
+} from "../../../types/connection/connection";
 import { Select } from "../../ui/forms";
 import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
 import type { SavedTunnelChain } from "../../../types/settings/vpnSettings";
 import { getTypeLabel } from "./tunnelChainShared.helpers";
 
+// Protocol and product names; not localised.
 const tunnelTypeLabels: Record<TunnelType, string> = {
   proxy: "Proxy",
   "ssh-tunnel": "SSH Tunnel",
@@ -32,9 +37,12 @@ function TunnelChainPreview({
   connection: Connection;
   onClear: () => void;
 }) {
+  const { t } = useTranslation();
   // Show preview from referenced chain or inline chain
   const chainId = connection.tunnelChainId;
-  const referencedChain = chainId ? proxyCollectionManager.getTunnelChain(chainId) : null;
+  const referencedChain = chainId
+    ? proxyCollectionManager.getTunnelChain(chainId)
+    : null;
   const layers = referencedChain?.layers ?? connection.security?.tunnelChain;
   const hasChain = layers && layers.length > 0;
 
@@ -42,10 +50,16 @@ function TunnelChainPreview({
     <div className="mt-2">
       <div className="flex items-center justify-between mb-1">
         <label className="block text-xs text-[var(--color-textSecondary)]">
-          Tunnel Chain
+          {t("proxyChainMenu.associations.tunnelChain", "Tunnel Chain")}
           {referencedChain && (
             <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
-              linked: {referencedChain.name}
+              {t(
+                "proxyChainMenu.associations.linkedChain",
+                "linked: {{name}}",
+                {
+                  name: referencedChain.name,
+                },
+              )}
             </span>
           )}
         </label>
@@ -55,7 +69,7 @@ function TunnelChainPreview({
             onClick={onClear}
             className="text-xs text-[var(--color-danger)] hover:text-[var(--color-dangerHover)] transition-colors"
           >
-            Clear
+            {t("proxyChainMenu.associations.clear", "Clear")}
           </button>
         )}
       </div>
@@ -82,13 +96,16 @@ function TunnelChainPreview({
           <div className="flex items-center gap-1">
             <span className="text-[var(--color-textSecondary)] text-xs">→</span>
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[var(--color-success)]/15 text-[var(--color-success)] border border-[var(--color-success)]/30">
-              Target
+              {t("proxyChainMenu.associations.target", "Target")}
             </span>
           </div>
         </div>
       ) : (
         <div className="text-xs text-[var(--color-textSecondary)] italic">
-          No tunnel chain configured
+          {t(
+            "proxyChainMenu.associations.noTunnelChain",
+            "No tunnel chain configured",
+          )}
         </div>
       )}
     </div>
@@ -96,14 +113,19 @@ function TunnelChainPreview({
 }
 
 function AssociationsTab({ mgr }: { mgr: Mgr }) {
-  const [savedTunnelChains, setSavedTunnelChains] = useState<SavedTunnelChain[]>([]);
+  const { t } = useTranslation();
+  const [savedTunnelChains, setSavedTunnelChains] = useState<
+    SavedTunnelChain[]
+  >([]);
 
   useEffect(() => {
     setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
     const unsubscribe = proxyCollectionManager.subscribe(() => {
       setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
     });
-    return () => { unsubscribe(); };
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const handleClearTunnelChain = (connectionId: string) => {
@@ -115,8 +137,10 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
   return (
     <div className="space-y-4">
       <div className="text-sm text-[var(--color-textSecondary)]">
-        Associate chains with individual connections. These choices will be used
-        when launching sessions.
+        {t(
+          "proxyChainMenu.associations.description",
+          "Associate chains with individual connections. These choices will be used when launching sessions.",
+        )}
       </div>
       <div className="space-y-3">
         {mgr.connectionOptions.map((connection) => (
@@ -130,21 +154,54 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Connection Chain
+                  {t(
+                    "proxyChainMenu.associations.connectionChain",
+                    "Connection Chain",
+                  )}
                 </label>
-                <Select value={connection.connectionChainId || ""} onChange={(v: string) =>
-                    mgr.updateConnectionChain(connection.id, v)} options={[{ value: '', label: 'None' }, ...mgr.connectionChains.map((chain) => ({ value: chain.id, label: chain.name }))]} className="sor-form-input" />
+                <Select
+                  value={connection.connectionChainId || ""}
+                  onChange={(v: string) =>
+                    mgr.updateConnectionChain(connection.id, v)
+                  }
+                  options={[
+                    {
+                      value: "",
+                      label: t("proxyChainMenu.associations.none", "None"),
+                    },
+                    ...mgr.connectionChains.map((chain) => ({
+                      value: chain.id,
+                      label: chain.name,
+                    })),
+                  ]}
+                  className="sor-form-input"
+                />
               </div>
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Proxy Chain
+                  {t("proxyChainMenu.associations.proxyChain", "Proxy Chain")}
                 </label>
-                <Select value={connection.proxyChainId || ""} onChange={(v: string) =>
-                    mgr.updateProxyChain(connection.id, v)} options={[{ value: '', label: 'None' }, ...mgr.proxyChains.map((chain) => ({ value: chain.id, label: chain.name }))]} className="sor-form-input" />
+                <Select
+                  value={connection.proxyChainId || ""}
+                  onChange={(v: string) =>
+                    mgr.updateProxyChain(connection.id, v)
+                  }
+                  options={[
+                    {
+                      value: "",
+                      label: t("proxyChainMenu.associations.none", "None"),
+                    },
+                    ...mgr.proxyChains.map((chain) => ({
+                      value: chain.id,
+                      label: chain.name,
+                    })),
+                  ]}
+                  className="sor-form-input"
+                />
               </div>
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Tunnel Chain
+                  {t("proxyChainMenu.associations.tunnelChain", "Tunnel Chain")}
                 </label>
                 <Select
                   value={connection.tunnelChainId || ""}
@@ -152,10 +209,35 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
                     mgr.updateTunnelChainRef(connection.id, v);
                   }}
                   options={[
-                    { value: '', label: 'None' },
-                    ...savedTunnelChains.map(c => ({
+                    {
+                      value: "",
+                      label: t("proxyChainMenu.associations.none", "None"),
+                    },
+                    ...savedTunnelChains.map((c) => ({
                       value: c.id,
-                      label: `${c.name} (${c.layers.length} layer${c.layers.length !== 1 ? 's' : ''})`,
+                      label: t(
+                        "proxyChainMenu.associations.tunnelChainOption",
+                        "{{name}} ({{layers}})",
+                        {
+                          name: c.name,
+                          layers:
+                            c.layers.length === 1
+                              ? t(
+                                  "proxyChainMenu.shared.layerCountOne",
+                                  "{{count}} layer",
+                                  {
+                                    count: c.layers.length,
+                                  },
+                                )
+                              : t(
+                                  "proxyChainMenu.shared.layerCountOther",
+                                  "{{count}} layers",
+                                  {
+                                    count: c.layers.length,
+                                  },
+                                ),
+                        },
+                      ),
                     })),
                   ]}
                   className="sor-form-input"
@@ -170,22 +252,26 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
         ))}
         {mgr.connectionOptions.length === 0 && (
           <div className="text-sm text-[var(--color-textSecondary)]">
-            No connections available.
+            {t(
+              "proxyChainMenu.associations.noConnections",
+              "No connections available.",
+            )}
           </div>
         )}
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-backgroundSecondary)]/50 p-3">
         <div className="text-xs text-[var(--color-textSecondary)]">
-          <strong>Tunnel Chains</strong> define an ordered sequence of tunnels
-          (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the
-          target host. Each layer wraps the next, with the first layer being the
-          outermost hop. Chains are linked by reference &mdash; updating a chain
-          automatically applies to all connections using it.
+          <strong>
+            {t("proxyChainMenu.associations.infoTitle", "Tunnel Chains")}
+          </strong>{" "}
+          {t(
+            "proxyChainMenu.associations.infoBody",
+            "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target host. Each layer wraps the next, with the first layer being the outermost hop. Chains are linked by reference — updating a chain automatically applies to all connections using it.",
+          )}
         </div>
       </div>
     </div>
   );
 }
-
 
 export default AssociationsTab;
