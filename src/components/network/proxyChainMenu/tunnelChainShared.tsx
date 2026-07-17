@@ -316,7 +316,7 @@ export function TunnelChainRow({
   // The guard is resolved here, never by the caller: a consumer that forgot to
   // pass it would silently reintroduce a clickable Connect on an unconnectable
   // chain.
-  const connectBlockReason = tunnelMgr.getConnectBlockReason(chain);
+  const connectBlockReason = tunnelMgr.getConnectBlockReason(chain, t);
 
   const layerCount = chain.layers.length;
 

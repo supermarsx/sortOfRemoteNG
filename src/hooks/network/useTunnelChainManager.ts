@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
@@ -56,24 +58,38 @@ export function getUnsupportedAdHocLayerTypes(
   );
 }
 
+// Pure function (not a hook), so it cannot call useTranslation(); the caller
+// threads in its own `t`. Fallbacks keep it rendering correctly before the
+// locale fragment is merged.
 export function getTunnelChainConnectBlockReason(
   chain: SavedTunnelChain,
+  t: TFunction,
 ): string | null {
   const enabledLayers = chain.layers.filter((layer) => layer.enabled);
   if (enabledLayers.length === 0) {
-    return "No enabled layers in this chain.";
+    return t(
+      "proxyChainMenu.shared.blockReason.noEnabledLayers",
+      "No enabled layers in this chain.",
+    );
   }
 
   const unsupportedTypes = getUnsupportedAdHocLayerTypes(chain);
   if (unsupportedTypes.length > 0) {
-    return `Ad-hoc Connect is not available for ${unsupportedTypes.join(", ")} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.`;
+    return t(
+      "proxyChainMenu.shared.blockReason.unsupportedAdHoc",
+      "Ad-hoc Connect is not available for {{types}} layers. SSH jump/proxy-command layers are applied when an SSH connection uses the chain.",
+      { types: unsupportedTypes.join(", ") },
+    );
   }
 
   const hasConnectableLayer = enabledLayers.some((layer) =>
     Boolean(mapTunnelTypeToConnectionType(layer.type)),
   );
   if (!hasConnectableLayer) {
-    return "No independently connectable layers in this chain.";
+    return t(
+      "proxyChainMenu.shared.blockReason.noConnectableLayers",
+      "No independently connectable layers in this chain.",
+    );
   }
 
   return null;
@@ -83,6 +99,7 @@ export function getTunnelChainConnectBlockReason(
 
 export function useTunnelChainManager(isOpen: boolean) {
   const { dispatch } = useConnections();
+  const { t } = useTranslation();
 
   // ── State ──────────────────────────────────────────────────────
   const [tunnelChains, setTunnelChains] = useState<SavedTunnelChain[]>([]);
@@ -265,84 +282,87 @@ export function useTunnelChainManager(isOpen: boolean) {
 
   // ── Ad-hoc connect/disconnect ──────────────────────────────────
 
-  const handleConnectChain = useCallback(async (chainId: string) => {
-    const chain = proxyCollectionManager.getTunnelChain(chainId);
-    if (!chain) return;
-    const blockReason = getTunnelChainConnectBlockReason(chain);
-    if (blockReason) {
-      setActiveStatuses((prev) => {
-        const next = new Map(prev);
-        next.set(chainId, {
-          backendChainId: "",
-          status: "error",
-          error: blockReason,
+  const handleConnectChain = useCallback(
+    async (chainId: string) => {
+      const chain = proxyCollectionManager.getTunnelChain(chainId);
+      if (!chain) return;
+      const blockReason = getTunnelChainConnectBlockReason(chain, t);
+      if (blockReason) {
+        setActiveStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(chainId, {
+            backendChainId: "",
+            status: "error",
+            error: blockReason,
+          });
+          return next;
         });
-        return next;
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Build backend ChainLayer[] from frontend TunnelChainLayer[]
-      const backendLayers = chain.layers
-        .filter((l) => l.enabled)
-        .map((layer, idx) => {
-          const connectionType = mapTunnelTypeToConnectionType(layer.type);
-          if (!connectionType) {
-            throw new Error(
-              `Tunnel type "${layer.type}" does not support ad-hoc connect`,
-            );
-          }
-          return {
-            id: layer.id,
-            connection_type: connectionType,
-            connection_id:
-              layer.vpn?.configId ||
-              layer.mesh?.networkId ||
-              layer.proxy?.host ||
-              layer.id,
-            position: idx,
-            status: "Disconnected",
-            local_port: null,
-            error: null,
-          };
-        });
-
-      if (backendLayers.length === 0) {
-        throw new Error("No connectable layers in chain");
+        return;
       }
 
-      // Create chain in backend with a traceable name
-      const backendChainId = await invoke<string>("create_connection_chain", {
-        name: `adhoc:${chainId}`,
-        description: chain.description,
-        layers: backendLayers,
-      });
+      setIsLoading(true);
+      try {
+        // Build backend ChainLayer[] from frontend TunnelChainLayer[]
+        const backendLayers = chain.layers
+          .filter((l) => l.enabled)
+          .map((layer, idx) => {
+            const connectionType = mapTunnelTypeToConnectionType(layer.type);
+            if (!connectionType) {
+              throw new Error(
+                `Tunnel type "${layer.type}" does not support ad-hoc connect`,
+              );
+            }
+            return {
+              id: layer.id,
+              connection_type: connectionType,
+              connection_id:
+                layer.vpn?.configId ||
+                layer.mesh?.networkId ||
+                layer.proxy?.host ||
+                layer.id,
+              position: idx,
+              status: "Disconnected",
+              local_port: null,
+              error: null,
+            };
+          });
 
-      // Connect
-      await invoke("connect_connection_chain", { chainId: backendChainId });
+        if (backendLayers.length === 0) {
+          throw new Error("No connectable layers in chain");
+        }
 
-      setActiveStatuses((prev) => {
-        const next = new Map(prev);
-        next.set(chainId, { backendChainId, status: "connected" });
-        return next;
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      setActiveStatuses((prev) => {
-        const next = new Map(prev);
-        next.set(chainId, {
-          backendChainId: "",
-          status: "error",
-          error: errorMsg,
+        // Create chain in backend with a traceable name
+        const backendChainId = await invoke<string>("create_connection_chain", {
+          name: `adhoc:${chainId}`,
+          description: chain.description,
+          layers: backendLayers,
         });
-        return next;
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+
+        // Connect
+        await invoke("connect_connection_chain", { chainId: backendChainId });
+
+        setActiveStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(chainId, { backendChainId, status: "connected" });
+          return next;
+        });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        setActiveStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(chainId, {
+            backendChainId: "",
+            status: "error",
+            error: errorMsg,
+          });
+          return next;
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [t],
+  );
 
   const handleDisconnectChain = useCallback(
     async (chainId: string) => {
