@@ -55,9 +55,11 @@ describe('SettingsContext', () => {
     const mgr = SettingsManager.getInstance();
     const { result } = renderHook(() => useSettings(), { wrapper });
 
-    // Wait for the useEffect to resolve
-    await vi.waitFor(() => {
-      expect(mgr.loadSettings).toHaveBeenCalled();
+    // Wait for the useEffect to resolve and the loaded settings to apply
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mgr.loadSettings).toHaveBeenCalled();
+      });
     });
     expect(result.current.settings.language).toBe('en');
   });
