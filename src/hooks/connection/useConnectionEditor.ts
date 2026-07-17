@@ -25,7 +25,7 @@ import {
 } from "../../types/connection/connection";
 import {
   integrationRegistry,
-  type IntegrationCategory,
+  type ConnectionTypeCategory,
   type IntegrationDescriptor,
 } from "../../types/integrations/registry";
 import { useConnections } from "../../contexts/useConnections";
@@ -57,16 +57,57 @@ export interface ProtocolOption {
   desc: string;
   icon: LucideIcon;
   color: string;
+  /** Which connection-type category this option is filed under. Built-in and
+   *  integration-backed options share one taxonomy — the picker groups on this
+   *  and nothing else (t56 C5). */
+  category: ConnectionTypeCategory;
 }
 
-const INTEGRATION_CATEGORY_LABELS: Record<IntegrationCategory, string> = {
-  infra: "Infrastructure",
-  web: "Web",
-  database: "Database",
-  "app-service": "App Service",
-  mail: "Mail",
-  vault: "Vault",
+/** i18n key path per category. Consumed by the picker, which resolves each via
+ *  `t(PROTOCOL_CATEGORY_LABEL_KEYS[c], PROTOCOL_CATEGORY_LABELS[c])` — this map
+ *  holds keys, never rendered strings. Owned by the locale files (t56 C3);
+ *  never define these under `integrations.*`, since several categories
+ *  (`console`, `lights-out`, `cloud`) contain no integrations at all. */
+export const PROTOCOL_CATEGORY_LABEL_KEYS: Record<
+  ConnectionTypeCategory,
+  string
+> = {
+  "remote-desktop": "connection.protocolCategory.remote-desktop",
+  console: "connection.protocolCategory.console",
+  "lights-out": "connection.protocolCategory.lights-out",
+  virtualization: "connection.protocolCategory.virtualization",
+  networking: "connection.protocolCategory.networking",
+  "web-server": "connection.protocolCategory.web-server",
+  "mail-server": "connection.protocolCategory.mail-server",
+  database: "connection.protocolCategory.database",
+  "file-storage": "connection.protocolCategory.file-storage",
+  cloud: "connection.protocolCategory.cloud",
+  monitoring: "connection.protocolCategory.monitoring",
+  vault: "connection.protocolCategory.vault",
+  management: "connection.protocolCategory.management",
+  "business-app": "connection.protocolCategory.business-app",
 };
+
+/** English fallbacks for {@link PROTOCOL_CATEGORY_LABEL_KEYS}, matching the
+ *  locale fragment's values verbatim. Also used for non-reactive strings such
+ *  as an integration option's `desc`. */
+export const PROTOCOL_CATEGORY_LABELS: Record<ConnectionTypeCategory, string> =
+  {
+    "remote-desktop": "Remote Desktops",
+    console: "Consoles & Terminals",
+    "lights-out": "Lights-Out & BMC",
+    virtualization: "Virtualization & Containers",
+    networking: "Networking",
+    "web-server": "Web Servers & Proxies",
+    "mail-server": "Mail Servers",
+    database: "Databases",
+    "file-storage": "File Transfer & Storage",
+    cloud: "Cloud Platforms",
+    monitoring: "Monitoring & Metrics",
+    vault: "Secrets & Vaults",
+    management: "Management & Automation",
+    "business-app": "Business Applications",
+  };
 
 export const toIntegrationProtocol = (
   descriptorKey: string,
@@ -96,6 +137,11 @@ type IntegrationConnectionFormSettings = IntegrationConnectionSettings & {
   providerSecrets?: Record<string, string>;
 };
 
+// Only protocols with a registered direct-session route belong here.
+// `BUILT_IN_MANAGEMENT_PROTOCOLS` (utils/session/protocolAvailability.ts) —
+// the cloud providers plus ilo/lenovo/supermicro — are persisted management
+// identities with no session host and must never become selectable, which is
+// why the `cloud` and `lights-out` categories have no entries below.
 export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   {
     value: "rdp",
@@ -103,6 +149,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Remote Desktop",
     icon: Monitor,
     color: "blue",
+    category: "remote-desktop",
   },
   {
     value: "ssh",
@@ -110,6 +157,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Secure Shell",
     icon: Terminal,
     color: "green",
+    category: "console",
   },
   {
     value: "ard",
@@ -117,6 +165,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "macOS Screen Sharing (ARD/RFB)",
     icon: Monitor,
     color: "blue",
+    category: "remote-desktop",
   },
   {
     value: "serial",
@@ -124,6 +173,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Local COM or tty terminal",
     icon: Cable,
     color: "cyan",
+    category: "console",
   },
   {
     value: "raw",
@@ -131,6 +181,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "TCP / UDP Payload Client",
     icon: Cable,
     color: "cyan",
+    category: "console",
   },
   {
     value: "rlogin",
@@ -138,6 +189,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "RFC 1282 Remote Login",
     icon: Phone,
     color: "amber",
+    category: "console",
   },
   {
     value: "telnet",
@@ -145,6 +197,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Legacy plaintext terminal",
     icon: Terminal,
     color: "amber",
+    category: "console",
   },
   {
     value: "sftp",
@@ -152,6 +205,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "SSH File Transfer",
     icon: Files,
     color: "green",
+    category: "file-storage",
   },
   {
     value: "ftp",
@@ -159,6 +213,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Direct FTP file transfer",
     icon: Files,
     color: "amber",
+    category: "file-storage",
   },
   {
     value: "scp",
@@ -166,6 +221,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "SSH Secure Copy",
     icon: Files,
     color: "green",
+    category: "file-storage",
   },
   {
     value: "mysql",
@@ -173,6 +229,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "MySQL / MariaDB database",
     icon: Database,
     color: "blue",
+    category: "database",
   },
   {
     value: "postgresql",
@@ -180,6 +237,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Native PostgreSQL query client",
     icon: Database,
     color: "blue",
+    category: "database",
   },
   {
     value: "spice",
@@ -187,6 +245,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Native remote-viewer handoff",
     icon: Monitor,
     color: "red",
+    category: "remote-desktop",
   },
   {
     value: "xdmcp",
@@ -194,6 +253,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Native local X server handoff",
     icon: Monitor,
     color: "amber",
+    category: "remote-desktop",
   },
   {
     value: "x2go",
@@ -201,6 +261,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Installed x2goclient handoff",
     icon: Monitor,
     color: "green",
+    category: "remote-desktop",
   },
   {
     value: "nx",
@@ -208,6 +269,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Installed nxplayer handoff",
     icon: Monitor,
     color: "purple",
+    category: "remote-desktop",
   },
   {
     value: "smb",
@@ -215,6 +277,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Windows and Samba file shares",
     icon: Network,
     color: "cyan",
+    category: "file-storage",
   },
   {
     value: "rustdesk",
@@ -222,6 +285,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Remote desktop by device ID",
     icon: Monitor,
     color: "red",
+    category: "remote-desktop",
   },
   {
     value: "vnc",
@@ -229,6 +293,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Virtual Network",
     icon: Server,
     color: "purple",
+    category: "remote-desktop",
   },
   {
     value: "http",
@@ -236,6 +301,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Web Service",
     icon: Globe,
     color: "orange",
+    category: "web-server",
   },
   {
     value: "https",
@@ -243,6 +309,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Secure Web",
     icon: Shield,
     color: "emerald",
+    category: "web-server",
   },
   {
     value: "winrm",
@@ -250,6 +317,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "WSMan / WinRM",
     icon: Terminal,
     color: "amber",
+    category: "console",
   },
   {
     value: "anydesk",
@@ -257,6 +325,7 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     desc: "Remote Access",
     icon: Monitor,
     color: "red",
+    category: "remote-desktop",
   },
 ];
 
@@ -264,9 +333,10 @@ export const INTEGRATION_PROTOCOL_OPTIONS: ProtocolOption[] =
   integrationRegistry.map((descriptor) => ({
     value: toIntegrationProtocol(descriptor.key),
     label: descriptor.label,
-    desc: `Integration - ${INTEGRATION_CATEGORY_LABELS[descriptor.category]}`,
+    desc: PROTOCOL_CATEGORY_LABELS[descriptor.category],
     icon: descriptor.icon,
     color: "cyan",
+    category: descriptor.category,
   }));
 
 export interface IconOption {
@@ -354,7 +424,16 @@ const buildIntegrationSettings = (
   return {
     descriptorKey,
     descriptorLabel: descriptor?.label ?? current?.descriptorLabel,
-    category: descriptor?.category ?? current?.category,
+    // Denormalized display data with no readers anywhere: routing is by
+    // `descriptorKey` via `findDescriptor`, and the live category always comes
+    // from the descriptor — never from this persisted copy (t56 R4). Old saved
+    // JSON still holds the retired `"infra"`/`"app-service"` values, so the
+    // field stays permissive on read.
+    // The cast is temporary: `IntegrationConnectionSettings.category`
+    // (types/connection/connection.ts) still inlines the retired six literals
+    // instead of referencing the category union. Drop it once that widens.
+    category: (descriptor?.category ??
+      current?.category) as IntegrationConnectionSettings["category"],
     instanceId: current?.instanceId ?? "",
     instanceName: current?.instanceName ?? "",
     credentialRefId: current?.credentialRefId,
