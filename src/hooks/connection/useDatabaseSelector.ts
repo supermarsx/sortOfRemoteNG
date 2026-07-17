@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ConnectionDatabase } from "../../types/connection/connection";
 import { defaultExportSecuritySettings, SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
@@ -34,6 +34,20 @@ const EMPTY_NEW_COLLECTION: NewCollectionForm = {
 };
 
 type PasswordDialogMode = "unlock" | "clone";
+
+/**
+ * How the in-progress open is phrased to the user. "open" is a cold open
+ * with no database attached; "switch" is a hand-off from an already-open
+ * database (the previous one is torn down as part of the load); "unlock"
+ * is an encrypted open, where decryption dominates the wait.
+ */
+export type LoadingCollectionMode = "open" | "switch" | "unlock";
+
+export interface LoadingCollection {
+  id: string;
+  name: string;
+  mode: LoadingCollectionMode;
+}
 
 interface CollectionActionMenuState {
   collection: ConnectionDatabase;
@@ -121,6 +135,15 @@ export function useDatabaseSelector(
   const [highlightedCollectionId, setHighlightedCollectionId] = useState<
     string | null
   >(null);
+  // Drives the open/switch loading animation. `isWorking` can't serve this
+  // purpose: it's a bare boolean owned by the password card, so it can't say
+  // *which* row is busy, and it isn't set on the unencrypted select path.
+  const [loadingCollection, setLoadingCollection] =
+    useState<LoadingCollection | null>(null);
+  // Re-entrancy guard for the open paths. `loadingCollection` can't serve:
+  // React state isn't updated synchronously, so two clicks in the same tick
+  // would both read `null` and both fire `onDatabaseSelect`.
+  const openInFlight = useRef(false);
 
   // Shared UI state
   const [error, setError] = useState("");
@@ -430,8 +453,29 @@ export function useDatabaseSelector(
       setPasswordDialogMode("unlock");
       setShowPasswordDialog(true);
       setPassword("");
-    } else {
+      return;
+    }
+
+    // Taken below the encrypted branch: that branch only opens the password
+    // card, so it isn't a load, and holding the guard there would wedge the
+    // card shut.
+    if (openInFlight.current) return;
+    openInFlight.current = true;
+
+    // A different database already being open makes this a switch rather
+    // than a cold open — the load tears the old one down on the way, so
+    // the wait is longer and the copy should say so.
+    const currentId = databaseManager.getCurrentDatabase()?.id;
+    setLoadingCollection({
+      id: collection.id,
+      name: collection.name,
+      mode: currentId && currentId !== collection.id ? "switch" : "open",
+    });
+    try {
       await Promise.resolve(onDatabaseSelect(collection.id));
+    } finally {
+      setLoadingCollection(null);
+      openInFlight.current = false;
     }
   };
 
@@ -477,6 +521,8 @@ export function useDatabaseSelector(
 
   const handlePasswordSubmit = async () => {
     if (!selectedCollection) return;
+    if (openInFlight.current) return;
+    openInFlight.current = true;
 
     setIsWorking(true);
     try {
@@ -485,6 +531,12 @@ export function useDatabaseSelector(
         return;
       }
 
+      // Cloning is not an open, so only the unlock path animates a row.
+      setLoadingCollection({
+        id: selectedCollection.id,
+        name: selectedCollection.name,
+        mode: "unlock",
+      });
       await databaseManager.loadDatabaseData(selectedCollection.id, password);
       await Promise.resolve(onDatabaseSelect(selectedCollection.id, password));
       closePasswordDialog();
@@ -499,6 +551,8 @@ export function useDatabaseSelector(
       );
     } finally {
       setIsWorking(false);
+      setLoadingCollection(null);
+      openInFlight.current = false;
     }
   };
 
@@ -825,6 +879,7 @@ export function useDatabaseSelector(
     openCollectionMenu,
     closeCollectionMenu,
     isWorking,
+    loadingCollection,
     highlightedCollectionId,
 
     // Import
