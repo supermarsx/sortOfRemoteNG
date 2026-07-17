@@ -982,6 +982,31 @@ export function useConnectionEditor(
     ],
   );
 
+  /**
+   * Persist any pending edits and return the connection as it now exists on
+   * disk. Returns the freshly-built object — NEVER re-read state.connections
+   * after this, the dispatch has not flushed. Returns null for an unsaved
+   * (new) connection.
+   */
+  const saveNow = useCallback((): Connection | null => {
+    if (!connection) return null;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    const connectionData = buildConnectionData();
+    const hasChanges =
+      buildEditorSnapshot(formData) !== originalDataRef.current;
+    if (hasChanges) {
+      dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
+      originalDataRef.current = buildEditorSnapshot(formData);
+    }
+    return connectionData;
+  }, [
+    buildConnectionData,
+    buildEditorSnapshot,
+    connection,
+    dispatch,
+    formData,
+  ]);
+
   const handleTagsChange = useCallback(
     (tags: string[]) => setFormData((p) => ({ ...p, tags })),
     [],
@@ -1145,6 +1170,7 @@ export function useConnectionEditor(
     settings,
     connection,
     handleSubmit,
+    saveNow,
     handleTagsChange,
     handleProtocolChange,
     handleParentFolderChange,
