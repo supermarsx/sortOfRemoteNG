@@ -59,7 +59,10 @@ export const ConnectionEditorSearchBar: React.FC<{
       data-search-bar
       className="relative w-full min-w-0 max-w-[340px] flex-[1_1_240px]"
     >
-      <div className="flex items-center gap-1 rounded-lg bg-[var(--color-border)]/60 px-2 py-1">
+      <div
+        data-testid="editor-search-bar"
+        className="flex h-9 items-center gap-1 rounded-lg bg-[var(--color-border)]/60 px-2 py-1"
+      >
         <Search
           size={13}
           aria-hidden="true"
