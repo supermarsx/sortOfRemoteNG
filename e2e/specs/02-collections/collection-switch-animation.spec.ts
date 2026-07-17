@@ -154,6 +154,23 @@ describe("Database loading animation (t49)", () => {
     );
     expect(outgoing).toBe(true);
 
+    // F1 regression. The handoff must hold for the WHOLE load, not just the
+    // first frame: while the incoming row is still busy announcing the switch,
+    // the outgoing row must still be saying it is closing. Anything less and
+    // the two rows tell contradictory stories for the tail of the switch.
+    // `some()` above would pass on a single frame — this is the real gate.
+    const contradictory = loadingFrames.filter(
+      (f) =>
+        !f.rows.some((r) => r.handoff && r.text.includes("Closing Beta DB")),
+    );
+    expect({
+      contradictoryFrames: contradictory.map((f) => f.t),
+      loadingFrames: loadingFrames.map((f) => f.t),
+    }).toEqual({
+      contradictoryFrames: [],
+      loadingFrames: loadingFrames.map((f) => f.t),
+    });
+
     // Exactly one aria-live region, announcing the switch once.
     const announcements = new Set(
       frames.map((f) => f.announcement).filter((a) => a.length > 0),
