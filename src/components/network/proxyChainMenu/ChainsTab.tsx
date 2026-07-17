@@ -1,28 +1,36 @@
+import { useTranslation } from "react-i18next";
+import { Copy, Edit2, Plus, Search, Trash2 } from "lucide-react";
 import { Mgr } from "./types";
-import type { Connection } from "../../../types/connection/connection";
-import { Copy, Edit, Edit2, Plus, Search, Trash2 } from "lucide-react";
 
 function ChainsTab({ mgr }: { mgr: Mgr }) {
+  const { t } = useTranslation();
+
+  const layerCountLabel = (count: number) =>
+    count === 1
+      ? t("proxyChainMenu.shared.layerCountOne", "{{count}} layer", { count })
+      : t("proxyChainMenu.shared.layerCountOther", "{{count}} layers", {
+          count,
+        });
+
   return (
     <div className="space-y-6">
       {/* Saved Chains Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium text-[var(--color-text)]">
-            Saved Chains
+            {t("proxyChainMenu.chains.savedTitle", "Saved Chains")}
           </h3>
-          <button
-            onClick={mgr.handleNewChain}
-            className="sor-btn-primary-sm"
-          >
+          <button onClick={mgr.handleNewChain} className="sor-btn-primary-sm">
             <Plus size={14} />
-            New Chain
+            {t("proxyChainMenu.chains.newChain", "New Chain")}
           </button>
         </div>
 
         <div className="text-sm text-[var(--color-textSecondary)]">
-          Create reusable proxy chains that route traffic through multiple
-          layers.
+          {t(
+            "proxyChainMenu.chains.description",
+            "Reusable proxy chains that route traffic through multiple proxy layers. Chains built from tunnel layers such as SSH, VPN or mesh live in the Tunnel Chains tab.",
+          )}
         </div>
 
         {/* Search */}
@@ -32,7 +40,10 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
             type="text"
             value={mgr.chainSearch}
             onChange={(e) => mgr.setChainSearch(e.target.value)}
-            placeholder="Search chains..."
+            placeholder={t(
+              "proxyChainMenu.chains.searchPlaceholder",
+              "Search chains...",
+            )}
             className="sor-search-input"
           />
         </div>
@@ -42,23 +53,25 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
           {mgr.filteredSavedChains.length === 0 ? (
             <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
               {mgr.chainSearch
-                ? "No chains match your search."
-                : 'No proxy chains saved. Click "New Chain" to create one.'}
+                ? t(
+                    "proxyChainMenu.chains.noMatches",
+                    "No chains match your search.",
+                  )
+                : t(
+                    "proxyChainMenu.chains.empty",
+                    'No proxy chains saved. Click "New Chain" to create one.',
+                  )}
             </div>
           ) : (
             mgr.filteredSavedChains.map((chain) => (
-              <div
-                key={chain.id}
-                className="sor-selection-row"
-              >
+              <div key={chain.id} className="sor-selection-row">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <div className="text-sm font-medium text-[var(--color-text)]">
                       {chain.name}
                     </div>
                     <span className="sor-badge sor-badge-purple">
-                      {chain.layers.length} layer
-                      {chain.layers.length !== 1 ? "s" : ""}
+                      {layerCountLabel(chain.layers.length)}
                     </span>
                   </div>
                   {chain.description && (
@@ -86,10 +99,7 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                   {chain.tags && chain.tags.length > 0 && (
                     <div className="flex gap-1 mt-2">
                       {chain.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="sor-badge sor-badge-blue"
-                        >
+                        <span key={tag} className="sor-badge sor-badge-blue">
                           {tag}
                         </span>
                       ))}
@@ -100,21 +110,21 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                   <button
                     onClick={() => mgr.handleDuplicateChain(chain.id)}
                     className="sor-icon-btn"
-                    title="Duplicate"
+                    title={t("proxyChainMenu.common.duplicate", "Duplicate")}
                   >
                     <Copy size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleEditChain(chain)}
                     className="sor-icon-btn"
-                    title="Edit"
+                    title={t("proxyChainMenu.common.edit", "Edit")}
                   >
                     <Edit2 size={14} />
                   </button>
                   <button
                     onClick={() => mgr.handleDeleteChain(chain.id)}
                     className="sor-icon-btn-danger"
-                    title="Delete"
+                    title={t("proxyChainMenu.common.delete", "Delete")}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -129,22 +139,25 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
       <div className="border-t border-[var(--color-border)] pt-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium text-[var(--color-text)]">
-            Active Chains
+            {t("proxyChainMenu.chains.activeTitle", "Active Chains")}
           </h3>
           {mgr.isLoading && (
             <span className="text-xs text-[var(--color-textSecondary)]">
-              Refreshing...
+              {t("proxyChainMenu.chains.refreshing", "Refreshing...")}
             </span>
           )}
         </div>
 
         <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
           <div className="text-sm font-semibold text-[var(--color-textSecondary)] mb-3">
-            Connection Chains
+            {t("proxyChainMenu.chains.connectionChains", "Connection Chains")}
           </div>
           {mgr.connectionChains.length === 0 ? (
             <div className="text-sm text-[var(--color-textSecondary)]">
-              No connection chains available.
+              {t(
+                "proxyChainMenu.chains.noConnectionChains",
+                "No connection chains available.",
+              )}
             </div>
           ) : (
             mgr.connectionChains.map((chain) => (
@@ -157,7 +170,7 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                     {chain.name}
                   </div>
                   <div className="text-xs text-[var(--color-textSecondary)]">
-                    {chain.layers.length} layers · {chain.status}
+                    {layerCountLabel(chain.layers.length)} · {chain.status}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -166,14 +179,14 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                       onClick={() => mgr.handleDisconnectChain(chain.id)}
                       className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
                     >
-                      Disconnect
+                      {t("proxyChainMenu.common.disconnect", "Disconnect")}
                     </button>
                   ) : (
                     <button
                       onClick={() => mgr.handleConnectChain(chain.id)}
                       className="px-3 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"
                     >
-                      Connect
+                      {t("proxyChainMenu.common.connect", "Connect")}
                     </button>
                   )}
                 </div>
@@ -184,11 +197,14 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
 
         <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
           <div className="text-sm font-semibold text-[var(--color-textSecondary)] mb-3">
-            Proxy Chains
+            {t("proxyChainMenu.chains.proxyChains", "Proxy Chains")}
           </div>
           {mgr.proxyChains.length === 0 ? (
             <div className="text-sm text-[var(--color-textSecondary)]">
-              No proxy chains available.
+              {t(
+                "proxyChainMenu.chains.noProxyChains",
+                "No proxy chains available.",
+              )}
             </div>
           ) : (
             mgr.proxyChains.map((chain) => (
@@ -201,25 +217,23 @@ function ChainsTab({ mgr }: { mgr: Mgr }) {
                     {chain.name}
                   </div>
                   <div className="text-xs text-[var(--color-textSecondary)]">
-                    {chain.layers.length} layers · {chain.status}
+                    {layerCountLabel(chain.layers.length)} · {chain.status}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {String(chain.status).toLowerCase() === "connected" ? (
                     <button
-                      onClick={() =>
-                        mgr.handleDisconnectProxyChain(chain.id)
-                      }
+                      onClick={() => mgr.handleDisconnectProxyChain(chain.id)}
                       className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)]"
                     >
-                      Disconnect
+                      {t("proxyChainMenu.common.disconnect", "Disconnect")}
                     </button>
                   ) : (
                     <button
                       onClick={() => mgr.handleConnectProxyChain(chain.id)}
                       className="px-3 py-1 text-xs rounded-md bg-primary hover:bg-primary/90 text-[var(--color-text)]"
                     >
-                      Connect
+                      {t("proxyChainMenu.common.connect", "Connect")}
                     </button>
                   )}
                 </div>
