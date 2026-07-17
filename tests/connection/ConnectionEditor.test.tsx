@@ -19,21 +19,21 @@ vi.mock("../../src/types/integrations/registry", () => ({
     {
       key: "netbox",
       label: "NetBox",
-      category: "infra",
+      category: "networking",
       icon: () => null,
       importPanel: async () => ({ default: () => null }),
     },
     {
       key: "grafana",
       label: "Grafana",
-      category: "app-service",
+      category: "monitoring",
       icon: () => null,
       importPanel: async () => ({ default: () => null }),
     },
     {
       key: "exchange",
       label: "Exchange",
-      category: "app-service",
+      category: "mail-server",
       icon: () => null,
       importPanel: async () => ({ default: () => null }),
     },
@@ -427,10 +427,10 @@ describe("ConnectionEditor", () => {
         screen.getByRole("option", { name: /NetBox/i }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("group", { name: "Integrations" }),
+        screen.getByRole("group", { name: "Networking" }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("group", { name: "Cloud Providers" }),
+        screen.queryByRole("group", { name: "Cloud Platforms" }),
       ).not.toBeInTheDocument();
 
       fireEvent.change(searchInput, { target: { value: "digital-ocean" } });
@@ -439,15 +439,19 @@ describe("ConnectionEditor", () => {
       );
       expect(screen.queryByRole("option", { name: /^DO/i })).toBeNull();
 
-      fireEvent.change(searchInput, { target: { value: "integrations" } });
+      // A category search term surfaces every option filed under it and only
+      // renders that category's group.
+      fireEvent.change(searchInput, { target: { value: "networking" } });
       expect(
-        screen.getByRole("group", { name: "Integrations" }),
+        screen.getByRole("group", { name: "Networking" }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("group", { name: "Protocols" }),
+        screen.queryByRole("group", { name: "Databases" }),
       ).not.toBeInTheDocument();
 
-      fireEvent.change(searchInput, { target: { value: "cloud providers" } });
+      // The cloud category has no selectable options (its protocols are
+      // management-only identities), so its label matches nothing.
+      fireEvent.change(searchInput, { target: { value: "cloud platforms" } });
       expect(screen.getByRole("status")).toHaveTextContent(
         "No protocols found",
       );
@@ -457,7 +461,7 @@ describe("ConnectionEditor", () => {
         screen.getByRole("option", { name: /^PostgreSQL/i }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("group", { name: "Protocols" }),
+        screen.getByRole("group", { name: "Databases" }),
       ).toBeInTheDocument();
     });
 
@@ -1851,7 +1855,7 @@ describe("ConnectionEditor", () => {
       expect(saved.integration).toMatchObject({
         descriptorKey: "netbox",
         descriptorLabel: "NetBox",
-        category: "infra",
+        category: "networking",
         host: "netbox.internal",
         baseUrl: "https://netbox.internal",
         username: "ops",
@@ -1934,7 +1938,7 @@ describe("ConnectionEditor", () => {
       expect(saved.integration).toMatchObject({
         descriptorKey: "exchange",
         descriptorLabel: "Exchange",
-        category: "app-service",
+        category: "mail-server",
         host: "mail01.contoso.local",
         username: "admin@tenant.onmicrosoft.com",
         timeout: 180,

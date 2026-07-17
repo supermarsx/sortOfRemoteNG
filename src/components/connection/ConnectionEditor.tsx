@@ -25,9 +25,12 @@ import {
   PROTOCOL_OPTIONS,
   INTEGRATION_PROTOCOL_OPTIONS,
   PROTOCOL_COLOR_MAP,
+  PROTOCOL_CATEGORY_LABEL_KEYS,
+  PROTOCOL_CATEGORY_LABELS,
   getIntegrationKeyFromProtocol,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
+import type { ConnectionTypeCategory } from "../../types/integrations/registry";
 import { getProtocolAvailability } from "../../utils/session/protocolAvailability";
 import {
   EXCHANGE_AUTH_METHODS,
@@ -273,32 +276,63 @@ const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
    ═══════════════════════════════════════════════════════════════ */
 
 const ALL_PROTOCOL_OPTIONS = [
-  ...PROTOCOL_OPTIONS.map((p) => ({ ...p, group: "protocol" as const })),
-  ...INTEGRATION_PROTOCOL_OPTIONS.map((p) => ({
-    ...p,
-    group: "integration" as const,
-  })),
+  ...PROTOCOL_OPTIONS,
+  ...INTEGRATION_PROTOCOL_OPTIONS,
 ];
 
 type ProtocolPickerOption = (typeof ALL_PROTOCOL_OPTIONS)[number];
 
-const PROTOCOL_GROUP_SEARCH_TERMS: Record<
-  ProtocolPickerOption["group"],
-  string
-> = {
-  protocol: "protocol protocols",
-  integration: "integration integrations",
+/** Display order of the connection-type categories in the picker (t56 C2 —
+ *  mirrors `groupByCategory`'s order). `lights-out` and `cloud` are listed for
+ *  completeness but currently have no selectable options, so they render no
+ *  header (their protocols are management-only; see `PROTOCOL_OPTIONS`). */
+const PROTOCOL_CATEGORY_ORDER: ConnectionTypeCategory[] = [
+  "remote-desktop",
+  "console",
+  "lights-out",
+  "virtualization",
+  "networking",
+  "web-server",
+  "mail-server",
+  "database",
+  "file-storage",
+  "cloud",
+  "monitoring",
+  "vault",
+  "management",
+  "business-app",
+];
+
+/** Extra free-text search tokens per category so a query like "console" or
+ *  "web server" surfaces every option filed under it, regardless of the
+ *  option's own label/desc. */
+const PROTOCOL_GROUP_SEARCH_TERMS: Record<ConnectionTypeCategory, string> = {
+  "remote-desktop": "remote desktop desktops",
+  console: "console consoles terminal terminals",
+  "lights-out": "lights out lights-out bmc ipmi baseboard management",
+  virtualization: "virtualization virtual containers container",
+  networking: "networking network",
+  "web-server": "web server servers proxy proxies",
+  "mail-server": "mail server servers email",
+  database: "database databases",
+  "file-storage": "file transfer storage files",
+  cloud: "cloud platform platforms",
+  monitoring: "monitoring metrics observability",
+  vault: "vault vaults secret secrets",
+  management: "management automation",
+  "business-app": "business application applications app apps",
 };
 
 const matchesProtocolSearch = (
   option: ProtocolPickerOption,
   normalizedQuery: string,
 ) =>
-  `${option.label} ${option.desc} ${option.value} ${PROTOCOL_GROUP_SEARCH_TERMS[option.group]}`
+  `${option.label} ${option.desc} ${option.value} ${PROTOCOL_GROUP_SEARCH_TERMS[option.category]}`
     .toLowerCase()
     .includes(normalizedQuery);
 
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -315,8 +349,8 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     );
   }, [normalizedQuery]);
 
-  const firstVisibleGroup = (["protocol", "integration"] as const).find(
-    (group) => visibleOptions.some((option) => option.group === group),
+  const firstVisibleGroup = PROTOCOL_CATEGORY_ORDER.find((category) =>
+    visibleOptions.some((option) => option.category === category),
   );
 
   const closeDropdown = React.useCallback((restoreFocus = false) => {
@@ -431,19 +465,23 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     }
   };
 
-  const renderProtocolGroup = (
-    group: "protocol" | "integration",
-    label: string,
-  ) => {
-    const options = visibleOptions.filter((option) => option.group === group);
+  const renderProtocolGroup = (category: ConnectionTypeCategory) => {
+    const options = visibleOptions.filter(
+      (option) => option.category === category,
+    );
     if (options.length === 0) return null;
+
+    const label = t(
+      PROTOCOL_CATEGORY_LABEL_KEYS[category],
+      PROTOCOL_CATEGORY_LABELS[category],
+    );
 
     return (
       <div
-        key={group}
+        key={category}
         role="group"
         aria-label={label}
-        className={`${group === firstVisibleGroup ? "" : "border-t border-[var(--color-border)]"} py-1`}
+        className={`${category === firstVisibleGroup ? "" : "border-t border-[var(--color-border)]"} py-1`}
       >
         <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
           {label}
@@ -620,8 +658,9 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             >
               {visibleOptions.length > 0 && (
                 <>
-                  {renderProtocolGroup("protocol", "Protocols")}
-                  {renderProtocolGroup("integration", "Integrations")}
+                  {PROTOCOL_CATEGORY_ORDER.map((category) =>
+                    renderProtocolGroup(category),
+                  )}
                 </>
               )}
             </div>
