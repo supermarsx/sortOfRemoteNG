@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Save, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
-import type { TunnelType, TunnelChainLayer } from "../../../types/connection/connection";
-import {
-  TUNNEL_TYPE_OPTIONS,
-  getTypeLabel,
-} from "./tunnelChainShared.helpers";
+import type {
+  TunnelType,
+  TunnelChainLayer,
+} from "../../../types/connection/connection";
+import { TUNNEL_TYPE_OPTIONS, getTypeLabel } from "./tunnelChainShared.helpers";
 import { LayerConfigForm } from "./tunnelChainShared";
 
 // Reuse createDefaultLayer from useTunnelChainEditor
@@ -15,15 +16,36 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
 
   switch (type) {
     case "proxy":
-      return { ...base, name: "Proxy", proxy: { proxyType: "socks5", host: "", port: 1080 } };
+      return {
+        ...base,
+        name: "Proxy",
+        proxy: { proxyType: "socks5", host: "", port: 1080 },
+      };
     case "ssh-tunnel":
-      return { ...base, name: "SSH Tunnel", sshTunnel: { forwardType: "local", host: "", port: 22, username: "" } };
+      return {
+        ...base,
+        name: "SSH Tunnel",
+        sshTunnel: { forwardType: "local", host: "", port: 22, username: "" },
+      };
     case "ssh-jump":
-      return { ...base, name: "SSH Jump Host", sshChainingMethod: "proxyjump", sshTunnel: { forwardType: "local", host: "", port: 22, username: "" } };
+      return {
+        ...base,
+        name: "SSH Jump Host",
+        sshChainingMethod: "proxyjump",
+        sshTunnel: { forwardType: "local", host: "", port: 22, username: "" },
+      };
     case "ssh-proxycmd":
-      return { ...base, name: "SSH ProxyCommand", sshTunnel: { forwardType: "local", proxyCommand: { template: "nc" } } };
+      return {
+        ...base,
+        name: "SSH ProxyCommand",
+        sshTunnel: { forwardType: "local", proxyCommand: { template: "nc" } },
+      };
     case "ssh-stdio":
-      return { ...base, name: "SSH Stdio", sshTunnel: { forwardType: "local" } };
+      return {
+        ...base,
+        name: "SSH Stdio",
+        sshTunnel: { forwardType: "local" },
+      };
     case "openvpn":
       return { ...base, name: "OpenVPN", vpn: { protocol: "udp" } };
     case "wireguard":
@@ -33,9 +55,17 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
     case "zerotier":
       return { ...base, name: "ZeroTier", mesh: {} };
     case "shadowsocks":
-      return { ...base, name: "Shadowsocks", proxy: { proxyType: "socks5", host: "", port: 8388 } };
+      return {
+        ...base,
+        name: "Shadowsocks",
+        proxy: { proxyType: "socks5", host: "", port: 8388 },
+      };
     case "tor":
-      return { ...base, name: "Tor", proxy: { proxyType: "socks5", host: "127.0.0.1", port: 9050 } };
+      return {
+        ...base,
+        name: "Tor",
+        proxy: { proxyType: "socks5", host: "127.0.0.1", port: 9050 },
+      };
     default:
       return { ...base, name: type, tunnel: {} };
   }
@@ -54,12 +84,15 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
   onSave,
   editingProfileId,
 }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [selectedType, setSelectedType] = useState<TunnelType>("proxy");
-  const [layerConfig, setLayerConfig] = useState<TunnelChainLayer>(() => createDefaultLayer("proxy"));
+  const [layerConfig, setLayerConfig] = useState<TunnelChainLayer>(() =>
+    createDefaultLayer("proxy"),
+  );
 
   // Load existing profile if editing
   useEffect(() => {
@@ -100,28 +133,38 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
         {
           description: description.trim() || undefined,
           tags: tags.length > 0 ? tags : undefined,
-        }
+        },
       );
     }
     onSave();
-  }, [name, description, tags, selectedType, layerConfig, editingProfileId, onSave]);
+  }, [
+    name,
+    description,
+    tags,
+    selectedType,
+    layerConfig,
+    editingProfileId,
+    onSave,
+  ]);
 
   const handleAddTag = useCallback(() => {
     const tag = tagInput.trim();
     if (tag && !tags.includes(tag)) {
-      setTags(prev => [...prev, tag]);
+      setTags((prev) => [...prev, tag]);
     }
     setTagInput("");
   }, [tagInput, tags]);
 
   const handleRemoveTag = useCallback((tag: string) => {
-    setTags(prev => prev.filter(t => t !== tag));
+    setTags((prev) => prev.filter((t) => t !== tag));
   }, []);
 
   if (!isOpen) return null;
 
   // Group types by category for the selector
-  const groupedTypes = TUNNEL_TYPE_OPTIONS.reduce<Record<string, typeof TUNNEL_TYPE_OPTIONS>>((acc, opt) => {
+  const groupedTypes = TUNNEL_TYPE_OPTIONS.reduce<
+    Record<string, typeof TUNNEL_TYPE_OPTIONS>
+  >((acc, opt) => {
     (acc[opt.category] ??= []).push(opt);
     return acc;
   }, {});
@@ -131,7 +174,15 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between flex-shrink-0">
         <h2 className="text-sm font-semibold text-[var(--color-text)]">
-          {editingProfileId ? "Edit Tunnel Profile" : "New Tunnel Profile"}
+          {editingProfileId
+            ? t(
+                "proxyChainMenu.tunnelProfileEditor.editTitle",
+                "Edit Tunnel Profile",
+              )
+            : t(
+                "proxyChainMenu.tunnelProfileEditor.newTitle",
+                "New Tunnel Profile",
+              )}
         </h2>
         <div className="flex items-center gap-2">
           <button
@@ -139,7 +190,10 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
             disabled={!name.trim()}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-[var(--color-primary)] hover:bg-[var(--color-primaryHover)] text-white disabled:opacity-40 transition-colors"
           >
-            <Save size={12} /> {editingProfileId ? "Update" : "Save"}
+            <Save size={12} />{" "}
+            {editingProfileId
+              ? t("proxyChainMenu.tunnelProfileEditor.update", "Update")
+              : t("proxyChainMenu.common.save", "Save")}
           </button>
           <button
             onClick={onClose}
@@ -154,33 +208,54 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
         {/* Metadata */}
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Name *</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+              {t("proxyChainMenu.tunnelProfileEditor.nameLabel", "Name *")}
+            </label>
             <input
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Office WireGuard, Bastion SSH"
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t(
+                "proxyChainMenu.tunnelProfileEditor.namePlaceholder",
+                "e.g. Office WireGuard, Bastion SSH",
+              )}
               className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
               autoFocus
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Description</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+              {t(
+                "proxyChainMenu.tunnelProfileEditor.descriptionLabel",
+                "Description",
+              )}
+            </label>
             <textarea
               value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Optional description..."
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t(
+                "proxyChainMenu.tunnelProfileEditor.descriptionPlaceholder",
+                "Optional description...",
+              )}
               rows={2}
               className="w-full px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] resize-none"
             />
           </div>
           <div>
-            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Tags</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+              {t("proxyChainMenu.tunnelProfileEditor.tagsLabel", "Tags")}
+            </label>
             <div className="flex items-center gap-1 flex-wrap">
-              {tags.map(tag => (
-                <span key={tag} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[var(--color-primary)]/15 text-[var(--color-primary)]"
+                >
                   {tag}
-                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-[var(--color-danger)]">
+                  <button
+                    onClick={() => handleRemoveTag(tag)}
+                    className="hover:text-[var(--color-danger)]"
+                  >
                     <X size={10} />
                   </button>
                 </span>
@@ -188,9 +263,17 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
               <input
                 type="text"
                 value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(); } }}
-                placeholder="Add tag..."
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+                placeholder={t(
+                  "proxyChainMenu.tunnelProfileEditor.tagPlaceholder",
+                  "Add tag...",
+                )}
                 className="px-2 py-0.5 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] w-24"
               />
             </div>
@@ -199,7 +282,12 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
 
         {/* Tunnel Type Selector */}
         <div className="border-t border-[var(--color-border)] pt-4">
-          <label className="block text-xs text-[var(--color-textSecondary)] mb-2">Tunnel Type</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
+            {t(
+              "proxyChainMenu.tunnelProfileEditor.tunnelTypeLabel",
+              "Tunnel Type",
+            )}
+          </label>
           <div className="space-y-2">
             {Object.entries(groupedTypes).map(([category, types]) => (
               <div key={category}>
@@ -207,7 +295,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
                   {category}
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {types.map(opt => (
+                  {types.map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => handleTypeChange(opt.value)}
@@ -229,11 +317,17 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
         {/* Type-specific config */}
         <div className="border-t border-[var(--color-border)] pt-4">
           <h3 className="text-sm font-medium text-[var(--color-text)] mb-2">
-            {getTypeLabel(selectedType)} Configuration
+            {t(
+              "proxyChainMenu.tunnelProfileEditor.configHeading",
+              "{{type}} Configuration",
+              { type: getTypeLabel(selectedType) },
+            )}
           </h3>
           <LayerConfigForm
             layer={layerConfig}
-            onUpdate={updates => setLayerConfig(prev => ({ ...prev, ...updates }))}
+            onUpdate={(updates) =>
+              setLayerConfig((prev) => ({ ...prev, ...updates }))
+            }
           />
         </div>
       </div>
