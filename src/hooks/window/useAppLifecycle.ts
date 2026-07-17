@@ -164,7 +164,7 @@ export const useAppLifecycle = ({
         parallelTasks.push(
           (async () => {
             try {
-              if (effectiveLanguage !== "en") {
+              if (effectiveLanguage !== "en-US") {
                 await loadLanguage(effectiveLanguage);
               }
               await i18n.changeLanguage(effectiveLanguage);
