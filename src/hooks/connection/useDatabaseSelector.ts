@@ -47,6 +47,14 @@ export interface LoadingCollection {
   id: string;
   name: string;
   mode: LoadingCollectionMode;
+  /**
+   * The database being handed away, latched when the load starts. Only
+   * meaningful for `"switch"`. The row UI must not re-derive this from
+   * the manager mid-load: the manager makes the incoming database
+   * current partway through, so the outgoing row would stop looking
+   * outgoing while the switch is still visibly running.
+   */
+  fromId?: string;
 }
 
 interface CollectionActionMenuState {
@@ -466,10 +474,12 @@ export function useDatabaseSelector(
     // than a cold open — the load tears the old one down on the way, so
     // the wait is longer and the copy should say so.
     const currentId = databaseManager.getCurrentDatabase()?.id;
+    const isSwitch = Boolean(currentId && currentId !== collection.id);
     setLoadingCollection({
       id: collection.id,
       name: collection.name,
-      mode: currentId && currentId !== collection.id ? "switch" : "open",
+      mode: isSwitch ? "switch" : "open",
+      fromId: isSwitch ? currentId : undefined,
     });
     try {
       await Promise.resolve(onDatabaseSelect(collection.id));

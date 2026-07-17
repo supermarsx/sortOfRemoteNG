@@ -69,7 +69,11 @@ const GAMMA: ConnectionDatabase = { ...ALPHA, id: "gamma", name: "Gamma" };
 
 interface StubOptions {
   loadingCollection?: LoadingCollection | null;
-  /** id of the currently-open database — drives the handoff derivation. */
+  /**
+   * id of the currently-open database. Drives the per-row close/lock button.
+   * Deliberately NOT the handoff derivation any more — see the F1 regression
+   * test below.
+   */
   currentId?: string | null;
 }
 
@@ -222,7 +226,12 @@ describe("DatabaseList loading treatment", () => {
 
   it("announces exactly once — one live region, not one per row", () => {
     renderList({
-      loadingCollection: { id: "beta", name: "Beta", mode: "switch" },
+      loadingCollection: {
+        id: "beta",
+        name: "Beta",
+        mode: "switch",
+        fromId: "alpha",
+      },
       currentId: "alpha",
     });
 
@@ -239,7 +248,12 @@ describe("DatabaseList loading treatment", () => {
 
   it("renders handoff copy on the outgoing row during a switch", () => {
     renderList({
-      loadingCollection: { id: "beta", name: "Beta", mode: "switch" },
+      loadingCollection: {
+        id: "beta",
+        name: "Beta",
+        mode: "switch",
+        fromId: "alpha",
+      },
       currentId: "alpha",
     });
 
@@ -255,6 +269,49 @@ describe("DatabaseList loading treatment", () => {
 
     // Handoff copy is row-only — the announcement carries the incoming mode.
     expect(screen.getAllByText(CLOSING_ALPHA)).toHaveLength(1);
+  });
+
+  // ─── The F1 regression ──────────────────────────────────────────────
+  //
+  // Observed in the real Tauri app: the outgoing row dropped its hand-off
+  // mid-switch and reverted to "Last accessed: …" while the incoming row was
+  // still aria-busy announcing "Switching to Beta…" — the two rows told
+  // contradictory stories for the tail of the switch (≥1130ms in one run).
+  //
+  // The cause was deriving the hand-off row from `mgr.isCurrentDatabase()`.
+  // `databaseManager.selectDatabase` makes the incoming database current
+  // *while the load is still running*, so the outgoing row stopped being
+  // "current" and silently demoted itself to a plain bystander.
+  //
+  // This is the state at that moment: the switch is in flight, `fromId` still
+  // names Alpha, but the manager has already moved on to Beta. The hand-off
+  // must hold. Against the old derivation this test fails.
+  it("keeps the handoff on the outgoing row after the manager flips current mid-load", () => {
+    renderList({
+      loadingCollection: {
+        id: "beta",
+        name: "Beta",
+        mode: "switch",
+        fromId: "alpha",
+      },
+      // The flip: Beta is already current, Alpha no longer is.
+      currentId: "beta",
+    });
+
+    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
+    expect(rowFor("Alpha").textContent).not.toContain("Last accessed");
+    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
+    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(1);
+
+    // The outgoing row must not be demoted to a dimmed bystander.
+    expect(rowFor("Alpha").className).not.toContain("pointer-events-none");
+
+    // And the incoming row is still telling its half of the same story.
+    expect(rowFor("Beta")).toHaveAttribute("aria-busy", "true");
+    expect(rowFor("Beta").textContent).toContain(SWITCHING_BETA);
+    expect(
+      screen.getByTestId("database-loading-announcement").textContent,
+    ).toBe(SWITCHING_BETA);
   });
 
   it("does not treat a re-open of the current database as a handoff", () => {
@@ -301,7 +358,12 @@ describe("DatabaseList loading treatment", () => {
 
     it("drops every motion class on a switch, including the handoff", () => {
       renderList({
-        loadingCollection: { id: "beta", name: "Beta", mode: "switch" },
+        loadingCollection: {
+          id: "beta",
+          name: "Beta",
+          mode: "switch",
+          fromId: "alpha",
+        },
         currentId: "alpha",
       });
 
@@ -326,7 +388,12 @@ describe("DatabaseList loading treatment", () => {
 
     it("keeps the spinner, the handoff copy and the disabled siblings", () => {
       renderList({
-        loadingCollection: { id: "beta", name: "Beta", mode: "switch" },
+        loadingCollection: {
+          id: "beta",
+          name: "Beta",
+          mode: "switch",
+          fromId: "alpha",
+        },
         currentId: "alpha",
       });
 

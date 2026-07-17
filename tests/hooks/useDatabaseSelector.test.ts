@@ -179,7 +179,72 @@ describe("useDatabaseSelector — loadingCollection", () => {
       id: "plain",
       name: "Personal",
       mode: "switch",
+      fromId: "other",
     });
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
+  });
+
+  // F1: the outgoing id must be latched at the start of the load. The row UI
+  // used to ask the manager who was current on every render, but the manager
+  // makes the incoming database current *mid-load* — so the outgoing row quit
+  // its hand-off while the incoming row was still busy. `fromId` is captured
+  // once, up front, and cannot drift underneath the UI.
+  it("latches fromId to the outgoing database, surviving a mid-load switch of current", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "other" });
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    act(() => {
+      void result.current.handleSelectCollection(plain);
+    });
+
+    expect(result.current.loadingCollection?.fromId).toBe("other");
+
+    // The manager attaches the incoming database while the load is still in
+    // flight — exactly what happens in the real app, and what used to break it.
+    mockGetCurrentDatabase.mockReturnValue({ id: "plain" });
+
+    expect(result.current.loadingCollection?.fromId).toBe("other");
+    expect(result.current.loadingCollection?.mode).toBe("switch");
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
+  });
+
+  it("sets no fromId on a cold open — there is nothing to hand off", async () => {
+    mockGetCurrentDatabase.mockReturnValue(null);
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    act(() => {
+      void result.current.handleSelectCollection(plain);
+    });
+
+    expect(result.current.loadingCollection?.mode).toBe("open");
+    expect(result.current.loadingCollection?.fromId).toBeUndefined();
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
+  });
+
+  it("sets no fromId when re-opening the database that is already open", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "plain" });
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    act(() => {
+      void result.current.handleSelectCollection(plain);
+    });
+
+    expect(result.current.loadingCollection?.fromId).toBeUndefined();
 
     await act(async () => {
       gate.resolve();
@@ -295,6 +360,39 @@ describe("useDatabaseSelector — handlePasswordSubmit", () => {
     expect(result.current.loadingCollection).toBeNull();
     expect(result.current.isWorking).toBe(false);
     expect(onDatabaseSelect).toHaveBeenCalledWith("enc", "hunter2");
+  });
+
+  // Documents current behaviour, not an endorsement of it: unlocking an
+  // encrypted database while another one is open is functionally a switch, but
+  // the unlock path reports `mode: "unlock"` with no `fromId`, so no row tells
+  // a hand-off story. That is a gap, not a contradiction — no row ever claims
+  // to be closing and then takes it back, which is what F1 was. Pinned here so
+  // that a future decision to treat it as a switch is a deliberate change.
+  it("reports mode 'unlock' with no fromId even when another database is open", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "other" });
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    await act(async () => {
+      await result.current.handleSelectCollection(encrypted);
+    });
+    act(() => {
+      result.current.setPassword("hunter2");
+    });
+    act(() => {
+      void result.current.handlePasswordSubmit();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.loadingCollection?.mode).toBe("unlock");
+    expect(result.current.loadingCollection?.fromId).toBeUndefined();
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
   });
 
   it("sets no loadingCollection on the clone path — cloning is not an open", async () => {
