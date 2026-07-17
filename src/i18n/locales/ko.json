@@ -208,6 +208,12 @@
       "cloneAction": "컬렉션 복제",
       "unlocking": "잠금 해제 중...",
       "cloning": "복제 중...",
+      "loading": {
+        "open": "{{name}} 여는 중…",
+        "switch": "{{name}}(으)로 전환하는 중…",
+        "unlock": "{{name}} 잠금 해제 중…",
+        "handoff": "{{name}} 닫는 중…"
+      },
       "emptyTitle": "컬렉션을 찾을 수 없음",
       "emptyDescription": "시작하려면 첫 번째 연결 컬렉션을 만드세요",
       "lastAccessed": "마지막 접근",

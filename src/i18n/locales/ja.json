@@ -208,6 +208,12 @@
       "cloneAction": "コレクションをクローン",
       "unlocking": "ロック解除中...",
       "cloning": "クローン中...",
+      "loading": {
+        "open": "{{name}} を開いています…",
+        "switch": "{{name}} に切り替えています…",
+        "unlock": "{{name}} のロックを解除しています…",
+        "handoff": "{{name}} を閉じています…"
+      },
       "emptyTitle": "コレクションが見つかりません",
       "emptyDescription": "はじめるには最初の接続コレクションを作成してください",
       "lastAccessed": "最終アクセス",

@@ -208,6 +208,12 @@
       "cloneAction": "Clona raccolta",
       "unlocking": "Sblocco in corso...",
       "cloning": "Clonazione in corso...",
+      "loading": {
+        "open": "Apertura di {{name}}…",
+        "switch": "Passaggio a {{name}}…",
+        "unlock": "Sblocco di {{name}}…",
+        "handoff": "Chiusura di {{name}}…"
+      },
       "emptyTitle": "Nessuna raccolta trovata",
       "emptyDescription": "Crea la tua prima raccolta di connessioni per iniziare",
       "lastAccessed": "Ultimo accesso",

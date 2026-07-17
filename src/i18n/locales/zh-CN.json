@@ -208,6 +208,12 @@
       "cloneAction": "克隆集合",
       "unlocking": "正在解锁...",
       "cloning": "正在克隆...",
+      "loading": {
+        "open": "正在打开 {{name}}…",
+        "switch": "正在切换到 {{name}}…",
+        "unlock": "正在解锁 {{name}}…",
+        "handoff": "正在关闭 {{name}}…"
+      },
       "emptyTitle": "未找到集合",
       "emptyDescription": "创建你的第一个连接集合以开始使用",
       "lastAccessed": "最近访问",

@@ -208,6 +208,12 @@
       "cloneAction": "Clone Database",
       "unlocking": "Unlocking...",
       "cloning": "Cloning...",
+      "loading": {
+        "open": "Opening {{name}}…",
+        "switch": "Switching to {{name}}…",
+        "unlock": "Unlocking {{name}}…",
+        "handoff": "Closing {{name}}…"
+      },
       "emptyTitle": "No databases found",
       "emptyDescription": "Create your first connection database to get started",
       "lastAccessed": "Last accessed",

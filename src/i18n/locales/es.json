@@ -208,6 +208,12 @@
       "cloneAction": "Clonar colección",
       "unlocking": "Desbloqueando...",
       "cloning": "Clonando...",
+      "loading": {
+        "open": "Abriendo {{name}}…",
+        "switch": "Cambiando a {{name}}…",
+        "unlock": "Desbloqueando {{name}}…",
+        "handoff": "Cerrando {{name}}…"
+      },
       "emptyTitle": "No se encontraron colecciones",
       "emptyDescription": "Crea tu primera colección de conexiones para empezar",
       "lastAccessed": "Último acceso",

@@ -208,6 +208,12 @@
       "cloneAction": "Sammlung klonen",
       "unlocking": "Wird entsperrt...",
       "cloning": "Wird geklont...",
+      "loading": {
+        "open": "{{name}} wird geöffnet…",
+        "switch": "Wird zu {{name}} gewechselt…",
+        "unlock": "{{name}} wird entsperrt…",
+        "handoff": "{{name}} wird geschlossen…"
+      },
       "emptyTitle": "Keine Sammlungen gefunden",
       "emptyDescription": "Erstellen Sie Ihre erste Verbindungssammlung, um zu beginnen",
       "lastAccessed": "Zuletzt verwendet",
