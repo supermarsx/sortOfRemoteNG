@@ -88,7 +88,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -119,6 +120,26 @@
     opacity: 0;
     transform: translateY(-8px) scale(0.97);
     filter: blur(2px);
+  }
+}
+
+@keyframes rowSweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes rowHandoff {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.45;
+    transform: translateY(1px);
   }
 }
 
@@ -159,11 +180,33 @@
 }
 
 .animate-card-hide {
-  animation: cardHide calc(var(--animation-duration, 200ms) * 1.0)
+  animation: cardHide calc(var(--animation-duration, 200ms) * 1)
     cubic-bezier(0.4, 0, 1, 1) forwards;
   transform-origin: top center;
   will-change: transform, opacity, filter;
   pointer-events: none;
+}
+
+/* Indeterminate sweep across a loading row surface */
+.animate-row-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--color-primary-rgb) / 0.16) 50%,
+    transparent 100%
+  );
+  animation: rowSweep calc(var(--animation-duration, 200ms) * 4) ease-in-out
+    infinite;
+  will-change: transform;
+}
+
+/* Outgoing row handing off during a database switch */
+.animate-row-handoff {
+  animation: rowHandoff var(--animation-duration, 200ms) ease-out forwards;
+  will-change: transform, opacity;
 }
 
 /* Modal/Dialog backdrop animation */
@@ -174,7 +217,8 @@
 
 /* Modal/Dialog content animation */
 .modal-content-animate {
-  animation: fadeInScale var(--animation-duration, 550ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInScale var(--animation-duration, 550ms)
+    cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Dropdown/Popup animation */
@@ -208,9 +252,10 @@
 
 /* Card/Container hover effect */
 .card-hover-effect {
-  transition: transform var(--animation-duration, 200ms) ease,
-              box-shadow var(--animation-duration, 200ms) ease,
-              background-color var(--animation-duration, 200ms) ease;
+  transition:
+    transform var(--animation-duration, 200ms) ease,
+    box-shadow var(--animation-duration, 200ms) ease,
+    background-color var(--animation-duration, 200ms) ease;
 }
 
 .card-hover-effect:hover {
@@ -220,9 +265,10 @@
 
 /* Button hover animation */
 .btn-animate {
-  transition: transform var(--animation-duration, 150ms) ease,
-              background-color var(--animation-duration, 150ms) ease,
-              box-shadow var(--animation-duration, 150ms) ease;
+  transition:
+    transform var(--animation-duration, 150ms) ease,
+    background-color var(--animation-duration, 150ms) ease,
+    box-shadow var(--animation-duration, 150ms) ease;
 }
 
 .btn-animate:hover:not(:disabled) {
@@ -239,9 +285,10 @@
 }
 
 .transition-colors-smooth {
-  transition: color var(--animation-duration, 150ms) ease,
-              background-color var(--animation-duration, 150ms) ease,
-              border-color var(--animation-duration, 150ms) ease;
+  transition:
+    color var(--animation-duration, 150ms) ease,
+    background-color var(--animation-duration, 150ms) ease,
+    border-color var(--animation-duration, 150ms) ease;
 }
 
 .transition-transform-smooth {
@@ -253,14 +300,37 @@
 }
 
 /* Staggered animation for lists */
-.stagger-animate > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-animate > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-animate > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-animate > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-animate > *:nth-child(5) { animation-delay: 200ms; }
-.stagger-animate > *:nth-child(6) { animation-delay: 250ms; }
-.stagger-animate > *:nth-child(7) { animation-delay: 300ms; }
-.stagger-animate > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-animate > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger-animate > *:nth-child(2) {
+  animation-delay: 50ms;
+}
+.stagger-animate > *:nth-child(3) {
+  animation-delay: 100ms;
+}
+.stagger-animate > *:nth-child(4) {
+  animation-delay: 150ms;
+}
+.stagger-animate > *:nth-child(5) {
+  animation-delay: 200ms;
+}
+.stagger-animate > *:nth-child(6) {
+  animation-delay: 250ms;
+}
+.stagger-animate > *:nth-child(7) {
+  animation-delay: 300ms;
+}
+.stagger-animate > *:nth-child(8) {
+  animation-delay: 350ms;
+}
+
+/* The .reduce-motion setting (base.css) clamps every animation to 50ms, which would
+   turn the infinite sweep into a strobe rather than calming it. Disable it instead. */
+.reduce-motion .animate-row-sweep {
+  animation: none !important;
+  opacity: 0 !important;
+}
 
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
@@ -282,7 +352,22 @@
     opacity: 1 !important;
     transform: none !important;
   }
-  
+
+  /* rowSweep is infinite; kill it outright and hide the overlay rather than
+     leaving a static gradient stripe across the row */
+  .animate-row-sweep {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+
+  /* Hold the handoff end state so the outgoing row still reads as dimmed */
+  .animate-row-handoff {
+    animation: none !important;
+    opacity: 0.45 !important;
+    transform: none !important;
+  }
+
   .card-hover-effect,
   .btn-animate,
   .transition-smooth,
