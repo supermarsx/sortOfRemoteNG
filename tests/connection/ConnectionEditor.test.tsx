@@ -1,7 +1,14 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
+import { ToolTabViewer } from "../../src/components/app/ToolPanel";
 import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
 import { Connection } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
@@ -44,6 +51,28 @@ vi.mock("../../src/contexts/ToastContext", () => ({
     },
   }),
 }));
+
+// Override the global SettingsContext mock so a single test can flip
+// autoSaveEnabled on. Defaults to false, matching vitest.setup.ts, so the
+// other ~293 tests in this file are unaffected. Toggled via settingsMockState.
+const settingsMockState = vi.hoisted(() => ({ autoSaveEnabled: false }));
+
+vi.mock("../../src/contexts/SettingsContext", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const defaults = (actual as { defaultSettings: Record<string, unknown> })
+    .defaultSettings;
+  return {
+    ...actual,
+    useSettings: () => ({
+      settings: {
+        ...defaults,
+        autoSaveEnabled: settingsMockState.autoSaveEnabled,
+      },
+      updateSettings: async () => {},
+      reloadSettings: async () => {},
+    }),
+  };
+});
 
 // Mock child components
 vi.mock("../../src/components/connection/TagManager", () => ({
@@ -1974,6 +2003,346 @@ describe("ConnectionEditor", () => {
 
       // Should not crash with empty hostname
       expect(screen.getByText("New Connection")).toBeInTheDocument();
+    });
+  });
+
+  /* ═══════════════════════════════════════════════════════════════
+     t54-A — header control heights
+     jsdom has no layout engine and never compiles Tailwind, so these
+     assert *intent* (the shared height class), never pixels. The real
+     equal-height proof is the gate's SSR + headless-browser measurement.
+     ═══════════════════════════════════════════════════════════════ */
+  describe("Header control heights (t54-A)", () => {
+    it("keeps the search bar, Connect, Reset and Save on the same h-9 class", () => {
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect: vi.fn(),
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      expect(screen.getByTestId("editor-search-bar")).toHaveClass("h-9");
+      expect(screen.getByTestId("editor-connect")).toHaveClass("h-9");
+      expect(screen.getByTestId("editor-save")).toHaveClass("h-9");
+      expect(screen.getByRole("button", { name: /Reset/i })).toHaveClass("h-9");
+    });
+
+    it("no longer sizes Reset and Save from py-2 (the emergent-height source)", () => {
+      renderWithProviders(
+        { connection: mockConnection, isOpen: true, onClose: vi.fn() },
+        undefined,
+        [mockConnection],
+      );
+
+      // py-2 was the inherited-line-height source that drifted these to ~42px.
+      // h-9 replaces it; if py-2 comes back the parity silently breaks again.
+      expect(screen.getByTestId("editor-save")).not.toHaveClass("py-2");
+      expect(screen.getByRole("button", { name: /Reset/i })).not.toHaveClass(
+        "py-2",
+      );
+    });
+  });
+
+  /* ═══════════════════════════════════════════════════════════════
+     t54-B — Connect-from-editor button
+     ═══════════════════════════════════════════════════════════════ */
+  describe("Connect button (t54-B)", () => {
+    it("renders for a saved, non-group connection with a connect handler", () => {
+      // Anti-vacuity positive control: prove the button is PRESENT here before
+      // the tests below prove it is absent in the negative cases.
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect: vi.fn(),
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      expect(screen.getByTestId("editor-connect")).toBeInTheDocument();
+    });
+
+    it("connects to the edited on-screen values, not the pre-edit saved values (R2)", () => {
+      // ⭐ THE headline regression. The saved connection's hostname is
+      // 192.168.1.100; we edit it on screen to 10.0.0.5 and click Connect.
+      // A handler that passed mgr.connection, or re-read state.connections
+      // (whose dispatch has not flushed at click time), would hand over the
+      // stale 192.168.1.100 and FAIL this assertion. Only routing through
+      // saveNow()'s freshly-built return value passes. That is the bug the
+      // whole feature exists to prevent — see plan §D4/R2.
+      const onConnect = vi.fn();
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "10.0.0.5" },
+      });
+
+      fireEvent.click(screen.getByTestId("editor-connect"));
+
+      expect(onConnect).toHaveBeenCalledTimes(1);
+      const target = onConnect.mock.calls[0][0] as Connection;
+      expect(target.hostname).toBe("10.0.0.5");
+      expect(target.hostname).not.toBe(mockConnection.hostname);
+      expect(target.id).toBe(mockConnection.id);
+    });
+
+    it("connects without writing to the store when nothing was edited", () => {
+      const onConnect = vi.fn();
+      const seen: Connection[][] = [];
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        (connections) => seen.push(connections),
+        [mockConnection],
+      );
+
+      const writesBefore = seen.length;
+      fireEvent.click(screen.getByTestId("editor-connect"));
+
+      // saveNow() gates the UPDATE_CONNECTION dispatch on hasChanges, so a
+      // clean connect must not mutate state.connections at all (no new state
+      // reference reaches the probe).
+      expect(seen.length).toBe(writesBefore);
+      expect(onConnect).toHaveBeenCalledTimes(1);
+      expect((onConnect.mock.calls[0][0] as Connection).hostname).toBe(
+        mockConnection.hostname,
+      );
+    });
+
+    it("saves the edit exactly once before connecting", () => {
+      const onConnect = vi.fn();
+      const seen: Connection[][] = [];
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        (connections) => seen.push(connections),
+        [mockConnection],
+      );
+
+      fireEvent.change(screen.getByTestId("editor-hostname"), {
+        target: { value: "10.0.0.5" },
+      });
+
+      const writesBefore = seen.length;
+      fireEvent.click(screen.getByTestId("editor-connect"));
+
+      // Exactly one UPDATE_CONNECTION reached the store (the save half really
+      // happened — not just the callback)...
+      expect(seen.length).toBe(writesBefore + 1);
+      // ...and it persisted the edited value.
+      expect(seen[seen.length - 1][0].hostname).toBe("10.0.0.5");
+      expect(onConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it("still connects after an autosave has fired (autosave dirty-baseline guard)", async () => {
+      // Encodes plan §1.4: autosave persists but never updates the dirty
+      // baseline, so the connection reports dirty forever. This is the test
+      // that would go RED under a "disable Connect while dirty" design — it
+      // locks that door shut. Uses real timers to drive the ~1s autosave
+      // debounce, matching this file's idiom.
+      settingsMockState.autoSaveEnabled = true;
+      try {
+        const onConnect = vi.fn();
+        const seen: Connection[][] = [];
+        renderWithProviders(
+          {
+            connection: mockConnection,
+            isOpen: true,
+            onClose: vi.fn(),
+            onConnect,
+          },
+          (connections) => seen.push(connections),
+          [mockConnection],
+        );
+
+        // Let the editor's init rAF flip isInitializedRef → true, otherwise the
+        // edit below is ignored by the autosave effect.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        });
+
+        fireEvent.change(screen.getByTestId("editor-hostname"), {
+          target: { value: "172.16.0.9" },
+        });
+
+        // Autosave fires ~1s later, shows the "Saved" badge, and persists.
+        await screen.findByText("Saved", {}, { timeout: 3000 });
+        await waitFor(() =>
+          expect(seen[seen.length - 1][0].hostname).toBe("172.16.0.9"),
+        );
+
+        // The connection is now "dirty forever"; Connect must still work.
+        fireEvent.click(screen.getByTestId("editor-connect"));
+        expect(onConnect).toHaveBeenCalledTimes(1);
+        expect((onConnect.mock.calls[0][0] as Connection).hostname).toBe(
+          "172.16.0.9",
+        );
+      } finally {
+        settingsMockState.autoSaveEnabled = false;
+      }
+    });
+
+    it("does not call onConnect when Save is pressed", () => {
+      const onConnect = vi.fn();
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      // Save submits the form; the two buttons stay distinct.
+      fireEvent.click(screen.getByTestId("editor-save"));
+      expect(onConnect).not.toHaveBeenCalled();
+    });
+
+    it("is hidden for a new (unsaved) connection", () => {
+      renderWithProviders({
+        isOpen: true,
+        onClose: vi.fn(),
+        onConnect: vi.fn(),
+      });
+
+      // Positive control: the editor really rendered (so the absence below is
+      // not vacuous)...
+      expect(screen.getByTestId("editor-save")).toBeInTheDocument();
+      // ...yet Connect is absent — there is no saved connection to connect to.
+      expect(screen.queryByTestId("editor-connect")).not.toBeInTheDocument();
+    });
+
+    it("is hidden for a group/folder", () => {
+      const folder = {
+        ...mockConnection,
+        id: "folder",
+        isGroup: true,
+        hostname: "",
+      };
+      renderWithProviders(
+        {
+          connection: folder,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect: vi.fn(),
+        },
+        undefined,
+        [folder],
+      );
+
+      expect(screen.getByTestId("editor-save")).toBeInTheDocument();
+      expect(screen.queryByTestId("editor-connect")).not.toBeInTheDocument();
+    });
+
+    it("is hidden when no onConnect handler is wired", () => {
+      renderWithProviders(
+        { connection: mockConnection, isOpen: true, onClose: vi.fn() },
+        undefined,
+        [mockConnection],
+      );
+
+      expect(screen.getByTestId("editor-save")).toBeInTheDocument();
+      expect(screen.queryByTestId("editor-connect")).not.toBeInTheDocument();
+    });
+
+    it("uses type=button so it never submits the form", () => {
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect: vi.fn(),
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      expect(screen.getByTestId("editor-connect")).toHaveAttribute(
+        "type",
+        "button",
+      );
+    });
+
+    it('exposes an accessible name of "Connect"', () => {
+      renderWithProviders(
+        {
+          connection: mockConnection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect: vi.fn(),
+        },
+        undefined,
+        [mockConnection],
+      );
+
+      // The visible text is the accessible name (no redundant aria-label).
+      expect(screen.getByRole("button", { name: "Connect" })).toBe(
+        screen.getByTestId("editor-connect"),
+      );
+    });
+
+    it("ToolTabViewer forwards its onReconnect down to ConnectionEditor's onConnect", async () => {
+      // The one-line hop in ToolPanel (onConnect={onReconnect}) is the whole of
+      // plan §1.3. Render the real ToolTabViewer for a connectionEditor tab and
+      // prove the button both appears (onConnect was threaded) and invokes the
+      // forwarded handler with the target connection. ToolPanel loads the editor
+      // via next/dynamic, so the button arrives asynchronously — hence findBy.
+      const onReconnect = vi.fn();
+      const session = {
+        id: "session-1",
+        connectionId: mockConnection.id,
+        protocol: "tool:connectionEditor",
+        name: "Connection Editor",
+        status: "connected",
+      };
+
+      render(
+        <ConnectionProvider>
+          <ConnectionStateProbe initialConnections={[mockConnection]} />
+          <ToolTabViewer
+            session={session as never}
+            onClose={vi.fn()}
+            onReconnect={onReconnect}
+          />
+        </ConnectionProvider>,
+      );
+
+      const connectButton = await screen.findByTestId(
+        "editor-connect",
+        {},
+        { timeout: 3000 },
+      );
+      fireEvent.click(connectButton);
+
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+      expect((onReconnect.mock.calls[0][0] as Connection).id).toBe(
+        mockConnection.id,
+      );
     });
   });
 });

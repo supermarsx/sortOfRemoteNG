@@ -1,6 +1,21 @@
 import { S } from '../../helpers/selectors';
 import { resetAppState, createCollection } from '../../helpers/app';
 
+// t54-B: the Connect-from-editor button has no entry in the shared selector
+// map; use an inline selector, mirroring how this file already targets the
+// SSH-specific option fields.
+const EDITOR_CONNECT = '[data-testid="editor-connect"]';
+
+async function sessionTabExists(connectionName: string): Promise<boolean> {
+  const tabs = await $$(S.sessionTab);
+  for (const tab of tabs) {
+    if ((await tab.getText()).includes(connectionName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function createTestConnection(
   name: string,
   hostname: string,
@@ -150,5 +165,75 @@ describe('Connection Editing', () => {
 
     const updatedHostname = await $(S.editorHostname);
     expect(await updatedHostname.getValue()).toBe('172.16.0.99');
+  });
+
+  // t54-B — Connect from the edit tab. NOTE: like every spec here this runs
+  // only under the gate's Tauri driver rig (wdio.conf.ts hard-requires a built
+  // binary); it is authored to the contract, not executed in the unit gate.
+  describe('Connect from the editor (t54-B)', () => {
+    it('shows a Connect button for a saved connection', async () => {
+      await selectConnection('Alpha');
+
+      const connectBtn = await $(EDITOR_CONNECT);
+      await connectBtn.waitForDisplayed({ timeout: 5_000 });
+      expect(await connectBtn.isDisplayed()).toBe(true);
+    });
+
+    it('opens a session tab when Connect is clicked', async () => {
+      await selectConnection('Bravo');
+
+      const connectBtn = await $(EDITOR_CONNECT);
+      await connectBtn.waitForDisplayed({ timeout: 5_000 });
+      await connectBtn.click();
+      await browser.pause(1_000);
+
+      expect(await sessionTabExists('Bravo')).toBe(true);
+    });
+
+    it('save-then-connect: connects to the freshly edited hostname', async () => {
+      await selectConnection('Alpha');
+
+      const hostnameInput = await $(S.editorHostname);
+      await hostnameInput.clearValue();
+      await hostnameInput.setValue('10.20.30.40');
+
+      const connectBtn = await $(EDITOR_CONNECT);
+      await connectBtn.waitForDisplayed({ timeout: 5_000 });
+      await connectBtn.click();
+      await browser.pause(1_000);
+
+      // A session tab opened for the connection...
+      expect(await sessionTabExists('Alpha')).toBe(true);
+
+      // ...and Connect implicitly persisted the edit (the editor stays open for
+      // an existing connection, so re-selecting shows the saved new hostname).
+      await selectConnection('Charlie');
+      await browser.pause(300);
+      await selectConnection('Alpha');
+      expect(await (await $(S.editorHostname)).getValue()).toBe('10.20.30.40');
+    });
+
+    it('keeps the edit tab open after connecting (existing connection)', async () => {
+      await selectConnection('Bravo');
+
+      const connectBtn = await $(EDITOR_CONNECT);
+      await connectBtn.waitForDisplayed({ timeout: 5_000 });
+      await connectBtn.click();
+      await browser.pause(1_000);
+
+      // The editor is not unmounted by a connect on an existing connection.
+      expect(await (await $(S.editorPanel)).isDisplayed()).toBe(true);
+    });
+
+    it('hides the Connect button for a new, unsaved connection', async () => {
+      const addBtn = await $(S.toolbarNewConnection);
+      await addBtn.click();
+
+      const editor = await $(S.editorPanel);
+      await editor.waitForDisplayed({ timeout: 5_000 });
+
+      // There is no saved record to connect to yet, so the button is absent.
+      expect(await (await $(EDITOR_CONNECT)).isExisting()).toBe(false);
+    });
   });
 });
