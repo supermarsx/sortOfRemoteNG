@@ -137,6 +137,7 @@ function openEntryPoints(row: HTMLElement): HTMLButtonElement[] {
 const OPENING_ALPHA = "Opening Alpha…";
 const SWITCHING_BETA = "Switching to Beta…";
 const UNLOCKING_ALPHA = "Unlocking Alpha…";
+const UNLOCKING_BETA = "Unlocking Beta…";
 const CLOSING_ALPHA = "Closing Alpha…";
 
 beforeEach(() => {
@@ -312,6 +313,73 @@ describe("DatabaseList loading treatment", () => {
     expect(
       screen.getByTestId("database-loading-announcement").textContent,
     ).toBe(SWITCHING_BETA);
+  });
+
+  // ─── Unlock is a hand-off too ───────────────────────────────────────
+  //
+  // Unlocking an encrypted database while another one is open tears the open
+  // one down, exactly as a plain switch does, so the outgoing row must say so
+  // rather than sitting silently dimmed among the bystanders. The hand-off is
+  // keyed on `fromId`, not on `mode === "switch"` — which is why the incoming
+  // row keeps the more specific "Unlocking…" copy while the outgoing row uses
+  // the same cause-free "Closing…" copy a switch uses.
+  //
+  // Both rows are asserted together on purpose: this is a two-row story, and
+  // either row alone would pass while the pair still contradicted each other.
+  it("tells the handoff story on the outgoing row while an unlock is in flight", () => {
+    renderList({
+      loadingCollection: {
+        id: "beta",
+        name: "Beta",
+        mode: "unlock",
+        fromId: "alpha",
+      },
+      currentId: "alpha",
+    });
+
+    // Outgoing: hands off, and is NOT demoted to a dimmed bystander.
+    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
+    expect(rowFor("Alpha").textContent).not.toContain("Last accessed");
+    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
+    expect(rowFor("Alpha").className).not.toContain("pointer-events-none");
+    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(1);
+
+    // Incoming: busy, and announcing the unlock — not "Switching to…".
+    expect(rowFor("Beta")).toHaveAttribute("aria-busy", "true");
+    expect(rowFor("Beta").textContent).toContain(UNLOCKING_BETA);
+    expect(
+      screen.getByTestId("database-loading-announcement").textContent,
+    ).toBe(UNLOCKING_BETA);
+
+    // Uninvolved rows are still bystanders.
+    expect(rowFor("Gamma").className).toContain("pointer-events-none");
+  });
+
+  it("keeps the unlock handoff after the manager flips current mid-load", () => {
+    renderList({
+      loadingCollection: {
+        id: "beta",
+        name: "Beta",
+        mode: "unlock",
+        fromId: "alpha",
+      },
+      // The flip: Beta is already current, Alpha no longer is.
+      currentId: "beta",
+    });
+
+    expect(rowFor("Alpha").textContent).toContain(CLOSING_ALPHA);
+    expect(rowFor("Alpha").className).toContain("animate-row-handoff");
+    expect(rowFor("Beta").textContent).toContain(UNLOCKING_BETA);
+  });
+
+  it("tells no handoff story when unlocking with nothing else open", () => {
+    renderList({
+      loadingCollection: { id: "alpha", name: "Alpha", mode: "unlock" },
+    });
+
+    expect(document.querySelectorAll(".animate-row-handoff")).toHaveLength(0);
+    expect(rowFor("Alpha").textContent).toContain(UNLOCKING_ALPHA);
+    expect(screen.queryByText(CLOSING_ALPHA)).toBeNull();
   });
 
   it("does not treat a re-open of the current database as a handoff", () => {

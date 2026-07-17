@@ -294,13 +294,14 @@ const DatabaseRow: React.FC<DatabaseRowProps> = ({
 
   const loading = mgr.loadingCollection;
   const isLoadingThis = loading?.id === collection.id;
-  // The row being handed away during a switch — dims and settles back while
-  // the incoming row loads. Read off the latched `fromId` rather than asking
-  // the manager who is current: the manager makes the incoming database
-  // current partway through the load, which would end the hand-off early
-  // while the incoming row is still busy.
-  const isHandoff =
-    loading?.mode === "switch" && loading.fromId === collection.id;
+  // The row being handed away — dims and settles back while the incoming row
+  // loads. Keyed on the latched `fromId` alone: it is set only when a
+  // different database really was open, so it already says precisely this,
+  // for an unlock-over-an-open-database as much as for a plain switch. Not
+  // asking the manager who is current is deliberate — it makes the incoming
+  // database current partway through the load, which would end the hand-off
+  // early while the incoming row is still busy.
+  const isHandoff = loading?.fromId === collection.id;
   // Rows with no part in the load. Dimming them is the visual half of the
   // hook's re-entrancy guard: a click that can't happen needs no explaining.
   const isBystander = loading !== null && !isLoadingThis && !isHandoff;

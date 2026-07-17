@@ -362,13 +362,16 @@ describe("useDatabaseSelector — handlePasswordSubmit", () => {
     expect(onDatabaseSelect).toHaveBeenCalledWith("enc", "hunter2");
   });
 
-  // Documents current behaviour, not an endorsement of it: unlocking an
-  // encrypted database while another one is open is functionally a switch, but
-  // the unlock path reports `mode: "unlock"` with no `fromId`, so no row tells
-  // a hand-off story. That is a gap, not a contradiction — no row ever claims
-  // to be closing and then takes it back, which is what F1 was. Pinned here so
-  // that a future decision to treat it as a switch is a deliberate change.
-  it("reports mode 'unlock' with no fromId even when another database is open", async () => {
+  // Unlocking an encrypted database while another one is open is functionally
+  // a switch — the open database is torn down as part of the load — so the
+  // outgoing row must tell the same hand-off story a plain switch tells. The
+  // mode stays "unlock": that is what the incoming row is honestly doing, and
+  // `fromId` is what marks the hand-off.
+  //
+  // This replaces a test that pinned the opposite (`fromId` undefined here),
+  // written to document the gap rather than endorse it. The gap is now closed
+  // by decision, so the pin moves with it.
+  it("latches fromId when unlocking while a different database is open", async () => {
     mockGetCurrentDatabase.mockReturnValue({ id: "other" });
     const gate = deferred();
     const { result } = renderSelector(() => gate.promise);
@@ -386,7 +389,75 @@ describe("useDatabaseSelector — handlePasswordSubmit", () => {
       await Promise.resolve();
     });
 
+    expect(result.current.loadingCollection).toEqual({
+      id: "enc",
+      name: "Vault",
+      mode: "unlock",
+      fromId: "other",
+    });
+
+    // The latch must hold even once the manager makes the incoming database
+    // current mid-load — the same failure mode F1 was on the switch path.
+    mockGetCurrentDatabase.mockReturnValue({ id: "enc" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.loadingCollection?.fromId).toBe("other");
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
+  });
+
+  it("sets no fromId when unlocking with nothing else open", async () => {
+    mockGetCurrentDatabase.mockReturnValue(null);
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    await act(async () => {
+      await result.current.handleSelectCollection(encrypted);
+    });
+    act(() => {
+      result.current.setPassword("hunter2");
+    });
+    act(() => {
+      void result.current.handlePasswordSubmit();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
     expect(result.current.loadingCollection?.mode).toBe("unlock");
+    expect(result.current.loadingCollection?.fromId).toBeUndefined();
+
+    await act(async () => {
+      gate.resolve();
+      await gate.promise;
+    });
+  });
+
+  // Re-unlocking the database that is already open is not a hand-off: there is
+  // nothing being handed away. Distinct from the case above — here the manager
+  // does have a current database, it just happens to be this one.
+  it("sets no fromId when unlocking the database that is already open", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "enc" });
+    const gate = deferred();
+    const { result } = renderSelector(() => gate.promise);
+
+    await act(async () => {
+      await result.current.handleSelectCollection(encrypted);
+    });
+    act(() => {
+      result.current.setPassword("hunter2");
+    });
+    act(() => {
+      void result.current.handlePasswordSubmit();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
     expect(result.current.loadingCollection?.fromId).toBeUndefined();
 
     await act(async () => {
@@ -416,6 +487,33 @@ describe("useDatabaseSelector — handlePasswordSubmit", () => {
     expect(mockDuplicateDatabase).toHaveBeenCalledWith("enc", {
       password: "hunter2",
     });
+    expect(onDatabaseSelect).not.toHaveBeenCalled();
+  });
+
+  // The clone path shares `handlePasswordSubmit` with unlock and returns before
+  // it ever sets `loadingCollection`. Now that the unlock branch reads the
+  // current database to latch `fromId`, an open database is exactly the state
+  // that could leak a hand-off onto a clone. It must not: cloning is not an
+  // open, so no row animates and nothing is handed away.
+  it("sets no loadingCollection on the clone path even when another database is open", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "other" });
+    const onDatabaseSelect = vi.fn();
+    const { result } = renderSelector(onDatabaseSelect);
+
+    await act(async () => {
+      await result.current.handleCloneCollection(encrypted);
+    });
+    expect(result.current.passwordDialogMode).toBe("clone");
+
+    act(() => {
+      result.current.setPassword("hunter2");
+    });
+
+    await act(async () => {
+      await result.current.handlePasswordSubmit();
+    });
+
+    expect(result.current.loadingCollection).toBeNull();
     expect(onDatabaseSelect).not.toHaveBeenCalled();
   });
 });

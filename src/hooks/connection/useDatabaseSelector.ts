@@ -48,11 +48,14 @@ export interface LoadingCollection {
   name: string;
   mode: LoadingCollectionMode;
   /**
-   * The database being handed away, latched when the load starts. Only
-   * meaningful for `"switch"`. The row UI must not re-derive this from
-   * the manager mid-load: the manager makes the incoming database
-   * current partway through, so the outgoing row would stop looking
-   * outgoing while the switch is still visibly running.
+   * The database being handed away, latched when the load starts. Set
+   * whenever a *different* database was open — on `"switch"` and on
+   * `"unlock"` alike, since unlocking tears the old database down just
+   * as a plain switch does. Its presence, not the mode, is what makes
+   * a load a hand-off. The row UI must not re-derive this from the
+   * manager mid-load: the manager makes the incoming database current
+   * partway through, so the outgoing row would stop looking outgoing
+   * while the load is still visibly running.
    */
   fromId?: string;
 }
@@ -542,10 +545,22 @@ export function useDatabaseSelector(
       }
 
       // Cloning is not an open, so only the unlock path animates a row.
+      //
+      // An unlock while a different database is open is a hand-off as much
+      // as a plain switch is — the old database is torn down on the way in.
+      // The mode stays "unlock" because that is the more specific and more
+      // honest thing to say about the wait the user is watching (decryption
+      // dominates it); `fromId` carries the hand-off half of the story, and
+      // the outgoing row's copy names no cause, so the two agree.
+      const currentId = databaseManager.getCurrentDatabase()?.id;
       setLoadingCollection({
         id: selectedCollection.id,
         name: selectedCollection.name,
         mode: "unlock",
+        fromId:
+          currentId && currentId !== selectedCollection.id
+            ? currentId
+            : undefined,
       });
       await databaseManager.loadDatabaseData(selectedCollection.id, password);
       await Promise.resolve(onDatabaseSelect(selectedCollection.id, password));
