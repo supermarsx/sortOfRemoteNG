@@ -6,6 +6,7 @@ import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { FeatureErrorBoundary } from "./FeatureErrorBoundary";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { getToolKeyFromProtocol, ToolKey } from "./toolSession";
 
 const PerformanceMonitor = dynamic(
@@ -319,14 +320,43 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({
       {toolKey === "proxyProfileEditor" && (
         <ProxyProfileEditor isOpen onClose={onClose} onSave={() => onClose()} />
       )}
-      {toolKey === "proxyChainEditor" && (
-        <ProxyChainEditor
-          isOpen
-          onClose={onClose}
-          onSave={() => onClose()}
-          editingChain={null}
-        />
-      )}
+      {toolKey === "proxyChainEditor" &&
+        (() => {
+          // A `tool-` prefixed connectionId is createToolSession's sentinel for
+          // "no connection" — i.e. New Chain. Anything else is a chain id.
+          const editingChain = session.connectionId?.startsWith("tool-")
+            ? null
+            : (proxyCollectionManager.getChain(session.connectionId) ?? null);
+          return (
+            <ProxyChainEditor
+              isOpen
+              onClose={onClose}
+              onSave={async (chainData) => {
+                try {
+                  if (editingChain) {
+                    await proxyCollectionManager.updateChain(
+                      editingChain.id,
+                      chainData,
+                    );
+                  } else {
+                    await proxyCollectionManager.createChain(
+                      chainData.name,
+                      chainData.layers,
+                      {
+                        description: chainData.description,
+                        tags: chainData.tags,
+                      },
+                    );
+                  }
+                  onClose();
+                } catch (error) {
+                  console.error("Failed to save proxy chain:", error);
+                }
+              }}
+              editingChain={editingChain}
+            />
+          );
+        })()}
       {toolKey === "sshTunnelEditor" && (
         <SSHTunnelDialog
           isOpen
