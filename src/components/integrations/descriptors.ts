@@ -17,7 +17,7 @@ import type { IntegrationDescriptor } from "../../types/integrations/registry";
 export const lxdDescriptor: IntegrationDescriptor = {
   key: "lxd",
   label: "LXD / Incus",
-  category: "infra",
+  category: "virtualization",
   icon: Boxes,
   defaultConnectionIconKey: "boxes",
   importPanel: () => import("./lxd/LxdPanel"),
@@ -26,7 +26,7 @@ export const lxdDescriptor: IntegrationDescriptor = {
 export const pfsenseDescriptor: IntegrationDescriptor = {
   key: "pfsense",
   label: "pfSense",
-  category: "infra",
+  category: "networking",
   icon: ShieldCheck,
   defaultConnectionIconKey: "shield-check",
   importPanel: () => import("./pfsense/PfsensePanel"),
@@ -35,7 +35,7 @@ export const pfsenseDescriptor: IntegrationDescriptor = {
 export const vmwareDesktopDescriptor: IntegrationDescriptor = {
   key: "vmwareDesktop",
   label: "VMware Workstation",
-  category: "infra",
+  category: "virtualization",
   icon: MonitorPlay,
   defaultConnectionIconKey: "monitor-play",
   importPanel: () => import("./vmwareDesktop/VmwareDesktopPanel"),
@@ -44,7 +44,7 @@ export const vmwareDesktopDescriptor: IntegrationDescriptor = {
 export const vmwareDescriptor: IntegrationDescriptor = {
   key: "vmware",
   label: "VMware vSphere",
-  category: "infra",
+  category: "virtualization",
   icon: Server,
   defaultConnectionIconKey: "server",
   importPanel: () => import("./VmwarePanel"),
@@ -53,7 +53,7 @@ export const vmwareDescriptor: IntegrationDescriptor = {
 export const nginxDescriptor: IntegrationDescriptor = {
   key: "nginx",
   label: "Nginx",
-  category: "web",
+  category: "web-server",
   icon: Server,
   defaultConnectionIconKey: "server",
   importPanel: () => import("./NginxPanel"),
@@ -62,7 +62,7 @@ export const nginxDescriptor: IntegrationDescriptor = {
 export const haproxyDescriptor: IntegrationDescriptor = {
   key: "haproxy",
   label: "HAProxy",
-  category: "web",
+  category: "web-server",
   icon: Network,
   defaultConnectionIconKey: "network",
   importPanel: () => import("./HaproxyPanel"),
@@ -71,7 +71,7 @@ export const haproxyDescriptor: IntegrationDescriptor = {
 export const caddyDescriptor: IntegrationDescriptor = {
   key: "caddy",
   label: "Caddy",
-  category: "web",
+  category: "web-server",
   icon: Boxes,
   defaultConnectionIconKey: "boxes",
   importPanel: () => import("./CaddyPanel"),
@@ -80,7 +80,7 @@ export const caddyDescriptor: IntegrationDescriptor = {
 export const traefikDescriptor: IntegrationDescriptor = {
   key: "traefik",
   label: "Traefik",
-  category: "web",
+  category: "web-server",
   icon: Waypoints,
   defaultConnectionIconKey: "waypoints",
   importPanel: () => import("./TraefikPanel"),
@@ -98,7 +98,7 @@ export const mssqlDescriptor: IntegrationDescriptor = {
 export const prometheusDescriptor: IntegrationDescriptor = {
   key: "prometheus",
   label: "Prometheus",
-  category: "app-service",
+  category: "monitoring",
   icon: Activity,
   defaultConnectionIconKey: "activity",
   importPanel: () => import("./PrometheusPanel"),
@@ -107,7 +107,7 @@ export const prometheusDescriptor: IntegrationDescriptor = {
 export const gdriveDescriptor: IntegrationDescriptor = {
   key: "gdrive",
   label: "Google Drive",
-  category: "app-service",
+  category: "file-storage",
   icon: HardDrive,
   defaultConnectionIconKey: "drive",
   importPanel: () => import("./GdrivePanel"),
@@ -116,7 +116,7 @@ export const gdriveDescriptor: IntegrationDescriptor = {
 export const grafanaDescriptor: IntegrationDescriptor = {
   key: "grafana",
   label: "Grafana",
-  category: "app-service",
+  category: "monitoring",
   icon: BarChart3,
   defaultConnectionIconKey: "bar-chart",
   importPanel: () => import("./GrafanaPanel"),
@@ -125,7 +125,7 @@ export const grafanaDescriptor: IntegrationDescriptor = {
 export const budibaseDescriptor: IntegrationDescriptor = {
   key: "budibase",
   label: "Budibase",
-  category: "app-service",
+  category: "business-app",
   icon: Boxes,
   defaultConnectionIconKey: "boxes",
   importPanel: () => import("./BudibasePanel"),
