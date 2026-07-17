@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const exchangeDescriptor: IntegrationDescriptor = {
   key: "exchange",
   label: "Exchange",
-  category: "app-service",
+  category: "mail-server",
   icon: Mail,
   defaultConnectionIconKey: "mail",
   importPanel: () => import("./ExchangePanel"),

@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const osticketDescriptor: IntegrationDescriptor = {
   key: "osticket",
   label: "osTicket",
-  category: "app-service",
+  category: "business-app",
   icon: LifeBuoy,
   defaultConnectionIconKey: "life-buoy",
   importPanel: () => import("./OsticketPanel"),

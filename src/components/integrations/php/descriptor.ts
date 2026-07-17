@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const phpDescriptor: IntegrationDescriptor = {
   key: "php",
   label: "PHP-FPM",
-  category: "web",
+  category: "web-server",
   icon: FileCode2,
   defaultConnectionIconKey: "file-code",
   importPanel: () => import("./PhpPanel"),

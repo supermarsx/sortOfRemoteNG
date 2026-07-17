@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const ansibleDescriptor: IntegrationDescriptor = {
   key: "ansible",
   label: "Ansible",
-  category: "infra",
+  category: "management",
   icon: ServerCog,
   defaultConnectionIconKey: "server-cog",
   importPanel: () => import("./AnsiblePanel"),

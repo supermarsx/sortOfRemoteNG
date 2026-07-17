@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const jiraDescriptor: IntegrationDescriptor = {
   key: "jira",
   label: "Jira",
-  category: "app-service",
+  category: "business-app",
   icon: SquareKanban,
   defaultConnectionIconKey: "kanban",
   importPanel: () => import("./JiraPanel"),

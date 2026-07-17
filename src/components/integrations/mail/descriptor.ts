@@ -17,7 +17,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const mailDescriptor: IntegrationDescriptor = {
   key: "mail",
   label: "Mail Server",
-  category: "mail",
+  category: "mail-server",
   icon: Mail,
   defaultConnectionIconKey: "mail",
   importPanel: () => import("./MailServerPanel"),

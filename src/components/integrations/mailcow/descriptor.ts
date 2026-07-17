@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const mailcowDescriptor: IntegrationDescriptor = {
   key: "mailcow",
   label: "mailcow",
-  category: "app-service",
+  category: "mail-server",
   icon: Mailbox,
   defaultConnectionIconKey: "mailbox",
   importPanel: () => import("./MailcowPanel"),

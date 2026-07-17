@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const cpanelDescriptor: IntegrationDescriptor = {
   key: "cpanel",
   label: "cPanel/WHM",
-  category: "infra",
+  category: "management",
   icon: Server,
   defaultConnectionIconKey: "server",
   importPanel: () => import("./CpanelPanel"),

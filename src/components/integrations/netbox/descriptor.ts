@@ -13,7 +13,7 @@ import type { IntegrationDescriptor } from "../../../types/integrations/registry
 export const netboxDescriptor: IntegrationDescriptor = {
   key: "netbox",
   label: "NetBox",
-  category: "infra",
+  category: "networking",
   icon: Network,
   defaultConnectionIconKey: "network",
   importPanel: () => import("./NetboxPanel"),
