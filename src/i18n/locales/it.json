@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "Cancella",
+      "connectionChain": "Catena di connessione",
+      "description": "Associa le catene alle singole connessioni. Queste scelte verranno usate all'avvio delle sessioni.",
+      "infoBody": "definiscono una sequenza ordinata di tunnel (VPN, host di salto SSH, proxy) che il traffico attraversa prima di raggiungere l'host di destinazione. Ogni livello racchiude il successivo, e il primo livello è l'hop più esterno. Le catene sono collegate per riferimento: la modifica di una catena si applica automaticamente a tutte le connessioni che la utilizzano.",
+      "infoTitle": "Catene di tunnel",
+      "linkedChain": "collegata: {{name}}",
+      "noConnections": "Nessuna connessione disponibile.",
+      "noTunnelChain": "Nessuna catena di tunnel configurata",
+      "none": "Nessuna",
+      "proxyChain": "Catena di proxy",
+      "target": "Destinazione",
+      "tunnelChain": "Catena di tunnel",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "Catene attive",
+      "connectionChains": "Catene di connessione",
+      "description": "Catene di proxy riutilizzabili che instradano il traffico attraverso più livelli di proxy. Le catene costituite da livelli di tunnel come SSH, VPN o mesh si trovano nella scheda «Catene di tunnel».",
+      "empty": "Nessuna catena di proxy salvata. Fai clic su «Nuova catena» per crearne una.",
+      "newChain": "Nuova catena",
+      "noConnectionChains": "Nessuna catena di connessione disponibile.",
+      "noMatches": "Nessuna catena corrisponde alla ricerca.",
+      "noProxyChains": "Nessuna catena di proxy disponibile.",
+      "proxyChains": "Catene di proxy",
+      "refreshing": "Aggiornamento...",
+      "savedTitle": "Catene salvate",
+      "searchPlaceholder": "Cerca catene..."
+    },
+    "common": {
+      "connect": "Connetti",
+      "delete": "Elimina",
+      "disconnect": "Disconnetti",
+      "duplicate": "Duplica",
+      "edit": "Modifica",
+      "refresh": "Aggiorna",
+      "save": "Salva"
+    },
+    "layerProfiles": {
+      "description": "Configurazioni di tunnel riutilizzabili. Aggiungi profili alle catene per comporre percorsi complessi a più hop.",
+      "empty": "Nessun profilo salvato. Fai clic su «Nuovo profilo» per crearne uno.",
+      "newProfile": "Nuovo profilo",
+      "noMatches": "Nessun profilo corrisponde alla ricerca.",
+      "searchPlaceholder": "Cerca profili...",
+      "title": "Profili di livello"
+    },
+    "nav": {
+      "ariaLabel": "Sezioni delle catene di proxy",
+      "associations": "Associazioni",
+      "chains": "Catene",
+      "layerProfiles": "Profili di livello",
+      "profiles": "Profili",
+      "tunnelChains": "Catene di tunnel",
+      "tunnels": "Tunnel SSH",
+      "unifiedChains": "Catene unificate",
+      "vpnConnections": "Connessioni VPN"
+    },
+    "profiles": {
+      "defaultBadge": "Predefinito",
+      "description": "Crea e gestisci configurazioni di proxy riutilizzabili, utilizzabili tra connessioni e catene.",
+      "empty": "Nessun profilo di proxy salvato. Fai clic su «Nuovo profilo» per crearne uno.",
+      "export": "Esporta",
+      "exportTitle": "Esporta profili",
+      "import": "Importa",
+      "importTitle": "Importa profili",
+      "newProfile": "Nuovo profilo",
+      "noMatches": "Nessun profilo corrisponde alla ricerca.",
+      "searchPlaceholder": "Cerca profili...",
+      "title": "Profili di proxy salvati",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "Connetti catena",
+      "layerCountOne": "{{count}} livello",
+      "layerCountOther": "{{count}} livelli",
+      "status": {
+        "connected": "Connesso",
+        "connecting": "Connessione...",
+        "disconnecting": "Disconnessione...",
+        "error": "Errore"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "Aggiungi livello",
+      "chainPath": "Percorso della catena:",
+      "descriptionLabel": "Descrizione",
+      "descriptionPlaceholder": "Descrizione facoltativa...",
+      "disableLayer": "Disattiva",
+      "editTitle": "Modifica catena di tunnel",
+      "emptyHint": "Fai clic su «Aggiungi livello» per iniziare a costruire una catena di tunnel",
+      "emptyTitle": "Nessun livello nella catena",
+      "enableLayer": "Attiva",
+      "fromProfile": "Da profilo",
+      "layerNamePlaceholder": "Nome del livello (facoltativo)",
+      "layersHeading": "Livelli ({{layerCount}})",
+      "nameLabel": "Nome *",
+      "namePlaceholder": "es. VPN dell'ufficio + host di salto",
+      "newTitle": "Nuova catena di tunnel",
+      "profileBadge": "profilo",
+      "reset": "Reimposta",
+      "tagPlaceholder": "Aggiungi tag...",
+      "tagsLabel": "Tag",
+      "update": "Aggiorna"
+    },
+    "tunnelChains": {
+      "description": "Crea e gestisci catene di tunnel riutilizzabili, distinte dalle catene di proxy della scheda «Catene». Ogni catena definisce una sequenza ordinata di tunnel (VPN, SSH, proxy) che il traffico attraversa prima di raggiungere la destinazione. Le catene possono essere associate alle connessioni; solo i livelli proxy, VPN e mesh possono essere attivati in modo indipendente.",
+      "emptyLibrary": "Nessuna catena di tunnel salvata. Fai clic su «Nuova catena» per crearne una.",
+      "emptySearch": "Nessuna catena corrisponde alla ricerca.",
+      "infoBody": "definiscono una sequenza ordinata di tunnel (VPN, host di salto SSH, proxy) che il traffico attraversa prima di raggiungere l'host di destinazione. Ogni livello racchiude il successivo, e il primo livello è l'hop più esterno. Assegna le catene alle connessioni nella scheda «Associazioni» oppure attivale in modo indipendente con il pulsante «Connetti».",
+      "newChain": "Nuova catena",
+      "searchPlaceholder": "Cerca catene di tunnel...",
+      "title": "Catene di tunnel"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "Configurazione {{type}}",
+      "descriptionLabel": "Descrizione",
+      "descriptionPlaceholder": "Descrizione facoltativa...",
+      "editTitle": "Modifica profilo di tunnel",
+      "nameLabel": "Nome *",
+      "namePlaceholder": "es. WireGuard dell'ufficio, SSH bastion",
+      "newTitle": "Nuovo profilo di tunnel",
+      "tagPlaceholder": "Aggiungi tag...",
+      "tagsLabel": "Tag",
+      "tunnelTypeLabel": "Tipo di tunnel",
+      "update": "Aggiorna"
+    },
+    "tunnels": {
+      "description": "Crea tunnel SSH usando connessioni SSH esistenti per inoltrare le porte in modo sicuro.",
+      "empty": "Nessun tunnel SSH configurato. Fai clic su «Nuovo tunnel» per crearne uno.",
+      "info": {
+        "dynamic": "Proxy SOCKS5 su localhost:{{localPort}}",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "Nuovo tunnel",
+      "status": {
+        "connected": "Connesso",
+        "connecting": "Connessione...",
+        "disconnected": "Disconnesso",
+        "error": "Errore"
+      },
+      "title": "Tunnel SSH",
+      "type": {
+        "dynamic": "Dinamico",
+        "local": "Locale",
+        "remote": "Remoto"
+      },
+      "unknownSsh": "SSH sconosciuto",
+      "via": "tramite"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "Catene backend attive",
+      "description": "Crea e gestisci catene a più hop che instradano il traffico attraverso VPN, tunnel SSH e proxy. Ogni livello racchiude il successivo, e il primo livello è l'hop più esterno.",
+      "empty": "Nessuna catena salvata. Fai clic su «Nuova catena» per crearne una.",
+      "info": {
+        "associationsTerm": "Associazioni",
+        "body": "definiscono una sequenza ordinata di tunnel (VPN, host di salto SSH, proxy) che il traffico attraversa prima di raggiungere la destinazione. Ogni livello racchiude il successivo, e il primo livello è l'hop più esterno. Assegna le catene alle connessioni nella scheda",
+        "bodyEnd": "oppure attivale con il pulsante «Connetti».",
+        "chainsTerm": "Catene"
+      },
+      "newChain": "Nuova catena",
+      "noMatches": "Nessuna catena corrisponde alla ricerca.",
+      "proxyChainBadge": "Catena di proxy",
+      "refreshing": "Aggiornamento...",
+      "searchPlaceholder": "Cerca catene...",
+      "title": "Catene"
+    },
+    "vpnConnections": {
+      "empty": "Nessuna connessione VPN",
+      "emptyHint": "Fai clic su «Nuova VPN» per creare una connessione o importa un file .ovpn",
+      "filterAll": "Tutte",
+      "import": "Importa",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "VPN importata",
+      "importedWireguardName": "WireGuard importato",
+      "loading": "Caricamento delle connessioni VPN...",
+      "newVpn": "Nuova VPN",
+      "ovpnFileFilter": "Configurazione OpenVPN",
+      "searchPlaceholder": "Cerca connessioni VPN...",
+      "status": {
+        "connected": "Connesso",
+        "connecting": "Connessione",
+        "disconnected": "Disconnesso",
+        "error": "Errore"
+      },
+      "title": "Connessioni VPN",
+      "wireguardFileFilter": "Configurazione WireGuard"
+    }
   }
 }

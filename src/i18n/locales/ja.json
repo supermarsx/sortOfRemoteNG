@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "クリア",
+      "connectionChain": "接続チェーン",
+      "description": "チェーンを個々の接続に関連付けます。この選択はセッションの起動時に使用されます。",
+      "infoBody": "は、トラフィックがターゲットホストに到達するまでに通過するトンネル (VPN、SSH 踏み台ホスト、プロキシ) の順序付きシーケンスを定義します。各レイヤーは次のレイヤーをラップし、最初のレイヤーが最も外側のホップになります。チェーンは参照によってリンクされるため、チェーンを更新すると、それを使用しているすべての接続に自動的に適用されます。",
+      "infoTitle": "トンネルチェーン",
+      "linkedChain": "リンク済み: {{name}}",
+      "noConnections": "利用可能な接続がありません。",
+      "noTunnelChain": "トンネルチェーンが設定されていません",
+      "none": "なし",
+      "proxyChain": "プロキシチェーン",
+      "target": "ターゲット",
+      "tunnelChain": "トンネルチェーン",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "アクティブなチェーン",
+      "connectionChains": "接続チェーン",
+      "description": "複数のプロキシレイヤーを経由してトラフィックをルーティングする、再利用可能なプロキシチェーンです。SSH、VPN、メッシュなどのトンネルレイヤーで構成されたチェーンは「トンネルチェーン」タブにあります。",
+      "empty": "保存されたプロキシチェーンはありません。「新しいチェーン」をクリックして作成してください。",
+      "newChain": "新しいチェーン",
+      "noConnectionChains": "利用可能な接続チェーンがありません。",
+      "noMatches": "検索条件に一致するチェーンはありません。",
+      "noProxyChains": "利用可能なプロキシチェーンがありません。",
+      "proxyChains": "プロキシチェーン",
+      "refreshing": "更新中...",
+      "savedTitle": "保存されたチェーン",
+      "searchPlaceholder": "チェーンを検索..."
+    },
+    "common": {
+      "connect": "接続",
+      "delete": "削除",
+      "disconnect": "切断",
+      "duplicate": "複製",
+      "edit": "編集",
+      "refresh": "更新",
+      "save": "保存"
+    },
+    "layerProfiles": {
+      "description": "再利用可能なトンネル構成です。プロファイルをチェーンに追加して、複雑なマルチホップ経路を構成できます。",
+      "empty": "保存されたプロファイルはありません。「新しいプロファイル」をクリックして作成してください。",
+      "newProfile": "新しいプロファイル",
+      "noMatches": "検索条件に一致するプロファイルはありません。",
+      "searchPlaceholder": "プロファイルを検索...",
+      "title": "レイヤープロファイル"
+    },
+    "nav": {
+      "ariaLabel": "プロキシチェーンのセクション",
+      "associations": "関連付け",
+      "chains": "チェーン",
+      "layerProfiles": "レイヤープロファイル",
+      "profiles": "プロファイル",
+      "tunnelChains": "トンネルチェーン",
+      "tunnels": "SSH トンネル",
+      "unifiedChains": "統合チェーン",
+      "vpnConnections": "VPN 接続"
+    },
+    "profiles": {
+      "defaultBadge": "デフォルト",
+      "description": "接続やチェーン全体で使用できる、再利用可能なプロキシ構成を作成・管理します。",
+      "empty": "保存されたプロキシプロファイルはありません。「新しいプロファイル」をクリックして作成してください。",
+      "export": "エクスポート",
+      "exportTitle": "プロファイルをエクスポート",
+      "import": "インポート",
+      "importTitle": "プロファイルをインポート",
+      "newProfile": "新しいプロファイル",
+      "noMatches": "検索条件に一致するプロファイルはありません。",
+      "searchPlaceholder": "プロファイルを検索...",
+      "title": "保存されたプロキシプロファイル",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "チェーンを接続",
+      "layerCountOne": "{{count}} レイヤー",
+      "layerCountOther": "{{count}} レイヤー",
+      "status": {
+        "connected": "接続済み",
+        "connecting": "接続中...",
+        "disconnecting": "切断中...",
+        "error": "エラー"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "レイヤーを追加",
+      "chainPath": "チェーン経路:",
+      "descriptionLabel": "説明",
+      "descriptionPlaceholder": "説明 (省略可)...",
+      "disableLayer": "無効化",
+      "editTitle": "トンネルチェーンを編集",
+      "emptyHint": "「レイヤーを追加」をクリックしてトンネルチェーンの作成を開始してください",
+      "emptyTitle": "チェーンにレイヤーがありません",
+      "enableLayer": "有効化",
+      "fromProfile": "プロファイルから",
+      "layerNamePlaceholder": "レイヤー名 (省略可)",
+      "layersHeading": "レイヤー ({{layerCount}})",
+      "nameLabel": "名前 *",
+      "namePlaceholder": "例: オフィス VPN + 踏み台ホスト",
+      "newTitle": "新しいトンネルチェーン",
+      "profileBadge": "プロファイル",
+      "reset": "リセット",
+      "tagPlaceholder": "タグを追加...",
+      "tagsLabel": "タグ",
+      "update": "更新"
+    },
+    "tunnelChains": {
+      "description": "再利用可能なトンネルチェーンを作成・管理します。「チェーン」タブのプロキシチェーンとは異なります。各チェーンは、トラフィックがターゲットに到達するまでに通過するトンネル (VPN、SSH、プロキシ) の順序付きシーケンスを定義します。チェーンは接続に関連付けできます。単独で有効化できるのはプロキシ、VPN、メッシュのレイヤーのみです。",
+      "emptyLibrary": "保存されたトンネルチェーンはありません。「新しいチェーン」をクリックして作成してください。",
+      "emptySearch": "検索条件に一致するチェーンはありません。",
+      "infoBody": "は、トラフィックがターゲットホストに到達するまでに通過するトンネル (VPN、SSH 踏み台ホスト、プロキシ) の順序付きシーケンスを定義します。各レイヤーは次のレイヤーをラップし、最初のレイヤーが最も外側のホップになります。「関連付け」タブでチェーンを接続に割り当てるか、「接続」ボタンで単独で有効化してください。",
+      "newChain": "新しいチェーン",
+      "searchPlaceholder": "トンネルチェーンを検索...",
+      "title": "トンネルチェーン"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "{{type}} の構成",
+      "descriptionLabel": "説明",
+      "descriptionPlaceholder": "説明 (省略可)...",
+      "editTitle": "トンネルプロファイルを編集",
+      "nameLabel": "名前 *",
+      "namePlaceholder": "例: オフィス WireGuard、踏み台 SSH",
+      "newTitle": "新しいトンネルプロファイル",
+      "tagPlaceholder": "タグを追加...",
+      "tagsLabel": "タグ",
+      "tunnelTypeLabel": "トンネルの種類",
+      "update": "更新"
+    },
+    "tunnels": {
+      "description": "既存の SSH 接続を使用して SSH トンネルを作成し、ポートを安全に転送します。",
+      "empty": "SSH トンネルが設定されていません。「新しいトンネル」をクリックして作成してください。",
+      "info": {
+        "dynamic": "localhost:{{localPort}} の SOCKS5 プロキシ",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "新しいトンネル",
+      "status": {
+        "connected": "接続済み",
+        "connecting": "接続中...",
+        "disconnected": "切断済み",
+        "error": "エラー"
+      },
+      "title": "SSH トンネル",
+      "type": {
+        "dynamic": "動的",
+        "local": "ローカル",
+        "remote": "リモート"
+      },
+      "unknownSsh": "不明な SSH",
+      "via": "経由"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "アクティブなバックエンドチェーン",
+      "description": "VPN、SSH トンネル、プロキシを経由してトラフィックをルーティングするマルチホップチェーンを作成・管理します。各レイヤーは次のレイヤーをラップし、最初のレイヤーが最も外側のホップになります。",
+      "empty": "保存されたチェーンはありません。「新しいチェーン」をクリックして作成してください。",
+      "info": {
+        "associationsTerm": "関連付け",
+        "body": "は、トラフィックがターゲットに到達するまでに通過するトンネル (VPN、SSH 踏み台ホスト、プロキシ) の順序付きシーケンスを定義します。各レイヤーは次のレイヤーをラップし、最初のレイヤーが最も外側のホップになります。チェーンを接続に割り当てるには、次のタブを使用します:",
+        "bodyEnd": "または「接続」ボタンで有効化してください。",
+        "chainsTerm": "チェーン"
+      },
+      "newChain": "新しいチェーン",
+      "noMatches": "検索条件に一致するチェーンはありません。",
+      "proxyChainBadge": "プロキシチェーン",
+      "refreshing": "更新中...",
+      "searchPlaceholder": "チェーンを検索...",
+      "title": "チェーン"
+    },
+    "vpnConnections": {
+      "empty": "VPN 接続がありません",
+      "emptyHint": "「新しい VPN」をクリックして接続を作成するか、.ovpn ファイルをインポートしてください",
+      "filterAll": "すべて",
+      "import": "インポート",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "インポートされた VPN",
+      "importedWireguardName": "インポートされた WireGuard",
+      "loading": "VPN 接続を読み込んでいます...",
+      "newVpn": "新しい VPN",
+      "ovpnFileFilter": "OpenVPN 構成",
+      "searchPlaceholder": "VPN 接続を検索...",
+      "status": {
+        "connected": "接続済み",
+        "connecting": "接続中",
+        "disconnected": "切断済み",
+        "error": "エラー"
+      },
+      "title": "VPN 接続",
+      "wireguardFileFilter": "WireGuard 構成"
+    }
   }
 }

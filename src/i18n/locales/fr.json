@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "Effacer",
+      "connectionChain": "Chaîne de connexion",
+      "description": "Associez des chaînes à des connexions individuelles. Ces choix seront utilisés au lancement des sessions.",
+      "infoBody": "définissent une séquence ordonnée de tunnels (VPN, hôtes de rebond SSH, proxys) que le trafic traverse avant d'atteindre l'hôte cible. Chaque couche encapsule la suivante, la première couche étant le saut le plus externe. Les chaînes sont liées par référence — la mise à jour d'une chaîne s'applique automatiquement à toutes les connexions qui l'utilisent.",
+      "infoTitle": "Chaînes de tunnels",
+      "linkedChain": "liée : {{name}}",
+      "noConnections": "Aucune connexion disponible.",
+      "noTunnelChain": "Aucune chaîne de tunnels configurée",
+      "none": "Aucune",
+      "proxyChain": "Chaîne de proxys",
+      "target": "Cible",
+      "tunnelChain": "Chaîne de tunnels",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "Chaînes actives",
+      "connectionChains": "Chaînes de connexion",
+      "description": "Chaînes de proxys réutilisables qui acheminent le trafic à travers plusieurs couches de proxy. Les chaînes composées de couches de tunnel telles que SSH, VPN ou mesh se trouvent dans l'onglet « Chaînes de tunnels ».",
+      "empty": "Aucune chaîne de proxys enregistrée. Cliquez sur « Nouvelle chaîne » pour en créer une.",
+      "newChain": "Nouvelle chaîne",
+      "noConnectionChains": "Aucune chaîne de connexion disponible.",
+      "noMatches": "Aucune chaîne ne correspond à votre recherche.",
+      "noProxyChains": "Aucune chaîne de proxys disponible.",
+      "proxyChains": "Chaînes de proxys",
+      "refreshing": "Actualisation...",
+      "savedTitle": "Chaînes enregistrées",
+      "searchPlaceholder": "Rechercher des chaînes..."
+    },
+    "common": {
+      "connect": "Connecter",
+      "delete": "Supprimer",
+      "disconnect": "Déconnecter",
+      "duplicate": "Dupliquer",
+      "edit": "Modifier",
+      "refresh": "Actualiser",
+      "save": "Enregistrer"
+    },
+    "layerProfiles": {
+      "description": "Configurations de tunnel réutilisables. Ajoutez des profils aux chaînes pour composer des trajets complexes à plusieurs sauts.",
+      "empty": "Aucun profil enregistré. Cliquez sur « Nouveau profil » pour en créer un.",
+      "newProfile": "Nouveau profil",
+      "noMatches": "Aucun profil ne correspond à votre recherche.",
+      "searchPlaceholder": "Rechercher des profils...",
+      "title": "Profils de couche"
+    },
+    "nav": {
+      "ariaLabel": "Sections des chaînes de proxys",
+      "associations": "Associations",
+      "chains": "Chaînes",
+      "layerProfiles": "Profils de couche",
+      "profiles": "Profils",
+      "tunnelChains": "Chaînes de tunnels",
+      "tunnels": "Tunnels SSH",
+      "unifiedChains": "Chaînes unifiées",
+      "vpnConnections": "Connexions VPN"
+    },
+    "profiles": {
+      "defaultBadge": "Par défaut",
+      "description": "Créez et gérez des configurations de proxy réutilisables, utilisables dans toutes les connexions et chaînes.",
+      "empty": "Aucun profil de proxy enregistré. Cliquez sur « Nouveau profil » pour en créer un.",
+      "export": "Exporter",
+      "exportTitle": "Exporter les profils",
+      "import": "Importer",
+      "importTitle": "Importer des profils",
+      "newProfile": "Nouveau profil",
+      "noMatches": "Aucun profil ne correspond à votre recherche.",
+      "searchPlaceholder": "Rechercher des profils...",
+      "title": "Profils de proxy enregistrés",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "Connecter la chaîne",
+      "layerCountOne": "{{count}} couche",
+      "layerCountOther": "{{count}} couches",
+      "status": {
+        "connected": "Connecté",
+        "connecting": "Connexion...",
+        "disconnecting": "Déconnexion...",
+        "error": "Erreur"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "Ajouter une couche",
+      "chainPath": "Trajet de la chaîne :",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Description facultative...",
+      "disableLayer": "Désactiver",
+      "editTitle": "Modifier la chaîne de tunnels",
+      "emptyHint": "Cliquez sur « Ajouter une couche » pour commencer à construire une chaîne de tunnels",
+      "emptyTitle": "Aucune couche dans la chaîne",
+      "enableLayer": "Activer",
+      "fromProfile": "Depuis un profil",
+      "layerNamePlaceholder": "Nom de la couche (facultatif)",
+      "layersHeading": "Couches ({{layerCount}})",
+      "nameLabel": "Nom *",
+      "namePlaceholder": "ex. VPN du bureau + hôte de rebond",
+      "newTitle": "Nouvelle chaîne de tunnels",
+      "profileBadge": "profil",
+      "reset": "Réinitialiser",
+      "tagPlaceholder": "Ajouter une étiquette...",
+      "tagsLabel": "Étiquettes",
+      "update": "Mettre à jour"
+    },
+    "tunnelChains": {
+      "description": "Créez et gérez des chaînes de tunnels réutilisables — distinctes des chaînes de proxys de l'onglet « Chaînes ». Chaque chaîne définit une séquence ordonnée de tunnels (VPN, SSH, proxy) que le trafic traverse avant d'atteindre la cible. Les chaînes peuvent être associées à des connexions ; seules les couches proxy, VPN et mesh peuvent être activées indépendamment.",
+      "emptyLibrary": "Aucune chaîne de tunnels enregistrée. Cliquez sur « Nouvelle chaîne » pour en créer une.",
+      "emptySearch": "Aucune chaîne ne correspond à votre recherche.",
+      "infoBody": "définissent une séquence ordonnée de tunnels (VPN, hôtes de rebond SSH, proxys) que le trafic traverse avant d'atteindre l'hôte cible. Chaque couche encapsule la suivante, la première couche étant le saut le plus externe. Associez les chaînes aux connexions dans l'onglet « Associations » ou activez-les indépendamment à l'aide du bouton « Connecter ».",
+      "newChain": "Nouvelle chaîne",
+      "searchPlaceholder": "Rechercher des chaînes de tunnels...",
+      "title": "Chaînes de tunnels"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "Configuration {{type}}",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Description facultative...",
+      "editTitle": "Modifier le profil de tunnel",
+      "nameLabel": "Nom *",
+      "namePlaceholder": "ex. WireGuard du bureau, SSH bastion",
+      "newTitle": "Nouveau profil de tunnel",
+      "tagPlaceholder": "Ajouter une étiquette...",
+      "tagsLabel": "Étiquettes",
+      "tunnelTypeLabel": "Type de tunnel",
+      "update": "Mettre à jour"
+    },
+    "tunnels": {
+      "description": "Créez des tunnels SSH à partir de connexions SSH existantes pour rediriger des ports en toute sécurité.",
+      "empty": "Aucun tunnel SSH configuré. Cliquez sur « Nouveau tunnel » pour en créer un.",
+      "info": {
+        "dynamic": "Proxy SOCKS5 sur localhost:{{localPort}}",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "Nouveau tunnel",
+      "status": {
+        "connected": "Connecté",
+        "connecting": "Connexion...",
+        "disconnected": "Déconnecté",
+        "error": "Erreur"
+      },
+      "title": "Tunnels SSH",
+      "type": {
+        "dynamic": "Dynamique",
+        "local": "Local",
+        "remote": "Distant"
+      },
+      "unknownSsh": "SSH inconnu",
+      "via": "via"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "Chaînes backend actives",
+      "description": "Créez et gérez des chaînes à plusieurs sauts qui acheminent le trafic à travers des VPN, des tunnels SSH et des proxys. Chaque couche encapsule la suivante, la première couche étant le saut le plus externe.",
+      "empty": "Aucune chaîne enregistrée. Cliquez sur « Nouvelle chaîne » pour en créer une.",
+      "info": {
+        "associationsTerm": "Associations",
+        "body": "définissent une séquence ordonnée de tunnels (VPN, hôtes de rebond SSH, proxys) que le trafic traverse avant d'atteindre la cible. Chaque couche encapsule la suivante, la première couche étant le saut le plus externe. Associez les chaînes aux connexions dans l'onglet",
+        "bodyEnd": "ou activez-les à l'aide du bouton « Connecter ».",
+        "chainsTerm": "Chaînes"
+      },
+      "newChain": "Nouvelle chaîne",
+      "noMatches": "Aucune chaîne ne correspond à votre recherche.",
+      "proxyChainBadge": "Chaîne de proxys",
+      "refreshing": "Actualisation...",
+      "searchPlaceholder": "Rechercher des chaînes...",
+      "title": "Chaînes"
+    },
+    "vpnConnections": {
+      "empty": "Aucune connexion VPN",
+      "emptyHint": "Cliquez sur « Nouveau VPN » pour créer une connexion ou importez un fichier .ovpn",
+      "filterAll": "Toutes",
+      "import": "Importer",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "VPN importé",
+      "importedWireguardName": "WireGuard importé",
+      "loading": "Chargement des connexions VPN...",
+      "newVpn": "Nouveau VPN",
+      "ovpnFileFilter": "Configuration OpenVPN",
+      "searchPlaceholder": "Rechercher des connexions VPN...",
+      "status": {
+        "connected": "Connecté",
+        "connecting": "Connexion",
+        "disconnected": "Déconnecté",
+        "error": "Erreur"
+      },
+      "title": "Connexions VPN",
+      "wireguardFileFilter": "Configuration WireGuard"
+    }
   }
 }

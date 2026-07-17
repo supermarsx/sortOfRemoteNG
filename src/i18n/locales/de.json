@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "Zurücksetzen",
+      "connectionChain": "Verbindungskette",
+      "description": "Ketten einzelnen Verbindungen zuordnen. Diese Auswahl wird beim Starten von Sitzungen verwendet.",
+      "infoBody": "definieren eine geordnete Abfolge von Tunneln (VPN, SSH-Sprunghosts, Proxys), die der Datenverkehr durchläuft, bevor er den Zielhost erreicht. Jede Schicht umschließt die nächste, wobei die erste Schicht der äußerste Hop ist. Ketten werden per Referenz verknüpft — eine Änderung an einer Kette gilt automatisch für alle Verbindungen, die sie verwenden.",
+      "infoTitle": "Tunnelketten",
+      "linkedChain": "verknüpft: {{name}}",
+      "noConnections": "Keine Verbindungen verfügbar.",
+      "noTunnelChain": "Keine Tunnelkette konfiguriert",
+      "none": "Keine",
+      "proxyChain": "Proxy-Kette",
+      "target": "Ziel",
+      "tunnelChain": "Tunnelkette",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "Aktive Ketten",
+      "connectionChains": "Verbindungsketten",
+      "description": "Wiederverwendbare Proxy-Ketten, die den Datenverkehr über mehrere Proxy-Schichten leiten. Ketten aus Tunnelschichten wie SSH, VPN oder Mesh finden Sie im Tab „Tunnelketten“.",
+      "empty": "Keine Proxy-Ketten gespeichert. Klicken Sie auf „Neue Kette“, um eine zu erstellen.",
+      "newChain": "Neue Kette",
+      "noConnectionChains": "Keine Verbindungsketten verfügbar.",
+      "noMatches": "Keine Ketten entsprechen Ihrer Suche.",
+      "noProxyChains": "Keine Proxy-Ketten verfügbar.",
+      "proxyChains": "Proxy-Ketten",
+      "refreshing": "Wird aktualisiert...",
+      "savedTitle": "Gespeicherte Ketten",
+      "searchPlaceholder": "Ketten suchen..."
+    },
+    "common": {
+      "connect": "Verbinden",
+      "delete": "Löschen",
+      "disconnect": "Trennen",
+      "duplicate": "Duplizieren",
+      "edit": "Bearbeiten",
+      "refresh": "Aktualisieren",
+      "save": "Speichern"
+    },
+    "layerProfiles": {
+      "description": "Wiederverwendbare Tunnelkonfigurationen. Fügen Sie Profile zu Ketten hinzu, um komplexe Mehrfach-Hop-Pfade zusammenzustellen.",
+      "empty": "Keine Profile gespeichert. Klicken Sie auf „Neues Profil“, um eines zu erstellen.",
+      "newProfile": "Neues Profil",
+      "noMatches": "Keine Profile entsprechen Ihrer Suche.",
+      "searchPlaceholder": "Profile suchen...",
+      "title": "Schichtprofile"
+    },
+    "nav": {
+      "ariaLabel": "Proxy-Ketten-Bereiche",
+      "associations": "Zuordnungen",
+      "chains": "Ketten",
+      "layerProfiles": "Schichtprofile",
+      "profiles": "Profile",
+      "tunnelChains": "Tunnelketten",
+      "tunnels": "SSH-Tunnel",
+      "unifiedChains": "Vereinheitlichte Ketten",
+      "vpnConnections": "VPN-Verbindungen"
+    },
+    "profiles": {
+      "defaultBadge": "Standard",
+      "description": "Erstellen und verwalten Sie wiederverwendbare Proxy-Konfigurationen, die verbindungs- und kettenübergreifend genutzt werden können.",
+      "empty": "Keine Proxy-Profile gespeichert. Klicken Sie auf „Neues Profil“, um eines zu erstellen.",
+      "export": "Exportieren",
+      "exportTitle": "Profile exportieren",
+      "import": "Importieren",
+      "importTitle": "Profile importieren",
+      "newProfile": "Neues Profil",
+      "noMatches": "Keine Profile entsprechen Ihrer Suche.",
+      "searchPlaceholder": "Profile suchen...",
+      "title": "Gespeicherte Proxy-Profile",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "Kette verbinden",
+      "layerCountOne": "{{count}} Schicht",
+      "layerCountOther": "{{count}} Schichten",
+      "status": {
+        "connected": "Verbunden",
+        "connecting": "Verbinden...",
+        "disconnecting": "Trennen...",
+        "error": "Fehler"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "Schicht hinzufügen",
+      "chainPath": "Kettenpfad:",
+      "descriptionLabel": "Beschreibung",
+      "descriptionPlaceholder": "Optionale Beschreibung...",
+      "disableLayer": "Deaktivieren",
+      "editTitle": "Tunnelkette bearbeiten",
+      "emptyHint": "Klicken Sie auf „Schicht hinzufügen“, um eine Tunnelkette zu erstellen",
+      "emptyTitle": "Keine Schichten in der Kette",
+      "enableLayer": "Aktivieren",
+      "fromProfile": "Aus Profil",
+      "layerNamePlaceholder": "Schichtname (optional)",
+      "layersHeading": "Schichten ({{layerCount}})",
+      "nameLabel": "Name *",
+      "namePlaceholder": "z. B. Büro-VPN + Sprunghost",
+      "newTitle": "Neue Tunnelkette",
+      "profileBadge": "Profil",
+      "reset": "Zurücksetzen",
+      "tagPlaceholder": "Schlagwort hinzufügen...",
+      "tagsLabel": "Schlagwörter",
+      "update": "Aktualisieren"
+    },
+    "tunnelChains": {
+      "description": "Erstellen und verwalten Sie wiederverwendbare Tunnelketten — zu unterscheiden von den Proxy-Ketten im Tab „Ketten“. Jede Kette definiert eine geordnete Abfolge von Tunneln (VPN, SSH, Proxy), die der Datenverkehr bis zum Ziel durchläuft. Ketten können Verbindungen zugeordnet werden; nur Proxy-, VPN- und Mesh-Schichten lassen sich eigenständig aktivieren.",
+      "emptyLibrary": "Keine Tunnelketten gespeichert. Klicken Sie auf „Neue Kette“, um eine zu erstellen.",
+      "emptySearch": "Keine Ketten entsprechen Ihrer Suche.",
+      "infoBody": "definieren eine geordnete Abfolge von Tunneln (VPN, SSH-Sprunghosts, Proxys), die der Datenverkehr durchläuft, bevor er den Zielhost erreicht. Jede Schicht umschließt die nächste, wobei die erste Schicht der äußerste Hop ist. Ordnen Sie Ketten im Tab „Zuordnungen“ Verbindungen zu oder aktivieren Sie sie eigenständig über die Schaltfläche „Verbinden“.",
+      "newChain": "Neue Kette",
+      "searchPlaceholder": "Tunnelketten suchen...",
+      "title": "Tunnelketten"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "{{type}}-Konfiguration",
+      "descriptionLabel": "Beschreibung",
+      "descriptionPlaceholder": "Optionale Beschreibung...",
+      "editTitle": "Tunnelprofil bearbeiten",
+      "nameLabel": "Name *",
+      "namePlaceholder": "z. B. Büro-WireGuard, Bastion-SSH",
+      "newTitle": "Neues Tunnelprofil",
+      "tagPlaceholder": "Schlagwort hinzufügen...",
+      "tagsLabel": "Schlagwörter",
+      "tunnelTypeLabel": "Tunneltyp",
+      "update": "Aktualisieren"
+    },
+    "tunnels": {
+      "description": "Erstellen Sie SSH-Tunnel über bestehende SSH-Verbindungen, um Ports sicher weiterzuleiten.",
+      "empty": "Keine SSH-Tunnel konfiguriert. Klicken Sie auf „Neuer Tunnel“, um einen zu erstellen.",
+      "info": {
+        "dynamic": "SOCKS5-Proxy auf localhost:{{localPort}}",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "Neuer Tunnel",
+      "status": {
+        "connected": "Verbunden",
+        "connecting": "Verbinden...",
+        "disconnected": "Getrennt",
+        "error": "Fehler"
+      },
+      "title": "SSH-Tunnel",
+      "type": {
+        "dynamic": "Dynamisch",
+        "local": "Lokal",
+        "remote": "Remote"
+      },
+      "unknownSsh": "Unbekanntes SSH",
+      "via": "über"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "Aktive Backend-Ketten",
+      "description": "Erstellen und verwalten Sie Mehrfach-Hop-Ketten, die den Datenverkehr über VPNs, SSH-Tunnel und Proxys leiten. Jede Schicht umschließt die nächste, wobei die erste Schicht der äußerste Hop ist.",
+      "empty": "Keine Ketten gespeichert. Klicken Sie auf „Neue Kette“, um eine zu erstellen.",
+      "info": {
+        "associationsTerm": "Zuordnungen",
+        "body": "definieren eine geordnete Abfolge von Tunneln (VPN, SSH-Sprunghosts, Proxys), die der Datenverkehr bis zum Ziel durchläuft. Jede Schicht umschließt die nächste, wobei die erste Schicht der äußerste Hop ist. Ordnen Sie Ketten Verbindungen im Tab",
+        "bodyEnd": "zu oder aktivieren Sie sie über die Schaltfläche „Verbinden“.",
+        "chainsTerm": "Ketten"
+      },
+      "newChain": "Neue Kette",
+      "noMatches": "Keine Ketten entsprechen Ihrer Suche.",
+      "proxyChainBadge": "Proxy-Kette",
+      "refreshing": "Wird aktualisiert...",
+      "searchPlaceholder": "Ketten suchen...",
+      "title": "Ketten"
+    },
+    "vpnConnections": {
+      "empty": "Keine VPN-Verbindungen",
+      "emptyHint": "Klicken Sie auf „Neues VPN“, um eine Verbindung zu erstellen, oder importieren Sie eine .ovpn-Datei",
+      "filterAll": "Alle",
+      "import": "Importieren",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "Importiertes VPN",
+      "importedWireguardName": "Importiertes WireGuard",
+      "loading": "VPN-Verbindungen werden geladen...",
+      "newVpn": "Neues VPN",
+      "ovpnFileFilter": "OpenVPN-Konfiguration",
+      "searchPlaceholder": "VPN-Verbindungen suchen...",
+      "status": {
+        "connected": "Verbunden",
+        "connecting": "Verbinden",
+        "disconnected": "Getrennt",
+        "error": "Fehler"
+      },
+      "title": "VPN-Verbindungen",
+      "wireguardFileFilter": "WireGuard-Konfiguration"
+    }
   }
 }

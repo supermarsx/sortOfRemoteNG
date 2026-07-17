@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "Borrar",
+      "connectionChain": "Cadena de conexión",
+      "description": "Asocie cadenas con conexiones individuales. Estas selecciones se usarán al iniciar sesiones.",
+      "infoBody": "definen una secuencia ordenada de túneles (VPN, hosts de salto SSH, proxies) que el tráfico atraviesa antes de llegar al host de destino. Cada capa envuelve a la siguiente, siendo la primera capa el salto más externo. Las cadenas se vinculan por referencia: al actualizar una cadena, el cambio se aplica automáticamente a todas las conexiones que la usan.",
+      "infoTitle": "Cadenas de túnel",
+      "linkedChain": "vinculada: {{name}}",
+      "noConnections": "No hay conexiones disponibles.",
+      "noTunnelChain": "No hay ninguna cadena de túnel configurada",
+      "none": "Ninguna",
+      "proxyChain": "Cadena de proxy",
+      "target": "Destino",
+      "tunnelChain": "Cadena de túnel",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "Cadenas activas",
+      "connectionChains": "Cadenas de conexión",
+      "description": "Cadenas de proxy reutilizables que enrutan el tráfico a través de varias capas de proxy. Las cadenas formadas por capas de túnel como SSH, VPN o mesh están en la pestaña «Cadenas de túnel».",
+      "empty": "No hay cadenas de proxy guardadas. Haga clic en «Nueva cadena» para crear una.",
+      "newChain": "Nueva cadena",
+      "noConnectionChains": "No hay cadenas de conexión disponibles.",
+      "noMatches": "Ninguna cadena coincide con su búsqueda.",
+      "noProxyChains": "No hay cadenas de proxy disponibles.",
+      "proxyChains": "Cadenas de proxy",
+      "refreshing": "Actualizando...",
+      "savedTitle": "Cadenas guardadas",
+      "searchPlaceholder": "Buscar cadenas..."
+    },
+    "common": {
+      "connect": "Conectar",
+      "delete": "Eliminar",
+      "disconnect": "Desconectar",
+      "duplicate": "Duplicar",
+      "edit": "Editar",
+      "refresh": "Actualizar",
+      "save": "Guardar"
+    },
+    "layerProfiles": {
+      "description": "Configuraciones de túnel reutilizables. Añada perfiles a las cadenas para componer rutas complejas de varios saltos.",
+      "empty": "No hay perfiles guardados. Haga clic en «Nuevo perfil» para crear uno.",
+      "newProfile": "Nuevo perfil",
+      "noMatches": "Ningún perfil coincide con su búsqueda.",
+      "searchPlaceholder": "Buscar perfiles...",
+      "title": "Perfiles de capa"
+    },
+    "nav": {
+      "ariaLabel": "Secciones de cadenas de proxy",
+      "associations": "Asociaciones",
+      "chains": "Cadenas",
+      "layerProfiles": "Perfiles de capa",
+      "profiles": "Perfiles",
+      "tunnelChains": "Cadenas de túnel",
+      "tunnels": "Túneles SSH",
+      "unifiedChains": "Cadenas unificadas",
+      "vpnConnections": "Conexiones VPN"
+    },
+    "profiles": {
+      "defaultBadge": "Predeterminado",
+      "description": "Cree y administre configuraciones de proxy reutilizables que pueden usarse en conexiones y cadenas.",
+      "empty": "No hay perfiles de proxy guardados. Haga clic en «Nuevo perfil» para crear uno.",
+      "export": "Exportar",
+      "exportTitle": "Exportar perfiles",
+      "import": "Importar",
+      "importTitle": "Importar perfiles",
+      "newProfile": "Nuevo perfil",
+      "noMatches": "Ningún perfil coincide con su búsqueda.",
+      "searchPlaceholder": "Buscar perfiles...",
+      "title": "Perfiles de proxy guardados",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "Conectar cadena",
+      "layerCountOne": "{{count}} capa",
+      "layerCountOther": "{{count}} capas",
+      "status": {
+        "connected": "Conectado",
+        "connecting": "Conectando...",
+        "disconnecting": "Desconectando...",
+        "error": "Error"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "Añadir capa",
+      "chainPath": "Ruta de la cadena:",
+      "descriptionLabel": "Descripción",
+      "descriptionPlaceholder": "Descripción opcional...",
+      "disableLayer": "Desactivar",
+      "editTitle": "Editar cadena de túnel",
+      "emptyHint": "Haga clic en «Añadir capa» para empezar a construir una cadena de túnel",
+      "emptyTitle": "No hay capas en la cadena",
+      "enableLayer": "Activar",
+      "fromProfile": "Desde perfil",
+      "layerNamePlaceholder": "Nombre de la capa (opcional)",
+      "layersHeading": "Capas ({{layerCount}})",
+      "nameLabel": "Nombre *",
+      "namePlaceholder": "p. ej. VPN de la oficina + host de salto",
+      "newTitle": "Nueva cadena de túnel",
+      "profileBadge": "perfil",
+      "reset": "Restablecer",
+      "tagPlaceholder": "Añadir etiqueta...",
+      "tagsLabel": "Etiquetas",
+      "update": "Actualizar"
+    },
+    "tunnelChains": {
+      "description": "Cree y administre cadenas de túnel reutilizables, distintas de las cadenas de proxy de la pestaña «Cadenas». Cada cadena define una secuencia ordenada de túneles (VPN, SSH, proxy) que el tráfico atraviesa antes de llegar al destino. Las cadenas pueden asociarse a conexiones; solo las capas de proxy, VPN y mesh pueden activarse de forma independiente.",
+      "emptyLibrary": "No hay cadenas de túnel guardadas. Haga clic en «Nueva cadena» para crear una.",
+      "emptySearch": "Ninguna cadena coincide con su búsqueda.",
+      "infoBody": "definen una secuencia ordenada de túneles (VPN, hosts de salto SSH, proxies) que el tráfico atraviesa antes de llegar al host de destino. Cada capa envuelve a la siguiente, siendo la primera capa el salto más externo. Asigne cadenas a conexiones en la pestaña «Asociaciones» o actívelas de forma independiente con el botón «Conectar».",
+      "newChain": "Nueva cadena",
+      "searchPlaceholder": "Buscar cadenas de túnel...",
+      "title": "Cadenas de túnel"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "Configuración de {{type}}",
+      "descriptionLabel": "Descripción",
+      "descriptionPlaceholder": "Descripción opcional...",
+      "editTitle": "Editar perfil de túnel",
+      "nameLabel": "Nombre *",
+      "namePlaceholder": "p. ej. WireGuard de la oficina, SSH bastión",
+      "newTitle": "Nuevo perfil de túnel",
+      "tagPlaceholder": "Añadir etiqueta...",
+      "tagsLabel": "Etiquetas",
+      "tunnelTypeLabel": "Tipo de túnel",
+      "update": "Actualizar"
+    },
+    "tunnels": {
+      "description": "Cree túneles SSH usando conexiones SSH existentes para reenviar puertos de forma segura.",
+      "empty": "No hay túneles SSH configurados. Haga clic en «Nuevo túnel» para crear uno.",
+      "info": {
+        "dynamic": "Proxy SOCKS5 en localhost:{{localPort}}",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "Nuevo túnel",
+      "status": {
+        "connected": "Conectado",
+        "connecting": "Conectando...",
+        "disconnected": "Desconectado",
+        "error": "Error"
+      },
+      "title": "Túneles SSH",
+      "type": {
+        "dynamic": "Dinámico",
+        "local": "Local",
+        "remote": "Remoto"
+      },
+      "unknownSsh": "SSH desconocido",
+      "via": "vía"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "Cadenas de backend activas",
+      "description": "Cree y administre cadenas de varios saltos que enrutan el tráfico a través de VPN, túneles SSH y proxies. Cada capa envuelve a la siguiente, siendo la primera capa el salto más externo.",
+      "empty": "No hay cadenas guardadas. Haga clic en «Nueva cadena» para crear una.",
+      "info": {
+        "associationsTerm": "Asociaciones",
+        "body": "definen una secuencia ordenada de túneles (VPN, hosts de salto SSH, proxies) que el tráfico atraviesa antes de llegar al destino. Cada capa envuelve a la siguiente, siendo la primera capa el salto más externo. Asigne cadenas a conexiones en la pestaña",
+        "bodyEnd": "o actívelas con el botón «Conectar».",
+        "chainsTerm": "Cadenas"
+      },
+      "newChain": "Nueva cadena",
+      "noMatches": "Ninguna cadena coincide con su búsqueda.",
+      "proxyChainBadge": "Cadena de proxy",
+      "refreshing": "Actualizando...",
+      "searchPlaceholder": "Buscar cadenas...",
+      "title": "Cadenas"
+    },
+    "vpnConnections": {
+      "empty": "No hay conexiones VPN",
+      "emptyHint": "Haga clic en «Nueva VPN» para crear una conexión o importe un archivo .ovpn",
+      "filterAll": "Todas",
+      "import": "Importar",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "VPN importada",
+      "importedWireguardName": "WireGuard importado",
+      "loading": "Cargando conexiones VPN...",
+      "newVpn": "Nueva VPN",
+      "ovpnFileFilter": "Configuración de OpenVPN",
+      "searchPlaceholder": "Buscar conexiones VPN...",
+      "status": {
+        "connected": "Conectado",
+        "connecting": "Conectando",
+        "disconnected": "Desconectado",
+        "error": "Error"
+      },
+      "title": "Conexiones VPN",
+      "wireguardFileFilter": "Configuración de WireGuard"
+    }
   }
 }

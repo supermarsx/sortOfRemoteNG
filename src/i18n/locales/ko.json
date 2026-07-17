@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "지우기",
+      "connectionChain": "연결 체인",
+      "description": "체인을 개별 연결에 연결합니다. 이 선택은 세션을 시작할 때 사용됩니다.",
+      "infoBody": "은(는) 트래픽이 대상 호스트에 도달하기 전에 통과하는 터널(VPN, SSH 점프 호스트, 프록시)의 순서가 지정된 시퀀스를 정의합니다. 각 계층은 다음 계층을 감싸며, 첫 번째 계층이 가장 바깥쪽 홉입니다. 체인은 참조로 연결되므로 체인을 업데이트하면 해당 체인을 사용하는 모든 연결에 자동으로 적용됩니다.",
+      "infoTitle": "터널 체인",
+      "linkedChain": "연결됨: {{name}}",
+      "noConnections": "사용 가능한 연결이 없습니다.",
+      "noTunnelChain": "구성된 터널 체인이 없습니다",
+      "none": "없음",
+      "proxyChain": "프록시 체인",
+      "target": "대상",
+      "tunnelChain": "터널 체인",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "활성 체인",
+      "connectionChains": "연결 체인",
+      "description": "여러 프록시 계층을 통해 트래픽을 라우팅하는 재사용 가능한 프록시 체인입니다. SSH, VPN, 메시와 같은 터널 계층으로 구성된 체인은 '터널 체인' 탭에 있습니다.",
+      "empty": "저장된 프록시 체인이 없습니다. '새 체인'을 클릭하여 만드세요.",
+      "newChain": "새 체인",
+      "noConnectionChains": "사용 가능한 연결 체인이 없습니다.",
+      "noMatches": "검색과 일치하는 체인이 없습니다.",
+      "noProxyChains": "사용 가능한 프록시 체인이 없습니다.",
+      "proxyChains": "프록시 체인",
+      "refreshing": "새로 고치는 중...",
+      "savedTitle": "저장된 체인",
+      "searchPlaceholder": "체인 검색..."
+    },
+    "common": {
+      "connect": "연결",
+      "delete": "삭제",
+      "disconnect": "연결 해제",
+      "duplicate": "복제",
+      "edit": "편집",
+      "refresh": "새로 고침",
+      "save": "저장"
+    },
+    "layerProfiles": {
+      "description": "재사용 가능한 터널 구성입니다. 프로필을 체인에 추가하여 복잡한 다중 홉 경로를 구성하세요.",
+      "empty": "저장된 프로필이 없습니다. '새 프로필'을 클릭하여 만드세요.",
+      "newProfile": "새 프로필",
+      "noMatches": "검색과 일치하는 프로필이 없습니다.",
+      "searchPlaceholder": "프로필 검색...",
+      "title": "계층 프로필"
+    },
+    "nav": {
+      "ariaLabel": "프록시 체인 섹션",
+      "associations": "연결 관계",
+      "chains": "체인",
+      "layerProfiles": "계층 프로필",
+      "profiles": "프로필",
+      "tunnelChains": "터널 체인",
+      "tunnels": "SSH 터널",
+      "unifiedChains": "통합 체인",
+      "vpnConnections": "VPN 연결"
+    },
+    "profiles": {
+      "defaultBadge": "기본값",
+      "description": "연결과 체인 전반에서 사용할 수 있는 재사용 가능한 프록시 구성을 만들고 관리합니다.",
+      "empty": "저장된 프록시 프로필이 없습니다. '새 프로필'을 클릭하여 만드세요.",
+      "export": "내보내기",
+      "exportTitle": "프로필 내보내기",
+      "import": "가져오기",
+      "importTitle": "프로필 가져오기",
+      "newProfile": "새 프로필",
+      "noMatches": "검색과 일치하는 프로필이 없습니다.",
+      "searchPlaceholder": "프로필 검색...",
+      "title": "저장된 프록시 프로필",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "체인 연결",
+      "layerCountOne": "{{count}}개 계층",
+      "layerCountOther": "{{count}}개 계층",
+      "status": {
+        "connected": "연결됨",
+        "connecting": "연결 중...",
+        "disconnecting": "연결 해제 중...",
+        "error": "오류"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "계층 추가",
+      "chainPath": "체인 경로:",
+      "descriptionLabel": "설명",
+      "descriptionPlaceholder": "설명 (선택 사항)...",
+      "disableLayer": "비활성화",
+      "editTitle": "터널 체인 편집",
+      "emptyHint": "'계층 추가'를 클릭하여 터널 체인 구성을 시작하세요",
+      "emptyTitle": "체인에 계층이 없습니다",
+      "enableLayer": "활성화",
+      "fromProfile": "프로필에서",
+      "layerNamePlaceholder": "계층 이름 (선택 사항)",
+      "layersHeading": "계층 ({{layerCount}})",
+      "nameLabel": "이름 *",
+      "namePlaceholder": "예: 사무실 VPN + 점프 호스트",
+      "newTitle": "새 터널 체인",
+      "profileBadge": "프로필",
+      "reset": "재설정",
+      "tagPlaceholder": "태그 추가...",
+      "tagsLabel": "태그",
+      "update": "업데이트"
+    },
+    "tunnelChains": {
+      "description": "재사용 가능한 터널 체인을 만들고 관리합니다. '체인' 탭의 프록시 체인과는 다릅니다. 각 체인은 트래픽이 대상에 도달하기 전에 통과하는 터널(VPN, SSH, 프록시)의 순서가 지정된 시퀀스를 정의합니다. 체인은 연결에 연결할 수 있으며, 프록시, VPN, 메시 계층만 독립적으로 활성화할 수 있습니다.",
+      "emptyLibrary": "저장된 터널 체인이 없습니다. '새 체인'을 클릭하여 만드세요.",
+      "emptySearch": "검색과 일치하는 체인이 없습니다.",
+      "infoBody": "은(는) 트래픽이 대상 호스트에 도달하기 전에 통과하는 터널(VPN, SSH 점프 호스트, 프록시)의 순서가 지정된 시퀀스를 정의합니다. 각 계층은 다음 계층을 감싸며, 첫 번째 계층이 가장 바깥쪽 홉입니다. '연결 관계' 탭에서 체인을 연결에 할당하거나 '연결' 버튼으로 독립적으로 활성화하세요.",
+      "newChain": "새 체인",
+      "searchPlaceholder": "터널 체인 검색...",
+      "title": "터널 체인"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "{{type}} 구성",
+      "descriptionLabel": "설명",
+      "descriptionPlaceholder": "설명 (선택 사항)...",
+      "editTitle": "터널 프로필 편집",
+      "nameLabel": "이름 *",
+      "namePlaceholder": "예: 사무실 WireGuard, 배스천 SSH",
+      "newTitle": "새 터널 프로필",
+      "tagPlaceholder": "태그 추가...",
+      "tagsLabel": "태그",
+      "tunnelTypeLabel": "터널 유형",
+      "update": "업데이트"
+    },
+    "tunnels": {
+      "description": "기존 SSH 연결을 사용하여 SSH 터널을 만들고 포트를 안전하게 전달합니다.",
+      "empty": "구성된 SSH 터널이 없습니다. '새 터널'을 클릭하여 만드세요.",
+      "info": {
+        "dynamic": "localhost:{{localPort}}의 SOCKS5 프록시",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "새 터널",
+      "status": {
+        "connected": "연결됨",
+        "connecting": "연결 중...",
+        "disconnected": "연결 해제됨",
+        "error": "오류"
+      },
+      "title": "SSH 터널",
+      "type": {
+        "dynamic": "동적",
+        "local": "로컬",
+        "remote": "원격"
+      },
+      "unknownSsh": "알 수 없는 SSH",
+      "via": "경유"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "활성 백엔드 체인",
+      "description": "VPN, SSH 터널, 프록시를 통해 트래픽을 라우팅하는 다중 홉 체인을 만들고 관리합니다. 각 계층은 다음 계층을 감싸며, 첫 번째 계층이 가장 바깥쪽 홉입니다.",
+      "empty": "저장된 체인이 없습니다. '새 체인'을 클릭하여 만드세요.",
+      "info": {
+        "associationsTerm": "연결 관계",
+        "body": "은(는) 트래픽이 대상에 도달하기 전에 통과하는 터널(VPN, SSH 점프 호스트, 프록시)의 순서가 지정된 시퀀스를 정의합니다. 각 계층은 다음 계층을 감싸며, 첫 번째 계층이 가장 바깥쪽 홉입니다. 다음 탭에서 체인을 연결에 할당하세요:",
+        "bodyEnd": "또는 '연결' 버튼으로 활성화하세요.",
+        "chainsTerm": "체인"
+      },
+      "newChain": "새 체인",
+      "noMatches": "검색과 일치하는 체인이 없습니다.",
+      "proxyChainBadge": "프록시 체인",
+      "refreshing": "새로 고치는 중...",
+      "searchPlaceholder": "체인 검색...",
+      "title": "체인"
+    },
+    "vpnConnections": {
+      "empty": "VPN 연결 없음",
+      "emptyHint": "'새 VPN'을 클릭하여 연결을 만들거나 .ovpn 파일을 가져오세요",
+      "filterAll": "전체",
+      "import": "가져오기",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "가져온 VPN",
+      "importedWireguardName": "가져온 WireGuard",
+      "loading": "VPN 연결을 불러오는 중...",
+      "newVpn": "새 VPN",
+      "ovpnFileFilter": "OpenVPN 구성",
+      "searchPlaceholder": "VPN 연결 검색...",
+      "status": {
+        "connected": "연결됨",
+        "connecting": "연결 중",
+        "disconnected": "연결 해제됨",
+        "error": "오류"
+      },
+      "title": "VPN 연결",
+      "wireguardFileFilter": "WireGuard 구성"
+    }
   }
 }

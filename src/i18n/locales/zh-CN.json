@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "清除",
+      "connectionChain": "连接链",
+      "description": "将链关联到各个连接。启动会话时将使用这些选择。",
+      "infoBody": "定义流量在到达目标主机之前所经过的有序隧道序列（VPN、SSH 跳板机、代理）。每一层包裹下一层，第一层为最外层跃点。链通过引用关联——更新某条链会自动应用于所有使用它的连接。",
+      "infoTitle": "隧道链",
+      "linkedChain": "已关联：{{name}}",
+      "noConnections": "没有可用的连接。",
+      "noTunnelChain": "未配置隧道链",
+      "none": "无",
+      "proxyChain": "代理链",
+      "target": "目标",
+      "tunnelChain": "隧道链",
+      "tunnelChainOption": "{{name}}（{{layers}}）"
+    },
+    "chains": {
+      "activeTitle": "活动链",
+      "connectionChains": "连接链",
+      "description": "可重复使用的代理链，通过多个代理层路由流量。由 SSH、VPN 或 mesh 等隧道层构成的链位于“隧道链”选项卡中。",
+      "empty": "尚未保存代理链。点击“新建链”创建一条。",
+      "newChain": "新建链",
+      "noConnectionChains": "没有可用的连接链。",
+      "noMatches": "没有与搜索匹配的链。",
+      "noProxyChains": "没有可用的代理链。",
+      "proxyChains": "代理链",
+      "refreshing": "正在刷新...",
+      "savedTitle": "已保存的链",
+      "searchPlaceholder": "搜索链..."
+    },
+    "common": {
+      "connect": "连接",
+      "delete": "删除",
+      "disconnect": "断开连接",
+      "duplicate": "复制",
+      "edit": "编辑",
+      "refresh": "刷新",
+      "save": "保存"
+    },
+    "layerProfiles": {
+      "description": "可重复使用的隧道配置。将配置文件添加到链中，以组合复杂的多跳路径。",
+      "empty": "尚未保存配置文件。点击“新建配置文件”创建一个。",
+      "newProfile": "新建配置文件",
+      "noMatches": "没有与搜索匹配的配置文件。",
+      "searchPlaceholder": "搜索配置文件...",
+      "title": "层配置文件"
+    },
+    "nav": {
+      "ariaLabel": "代理链分区",
+      "associations": "关联",
+      "chains": "链",
+      "layerProfiles": "层配置文件",
+      "profiles": "配置文件",
+      "tunnelChains": "隧道链",
+      "tunnels": "SSH 隧道",
+      "unifiedChains": "统一链",
+      "vpnConnections": "VPN 连接"
+    },
+    "profiles": {
+      "defaultBadge": "默认",
+      "description": "创建和管理可在连接和链中重复使用的代理配置。",
+      "empty": "尚未保存代理配置文件。点击“新建配置文件”创建一个。",
+      "export": "导出",
+      "exportTitle": "导出配置文件",
+      "import": "导入",
+      "importTitle": "导入配置文件",
+      "newProfile": "新建配置文件",
+      "noMatches": "没有与搜索匹配的配置文件。",
+      "searchPlaceholder": "搜索配置文件...",
+      "title": "已保存的代理配置文件",
+      "usernameSuffix": "（{{username}}）"
+    },
+    "shared": {
+      "connectChain": "连接链",
+      "layerCountOne": "{{count}} 层",
+      "layerCountOther": "{{count}} 层",
+      "status": {
+        "connected": "已连接",
+        "connecting": "正在连接...",
+        "disconnecting": "正在断开连接...",
+        "error": "错误"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "添加层",
+      "chainPath": "链路径：",
+      "descriptionLabel": "描述",
+      "descriptionPlaceholder": "可选描述...",
+      "disableLayer": "禁用",
+      "editTitle": "编辑隧道链",
+      "emptyHint": "点击“添加层”开始构建隧道链",
+      "emptyTitle": "链中没有层",
+      "enableLayer": "启用",
+      "fromProfile": "从配置文件",
+      "layerNamePlaceholder": "层名称（可选）",
+      "layersHeading": "层（{{layerCount}}）",
+      "nameLabel": "名称 *",
+      "namePlaceholder": "例如：办公室 VPN + 跳板机",
+      "newTitle": "新建隧道链",
+      "profileBadge": "配置文件",
+      "reset": "重置",
+      "tagPlaceholder": "添加标签...",
+      "tagsLabel": "标签",
+      "update": "更新"
+    },
+    "tunnelChains": {
+      "description": "创建和管理可重复使用的隧道链——不同于“链”选项卡中的代理链。每条链定义流量在到达目标之前所经过的有序隧道序列（VPN、SSH、代理）。链可以关联到连接；只有代理、VPN 和 mesh 层可以独立激活。",
+      "emptyLibrary": "尚未保存隧道链。点击“新建链”创建一条。",
+      "emptySearch": "没有与搜索匹配的链。",
+      "infoBody": "定义流量在到达目标主机之前所经过的有序隧道序列（VPN、SSH 跳板机、代理）。每一层包裹下一层，第一层为最外层跃点。在“关联”选项卡中将链分配给连接，或使用“连接”按钮独立激活它们。",
+      "newChain": "新建链",
+      "searchPlaceholder": "搜索隧道链...",
+      "title": "隧道链"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "{{type}} 配置",
+      "descriptionLabel": "描述",
+      "descriptionPlaceholder": "可选描述...",
+      "editTitle": "编辑隧道配置文件",
+      "nameLabel": "名称 *",
+      "namePlaceholder": "例如：办公室 WireGuard、堡垒机 SSH",
+      "newTitle": "新建隧道配置文件",
+      "tagPlaceholder": "添加标签...",
+      "tagsLabel": "标签",
+      "tunnelTypeLabel": "隧道类型",
+      "update": "更新"
+    },
+    "tunnels": {
+      "description": "使用现有的 SSH 连接创建 SSH 隧道，以安全地转发端口。",
+      "empty": "尚未配置 SSH 隧道。点击“新建隧道”创建一条。",
+      "info": {
+        "dynamic": "localhost:{{localPort}} 上的 SOCKS5 代理",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "新建隧道",
+      "status": {
+        "connected": "已连接",
+        "connecting": "正在连接...",
+        "disconnected": "已断开连接",
+        "error": "错误"
+      },
+      "title": "SSH 隧道",
+      "type": {
+        "dynamic": "动态",
+        "local": "本地",
+        "remote": "远程"
+      },
+      "unknownSsh": "未知 SSH",
+      "via": "经由"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "活动后端链",
+      "description": "创建和管理通过 VPN、SSH 隧道和代理路由流量的多跳链。每一层包裹下一层，第一层为最外层跃点。",
+      "empty": "尚未保存链。点击“新建链”创建一条。",
+      "info": {
+        "associationsTerm": "关联",
+        "body": "定义流量在到达目标之前所经过的有序隧道序列（VPN、SSH 跳板机、代理）。每一层包裹下一层，第一层为最外层跃点。在以下选项卡中将链分配给连接：",
+        "bodyEnd": "或使用“连接”按钮激活它们。",
+        "chainsTerm": "链"
+      },
+      "newChain": "新建链",
+      "noMatches": "没有与搜索匹配的链。",
+      "proxyChainBadge": "代理链",
+      "refreshing": "正在刷新...",
+      "searchPlaceholder": "搜索链...",
+      "title": "链"
+    },
+    "vpnConnections": {
+      "empty": "没有 VPN 连接",
+      "emptyHint": "点击“新建 VPN”创建连接，或导入 .ovpn 文件",
+      "filterAll": "全部",
+      "import": "导入",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "已导入的 VPN",
+      "importedWireguardName": "已导入的 WireGuard",
+      "loading": "正在加载 VPN 连接...",
+      "newVpn": "新建 VPN",
+      "ovpnFileFilter": "OpenVPN 配置",
+      "searchPlaceholder": "搜索 VPN 连接...",
+      "status": {
+        "connected": "已连接",
+        "connecting": "正在连接",
+        "disconnected": "已断开连接",
+        "error": "错误"
+      },
+      "title": "VPN 连接",
+      "wireguardFileFilter": "WireGuard 配置"
+    }
   }
 }

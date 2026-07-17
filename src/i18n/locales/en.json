@@ -8292,5 +8292,196 @@
       "estimate": "Estimate",
       "tokens": "tokens"
     }
+  },
+  "proxyChainMenu": {
+    "associations": {
+      "clear": "Clear",
+      "connectionChain": "Connection Chain",
+      "description": "Associate chains with individual connections. These choices will be used when launching sessions.",
+      "infoBody": "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target host. Each layer wraps the next, with the first layer being the outermost hop. Chains are linked by reference — updating a chain automatically applies to all connections using it.",
+      "infoTitle": "Tunnel Chains",
+      "linkedChain": "linked: {{name}}",
+      "noConnections": "No connections available.",
+      "noTunnelChain": "No tunnel chain configured",
+      "none": "None",
+      "proxyChain": "Proxy Chain",
+      "target": "Target",
+      "tunnelChain": "Tunnel Chain",
+      "tunnelChainOption": "{{name}} ({{layers}})"
+    },
+    "chains": {
+      "activeTitle": "Active Chains",
+      "connectionChains": "Connection Chains",
+      "description": "Reusable proxy chains that route traffic through multiple proxy layers. Chains built from tunnel layers such as SSH, VPN or mesh live in the Tunnel Chains tab.",
+      "empty": "No proxy chains saved. Click \"New Chain\" to create one.",
+      "newChain": "New Chain",
+      "noConnectionChains": "No connection chains available.",
+      "noMatches": "No chains match your search.",
+      "noProxyChains": "No proxy chains available.",
+      "proxyChains": "Proxy Chains",
+      "refreshing": "Refreshing...",
+      "savedTitle": "Saved Chains",
+      "searchPlaceholder": "Search chains..."
+    },
+    "common": {
+      "connect": "Connect",
+      "delete": "Delete",
+      "disconnect": "Disconnect",
+      "duplicate": "Duplicate",
+      "edit": "Edit",
+      "refresh": "Refresh",
+      "save": "Save"
+    },
+    "layerProfiles": {
+      "description": "Reusable tunnel configurations. Add profiles to chains to compose complex multi-hop paths.",
+      "empty": "No profiles saved. Click \"New Profile\" to create one.",
+      "newProfile": "New Profile",
+      "noMatches": "No profiles match your search.",
+      "searchPlaceholder": "Search profiles...",
+      "title": "Layer Profiles"
+    },
+    "nav": {
+      "ariaLabel": "Proxy chain sections",
+      "associations": "Associations",
+      "chains": "Chains",
+      "layerProfiles": "Layer Profiles",
+      "profiles": "Profiles",
+      "tunnelChains": "Tunnel Chains",
+      "tunnels": "SSH Tunnels",
+      "unifiedChains": "Unified Chains",
+      "vpnConnections": "VPN Connections"
+    },
+    "profiles": {
+      "defaultBadge": "Default",
+      "description": "Create and manage reusable proxy configurations that can be used across connections and chains.",
+      "empty": "No proxy profiles saved. Click \"New Profile\" to create one.",
+      "export": "Export",
+      "exportTitle": "Export Profiles",
+      "import": "Import",
+      "importTitle": "Import Profiles",
+      "newProfile": "New Profile",
+      "noMatches": "No profiles match your search.",
+      "searchPlaceholder": "Search profiles...",
+      "title": "Saved Proxy Profiles",
+      "usernameSuffix": "({{username}})"
+    },
+    "shared": {
+      "connectChain": "Connect chain",
+      "layerCountOne": "{{count}} layer",
+      "layerCountOther": "{{count}} layers",
+      "status": {
+        "connected": "Connected",
+        "connecting": "Connecting...",
+        "disconnecting": "Disconnecting...",
+        "error": "Error"
+      }
+    },
+    "tunnelChainEditor": {
+      "addLayer": "Add Layer",
+      "chainPath": "Chain Path:",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Optional description...",
+      "disableLayer": "Disable",
+      "editTitle": "Edit Tunnel Chain",
+      "emptyHint": "Click \"Add Layer\" to start building a tunnel chain",
+      "emptyTitle": "No layers in chain",
+      "enableLayer": "Enable",
+      "fromProfile": "From Profile",
+      "layerNamePlaceholder": "Layer name (optional)",
+      "layersHeading": "Layers ({{layerCount}})",
+      "nameLabel": "Name *",
+      "namePlaceholder": "e.g. Office VPN + Jump Host",
+      "newTitle": "New Tunnel Chain",
+      "profileBadge": "profile",
+      "reset": "Reset",
+      "tagPlaceholder": "Add tag...",
+      "tagsLabel": "Tags",
+      "update": "Update"
+    },
+    "tunnelChains": {
+      "description": "Create and manage reusable tunnel chains — distinct from the proxy chains on the Chains tab. Each chain defines an ordered sequence of tunnels (VPN, SSH, proxy) that traffic traverses before reaching the target. Chains can be associated with connections; only proxy, VPN, and mesh layers can be activated independently.",
+      "emptyLibrary": "No tunnel chains saved. Click \"New Chain\" to create one.",
+      "emptySearch": "No chains match your search.",
+      "infoBody": "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target host. Each layer wraps the next, with the first layer being the outermost hop. Assign chains to connections in the Associations tab or activate them independently using the Connect button.",
+      "newChain": "New Chain",
+      "searchPlaceholder": "Search tunnel chains...",
+      "title": "Tunnel Chains"
+    },
+    "tunnelProfileEditor": {
+      "configHeading": "{{type}} Configuration",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Optional description...",
+      "editTitle": "Edit Tunnel Profile",
+      "nameLabel": "Name *",
+      "namePlaceholder": "e.g. Office WireGuard, Bastion SSH",
+      "newTitle": "New Tunnel Profile",
+      "tagPlaceholder": "Add tag...",
+      "tagsLabel": "Tags",
+      "tunnelTypeLabel": "Tunnel Type",
+      "update": "Update"
+    },
+    "tunnels": {
+      "description": "Create SSH tunnels using existing SSH connections to forward ports securely.",
+      "empty": "No SSH tunnels configured. Click \"New Tunnel\" to create one.",
+      "info": {
+        "dynamic": "SOCKS5 proxy on localhost:{{localPort}}",
+        "local": "localhost:{{localPort}} → {{remoteHost}}:{{remotePort}}",
+        "remote": "{{remoteHost}}:{{remotePort}} → localhost:{{localPort}}"
+      },
+      "newTunnel": "New Tunnel",
+      "status": {
+        "connected": "Connected",
+        "connecting": "Connecting...",
+        "disconnected": "Disconnected",
+        "error": "Error"
+      },
+      "title": "SSH Tunnels",
+      "type": {
+        "dynamic": "Dynamic",
+        "local": "Local",
+        "remote": "Remote"
+      },
+      "unknownSsh": "Unknown SSH",
+      "via": "via"
+    },
+    "unifiedChains": {
+      "activeBackendChains": "Active Backend Chains",
+      "description": "Create and manage multi-hop chains that route traffic through VPNs, SSH tunnels, and proxies. Each layer wraps the next, with the first layer being the outermost hop.",
+      "empty": "No chains saved. Click \"New Chain\" to create one.",
+      "info": {
+        "associationsTerm": "Associations",
+        "body": "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target. Each layer wraps the next, with the first layer being the outermost hop. Assign chains to connections in the",
+        "bodyEnd": "tab or activate them using the Connect button.",
+        "chainsTerm": "Chains"
+      },
+      "newChain": "New Chain",
+      "noMatches": "No chains match your search.",
+      "proxyChainBadge": "Proxy Chain",
+      "refreshing": "Refreshing...",
+      "searchPlaceholder": "Search chains...",
+      "title": "Chains"
+    },
+    "vpnConnections": {
+      "empty": "No VPN connections",
+      "emptyHint": "Click \"New VPN\" to create a connection or import an .ovpn file",
+      "filterAll": "All",
+      "import": "Import",
+      "importOvpn": "OpenVPN (.ovpn)",
+      "importWireguard": "WireGuard (.conf)",
+      "importedVpnName": "Imported VPN",
+      "importedWireguardName": "Imported WireGuard",
+      "loading": "Loading VPN connections...",
+      "newVpn": "New VPN",
+      "ovpnFileFilter": "OpenVPN Config",
+      "searchPlaceholder": "Search VPN connections...",
+      "status": {
+        "connected": "Connected",
+        "connecting": "Connecting",
+        "disconnected": "Disconnected",
+        "error": "Error"
+      },
+      "title": "VPN Connections",
+      "wireguardFileFilter": "WireGuard Config"
+    }
   }
 }
