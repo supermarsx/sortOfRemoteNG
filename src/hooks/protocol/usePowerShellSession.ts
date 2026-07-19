@@ -220,6 +220,15 @@ export function usePowerShellSession(
       const existingId = backendRef.current;
       const eventChannel = createChannel();
 
+      // PowerShell actors currently support direct networking only. Resolve
+      // the live definition before both attach and open so a detached direct
+      // actor cannot be reattached after its connection drifts to VPN/proxy.
+      await resolveRuntimeNetworkPath(
+        currentConnection,
+        connectionsRef.current,
+        "powershell",
+      );
+
       if (existingId && !forceNew) {
         const info = await invoke<PowerShellBackendSession>(
           "get_powershell_session",
@@ -242,17 +251,6 @@ export function usePowerShellSession(
         markConnected(existingId, false);
         return;
       }
-
-      // Shared connection/proxy/tunnel/VPN routes are intentionally not
-      // materialized by the current PowerShell backend. Resolve the canonical
-      // path before opening or replacing a backend actor so any configured
-      // route fails closed instead of being silently bypassed. Reattachment to
-      // an already-live detached actor remains unaffected above.
-      await resolveRuntimeNetworkPath(
-        currentConnection,
-        connectionsRef.current,
-        "powershell",
-      );
 
       if (existingId && forceNew) {
         await invoke("close_powershell_session", {

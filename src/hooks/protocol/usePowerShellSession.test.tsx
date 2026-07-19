@@ -248,6 +248,45 @@ describe("usePowerShellSession", () => {
     ).toBe(false);
   });
 
+  it("fails closed before reattaching when a detached direct session drifts to a routed path", async () => {
+    const routedConnection: Connection = {
+      ...connection,
+      proxyChainId: "proxy-chain-added-after-detach",
+    };
+    mocks.useConnections.mockReturnValue({
+      state: { connections: [routedConnection], sessions: [] },
+      dispatch: mocks.dispatch,
+    });
+    mocks.resolveRuntimeNetworkPath.mockRejectedValueOnce(
+      new Error(
+        "PowerShell Remoting cannot use network-path layer 1 (socks5).",
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      usePowerShellSession(
+        frontendSession({
+          status: "connected",
+          backendSessionId: "backend-ps-1",
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(mocks.resolveRuntimeNetworkPath).toHaveBeenCalledWith(
+      routedConnection,
+      [routedConnection],
+      "powershell",
+    );
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) =>
+          command === "get_powershell_session" ||
+          command === "attach_powershell_session",
+      ),
+    ).toBe(false);
+  });
+
   it("ignores Strict Mode's stale cleanup and closes the backend exactly once", async () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <StrictMode>{children}</StrictMode>
@@ -409,7 +448,11 @@ describe("usePowerShellSession", () => {
     );
     await waitFor(() => expect(result.current.events).toHaveLength(1));
     expect(result.current.replayTruncated).toBe(true);
-    expect(mocks.resolveRuntimeNetworkPath).not.toHaveBeenCalled();
+    expect(mocks.resolveRuntimeNetworkPath).toHaveBeenCalledWith(
+      connection,
+      [connection],
+      "powershell",
+    );
 
     window.dispatchEvent(
       new CustomEvent("sorng:session-will-detach", {
