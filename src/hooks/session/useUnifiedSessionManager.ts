@@ -19,6 +19,10 @@ import {
   useInternalProxyManager,
   ProxySessionDetail,
 } from "../network/useInternalProxyManager";
+import {
+  useSshSessionPanel,
+  type SshSessionInfo,
+} from "../ssh/useSshSessionPanel";
 
 /**
  * Unified Session Manager aggregation hook.
@@ -35,7 +39,7 @@ import {
  * that own generic tab actions.
  */
 
-export type SourceSessionKind = "rdp" | "http-proxy";
+export type SourceSessionKind = "rdp" | "ssh" | "http-proxy";
 
 export type FrontendSessionKind =
   | "ssh"
@@ -56,9 +60,9 @@ export type FrontendSessionKind =
 
 export type SessionKind = SourceSessionKind | (string & {});
 
-export type UnifiedSessionSource = "rdp" | "http-proxy" | "frontend";
+export type UnifiedSessionSource = "rdp" | "ssh" | "http-proxy" | "frontend";
 
-export type UnifiedSessionBucket = "rdp" | "proxy" | TabKind;
+export type UnifiedSessionBucket = "rdp" | "ssh" | "proxy" | TabKind;
 
 /** Normalized status across both sources. */
 export type UnifiedSessionStatus =
@@ -109,6 +113,8 @@ export interface UnifiedSessionRow {
   rdpSession?: RDPSessionInfo;
   /** Proxy-only: raw proxy session detail. */
   proxySession?: ProxySessionDetail;
+  /** SSH-only: raw native session info. */
+  sshSession?: SshSessionInfo;
 }
 
 export interface UseUnifiedSessionManagerParams {
@@ -216,6 +222,11 @@ function frontendSubtitle(
   return session.protocol;
 }
 
+function parseBackendDate(value: string): Date | undefined {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 function projectFrontendSession(
   session: ConnectionSession,
   tabKind: TabKind,
@@ -270,6 +281,8 @@ export function useUnifiedSessionManager({
 
   // ── Source 2: internal HTTP/HTTPS proxy sessions ──
   const proxy = useInternalProxyManager(isVisible);
+  // ── Source 3: native SSH sessions ──
+  const ssh = useSshSessionPanel(isVisible);
   const {
     sessions: rdpSessions,
     statsMap: rdpStatsMap,
@@ -288,11 +301,29 @@ export function useUnifiedSessionManager({
     [state.sessions],
   );
 
+  const frontendSshByBackendId = useMemo(() => {
+    return new Map(
+      sessionPartition.connections
+        .filter(
+          (session) =>
+            session.protocol.toLowerCase() === "ssh" &&
+            Boolean(session.backendSessionId),
+        )
+        .map((session) => [session.backendSessionId!, session]),
+    );
+  }, [sessionPartition.connections]);
+
+  const liveSshBackendIds = useMemo(
+    () => new Set(ssh.sessions.map((session) => session.id)),
+    [ssh.sessions],
+  );
+
   // ── Project RDP sessions into unified rows ──
   const rdpRows = useMemo<UnifiedSessionRow[]>(() => {
     return rdpSessions.map((s) => {
       const display = getSessionDisplayName(s);
       const isDetached = isSessionDetached(s);
+      const stats = rdpStatsMap[s.id];
       const status: UnifiedSessionStatus = !s.connected
         ? "disconnected"
         : isDetached
@@ -314,7 +345,12 @@ export function useUnifiedSessionManager({
         protocol: "rdp",
         hostname: s.host,
         username: s.username,
-        rdpStats: rdpStatsMap[s.id],
+        startedAt:
+          stats?.uptime_secs != null
+            ? new Date(Date.now() - stats.uptime_secs * 1000)
+            : undefined,
+        errorMessage: stats?.last_error,
+        rdpStats: stats,
         detached: isDetached,
         rdpSession: s,
       };
@@ -337,14 +373,63 @@ export function useUnifiedSessionManager({
       status: proxyStatus(s),
       protocol: "http-proxy",
       username: s.username,
+      startedAt: parseBackendDate(s.created_at),
+      errorMessage: s.last_error ?? undefined,
       proxySession: s,
     }));
   }, [proxy.sessions]);
 
+  // ── Project native SSH sessions, enriching them with frontend metadata ──
+  const sshRows = useMemo<UnifiedSessionRow[]>(() => {
+    return ssh.sessions.map((backendSession) => {
+      const frontendSession = frontendSshByBackendId.get(backendSession.id);
+      const connection = frontendSession
+        ? connectionsById.get(frontendSession.connectionId)
+        : undefined;
+      const host = backendSession.config.host;
+      const port = backendSession.config.port;
+      const username = backendSession.config.username;
+      const target = host && port ? `${host}:${port}` : host;
+      return {
+        uid: `ssh:${backendSession.id}`,
+        kind: "ssh" as const,
+        source: "ssh" as const,
+        bucket: "ssh" as const,
+        kindLabel: "SSH",
+        groupKey: "ssh",
+        groupLabel: "SSH",
+        nativeId: backendSession.id,
+        title:
+          frontendSession?.name ||
+          connection?.name ||
+          (username && target ? `${username}@${target}` : target || "SSH"),
+        subtitle: username && target ? `${username}@${target}` : target,
+        status: backendSession.is_alive ? "connected" : "disconnected",
+        connectionId: frontendSession?.connectionId,
+        protocol: "ssh",
+        hostname: host,
+        username,
+        startedAt: parseBackendDate(backendSession.connected_at),
+        lastActivity: parseBackendDate(backendSession.last_activity),
+        metrics: frontendSession?.metrics,
+        frontendSession,
+        sshSession: backendSession,
+      };
+    });
+  }, [connectionsById, frontendSshByBackendId, ssh.sessions]);
+
   // ── Project frontend ConnectionContext sessions into unified rows ──
   const frontendConnectionRows = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.connections
-      .filter((session) => session.protocol !== "rdp")
+      .filter(
+        (session) =>
+          session.protocol !== "rdp" &&
+          !(
+            session.protocol.toLowerCase() === "ssh" &&
+            session.backendSessionId &&
+            liveSshBackendIds.has(session.backendSessionId)
+          ),
+      )
       .map((session) =>
         projectFrontendSession(
           session,
@@ -352,7 +437,7 @@ export function useUnifiedSessionManager({
           connectionsById.get(session.connectionId),
         ),
       );
-  }, [sessionPartition.connections, connectionsById]);
+  }, [sessionPartition.connections, connectionsById, liveSshBackendIds]);
 
   const toolRows = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.tools.map((session) =>
@@ -395,22 +480,24 @@ export function useUnifiedSessionManager({
   );
 
   const allRows = useMemo(
-    () => [...rdpRows, ...proxyRows, ...frontendRows],
-    [rdpRows, proxyRows, frontendRows],
+    () => [...rdpRows, ...sshRows, ...proxyRows, ...frontendRows],
+    [rdpRows, sshRows, proxyRows, frontendRows],
   );
 
-  const isLoading = rdp.isLoading || proxy.isLoading;
-  const combinedError = rdp.error || proxy.error;
+  const isLoading = rdp.isLoading || ssh.isLoading || proxy.isLoading;
+  const combinedError = rdp.error || ssh.error || proxy.error;
 
   /** Refresh both sources. */
   const handleRefresh = () => {
     rdp.handleRefresh();
+    ssh.handleRefresh();
     proxy.handleRefresh();
   };
 
   /** Clear errors on both sources. */
   const clearError = () => {
     rdp.setError("");
+    ssh.setError("");
     proxy.setError("");
   };
 
@@ -418,6 +505,7 @@ export function useUnifiedSessionManager({
     // Aggregated view
     rows: allRows,
     rdpRows,
+    sshRows,
     proxyRows,
     frontendRows,
     frontendConnectionRows,
@@ -430,6 +518,7 @@ export function useUnifiedSessionManager({
     handleRefresh,
     // Live source handles (full action surfaces preserved)
     rdp,
+    ssh,
     proxy,
   };
 }
