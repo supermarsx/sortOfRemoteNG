@@ -203,7 +203,7 @@ describe("useSessionDetach", () => {
       await result.current.handleSessionDetach("s2");
     });
     expect(invoke).toHaveBeenCalledWith("detach_rdp_session", {
-      connectionId: "conn-s2",
+      sessionId: "be-s2",
     });
   });
 
@@ -296,12 +296,34 @@ describe("useSessionDetach", () => {
     const rdpSession = makeSession("rdp1", "rdp", {
       backendSessionId: "be-rdp1",
       status: "connected",
+      vpnLeaseOwnerId: "owner-current",
+      vpnLeaseOwnerIds: ["owner-old", "owner-current"],
+      layout: {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+        isDetached: true,
+      },
     });
-    const { result, setActiveSessionId } = renderDetach({
+    const { result, dispatch, setActiveSessionId } = renderDetach({
       sessions: [rdpSession],
     });
     act(() => {
       result.current.handleReattachRdpSession("be-rdp1");
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        id: "rdp1",
+        vpnLeaseOwnerId: "owner-current",
+        vpnLeaseOwnerIds: ["owner-old", "owner-current"],
+        layout: expect.objectContaining({
+          isDetached: false,
+          windowId: undefined,
+        }),
+      }),
     });
     expect(setActiveSessionId).toHaveBeenCalledWith("rdp1");
   });

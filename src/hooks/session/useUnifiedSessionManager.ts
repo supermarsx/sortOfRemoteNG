@@ -418,18 +418,46 @@ export function useUnifiedSessionManager({
     });
   }, [connectionsById, frontendSshByBackendId, ssh.sessions]);
 
+  const representedRdpBackendIds = useMemo(
+    () => new Set(rdp.sessions.map((session) => session.id)),
+    [rdp.sessions],
+  );
+  const representedRdpConnectionIds = useMemo(
+    () =>
+      new Set(
+        rdp.sessions
+          .map((session) => session.connection_id)
+          .filter((connectionId): connectionId is string =>
+            Boolean(connectionId),
+          ),
+      ),
+    [rdp.sessions],
+  );
+
   // ── Project frontend ConnectionContext sessions into unified rows ──
   const frontendConnectionRows = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.connections
-      .filter(
-        (session) =>
-          session.protocol !== "rdp" &&
-          !(
-            session.protocol.toLowerCase() === "ssh" &&
-            session.backendSessionId &&
-            liveSshBackendIds.has(session.backendSessionId)
-          ),
-      )
+      .filter((session) => {
+        const protocol = session.protocol.toLowerCase();
+        if (protocol === "rdp") {
+          // Native RDP rows are normally authoritative. Once their backend has
+          // closed, expose a persisted cleanup failure as a frontend row so a
+          // Session Manager remount cannot strand its VPN owner tokens.
+          const needsCleanup =
+            session.status === "error" &&
+            session.errorMessage?.includes("VPN cleanup needs attention") ===
+              true;
+          const representedByPanel = session.backendSessionId
+            ? representedRdpBackendIds.has(session.backendSessionId)
+            : representedRdpConnectionIds.has(session.connectionId);
+          return needsCleanup && !representedByPanel;
+        }
+        return !(
+          protocol === "ssh" &&
+          session.backendSessionId &&
+          liveSshBackendIds.has(session.backendSessionId)
+        );
+      })
       .map((session) =>
         projectFrontendSession(
           session,
@@ -437,7 +465,13 @@ export function useUnifiedSessionManager({
           connectionsById.get(session.connectionId),
         ),
       );
-  }, [sessionPartition.connections, connectionsById, liveSshBackendIds]);
+  }, [
+    sessionPartition.connections,
+    connectionsById,
+    liveSshBackendIds,
+    representedRdpBackendIds,
+    representedRdpConnectionIds,
+  ]);
 
   const toolRows = useMemo<UnifiedSessionRow[]>(() => {
     return sessionPartition.tools.map((session) =>

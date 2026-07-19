@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useConnections } from "../../contexts/useConnections";
+import type { ConnectionSession } from "../../types/connection/connection";
+import {
+  cleanupSessionVpnLeases,
+  findAssociatedVpnSessions,
+  remainingSessionVpnLeaseOwnerFields,
+  sessionVpnLeaseOwnerIds,
+  vpnLeaseCleanupFailureMessage,
+} from "../../utils/network/sessionVpnLeaseCleanup";
 
 export interface SshSessionInfo {
   id: string;
@@ -56,11 +65,20 @@ function sanitizeSessionInfo(value: unknown): SshSessionInfo | null {
  * gives the manager a reliable disconnect surface.
  */
 export function useSshSessionPanel(isVisible: boolean) {
+  const { state, dispatch } = useConnections();
   const [sessions, setSessions] = useState<SshSessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
+  const sessionsRef = useRef(sessions);
+  const frontendSessionsRef = useRef(state.sessions);
+  const retainedCleanupRowsRef = useRef(new Map<string, SshSessionInfo>());
+  const backendClosedRef = useRef(new Set<string>());
+  const associatedSessionsRef = useRef(new Map<string, ConnectionSession[]>());
+
+  sessionsRef.current = sessions;
+  frontendSessionsRef.current = state.sessions;
 
   useEffect(() => {
     autoRefreshRef.current = autoRefresh;
@@ -69,14 +87,19 @@ export function useSshSessionPanel(isVisible: boolean) {
   const fetchData = useCallback(async () => {
     try {
       const result = await invoke<unknown>("list_sessions");
-      setSessions(
-        Array.isArray(result)
-          ? result
-              .map(sanitizeSessionInfo)
-              .filter((session): session is SshSessionInfo => session !== null)
-          : [],
-      );
-      setError("");
+      const liveSessions = Array.isArray(result)
+        ? result
+            .map(sanitizeSessionInfo)
+            .filter((session): session is SshSessionInfo => session !== null)
+        : [];
+      const liveIds = new Set(liveSessions.map((session) => session.id));
+      setSessions([
+        ...liveSessions,
+        ...[...retainedCleanupRowsRef.current.values()].filter(
+          (session) => !liveIds.has(session.id),
+        ),
+      ]);
+      if (retainedCleanupRowsRef.current.size === 0) setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -100,44 +123,116 @@ export function useSshSessionPanel(isVisible: boolean) {
     return () => clearInterval(timer);
   }, [fetchData, handleRefresh, isVisible]);
 
-  const handleDisconnect = useCallback(async (sessionId: string) => {
-    try {
-      await invoke("disconnect_ssh", { sessionId });
+  const disconnectSession = useCallback(
+    async (sessionId: string) => {
+      const nativeSession =
+        sessionsRef.current.find((session) => session.id === sessionId) ??
+        retainedCleanupRowsRef.current.get(sessionId);
+      if (!nativeSession) return false;
+
+      const associatedSessions =
+        associatedSessionsRef.current.get(sessionId) ??
+        findAssociatedVpnSessions(
+          frontendSessionsRef.current,
+          "ssh",
+          sessionId,
+        );
+
+      try {
+        if (!backendClosedRef.current.has(sessionId)) {
+          await invoke("disconnect_ssh", { sessionId });
+          backendClosedRef.current.add(sessionId);
+        }
+      } catch (cause) {
+        setError(
+          `Disconnect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+        return false;
+      }
+
+      const cleanup = await cleanupSessionVpnLeases(associatedSessions);
+      const releasedOwners = new Set(cleanup.releasedOwnerIds);
+      const failedOwners = new Set(
+        cleanup.failures.map((failure) => failure.ownerId),
+      );
+      const cleanupError =
+        cleanup.failures.length > 0
+          ? vpnLeaseCleanupFailureMessage("ssh", cleanup)
+          : "";
+
+      associatedSessions.forEach((session) => {
+        const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
+          failedOwners.has(ownerId),
+        );
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...session,
+            backendSessionId: undefined,
+            shellId: undefined,
+            status: failed ? "error" : "disconnected",
+            errorMessage: failed ? cleanupError : undefined,
+            ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
+            lastActivity: new Date(),
+          },
+        });
+      });
+
+      if (cleanup.failures.length > 0) {
+        retainedCleanupRowsRef.current.set(sessionId, nativeSession);
+        associatedSessionsRef.current.set(
+          sessionId,
+          associatedSessions.map((session) => {
+            return {
+              ...session,
+              backendSessionId: undefined,
+              shellId: undefined,
+              ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
+            };
+          }),
+        );
+        setSessions((current) =>
+          current.some((session) => session.id === sessionId)
+            ? current
+            : [...current, nativeSession],
+        );
+        setError(cleanupError);
+        return false;
+      }
+
+      retainedCleanupRowsRef.current.delete(sessionId);
+      backendClosedRef.current.delete(sessionId);
+      associatedSessionsRef.current.delete(sessionId);
       setSessions((current) =>
         current.filter((session) => session.id !== sessionId),
       );
-      setError("");
+      if (retainedCleanupRowsRef.current.size === 0) setError("");
       return true;
-    } catch (cause) {
-      setError(
-        `Disconnect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
-      return false;
-    }
-  }, []);
+    },
+    [dispatch],
+  );
+
+  const handleDisconnect = useCallback(
+    (sessionId: string) => disconnectSession(sessionId),
+    [disconnectSession],
+  );
 
   const handleDisconnectAll = useCallback(async () => {
-    const current = sessions;
-    const results = await Promise.allSettled(
-      current.map((session) =>
-        invoke("disconnect_ssh", { sessionId: session.id }),
-      ),
-    );
-    const disconnectedIds = current
-      .filter((_, index) => results[index]?.status === "fulfilled")
-      .map((session) => session.id);
-    const failedCount = results.length - disconnectedIds.length;
-
-    setSessions((existing) =>
-      existing.filter((session) => !disconnectedIds.includes(session.id)),
-    );
-    setError(
-      failedCount > 0
-        ? `Failed to disconnect ${failedCount} SSH session${failedCount === 1 ? "" : "s"}.`
-        : "",
-    );
+    const current = [...sessionsRef.current];
+    const disconnectedIds: string[] = [];
+    for (const session of current) {
+      if (await disconnectSession(session.id)) {
+        disconnectedIds.push(session.id);
+      }
+    }
+    const failedCount = current.length - disconnectedIds.length;
+    if (failedCount > 0) {
+      setError(
+        `Failed to fully clean up ${failedCount} SSH session${failedCount === 1 ? "" : "s"}. Retry disconnect to finish cleanup.`,
+      );
+    }
     return disconnectedIds;
-  }, [sessions]);
+  }, [disconnectSession]);
 
   return {
     sessions,

@@ -35,6 +35,12 @@ import {
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { BehaviorWindowActionRuntime } from "../../utils/behavior/windowActions";
 import {
+  cleanupSessionVpnLeases,
+  findAssociatedVpnSessions,
+  remainingSessionVpnLeaseOwnerFields,
+  vpnLeaseCleanupFailureMessage,
+} from "../../utils/network/sessionVpnLeaseCleanup";
+import {
   useSessionLifecycleEvents,
   type SessionLifecycleNotification,
   type SessionReconnectRequest,
@@ -620,6 +626,11 @@ export const useSessionManager = () => {
       session.connectionId,
     );
     const settings = settingsManager.getSettings();
+    let disconnectRdpBackend = false;
+    let preserveRdpBackend = false;
+    const retryingVpnCleanup =
+      session.status === "error" &&
+      session.errorMessage?.includes("VPN cleanup needs attention") === true;
 
     // Integration tabs have no transport cleanup or legacy disconnect script,
     // but still own a real per-connection lifecycle.
@@ -661,40 +672,41 @@ export const useSessionManager = () => {
     // RDP sessions use their own close policy instead of the generic warnOnClose.
     // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
-      const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
-      const closePolicy =
-        perConn && perConn !== "global"
-          ? perConn
-          : settings.rdpSessionClosePolicy || "detach";
+      if (retryingVpnCleanup) {
+        // A panel already closed the native backend. Retry only its retained
+        // owners, regardless of the normal tab close/detach preference.
+        disconnectRdpBackend = true;
+      } else {
+        const perConn = connection?.rdpSettings?.advanced?.sessionClosePolicy;
+        const closePolicy =
+          perConn && perConn !== "global"
+            ? perConn
+            : settings.rdpSessionClosePolicy || "detach";
 
-      if (closePolicy === "ask") {
-        // Single confirmation — OK closes tab (session stays running), Cancel aborts.
-        const confirmed = await showConfirm(
-          "Close this RDP tab? The session will keep running in the background — you can reattach later from the RDP Sessions panel.",
-        );
-        if (!confirmed) return false;
-        // Tab closes, RDPClient unmount calls detach_rdp_session, backend stays alive
-      } else if (closePolicy === "disconnect") {
-        // Fully disconnect — ask for confirmation if warnOnClose is on
-        const shouldWarn = resolveConnectionWarnOnClose(
-          connection?.warnOnClose,
-          settings.warnOnClose,
-        );
-        if (shouldWarn) {
+        if (closePolicy === "ask") {
+          // Single confirmation — OK closes tab (session stays running), Cancel aborts.
           const confirmed = await showConfirm(
-            "Disconnect this RDP session? The remote session will be ended.",
+            "Close this RDP tab? The session will keep running in the background — you can reattach later from the RDP Sessions panel.",
           );
           if (!confirmed) return false;
-        }
-        try {
-          await invoke("disconnect_rdp", {
-            connectionId: session.connectionId,
-          });
-        } catch (error) {
-          console.error("Failed to disconnect RDP session:", error);
+          preserveRdpBackend = true;
+        } else if (closePolicy === "disconnect") {
+          // Fully disconnect — ask for confirmation if warnOnClose is on
+          const shouldWarn = resolveConnectionWarnOnClose(
+            connection?.warnOnClose,
+            settings.warnOnClose,
+          );
+          if (shouldWarn) {
+            const confirmed = await showConfirm(
+              "Disconnect this RDP session? The remote session will be ended.",
+            );
+            if (!confirmed) return false;
+          }
+          disconnectRdpBackend = true;
+        } else {
+          preserveRdpBackend = true;
         }
       }
-      // 'detach' policy: silently close the tab; RDPClient unmount calls detach_rdp_session
     } else {
       // Non-RDP protocols: original warnOnClose flow
       const shouldWarn = resolveConnectionWarnOnClose(
@@ -705,6 +717,48 @@ export const useSessionManager = () => {
         const confirmed = await showConfirm(t("dialogs.confirmClose"));
         if (!confirmed) return false;
       }
+    }
+
+    if (preserveRdpBackend) {
+      try {
+        await invoke("detach_rdp_session", {
+          ...(session.backendSessionId
+            ? { sessionId: session.backendSessionId }
+            : { connectionId: session.connectionId }),
+        });
+      } catch (error) {
+        const message = `RDP detach failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...session, status: "error", errorMessage: message },
+        });
+        return false;
+      }
+
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          layout: {
+            x: session.layout?.x ?? 0,
+            y: session.layout?.y ?? 0,
+            width: session.layout?.width ?? 100,
+            height: session.layout?.height ?? 100,
+            zIndex: session.layout?.zIndex ?? 1,
+            isDetached: true,
+            windowId: undefined,
+          },
+          lastActivity: new Date(),
+        },
+      });
+      if (activeSessionId === sessionId) {
+        const remaining = currentState.sessions.filter(
+          (candidate) =>
+            candidate.id !== sessionId && !candidate.layout?.isDetached,
+        );
+        setActiveSessionId(remaining[0]?.id);
+      }
+      return true;
     }
 
     // From this point onward every user-facing close policy has been accepted.
@@ -722,12 +776,98 @@ export const useSessionManager = () => {
       }
     }
 
-    if (session.protocol === "ssh" && session.backendSessionId) {
+    const vpnBackedProtocol =
+      session.protocol === "ssh" ||
+      (session.protocol === "rdp" && disconnectRdpBackend);
+    const associatedVpnSessions = vpnBackedProtocol
+      ? findAssociatedVpnSessions(
+          currentState.sessions,
+          session.protocol as "ssh" | "rdp",
+          session.backendSessionId ?? session.connectionId,
+          session.connectionId,
+        )
+      : [];
+    if (
+      vpnBackedProtocol &&
+      !associatedVpnSessions.some((candidate) => candidate.id === session.id)
+    ) {
+      associatedVpnSessions.push(session);
+    }
+    if (
+      session.protocol === "ssh" &&
+      session.backendSessionId &&
+      !retryingVpnCleanup
+    ) {
       try {
         await invoke("disconnect_ssh", { sessionId: session.backendSessionId });
       } catch (error) {
         console.error("Failed to disconnect SSH session:", error);
+        const message = `SSH disconnect failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...session, status: "error", errorMessage: message },
+        });
+        return false;
       }
+    }
+
+    if (
+      session.protocol === "rdp" &&
+      disconnectRdpBackend &&
+      !retryingVpnCleanup &&
+      (session.backendSessionId || session.status !== "error")
+    ) {
+      try {
+        await invoke("disconnect_rdp", {
+          sessionId: session.backendSessionId,
+          connectionId: session.connectionId,
+        });
+      } catch (error) {
+        console.error("Failed to disconnect RDP session:", error);
+        const message = `RDP disconnect failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...session, status: "error", errorMessage: message },
+        });
+        return false;
+      }
+    }
+
+    if (vpnBackedProtocol) {
+      const cleanup = await cleanupSessionVpnLeases(associatedVpnSessions);
+      const releasedOwners = new Set(cleanup.releasedOwnerIds);
+      const cleanupError =
+        cleanup.failures.length > 0
+          ? vpnLeaseCleanupFailureMessage(
+              session.protocol as "ssh" | "rdp",
+              cleanup,
+            )
+          : "";
+
+      associatedVpnSessions.forEach((candidate) => {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...candidate,
+            backendSessionId:
+              cleanup.failures.length > 0
+                ? candidate.backendSessionId
+                : undefined,
+            shellId:
+              cleanup.failures.length === 0 &&
+              candidate.protocol.toLowerCase() === "ssh"
+                ? undefined
+                : candidate.shellId,
+            status: cleanup.failures.length > 0 ? "error" : "disconnected",
+            errorMessage:
+              cleanup.failures.length > 0 ? cleanupError : undefined,
+            ...remainingSessionVpnLeaseOwnerFields(candidate, releasedOwners),
+            lastActivity: new Date(),
+          },
+        });
+      });
+
+      if (cleanup.failures.length > 0) return false;
     }
 
     if (session.protocol === "raw" && session.backendSessionId) {

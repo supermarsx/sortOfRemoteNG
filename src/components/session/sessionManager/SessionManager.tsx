@@ -515,7 +515,7 @@ const SessionsView: React.FC<{
         const matchesKind = (() => {
           switch (kindFilter) {
             case "rdp":
-              return row.source === "rdp";
+              return row.kind === "rdp";
             case "ssh":
               return row.kind === "ssh";
             case "proxy":
@@ -1033,42 +1033,16 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     [dispatch, onCloseSession],
   );
 
-  const markSshSessionsDisconnected = useCallback(
-    (backendSessionIds: readonly string[]) => {
-      const ids = new Set(backendSessionIds);
-      state.sessions
-        .filter(
-          (session) =>
-            session.protocol.toLowerCase() === "ssh" &&
-            session.backendSessionId &&
-            ids.has(session.backendSessionId),
-        )
-        .forEach((session) => {
-          dispatch({
-            type: "UPDATE_SESSION",
-            payload: {
-              ...session,
-              status: "disconnected",
-              lastActivity: new Date(),
-            },
-          });
-        });
-    },
-    [dispatch, state.sessions],
-  );
-
   const handleDisconnectSsh = useCallback(
     async (row: UnifiedSessionRow) => {
-      const disconnected = await mgr.ssh.handleDisconnect(row.nativeId);
-      if (disconnected) markSshSessionsDisconnected([row.nativeId]);
+      await mgr.ssh.handleDisconnect(row.nativeId);
     },
-    [markSshSessionsDisconnected, mgr.ssh],
+    [mgr.ssh],
   );
 
   const handleDisconnectAllSsh = useCallback(async () => {
-    const disconnectedIds = await mgr.ssh.handleDisconnectAll();
-    markSshSessionsDisconnected(disconnectedIds);
-  }, [markSshSessionsDisconnected, mgr.ssh]);
+    await mgr.ssh.handleDisconnectAll();
+  }, [mgr.ssh]);
 
   /** Mark the frontend RDP tab disconnected when its viewer is detached. */
   const handleViewerDetach = useCallback(

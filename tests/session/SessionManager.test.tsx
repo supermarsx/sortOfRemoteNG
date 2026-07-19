@@ -441,6 +441,61 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     );
   });
 
+  it("keeps an orphaned RDP VPN cleanup retry visible under the RDP filter", async () => {
+    mockInvoke({
+      list_rdp_sessions: [],
+      get_proxy_session_details: [],
+      list_sessions: [],
+    });
+    const orphanedRdp: ConnectionSession = {
+      id: "rdp-cleanup-retry",
+      connectionId: "conn-1",
+      name: "Prod RDP cleanup",
+      status: "error",
+      startTime: new Date("2026-01-01T12:00:00.000Z"),
+      protocol: "rdp",
+      hostname: "10.0.0.10",
+      vpnLeaseOwnerId: "owner-current",
+      vpnLeaseOwnerIds: ["owner-previous", "owner-current"],
+      errorMessage:
+        "RDP disconnected, but VPN cleanup needs attention. Retry disconnect to finish cleanup.",
+    };
+
+    renderManagerWithConnectionState({ sessions: [orphanedRdp] });
+    expect(await screen.findByText("Prod RDP cleanup")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("session-filter-rdp"));
+    expect(screen.getByText("Prod RDP cleanup")).toBeInTheDocument();
+    expect(
+      screen.getByText(/VPN cleanup needs attention/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not duplicate an RDP cleanup retry while its retained native row is visible", async () => {
+    const retainedCleanup: ConnectionSession = {
+      id: "rdp-cleanup-retained",
+      connectionId: "conn-1",
+      name: "Prod RDP cleanup",
+      status: "error",
+      startTime: new Date("2026-01-01T12:00:00.000Z"),
+      protocol: "rdp",
+      hostname: "10.0.0.10",
+      backendSessionId: RDP_SESSION.id,
+      vpnLeaseOwnerId: "owner-current",
+      vpnLeaseOwnerIds: ["owner-current"],
+      errorMessage:
+        "RDP disconnected, but VPN cleanup needs attention. Retry disconnect to finish cleanup.",
+    };
+    const { result } = renderUnifiedSessionManagerHook({
+      sessions: [retainedCleanup],
+    });
+
+    await waitFor(() => expect(result.current.rdpRows).toHaveLength(1));
+    expect(result.current.frontendConnectionRows).toHaveLength(0);
+    expect(
+      result.current.rows.filter((row) => row.kind === "rdp"),
+    ).toHaveLength(1);
+  });
+
   it("projects source timing/errors and retains only display-safe SSH fields", async () => {
     mockInvoke({
       list_sessions: [

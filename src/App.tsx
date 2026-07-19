@@ -561,7 +561,7 @@ const AppContent: React.FC = () => {
   const activeRdpBackendIds = useMemo(
     () =>
       state.sessions
-        .filter((s) => s.protocol === "rdp")
+        .filter((s) => s.protocol === "rdp" && !s.layout?.isDetached)
         .map((s) => s.backendSessionId || s.connectionId)
         .filter(Boolean) as string[],
     [state.sessions],

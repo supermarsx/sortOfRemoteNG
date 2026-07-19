@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Connection } from "../../types/connection/connection";
+import {
+  Connection,
+  type ConnectionSession,
+} from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
 import { useSessionThumbnails } from "./useSessionThumbnails";
 import {
   loadSessionHistory,
@@ -9,6 +13,13 @@ import {
   resolveRdpHistoryConnection,
   RDPSessionHistoryEntry,
 } from "../../utils/rdp/rdpSessionHistory";
+import {
+  cleanupSessionVpnLeases,
+  findAssociatedVpnSessions,
+  remainingSessionVpnLeaseOwnerFields,
+  sessionVpnLeaseOwnerIds,
+  vpnLeaseCleanupFailureMessage,
+} from "../../utils/network/sessionVpnLeaseCleanup";
 
 export interface RDPSessionInfo {
   id: string;
@@ -77,6 +88,7 @@ export function useRDPSessionPanel({
   thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
 }: UseRDPSessionPanelParams) {
+  const { state, dispatch } = useConnections();
   const [sessions, setSessions] = useState<RDPSessionInfo[]>([]);
   const [statsMap, setStatsMap] = useState<Record<string, RDPStats>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -90,6 +102,14 @@ export function useRDPSessionPanel({
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
   const [sessionHistory, setSessionHistory] =
     useState<RDPSessionHistoryEntry[]>(loadSessionHistory);
+  const sessionsRef = useRef(sessions);
+  const frontendSessionsRef = useRef(state.sessions);
+  const retainedCleanupRowsRef = useRef(new Map<string, RDPSessionInfo>());
+  const backendClosedRef = useRef(new Set<string>());
+  const associatedSessionsRef = useRef(new Map<string, ConnectionSession[]>());
+
+  sessionsRef.current = sessions;
+  frontendSessionsRef.current = state.sessions;
 
   // Track previous sessions so we can detect disconnections
   const prevSessionsRef = useRef<RDPSessionInfo[]>([]);
@@ -218,7 +238,13 @@ export function useRDPSessionPanel({
     try {
       setIsLoading(true);
       const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
-      setSessions(list);
+      const liveIds = new Set(list.map((session) => session.id));
+      setSessions([
+        ...list,
+        ...[...retainedCleanupRowsRef.current.values()].filter(
+          (session) => !liveIds.has(session.id),
+        ),
+      ]);
       const newStats: Record<string, RDPStats> = {};
       for (const s of list) {
         try {
@@ -231,7 +257,7 @@ export function useRDPSessionPanel({
         }
       }
       setStatsMap(newStats);
-      setError("");
+      if (retainedCleanupRowsRef.current.size === 0) setError("");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -254,16 +280,91 @@ export function useRDPSessionPanel({
 
   const handleDisconnect = useCallback(
     async (sessionId: string) => {
+      const nativeSession =
+        sessionsRef.current.find((session) => session.id === sessionId) ??
+        retainedCleanupRowsRef.current.get(sessionId);
+      if (!nativeSession) return false;
+      const associatedSessions =
+        associatedSessionsRef.current.get(sessionId) ??
+        findAssociatedVpnSessions(
+          frontendSessionsRef.current,
+          "rdp",
+          sessionId,
+          nativeSession.connection_id,
+        );
+
       try {
-        const session = sessions.find((s) => s.id === sessionId);
-        if (session) addToHistory(session);
-        await invoke("disconnect_rdp", { sessionId });
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        if (!backendClosedRef.current.has(sessionId)) {
+          await invoke("disconnect_rdp", { sessionId });
+          addToHistory(nativeSession);
+          backendClosedRef.current.add(sessionId);
+        }
       } catch (e) {
         setError(`Disconnect failed: ${String(e)}`);
+        return false;
       }
+
+      const cleanup = await cleanupSessionVpnLeases(associatedSessions);
+      const releasedOwners = new Set(cleanup.releasedOwnerIds);
+      const failedOwners = new Set(
+        cleanup.failures.map((failure) => failure.ownerId),
+      );
+      const cleanupError =
+        cleanup.failures.length > 0
+          ? vpnLeaseCleanupFailureMessage("rdp", cleanup)
+          : "";
+
+      associatedSessions.forEach((session) => {
+        const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
+          failedOwners.has(ownerId),
+        );
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...session,
+            backendSessionId: failed ? sessionId : undefined,
+            status: failed ? "error" : "disconnected",
+            errorMessage: failed ? cleanupError : undefined,
+            ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
+            lastActivity: new Date(),
+          },
+        });
+      });
+
+      if (cleanup.failures.length > 0) {
+        retainedCleanupRowsRef.current.set(sessionId, nativeSession);
+        associatedSessionsRef.current.set(
+          sessionId,
+          associatedSessions.map((session) => {
+            const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
+              failedOwners.has(ownerId),
+            );
+            return {
+              ...session,
+              backendSessionId: failed ? sessionId : undefined,
+              ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
+            };
+          }),
+        );
+        setSessions((current) =>
+          current.some((session) => session.id === sessionId)
+            ? current
+            : [...current, nativeSession],
+        );
+        setError(cleanupError);
+        return false;
+      }
+
+      retainedCleanupRowsRef.current.delete(sessionId);
+      backendClosedRef.current.delete(sessionId);
+      associatedSessionsRef.current.delete(sessionId);
+      setSessions((current) =>
+        current.filter((session) => session.id !== sessionId),
+      );
+      if (retainedCleanupRowsRef.current.size === 0) setError("");
+      return true;
     },
-    [sessions, addToHistory],
+    [addToHistory, dispatch],
   );
 
   const handleDetach = useCallback(
@@ -303,17 +404,23 @@ export function useRDPSessionPanel({
   );
 
   const handleDisconnectAll = useCallback(async () => {
-    for (const s of sessions) {
-      addToHistory(s);
-      try {
-        await invoke("disconnect_rdp", { sessionId: s.id });
-      } catch {
-        // best-effort
-      }
+    const current = [...sessionsRef.current];
+    let failedCount = 0;
+    for (const session of current) {
+      if (!(await handleDisconnect(session.id))) failedCount += 1;
     }
-    setSessions([]);
-    setStatsMap({});
-  }, [sessions, addToHistory]);
+    if (failedCount > 0) {
+      setError(
+        `Failed to fully clean up ${failedCount} RDP session${failedCount === 1 ? "" : "s"}. Retry disconnect to finish cleanup.`,
+      );
+    }
+    setStatsMap((currentStats) => {
+      const retainedIds = new Set(retainedCleanupRowsRef.current.keys());
+      return Object.fromEntries(
+        Object.entries(currentStats).filter(([id]) => retainedIds.has(id)),
+      );
+    });
+  }, [handleDisconnect]);
 
   const isSessionDetached = useCallback(
     (session: RDPSessionInfo): boolean => {

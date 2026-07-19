@@ -49,7 +49,12 @@ export function useSessionDetach(
       // race against the main window's component cleanup.
       if (session.protocol === "rdp" && connection) {
         try {
-          await invoke("detach_rdp_session", { connectionId: connection.id });
+          await invoke(
+            "detach_rdp_session",
+            session.backendSessionId
+              ? { sessionId: session.backendSessionId }
+              : { connectionId: connection.id },
+          );
           console.log("[detach] detach_rdp_session succeeded");
         } catch (err) {
           console.warn("[detach] detach_rdp_session failed:", err);
@@ -244,13 +249,28 @@ export function useSessionDetach(
             s.protocol === "rdp"),
       );
       if (existing) {
-        // Re-activate and ensure it's marked as connecting so the RDP client re-initialises
-        if (existing.status === "disconnected") {
-          dispatch({
-            type: "UPDATE_SESSION",
-            payload: { ...existing, status: "connecting" },
-          });
-        }
+        // A close-policy detach keeps a hidden ownership row. Move it back to
+        // the main layout before activation so the existing backend and every
+        // persisted VPN owner remain associated with the reopened viewer.
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...existing,
+            status:
+              existing.status === "disconnected"
+                ? "connecting"
+                : existing.status,
+            layout: {
+              x: existing.layout?.x ?? 0,
+              y: existing.layout?.y ?? 0,
+              width: existing.layout?.width ?? 100,
+              height: existing.layout?.height ?? 100,
+              zIndex: existing.layout?.zIndex ?? 1,
+              isDetached: false,
+              windowId: undefined,
+            },
+          },
+        });
         setActiveSessionId(existing.id);
         return;
       }
