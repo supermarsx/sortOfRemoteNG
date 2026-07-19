@@ -29,15 +29,43 @@ function hasAssociation(connection: Connection): boolean {
   );
 }
 
-function connectionSearchText(connection: Connection): string {
+interface AssociationSearchCatalog {
+  connectionChains: ReadonlyMap<string, string>;
+  proxyChains: ReadonlyMap<string, string>;
+  tunnelChains: ReadonlyMap<string, string>;
+}
+
+function connectionSearchText(
+  connection: Connection,
+  catalog: AssociationSearchCatalog,
+): string {
+  const referencedTunnelChain = connection.tunnelChainId
+    ? catalog.tunnelChains.get(connection.tunnelChainId)
+    : undefined;
+  const visibleInlineLayers = referencedTunnelChain
+    ? []
+    : (connection.security?.tunnelChain ?? []).flatMap((layer) => [
+        layer.name,
+        layer.type,
+      ]);
+
   return [
+    connection.id,
     connection.name,
     connection.hostname,
     connection.protocol,
     connection.username,
     connection.connectionChainId,
+    connection.connectionChainId
+      ? catalog.connectionChains.get(connection.connectionChainId)
+      : undefined,
     connection.proxyChainId,
+    connection.proxyChainId
+      ? catalog.proxyChains.get(connection.proxyChainId)
+      : undefined,
     connection.tunnelChainId,
+    referencedTunnelChain,
+    ...visibleInlineLayers,
   ]
     .filter(Boolean)
     .join(" ")
@@ -182,6 +210,40 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
     [savedTunnelChains, t],
   );
 
+  const associationSearchCatalog = useMemo<AssociationSearchCatalog>(
+    () => ({
+      connectionChains: new Map(
+        mgr.connectionChains.map((chain) => [chain.id, chain.name]),
+      ),
+      proxyChains: new Map(
+        mgr.proxyChains.map((chain) => [chain.id, chain.name]),
+      ),
+      tunnelChains: new Map(
+        savedTunnelChains.map((chain) => [
+          chain.id,
+          [
+            chain.name,
+            ...chain.layers.flatMap((layer) => [layer.name, layer.type]),
+          ]
+            .filter(Boolean)
+            .join(" "),
+        ]),
+      ),
+    }),
+    [mgr.connectionChains, mgr.proxyChains, savedTunnelChains],
+  );
+
+  const associationSearchIndex = useMemo(
+    () =>
+      new Map(
+        mgr.connectionOptions.map((connection) => [
+          connection.id,
+          connectionSearchText(connection, associationSearchCatalog),
+        ]),
+      ),
+    [associationSearchCatalog, mgr.connectionOptions],
+  );
+
   const configuredCount = useMemo(
     () => mgr.connectionOptions.filter(hasAssociation).length,
     [mgr.connectionOptions],
@@ -194,7 +256,9 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
         const configured = hasAssociation(connection);
         if (assignmentFilter === "configured" && !configured) return false;
         if (assignmentFilter === "unconfigured" && configured) return false;
-        return !query || connectionSearchText(connection).includes(query);
+        return (
+          !query || associationSearchIndex.get(connection.id)?.includes(query)
+        );
       })
       .sort((left, right) => {
         const result = left.name.localeCompare(right.name, undefined, {
@@ -203,7 +267,13 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
         });
         return sortDirection === "asc" ? result : -result;
       });
-  }, [assignmentFilter, mgr.connectionOptions, searchTerm, sortDirection]);
+  }, [
+    assignmentFilter,
+    associationSearchIndex,
+    mgr.connectionOptions,
+    searchTerm,
+    sortDirection,
+  ]);
 
   const pageCount = Math.max(
     1,

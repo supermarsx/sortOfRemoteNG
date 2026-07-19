@@ -142,6 +142,37 @@ describe("AssociationsTab", () => {
     expect(bodyRows[2]).toHaveTextContent("Alpha");
   });
 
+  it("searches assigned rows by the visible chain names", () => {
+    const mgr = manager([
+      connection("alpha", "Alpha", { proxyChainId: "proxy-chain-1" }),
+      connection("bravo", "Bravo", { tunnelChainId: "tunnel-1" }),
+      connection("charlie", "Charlie"),
+    ]);
+    render(<AssociationsTab mgr={mgr} />);
+
+    fireEvent.change(screen.getByTestId("associations-search"), {
+      target: { value: "Office Proxy" },
+    });
+    expect(screen.getByTestId("association-row-alpha")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("association-row-bravo"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("association-row-charlie"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("associations-search"), {
+      target: { value: "Corporate VPN Path" },
+    });
+    expect(screen.getByTestId("association-row-bravo")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("association-row-alpha"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("association-row-charlie"),
+    ).not.toBeInTheDocument();
+  });
+
   it("paginates 1000+ connections and renders only the active page", () => {
     const connections = Array.from({ length: 1050 }, (_, index) => {
       const number = String(index + 1).padStart(4, "0");
