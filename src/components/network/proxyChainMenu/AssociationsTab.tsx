@@ -1,36 +1,50 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ChevronLeft,
+  ChevronRight,
+  Link2,
+  Search,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Mgr } from "./types";
-import type {
-  Connection,
-  TunnelType,
-} from "../../../types/connection/connection";
-import { Select } from "../../ui/forms";
-import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
+import type { Connection } from "../../../types/connection/connection";
 import type { SavedTunnelChain } from "../../../types/settings/vpnSettings";
-import { getTypeLabel } from "./tunnelChainShared.helpers";
+import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
+import { Select } from "../../ui/forms";
+import type { Mgr } from "./types";
 
-// Protocol and product names; not localised.
-const tunnelTypeLabels: Record<TunnelType, string> = {
-  proxy: "Proxy",
-  "ssh-tunnel": "SSH Tunnel",
-  "ssh-jump": "SSH Jump Host",
-  "ssh-proxycmd": "SSH ProxyCommand",
-  "ssh-stdio": "SSH Stdio",
-  openvpn: "OpenVPN",
-  wireguard: "WireGuard",
-  shadowsocks: "Shadowsocks",
-  tor: "Tor",
-  i2p: "I2P",
-  stunnel: "STunnel",
-  chisel: "Chisel",
-  ngrok: "ngrok",
-  cloudflared: "Cloudflare Tunnel",
-  tailscale: "Tailscale",
-  zerotier: "ZeroTier",
-};
+type AssignmentFilter = "all" | "configured" | "unconfigured";
+type SortDirection = "asc" | "desc";
 
-function TunnelChainPreview({
+const DEFAULT_PAGE_SIZE = 50;
+
+function hasAssociation(connection: Connection): boolean {
+  return Boolean(
+    connection.connectionChainId ||
+    connection.proxyChainId ||
+    connection.tunnelChainId ||
+    connection.security?.tunnelChain?.length,
+  );
+}
+
+function connectionSearchText(connection: Connection): string {
+  return [
+    connection.name,
+    connection.hostname,
+    connection.protocol,
+    connection.username,
+    connection.connectionChainId,
+    connection.proxyChainId,
+    connection.tunnelChainId,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase();
+}
+
+function TunnelPathSummary({
   connection,
   onClear,
 }: {
@@ -38,76 +52,82 @@ function TunnelChainPreview({
   onClear: () => void;
 }) {
   const { t } = useTranslation();
-  // Show preview from referenced chain or inline chain
-  const chainId = connection.tunnelChainId;
-  const referencedChain = chainId
-    ? proxyCollectionManager.getTunnelChain(chainId)
+  const referencedChain = connection.tunnelChainId
+    ? proxyCollectionManager.getTunnelChain(connection.tunnelChainId)
     : null;
-  const layers = referencedChain?.layers ?? connection.security?.tunnelChain;
-  const hasChain = layers && layers.length > 0;
+  const layers =
+    referencedChain?.layers ?? connection.security?.tunnelChain ?? [];
+  const hasPath = layers.length > 0 || Boolean(connection.tunnelChainId);
+  const visibleLayers = layers.slice(0, 2);
+  const hiddenLayerCount = Math.max(0, layers.length - visibleLayers.length);
+
+  if (!hasPath) {
+    return (
+      <span
+        className="text-xs text-[var(--color-textMuted)]"
+        aria-label="No tunnel path"
+      >
+        —
+      </span>
+    );
+  }
+
+  const pathTitle = layers
+    .map((layer) => layer.name || layer.type)
+    .filter(Boolean)
+    .join(" → ");
 
   return (
-    <div className="mt-2">
-      <div className="flex items-center justify-between mb-1">
-        <label className="block text-xs text-[var(--color-textSecondary)]">
-          {t("proxyChainMenu.associations.tunnelChain", "Tunnel Chain")}
-          {referencedChain && (
-            <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
-              {t(
-                "proxyChainMenu.associations.linkedChain",
-                "linked: {{name}}",
-                {
-                  name: referencedChain.name,
-                },
-              )}
-            </span>
-          )}
-        </label>
-        {(hasChain || chainId) && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="text-xs text-[var(--color-danger)] hover:text-[var(--color-dangerHover)] transition-colors"
+    <div
+      className="flex items-center gap-1.5 min-w-0"
+      aria-label={`${connection.name} tunnel path`}
+      title={pathTitle || referencedChain?.name || connection.tunnelChainId}
+    >
+      <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+        {referencedChain && (
+          <span className="max-w-28 truncate rounded bg-[var(--color-primary)]/15 px-1.5 py-0.5 text-[10px] text-[var(--color-primary)]">
+            {referencedChain.name}
+          </span>
+        )}
+        {!referencedChain && layers.length > 0 && (
+          <span className="rounded bg-[var(--color-accent)]/15 px-1.5 py-0.5 text-[10px] text-[var(--color-accent)]">
+            {t("proxyChainMenu.associations.inline", "Inline")}
+          </span>
+        )}
+        {visibleLayers.map((layer) => (
+          <span
+            key={layer.id}
+            className={`max-w-24 truncate rounded border px-1.5 py-0.5 text-[10px] ${
+              layer.enabled
+                ? "border-[var(--color-accent)]/30 text-[var(--color-textSecondary)]"
+                : "border-[var(--color-border)] text-[var(--color-textMuted)] line-through"
+            }`}
           >
-            {t("proxyChainMenu.associations.clear", "Clear")}
-          </button>
+            {layer.name || layer.type}
+          </span>
+        ))}
+        {hiddenLayerCount > 0 && (
+          <span className="text-[10px] text-[var(--color-textMuted)]">
+            +{hiddenLayerCount}
+          </span>
         )}
       </div>
-      {hasChain ? (
-        <div className="flex items-center gap-1 flex-wrap">
-          {layers.map((layer, idx) => (
-            <div key={layer.id} className="flex items-center gap-1">
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                  layer.enabled
-                    ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/30"
-                    : "bg-[var(--color-textSecondary)]/10 text-[var(--color-textSecondary)] border border-[var(--color-border)] line-through"
-                }`}
-              >
-                {layer.name || tunnelTypeLabels[layer.type] || layer.type}
-              </span>
-              {idx < layers.length - 1 && (
-                <span className="text-[var(--color-textSecondary)] text-xs">
-                  →
-                </span>
-              )}
-            </div>
-          ))}
-          <div className="flex items-center gap-1">
-            <span className="text-[var(--color-textSecondary)] text-xs">→</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[var(--color-success)]/15 text-[var(--color-success)] border border-[var(--color-success)]/30">
-              {t("proxyChainMenu.associations.target", "Target")}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-[var(--color-textSecondary)] italic">
-          {t(
-            "proxyChainMenu.associations.noTunnelChain",
-            "No tunnel chain configured",
-          )}
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={onClear}
+        className="sor-icon-btn-xs flex-shrink-0 text-error hover:text-error"
+        title={t(
+          "proxyChainMenu.associations.clearTunnelPath",
+          "Clear tunnel path",
+        )}
+        aria-label={t(
+          "proxyChainMenu.associations.clearTunnelPathFor",
+          "Clear tunnel path for {{name}}",
+          { name: connection.name },
+        )}
+      >
+        <X size={12} aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -117,158 +137,437 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
   const [savedTunnelChains, setSavedTunnelChains] = useState<
     SavedTunnelChain[]
   >([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [assignmentFilter, setAssignmentFilter] =
+    useState<AssignmentFilter>("all");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   useEffect(() => {
     setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
-    const unsubscribe = proxyCollectionManager.subscribe(() => {
+    return proxyCollectionManager.subscribe(() => {
       setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
     });
-    return () => {
-      unsubscribe();
-    };
   }, []);
 
-  const handleClearTunnelChain = (connectionId: string) => {
-    // Clear both reference and inline chain
+  const connectionChainOptions = useMemo(
+    () => [
+      { value: "", label: t("proxyChainMenu.associations.none", "None") },
+      ...mgr.connectionChains.map((chain) => ({
+        value: chain.id,
+        label: chain.name,
+      })),
+    ],
+    [mgr.connectionChains, t],
+  );
+  const proxyChainOptions = useMemo(
+    () => [
+      { value: "", label: t("proxyChainMenu.associations.none", "None") },
+      ...mgr.proxyChains.map((chain) => ({
+        value: chain.id,
+        label: chain.name,
+      })),
+    ],
+    [mgr.proxyChains, t],
+  );
+  const tunnelChainOptions = useMemo(
+    () => [
+      { value: "", label: t("proxyChainMenu.associations.none", "None") },
+      ...savedTunnelChains.map((chain) => ({
+        value: chain.id,
+        label: `${chain.name} (${chain.layers.length})`,
+      })),
+    ],
+    [savedTunnelChains, t],
+  );
+
+  const configuredCount = useMemo(
+    () => mgr.connectionOptions.filter(hasAssociation).length,
+    [mgr.connectionOptions],
+  );
+
+  const filteredConnections = useMemo(() => {
+    const query = searchTerm.trim().toLocaleLowerCase();
+    return mgr.connectionOptions
+      .filter((connection) => {
+        const configured = hasAssociation(connection);
+        if (assignmentFilter === "configured" && !configured) return false;
+        if (assignmentFilter === "unconfigured" && configured) return false;
+        return !query || connectionSearchText(connection).includes(query);
+      })
+      .sort((left, right) => {
+        const result = left.name.localeCompare(right.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        return sortDirection === "asc" ? result : -result;
+      });
+  }, [assignmentFilter, mgr.connectionOptions, searchTerm, sortDirection]);
+
+  const pageCount = Math.max(
+    1,
+    Math.ceil(filteredConnections.length / pageSize),
+  );
+  const currentPage = Math.min(page, pageCount);
+  const pageConnections = filteredConnections.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  const resetToFirstPage = () => setPage(1);
+  const clearTunnelPath = (connectionId: string) => {
     mgr.updateTunnelChainRef(connectionId, "");
     mgr.clearTunnelChain(connectionId);
   };
 
+  const firstResult =
+    filteredConnections.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastResult = Math.min(
+    currentPage * pageSize,
+    filteredConnections.length,
+  );
+
   return (
-    <div className="space-y-4">
-      <div className="text-sm text-[var(--color-textSecondary)]">
-        {t(
-          "proxyChainMenu.associations.description",
-          "Associate chains with individual connections. These choices will be used when launching sessions.",
-        )}
-      </div>
-      <div className="space-y-3">
-        {mgr.connectionOptions.map((connection) => (
-          <div
-            key={connection.id}
-            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-3"
-          >
-            <div className="text-sm font-medium text-[var(--color-text)] mb-2">
-              {connection.name}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  {t(
-                    "proxyChainMenu.associations.connectionChain",
-                    "Connection Chain",
-                  )}
-                </label>
-                <Select
-                  value={connection.connectionChainId || ""}
-                  onChange={(v: string) =>
-                    mgr.updateConnectionChain(connection.id, v)
-                  }
-                  options={[
-                    {
-                      value: "",
-                      label: t("proxyChainMenu.associations.none", "None"),
-                    },
-                    ...mgr.connectionChains.map((chain) => ({
-                      value: chain.id,
-                      label: chain.name,
-                    })),
-                  ]}
-                  className="sor-form-input"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  {t("proxyChainMenu.associations.proxyChain", "Proxy Chain")}
-                </label>
-                <Select
-                  value={connection.proxyChainId || ""}
-                  onChange={(v: string) =>
-                    mgr.updateProxyChain(connection.id, v)
-                  }
-                  options={[
-                    {
-                      value: "",
-                      label: t("proxyChainMenu.associations.none", "None"),
-                    },
-                    ...mgr.proxyChains.map((chain) => ({
-                      value: chain.id,
-                      label: chain.name,
-                    })),
-                  ]}
-                  className="sor-form-input"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  {t("proxyChainMenu.associations.tunnelChain", "Tunnel Chain")}
-                </label>
-                <Select
-                  value={connection.tunnelChainId || ""}
-                  onChange={(v: string) => {
-                    mgr.updateTunnelChainRef(connection.id, v);
-                  }}
-                  options={[
-                    {
-                      value: "",
-                      label: t("proxyChainMenu.associations.none", "None"),
-                    },
-                    ...savedTunnelChains.map((c) => ({
-                      value: c.id,
-                      label: t(
-                        "proxyChainMenu.associations.tunnelChainOption",
-                        "{{name}} ({{layers}})",
-                        {
-                          name: c.name,
-                          layers:
-                            c.layers.length === 1
-                              ? t(
-                                  "proxyChainMenu.shared.layerCountOne",
-                                  "{{count}} layer",
-                                  {
-                                    count: c.layers.length,
-                                  },
-                                )
-                              : t(
-                                  "proxyChainMenu.shared.layerCountOther",
-                                  "{{count}} layers",
-                                  {
-                                    count: c.layers.length,
-                                  },
-                                ),
-                        },
-                      ),
-                    })),
-                  ]}
-                  className="sor-form-input"
-                />
-              </div>
-            </div>
-            <TunnelChainPreview
-              connection={connection}
-              onClear={() => handleClearTunnelChain(connection.id)}
-            />
-          </div>
-        ))}
-        {mgr.connectionOptions.length === 0 && (
-          <div className="text-sm text-[var(--color-textSecondary)]">
+    <div className="space-y-4" data-testid="associations-tab">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+            <Link2 size={15} aria-hidden="true" />
+            {t("proxyChainMenu.associations.title", "Connection Associations")}
+          </h3>
+          <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
             {t(
-              "proxyChainMenu.associations.noConnections",
-              "No connections available.",
+              "proxyChainMenu.associations.description",
+              "Associate reusable connection, proxy, and tunnel chains with individual connections. These choices are used when launching sessions.",
             )}
-          </div>
-        )}
-      </div>
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-backgroundSecondary)]/50 p-3">
-        <div className="text-xs text-[var(--color-textSecondary)]">
-          <strong>
-            {t("proxyChainMenu.associations.infoTitle", "Tunnel Chains")}
-          </strong>{" "}
+          </p>
+        </div>
+        <div
+          className="text-xs text-[var(--color-textMuted)]"
+          aria-live="polite"
+        >
           {t(
-            "proxyChainMenu.associations.infoBody",
-            "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target host. Each layer wraps the next, with the first layer being the outermost hop. Chains are linked by reference — updating a chain automatically applies to all connections using it.",
+            "proxyChainMenu.associations.configuredSummary",
+            "{{configured}} of {{total}} configured",
+            {
+              configured: configuredCount,
+              total: mgr.connectionOptions.length,
+            },
           )}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-backgroundSecondary)]/40 p-2.5">
+        <label className="relative min-w-56 flex-1">
+          <span className="sr-only">
+            {t("proxyChainMenu.associations.searchLabel", "Search connections")}
+          </span>
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => {
+              setSearchTerm(event.target.value);
+              resetToFirstPage();
+            }}
+            placeholder={t(
+              "proxyChainMenu.associations.searchPlaceholder",
+              "Search name, host, protocol, or chain…",
+            )}
+            className="sor-form-input w-full pl-8"
+            data-testid="associations-search"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+          <span>{t("proxyChainMenu.associations.show", "Show")}</span>
+          <select
+            value={assignmentFilter}
+            onChange={(event) => {
+              setAssignmentFilter(event.target.value as AssignmentFilter);
+              resetToFirstPage();
+            }}
+            className="sor-form-input min-w-32"
+            aria-label={t(
+              "proxyChainMenu.associations.assignmentFilter",
+              "Filter by association status",
+            )}
+            data-testid="associations-filter"
+          >
+            <option value="all">
+              {t("proxyChainMenu.associations.filterAll", "All connections")}
+            </option>
+            <option value="configured">
+              {t("proxyChainMenu.associations.filterConfigured", "Configured")}
+            </option>
+            <option value="unconfigured">
+              {t(
+                "proxyChainMenu.associations.filterUnconfigured",
+                "Unconfigured",
+              )}
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+            resetToFirstPage();
+          }}
+          className="sor-option-chip text-xs"
+          title={
+            sortDirection === "asc"
+              ? t("proxyChainMenu.associations.sortDescending", "Sort Z to A")
+              : t("proxyChainMenu.associations.sortAscending", "Sort A to Z")
+          }
+          aria-label={
+            sortDirection === "asc"
+              ? t("proxyChainMenu.associations.sortDescending", "Sort Z to A")
+              : t("proxyChainMenu.associations.sortAscending", "Sort A to Z")
+          }
+          data-testid="associations-sort"
+        >
+          {sortDirection === "asc" ? (
+            <ArrowDownAZ size={13} aria-hidden="true" />
+          ) : (
+            <ArrowUpAZ size={13} aria-hidden="true" />
+          )}
+          {sortDirection === "asc" ? "A–Z" : "Z–A"}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+        <table
+          className="w-full min-w-[980px] border-collapse text-left text-xs"
+          data-testid="associations-table"
+        >
+          <caption className="sr-only">
+            {t(
+              "proxyChainMenu.associations.tableCaption",
+              "Connection-to-chain associations",
+            )}
+          </caption>
+          <thead className="sticky top-0 z-10 bg-[var(--color-backgroundSecondary)] text-[var(--color-textSecondary)]">
+            <tr>
+              <th scope="col" className="w-64 px-3 py-2 font-medium">
+                {t("proxyChainMenu.associations.connection", "Connection")}
+              </th>
+              <th scope="col" className="w-52 px-3 py-2 font-medium">
+                {t(
+                  "proxyChainMenu.associations.connectionChain",
+                  "Connection Chain",
+                )}
+              </th>
+              <th scope="col" className="w-52 px-3 py-2 font-medium">
+                {t("proxyChainMenu.associations.proxyChain", "Proxy Chain")}
+              </th>
+              <th scope="col" className="w-52 px-3 py-2 font-medium">
+                {t("proxyChainMenu.associations.tunnelChain", "Tunnel Chain")}
+              </th>
+              <th scope="col" className="min-w-56 px-3 py-2 font-medium">
+                {t("proxyChainMenu.associations.path", "Tunnel Path")}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)]">
+            {pageConnections.map((connection) => (
+              <tr
+                key={connection.id}
+                className="bg-[var(--color-background)]/40 hover:bg-[var(--color-surfaceHover)]/50"
+                data-testid={`association-row-${connection.id}`}
+              >
+                <th scope="row" className="px-3 py-2.5 font-normal">
+                  <div
+                    className="max-w-60 truncate font-medium text-[var(--color-text)]"
+                    title={connection.name}
+                  >
+                    {connection.name}
+                  </div>
+                  <div className="mt-0.5 max-w-60 truncate font-mono text-[10px] text-[var(--color-textMuted)]">
+                    {[connection.protocol?.toUpperCase(), connection.hostname]
+                      .filter(Boolean)
+                      .join(" · ") || connection.id}
+                  </div>
+                </th>
+                <td className="px-3 py-2.5">
+                  <Select
+                    value={connection.connectionChainId || ""}
+                    onChange={(value) =>
+                      mgr.updateConnectionChain(connection.id, value)
+                    }
+                    options={connectionChainOptions}
+                    variant="form-sm"
+                    searchable
+                    searchPlaceholder={t(
+                      "proxyChainMenu.associations.searchConnectionChains",
+                      "Search connection chains…",
+                    )}
+                    label={t(
+                      "proxyChainMenu.associations.connectionChainFor",
+                      "Connection chain for {{name}}",
+                      { name: connection.name },
+                    )}
+                    className="w-full"
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <Select
+                    value={connection.proxyChainId || ""}
+                    onChange={(value) =>
+                      mgr.updateProxyChain(connection.id, value)
+                    }
+                    options={proxyChainOptions}
+                    variant="form-sm"
+                    searchable
+                    searchPlaceholder={t(
+                      "proxyChainMenu.associations.searchProxyChains",
+                      "Search proxy chains…",
+                    )}
+                    label={t(
+                      "proxyChainMenu.associations.proxyChainFor",
+                      "Proxy chain for {{name}}",
+                      { name: connection.name },
+                    )}
+                    className="w-full"
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <Select
+                    value={connection.tunnelChainId || ""}
+                    onChange={(value) =>
+                      mgr.updateTunnelChainRef(connection.id, value)
+                    }
+                    options={tunnelChainOptions}
+                    variant="form-sm"
+                    searchable
+                    searchPlaceholder={t(
+                      "proxyChainMenu.associations.searchTunnelChains",
+                      "Search tunnel chains…",
+                    )}
+                    label={t(
+                      "proxyChainMenu.associations.tunnelChainFor",
+                      "Tunnel chain for {{name}}",
+                      { name: connection.name },
+                    )}
+                    className="w-full"
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <TunnelPathSummary
+                    connection={connection}
+                    onClear={() => clearTunnelPath(connection.id)}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pageConnections.length === 0 && (
+          <div className="px-4 py-12 text-center text-sm text-[var(--color-textMuted)]">
+            {mgr.connectionOptions.length === 0
+              ? t(
+                  "proxyChainMenu.associations.noConnections",
+                  "No connections available.",
+                )
+              : t(
+                  "proxyChainMenu.associations.noMatches",
+                  "No connections match the current search and filter.",
+                )}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-textSecondary)]">
+        <div aria-live="polite">
+          {t(
+            "proxyChainMenu.associations.resultRange",
+            "Showing {{first}}–{{last}} of {{total}}",
+            {
+              first: firstResult,
+              last: lastResult,
+              total: filteredConnections.length,
+            },
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5">
+            <span>{t("proxyChainMenu.associations.rowsPerPage", "Rows")}</span>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                resetToFirstPage();
+              }}
+              className="sor-form-input py-1"
+              aria-label={t(
+                "proxyChainMenu.associations.rowsPerPageLabel",
+                "Rows per page",
+              )}
+              data-testid="associations-page-size"
+            >
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>
+            {t(
+              "proxyChainMenu.associations.pageSummary",
+              "Page {{page}} of {{pages}}",
+              { page: currentPage, pages: pageCount },
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={currentPage <= 1}
+            className="sor-icon-btn-xs disabled:cursor-not-allowed disabled:opacity-40"
+            title={t(
+              "proxyChainMenu.associations.previousPage",
+              "Previous page",
+            )}
+            aria-label={t(
+              "proxyChainMenu.associations.previousPage",
+              "Previous page",
+            )}
+            data-testid="associations-previous-page"
+          >
+            <ChevronLeft size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setPage((current) => Math.min(pageCount, current + 1))
+            }
+            disabled={currentPage >= pageCount}
+            className="sor-icon-btn-xs disabled:cursor-not-allowed disabled:opacity-40"
+            title={t("proxyChainMenu.associations.nextPage", "Next page")}
+            aria-label={t("proxyChainMenu.associations.nextPage", "Next page")}
+            data-testid="associations-next-page"
+          >
+            <ChevronRight size={14} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-backgroundSecondary)]/50 p-3 text-xs text-[var(--color-textSecondary)]">
+        <strong>
+          {t("proxyChainMenu.associations.infoTitle", "Tunnel Chains")}
+        </strong>{" "}
+        {t(
+          "proxyChainMenu.associations.infoBody",
+          "define an ordered sequence of tunnels (VPN, SSH jump hosts, proxies) that traffic traverses before reaching the target host. Chains are linked by reference, so updates apply to every associated connection.",
+        )}
       </div>
     </div>
   );
