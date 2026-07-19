@@ -1335,8 +1335,16 @@ async fn verify_totp(
 #[derive(Deserialize)]
 #[allow(dead_code)]
 struct WolRequest {
+    #[serde(alias = "macAddress")]
     mac_address: String,
+    #[serde(default, alias = "broadcastAddress", alias = "broadcast_address")]
     broadcast_addr: Option<String>,
+    #[serde(default, alias = "targetAddress", alias = "target_address")]
+    target_addr: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    password: Option<String>,
 }
 
 async fn wake_on_lan(
@@ -1345,12 +1353,23 @@ async fn wake_on_lan(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let wol = services.wol_service.lock().await;
     match wol
-        .wake_on_lan(req.mac_address, req.broadcast_addr, None, None)
+        .wake_on_lan(
+            req.mac_address,
+            req.broadcast_addr,
+            req.port,
+            req.password,
+            req.target_addr,
+        )
         .await
     {
-        Ok(_) => Ok(Json(serde_json::json!({
+        Ok(outcome) => Ok(Json(serde_json::json!({
             "success": true,
-            "message": "Wake-on-LAN packet sent"
+            "message": if outcome.warnings.is_empty() {
+                "Wake-on-LAN packet sent"
+            } else {
+                "Wake-on-LAN packet sent with warnings"
+            },
+            "outcome": outcome
         }))),
         Err(_) => Err(StatusCode::BAD_REQUEST),
     }

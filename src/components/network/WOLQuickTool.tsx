@@ -1,13 +1,29 @@
-import React from 'react';
+import React from "react";
 import {
-  Power, Clock, Search, RefreshCw, Send,
-  AlertCircle, CheckCircle, Cpu, Globe, Building2,
-  Database, Loader2, CheckSquare, Square, Zap, Calendar,
-} from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { WakeScheduleManager } from './WakeScheduleManager';
-import { useWOLQuickTool, type WOLQuickToolMgr } from '../../hooks/network/useWOLQuickTool';
-import { Checkbox, NumberInput } from '../ui/forms';
+  Power,
+  Clock,
+  Search,
+  RefreshCw,
+  Send,
+  AlertCircle,
+  CheckCircle,
+  Cpu,
+  Globe,
+  Building2,
+  Database,
+  Loader2,
+  CheckSquare,
+  Square,
+  Zap,
+  Calendar,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { WakeScheduleManager } from "./WakeScheduleManager";
+import {
+  useWOLQuickTool,
+  type WOLQuickToolMgr,
+} from "../../hooks/network/useWOLQuickTool";
+import { Checkbox, NumberInput } from "../ui/forms";
 
 interface WOLQuickToolProps {
   isOpen: boolean;
@@ -20,21 +36,21 @@ interface WolDevice {
   hostname: string | null;
   last_seen: string | null;
   vendor?: string | null;
-  vendorSource?: 'local' | 'maclookup' | 'macvendors' | null;
+  vendorSource?: "local" | "maclookup" | "macvendors" | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
 
 function getVendorSourceIcon(source: string | null | undefined) {
   switch (source) {
-    case 'local':
+    case "local":
       return (
         <span title="Local database">
           <Database size={10} className="text-primary" />
         </span>
       );
-    case 'maclookup':
-    case 'macvendors':
+    case "maclookup":
+    case "macvendors":
       return (
         <span title="Online lookup">
           <Globe size={10} className="text-success" />
@@ -54,7 +70,7 @@ function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
       <div>
         <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <Power className="w-5 h-5 text-primary" />
-          {t('wake.quickTool', 'Wake-on-LAN')}
+          {t("wake.quickTool", "Wake-on-LAN")}
         </h3>
         <p className="text-xs text-[var(--color-textSecondary)] mt-1">
           Send magic packets to wake network devices
@@ -63,10 +79,10 @@ function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
       <button
         onClick={() => mgr.setShowScheduleManager(true)}
         className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] btn-animate"
-        title={t('wake.scheduleWake', 'Schedule Wake')}
+        title={t("wake.scheduleWake", "Schedule Wake")}
       >
         <Calendar size={16} />
-        <span className="text-sm">{t('wake.schedules', 'Schedules')}</span>
+        <span className="text-sm">{t("wake.schedules", "Schedules")}</span>
       </button>
     </div>
   );
@@ -77,7 +93,7 @@ function QuickWakeSection({ mgr }: { mgr: WOLQuickToolMgr }) {
   return (
     <div className="space-y-3 flex-shrink-0">
       <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-        {t('wake.macAddress', 'MAC Address')}
+        {t("wake.macAddress", "MAC Address")}
       </label>
       <div className="flex space-x-3">
         <div className="flex-1 relative">
@@ -101,7 +117,7 @@ function QuickWakeSection({ mgr }: { mgr: WOLQuickToolMgr }) {
           className="px-6 py-3 bg-success hover:bg-success/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 font-medium btn-animate shadow-lg shadow-success/30 disabled:shadow-none"
         >
           <Send size={18} />
-          <span>{t('wake.send', 'Wake')}</span>
+          <span>{t("wake.send", "Wake")}</span>
         </button>
       </div>
     </div>
@@ -114,12 +130,28 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
     <details className="group flex-shrink-0">
       <summary className="text-sm text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] flex items-center gap-2 transition-colors">
         <Cpu size={14} />
-        {t('wake.advancedOptions', 'Advanced Options')}
+        {t("wake.advancedOptions", "Advanced Options")}
       </summary>
       <div className="mt-4 grid grid-cols-2 gap-4 p-4 bg-[var(--color-surfaceHover)]/30 rounded-lg border border-[var(--color-border)] animate-fade-in">
+        <div className="col-span-2">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
+            {t("wake.targetAddress", "Target Host / FQDN (optional)")}
+          </label>
+          <input
+            type="text"
+            value={mgr.targetAddress}
+            onChange={(e) => mgr.setTargetAddress(e.target.value)}
+            placeholder="host.example.com or 192.168.1.20"
+            className="sor-form-input-sm w-full font-mono"
+          />
+          <p className="mt-1 text-[11px] text-[var(--color-textMuted)]">
+            The target is resolved with a short timeout; the broadcast packet is
+            always sent as an offline-safe fallback.
+          </p>
+        </div>
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
-            {t('wake.broadcastAddress', 'Broadcast Address')}
+            {t("wake.broadcastAddress", "Broadcast Address")}
           </label>
           <input
             type="text"
@@ -131,14 +163,22 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
         </div>
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
-            {t('wake.port', 'UDP Port')}
+            {t("wake.port", "UDP Port")}
           </label>
-          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="sor-form-input-sm w-full" />
+          <NumberInput
+            value={mgr.port}
+            onChange={(v: number) => mgr.setPort(v)}
+            className="sor-form-input-sm w-full"
+          />
         </div>
         <div className="col-span-2">
           <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
-            <Checkbox checked={mgr.useSecureOn} onChange={(v: boolean) => mgr.setUseSecureOn(v)} className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-success focus:ring-primary" />
-            <span>{t('wake.secureOn', 'SecureOn Password')}</span>
+            <Checkbox
+              checked={mgr.useSecureOn}
+              onChange={(v: boolean) => mgr.setUseSecureOn(v)}
+              className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-success focus:ring-primary"
+            />
+            <span>{t("wake.secureOn", "SecureOn Password")}</span>
           </label>
           {mgr.useSecureOn && (
             <input
@@ -160,12 +200,18 @@ function StatusMessage({ mgr }: { mgr: WOLQuickToolMgr }) {
   return (
     <div
       className={`flex items-center space-x-3 p-4 rounded-lg animate-fade-in-up ${
-        mgr.status.type === 'success'
-          ? 'bg-success/10 text-success dark:text-success border border-success/30'
-          : 'bg-error/10 text-error dark:text-error border border-error/30'
+        mgr.status.type === "success"
+          ? "bg-success/10 text-success dark:text-success border border-success/30"
+          : mgr.status.type === "warning"
+            ? "bg-warning/10 text-warning border border-warning/30"
+            : "bg-error/10 text-error dark:text-error border border-error/30"
       }`}
     >
-      {mgr.status.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+      {mgr.status.type === "success" ? (
+        <CheckCircle size={18} />
+      ) : (
+        <AlertCircle size={18} />
+      )}
       <span className="text-sm font-medium">{mgr.status.message}</span>
     </div>
   );
@@ -179,7 +225,7 @@ function RecentMacs({ mgr }: { mgr: WOLQuickToolMgr }) {
       <div className="flex items-center justify-between mb-3">
         <label className="text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-2">
           <Clock size={14} className="text-[var(--color-textMuted)]" />
-          {t('wake.recent', 'Recent')}
+          {t("wake.recent", "Recent")}
         </label>
       </div>
       <div className="sor-chip-list">
@@ -203,9 +249,11 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
     <div className="flex items-center justify-between mb-3">
       <label className="text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-2">
         <Search size={14} className="text-[var(--color-textMuted)]" />
-        {t('wake.networkDevices', 'Network Devices')}
+        {t("wake.networkDevices", "Network Devices")}
         {mgr.devices.length > 0 && (
-          <span className="text-xs text-[var(--color-textMuted)]">({mgr.devices.length})</span>
+          <span className="text-xs text-[var(--color-textMuted)]">
+            ({mgr.devices.length})
+          </span>
         )}
         {mgr.isLookingUp && (
           <span className="flex items-center gap-1 text-xs text-[var(--color-textMuted)]">
@@ -221,7 +269,9 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
               onClick={mgr.toggleSelectAll}
               className="sor-option-chip text-xs btn-animate"
               title={
-                mgr.selectedDevices.size === mgr.devices.length ? 'Deselect all' : 'Select all'
+                mgr.selectedDevices.size === mgr.devices.length
+                  ? "Deselect all"
+                  : "Select all"
               }
             >
               {mgr.selectedDevices.size === mgr.devices.length ? (
@@ -231,8 +281,8 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
               )}
               <span>
                 {mgr.selectedDevices.size === mgr.devices.length
-                  ? t('wake.deselectAll', 'Deselect All')
-                  : t('wake.selectAll', 'Select All')}
+                  ? t("wake.deselectAll", "Deselect All")
+                  : t("wake.selectAll", "Select All")}
               </span>
             </button>
             {mgr.selectedDevices.size > 0 && (
@@ -247,7 +297,8 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
                   <Send size={12} />
                 )}
                 <span>
-                  {t('wake.wakeSelected', 'Wake Selected')} ({mgr.selectedDevices.size})
+                  {t("wake.wakeSelected", "Wake Selected")} (
+                  {mgr.selectedDevices.size})
                 </span>
               </button>
             )}
@@ -262,7 +313,7 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
               ) : (
                 <Zap size={12} />
               )}
-              <span>{t('wake.wakeAll', 'Wake All')}</span>
+              <span>{t("wake.wakeAll", "Wake All")}</span>
             </button>
           </>
         )}
@@ -271,11 +322,14 @@ function DeviceListToolbar({ mgr }: { mgr: WOLQuickToolMgr }) {
           disabled={mgr.isScanning}
           className="sor-option-chip text-xs btn-animate"
         >
-          <RefreshCw size={12} className={mgr.isScanning ? 'animate-spin' : ''} />
+          <RefreshCw
+            size={12}
+            className={mgr.isScanning ? "animate-spin" : ""}
+          />
           <span>
             {mgr.isScanning
-              ? t('wake.scanning', 'Scanning...')
-              : t('wake.scan', 'Scan ARP')}
+              ? t("wake.scanning", "Scanning...")
+              : t("wake.scan", "Scan ARP")}
           </span>
         </button>
       </div>
@@ -297,11 +351,16 @@ function DeviceRow({
       role="button"
       tabIndex={0}
       onClick={() => mgr.handleSelectDevice(device)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); mgr.handleSelectDevice(device); } }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          mgr.handleSelectDevice(device);
+        }
+      }}
       className={`sor-selection-row group animate-fade-in-up card-hover-effect ${
         mgr.selectedDevices.has(device.mac)
-          ? 'sor-selection-row-selected bg-success/10 border-success/40 hover:bg-success/15'
-          : 'bg-[var(--color-surfaceHover)]/30 hover:bg-[var(--color-surfaceHover)]/50'
+          ? "sor-selection-row-selected bg-success/10 border-success/40 hover:bg-success/15"
+          : "bg-[var(--color-surfaceHover)]/30 hover:bg-[var(--color-surfaceHover)]/50"
       }`}
       style={{ animationDelay: `${idx * 50}ms` }}
     >
@@ -313,8 +372,8 @@ function DeviceRow({
           }}
           className={`p-1 rounded transition-colors ${
             mgr.selectedDevices.has(device.mac)
-              ? 'text-success hover:text-success'
-              : 'text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]'
+              ? "text-success hover:text-success"
+              : "text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]"
           }`}
         >
           {mgr.selectedDevices.has(device.mac) ? (
@@ -325,7 +384,9 @@ function DeviceRow({
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-[var(--color-text)] font-mono">{device.mac}</span>
+            <span className="text-sm text-[var(--color-text)] font-mono">
+              {device.mac}
+            </span>
             {device.vendor && (
               <span className="flex items-center gap-1 px-2 py-0.5 bg-[var(--color-surfaceHover)] rounded text-xs text-[var(--color-textSecondary)]">
                 {getVendorSourceIcon(device.vendorSource)}
@@ -339,7 +400,9 @@ function DeviceRow({
             {device.hostname && (
               <>
                 <span className="text-[var(--color-border)]">•</span>
-                <span className="text-[var(--color-textMuted)]">{device.hostname}</span>
+                <span className="text-[var(--color-textMuted)]">
+                  {device.hostname}
+                </span>
               </>
             )}
           </div>
@@ -348,7 +411,7 @@ function DeviceRow({
       <button
         onClick={(e) => {
           e.stopPropagation();
-          mgr.handleWake(device.mac);
+          mgr.handleWake(device.mac, device.hostname || device.ip);
         }}
         className="sor-selection-row-hover-action ml-3 p-2 bg-success hover:bg-success/90 text-[var(--color-text)] rounded-lg transition-all btn-animate shadow-lg shadow-success/30"
         title="Wake this device"
@@ -373,7 +436,9 @@ function DeviceList({ mgr }: { mgr: WOLQuickToolMgr }) {
       {mgr.devices.length === 0 && !mgr.isScanning && (
         <div className="text-center py-8 text-[var(--color-textMuted)]">
           <Search size={32} className="mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Click "Scan ARP" to discover devices on your network</p>
+          <p className="text-sm">
+            Click "Scan ARP" to discover devices on your network
+          </p>
         </div>
       )}
     </div>
@@ -382,7 +447,10 @@ function DeviceList({ mgr }: { mgr: WOLQuickToolMgr }) {
 
 // ── Root component ─────────────────────────────────────────────────
 
-export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) => {
+export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({
+  isOpen,
+  onClose,
+}) => {
   const mgr = useWOLQuickTool(onClose);
 
   if (!isOpen) return null;

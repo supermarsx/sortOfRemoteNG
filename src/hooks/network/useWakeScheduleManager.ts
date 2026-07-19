@@ -1,16 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
-import { WakeOnLanService, type WakeSchedule, type WakeRecurrence } from '../../utils/network/wakeOnLan';
-import { useTranslation } from 'react-i18next';
+import { useState, useEffect, useCallback } from "react";
+import {
+  WakeOnLanService,
+  type WakeSchedule,
+  type WakeRecurrence,
+} from "../../utils/network/wakeOnLan";
+import { useTranslation } from "react-i18next";
 
 const wolService = new WakeOnLanService();
 
 const toLocalInput = (date: Date) =>
-  new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
 
 export const formatMac = (value: string): string => {
-  const clean = value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  const clean = value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
   const pairs = clean.match(/.{1,2}/g) || [];
-  return pairs.slice(0, 6).join(':');
+  return pairs.slice(0, 6).join(":");
 };
 
 export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
@@ -19,7 +25,7 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
   const [editing, setEditing] = useState<WakeSchedule | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<WakeSchedule>({
-    macAddress: '',
+    macAddress: "",
     wakeTime: toLocalInput(new Date()),
     port: 9,
   });
@@ -31,7 +37,7 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
   }, [isOpen]);
 
   const resetForm = useCallback(() => {
-    setForm({ macAddress: '', wakeTime: toLocalInput(new Date()), port: 9 });
+    setForm({ macAddress: "", wakeTime: toLocalInput(new Date()), port: 9 });
     setEditing(null);
     setShowForm(false);
   }, []);
@@ -39,7 +45,7 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         if (showForm) {
           resetForm();
         } else {
@@ -47,8 +53,8 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
         }
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, showForm, onClose, resetForm]);
 
   const handleSubmit = useCallback(() => {
@@ -57,15 +63,17 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
       wolService.cancelSchedule(editing);
     }
     const broadcast = form.broadcastAddress?.trim() || undefined;
+    const target = form.targetAddress?.trim() || undefined;
     wolService.scheduleWakeUp(
       form.macAddress,
       date,
       broadcast,
       form.port,
       form.recurrence as WakeRecurrence | undefined,
+      target,
     );
     setSchedules(wolService.listSchedules());
-    setForm({ macAddress: '', wakeTime: toLocalInput(new Date()), port: 9 });
+    setForm({ macAddress: "", wakeTime: toLocalInput(new Date()), port: 9 });
     setEditing(null);
     setShowForm(false);
   }, [form, editing]);
@@ -84,12 +92,12 @@ export function useWakeScheduleManager(isOpen: boolean, onClose: () => void) {
   const getRecurrenceLabel = useCallback(
     (recurrence?: string) => {
       switch (recurrence) {
-        case 'daily':
-          return t('wake.daily', 'Daily');
-        case 'weekly':
-          return t('wake.weekly', 'Weekly');
+        case "daily":
+          return t("wake.daily", "Daily");
+        case "weekly":
+          return t("wake.weekly", "Weekly");
         default:
-          return t('wake.once', 'Once');
+          return t("wake.once", "Once");
       }
     },
     [t],

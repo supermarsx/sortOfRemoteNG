@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WakeOnLanService } from "../../src/utils/network/wakeOnLan";
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+import { invoke } from "@tauri-apps/api/core";
+
 beforeEach(async () => {
   // @ts-expect-error - no type declarations for jsdom
   const { JSDOM } = await import("jsdom");
@@ -11,6 +15,8 @@ beforeEach(async () => {
   (global as any).document = dom.window.document;
   (global as any).localStorage = dom.window.localStorage;
   localStorage.clear();
+  vi.clearAllMocks();
+  vi.mocked(invoke).mockResolvedValue(undefined);
 });
 
 describe("WakeOnLanService", () => {
@@ -30,16 +36,20 @@ describe("WakeOnLanService", () => {
     );
   });
 
-  it("creates a proper magic packet", () => {
+  it("sends through the shared Tauri WOL path with an optional DNS target", async () => {
     const service = new WakeOnLanService();
-    const packet = (service as any).createMagicPacket("aabbccddeeff");
-    expect(packet.length).toBe(102);
-    for (let i = 0; i < 6; i++) {
-      expect(packet[i]).toBe(0xff);
-    }
-    const mac = new Uint8Array([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
-    expect(packet.slice(6, 12)).toEqual(mac);
-    expect(packet.slice(packet.length - 6)).toEqual(mac);
+    await service.sendWakePacket(
+      "aa:bb:cc:dd:ee:ff",
+      "192.168.1.255",
+      7,
+      "host.example.com",
+    );
+    expect(invoke).toHaveBeenCalledWith("wake_on_lan", {
+      macAddress: "aa:bb:cc:dd:ee:ff",
+      broadcastAddress: "192.168.1.255",
+      port: 7,
+      targetAddress: "host.example.com",
+    });
   });
 
   it("schedules long delays, persists schedule, and passes port", async () => {
@@ -62,25 +72,25 @@ describe("WakeOnLanService", () => {
     ).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
-    expect(sendSpy).toHaveBeenCalledWith("00:11:22:33:44:55", undefined, 7);
+    expect(sendSpy).toHaveBeenCalledWith(
+      "00:11:22:33:44:55",
+      undefined,
+      7,
+      undefined,
+    );
     expect(localStorage.getItem("wol-schedules")).toBeNull();
 
     vi.useRealTimers();
   });
 
-  it("sends packet via REST endpoint", async () => {
+  it("preserves literal broadcast calls without requiring a target", async () => {
     const service = new WakeOnLanService();
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    (global as any).fetch = fetchMock;
-
     await service.sendWakePacket("aa:bb:cc:dd:ee:ff", "192.168.1.255", 7);
-
-    expect(fetchMock).toHaveBeenCalled();
-    const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/wol");
-    const body = JSON.parse(options.body);
-    expect(body.broadcastAddress).toBe("192.168.1.255");
-    expect(body.port).toBe(7);
-    expect(body.packet).toHaveLength(102);
+    expect(invoke).toHaveBeenCalledWith("wake_on_lan", {
+      macAddress: "aa:bb:cc:dd:ee:ff",
+      broadcastAddress: "192.168.1.255",
+      port: 7,
+      targetAddress: undefined,
+    });
   });
 });

@@ -1,12 +1,18 @@
+import { invoke } from "@tauri-apps/api/core";
 import { debugLog } from "../core/debugLogger";
 import { LocalStorageService } from "../storage/localStorageService";
 
 export type WakeRecurrence = "daily" | "weekly";
 
+interface WolSendOutcome {
+  warnings: string[];
+}
+
 export interface WakeSchedule {
   macAddress: string;
   wakeTime: string;
   broadcastAddress?: string;
+  targetAddress?: string;
   port: number;
   recurrence?: WakeRecurrence;
 }
@@ -21,11 +27,13 @@ export class WakeOnLanService {
    * @param macAddress - Target device's MAC address
    * @param broadcastAddress - Broadcast address to use
    * @param port - UDP port used to send the packet (default 9)
+   * @param targetAddress - Optional host name, FQDN, or IP to try in addition to broadcast
    */
   async sendWakePacket(
     macAddress: string,
     broadcastAddress: string = "255.255.255.255",
     port: number = 9,
+    targetAddress?: string,
   ): Promise<void> {
     try {
       // Validate MAC address format
@@ -34,62 +42,22 @@ export class WakeOnLanService {
         throw new Error("Invalid MAC address format");
       }
 
-      // Create magic packet
-      const magicPacket = this.createMagicPacket(cleanMac);
-
-      // Send via REST endpoint to a WOL service
-      await this.sendPacketViaHttp(magicPacket, broadcastAddress, port);
+      const outcome = await invoke<WolSendOutcome>("wake_on_lan", {
+        macAddress,
+        broadcastAddress,
+        port,
+        targetAddress: targetAddress?.trim() || undefined,
+      });
+      if (outcome?.warnings.length) {
+        console.warn("Wake-on-LAN completed with warnings:", outcome.warnings);
+      }
 
       debugLog(
-        `Wake-on-LAN packet sent to ${macAddress} via ${broadcastAddress}:${port}`,
+        `Wake-on-LAN packet sent to ${macAddress} via ${broadcastAddress}:${port}${targetAddress ? ` (target ${targetAddress})` : ""}`,
       );
     } catch (error) {
       console.error("Failed to send Wake-on-LAN packet:", error);
       throw error;
-    }
-  }
-
-  private createMagicPacket(macAddress: string): Uint8Array {
-    // Magic packet format: 6 bytes of 0xFF followed by 16 repetitions of the MAC address
-    const packet = new Uint8Array(102); // 6 + (6 * 16) = 102 bytes
-
-    // Fill first 6 bytes with 0xFF
-    for (let i = 0; i < 6; i++) {
-      packet[i] = 0xff;
-    }
-
-    // Convert MAC address to bytes
-    const macBytes = new Uint8Array(6);
-    for (let i = 0; i < 6; i++) {
-      macBytes[i] = parseInt(macAddress.substr(i * 2, 2), 16);
-    }
-
-    // Repeat MAC address 16 times
-    for (let i = 0; i < 16; i++) {
-      const offset = 6 + i * 6;
-      packet.set(macBytes, offset);
-    }
-
-    return packet;
-  }
-
-  private async sendPacketViaHttp(
-    packet: Uint8Array,
-    broadcastAddress: string,
-    port: number,
-  ): Promise<void> {
-    const response = await fetch("/api/wol", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        packet: Array.from(packet),
-        broadcastAddress,
-        port,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to send Wake-on-LAN packet");
     }
   }
 
@@ -133,9 +101,17 @@ export class WakeOnLanService {
           s.broadcastAddress,
           s.port,
           s.recurrence,
+          s.targetAddress,
         );
       } else if (nextTime.getTime() > now.getTime()) {
-        this.scheduleWakeUp(s.macAddress, nextTime, s.broadcastAddress, s.port);
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+          undefined,
+          s.targetAddress,
+        );
       } else {
         this.removeSchedule(s);
       }
@@ -155,6 +131,7 @@ export class WakeOnLanService {
     broadcastAddress?: string,
     port: number = 9,
     recurrence?: WakeRecurrence,
+    targetAddress?: string,
   ): void {
     const now = new Date();
     const delay = wakeTime.getTime() - now.getTime();
@@ -167,6 +144,7 @@ export class WakeOnLanService {
       macAddress,
       wakeTime: wakeTime.toISOString(),
       broadcastAddress,
+      targetAddress,
       port,
       recurrence,
     };
@@ -175,7 +153,7 @@ export class WakeOnLanService {
     const MAX_SAFE_TIMEOUT = 0x7fffffff;
 
     const execute = () => {
-      this.sendWakePacket(macAddress, broadcastAddress, port);
+      this.sendWakePacket(macAddress, broadcastAddress, port, targetAddress);
       this.timers.delete(this.getScheduleKey(schedule));
       this.removeSchedule(schedule);
       if (recurrence) {
@@ -189,6 +167,7 @@ export class WakeOnLanService {
           broadcastAddress,
           port,
           recurrence,
+          targetAddress,
         );
       }
     };
@@ -201,6 +180,7 @@ export class WakeOnLanService {
           broadcastAddress,
           port,
           recurrence,
+          targetAddress,
         );
       }, MAX_SAFE_TIMEOUT);
       this.timers.set(this.getScheduleKey(schedule), timer);
@@ -241,7 +221,7 @@ export class WakeOnLanService {
   }
 
   private getScheduleKey(schedule: WakeSchedule): string {
-    return `${schedule.macAddress}-${schedule.wakeTime}-${schedule.broadcastAddress ?? ""}-${schedule.port}`;
+    return `${schedule.macAddress}-${schedule.wakeTime}-${schedule.broadcastAddress ?? ""}-${schedule.targetAddress ?? ""}-${schedule.port}`;
   }
 
   private getSchedules(): WakeSchedule[] {
@@ -254,6 +234,7 @@ export class WakeOnLanService {
       (s) =>
         s.macAddress === schedule.macAddress &&
         s.broadcastAddress === schedule.broadcastAddress &&
+        s.targetAddress === schedule.targetAddress &&
         s.port === schedule.port &&
         s.wakeTime === schedule.wakeTime,
     );
@@ -272,6 +253,7 @@ export class WakeOnLanService {
         !(
           s.macAddress === schedule.macAddress &&
           s.broadcastAddress === schedule.broadcastAddress &&
+          s.targetAddress === schedule.targetAddress &&
           s.port === schedule.port &&
           s.wakeTime === schedule.wakeTime
         ),

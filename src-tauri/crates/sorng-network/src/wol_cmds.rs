@@ -7,10 +7,17 @@ pub async fn wake_on_lan(
     broadcast_address: Option<String>,
     port: Option<u16>,
     password: Option<String>,
-) -> Result<(), String> {
+    target_address: Option<String>,
+) -> Result<WolSendOutcome, String> {
     let wol = state.lock().await;
-    wol.wake_on_lan(mac_address, broadcast_address, port, password)
-        .await
+    wol.wake_on_lan(
+        mac_address,
+        broadcast_address,
+        port,
+        password,
+        target_address,
+    )
+    .await
 }
 
 /// Wake multiple hosts in parallel, each in its own thread
@@ -68,4 +75,3 @@ pub async fn update_wol_schedule(
     let mut wol = state.lock().await;
     wol.update_schedule(schedule)
 }
-

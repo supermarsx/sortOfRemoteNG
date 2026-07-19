@@ -25,6 +25,28 @@ describe("WakeOnLanService scheduling", () => {
     expect(schedules[0].macAddress).toBe(MAC);
   });
 
+  it("persists and delivers an optional DNS target", () => {
+    const service = new WakeOnLanService();
+    const wakeTime = new Date(Date.now() + 1000);
+    service.scheduleWakeUp(
+      MAC,
+      wakeTime,
+      "192.168.1.255",
+      7,
+      undefined,
+      "host.example.com",
+    );
+
+    expect(service.listSchedules()[0].targetAddress).toBe("host.example.com");
+    vi.advanceTimersByTime(1000);
+    expect(WakeOnLanService.prototype.sendWakePacket).toHaveBeenCalledWith(
+      MAC,
+      "192.168.1.255",
+      7,
+      "host.example.com",
+    );
+  });
+
   it("keeps multiple schedules for the same device", () => {
     const service = new WakeOnLanService();
     const first = new Date(Date.now() + 3600000);

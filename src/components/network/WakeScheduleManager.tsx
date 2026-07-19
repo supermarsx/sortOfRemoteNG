@@ -1,5 +1,8 @@
 import React from "react";
-import { type WakeSchedule, type WakeRecurrence } from "../../utils/network/wakeOnLan";
+import {
+  type WakeSchedule,
+  type WakeRecurrence,
+} from "../../utils/network/wakeOnLan";
 import {
   Trash2,
   Pencil,
@@ -13,9 +16,12 @@ import {
 } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
-import { EmptyState } from '../ui/display';
-import { useWakeScheduleManager, formatMac } from "../../hooks/network/useWakeScheduleManager";
-import { NumberInput, Select, TextInput } from '../ui/forms';
+import { EmptyState } from "../ui/display";
+import {
+  useWakeScheduleManager,
+  formatMac,
+} from "../../hooks/network/useWakeScheduleManager";
+import { NumberInput, Select, TextInput } from "../ui/forms";
 
 type Mgr = ReturnType<typeof useWakeScheduleManager>;
 
@@ -25,32 +31,56 @@ const ScheduleRow: React.FC<{ s: WakeSchedule; mgr: Mgr }> = ({ s, mgr }) => {
   const isPast = mgr.isSchedulePast(s.wakeTime) && !s.recurrence;
   return (
     <div
-      key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
+      key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.targetAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
       className={`sor-selection-row cursor-default ${isPast ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${isPast ? "bg-[var(--color-secondary)]/20" : "bg-success/20"}`}>
-          <Power size={16} className={isPast ? "text-[var(--color-textSecondary)]" : "text-success"} />
+        <div
+          className={`p-2 rounded-lg ${isPast ? "bg-[var(--color-secondary)]/20" : "bg-success/20"}`}
+        >
+          <Power
+            size={16}
+            className={
+              isPast ? "text-[var(--color-textSecondary)]" : "text-success"
+            }
+          />
         </div>
         <div>
-          <div className="text-sm font-mono text-[var(--color-text)]">{s.macAddress}</div>
+          <div className="text-sm font-mono text-[var(--color-text)]">
+            {s.macAddress}
+          </div>
+          {s.targetAddress && (
+            <div className="text-xs font-mono text-[var(--color-textMuted)]">
+              {s.targetAddress}
+            </div>
+          )}
           <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
             <Calendar size={10} />
             <span>{new Date(s.wakeTime).toLocaleString()}</span>
             {s.recurrence && (
               <>
                 <Repeat size={10} className="ml-1" />
-                <span className="text-warning">{mgr.getRecurrenceLabel(s.recurrence)}</span>
+                <span className="text-warning">
+                  {mgr.getRecurrenceLabel(s.recurrence)}
+                </span>
               </>
             )}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <button onClick={() => mgr.handleEdit(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Edit schedule">
+        <button
+          onClick={() => mgr.handleEdit(s)}
+          className="p-2 text-[var(--color-textSecondary)] hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+          title="Edit schedule"
+        >
           <Pencil size={14} />
         </button>
-        <button onClick={() => mgr.handleDelete(s)} className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 rounded-lg transition-colors" title="Delete schedule">
+        <button
+          onClick={() => mgr.handleDelete(s)}
+          className="p-2 text-[var(--color-textSecondary)] hover:text-error hover:bg-error/10 rounded-lg transition-colors"
+          title="Delete schedule"
+        >
           <Trash2 size={14} />
         </button>
       </div>
@@ -58,41 +88,93 @@ const ScheduleRow: React.FC<{ s: WakeSchedule; mgr: Mgr }> = ({ s, mgr }) => {
   );
 };
 
-
-
 const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 p-4 bg-[var(--color-surfaceHover)]/30 rounded-lg border border-[var(--color-border)]">
     <div className="flex items-center justify-between mb-2">
       <span className="text-sm font-medium text-[var(--color-text)]">
         {mgr.editing ? "Edit Schedule" : "New Schedule"}
       </span>
-      <button onClick={mgr.resetForm} className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)]">Cancel</button>
+      <button
+        onClick={mgr.resetForm}
+        className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
+      >
+        Cancel
+      </button>
     </div>
     <div>
       <label className="sor-form-label-xs">MAC Address</label>
-      <TextInput placeholder="00:11:22:33:44:55" variant="form" className="font-mono" value={mgr.form.macAddress} onChange={(v) => mgr.setForm({ ...mgr.form, macAddress: formatMac(v) })} />
+      <TextInput
+        placeholder="00:11:22:33:44:55"
+        variant="form"
+        className="font-mono"
+        value={mgr.form.macAddress}
+        onChange={(v) => mgr.setForm({ ...mgr.form, macAddress: formatMac(v) })}
+      />
     </div>
     <div>
       <label className="sor-form-label-xs">Wake Time</label>
-      <input type="datetime-local" className="sor-form-input" value={mgr.form.wakeTime} onChange={(e) => mgr.setForm({ ...mgr.form, wakeTime: e.target.value })} />
+      <input
+        type="datetime-local"
+        className="sor-form-input"
+        value={mgr.form.wakeTime}
+        onChange={(e) => mgr.setForm({ ...mgr.form, wakeTime: e.target.value })}
+      />
+    </div>
+    <div>
+      <label className="sor-form-label-xs">Target Host / FQDN (optional)</label>
+      <TextInput
+        placeholder="host.example.com or 192.168.1.20"
+        variant="form"
+        className="font-mono"
+        value={mgr.form.targetAddress ?? ""}
+        onChange={(v) => mgr.setForm({ ...mgr.form, targetAddress: v })}
+      />
     </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="sor-form-label-xs">Broadcast Address</label>
-        <TextInput placeholder="255.255.255.255" variant="form" value={mgr.form.broadcastAddress ?? ""} onChange={(v) => mgr.setForm({ ...mgr.form, broadcastAddress: v })} />
+        <TextInput
+          placeholder="255.255.255.255"
+          variant="form"
+          value={mgr.form.broadcastAddress ?? ""}
+          onChange={(v) => mgr.setForm({ ...mgr.form, broadcastAddress: v })}
+        />
       </div>
       <div>
         <label className="sor-form-label-xs">UDP Port</label>
-        <NumberInput value={mgr.form.port} onChange={(v: number) => mgr.setForm({ ...mgr.form, port: v })} variant="form" />
+        <NumberInput
+          value={mgr.form.port}
+          onChange={(v: number) => mgr.setForm({ ...mgr.form, port: v })}
+          variant="form"
+        />
       </div>
     </div>
     <div>
       <label className="sor-form-label-xs">Recurrence</label>
-      <Select value={mgr.form.recurrence ?? ""} onChange={(v: string) => mgr.setForm({ ...mgr.form, recurrence: v as WakeRecurrence })} options={[{ value: "", label: mgr.t("wake.once", "Once") }, { value: "daily", label: mgr.t("wake.daily", "Daily") }, { value: "weekly", label: mgr.t("wake.weekly", "Weekly") }]} variant="form" />
+      <Select
+        value={mgr.form.recurrence ?? ""}
+        onChange={(v: string) =>
+          mgr.setForm({ ...mgr.form, recurrence: v as WakeRecurrence })
+        }
+        options={[
+          { value: "", label: mgr.t("wake.once", "Once") },
+          { value: "daily", label: mgr.t("wake.daily", "Daily") },
+          { value: "weekly", label: mgr.t("wake.weekly", "Weekly") },
+        ]}
+        variant="form"
+      />
     </div>
-    <button onClick={mgr.handleSubmit} disabled={!mgr.form.macAddress || mgr.form.macAddress.length < 17} className="w-full flex items-center justify-center space-x-2 bg-warning hover:bg-warning/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-warning/20 disabled:shadow-none">
+    <button
+      onClick={mgr.handleSubmit}
+      disabled={!mgr.form.macAddress || mgr.form.macAddress.length < 17}
+      className="w-full flex items-center justify-center space-x-2 bg-warning hover:bg-warning/90 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-warning/20 disabled:shadow-none"
+    >
       <Save size={16} />
-      <span>{mgr.editing ? mgr.t("common.save", "Save") : mgr.t("common.add", "Add Schedule")}</span>
+      <span>
+        {mgr.editing
+          ? mgr.t("common.save", "Save")
+          : mgr.t("common.add", "Add Schedule")}
+      </span>
     </button>
   </div>
 );
@@ -139,7 +221,11 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="relative z-10 p-5">
           <div className="sor-selection-list max-h-60 overflow-y-auto mb-4">
             {mgr.schedules.map((s) => (
-              <ScheduleRow key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`} s={s} mgr={mgr} />
+              <ScheduleRow
+                key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.targetAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
+                s={s}
+                mgr={mgr}
+              />
             ))}
             {mgr.schedules.length === 0 && !mgr.showForm && (
               <EmptyState
@@ -154,7 +240,10 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
           {mgr.showForm ? (
             <ScheduleForm mgr={mgr} />
           ) : (
-            <button onClick={() => mgr.setShowForm(true)} className="sor-option-chip w-full justify-center py-2.5 font-medium">
+            <button
+              onClick={() => mgr.setShowForm(true)}
+              className="sor-option-chip w-full justify-center py-2.5 font-medium"
+            >
               <Plus size={16} />
               <span>New Schedule</span>
             </button>

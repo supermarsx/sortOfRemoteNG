@@ -71,12 +71,23 @@ describe("WakeScheduleManager", () => {
     fireEvent.change(macInput, {
       target: { value: "AA:BB:CC:DD:EE:FF" },
     });
+    fireEvent.change(
+      screen.getByPlaceholderText("host.example.com or 192.168.1.20"),
+      { target: { value: "host.example.com" } },
+    );
 
     const addButton = screen.getByRole("button", { name: /Add Schedule/i });
     fireEvent.click(addButton);
 
     await waitFor(() => {
-      expect(mocks.scheduleWakeUp).toHaveBeenCalled();
+      expect(mocks.scheduleWakeUp).toHaveBeenCalledWith(
+        "AA:BB:CC:DD:EE:FF",
+        expect.any(Date),
+        undefined,
+        9,
+        undefined,
+        "host.example.com",
+      );
     });
   });
 
@@ -97,7 +108,7 @@ describe("WakeScheduleManager", () => {
     );
 
     await screen.findByText("Wake Schedule Manager");
-    const backdrop = document.body.querySelector('.sor-modal-backdrop');
+    const backdrop = document.body.querySelector(".sor-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 

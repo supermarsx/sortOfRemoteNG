@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { lookupVendor, lookupVendorLocal } from '../../utils/network/macVendorLookup';
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  lookupVendor,
+  lookupVendorLocal,
+} from "../../utils/network/macVendorLookup";
 
 interface WolDevice {
   ip: string;
@@ -8,33 +11,73 @@ interface WolDevice {
   hostname: string | null;
   last_seen: string | null;
   vendor?: string | null;
-  vendorSource?: 'local' | 'maclookup' | 'macvendors' | null;
+  vendorSource?: "local" | "maclookup" | "macvendors" | null;
 }
 
 interface StatusMessage {
-  type: 'success' | 'error' | null;
+  type: "success" | "warning" | "error" | null;
   message: string;
 }
 
+interface WolSendOutcome {
+  sentTo: string[];
+  warnings: string[];
+  configuredBroadcastDelivered: boolean;
+  limitedBroadcastFallbackDelivered: boolean;
+  resolvedTargetDelivered: boolean;
+  targetResolutionFailed: boolean;
+}
+
+function wakeStatus(mac: string, outcome?: WolSendOutcome): StatusMessage {
+  if (!outcome) {
+    // Compatibility with older backends that returned no structured payload.
+    return { type: "success", message: `Wake packet sent to ${mac}` };
+  }
+  if (outcome.limitedBroadcastFallbackDelivered) {
+    const delivery = outcome.resolvedTargetDelivered
+      ? "the resolved target and limited-broadcast fallback"
+      : "only the limited-broadcast fallback";
+    return {
+      type: "warning",
+      message:
+        `Wake packet sent to ${mac} using ${delivery}. ${outcome.warnings.join(" ")}`.trim(),
+    };
+  }
+  if (outcome.warnings.length > 0) {
+    return {
+      type: "warning",
+      message:
+        `Wake packet sent to ${mac} with warnings. ${outcome.warnings.join(" ")}`.trim(),
+    };
+  }
+  return { type: "success", message: `Wake packet sent to ${mac}` };
+}
+
 export function useWOLQuickTool(onClose: () => void) {
-  const [macAddress, setMacAddress] = useState('');
-  const [broadcastAddress, setBroadcastAddress] = useState('255.255.255.255');
+  const [macAddress, setMacAddress] = useState("");
+  const [broadcastAddress, setBroadcastAddress] = useState("255.255.255.255");
+  const [targetAddress, setTargetAddress] = useState("");
   const [port, setPort] = useState(9);
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState("");
   const [useSecureOn, setUseSecureOn] = useState(false);
   const [devices, setDevices] = useState<WolDevice[]>([]);
-  const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
+  const [selectedDevices, setSelectedDevices] = useState<Set<string>>(
+    new Set(),
+  );
   const [isScanning, setIsScanning] = useState(false);
   const [isBulkWaking, setIsBulkWaking] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
-  const [status, setStatus] = useState<StatusMessage>({ type: null, message: '' });
+  const [status, setStatus] = useState<StatusMessage>({
+    type: null,
+    message: "",
+  });
   const [recentMacs, setRecentMacs] = useState<string[]>([]);
   const [currentVendor, setCurrentVendor] = useState<string | null>(null);
   const [showScheduleManager, setShowScheduleManager] = useState(false);
 
   // Load recent MACs from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('wol-recent-macs');
+    const saved = localStorage.getItem("wol-recent-macs");
     if (saved) {
       try {
         setRecentMacs(JSON.parse(saved));
@@ -56,17 +99,20 @@ export function useWOLQuickTool(onClose: () => void) {
 
   const saveRecentMac = useCallback(
     (mac: string) => {
-      const updated = [mac, ...recentMacs.filter((m) => m !== mac)].slice(0, 10);
+      const updated = [mac, ...recentMacs.filter((m) => m !== mac)].slice(
+        0,
+        10,
+      );
       setRecentMacs(updated);
-      localStorage.setItem('wol-recent-macs', JSON.stringify(updated));
+      localStorage.setItem("wol-recent-macs", JSON.stringify(updated));
     },
     [recentMacs],
   );
 
   const formatMac = useCallback((value: string): string => {
-    const clean = value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+    const clean = value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
     const pairs = clean.match(/.{1,2}/g) || [];
-    return pairs.slice(0, 6).join(':');
+    return pairs.slice(0, 6).join(":");
   }, []);
 
   const handleMacChange = useCallback(
@@ -78,19 +124,19 @@ export function useWOLQuickTool(onClose: () => void) {
 
   const handleScan = useCallback(async () => {
     setIsScanning(true);
-    setStatus({ type: null, message: '' });
+    setStatus({ type: null, message: "" });
     try {
-      const result = await invoke<WolDevice[]>('discover_wol_devices');
+      const result = await invoke<WolDevice[]>("discover_wol_devices");
 
       const devicesWithLocalVendor: WolDevice[] = result.map((device) => ({
         ...device,
         vendor: lookupVendorLocal(device.mac),
-        vendorSource: lookupVendorLocal(device.mac) ? ('local' as const) : null,
+        vendorSource: lookupVendorLocal(device.mac) ? ("local" as const) : null,
       }));
       setDevices(devicesWithLocalVendor);
 
       if (result.length === 0) {
-        setStatus({ type: 'error', message: 'No devices found in ARP table' });
+        setStatus({ type: "error", message: "No devices found in ARP table" });
       } else {
         setIsLookingUp(true);
         const updatedDevices = [...devicesWithLocalVendor];
@@ -98,9 +144,15 @@ export function useWOLQuickTool(onClose: () => void) {
         for (let i = 0; i < updatedDevices.length; i++) {
           if (!updatedDevices[i].vendor) {
             try {
-              const { vendor, source } = await lookupVendor(updatedDevices[i].mac);
+              const { vendor, source } = await lookupVendor(
+                updatedDevices[i].mac,
+              );
               if (vendor) {
-                updatedDevices[i] = { ...updatedDevices[i], vendor, vendorSource: source };
+                updatedDevices[i] = {
+                  ...updatedDevices[i],
+                  vendor,
+                  vendorSource: source,
+                };
                 setDevices([...updatedDevices]);
               }
             } catch {
@@ -111,41 +163,54 @@ export function useWOLQuickTool(onClose: () => void) {
         setIsLookingUp(false);
       }
     } catch (error) {
-      setStatus({ type: 'error', message: `Scan failed: ${error}` });
+      setStatus({ type: "error", message: `Scan failed: ${error}` });
     } finally {
       setIsScanning(false);
     }
   }, []);
 
   const handleWake = useCallback(
-    async (targetMac?: string) => {
+    async (targetMac?: string, discoveredTarget?: string | null) => {
       const mac = targetMac || macAddress;
       if (!mac) {
-        setStatus({ type: 'error', message: 'Please enter a MAC address' });
+        setStatus({ type: "error", message: "Please enter a MAC address" });
         return;
       }
 
-      const cleanMac = mac.replace(/[:-]/g, '');
+      const cleanMac = mac.replace(/[:-]/g, "");
       if (!/^[0-9a-fA-F]{12}$/.test(cleanMac)) {
-        setStatus({ type: 'error', message: 'Invalid MAC address format' });
+        setStatus({ type: "error", message: "Invalid MAC address format" });
         return;
       }
 
-      setStatus({ type: null, message: '' });
+      setStatus({ type: null, message: "" });
       try {
-        await invoke('wake_on_lan', {
+        const outcome = await invoke<WolSendOutcome>("wake_on_lan", {
           macAddress: mac,
           broadcastAddress: broadcastAddress || undefined,
+          targetAddress:
+            discoveredTarget?.trim() || targetAddress.trim() || undefined,
           port: port || undefined,
           password: useSecureOn && password ? password : undefined,
         });
-        setStatus({ type: 'success', message: `Wake packet sent to ${mac}` });
+        setStatus(wakeStatus(mac, outcome));
         saveRecentMac(mac);
       } catch (error) {
-        setStatus({ type: 'error', message: `Failed to send wake packet: ${error}` });
+        setStatus({
+          type: "error",
+          message: `Failed to send wake packet: ${error}`,
+        });
       }
     },
-    [macAddress, broadcastAddress, port, useSecureOn, password, saveRecentMac],
+    [
+      macAddress,
+      broadcastAddress,
+      targetAddress,
+      port,
+      useSecureOn,
+      password,
+      saveRecentMac,
+    ],
   );
 
   const toggleDeviceSelection = useCallback((mac: string) => {
@@ -170,24 +235,32 @@ export function useWOLQuickTool(onClose: () => void) {
 
   const handleBulkWake = useCallback(async () => {
     if (selectedDevices.size === 0) {
-      setStatus({ type: 'error', message: 'No devices selected' });
+      setStatus({ type: "error", message: "No devices selected" });
       return;
     }
 
     setIsBulkWaking(true);
-    setStatus({ type: null, message: '' });
+    setStatus({ type: null, message: "" });
 
     let successCount = 0;
     let failCount = 0;
+    let warningCount = 0;
 
     for (const mac of selectedDevices) {
       try {
-        await invoke('wake_on_lan', {
+        const device = devices.find((candidate) => candidate.mac === mac);
+        const outcome = await invoke<WolSendOutcome>("wake_on_lan", {
           macAddress: mac,
           broadcastAddress: broadcastAddress || undefined,
+          targetAddress:
+            device?.hostname || device?.ip || targetAddress.trim() || undefined,
           port: port || undefined,
           password: useSecureOn && password ? password : undefined,
         });
+        if (outcome?.warnings.length) {
+          warningCount++;
+          console.warn(`Wake-on-LAN warnings for ${mac}:`, outcome.warnings);
+        }
         successCount++;
         saveRecentMac(mac);
       } catch {
@@ -197,43 +270,70 @@ export function useWOLQuickTool(onClose: () => void) {
 
     setIsBulkWaking(false);
 
-    if (failCount === 0) {
+    if (failCount === 0 && warningCount === 0) {
       setStatus({
-        type: 'success',
-        message: `Successfully sent wake packets to ${successCount} device${successCount !== 1 ? 's' : ''}`,
+        type: "success",
+        message: `Successfully sent wake packets to ${successCount} device${successCount !== 1 ? "s" : ""}`,
+      });
+    } else if (failCount === 0) {
+      setStatus({
+        type: "warning",
+        message: `Sent ${successCount} wake packet${successCount !== 1 ? "s" : ""}; ${warningCount} used a DNS or delivery fallback`,
       });
     } else if (successCount === 0) {
-      setStatus({ type: 'error', message: `Failed to wake all ${failCount} devices` });
+      setStatus({
+        type: "error",
+        message: `Failed to wake all ${failCount} devices`,
+      });
     } else {
       setStatus({
-        type: 'success',
-        message: `Sent ${successCount} wake packet${successCount !== 1 ? 's' : ''}, ${failCount} failed`,
+        type: "warning",
+        message: `Sent ${successCount} wake packet${successCount !== 1 ? "s" : ""}, ${failCount} failed${warningCount ? `, ${warningCount} with warnings` : ""}`,
       });
     }
 
     setSelectedDevices(new Set());
-  }, [selectedDevices, broadcastAddress, port, useSecureOn, password, saveRecentMac]);
+  }, [
+    selectedDevices,
+    devices,
+    broadcastAddress,
+    targetAddress,
+    port,
+    useSecureOn,
+    password,
+    saveRecentMac,
+  ]);
 
   const handleWakeAll = useCallback(async () => {
     if (devices.length === 0) {
-      setStatus({ type: 'error', message: 'No devices to wake' });
+      setStatus({ type: "error", message: "No devices to wake" });
       return;
     }
 
     setIsBulkWaking(true);
-    setStatus({ type: null, message: '' });
+    setStatus({ type: null, message: "" });
 
     let successCount = 0;
     let failCount = 0;
+    let warningCount = 0;
 
     for (const device of devices) {
       try {
-        await invoke('wake_on_lan', {
+        const outcome = await invoke<WolSendOutcome>("wake_on_lan", {
           macAddress: device.mac,
           broadcastAddress: broadcastAddress || undefined,
+          targetAddress:
+            device.hostname || device.ip || targetAddress.trim() || undefined,
           port: port || undefined,
           password: useSecureOn && password ? password : undefined,
         });
+        if (outcome?.warnings.length) {
+          warningCount++;
+          console.warn(
+            `Wake-on-LAN warnings for ${device.mac}:`,
+            outcome.warnings,
+          );
+        }
         successCount++;
         saveRecentMac(device.mac);
       } catch {
@@ -243,23 +343,37 @@ export function useWOLQuickTool(onClose: () => void) {
 
     setIsBulkWaking(false);
 
-    if (failCount === 0) {
+    if (failCount === 0 && warningCount === 0) {
       setStatus({
-        type: 'success',
+        type: "success",
         message: `Successfully sent wake packets to all ${successCount} devices`,
+      });
+    } else if (failCount === 0) {
+      setStatus({
+        type: "warning",
+        message: `Sent wake packets to all ${successCount} devices; ${warningCount} used a DNS or delivery fallback`,
       });
     } else {
       setStatus({
-        type: 'success',
-        message: `Sent ${successCount} wake packet${successCount !== 1 ? 's' : ''}, ${failCount} failed`,
+        type: "warning",
+        message: `Sent ${successCount} wake packet${successCount !== 1 ? "s" : ""}, ${failCount} failed${warningCount ? `, ${warningCount} with warnings` : ""}`,
       });
     }
-  }, [devices, broadcastAddress, port, useSecureOn, password, saveRecentMac]);
+  }, [
+    devices,
+    broadcastAddress,
+    targetAddress,
+    port,
+    useSecureOn,
+    password,
+    saveRecentMac,
+  ]);
 
   const handleSelectDevice = useCallback((device: WolDevice) => {
     setMacAddress(device.mac);
+    setTargetAddress(device.hostname || device.ip || "");
     setCurrentVendor(device.vendor || null);
-    setStatus({ type: null, message: '' });
+    setStatus({ type: null, message: "" });
   }, []);
 
   const handlePasswordChange = useCallback(
@@ -273,6 +387,7 @@ export function useWOLQuickTool(onClose: () => void) {
     // State
     macAddress,
     broadcastAddress,
+    targetAddress,
     port,
     password,
     useSecureOn,
@@ -288,6 +403,7 @@ export function useWOLQuickTool(onClose: () => void) {
     // Setters
     setMacAddress,
     setBroadcastAddress,
+    setTargetAddress,
     setPort,
     setUseSecureOn,
     setShowScheduleManager,
