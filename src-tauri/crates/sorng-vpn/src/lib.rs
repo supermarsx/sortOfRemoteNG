@@ -27,6 +27,7 @@ pub mod tailscale;
 pub mod unified_chain;
 pub mod unified_chain_service;
 pub mod validation;
+pub mod vpn_lifecycle;
 pub mod wireguard;
 pub mod zerotier;
 

@@ -5,6 +5,7 @@ import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { getStoredIdentity } from "../../src/utils/auth/trustStore";
+import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
 
 // Mock Tauri invoke + Channel
 vi.mock("@tauri-apps/api/core", () => ({
@@ -232,6 +233,223 @@ describe("RDPClient", () => {
           }),
         );
       });
+    });
+
+    it("acquires a session VPN before RDP and releases it after target disconnect", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+        if (cmd === "list_rdp_sessions") return [];
+        if (cmd === "list_openvpn_connections") {
+          return [
+            {
+              id: "vpn-office",
+              name: "Office VPN",
+              config: {},
+              status: "disconnected",
+              created_at: "2026-07-19T00:00:00.000Z",
+            },
+          ];
+        }
+        if (
+          cmd === "list_wireguard_connections" ||
+          cmd === "list_tailscale_connections" ||
+          cmd === "list_zerotier_connections"
+        ) {
+          return [];
+        }
+        if (cmd === "acquire_vpn_leases") {
+          const ownerId = String((args as { ownerId: string }).ownerId);
+          return {
+            owner_id: ownerId,
+            leases: [
+              {
+                vpn_type: "openvpn",
+                connection_id: "vpn-office",
+                was_already_connected: false,
+                already_owned: false,
+                started_by_lifecycle: true,
+                lease_count: 1,
+              },
+            ],
+          };
+        }
+        if (cmd === "release_vpn_leases") {
+          return {
+            owner_id: String((args as { ownerId: string }).ownerId),
+            released: [],
+            errors: [],
+          };
+        }
+        if (cmd === "detect_keyboard_layout") return 0x0409;
+        if (cmd === "connect_rdp") return "rdp-session-123";
+        return undefined;
+      });
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "acquire_vpn_leases",
+          expect.objectContaining({
+            ownerId: expect.stringMatching(/^test-rdp-session:rdp:\d+$/),
+            requests: [
+              {
+                vpn_type: "openvpn",
+                connection_id: "vpn-office",
+                auto_connect: true,
+              },
+            ],
+          }),
+        );
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+
+      let commands = mockInvoke.mock.calls.map(([command]) => command);
+      expect(commands.indexOf("acquire_vpn_leases")).toBeLessThan(
+        commands.indexOf("connect_rdp"),
+      );
+
+      emitStatus(
+        "connected",
+        "Connected (1920x1080)",
+        "rdp-session-123",
+        1920,
+        1080,
+      );
+      const disconnectButton = document.querySelector<HTMLButtonElement>(
+        'button[data-tooltip="Disconnect"]',
+      );
+      expect(disconnectButton).not.toBeNull();
+      fireEvent.click(disconnectButton!);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
+          ownerId: expect.stringMatching(/^test-rdp-session:rdp:\d+$/),
+        });
+      });
+      commands = mockInvoke.mock.calls.map(([command]) => command);
+      expect(commands.lastIndexOf("disconnect_rdp")).toBeLessThan(
+        commands.lastIndexOf("release_vpn_leases"),
+      );
+    });
+
+    it("releases a stale handed-off VPN owner without touching its replacement", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const overlapSession = {
+        ...mockSession,
+        vpnLeaseOwnerId: "rdp-old-owner",
+      };
+      const liveOwners = new Set<string>(["rdp-old-owner"]);
+      const acquiredOwners: string[] = [];
+      const releaseCalls: string[] = [];
+      let allowOldOwnerRelease!: () => void;
+      const oldOwnerReleaseGate = new Promise<void>((resolve) => {
+        allowOldOwnerRelease = resolve;
+      });
+      let connectCount = 0;
+
+      mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+        const invokeArgs = args as
+          | { ownerId?: string; sessionId?: string }
+          | undefined;
+        const ownerId = String(invokeArgs?.ownerId);
+        if (cmd === "list_rdp_sessions") return [];
+        if (cmd === "list_openvpn_connections") {
+          return [
+            {
+              id: "vpn-office",
+              name: "Office VPN",
+              config: {},
+              status: "disconnected",
+              created_at: "2026-07-19T00:00:00.000Z",
+            },
+          ];
+        }
+        if (
+          cmd === "list_wireguard_connections" ||
+          cmd === "list_tailscale_connections" ||
+          cmd === "list_zerotier_connections"
+        ) {
+          return [];
+        }
+        if (cmd === "acquire_vpn_leases") {
+          acquiredOwners.push(ownerId);
+          liveOwners.add(ownerId);
+          return {
+            owner_id: ownerId,
+            leases: [
+              {
+                vpn_type: "openvpn",
+                connection_id: "vpn-office",
+                was_already_connected: true,
+                already_owned: false,
+                started_by_lifecycle: true,
+                lease_count: liveOwners.size,
+              },
+            ],
+          };
+        }
+        if (cmd === "release_vpn_leases") {
+          releaseCalls.push(ownerId);
+          if (ownerId === "rdp-old-owner") await oldOwnerReleaseGate;
+          liveOwners.delete(ownerId);
+          return { owner_id: ownerId, released: [], errors: [] };
+        }
+        if (cmd === "detect_keyboard_layout") return 0x0409;
+        if (cmd === "connect_rdp") {
+          connectCount += 1;
+          return `rdp-overlap-${connectCount}`;
+        }
+        return undefined;
+      });
+
+      let model: ReturnType<typeof useRDPClient> | null = null;
+      const HookHarness = () => {
+        model = useRDPClient(overlapSession);
+        return null;
+      };
+      render(
+        <ToastProvider>
+          <ConnectionProvider>
+            <HookHarness />
+          </ConnectionProvider>
+        </ToastProvider>,
+      );
+
+      await waitFor(() => {
+        expect(connectCount).toBe(1);
+        expect(releaseCalls).toContain("rdp-old-owner");
+      });
+
+      let replacementInit!: Promise<void>;
+      act(() => {
+        replacementInit = model!.initializeRDPConnection();
+      });
+      await waitFor(() => expect(connectCount).toBe(2));
+      await act(async () => replacementInit);
+
+      await act(async () => {
+        allowOldOwnerRelease();
+        await oldOwnerReleaseGate;
+      });
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+          sessionId: "rdp-overlap-1",
+        });
+      });
+
+      expect(acquiredOwners).toHaveLength(2);
+      expect(acquiredOwners[0]).not.toBe(acquiredOwners[1]);
+      expect(liveOwners).toEqual(new Set([acquiredOwners[1]]));
+      expect(releaseCalls).toContain(acquiredOwners[0]);
+      expect(releaseCalls).not.toContain(acquiredOwners[1]);
     });
 
     it("creates the resolved final SSH bastion before connecting RDP", async () => {

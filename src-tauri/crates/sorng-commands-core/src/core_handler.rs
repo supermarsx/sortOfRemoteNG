@@ -322,6 +322,8 @@ pub fn is_command(command: &str) -> bool {
             | "delete_connection_chain"
             | "update_connection_chain_layers"
             | "ensure_vpn_connected"
+            | "acquire_vpn_leases"
+            | "release_vpn_leases"
             | "generate_qr_code"
             | "generate_qr_code_png"
             | "connect_wmi"
@@ -1628,6 +1630,8 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         chaining_commands::delete_connection_chain,
         chaining_commands::update_connection_chain_layers,
         chaining_commands::ensure_vpn_connected,
+        chaining_commands::acquire_vpn_leases,
+        chaining_commands::release_vpn_leases,
         qr_commands::generate_qr_code,
         qr_commands::generate_qr_code_png,
         wmi_commands::connect_wmi,

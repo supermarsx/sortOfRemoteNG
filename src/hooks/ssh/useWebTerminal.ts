@@ -39,6 +39,12 @@ import {
   resolveRuntimeNetworkPath,
   type RuntimeNetworkPath,
 } from "../../utils/network/resolveRuntimeNetworkPath";
+import {
+  acquireSessionVpnLeases,
+  createVpnLeaseAttemptOwnerId,
+  releaseSessionVpnLeases,
+  vpnLeaseCleanupError,
+} from "../../utils/network/vpnSessionLeases";
 import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
@@ -108,6 +114,11 @@ export function useWebTerminal(
 
   /* ── SSH refs ── */
   const sshSessionId = useRef<string | null>(null);
+  const vpnLeaseOwnerRef = useRef<string | null>(
+    session.vpnLeaseOwnerId ?? null,
+  );
+  const vpnLeaseReleasesRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const sshInitGenRef = useRef(0);
   const isSshReady = useRef(false);
   const isConnecting = useRef(false);
   const isDisposed = useRef(false);
@@ -617,31 +628,86 @@ export function useWebTerminal(
 
   /* ── SSH connect / disconnect ── */
 
-  const disconnectSsh = useCallback(() => {
-    if (sshSessionId.current) {
-      const sid = sshSessionId.current;
+  const releaseVpnLeaseOwner = useCallback(
+    async (ownerId: string): Promise<boolean> => {
+      const existing = vpnLeaseReleasesRef.current.get(ownerId);
+      if (existing) return existing;
 
-      // Fire "disconnected" lifecycle event and unregister from scripts engine
-      invoke("ssh_scripts_notify_event", {
-        event: {
-          sessionId: sid,
-          eventType: "disconnected",
-          timestamp: new Date().toISOString(),
-        },
-      }).catch(() => {});
-      invoke("ssh_scripts_unregister_session", { sessionId: sid }).catch(
-        () => {},
-      );
+      const release = (async (): Promise<boolean> => {
+        try {
+          const result = await releaseSessionVpnLeases(ownerId);
+          const cleanupError = vpnLeaseCleanupError(result);
+          if (cleanupError) {
+            writeLine(
+              `\x1b[33mVPN cleanup needs attention: ${cleanupError}\x1b[0m`,
+            );
+          }
+          return !cleanupError;
+        } catch (releaseError) {
+          writeLine(
+            `\x1b[33mVPN cleanup could not be confirmed: ${String(releaseError)}\x1b[0m`,
+          );
+          return false;
+        }
+      })();
 
-      invoke("disconnect_ssh", { sessionId: sid }).catch(() => undefined);
-      sshSessionId.current = null;
-      isSshReady.current = false;
-      isConnecting.current = false;
-      setStatusState("idle");
-      setError("");
-      writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
+      vpnLeaseReleasesRef.current.set(ownerId, release);
+      try {
+        return await release;
+      } finally {
+        vpnLeaseReleasesRef.current.delete(ownerId);
+      }
+    },
+    [writeLine],
+  );
+
+  const releaseOwnedVpnLeases = useCallback(async () => {
+    const ownerId =
+      vpnLeaseOwnerRef.current ?? sessionRef.current.vpnLeaseOwnerId ?? null;
+    if (!ownerId) return;
+
+    const clean = await releaseVpnLeaseOwner(ownerId);
+    if (clean && vpnLeaseOwnerRef.current === ownerId) {
+      vpnLeaseOwnerRef.current = null;
     }
-  }, [setStatusState, writeLine]);
+  }, [releaseVpnLeaseOwner]);
+
+  const disconnectCurrentSsh = useCallback(
+    async (preserveConnecting = false) => {
+      if (sshSessionId.current) {
+        const sid = sshSessionId.current;
+
+        // Fire "disconnected" lifecycle event and unregister from scripts engine
+        invoke("ssh_scripts_notify_event", {
+          event: {
+            sessionId: sid,
+            eventType: "disconnected",
+            timestamp: new Date().toISOString(),
+          },
+        }).catch(() => {});
+        invoke("ssh_scripts_unregister_session", { sessionId: sid }).catch(
+          () => {},
+        );
+
+        await invoke("disconnect_ssh", { sessionId: sid }).catch(
+          () => undefined,
+        );
+        sshSessionId.current = null;
+        isSshReady.current = false;
+        if (!preserveConnecting) isConnecting.current = false;
+        setStatusState("idle");
+        setError("");
+        writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
+      }
+      await releaseOwnedVpnLeases();
+    },
+    [releaseOwnedVpnLeases, setStatusState, writeLine],
+  );
+
+  const disconnectSsh = useCallback(async () => {
+    sshInitGenRef.current++;
+    await disconnectCurrentSsh();
+  }, [disconnectCurrentSsh]);
 
   const initSsh = useCallback(
     async (force = false) => {
@@ -653,6 +719,57 @@ export function useWebTerminal(
         setStatusState("connected");
         return;
       }
+
+      const gen = ++sshInitGenRef.current;
+      const stale = () => sshInitGenRef.current !== gen;
+      let attemptVpnLeaseOwnerId: string | null = null;
+      let attemptSshSessionId: string | null = null;
+
+      const releaseAttemptVpnLease = async () => {
+        const ownerId = attemptVpnLeaseOwnerId;
+        if (!ownerId) return;
+        attemptVpnLeaseOwnerId = null;
+        await releaseVpnLeaseOwner(ownerId);
+        if (vpnLeaseOwnerRef.current === ownerId) {
+          vpnLeaseOwnerRef.current = null;
+        }
+      };
+
+      const cleanupAttemptSsh = async () => {
+        const sessionId = attemptSshSessionId;
+        if (!sessionId) return;
+        attemptSshSessionId = null;
+        await invoke("disconnect_ssh", { sessionId }).catch(() => undefined);
+        if (sshSessionId.current === sessionId) {
+          sshSessionId.current = null;
+        }
+      };
+
+      const stopIfStale = async () => {
+        if (!stale()) return false;
+        await cleanupAttemptSsh();
+        await releaseAttemptVpnLease();
+        return true;
+      };
+
+      const handoffAttempt = async (targetSessionId: string) => {
+        const previousOwnerId =
+          vpnLeaseOwnerRef.current ?? currentSession.vpnLeaseOwnerId ?? null;
+        const nextOwnerId = attemptVpnLeaseOwnerId;
+
+        sshSessionId.current = targetSessionId;
+        vpnLeaseOwnerRef.current = nextOwnerId;
+
+        if (previousOwnerId && previousOwnerId !== nextOwnerId) {
+          await releaseVpnLeaseOwner(previousOwnerId);
+        }
+      };
+
+      const commitAttemptHandoff = () => {
+        attemptSshSessionId = null;
+        attemptVpnLeaseOwnerId = null;
+      };
+
       if (force) sshSessionId.current = null;
 
       const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? false;
@@ -729,17 +846,56 @@ export function useWebTerminal(
             }
           : null;
 
+      const resolveAndAcquireVpnPath = async () => {
+        // Resolve every configured source against one live snapshot. Resolution
+        // is deliberately fail-closed: an invalid/missing/unsupported layer
+        // must never degrade into a direct connection.
+        const resolvedPath = await resolveRuntimeNetworkPath(
+          currentConnection,
+          connectionsRef.current,
+          "ssh",
+        );
+        const steps = resolvedPath.transport.vpnPreSteps;
+        if (steps.length === 0) return resolvedPath;
+
+        writeLine("\x1b[36mEstablishing session-owned VPN path...\x1b[0m");
+        attemptVpnLeaseOwnerId = createVpnLeaseAttemptOwnerId(
+          currentSession.id,
+          "ssh",
+        );
+        const leaseResult = await acquireSessionVpnLeases(
+          attemptVpnLeaseOwnerId,
+          steps,
+        );
+        for (const lease of leaseResult.leases) {
+          const detail = lease.already_owned
+            ? "lease retained"
+            : lease.was_already_connected
+              ? "already connected; lease acquired"
+              : "connected; lease acquired";
+          writeLine(
+            `\x1b[32m  ${lease.vpn_type}: ${detail} (${lease.lease_count} session${lease.lease_count === 1 ? "" : "s"})\x1b[0m`,
+          );
+        }
+        return resolvedPath;
+      };
+
       try {
         // Try reattaching to existing backend session
         if (currentSession.backendSessionId && !force) {
           const isAlive = await invoke<boolean>("is_session_alive", {
             sessionId: currentSession.backendSessionId,
           }).catch(() => false);
+          if (await stopIfStale()) return;
           if (isAlive) {
-            sshSessionId.current = currentSession.backendSessionId;
+            // Reattachment still verifies/acquires the configured VPN path. A
+            // remounted view must not assume machine-wide VPN state survived.
+            runtimePath = await resolveAndAcquireVpnPath();
+            if (await stopIfStale()) return;
             const buffer = await invoke<string>("get_terminal_buffer", {
               sessionId: currentSession.backendSessionId,
             }).catch(() => "");
+            if (await stopIfStale()) return;
             if (buffer) {
               restoreBuffer(buffer);
               writeLine("\x1b[32mRestored terminal buffer from session\x1b[0m");
@@ -748,7 +904,11 @@ export function useWebTerminal(
               "get_shell_info",
               { sessionId: currentSession.backendSessionId },
             ).catch(() => null);
+            if (await stopIfStale()) return;
             if (existingShellId) {
+              await handoffAttempt(currentSession.backendSessionId);
+              if (await stopIfStale()) return;
+              commitAttemptHandoff();
               dispatch({
                 type: "UPDATE_SESSION",
                 payload: {
@@ -756,6 +916,8 @@ export function useWebTerminal(
                   shellId: existingShellId,
                   status: "connected",
                   errorMessage: undefined,
+                  networkPath: runtimePath?.snapshot,
+                  vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
                 },
               });
               writeLine("\x1b[32mReattached to existing SSH session\x1b[0m");
@@ -765,6 +927,10 @@ export function useWebTerminal(
             const shellId = await invoke<string>("reattach_session", {
               sessionId: currentSession.backendSessionId,
             });
+            if (await stopIfStale()) return;
+            await handoffAttempt(currentSession.backendSessionId);
+            if (await stopIfStale()) return;
+            commitAttemptHandoff();
             dispatch({
               type: "UPDATE_SESSION",
               payload: {
@@ -772,6 +938,8 @@ export function useWebTerminal(
                 shellId,
                 status: "connected",
                 errorMessage: undefined,
+                networkPath: runtimePath?.snapshot,
+                vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
               },
             });
             writeLine(
@@ -786,55 +954,11 @@ export function useWebTerminal(
           }
         }
 
-        disconnectSsh();
-
-        // Resolve every configured source against one live snapshot. Resolution
-        // is deliberately fail-closed: an invalid/missing/unsupported layer must
-        // never degrade into a direct connection.
-        runtimePath = await resolveRuntimeNetworkPath(
-          currentConnection,
-          connectionsRef.current,
-          "ssh",
-        );
+        await disconnectCurrentSsh(true);
+        if (await stopIfStale()) return;
+        runtimePath = await resolveAndAcquireVpnPath();
+        if (await stopIfStale()) return;
         const resolved = runtimePath.transport;
-
-        // ── Ensure VPN pre-layers are connected ──
-        if (resolved.vpnPreSteps.length) {
-          writeLine("\x1b[36mEstablishing VPN tunnel(s)...\x1b[0m");
-          for (const step of resolved.vpnPreSteps) {
-            writeLine(
-              `\x1b[90m  Checking ${step.vpnType}: ${step.connectionId}\x1b[0m`,
-            );
-            try {
-              const vpnResult = await invoke<{
-                was_already_connected: boolean;
-                is_now_connected: boolean;
-                vpn_type: string;
-                connection_id: string;
-                error: string | null;
-              }>("ensure_vpn_connected", {
-                vpnType: step.vpnType,
-                connectionId: step.connectionId,
-                autoConnect: true,
-              });
-              if (!vpnResult.is_now_connected) {
-                throw new Error(
-                  `VPN ${step.vpnType} failed: ${vpnResult.error || "unknown error"}`,
-                );
-              }
-              writeLine(
-                vpnResult.was_already_connected
-                  ? `\x1b[32m  ${step.vpnType} already connected\x1b[0m`
-                  : `\x1b[32m  ${step.vpnType} connected successfully\x1b[0m`,
-              );
-            } catch (vpnErr) {
-              writeLine(
-                `\x1b[31m  Failed to establish ${step.vpnType} VPN: ${vpnErr}\x1b[0m`,
-              );
-              throw vpnErr;
-            }
-          }
-        }
 
         const tcpOptions = sshTerminalConfig?.tcpOptions;
         proxyCommandPassword = sshConnectionConfig.proxyCommandPassword || null;
@@ -1042,20 +1166,17 @@ export function useWebTerminal(
         const sessionId = await invoke<string>("connect_ssh", {
           config: sshConfig,
         });
+        attemptSshSessionId = sessionId;
+        if (await stopIfStale()) return;
         unlistenHostKeyPrompt?.();
         unlistenHostKeyPrompt = null;
-        sshSessionId.current = sessionId;
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...currentSession,
-            backendSessionId: sessionId,
-            networkPath: runtimePath.snapshot,
-          },
-        });
         writeLine("\x1b[32mSSH connection established\x1b[0m");
 
         const shellId = await invoke<string>("start_shell", { sessionId });
+        if (await stopIfStale()) return;
+        await handoffAttempt(sessionId);
+        if (await stopIfStale()) return;
+        commitAttemptHandoff();
         dispatch({
           type: "UPDATE_SESSION",
           payload: {
@@ -1065,6 +1186,7 @@ export function useWebTerminal(
             status: "connected",
             errorMessage: undefined,
             networkPath: runtimePath.snapshot,
+            vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
           },
         });
         writeLine("\x1b[32mShell started successfully\x1b[0m");
@@ -1091,6 +1213,14 @@ export function useWebTerminal(
           },
         }).catch(() => {});
       } catch (err: unknown) {
+        // Any failure after VPN acquisition must tear down a partially-created
+        // SSH backend first, then release only this attempt's VPN owner. A
+        // superseded attempt must never touch the replacement's target/lease.
+        const superseded = stale();
+        await cleanupAttemptSsh();
+        await releaseAttemptVpnLease();
+        if (superseded || stale()) return;
+
         // ── ProxyCommand import-confirmation gate ──
         // The backend refuses an unconfirmed (imported/synced) ProxyCommand with a
         // distinct error. This is NOT a normal failure: show the user the exact
@@ -1126,6 +1256,7 @@ export function useWebTerminal(
               proxyCommandResolveRef.current = resolve;
               setProxyCommandPrompt({ command: expanded });
             });
+            if (await stopIfStale()) return;
             if (confirmed) {
               // Record runtime confirmation (fingerprint-scoped) ...
               await invoke<string>("confirm_proxy_command", {
@@ -1201,18 +1332,21 @@ export function useWebTerminal(
         privateKeyPassphrase = null;
         totpSecret = null;
         proxyCommandPassword = null;
-        isConnecting.current = false;
+        if (!stale()) {
+          isConnecting.current = false;
+          sshTrustResolveRef.current = null;
+        }
         unlistenHostKeyPrompt?.();
-        sshTrustResolveRef.current = null;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- all used functions are listed; refs read at call time
     [
       classifySshError,
-      disconnectSsh,
+      disconnectCurrentSsh,
       formatErrorDetails,
       isSsh,
       dispatch,
+      releaseVpnLeaseOwner,
       restoreBuffer,
       setStatusState,
       writeLine,
@@ -1617,6 +1751,9 @@ export function useWebTerminal(
           "ssh-shell-closed",
           (event) => {
             if (event.payload.session_id !== sshSessionId.current) return;
+            sshSessionId.current = null;
+            isSshReady.current = false;
+            void releaseOwnedVpnLeases();
             setStatusState("error");
             setError("Shell closed");
           },
@@ -1642,6 +1779,10 @@ export function useWebTerminal(
     }
 
     return () => {
+      // Supersede in-flight connection attempts. Their own continuation owns
+      // cleanup of attempt-local SSH and VPN resources.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally invalidate the latest shared generation
+      sshInitGenRef.current++;
       isDisposed.current = true;
       cancelled = true;
       cancelAnimationFrame(openTimer);
@@ -1675,6 +1816,7 @@ export function useWebTerminal(
     initSsh,
     isSsh,
     onResize,
+    releaseOwnedVpnLeases,
     session.id,
     safeWrite,
     safeWriteln,
@@ -1716,7 +1858,7 @@ export function useWebTerminal(
   const handleReconnect = useCallback(async () => {
     if (!isSsh) return;
     setStatusState("connecting");
-    disconnectSsh();
+    await disconnectSsh();
     const currentSession = sessionRef.current;
     if (currentSession.backendSessionId || currentSession.shellId) {
       dispatch({

@@ -1402,6 +1402,8 @@ export interface ConnectionSession {
   // Backend session handles
   backendSessionId?: string;
   shellId?: string;
+  /** Opaque backend owner token for an SSH/RDP session's machine-wide VPN lease. */
+  vpnLeaseOwnerId?: string;
 
   // Zoom level
   zoomLevel?: number;

@@ -1,0 +1,114 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  acquireSessionVpnLeases,
+  createVpnLeaseAttemptOwnerId,
+  releaseSessionVpnLeases,
+  vpnLeaseCleanupError,
+} from "../../src/utils/network/vpnSessionLeases";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+describe("session VPN lease IPC", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("acquires the complete ordered path in one backend transaction", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      owner_id: "session-1",
+      leases: [],
+    });
+
+    await acquireSessionVpnLeases("session-1", [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+      { vpnType: "tailscale", connectionId: "tailnet" },
+    ]);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("acquire_vpn_leases", {
+      ownerId: "session-1",
+      requests: [
+        {
+          vpn_type: "wireguard",
+          connection_id: "wg-office",
+          auto_connect: true,
+        },
+        {
+          vpn_type: "tailscale",
+          connection_id: "tailnet",
+          auto_connect: true,
+        },
+      ],
+    });
+  });
+
+  it("does not invoke lifecycle state for a direct path", async () => {
+    await expect(acquireSessionVpnLeases("session-1", [])).resolves.toEqual({
+      owner_id: "session-1",
+      leases: [],
+    });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("releases all owner leases through the idempotent cleanup command", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      owner_id: "session-1",
+      released: [],
+      errors: [],
+    });
+
+    await releaseSessionVpnLeases("session-1");
+
+    expect(invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "session-1",
+    });
+  });
+
+  it("surfaces provider cleanup failures for disconnect UX", () => {
+    expect(
+      vpnLeaseCleanupError({
+        owner_id: "session-1",
+        released: [],
+        errors: ["WireGuard remained active", "OpenVPN process is busy"],
+      }),
+    ).toBe("WireGuard remained active; OpenVPN process is busy");
+  });
+
+  it("isolates an overlapping stale attempt from its replacement owner", async () => {
+    const staleOwner = createVpnLeaseAttemptOwnerId("rdp-session", "rdp");
+    const replacementOwner = createVpnLeaseAttemptOwnerId("rdp-session", "rdp");
+    const liveOwners = new Set<string>();
+    let allowStaleRelease!: () => void;
+    const staleReleaseGate = new Promise<void>((resolve) => {
+      allowStaleRelease = resolve;
+    });
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const invokeArgs = args as Record<string, unknown> | undefined;
+        const ownerId = String(invokeArgs?.ownerId);
+        if (command === "acquire_vpn_leases") {
+          liveOwners.add(ownerId);
+          return { owner_id: ownerId, leases: [] };
+        }
+        if (command === "release_vpn_leases") {
+          if (ownerId === staleOwner) await staleReleaseGate;
+          liveOwners.delete(ownerId);
+          return { owner_id: ownerId, released: [], errors: [] };
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      },
+    );
+
+    const step = [{ vpnType: "wireguard" as const, connectionId: "office" }];
+    await acquireSessionVpnLeases(staleOwner, step);
+    const staleCleanup = releaseSessionVpnLeases(staleOwner);
+    await acquireSessionVpnLeases(replacementOwner, step);
+    allowStaleRelease();
+    await staleCleanup;
+
+    expect(staleOwner).not.toBe(replacementOwner);
+    expect(liveOwners).toEqual(new Set([replacementOwner]));
+  });
+});

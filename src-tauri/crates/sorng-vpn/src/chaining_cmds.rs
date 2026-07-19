@@ -1,4 +1,117 @@
 use super::chaining::*;
+use super::vpn_lifecycle::*;
+
+struct TauriVpnRuntime {
+    openvpn: super::openvpn::OpenVPNServiceState,
+    wireguard: super::wireguard::WireGuardServiceState,
+    tailscale: super::tailscale::TailscaleServiceState,
+    zerotier: super::zerotier::ZeroTierServiceState,
+}
+
+impl VpnRuntime for TauriVpnRuntime {
+    async fn is_active(&mut self, key: &VpnLeaseKey) -> bool {
+        match key.vpn_type {
+            RuntimeVpnType::OpenVpn => {
+                self.openvpn
+                    .lock()
+                    .await
+                    .is_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::WireGuard => {
+                self.wireguard
+                    .lock()
+                    .await
+                    .is_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Tailscale => {
+                self.tailscale
+                    .lock()
+                    .await
+                    .is_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::ZeroTier => {
+                self.zerotier
+                    .lock()
+                    .await
+                    .is_connection_active(&key.connection_id)
+                    .await
+            }
+        }
+    }
+
+    async fn connect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+        match key.vpn_type {
+            RuntimeVpnType::OpenVpn => self.openvpn.lock().await.connect(&key.connection_id).await,
+            RuntimeVpnType::WireGuard => {
+                self.wireguard
+                    .lock()
+                    .await
+                    .connect(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Tailscale => {
+                self.tailscale
+                    .lock()
+                    .await
+                    .connect(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::ZeroTier => {
+                self.zerotier.lock().await.connect(&key.connection_id).await
+            }
+        }
+    }
+
+    async fn disconnect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+        match key.vpn_type {
+            RuntimeVpnType::OpenVpn => {
+                self.openvpn
+                    .lock()
+                    .await
+                    .disconnect(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::WireGuard => {
+                self.wireguard
+                    .lock()
+                    .await
+                    .disconnect(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Tailscale => {
+                self.tailscale
+                    .lock()
+                    .await
+                    .disconnect(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::ZeroTier => {
+                self.zerotier
+                    .lock()
+                    .await
+                    .disconnect(&key.connection_id)
+                    .await
+            }
+        }
+    }
+}
+
+fn tauri_vpn_runtime(
+    openvpn_state: &tauri::State<'_, super::openvpn::OpenVPNServiceState>,
+    wireguard_state: &tauri::State<'_, super::wireguard::WireGuardServiceState>,
+    tailscale_state: &tauri::State<'_, super::tailscale::TailscaleServiceState>,
+    zerotier_state: &tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+) -> TauriVpnRuntime {
+    TauriVpnRuntime {
+        openvpn: openvpn_state.inner().clone(),
+        wireguard: wireguard_state.inner().clone(),
+        tailscale: tailscale_state.inner().clone(),
+        zerotier: zerotier_state.inner().clone(),
+    }
+}
 
 #[tauri::command]
 pub async fn create_connection_chain(
@@ -241,6 +354,55 @@ pub async fn ensure_vpn_connected(
     }
 }
 
+/// Atomically acquire every VPN pre-step required by one frontend session.
+///
+/// The lifecycle-state mutex is deliberately held across provider operations:
+/// competing SSH/RDP sessions are serialized, so two first acquirers cannot
+/// both start the same machine-wide VPN.  The pure orchestration layer rolls
+/// back leases added by this call if a later pre-step fails.
+#[tauri::command]
+pub async fn acquire_vpn_leases(
+    owner_id: String,
+    requests: Vec<VpnLeaseRequest>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
+    openvpn_state: tauri::State<'_, super::openvpn::OpenVPNServiceState>,
+    wireguard_state: tauri::State<'_, super::wireguard::WireGuardServiceState>,
+    tailscale_state: tauri::State<'_, super::tailscale::TailscaleServiceState>,
+    zerotier_state: tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+) -> Result<AcquireVpnLeasesResult, String> {
+    let mut registry = vpn_lease_state.lock().await;
+    let mut runtime = tauri_vpn_runtime(
+        &openvpn_state,
+        &wireguard_state,
+        &tailscale_state,
+        &zerotier_state,
+    );
+    acquire_session_vpn_leases(&mut registry, &owner_id, requests, &mut runtime).await
+}
+
+/// Release every VPN lease held by one frontend session.
+///
+/// Shared VPNs remain active until their final session releases them.  A VPN
+/// that pre-dated the first lease is removed from the registry but left active.
+#[tauri::command]
+pub async fn release_vpn_leases(
+    owner_id: String,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
+    openvpn_state: tauri::State<'_, super::openvpn::OpenVPNServiceState>,
+    wireguard_state: tauri::State<'_, super::wireguard::WireGuardServiceState>,
+    tailscale_state: tauri::State<'_, super::tailscale::TailscaleServiceState>,
+    zerotier_state: tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+) -> Result<ReleaseVpnLeasesResult, String> {
+    let mut registry = vpn_lease_state.lock().await;
+    let mut runtime = tauri_vpn_runtime(
+        &openvpn_state,
+        &wireguard_state,
+        &tailscale_state,
+        &zerotier_state,
+    );
+    release_session_vpn_leases(&mut registry, &owner_id, &mut runtime).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,4 +445,3 @@ mod tests {
         assert_eq!(deserialized.error, Some("Connection refused".to_string()));
     }
 }
-

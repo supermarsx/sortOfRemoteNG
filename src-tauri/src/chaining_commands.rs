@@ -18,6 +18,10 @@ mod zerotier {
     pub use crate::zerotier::*;
 }
 
+mod vpn_lifecycle {
+    pub use crate::vpn_lifecycle::*;
+}
+
 #[allow(dead_code)]
 mod inner {
     include!("../crates/sorng-vpn/src/chaining_cmds.rs");

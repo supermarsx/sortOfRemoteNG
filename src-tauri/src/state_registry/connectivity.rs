@@ -98,6 +98,11 @@ pub(crate) fn register(
     let tailscale_service = TailscaleService::new_with_emitter(emitter.clone());
     app.manage(tailscale_service.clone());
 
+    // Session-owned VPN refcounts are independent of provider state.  They
+    // prevent one SSH/RDP session from disconnecting a VPN still leased by
+    // another session and remember whether the app started the VPN.
+    app.manage(vpn_lifecycle::new_vpn_lease_service_state());
+
     let pptp_service = PPTPService::new_with_emitter(emitter.clone());
     app.manage(pptp_service.clone());
 

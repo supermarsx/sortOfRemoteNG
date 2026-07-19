@@ -82,6 +82,7 @@ pub use sorng_vpn::proxy;
 pub use sorng_vpn::softether;
 pub use sorng_vpn::sstp;
 pub use sorng_vpn::tailscale;
+pub use sorng_vpn::vpn_lifecycle;
 pub use sorng_vpn::wireguard;
 pub use sorng_vpn::zerotier;
 

@@ -30,6 +30,12 @@ import {
   resolveRuntimeNetworkPath,
   type RuntimeNetworkPath,
 } from '../../utils/network/resolveRuntimeNetworkPath';
+import {
+  acquireSessionVpnLeases,
+  createVpnLeaseAttemptOwnerId,
+  releaseSessionVpnLeases,
+  vpnLeaseCleanupError,
+} from '../../utils/network/vpnSessionLeases';
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
   data as Uint8ClampedArray<ArrayBuffer>;
@@ -129,6 +135,10 @@ export function useRDPClient(session: ConnectionSession) {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  // VPN ownership persists with a backend RDP session so a view-only unmount
+  // can reattach without tearing down the path that session still needs.
+  const vpnLeaseOwnerRef = useRef<string | null>(session.vpnLeaseOwnerId ?? null);
+  const vpnLeaseReleasesRef = useRef<Map<string, Promise<boolean>>>(new Map());
   // Tracks an SSH local-forward tunnel established for an imported mRemoteNG
   // SSH-tunnel/jump connection (RDP-through-SSH). Holds the backend SSH session
   // id and the RDP tunnel id so they can be torn down on disconnect/unmount.
@@ -198,6 +208,43 @@ export function useRDPClient(session: ConnectionSession) {
     if (!enabled) return false;
     return current === 'bidirectional' || current === direction;
   }, []);
+
+  const releaseVpnLeaseOwner = useCallback(async (ownerId: string): Promise<boolean> => {
+    const existing = vpnLeaseReleasesRef.current.get(ownerId);
+    if (existing) return existing;
+
+    const release = (async (): Promise<boolean> => {
+      try {
+        const result = await releaseSessionVpnLeases(ownerId);
+        const cleanupError = vpnLeaseCleanupError(result);
+        if (cleanupError) {
+          toast.warning(`VPN cleanup needs attention: ${cleanupError}`, 5000);
+        }
+        return true;
+      } catch (error) {
+        debugLog(`VPN lease release failed for ${ownerId}: ${error}`);
+        toast.warning('VPN cleanup failed; it will be retried on the next disconnect', 5000);
+        return false;
+      }
+    })();
+
+    vpnLeaseReleasesRef.current.set(ownerId, release);
+    try {
+      return await release;
+    } finally {
+      vpnLeaseReleasesRef.current.delete(ownerId);
+    }
+  }, [toast]);
+
+  const releaseOwnedVpnLeases = useCallback(async () => {
+    const ownerId = vpnLeaseOwnerRef.current ?? sessionRef.current.vpnLeaseOwnerId;
+    if (!ownerId) return;
+
+    const confirmed = await releaseVpnLeaseOwner(ownerId);
+    if (confirmed && vpnLeaseOwnerRef.current === ownerId) {
+      vpnLeaseOwnerRef.current = null;
+    }
+  }, [releaseVpnLeaseOwner]);
 
   // ─── Handlers ──────────────────────────────────────────────────────
 
@@ -313,14 +360,16 @@ export function useRDPClient(session: ConnectionSession) {
   const handleDisconnect = useCallback(async () => {
     initGenRef.current++; // abort any in-flight init
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      await invoke('disconnect_rdp', { sessionId: sid });
-    } catch (e) {
-      debugLog(`Disconnect error: ${e}`);
+    if (sid) {
+      try {
+        await invoke('disconnect_rdp', { sessionId: sid });
+      } catch (e) {
+        debugLog(`Disconnect error: ${e}`);
+      }
     }
     // Tear down any imported-mRemoteNG SSH tunnel backing this session.
     await teardownRdpTunnelRef.current();
+    await releaseOwnedVpnLeases();
     sessionIdRef.current = null;
     setRdpSessionId(null);
     setIsConnected(false);
@@ -334,7 +383,7 @@ export function useRDPClient(session: ConnectionSession) {
         tripleBuffering: perf?.tripleBuffering ?? true,
       });
     }
-  }, []);
+  }, [releaseOwnedVpnLeases]);
 
   const handleCopyToClipboard = useCallback(async () => {
     // If CLIPRDR is active, request clipboard text from the remote session.
@@ -565,6 +614,40 @@ export function useRDPClient(session: ConnectionSession) {
     const conn = connectionRef.current;
     const sess = sessionRef.current;
     const rdpCfg = rdpSettingsRef.current;
+    let attemptVpnLeaseOwnerId: string | null = null;
+
+    const releaseAttemptVpnLease = async () => {
+      const ownerId = attemptVpnLeaseOwnerId;
+      if (!ownerId) return;
+      attemptVpnLeaseOwnerId = null;
+      await releaseVpnLeaseOwner(ownerId);
+      if (vpnLeaseOwnerRef.current === ownerId) {
+        vpnLeaseOwnerRef.current = null;
+      }
+    };
+
+    const stopIfStale = async (cleanupTarget?: () => Promise<void>) => {
+      if (!stale()) return false;
+      if (cleanupTarget) await cleanupTarget();
+      await releaseAttemptVpnLease();
+      console.log(`[RDP init gen=${gen}] STALE, aborting`);
+      return true;
+    };
+
+    const handoffVpnLease = async () => {
+      const previousOwnerId = vpnLeaseOwnerRef.current ?? sess.vpnLeaseOwnerId ?? null;
+      const nextOwnerId = attemptVpnLeaseOwnerId;
+      vpnLeaseOwnerRef.current = nextOwnerId;
+
+      if (previousOwnerId && previousOwnerId !== nextOwnerId) {
+        await releaseVpnLeaseOwner(previousOwnerId);
+      }
+    };
+
+    const commitVpnLeaseHandoff = () => {
+      attemptVpnLeaseOwnerId = null;
+    };
+
     console.log(`[RDP init gen=${gen}] session=${sess?.id}, backendSessionId=${sess?.backendSessionId}, connectionId=${sess?.connectionId}, conn=${conn?.id ?? 'NULL'}`);
     // For reattach-only scenarios (e.g. RDP sessions panel), conn may be
     // null but backendSessionId is set.  We still proceed to attempt reattach.
@@ -590,7 +673,7 @@ export function useRDPClient(session: ConnectionSession) {
           connected: boolean;
         }>>('list_rdp_sessions');
 
-        if (stale()) { console.log(`[RDP init gen=${gen}] STALE after list_rdp_sessions, aborting`); return; }
+        if (await stopIfStale()) return;
 
         console.log(`[RDP reattach gen=${gen}] list_rdp_sessions: ${existingSessions.length} session(s)`, existingSessions.map(s => ({ id: s.id, cid: s.connectionId, connected: s.connected })));
 
@@ -616,7 +699,30 @@ export function useRDPClient(session: ConnectionSession) {
         toast.error('Failed to list RDP sessions', 4000);
       }
 
-      if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect/reattach, aborting`); return; }
+      if (await stopIfStale()) return;
+
+      // Resolve and acquire the complete VPN path before either attaching to
+      // an existing backend session or dialing a new one. The backend command
+      // owns validation, readiness, rollback, and cross-session refcounts.
+      if (conn) {
+        setStatusMessage('Resolving network path...');
+        runtimePath = await resolveRuntimeNetworkPath(
+          conn,
+          connectionsRef.current,
+          'rdp',
+        );
+        if (await stopIfStale()) return;
+
+        if (runtimePath.transport.vpnPreSteps.length > 0) {
+          setStatusMessage('Establishing VPN network path...');
+          attemptVpnLeaseOwnerId = createVpnLeaseAttemptOwnerId(sess.id, 'rdp');
+          await acquireSessionVpnLeases(
+            attemptVpnLeaseOwnerId,
+            runtimePath.transport.vpnPreSteps,
+          );
+          if (await stopIfStale()) return;
+        }
+      }
 
       if (reattachId) {
         debugLog(`Re-attaching to existing session ${reattachId} for ${conn?.id ?? sess.connectionId}`);
@@ -636,7 +742,16 @@ export function useRDPClient(session: ConnectionSession) {
             frameChannel,
           });
 
-          if (stale()) { console.log(`[RDP init gen=${gen}] STALE after attach, aborting`); return; }
+          if (await stopIfStale()) return;
+
+          // A connection definition means this init resolved the current path.
+          // Hand off the attempt lease only after target attach succeeds; this
+          // also releases an older persisted owner if the path changed.
+          if (conn) {
+            await handoffVpnLease();
+            if (await stopIfStale()) return;
+            commitVpnLeaseHandoff();
+          }
 
           setRdpSessionId(sessionInfo.id);
           sessionIdRef.current = sessionInfo.id;
@@ -683,6 +798,8 @@ export function useRDPClient(session: ConnectionSession) {
               backendSessionId: sessionInfo.id,
               name: conn?.name || sess.name,
               status: 'connected',
+              networkPath: runtimePath?.snapshot ?? sess.networkPath,
+              vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
             },
           });
           return;
@@ -701,37 +818,9 @@ export function useRDPClient(session: ConnectionSession) {
         return;
       }
 
-      if (stale()) { console.log(`[RDP init gen=${gen}] STALE before connect, aborting`); return; }
-
-      // Resolve all configured network-path sources from one live snapshot.
-      // Missing or unsupported layers abort here instead of silently dialing
-      // the RDP target directly.
-      setStatusMessage('Resolving network path...');
-      runtimePath = await resolveRuntimeNetworkPath(
-        conn,
-        connectionsRef.current,
-        'rdp',
-      );
-      if (stale()) return;
-
-      if (runtimePath.transport.vpnPreSteps.length > 0) {
-        setStatusMessage('Establishing VPN network path...');
-        for (const step of runtimePath.transport.vpnPreSteps) {
-          const result = await invoke<{
-            is_now_connected: boolean;
-            error: string | null;
-          }>('ensure_vpn_connected', {
-            vpnType: step.vpnType,
-            connectionId: step.connectionId,
-            autoConnect: true,
-          });
-          if (!result.is_now_connected) {
-            throw new Error(
-              `VPN ${step.vpnType} failed: ${result.error || 'unknown error'}`,
-            );
-          }
-          if (stale()) return;
-        }
+      if (await stopIfStale()) return;
+      if (!runtimePath) {
+        throw new Error('RDP network path was not resolved');
       }
 
       // Auto-detect keyboard layout from the OS if configured
@@ -739,7 +828,7 @@ export function useRDPClient(session: ConnectionSession) {
       if (rdpCfg.input?.autoDetectLayout !== false) {
         try {
           const detectedLayout = await invoke<number>('detect_keyboard_layout');
-          if (stale()) return;
+          if (await stopIfStale()) return;
           const langId = detectedLayout & 0xFFFF;
           if (langId && langId !== 0) {
             effectiveSettings = {
@@ -793,18 +882,13 @@ export function useRDPClient(session: ConnectionSession) {
           targetPort,
         );
         if (tunnel) {
-          if (stale()) {
-            // A newer init started while we were setting up the tunnel — tear it
-            // down so we don't leak the SSH session / forward.
-            await teardownRdpTunnel();
-            return;
-          }
+          if (await stopIfStale(teardownRdpTunnel)) return;
           setStatusMessage('SSH tunnel established — connecting RDP...');
           dialHost = tunnel.host;
           dialPort = tunnel.port;
         }
       } catch (tunnelErr) {
-        if (stale()) return;
+        if (await stopIfStale(teardownRdpTunnel)) return;
         throw tunnelErr;
       }
 
@@ -830,14 +914,19 @@ export function useRDPClient(session: ConnectionSession) {
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
 
-      if (stale()) {
-        // A newer init is running — we must NOT overwrite sessionIdRef.
-        // Try to clean up this orphaned backend session.
-        console.log(`[RDP init gen=${gen}] STALE after connect_rdp (sessionId=${sessionId}), aborting`);
-        invoke('disconnect_rdp', { sessionId }).catch(() => {});
-        teardownRdpTunnel();
-        return;
-      }
+      const cleanupOrphanedRdp = async () => {
+        try {
+          await invoke('disconnect_rdp', { sessionId });
+        } catch {
+          // Best-effort cleanup for a superseded init.
+        }
+        await teardownRdpTunnel();
+      };
+      if (await stopIfStale(cleanupOrphanedRdp)) return;
+
+      await handoffVpnLease();
+      if (await stopIfStale(cleanupOrphanedRdp)) return;
+      commitVpnLeaseHandoff();
 
       debugLog(`RDP session created: ${sessionId}`);
       setRdpSessionId(sessionId);
@@ -851,6 +940,7 @@ export function useRDPClient(session: ConnectionSession) {
           name: conn.name || sess.name,
           status: 'connecting',
           networkPath: runtimePath.snapshot,
+          vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
         },
       });
 
@@ -859,7 +949,9 @@ export function useRDPClient(session: ConnectionSession) {
       // caused a double-attach race: the status handler would create a
       // *new* blank renderer, discarding any frames already painted.
     } catch (error) {
-      if (stale()) return; // Don't clobber error state from a newer init
+      if (await stopIfStale(teardownRdpTunnel)) return;
+      await teardownRdpTunnel();
+      await releaseAttemptVpnLease();
       const safeError = formatRuntimeNetworkPathError(error, runtimePath, [
         conn?.password,
         conn?.passphrase,
@@ -887,6 +979,8 @@ export function useRDPClient(session: ConnectionSession) {
       sessionIdRef.current = null;
       setRdpSessionId(null);
     }
+    await teardownRdpTunnelRef.current();
+    await releaseOwnedVpnLeases();
     // Always destroy and recreate the pipeline to ensure no stale state carries over
     pipelineRef.current!.destroy();
     {
@@ -899,7 +993,7 @@ export function useRDPClient(session: ConnectionSession) {
     setConnectionStatus('connecting');
     setStatusMessage('Reconnecting...');
     initializeRDPConnection();
-  }, [initializeRDPConnection, connectionStatus]);
+  }, [initializeRDPConnection, connectionStatus, releaseOwnedVpnLeases]);
 
   const cleanup = useCallback(async () => {
     // Bump generation so any in-flight initializeRDPConnection aborts
@@ -1141,6 +1235,10 @@ export function useRDPClient(session: ConnectionSession) {
           break;
         case 'disconnected':
           setIsConnected(false);
+          void (async () => {
+            await teardownRdpTunnelRef.current();
+            await releaseOwnedVpnLeases();
+          })();
           setConnectionStatus((prev) => {
             if (prev === 'error') return 'error';
             setRdpSessionId(null);
@@ -1390,7 +1488,7 @@ export function useRDPClient(session: ConnectionSession) {
       unlisteners.forEach(fn => fn());
       if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
     };
-  }, [isClipboardDirectionEnabled]);
+  }, [isClipboardDirectionEnabled, releaseOwnedVpnLeases]);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
 
