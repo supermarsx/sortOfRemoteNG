@@ -10,6 +10,15 @@ use serde::Serialize;
 /// Current on-disk schema for per-provider profile definitions.
 pub const PROFILE_SCHEMA_VERSION: u32 = 1;
 
+const PROFILE_SERIALIZATION_FAILED: &str =
+    "VPN profile save failed: profile serialization failed";
+const PROFILE_STORAGE_WRITE_FAILED: &str = "VPN profile save failed: storage write failed";
+const PROFILE_RESTORE_CORRUPT: &str =
+    "VPN profile restore failed: stored data is corrupt or incompatible";
+const PROFILE_RESTORE_FUTURE_SCHEMA: &str =
+    "VPN profile restore failed: stored data uses a newer schema";
+const PROFILE_RESTORE_UNREADABLE: &str = "VPN profile restore failed: storage is unreadable";
+
 /// Result of attempting to restore a provider's profile definitions.
 ///
 /// Locked storage is intentionally not an error: password/hybrid installs
@@ -20,6 +29,64 @@ pub enum RestoreOutcome {
     Loaded,
     Missing,
     Locked,
+}
+
+/// Secret-safe classification for restore failures that may be logged or
+/// displayed. Raw storage and serde errors are deliberately discarded at the
+/// persistence boundary because they can contain paths or profile content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreFailureClass {
+    Corrupt,
+    FutureSchema,
+    Unreadable,
+}
+
+impl RestoreFailureClass {
+    pub fn as_log_label(self) -> &'static str {
+        match self {
+            Self::Corrupt => "corrupt",
+            Self::FutureSchema => "future-schema",
+            Self::Unreadable => "unreadable",
+        }
+    }
+
+    fn safe_message(self) -> &'static str {
+        match self {
+            Self::Corrupt => PROFILE_RESTORE_CORRUPT,
+            Self::FutureSchema => PROFILE_RESTORE_FUTURE_SCHEMA,
+            Self::Unreadable => PROFILE_RESTORE_UNREADABLE,
+        }
+    }
+}
+
+/// Classify an already-sanitized provider restore error for fixed-field logs.
+/// Provider wrappers may add their own safe context, so markers are matched
+/// within the message. Unknown failures remain fail-closed as corrupt data.
+pub fn classify_restore_failure(error: &str) -> RestoreFailureClass {
+    if error.contains(PROFILE_RESTORE_FUTURE_SCHEMA) {
+        RestoreFailureClass::FutureSchema
+    } else if error.contains(PROFILE_RESTORE_UNREADABLE) {
+        RestoreFailureClass::Unreadable
+    } else {
+        RestoreFailureClass::Corrupt
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StorageReadFailureClass {
+    Locked,
+    Unreadable,
+}
+
+fn classify_storage_read_failure(error: &str) -> StorageReadFailureClass {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("encryption state is locked")
+        || lower.contains("database is encrypted")
+    {
+        StorageReadFailureClass::Locked
+    } else {
+        StorageReadFailureClass::Unreadable
+    }
 }
 
 #[derive(Serialize)]
@@ -34,7 +101,7 @@ pub fn serialize_profile_definitions<T: Serialize>(connections: &[T]) -> Result<
         schema_version: PROFILE_SCHEMA_VERSION,
         connections,
     })
-    .map_err(|e| format!("Failed to serialize VPN profile definitions: {e}"))
+    .map_err(|_| PROFILE_SERIALIZATION_FAILED.to_string())
 }
 
 /// Deserialize the current envelope and the two shapes used by development
@@ -43,11 +110,11 @@ pub fn serialize_profile_definitions<T: Serialize>(connections: &[T]) -> Result<
 /// newer profile data.
 pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Result<Vec<T>, String> {
     let value: serde_json::Value = serde_json::from_str(data)
-        .map_err(|e| format!("VPN profile data is not valid JSON: {e}"))?;
+        .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())?;
 
     match value {
         serde_json::Value::Array(items) => serde_json::from_value(serde_json::Value::Array(items))
-            .map_err(|e| format!("Legacy VPN profile data is invalid: {e}")),
+            .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string()),
         serde_json::Value::Object(mut object) => {
             if let Some(connections) = object.remove("connections") {
                 let version = object
@@ -56,21 +123,18 @@ pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Resul
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
                 if version > u64::from(PROFILE_SCHEMA_VERSION) {
-                    return Err(format!(
-                        "VPN profile schema {version} is newer than supported schema {}",
-                        PROFILE_SCHEMA_VERSION
-                    ));
+                    return Err(PROFILE_RESTORE_FUTURE_SCHEMA.to_string());
                 }
                 serde_json::from_value(connections)
-                    .map_err(|e| format!("VPN profile definitions are invalid: {e}"))
+                    .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())
             } else {
                 // Compatibility with the short-lived id-keyed HashMap shape.
                 let values = object.into_values().collect::<Vec<_>>();
                 serde_json::from_value(serde_json::Value::Array(values))
-                    .map_err(|e| format!("Legacy VPN profile map is invalid: {e}"))
+                    .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())
             }
         }
-        _ => Err("VPN profile data must be an object or array".to_string()),
+        _ => Err(PROFILE_RESTORE_CORRUPT.to_string()),
     }
 }
 
@@ -101,12 +165,14 @@ pub async fn save_service_data<S: Persistable>(
     storage: &sorng_storage::storage::SecureStorageState,
 ) -> Result<(), String> {
     let key = service.storage_key();
-    let data = service.serialize_definitions()?;
+    let data = service
+        .serialize_definitions()
+        .map_err(|_| PROFILE_SERIALIZATION_FAILED.to_string())?;
     let storage = storage.lock().await;
     storage
         .write_app_data(key, &data)
         .await
-        .map_err(|e| format!("Failed to persist {}: {}", key, e))
+        .map_err(|_| PROFILE_STORAGE_WRITE_FAILED.to_string())
 }
 
 /// Load a service's definitions from storage.
@@ -120,7 +186,14 @@ pub async fn load_service_data<S: Persistable>(
     let storage = storage.lock().await;
     match storage.read_app_data(key).await {
         Ok(Some(data)) => {
-            service.deserialize_definitions(&data)?;
+            if let Err(error) = service.deserialize_definitions(&data) {
+                let class = classify_restore_failure(&error);
+                log::warn!(
+                    "Persisted VPN profile data failed validation; classification={}",
+                    class.as_log_label()
+                );
+                return Err(class.safe_message().to_string());
+            }
             log::info!("Loaded persisted data for '{}'", key);
             Ok(RestoreOutcome::Loaded)
         }
@@ -128,18 +201,16 @@ pub async fn load_service_data<S: Persistable>(
             log::debug!("No persisted data found for '{}'", key);
             Ok(RestoreOutcome::Missing)
         }
-        Err(e) => {
-            let lower = e.to_ascii_lowercase();
-            if lower.contains("unlock")
-                || lower.contains("encryption state is locked")
-                || lower.contains("database is encrypted")
-            {
-                log::debug!("Persisted data for '{}' is locked; restore deferred", key);
-                return Ok(RestoreOutcome::Locked);
+        Err(error) => match classify_storage_read_failure(&error) {
+            StorageReadFailureClass::Locked => {
+                log::debug!("Persisted VPN profile data is locked; restore deferred");
+                Ok(RestoreOutcome::Locked)
             }
-            log::warn!("Failed to load persisted data for '{}': {}", key, e);
-            Err(format!("Failed to load {}: {}", key, e))
-        }
+            StorageReadFailureClass::Unreadable => {
+                log::warn!("Persisted VPN profile storage is unreadable");
+                Err(PROFILE_RESTORE_UNREADABLE.to_string())
+            }
+        },
     }
 }
 
@@ -177,6 +248,27 @@ mod tests {
         }
     }
 
+    struct TestService {
+        loaded: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Persistable for TestService {
+        fn storage_key(&self) -> &'static str {
+            "vpn_test_profiles"
+        }
+
+        fn serialize_definitions(&self) -> Result<String, String> {
+            serialize_profile_definitions(&[profile()])
+        }
+
+        fn deserialize_definitions(&mut self, data: &str) -> Result<(), String> {
+            let _: Vec<TestProfile> = deserialize_profile_definitions(data)?;
+            self.loaded = true;
+            Ok(())
+        }
+    }
+
     #[test]
     fn versioned_profile_envelope_round_trips() {
         let encoded = serialize_profile_definitions(&[profile()]).unwrap();
@@ -200,12 +292,77 @@ mod tests {
 
     #[test]
     fn future_schema_and_corruption_fail_closed() {
+        let secret = "TOP-SECRET-PROFILE-MARKER-9f6f";
         let future = serde_json::json!({
             "schema_version": PROFILE_SCHEMA_VERSION + 1,
-            "connections": [profile()]
+            "connections": [{ "id": secret, "name": "Future" }]
         })
         .to_string();
-        assert!(deserialize_profile_definitions::<TestProfile>(&future).is_err());
-        assert!(deserialize_profile_definitions::<TestProfile>("not-json").is_err());
+        let future_error = deserialize_profile_definitions::<TestProfile>(&future).unwrap_err();
+        assert_eq!(
+            classify_restore_failure(&future_error),
+            RestoreFailureClass::FutureSchema
+        );
+        assert!(!future_error.contains(secret));
+
+        let malformed = format!("{{\"profile\":\"{secret}\"");
+        let corrupt_error =
+            deserialize_profile_definitions::<TestProfile>(&malformed).unwrap_err();
+        assert_eq!(
+            classify_restore_failure(&corrupt_error),
+            RestoreFailureClass::Corrupt
+        );
+        assert!(!corrupt_error.contains(secret));
+    }
+
+    #[test]
+    fn raw_storage_failures_are_reduced_to_secret_safe_categories() {
+        let secret = "TOP-SECRET-STORAGE-PATH-4d3a";
+        let unreadable = format!("permission denied reading C:/private/{secret}/storage.json");
+        let unreadable_class = classify_storage_read_failure(&unreadable);
+        assert_eq!(unreadable_class, StorageReadFailureClass::Unreadable);
+
+        let safe = RestoreFailureClass::Unreadable.safe_message();
+        let log_label = RestoreFailureClass::Unreadable.as_log_label();
+        assert!(!safe.contains(secret));
+        assert!(!log_label.contains(secret));
+
+        let locked = format!("encryption state is locked near {secret}");
+        assert_eq!(
+            classify_storage_read_failure(&locked),
+            StorageReadFailureClass::Locked
+        );
+        assert!(!format!("{:?}", StorageReadFailureClass::Locked).contains(secret));
+    }
+
+    #[tokio::test]
+    async fn load_boundary_does_not_return_malformed_profile_content() {
+        let secret = "TOP-SECRET-RESTORE-PAYLOAD-b17e";
+        let root = std::env::temp_dir().join(format!(
+            "sorng-vpn-persistence-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let storage = sorng_storage::storage::SecureStorage::new(
+            root.join("storage.json").to_string_lossy().to_string(),
+        );
+        let malformed = format!("{{\"profile\":\"{secret}\"");
+        storage
+            .lock()
+            .await
+            .write_app_data("vpn_test_profiles", &malformed)
+            .await
+            .unwrap();
+
+        let mut service = TestService { loaded: false };
+        let error = load_service_data(&mut service, &storage).await.unwrap_err();
+        assert_eq!(
+            classify_restore_failure(&error),
+            RestoreFailureClass::Corrupt
+        );
+        assert!(!error.contains(secret));
+        assert!(!service.loaded);
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

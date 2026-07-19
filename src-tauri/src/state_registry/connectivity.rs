@@ -1,6 +1,25 @@
 use super::*;
 use sorng_core::events::DynEventEmitter;
 
+fn vpn_profile_restore_log_label(error: &str) -> &'static str {
+    if error.contains("stored data uses a newer schema") {
+        "future-schema"
+    } else if error.contains("storage is unreadable") {
+        "unreadable"
+    } else if error.contains("storage is locked") {
+        "locked"
+    } else {
+        "corrupt"
+    }
+}
+
+fn log_vpn_profile_restore_failure(provider: &str, error: &str) {
+    log::warn!(
+        "{provider} profile restore failed; classification={}; stored data was left untouched",
+        vpn_profile_restore_log_label(error)
+    );
+}
+
 pub(crate) struct ApiHandles {
     pub(crate) agent_service: Arc<Mutex<agent::AgentService>>,
     pub(crate) aws_service: Arc<Mutex<aws::AwsService>>,
@@ -75,7 +94,13 @@ pub(crate) fn register(
     let script_service = ScriptService::new(ssh_service.clone());
     app.manage(script_service);
 
-    let openvpn_service = OpenVPNService::new_with_emitter(emitter.clone());
+    let vpn_profile_storage = app
+        .state::<sorng_storage::storage::SecureStorageState>()
+        .inner()
+        .clone();
+
+    let openvpn_service =
+        OpenVPNService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(openvpn_service.clone());
 
     // Dedicated `sorng-openvpn` crate service — separate from the legacy
@@ -89,14 +114,35 @@ pub(crate) fn register(
     let proxy_service = ProxyService::new_with_emitter(emitter.clone());
     app.manage(proxy_service.clone());
 
-    let wireguard_service = WireGuardService::new_with_emitter(emitter.clone());
+    let wireguard_service =
+        WireGuardService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(wireguard_service.clone());
 
-    let zerotier_service = ZeroTierService::new_with_emitter(emitter.clone());
+    let zerotier_service =
+        ZeroTierService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(zerotier_service.clone());
 
-    let tailscale_service = TailscaleService::new_with_emitter(emitter.clone());
+    let tailscale_service = TailscaleService::new_persistent(emitter.clone(), vpn_profile_storage);
     app.manage(tailscale_service.clone());
+
+    // Best-effort eager restore for vault-unlocked installs. Password/hybrid
+    // storage reports a deferred (non-error) outcome and each provider retries
+    // lazily on its first list/get/connect/mutation after unlock. Corrupt data
+    // is never replaced with an empty profile map.
+    tauri::async_runtime::block_on(async {
+        if let Err(e) = openvpn_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("OpenVPN", &e);
+        }
+        if let Err(e) = wireguard_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("WireGuard", &e);
+        }
+        if let Err(e) = zerotier_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("ZeroTier", &e);
+        }
+        if let Err(e) = tailscale_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("Tailscale", &e);
+        }
+    });
 
     // Session-owned VPN refcounts are independent of provider state.  They
     // prevent one SSH/RDP session from disconnecting a VPN still leased by
@@ -202,5 +248,33 @@ pub(crate) fn register(
         vercel_service,
         wmi_service,
         wol_service,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::vpn_profile_restore_log_label;
+
+    #[test]
+    fn restore_log_classification_never_contains_raw_error_content() {
+        let secret = "TOP-SECRET-RESTORE-LOG-0c52";
+        for (error, expected) in [
+            (
+                format!(
+                    "VPN profile restore failed: stored data uses a newer schema; {secret}"
+                ),
+                "future-schema",
+            ),
+            (
+                format!("VPN profile restore failed: storage is unreadable; {secret}"),
+                "unreadable",
+            ),
+            (format!("storage is locked; {secret}"), "locked"),
+            (format!("malformed profile {secret}"), "corrupt"),
+        ] {
+            let label = vpn_profile_restore_log_label(&error);
+            assert_eq!(label, expected);
+            assert!(!label.contains(secret));
+        }
     }
 }

@@ -298,6 +298,29 @@ mod ops;
 mod platform;
 mod security_data;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DekWrapperProbe {
+    Present,
+    ConfirmedMissing,
+    ProbeFailed,
+}
+
+fn classify_dek_wrapper_probe(result: std::io::Result<bool>) -> DekWrapperProbe {
+    match result {
+        Ok(true) => DekWrapperProbe::Present,
+        Ok(false) => DekWrapperProbe::ConfirmedMissing,
+        Err(_) => DekWrapperProbe::ProbeFailed,
+    }
+}
+
+fn probe_dek_wrapper(app_dir: &std::path::Path) -> DekWrapperProbe {
+    classify_dek_wrapper_probe(app_dir.join("dek.enc").try_exists())
+}
+
+fn should_bootstrap_vault(probe: DekWrapperProbe, keychain_available: bool) -> bool {
+    keychain_available && probe == DekWrapperProbe::ConfirmedMissing
+}
+
 pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     let launch_args = sorng_app_shell::commands::parse_launch_args(std::env::args());
     app.manage(launch_args);
@@ -324,19 +347,23 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // Encryption-at-rest subsystem (Phase 0): managed state holds the
     // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
     //
-    // Boot-time silent vault unlock — when the OS vault is available
-    // we call `ensure_dek` rather than `read_dek` so a fresh install
-    // auto-initialises a vault-mode master DEK on first boot. P4
-    // requires every database write to go through an unlocked state
-    // (eager-encrypt, explicit-downgrade-refusal policy); without
-    // auto-init the database picker would be empty on fresh installs
-    // until the user manually visited Settings → Security.
-    //
-    // Password / hybrid modes still require explicit user input via
-    // the Settings → Security panel — `ensure_dek` only fires for the
-    // vault path here, so the user-driven setup flow is unchanged.
+    // Boot-time silent vault unlock — when the OS vault is available and no
+    // password wrapper is configured, `ensure_dek` lets a fresh vault-only
+    // install auto-initialise a master DEK on first boot. If `dek.enc` exists,
+    // password or hybrid mode is configured and boot must remain locked until
+    // the user supplies that password. Calling `ensure_dek` in that case could
+    // install a different vault DEK and make encrypted profile data unreadable.
     let enc_state = sorng_encryption::EncryptionState::new();
-    if sorng_vault::keychain::is_available() {
+    let dek_wrapper_probe = probe_dek_wrapper(&app_dir);
+    if dek_wrapper_probe == DekWrapperProbe::ProbeFailed {
+        eprintln!(
+            "Encryption-at-rest: DEK wrapper presence could not be confirmed; vault bootstrap skipped."
+        );
+    }
+    if should_bootstrap_vault(
+        dek_wrapper_probe,
+        sorng_vault::keychain::is_available(),
+    ) {
         if let Ok(bytes) = tauri::async_runtime::block_on(sorng_vault::keychain::ensure_dek()) {
             if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
                 tauri::async_runtime::block_on(enc_state.install(dek));
@@ -455,54 +482,6 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     security_data::register(app, &app_dir, emitter);
 
     access::register(app);
-
-    // Encryption-at-rest subsystem (Phase 0): managed state holds the
-    // in-memory master DEK. See crates/sorng-encryption/src/state.rs.
-    //
-    // Boot-time silent vault unlock — when the OS vault is available
-    // and no password wrapper is configured, `ensure_dek` lets a fresh
-    // vault-only install auto-initialise a master DEK on first boot.
-    //
-    // If `dek.enc` exists, password or hybrid mode is configured. In
-    // those modes boot must remain locked until the user supplies their
-    // password; calling `ensure_dek` here would create a different vault
-    // DEK on password-only installs and incorrectly mark the process as
-    // unlocked before `encryption_unlock` can unwrap the real DEK.
-    let enc_state = sorng_encryption::EncryptionState::new();
-    let password_wrap_present = app_dir.join("dek.enc").exists();
-    if !password_wrap_present && sorng_vault::keychain::is_available() {
-        if let Ok(bytes) = tauri::async_runtime::block_on(
-            sorng_vault::keychain::ensure_dek(),
-        ) {
-            if let Some(dek) = sorng_encryption::MasterDek::from_bytes(&bytes) {
-                tauri::async_runtime::block_on(enc_state.install(dek));
-                println!(
-                    "Encryption-at-rest: vault DEK ensured + installed at boot."
-                );
-            }
-        }
-    }
-    // Snapshot the (cheaply cloneable Arc-backed) handle BEFORE
-    // `app.manage` consumes it — the logger drainer task owns its
-    // own clone so it survives independent of Tauri state lookups.
-    let enc_state_for_logger = enc_state.clone();
-    app.manage(enc_state);
-
-    // Install the encrypted log adapter once the encryption state
-    // exists. Gated on `debug_assertions` to preserve the prior
-    // tauri_plugin_log behaviour (no global logger in release until
-    // the rollout flips the gate). The state may be locked here —
-    // the sink buffers lines until unlock, so no records are lost.
-    if cfg!(debug_assertions) {
-        let logs_dir = app_dir.join("logs");
-        if let Err(e) = sorng_encryption::log_adapter::EncryptedLogAdapter::install(
-            std::sync::Arc::new(enc_state_for_logger),
-            logs_dir,
-            log::LevelFilter::Info,
-        ) {
-            eprintln!("Failed to install encrypted log adapter: {}", e);
-        }
-    }
 
     #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
     platform::register(app);
@@ -742,6 +721,44 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod encryption_bootstrap_tests {
+    use super::{
+        classify_dek_wrapper_probe, probe_dek_wrapper, should_bootstrap_vault, DekWrapperProbe,
+    };
+
+    #[test]
+    fn password_or_hybrid_wrapper_blocks_vault_dek_bootstrap() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("dek.enc"), b"password wrapper fixture").unwrap();
+        let probe = probe_dek_wrapper(temp.path());
+        assert_eq!(probe, DekWrapperProbe::Present);
+        assert!(!should_bootstrap_vault(probe, true));
+    }
+
+    #[test]
+    fn fresh_vault_install_bootstraps_only_when_keychain_is_available() {
+        let temp = tempfile::tempdir().unwrap();
+        let probe = probe_dek_wrapper(temp.path());
+        assert_eq!(probe, DekWrapperProbe::ConfirmedMissing);
+        assert!(should_bootstrap_vault(probe, true));
+        assert!(!should_bootstrap_vault(probe, false));
+    }
+
+    #[test]
+    fn unreadable_wrapper_probe_fails_closed_without_exposing_error_details() {
+        let secret = "TOP-SECRET-DEK-PATH-271c";
+        let probe = classify_dek_wrapper_probe(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("access denied at C:/private/{secret}/dek.enc"),
+        )));
+
+        assert_eq!(probe, DekWrapperProbe::ProbeFailed);
+        assert!(!should_bootstrap_vault(probe, true));
+        assert!(!format!("{probe:?}").contains(secret));
+    }
 }
 
 /// Read the persisted app settings as raw JSON, or `None` when the encryption
