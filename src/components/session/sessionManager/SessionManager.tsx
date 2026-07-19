@@ -1,9 +1,8 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   RefreshCw,
   Monitor,
   Globe,
-  Power,
   PowerOff,
   Unplug,
   PlugZap,
@@ -12,12 +11,9 @@ import {
   ExternalLink,
   ScrollText,
   StopCircle,
-  AlertCircle,
   Clock,
   User,
   ArrowUpDown,
-  Wifi,
-  WifiOff,
   Server,
   History,
   BarChart3,
@@ -25,6 +21,9 @@ import {
   Terminal,
   Database,
   Wrench,
+  Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { ErrorBanner, EmptyState } from "../../ui/display";
 import { Checkbox } from "../../ui/forms";
@@ -141,354 +140,308 @@ const StatusPill: React.FC<{ row: UnifiedSessionRow }> = ({ row }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   RDP row — preserves every RDP action
-   ═══════════════════════════════════════════════════════════════════ */
-
-const RdpRow: React.FC<{
-  mgr: Mgr;
-  row: UnifiedSessionRow;
-  onReattachSession?: (sessionId: string, connectionId?: string) => void;
-  onDetachToWindow?: (sessionId: string) => void;
-  onViewLogs: (sessionId: string) => void;
-  onViewerDetach: (backendSessionId: string) => void;
-}> = ({
-  mgr,
-  row,
-  onReattachSession,
-  onDetachToWindow,
-  onViewLogs,
-  onViewerDetach,
-}) => {
-  const { rdp } = mgr;
-  const s = row.rdpSession!;
-  const stats = row.rdpStats;
-  const StatusIcon = s.connected ? Wifi : WifiOff;
-  const statusColor = s.connected
-    ? row.detached
-      ? "text-warning"
-      : "text-success"
-    : "text-error";
-
-  return (
-    <div
-      className="group sor-selection-row p-4 cursor-default"
-      data-testid={`session-row-rdp-${s.id}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <StatusIcon size={13} className={`flex-shrink-0 ${statusColor}`} />
-            <Monitor size={13} className="text-info flex-shrink-0" />
-            <span className="text-[var(--color-text)] text-sm font-medium truncate">
-              {row.title}
-            </span>
-            {row.subtitle && (
-              <span className="text-[11px] text-[var(--color-textMuted)] font-mono truncate">
-                {row.subtitle}
-              </span>
-            )}
-            <StatusPill row={row} />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-textSecondary)]">
-            <span className="font-mono">
-              {s.desktop_width}&times;{s.desktop_height}
-            </span>
-            {stats && (
-              <>
-                <span className="flex items-center gap-1">
-                  <Clock size={10} />
-                  {formatUptime(stats.uptime_secs)}
-                </span>
-                <span>{stats.fps.toFixed(0)} fps</span>
-                <span>&darr; {formatBytes(stats.bytes_received)}</span>
-                <span>&uarr; {formatBytes(stats.bytes_sent)}</span>
-                <span
-                  className={`font-medium ${stats.phase === "active" ? "text-success" : "text-warning"}`}
-                >
-                  {stats.phase}
-                </span>
-              </>
-            )}
-          </div>
-          {stats?.last_error && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-error">
-              <AlertCircle size={10} className="flex-shrink-0" />
-              <span className="truncate">{stats.last_error}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {row.detached && onReattachSession && (
-            <button
-              onClick={() => onReattachSession(s.id, s.connection_id)}
-              className="sor-icon-btn-xs"
-              data-tooltip="Reattach"
-              title="Reattach"
-            >
-              <PlugZap size={15} />
-            </button>
-          )}
-          {onDetachToWindow && (
-            <button
-              onClick={() => onDetachToWindow(s.id)}
-              className="sor-icon-btn-xs"
-              data-tooltip="Detach to window"
-              title="Detach to window"
-            >
-              <ExternalLink size={15} />
-            </button>
-          )}
-          <button
-            onClick={() => {
-              rdp.handleDetach(s.id);
-              onViewerDetach(s.id);
-            }}
-            className="sor-icon-btn-xs"
-            data-tooltip="Detach viewer"
-            title="Detach viewer"
-          >
-            <Unplug size={15} />
-          </button>
-          <button
-            onClick={() => rdp.handleSignOut(s.id)}
-            className="sor-icon-btn-xs"
-            data-tooltip="Sign out"
-            title="Sign out"
-          >
-            <LogOut size={15} />
-          </button>
-          <button
-            onClick={() => onViewLogs(s.id)}
-            className="sor-icon-btn-xs"
-            data-tooltip="View logs"
-            title="View logs"
-          >
-            <ScrollText size={15} />
-          </button>
-          <div className="w-px h-3 bg-[var(--color-border)] mx-0.5" />
-          <button
-            onClick={() => rdp.setRebootConfirmSessionId(s.id)}
-            className="sor-icon-btn-xs text-warning hover:text-warning"
-            data-tooltip="Force reboot"
-            title="Force reboot"
-          >
-            <RotateCcw size={15} />
-          </button>
-          <button
-            onClick={() => rdp.handleDisconnect(s.id)}
-            className="sor-icon-btn-xs text-error hover:text-error"
-            data-tooltip="Disconnect"
-            title="Disconnect session"
-          >
-            <PowerOff size={15} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   Proxy row — preserves every proxy session action
-   ═══════════════════════════════════════════════════════════════════ */
-
-const ProxyRow: React.FC<{
-  mgr: Mgr;
-  row: UnifiedSessionRow;
-}> = ({ mgr, row }) => {
-  const { proxy } = mgr;
-  const s = row.proxySession!;
-  return (
-    <div
-      className="group sor-selection-row p-4 cursor-default"
-      data-testid={`session-row-proxy-${s.session_id}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Globe size={14} className="text-info flex-shrink-0" />
-            <span className="text-[var(--color-text)] text-sm font-medium truncate">
-              {s.target_url}
-            </span>
-            <StatusPill row={row} />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-textSecondary)]">
-            {s.username && (
-              <span className="flex items-center gap-1">
-                <User size={10} />
-                <span>{s.username}</span>
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Clock size={10} />
-              <span>{s.session_id.slice(0, 8)}</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <ArrowUpDown size={10} />
-              <span>
-                {s.request_count} req{s.request_count !== 1 ? "s" : ""}
-              </span>
-            </span>
-            {s.error_count > 0 && (
-              <span className="flex items-center gap-1 text-error">
-                <AlertCircle size={10} />
-                <span>
-                  {s.error_count} error{s.error_count !== 1 ? "s" : ""}
-                </span>
-              </span>
-            )}
-          </div>
-          {s.last_error && (
-            <div className="mt-1 px-2 py-1 bg-error/20 border border-error/30 rounded text-[11px] text-error truncate">
-              Last error: {s.last_error}
-            </div>
-          )}
-        </div>
-        <button
-          onClick={() => proxy.handleStopSession(s.session_id)}
-          className="flex-shrink-0 p-1.5 hover:bg-error/30 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
-          title="Stop session"
-          data-tooltip="Stop session"
-        >
-          <StopCircle size={15} />
-        </button>
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   Frontend row — tabs projected from ConnectionContext sessions
-   ═══════════════════════════════════════════════════════════════════ */
-
-const FrontendRow: React.FC<{
-  row: UnifiedSessionRow;
-  onCloseSession: (sessionId: string) => void;
-}> = ({ row, onCloseSession }) => {
-  const Icon = groupIconForRow(row);
-  const started = row.startedAt
-    ? row.startedAt.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
-
-  return (
-    <div
-      className="group sor-selection-row p-4 cursor-default"
-      data-testid={`session-row-frontend-${row.nativeId}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Icon size={14} className="text-info flex-shrink-0" />
-            <span className="text-[var(--color-text)] text-sm font-medium truncate">
-              {row.title}
-            </span>
-            {row.kindLabel && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-textSecondary)] uppercase">
-                {row.kindLabel}
-              </span>
-            )}
-            <StatusPill row={row} />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-textSecondary)]">
-            {row.subtitle && (
-              <span className="font-mono truncate">{row.subtitle}</span>
-            )}
-            {started && (
-              <span className="flex items-center gap-1">
-                <Clock size={10} />
-                {started}
-              </span>
-            )}
-            {row.metrics?.latency != null && (
-              <span>{Math.round(row.metrics.latency)} ms</span>
-            )}
-          </div>
-          {row.errorMessage && (
-            <div className="mt-1 flex items-center gap-1 text-[11px] text-error">
-              <AlertCircle size={10} className="flex-shrink-0" />
-              <span className="truncate">{row.errorMessage}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={() => onCloseSession(row.nativeId)}
-            className="sor-icon-btn-xs text-error hover:text-error"
-            data-tooltip="Close session"
-            title="Close session"
-          >
-            <StopCircle size={15} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   Group header (collapsible)
-   ═══════════════════════════════════════════════════════════════════ */
-
-const GroupHeader: React.FC<{
-  groupKey: string;
-  label: string;
-  icon: React.ElementType;
-  count: number;
-  collapsed: boolean;
-  onToggle: () => void;
-}> = ({ groupKey, label, icon: Icon, count, collapsed, onToggle }) => {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wide hover:bg-[var(--color-surfaceHover)]/60 transition-colors"
-      aria-expanded={!collapsed}
-      data-testid={`session-group-${groupKey}`}
-    >
-      <Icon size={13} className="text-[var(--color-textMuted)]" />
-      <span className="flex-1">{label}</span>
-      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-border)] text-[var(--color-textSecondary)]">
-        {count}
-      </span>
-    </button>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════
    Sessions view (both kinds, grouped + filtered)
    ═══════════════════════════════════════════════════════════════════ */
 
 type SessionFilter =
   | "all"
   | "rdp"
+  | "ssh"
   | "proxy"
   | "connections"
   | "tools"
   | "winmgmt"
   | "integrations";
 
-const KIND_FILTERS: { id: SessionFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "rdp", label: "RDP" },
-  { id: "proxy", label: "Proxy" },
-  { id: "connections", label: "Connections" },
-  { id: "tools", label: "Tools" },
-  { id: "winmgmt", label: "Windows" },
-  { id: "integrations", label: "Integrations" },
+const KIND_FILTERS: {
+  id: SessionFilter;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+}[] = [
+  {
+    id: "all",
+    label: "All",
+    description: "Show every active session",
+    icon: LayoutGrid,
+  },
+  {
+    id: "rdp",
+    label: "RDP",
+    description: "Show Remote Desktop sessions",
+    icon: Monitor,
+  },
+  {
+    id: "ssh",
+    label: "SSH",
+    description: "Show native SSH sessions",
+    icon: Terminal,
+  },
+  {
+    id: "proxy",
+    label: "Proxy",
+    description: "Show internal HTTP and HTTPS proxy sessions",
+    icon: Globe,
+  },
+  {
+    id: "connections",
+    label: "Connections",
+    description: "Show other connection tabs",
+    icon: Server,
+  },
+  {
+    id: "tools",
+    label: "Tools",
+    description: "Show utility and tool tabs",
+    icon: Wrench,
+  },
+  {
+    id: "winmgmt",
+    label: "Windows",
+    description: "Show Windows management tabs",
+    icon: Server,
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    description: "Show integration sessions",
+    icon: Database,
+  },
 ];
 
-interface SessionGroup {
-  key: string;
-  label: string;
-  icon: React.ElementType;
-  rows: UnifiedSessionRow[];
+export const SESSION_MANAGER_FILTER_STORAGE_KEY =
+  "sortofremoteng.session-manager.filter";
+
+function readStoredSessionFilter(): SessionFilter {
+  if (typeof window === "undefined") return "all";
+  try {
+    const stored = window.localStorage.getItem(
+      SESSION_MANAGER_FILTER_STORAGE_KEY,
+    );
+    return KIND_FILTERS.some((filter) => filter.id === stored)
+      ? (stored as SessionFilter)
+      : "all";
+  } catch {
+    return "all";
+  }
 }
+
+type SessionSortKey = "name" | "protocol" | "status" | "started" | "activity";
+type SortDirection = "asc" | "desc";
+
+function sessionDateValue(value?: Date): number {
+  return value?.getTime() ?? 0;
+}
+
+function formatSessionDate(value?: Date): string {
+  if (!value) return "—";
+  return value.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function sessionSearchText(row: UnifiedSessionRow): string {
+  return [
+    row.title,
+    row.subtitle,
+    row.kindLabel,
+    row.groupLabel,
+    row.protocol,
+    row.status,
+    row.hostname,
+    row.username,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase();
+}
+
+function sessionDetails(row: UnifiedSessionRow): string {
+  if (row.source === "rdp" && row.rdpStats) {
+    return `${row.rdpStats.fps.toFixed(0)} fps · ↓ ${formatBytes(row.rdpStats.bytes_received)} · ↑ ${formatBytes(row.rdpStats.bytes_sent)}`;
+  }
+  if (row.source === "http-proxy" && row.proxySession) {
+    return `${row.proxySession.request_count} request${row.proxySession.request_count === 1 ? "" : "s"} · ${row.proxySession.error_count} error${row.proxySession.error_count === 1 ? "" : "s"}`;
+  }
+  if (row.metrics?.latency != null) {
+    return `${Math.round(row.metrics.latency)} ms latency`;
+  }
+  return row.connectionId ? `Connection ${row.connectionId.slice(0, 8)}` : "—";
+}
+
+const SortHeader: React.FC<{
+  sortKey: SessionSortKey;
+  label: string;
+  activeSort: SessionSortKey;
+  direction: SortDirection;
+  onSort: (key: SessionSortKey) => void;
+}> = ({ sortKey, label, activeSort, direction, onSort }) => {
+  const active = activeSort === sortKey;
+  const ariaSort = !active
+    ? "none"
+    : direction === "asc"
+      ? "ascending"
+      : "descending";
+  return (
+    <th scope="col" aria-sort={ariaSort} className="px-3 py-2 font-medium">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex items-center gap-1 hover:text-[var(--color-text)]"
+        title={`Sort by ${label.toLowerCase()}`}
+        aria-label={`Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <ArrowUpDown
+          size={11}
+          aria-hidden="true"
+          className={active ? "text-[var(--color-primary)]" : "opacity-50"}
+        />
+      </button>
+    </th>
+  );
+};
+
+const SessionRowActions: React.FC<{
+  mgr: Mgr;
+  row: UnifiedSessionRow;
+  onReattachSession?: (sessionId: string, connectionId?: string) => void;
+  onDetachToWindow?: (sessionId: string) => void;
+  onViewRdpLogs: (sessionId: string) => void;
+  onViewerDetach: (backendSessionId: string) => void;
+  onCloseSession: (sessionId: string) => void;
+  onDisconnectSsh: (row: UnifiedSessionRow) => void | Promise<void>;
+}> = ({
+  mgr,
+  row,
+  onReattachSession,
+  onDetachToWindow,
+  onViewRdpLogs,
+  onViewerDetach,
+  onCloseSession,
+  onDisconnectSsh,
+}) => {
+  if (row.source === "rdp" && row.rdpSession) {
+    const session = row.rdpSession;
+    return (
+      <div className="flex items-center justify-end gap-0.5">
+        {row.detached && onReattachSession && (
+          <button
+            type="button"
+            onClick={() => onReattachSession(session.id, session.connection_id)}
+            className="sor-icon-btn-xs"
+            title="Reattach RDP session"
+            aria-label={`Reattach ${row.title}`}
+          >
+            <PlugZap size={14} aria-hidden="true" />
+          </button>
+        )}
+        {onDetachToWindow && (
+          <button
+            type="button"
+            onClick={() => onDetachToWindow(session.id)}
+            className="sor-icon-btn-xs"
+            title="Detach RDP to window"
+            aria-label={`Detach ${row.title} to a window`}
+          >
+            <ExternalLink size={14} aria-hidden="true" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            mgr.rdp.handleDetach(session.id);
+            onViewerDetach(session.id);
+          }}
+          className="sor-icon-btn-xs"
+          title="Detach RDP viewer"
+          aria-label={`Detach viewer for ${row.title}`}
+        >
+          <Unplug size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => mgr.rdp.handleSignOut(session.id)}
+          className="sor-icon-btn-xs"
+          title="Sign out RDP session"
+          aria-label={`Sign out ${row.title}`}
+        >
+          <LogOut size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onViewRdpLogs(session.id)}
+          className="sor-icon-btn-xs"
+          title="View RDP logs"
+          aria-label={`View logs for ${row.title}`}
+        >
+          <ScrollText size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => mgr.rdp.setRebootConfirmSessionId(session.id)}
+          className="sor-icon-btn-xs text-warning hover:text-warning"
+          title="Force reboot remote machine"
+          aria-label={`Force reboot ${row.title}`}
+        >
+          <RotateCcw size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => mgr.rdp.handleDisconnect(session.id)}
+          className="sor-icon-btn-xs text-error hover:text-error"
+          title="Disconnect RDP session"
+          aria-label={`Disconnect ${row.title}`}
+        >
+          <PowerOff size={14} aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
+
+  if (row.source === "ssh" && row.sshSession) {
+    return (
+      <button
+        type="button"
+        onClick={() => onDisconnectSsh(row)}
+        className="sor-icon-btn-xs text-error hover:text-error"
+        title="Disconnect SSH session"
+        aria-label={`Disconnect SSH session ${row.title}`}
+      >
+        <PowerOff size={14} aria-hidden="true" />
+      </button>
+    );
+  }
+
+  if (row.source === "http-proxy" && row.proxySession) {
+    return (
+      <button
+        type="button"
+        onClick={() => mgr.proxy.handleStopSession(row.nativeId)}
+        className="sor-icon-btn-xs text-error hover:text-error"
+        title="Stop proxy session"
+        aria-label={`Stop proxy session ${row.title}`}
+      >
+        <StopCircle size={14} aria-hidden="true" />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onCloseSession(row.nativeId)}
+      className="sor-icon-btn-xs text-error hover:text-error"
+      title="Close session tab"
+      aria-label={`Close session ${row.title}`}
+    >
+      <StopCircle size={14} aria-hidden="true" />
+    </button>
+  );
+};
 
 const SessionsView: React.FC<{
   mgr: Mgr;
@@ -497,6 +450,8 @@ const SessionsView: React.FC<{
   onViewRdpLogs: (sessionId: string) => void;
   onViewerDetach: (backendSessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
+  onDisconnectSsh: (row: UnifiedSessionRow) => void | Promise<void>;
+  onDisconnectAllSsh: () => void | Promise<void>;
 }> = ({
   mgr,
   onReattachSession,
@@ -504,161 +459,490 @@ const SessionsView: React.FC<{
   onViewRdpLogs,
   onViewerDetach,
   onCloseSession,
+  onDisconnectSsh,
+  onDisconnectAllSsh,
 }) => {
-  const [kindFilter, setKindFilter] = useState<SessionFilter>("all");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [kindFilter, setKindFilter] = useState<SessionFilter>(
+    readStoredSessionFilter,
+  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SessionSortKey>("started");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [confirmEndSelected, setConfirmEndSelected] = useState(false);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SESSION_MANAGER_FILTER_STORAGE_KEY,
+        kindFilter,
+      );
+    } catch {
+      // Preference persistence is best-effort (private/locked browser storage).
+    }
+  }, [kindFilter]);
 
   const visibleRows = useMemo(() => {
-    return mgr.rows.filter((row) => {
-      switch (kindFilter) {
-        case "rdp":
-          return row.source === "rdp";
-        case "proxy":
-          return row.source === "http-proxy";
-        case "connections":
-          return row.bucket === "connection";
-        case "tools":
-          return row.bucket === "tool";
-        case "winmgmt":
-          return row.bucket === "winmgmt";
-        case "integrations":
-          return row.bucket === "integration";
-        case "all":
-        default:
-          return true;
-      }
-    });
-  }, [kindFilter, mgr.rows]);
-
-  const groups = useMemo<SessionGroup[]>(() => {
-    const byKey = new Map<string, SessionGroup>();
-    for (const row of visibleRows) {
-      const key = row.groupKey || String(row.kind);
-      const existing = byKey.get(key);
-      if (existing) {
-        existing.rows.push(row);
-        continue;
-      }
-      byKey.set(key, {
-        key,
-        label: row.groupLabel || row.kindLabel || String(row.kind),
-        icon: groupIconForRow(row),
-        rows: [row],
+    const query = searchTerm.trim().toLocaleLowerCase();
+    return mgr.rows
+      .filter((row) => {
+        const matchesKind = (() => {
+          switch (kindFilter) {
+            case "rdp":
+              return row.source === "rdp";
+            case "ssh":
+              return row.kind === "ssh";
+            case "proxy":
+              return row.source === "http-proxy";
+            case "connections":
+              return row.bucket === "connection";
+            case "tools":
+              return row.bucket === "tool";
+            case "winmgmt":
+              return row.bucket === "winmgmt";
+            case "integrations":
+              return row.bucket === "integration";
+            case "all":
+            default:
+              return true;
+          }
+        })();
+        return (
+          matchesKind && (!query || sessionSearchText(row).includes(query))
+        );
+      })
+      .sort((left, right) => {
+        let result = 0;
+        switch (sortKey) {
+          case "name":
+            result = left.title.localeCompare(right.title, undefined, {
+              numeric: true,
+              sensitivity: "base",
+            });
+            break;
+          case "protocol":
+            result = left.kindLabel.localeCompare(right.kindLabel);
+            break;
+          case "status":
+            result = left.status.localeCompare(right.status);
+            break;
+          case "activity":
+            result =
+              sessionDateValue(left.lastActivity) -
+              sessionDateValue(right.lastActivity);
+            break;
+          case "started":
+          default:
+            result =
+              sessionDateValue(left.startedAt) -
+              sessionDateValue(right.startedAt);
+            break;
+        }
+        if (result === 0) result = left.uid.localeCompare(right.uid);
+        return sortDirection === "asc" ? result : -result;
       });
-    }
-    return Array.from(byKey.values());
-  }, [visibleRows]);
+  }, [kindFilter, mgr.rows, searchTerm, sortDirection, sortKey]);
 
-  const totalVisible = visibleRows.length;
+  const pageCount = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = visibleRows.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+  const pageRowIds = pageRows.map((row) => row.uid);
+  const allPageRowsSelected =
+    pageRowIds.length > 0 && pageRowIds.every((id) => selectedRows.has(id));
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  useEffect(() => {
+    const liveIds = new Set(mgr.rows.map((row) => row.uid));
+    setSelectedRows((current) => {
+      const next = new Set([...current].filter((id) => liveIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [mgr.rows]);
+
+  const changeFilter = (filter: SessionFilter) => {
+    setKindFilter(filter);
+    setPage(1);
+  };
+  const changeSort = (nextSort: SessionSortKey) => {
+    if (sortKey === nextSort) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(nextSort);
+      setSortDirection(
+        nextSort === "name" || nextSort === "protocol" ? "asc" : "desc",
+      );
+    }
+    setPage(1);
+  };
+  const togglePageSelection = (checked: boolean) => {
+    setSelectedRows((current) => {
+      const next = new Set(current);
+      pageRowIds.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  };
+
+  const endSession = useCallback(
+    async (row: UnifiedSessionRow) => {
+      if (row.source === "rdp") {
+        await mgr.rdp.handleDisconnect(row.nativeId);
+      } else if (row.source === "ssh") {
+        await onDisconnectSsh(row);
+      } else if (row.source === "http-proxy") {
+        await mgr.proxy.handleStopSession(row.nativeId);
+      } else {
+        onCloseSession(row.nativeId);
+      }
+    },
+    [mgr.proxy, mgr.rdp, onCloseSession, onDisconnectSsh],
+  );
+
+  const endSelectedSessions = async () => {
+    const rows = mgr.rows.filter((row) => selectedRows.has(row.uid));
+    await Promise.allSettled(rows.map(endSession));
+    setSelectedRows(new Set());
+  };
+
   const showRdpBulk =
     mgr.rdpRows.length > 0 && (kindFilter === "all" || kindFilter === "rdp");
   const showProxyBulk =
     mgr.proxyRows.length > 0 &&
     (kindFilter === "all" || kindFilter === "proxy");
+  const showSshBulk =
+    mgr.sshRows.length > 0 && (kindFilter === "all" || kindFilter === "ssh");
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Filter / action bar */}
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-[var(--color-border)] flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          {KIND_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setKindFilter(f.id)}
-              className={`sor-option-chip text-xs ${kindFilter === f.id ? "sor-option-chip-active" : ""}`}
-              data-testid={`session-filter-${f.id}`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {(showRdpBulk || showProxyBulk) && (
+      <div className="flex-shrink-0 space-y-2 border-b border-[var(--color-border)] px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="relative min-w-56 flex-1">
+            <span className="sr-only">Search sessions</span>
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => {
+                setSearchTerm(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search name, target, protocol, user, or status…"
+              className="sor-form-input w-full pl-8"
+              data-testid="session-search"
+            />
+          </label>
           <div className="flex items-center gap-1.5">
+            {selectedRows.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setConfirmEndSelected(true)}
+                className="sor-option-chip text-xs bg-error/20 text-error border-error/40 hover:bg-error/30"
+                title="End selected sessions"
+                data-testid="session-end-selected"
+              >
+                <StopCircle size={12} aria-hidden="true" />
+                End selected ({selectedRows.size})
+              </button>
+            )}
             {showRdpBulk && (
               <button
+                type="button"
                 onClick={mgr.rdp.handleDisconnectAll}
                 className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
                 title="Disconnect all RDP sessions"
               >
-                <Power size={12} />
+                <Monitor size={12} aria-hidden="true" />
                 <span>Disconnect RDP</span>
+              </button>
+            )}
+            {showSshBulk && (
+              <button
+                type="button"
+                onClick={onDisconnectAllSsh}
+                className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
+                title="Disconnect all SSH sessions"
+                aria-label="Disconnect all SSH sessions"
+              >
+                <Terminal size={12} aria-hidden="true" />
+                <span>Disconnect SSH</span>
               </button>
             )}
             {showProxyBulk && (
               <button
+                type="button"
                 onClick={mgr.proxy.handleStopAll}
                 className="sor-option-chip text-xs bg-error/20 hover:bg-error/40 text-error border-error/40"
                 title="Stop all proxy sessions"
               >
-                <StopCircle size={12} />
+                <Globe size={12} aria-hidden="true" />
                 <span>Stop Proxies</span>
               </button>
             )}
           </div>
-        )}
+        </div>
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto"
+          role="toolbar"
+          aria-label="Filter sessions by type"
+        >
+          {KIND_FILTERS.map((filter) => {
+            const Icon = filter.icon;
+            const active = kindFilter === filter.id;
+            return (
+              <button
+                type="button"
+                key={filter.id}
+                onClick={() => changeFilter(filter.id)}
+                className={`sor-option-chip text-xs flex-shrink-0 ${active ? "sor-option-chip-active" : ""}`}
+                data-testid={`session-filter-${filter.id}`}
+                data-tooltip={filter.description}
+                title={filter.description}
+                aria-label={filter.description}
+                aria-pressed={active}
+              >
+                <Icon size={12} aria-hidden="true" />
+                <span>{filter.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {totalVisible === 0 ? (
-          <div className="flex items-center justify-center py-16">
-            <EmptyState
-              icon={Server}
-              message="No active sessions"
-              hint="Remote sessions, tool tabs, Windows panels, integration panels, and internal proxy sessions appear here when active."
-            />
-          </div>
-        ) : (
-          <>
-            {groups.map((group) => (
-              <div key={group.key}>
-                <GroupHeader
-                  groupKey={group.key}
-                  label={group.label}
-                  icon={group.icon}
-                  count={group.rows.length}
-                  collapsed={collapsed[group.key] ?? false}
-                  onToggle={() =>
-                    setCollapsed((c) => ({
-                      ...c,
-                      [group.key]: !(c[group.key] ?? false),
-                    }))
-                  }
+      <div className="flex-1 overflow-auto p-3">
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <table
+            className="w-full min-w-[1040px] border-collapse text-left text-xs"
+            data-testid="session-management-table"
+          >
+            <caption className="sr-only">Active session management</caption>
+            <thead className="sticky top-0 z-10 bg-[var(--color-backgroundSecondary)] text-[var(--color-textSecondary)]">
+              <tr>
+                <th scope="col" className="w-10 px-3 py-2">
+                  <Checkbox
+                    checked={allPageRowsSelected}
+                    onChange={togglePageSelection}
+                    aria-label="Select all sessions on this page"
+                    disabled={pageRows.length === 0}
+                  />
+                </th>
+                <SortHeader
+                  sortKey="name"
+                  label="Name / target"
+                  activeSort={sortKey}
+                  direction={sortDirection}
+                  onSort={changeSort}
                 />
-                {!(collapsed[group.key] ?? false) && (
-                  <div className="sor-selection-list mt-1">
-                    {group.rows.map((row) => {
-                      if (row.source === "rdp" && row.rdpSession) {
-                        return (
-                          <RdpRow
-                            key={row.uid}
-                            mgr={mgr}
-                            row={row}
-                            onReattachSession={onReattachSession}
-                            onDetachToWindow={onDetachToWindow}
-                            onViewLogs={onViewRdpLogs}
-                            onViewerDetach={onViewerDetach}
-                          />
-                        );
-                      }
-                      if (row.source === "http-proxy" && row.proxySession) {
-                        return <ProxyRow key={row.uid} mgr={mgr} row={row} />;
-                      }
-                      return (
-                        <FrontendRow
-                          key={row.uid}
-                          row={row}
-                          onCloseSession={onCloseSession}
+                <SortHeader
+                  sortKey="protocol"
+                  label="Protocol"
+                  activeSort={sortKey}
+                  direction={sortDirection}
+                  onSort={changeSort}
+                />
+                <SortHeader
+                  sortKey="status"
+                  label="Status"
+                  activeSort={sortKey}
+                  direction={sortDirection}
+                  onSort={changeSort}
+                />
+                <SortHeader
+                  sortKey="started"
+                  label="Started"
+                  activeSort={sortKey}
+                  direction={sortDirection}
+                  onSort={changeSort}
+                />
+                <SortHeader
+                  sortKey="activity"
+                  label="Last activity"
+                  activeSort={sortKey}
+                  direction={sortDirection}
+                  onSort={changeSort}
+                />
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Details
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {pageRows.map((row) => {
+                const Icon = groupIconForRow(row);
+                return (
+                  <tr
+                    key={row.uid}
+                    className="bg-[var(--color-background)]/40 hover:bg-[var(--color-surfaceHover)]/50"
+                    data-testid={`session-table-row-${row.uid}`}
+                  >
+                    <td className="px-3 py-2.5">
+                      <Checkbox
+                        checked={selectedRows.has(row.uid)}
+                        onChange={(checked) =>
+                          setSelectedRows((current) => {
+                            const next = new Set(current);
+                            if (checked) next.add(row.uid);
+                            else next.delete(row.uid);
+                            return next;
+                          })
+                        }
+                        aria-label={`Select ${row.title}`}
+                      />
+                    </td>
+                    <th
+                      scope="row"
+                      className="max-w-72 px-3 py-2.5 font-normal"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Icon
+                          size={14}
+                          className="flex-shrink-0 text-info"
+                          aria-hidden="true"
                         />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </>
-        )}
+                        <div className="min-w-0">
+                          <div
+                            className="truncate font-medium text-[var(--color-text)]"
+                            title={row.title}
+                          >
+                            {row.title}
+                          </div>
+                          <div
+                            className="truncate font-mono text-[10px] text-[var(--color-textMuted)]"
+                            title={row.subtitle}
+                          >
+                            {row.subtitle || row.nativeId}
+                          </div>
+                        </div>
+                      </div>
+                    </th>
+                    <td className="px-3 py-2.5 text-[var(--color-textSecondary)]">
+                      {row.kindLabel}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <StatusPill row={row} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-[var(--color-textSecondary)]">
+                      {formatSessionDate(row.startedAt)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-[var(--color-textSecondary)]">
+                      {formatSessionDate(row.lastActivity)}
+                    </td>
+                    <td
+                      className="max-w-60 truncate px-3 py-2.5 text-[var(--color-textSecondary)]"
+                      title={sessionDetails(row)}
+                    >
+                      {sessionDetails(row)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <SessionRowActions
+                        mgr={mgr}
+                        row={row}
+                        onReattachSession={onReattachSession}
+                        onDetachToWindow={onDetachToWindow}
+                        onViewRdpLogs={onViewRdpLogs}
+                        onViewerDetach={onViewerDetach}
+                        onCloseSession={onCloseSession}
+                        onDisconnectSsh={onDisconnectSsh}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {pageRows.length === 0 && (
+            <div className="flex items-center justify-center py-14">
+              <EmptyState
+                icon={Server}
+                message="No matching sessions"
+                hint="Adjust the search or type filter, or open a remote session."
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-textSecondary)]">
+        <span aria-live="polite">
+          {visibleRows.length === 0
+            ? "0 sessions"
+            : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, visibleRows.length)} of ${visibleRows.length}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5">
+            <span>Rows</span>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+              className="sor-form-input py-1"
+              aria-label="Session rows per page"
+              data-testid="session-page-size"
+            >
+              {[25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>
+            Page {currentPage} of {pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={currentPage <= 1}
+            className="sor-icon-btn-xs disabled:cursor-not-allowed disabled:opacity-40"
+            title="Previous session page"
+            aria-label="Previous session page"
+            data-testid="session-previous-page"
+          >
+            <ChevronLeft size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setPage((current) => Math.min(pageCount, current + 1))
+            }
+            disabled={currentPage >= pageCount}
+            className="sor-icon-btn-xs disabled:cursor-not-allowed disabled:opacity-40"
+            title="Next session page"
+            aria-label="Next session page"
+            data-testid="session-next-page"
+          >
+            <ChevronRight size={14} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <ConfirmDialog
+        isOpen={confirmEndSelected}
+        title="End Selected Sessions"
+        message={`End ${selectedRows.size} selected session${selectedRows.size === 1 ? "" : "s"}? Active transports will be disconnected and selected tabs will be closed.`}
+        confirmText="End Sessions"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          setConfirmEndSelected(false);
+          void endSelectedSessions();
+        }}
+        onCancel={() => setConfirmEndSelected(false)}
+      />
     </div>
   );
 };
@@ -718,6 +1002,43 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     },
     [dispatch, onCloseSession],
   );
+
+  const markSshSessionsDisconnected = useCallback(
+    (backendSessionIds: readonly string[]) => {
+      const ids = new Set(backendSessionIds);
+      state.sessions
+        .filter(
+          (session) =>
+            session.protocol.toLowerCase() === "ssh" &&
+            session.backendSessionId &&
+            ids.has(session.backendSessionId),
+        )
+        .forEach((session) => {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: {
+              ...session,
+              status: "disconnected",
+              lastActivity: new Date(),
+            },
+          });
+        });
+    },
+    [dispatch, state.sessions],
+  );
+
+  const handleDisconnectSsh = useCallback(
+    async (row: UnifiedSessionRow) => {
+      const disconnected = await mgr.ssh.handleDisconnect(row.nativeId);
+      if (disconnected) markSshSessionsDisconnected([row.nativeId]);
+    },
+    [markSshSessionsDisconnected, mgr.ssh],
+  );
+
+  const handleDisconnectAllSsh = useCallback(async () => {
+    const disconnectedIds = await mgr.ssh.handleDisconnectAll();
+    markSshSessionsDisconnected(disconnectedIds);
+  }, [markSshSessionsDisconnected, mgr.ssh]);
 
   /** Mark the frontend RDP tab disconnected when its viewer is detached. */
   const handleViewerDetach = useCallback(
@@ -785,14 +1106,20 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           </div>
           <div className="mt-auto p-3 border-t border-[var(--color-border)] space-y-2">
             <div className="text-[10px] text-[var(--color-textMuted)]">
-              {mgr.rdpRows.length} RDP &middot; {mgr.proxyRows.length} proxy
-              &middot; {mgr.frontendRows.length} tabs
+              {mgr.rdpRows.length} RDP &middot; {mgr.sshRows.length} SSH
+              &middot; {mgr.proxyRows.length} proxy &middot;{" "}
+              {mgr.frontendRows.length} tabs
             </div>
             <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-textSecondary)] cursor-pointer">
               <Checkbox
-                checked={mgr.rdp.autoRefresh && mgr.proxy.autoRefresh}
+                checked={
+                  mgr.rdp.autoRefresh &&
+                  mgr.ssh.autoRefresh &&
+                  mgr.proxy.autoRefresh
+                }
                 onChange={(v: boolean) => {
                   mgr.rdp.setAutoRefresh(v);
+                  mgr.ssh.setAutoRefresh(v);
                   mgr.proxy.setAutoRefresh(v);
                 }}
               />
@@ -822,6 +1149,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               onViewRdpLogs={handleViewRdpLogs}
               onViewerDetach={handleViewerDetach}
               onCloseSession={handleCloseManagedSession}
+              onDisconnectSsh={handleDisconnectSsh}
+              onDisconnectAllSsh={handleDisconnectAllSsh}
             />
           )}
           {view === "rdp-logs" && (

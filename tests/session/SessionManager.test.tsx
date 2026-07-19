@@ -6,9 +6,13 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { SessionManager } from "../../src/components/session/sessionManager/SessionManager";
+import {
+  SessionManager,
+  SESSION_MANAGER_FILTER_STORAGE_KEY,
+} from "../../src/components/session/sessionManager/SessionManager";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import {
   ConnectionContext,
@@ -134,6 +138,18 @@ const SSH_SESSION: ConnectionSession = {
   },
 };
 
+const NATIVE_SSH_SESSION = {
+  id: "backend-ssh-1",
+  config: {
+    host: "ssh.example.com",
+    port: 22,
+    username: "deploy",
+  },
+  connected_at: "2026-01-01T12:00:00.000Z",
+  last_activity: "2026-01-01T12:05:00.000Z",
+  is_alive: true,
+};
+
 function renderManager(
   props: Partial<React.ComponentProps<typeof SessionManager>> = {},
 ) {
@@ -256,6 +272,7 @@ function renderManagerWithConnectionState({
 describe("SessionManager (unified RDP + internal proxy)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.removeItem(SESSION_MANAGER_FILTER_STORAGE_KEY);
     mockInvoke();
   });
 
@@ -266,15 +283,27 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
   });
 
-  it("renders BOTH an RDP session and a proxy session in one panel", async () => {
+  it("renders RDP and proxy sessions in an accessible management table", async () => {
     renderManager();
-    // RDP session — labelled by saved connection name
     expect(await screen.findByText("Prod RDP")).toBeInTheDocument();
-    // Proxy session — labelled by target url
     expect(await screen.findByText("https://example.com")).toBeInTheDocument();
-    // Both kind group headers present
-    expect(screen.getByTestId("session-group-rdp")).toBeInTheDocument();
-    expect(screen.getByTestId("session-group-http-proxy")).toBeInTheDocument();
+    const table = screen.getByTestId("session-management-table");
+    expect(table.tagName).toBe("TABLE");
+    expect(
+      within(table).getByRole("columnheader", { name: /name \/ target/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: /protocol/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: /status/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: /started/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("columnheader", { name: /last activity/i }),
+    ).toBeInTheDocument();
   });
 
   it("filters to RDP only and hides proxy rows", async () => {
@@ -293,6 +322,124 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
   });
 
+  it("shows clear icon filters and persists the selected filter", async () => {
+    const first = renderManager();
+    await screen.findByText("Prod RDP");
+
+    for (const id of [
+      "all",
+      "rdp",
+      "ssh",
+      "proxy",
+      "connections",
+      "tools",
+      "winmgmt",
+      "integrations",
+    ]) {
+      expect(
+        screen.getByTestId(`session-filter-${id}`).querySelector("svg"),
+      ).not.toBeNull();
+    }
+
+    fireEvent.click(screen.getByTestId("session-filter-proxy"));
+    expect(localStorage.getItem(SESSION_MANAGER_FILTER_STORAGE_KEY)).toBe(
+      "proxy",
+    );
+    first.unmount();
+
+    renderManager();
+    expect(screen.getByTestId("session-filter-proxy")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("searches and sorts the session table", async () => {
+    renderManager();
+    await screen.findByText("Prod RDP");
+
+    fireEvent.change(screen.getByTestId("session-search"), {
+      target: { value: "example.com" },
+    });
+    expect(screen.getByText("https://example.com")).toBeInTheDocument();
+    expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("session-search"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /sort by name/i }));
+    const rows = within(screen.getByTestId("session-management-table"))
+      .getAllByRole("row")
+      .slice(1);
+    expect(rows[0]).toHaveTextContent("https://example.com");
+    expect(rows[1]).toHaveTextContent("Prod RDP");
+  });
+
+  it("lists native SSH sessions once, filters them, and disconnects them", async () => {
+    mockInvoke({ list_sessions: [NATIVE_SSH_SESSION] });
+    const { dispatch } = renderManagerWithConnectionState({
+      sessions: [SSH_SESSION],
+      connections: [...CONNECTIONS, SSH_CONNECTION],
+    });
+
+    expect(
+      await screen.findByTestId("session-table-row-ssh:backend-ssh-1"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Prod SSH")).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId("session-filter-ssh"));
+    expect(screen.getByText("Prod SSH")).toBeInTheDocument();
+    expect(screen.queryByText("Prod RDP")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Disconnect SSH session Prod SSH",
+      }),
+    );
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: "backend-ssh-1",
+      });
+    });
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({ status: "disconnected" }),
+      }),
+    );
+  });
+
+  it("confirms or cancels ending selected mixed-source sessions", async () => {
+    renderManager();
+    await screen.findByText("Prod RDP");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Prod RDP" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select https://example.com" }),
+    );
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    expect(screen.getByText("End Selected Sessions")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(invoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: "rdp-1",
+    });
+    expect(invoke).not.toHaveBeenCalledWith("stop_basic_auth_proxy", {
+      sessionId: "sess-1",
+    });
+
+    fireEvent.click(screen.getByTestId("session-end-selected"));
+    fireEvent.click(screen.getByRole("button", { name: "End Sessions" }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "rdp-1",
+      });
+      expect(invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
+        sessionId: "sess-1",
+      });
+    });
+  });
+
   it("renders frontend SSH sessions in the same Session Manager panel", async () => {
     renderManagerWithConnectionState({
       sessions: [SSH_SESSION],
@@ -300,7 +447,9 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     });
 
     expect(await screen.findByText("Prod SSH")).toBeInTheDocument();
-    expect(screen.getByTestId("session-group-ssh")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("session-table-row-ssh:ssh-session-1"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("session-filter-connections"));
 
@@ -308,10 +457,48 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     expect(screen.queryByText("https://example.com")).not.toBeInTheDocument();
   });
 
+  it("paginates large session collections without rendering every row", async () => {
+    mockInvoke({
+      list_rdp_sessions: [],
+      get_proxy_session_details: [],
+      list_sessions: [],
+    });
+    const sessions = Array.from({ length: 55 }, (_, index) => {
+      const number = String(index + 1).padStart(3, "0");
+      return {
+        id: `telnet-${number}`,
+        connectionId: `connection-${number}`,
+        name: `Session ${number}`,
+        status: "connected" as const,
+        startTime: new Date("2026-01-01T12:00:00.000Z"),
+        protocol: "telnet",
+        hostname: `host-${number}.example.com`,
+      } satisfies ConnectionSession;
+    });
+
+    renderManagerWithConnectionState({ sessions, connections: [] });
+    fireEvent.click(screen.getByRole("button", { name: /sort by name/i }));
+    fireEvent.change(screen.getByTestId("session-page-size"), {
+      target: { value: "25" },
+    });
+
+    expect(screen.getByText("Session 001")).toBeInTheDocument();
+    expect(screen.queryByText("Session 026")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("session-management-table")).getAllByRole(
+        "row",
+      ),
+    ).toHaveLength(26);
+
+    fireEvent.click(screen.getByTestId("session-next-page"));
+    expect(screen.getByText("Session 026")).toBeInTheDocument();
+    expect(screen.queryByText("Session 001")).not.toBeInTheDocument();
+  });
+
   it("RDP disconnect action calls the RDP source handler", async () => {
     renderManager();
     await screen.findByText("Prod RDP");
-    fireEvent.click(await screen.findByTitle("Disconnect session"));
+    fireEvent.click(await screen.findByTitle("Disconnect RDP session"));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("disconnect_rdp", {
         sessionId: "rdp-1",
@@ -322,7 +509,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
   it("RDP sign-out action calls the RDP source handler", async () => {
     renderManager();
     await screen.findByText("Prod RDP");
-    fireEvent.click(await screen.findByTitle("Sign out"));
+    fireEvent.click(await screen.findByTitle("Sign out RDP session"));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("rdp_sign_out", {
         sessionId: "rdp-1",
@@ -333,7 +520,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
   it("proxy stop action calls the proxy source handler", async () => {
     renderManager();
     await screen.findByText("https://example.com");
-    fireEvent.click(await screen.findByTitle("Stop session"));
+    fireEvent.click(await screen.findByTitle("Stop proxy session"));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("stop_basic_auth_proxy", {
         sessionId: "sess-1",
