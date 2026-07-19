@@ -33,7 +33,8 @@ pub async fn get_zerotier_connection(
     connection_id: String,
     zerotier_service: tauri::State<'_, ZeroTierServiceState>,
 ) -> Result<ZeroTierConnection, String> {
-    let service = zerotier_service.lock().await;
+    let mut service = zerotier_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     service.get_connection(&connection_id).await
 }
 
@@ -42,7 +43,8 @@ pub async fn get_zerotier_status(
     connection_id: String,
     zerotier_service: tauri::State<'_, ZeroTierServiceState>,
 ) -> Result<ZeroTierStatus, String> {
-    let service = zerotier_service.lock().await;
+    let mut service = zerotier_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     Ok(service.get_connection(&connection_id).await?.status)
 }
 
@@ -50,7 +52,8 @@ pub async fn get_zerotier_status(
 pub async fn list_zerotier_connections(
     zerotier_service: tauri::State<'_, ZeroTierServiceState>,
 ) -> Result<Vec<ZeroTierConnection>, String> {
-    let service = zerotier_service.lock().await;
+    let mut service = zerotier_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     Ok(service.list_connections().await)
 }
 
