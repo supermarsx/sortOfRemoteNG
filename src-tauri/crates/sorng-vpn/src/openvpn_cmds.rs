@@ -1,4 +1,5 @@
 use super::openvpn::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_openvpn_connection(
@@ -23,35 +24,67 @@ pub async fn connect_openvpn(
 pub async fn disconnect_openvpn(
     connection_id: String,
     state: tauri::State<'_, OpenVPNServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::OpenVpn,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = state.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
 pub async fn get_openvpn_connection(
     connection_id: String,
     state: tauri::State<'_, OpenVPNServiceState>,
-) -> Result<OpenVPNConnection, String> {
+) -> Result<OpenVPNConnectionView, String> {
     let mut service = state.lock().await;
-    service.get_connection(&connection_id).await
+    Ok(service
+        .get_connection(&connection_id)
+        .await?
+        .into_redacted_view())
 }
 
 #[tauri::command]
 pub async fn list_openvpn_connections(
     state: tauri::State<'_, OpenVPNServiceState>,
-) -> Result<Vec<OpenVPNConnection>, String> {
+) -> Result<Vec<OpenVPNConnectionView>, String> {
     let mut service = state.lock().await;
-    service.list_connections().await
+    Ok(service
+        .list_connections()
+        .await?
+        .into_iter()
+        .map(OpenVPNConnection::into_redacted_view)
+        .collect())
 }
 
 #[tauri::command]
 pub async fn delete_openvpn_connection(
     connection_id: String,
     state: tauri::State<'_, OpenVPNServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::OpenVpn,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = state.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -108,11 +141,17 @@ pub async fn update_openvpn_connection(
     connection_id: String,
     name: Option<String>,
     config: Option<OpenVPNConfig>,
+    secret_mutation: Option<OpenVPNSecretMutation>,
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
     service
-        .update_connection(&connection_id, name, config)
+        .update_connection_from_ipc(
+            &connection_id,
+            name,
+            config,
+            secret_mutation.unwrap_or_default(),
+        )
         .await
 }
 

@@ -31,6 +31,41 @@ pub struct ZeroTierConnection {
     pub process_id: Option<u32>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct ZeroTierSecretPresence {
+    pub identity_secret: bool,
+    pub authtoken_secret: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ZeroTierConnectionView {
+    #[serde(flatten)]
+    pub connection: ZeroTierConnection,
+    pub secret_presence: ZeroTierSecretPresence,
+}
+
+impl ZeroTierConnection {
+    pub fn into_redacted_view(mut self) -> ZeroTierConnectionView {
+        let secret_presence = ZeroTierSecretPresence {
+            identity_secret: self.config.identity_secret.is_some(),
+            authtoken_secret: self.config.authtoken_secret.is_some(),
+        };
+        self.config.identity_secret = None;
+        self.config.authtoken_secret = None;
+        ZeroTierConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ZeroTierSecretMutation {
+    pub clear_identity_secret: bool,
+    pub clear_authtoken_secret: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ZeroTierStatus {
     Disconnected,
@@ -837,31 +872,44 @@ impl ZeroTierService {
         self.connections.values().cloned().collect()
     }
 
-    pub async fn is_connection_active(&self, connection_id: &str) -> bool {
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
         let Some(connection) = self.connections.get(connection_id) else {
-            return false;
+            return Ok(false);
         };
         let mut config = connection.config.clone();
-        if validate_zerotier_profile(&config).is_err()
-            || self
-                .duplicate_network_profile(Some(connection_id), &config.network_id)
-                .is_some()
-            || self
-                .active_network_owner(connection_id, &config.network_id)
-                .is_some()
+        validate_zerotier_profile(&config)?;
+        if let Some(conflict) =
+            self.duplicate_network_profile(Some(connection_id), &config.network_id)
         {
             // A duplicate app profile must reach `connect`, where the
             // machine-wide ownership conflict is reported. Treating the live
             // membership as external here would create an unsafe independent
             // lifecycle lease for the same ZeroTier network.
-            return false;
+            return Err(Self::duplicate_network_error(&config.network_id, conflict));
         }
-        match ZeroTierCliContext::prepare(&mut config, Arc::clone(&self.command_runner)) {
-            Ok(context) => matches!(
-                fetch_zerotier_network_info(&context, &config.network_id).await,
-                Ok(Some(NetworkInfo { ref status, .. })) if status.eq_ignore_ascii_case("OK")
-            ),
-            Err(_) => false,
+        if let Some(owner) = self.active_network_owner(connection_id, &config.network_id) {
+            return Err(format!(
+                "ZeroTier network {} is owned by profile '{}' ({})",
+                config.network_id, owner.name, owner.id
+            ));
+        }
+        let context = ZeroTierCliContext::prepare(&mut config, Arc::clone(&self.command_runner))?;
+        match fetch_zerotier_network_info(&context, &config.network_id).await? {
+            None => Ok(false),
+            Some(NetworkInfo { status, .. }) if status.eq_ignore_ascii_case("OK") => Ok(true),
+            Some(NetworkInfo { status, .. }) => {
+                // A listed membership is still daemon-global state that must
+                // be left during lifecycle cleanup, even while authorization
+                // or configuration is degraded. It is not ready for a target
+                // session, but reporting `false` would let the lifecycle try
+                // to join over an extant membership and later skip teardown.
+                let status = sanitize_zerotier_diagnostic(&status, None);
+                Err(format!(
+                    "ZeroTier network {} is joined but not ready (status: {status})",
+                    config.network_id
+                ))
+            }
         }
     }
 
@@ -924,6 +972,53 @@ impl ZeroTierService {
             connection.config = new_config;
         }
         self.persist_or_rollback(previous).await
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<ZeroTierConfig>,
+        secret_mutation: ZeroTierSecretMutation,
+    ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        if config.is_none()
+            && (secret_mutation.clear_identity_secret || secret_mutation.clear_authtoken_secret)
+        {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "ZeroTier connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_identity_secret {
+                current.identity_secret = None;
+            }
+            if secret_mutation.clear_authtoken_secret {
+                current.authtoken_secret = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "ZeroTier connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.identity_secret,
+                &mut submitted.identity_secret,
+                secret_mutation.clear_identity_secret,
+                "ZeroTier identity secret",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.authtoken_secret,
+                &mut submitted.authtoken_secret,
+                secret_mutation.clear_authtoken_secret,
+                "ZeroTier auth token",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
     }
 
     fn set_connection_error(&mut self, connection_id: &str, error: &str) {
@@ -1413,7 +1508,7 @@ mod tests {
 
         // Session lifecycle preflight may reuse a machine-wide membership it
         // did not start. Direct profile connect must not adopt or reconfigure it.
-        assert!(service.is_connection_active(&id).await);
+        assert!(service.probe_connection_active(&id).await.unwrap());
         let error = service.connect(&id).await.unwrap_err();
         assert!(error.contains("already joined outside this profile"));
         assert!(service.connections[&id].network_id.is_none());
@@ -1441,6 +1536,105 @@ mod tests {
             .iter()
             .flatten()
             .all(|argument| { argument != "join" && argument != "set" && argument != "leave" }));
+    }
+
+    #[tokio::test]
+    async fn degraded_membership_probe_fails_closed_instead_of_reporting_inactive() {
+        let runner = Arc::new(ScriptedZeroTierCommandRunner::new(vec![successful_output(
+            r#"[{"id":"8056c2e21c000001","status":"ACCESS_DENIED","assignedAddresses":[]}]"#,
+        )]));
+        let mut service = service_with_runner(Arc::clone(&runner));
+        let id = service
+            .create_connection("Degraded".to_string(), default_zt_config())
+            .await
+            .unwrap();
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("joined but not ready"));
+        assert!(error.contains("ACCESS_DENIED"));
+        assert!(service.connections[&id].network_id.is_none());
+        assert_eq!(
+            runner.calls(),
+            vec![vec!["-j".to_string(), "listnetworks".to_string()]]
+        );
+    }
+
+    #[tokio::test]
+    async fn owned_degraded_membership_is_left_once_after_probe_uncertainty() {
+        let runner = Arc::new(ScriptedZeroTierCommandRunner::new(vec![
+            successful_output(
+                r#"[{"id":"8056c2e21c000001","status":"REQUESTING_CONFIGURATION","assignedAddresses":[]}]"#,
+            ),
+            successful_output(""),
+        ]));
+        let mut service = service_with_runner(Arc::clone(&runner));
+        let id = service
+            .create_connection("Owned degraded".to_string(), default_zt_config())
+            .await
+            .unwrap();
+        let network_id = service.connections[&id].config.network_id.clone();
+        {
+            let connection = service.connections.get_mut(&id).unwrap();
+            connection.network_id = Some(network_id.clone());
+            connection.status = ZeroTierStatus::Error("not ready".to_string());
+        }
+
+        assert!(service.probe_connection_active(&id).await.is_err());
+        service.disconnect(&id).await.unwrap();
+
+        assert!(service.connections[&id].network_id.is_none());
+        assert!(matches!(
+            service.connections[&id].status,
+            ZeroTierStatus::Disconnected
+        ));
+        assert_eq!(
+            runner.calls(),
+            vec![
+                vec!["-j".to_string(), "listnetworks".to_string()],
+                vec!["leave".to_string(), network_id],
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn owned_degraded_membership_retains_cleanup_token_when_leave_fails() {
+        let runner = Arc::new(ScriptedZeroTierCommandRunner::new(vec![
+            successful_output(
+                r#"[{"id":"8056c2e21c000001","status":"ACCESS_DENIED","assignedAddresses":[]}]"#,
+            ),
+            failed_output("daemon busy"),
+        ]));
+        let mut service = service_with_runner(Arc::clone(&runner));
+        let id = service
+            .create_connection("Owned degraded".to_string(), default_zt_config())
+            .await
+            .unwrap();
+        let network_id = service.connections[&id].config.network_id.clone();
+        {
+            let connection = service.connections.get_mut(&id).unwrap();
+            connection.network_id = Some(network_id.clone());
+            connection.status = ZeroTierStatus::Error("not ready".to_string());
+        }
+
+        assert!(service.probe_connection_active(&id).await.is_err());
+        let error = service.disconnect(&id).await.unwrap_err();
+
+        assert!(error.contains("daemon busy"));
+        assert_eq!(
+            service.connections[&id].network_id.as_deref(),
+            Some(network_id.as_str())
+        );
+        assert!(matches!(
+            service.connections[&id].status,
+            ZeroTierStatus::Error(_)
+        ));
+        assert_eq!(
+            runner.calls(),
+            vec![
+                vec!["-j".to_string(), "listnetworks".to_string()],
+                vec!["leave".to_string(), network_id],
+            ]
+        );
     }
 
     #[tokio::test]
@@ -1679,7 +1873,10 @@ mod tests {
             connection.status = ZeroTierStatus::Connected;
             connection.network_id = Some(connection.config.network_id.clone());
         }
-        assert!(!service.is_connection_active(&id).await);
+        assert_eq!(
+            service.probe_connection_active(&id).await.unwrap_err(),
+            "resolver unavailable"
+        );
         assert!(resolver_failure.calls().is_empty());
 
         let query_failure = Arc::new(ScriptedZeroTierCommandRunner::new(vec![Err(
@@ -1695,7 +1892,11 @@ mod tests {
             connection.status = ZeroTierStatus::Connected;
             connection.network_id = Some(connection.config.network_id.clone());
         }
-        assert!(!service.is_connection_active(&id).await);
+        assert!(service
+            .probe_connection_active(&id)
+            .await
+            .unwrap_err()
+            .contains("query transport failed"));
         assert_eq!(
             query_failure.calls(),
             vec![vec!["-j".to_string(), "listnetworks".to_string()]]
@@ -1986,14 +2187,15 @@ mod tests {
             .create_connection("Test".to_string(), default_zt_config())
             .await
             .unwrap();
-        assert!(!svc.is_connection_active(&id).await);
+        let error = svc.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("zerotier-cli"));
     }
 
     #[tokio::test]
     async fn is_connection_active_nonexistent() {
         let state = ZeroTierService::new();
-        let svc = state.lock().await;
-        assert!(!svc.is_connection_active("nonexistent").await);
+        let mut svc = state.lock().await;
+        assert!(!svc.probe_connection_active("nonexistent").await.unwrap());
     }
 
     #[tokio::test]
@@ -2020,7 +2222,7 @@ mod tests {
 
         // The duplicate must not be mistaken for an external active
         // membership by lifecycle preflight.
-        assert!(!service.is_connection_active(&second).await);
+        assert!(service.probe_connection_active(&second).await.is_err());
         let error = service.connect(&second).await.unwrap_err();
         assert!(error.contains("Office"));
         assert!(error.contains(&first));
@@ -2156,7 +2358,7 @@ mod tests {
             restored.connections[&id].config.network_id,
             "8056c2e21c000001"
         );
-        assert!(restored.is_connection_active(&id).await);
+        assert!(restored.probe_connection_active(&id).await.unwrap());
         assert_eq!(
             runner.calls(),
             vec![vec!["-j".to_string(), "listnetworks".to_string()]]
@@ -2201,7 +2403,8 @@ mod tests {
         let mut restored = service_with_runner(Arc::clone(&runner));
         restored.deserialize_definitions(&encoded).unwrap();
         assert_eq!(restored.connections[&id].config.network_id, "invalid-id");
-        assert!(!restored.is_connection_active(&id).await);
+        let probe_error = restored.probe_connection_active(&id).await.unwrap_err();
+        assert!(probe_error.contains("exactly 16 hexadecimal"));
         let error = restored.connect(&id).await.unwrap_err();
         assert!(error.contains("exactly 16 hexadecimal"));
         assert!(runner.calls().is_empty());
@@ -2328,5 +2531,88 @@ mod tests {
         assert!(service.connections.is_empty());
         drop(service);
         std::fs::remove_file(blocker).unwrap();
+    }
+
+    #[test]
+    fn ipc_view_redacts_zerotier_secrets_and_reports_presence() {
+        let mut config = default_zt_config();
+        config.identity_secret = Some("ZEROTIER-IDENTITY-SENTINEL".to_string());
+        config.authtoken_secret = Some("ZEROTIER-AUTH-TOKEN-SENTINEL".to_string());
+        let view = ZeroTierConnection {
+            id: "profile".to_string(),
+            name: "Office".to_string(),
+            config,
+            status: ZeroTierStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            network_id: None,
+            assigned_ips: Vec::new(),
+            process_id: None,
+        }
+        .into_redacted_view();
+
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("ZEROTIER-IDENTITY-SENTINEL"));
+        assert!(!json.contains("ZEROTIER-AUTH-TOKEN-SENTINEL"));
+        assert_eq!(
+            view.secret_presence,
+            ZeroTierSecretPresence {
+                identity_secret: true,
+                authtoken_secret: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn ipc_update_preserves_replaces_and_explicitly_clears_zerotier_secret() {
+        let state = ZeroTierService::new();
+        let mut service = state.lock().await;
+        let mut config = default_zt_config();
+        config.authtoken_secret = Some("original-token".to_string());
+        let id = service
+            .create_connection("Office".to_string(), config)
+            .await
+            .unwrap();
+
+        let mut omitted = default_zt_config();
+        omitted.authtoken_secret = Some(" ".to_string());
+        service
+            .update_connection_from_ipc(&id, None, Some(omitted), ZeroTierSecretMutation::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.authtoken_secret.as_deref(),
+            Some("original-token")
+        );
+
+        let mut replacement = default_zt_config();
+        replacement.authtoken_secret = Some("replacement-token".to_string());
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(replacement),
+                ZeroTierSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.authtoken_secret.as_deref(),
+            Some("replacement-token")
+        );
+
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                None,
+                ZeroTierSecretMutation {
+                    clear_authtoken_secret: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(service.connections[&id].config.authtoken_secret.is_none());
     }
 }

@@ -7,11 +7,33 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+/// Merge one secret-bearing field from an IPC update without treating an
+/// omitted or blank editor value as deletion. A non-blank submitted value is
+/// an explicit replacement; deletion requires its separate clear flag.
+pub(crate) fn merge_secret_update(
+    stored: &Option<String>,
+    submitted: &mut Option<String>,
+    clear: bool,
+    field_label: &str,
+) -> Result<(), String> {
+    let replacement = submitted.take().filter(|value| !value.trim().is_empty());
+    if clear && replacement.is_some() {
+        return Err(format!(
+            "Cannot replace and clear {field_label} in the same update"
+        ));
+    }
+    *submitted = if clear {
+        None
+    } else {
+        replacement.or_else(|| stored.clone())
+    };
+    Ok(())
+}
+
 /// Current on-disk schema for per-provider profile definitions.
 pub const PROFILE_SCHEMA_VERSION: u32 = 1;
 
-const PROFILE_SERIALIZATION_FAILED: &str =
-    "VPN profile save failed: profile serialization failed";
+const PROFILE_SERIALIZATION_FAILED: &str = "VPN profile save failed: profile serialization failed";
 const PROFILE_STORAGE_WRITE_FAILED: &str = "VPN profile save failed: storage write failed";
 const PROFILE_RESTORE_CORRUPT: &str =
     "VPN profile restore failed: stored data is corrupt or incompatible";
@@ -80,9 +102,7 @@ enum StorageReadFailureClass {
 
 fn classify_storage_read_failure(error: &str) -> StorageReadFailureClass {
     let lower = error.to_ascii_lowercase();
-    if lower.contains("encryption state is locked")
-        || lower.contains("database is encrypted")
-    {
+    if lower.contains("encryption state is locked") || lower.contains("database is encrypted") {
         StorageReadFailureClass::Locked
     } else {
         StorageReadFailureClass::Unreadable
@@ -109,8 +129,8 @@ pub fn serialize_profile_definitions<T: Serialize>(connections: &[T]) -> Result<
 /// Unsupported future schemas fail closed so an older binary cannot overwrite
 /// newer profile data.
 pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Result<Vec<T>, String> {
-    let value: serde_json::Value = serde_json::from_str(data)
-        .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_str(data).map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())?;
 
     match value {
         serde_json::Value::Array(items) => serde_json::from_value(serde_json::Value::Array(items))
@@ -125,8 +145,7 @@ pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Resul
                 if version > u64::from(PROFILE_SCHEMA_VERSION) {
                     return Err(PROFILE_RESTORE_FUTURE_SCHEMA.to_string());
                 }
-                serde_json::from_value(connections)
-                    .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())
+                serde_json::from_value(connections).map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())
             } else {
                 // Compatibility with the short-lived id-keyed HashMap shape.
                 let values = object.into_values().collect::<Vec<_>>();
@@ -306,8 +325,7 @@ mod tests {
         assert!(!future_error.contains(secret));
 
         let malformed = format!("{{\"profile\":\"{secret}\"");
-        let corrupt_error =
-            deserialize_profile_definitions::<TestProfile>(&malformed).unwrap_err();
+        let corrupt_error = deserialize_profile_definitions::<TestProfile>(&malformed).unwrap_err();
         assert_eq!(
             classify_restore_failure(&corrupt_error),
             RestoreFailureClass::Corrupt

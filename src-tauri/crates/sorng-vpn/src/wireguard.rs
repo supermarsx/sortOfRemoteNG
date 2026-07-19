@@ -7,7 +7,7 @@ use defguard_wireguard_rs::{
     host::Peer, key::Key, net::IpAddrMask, InterfaceConfiguration, WGApi, WireguardInterfaceApi,
 };
 use sorng_core::events::DynEventEmitter;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -62,6 +62,77 @@ impl WireGuardRuntime for WgHandle {
     }
 }
 
+/// Read-only operating-system observation used only for profiles restored
+/// after a process restart. The selected name is deterministic and app-owned;
+/// custom interface names are deliberately never passed to this probe.
+#[async_trait::async_trait]
+trait WireGuardInterfaceActivityProbe: Send + Sync {
+    async fn probe_exact_interface(&self, interface_name: &str) -> Result<bool, String>;
+}
+
+struct SystemWireGuardInterfaceActivityProbe;
+
+#[async_trait::async_trait]
+impl WireGuardInterfaceActivityProbe for SystemWireGuardInterfaceActivityProbe {
+    async fn probe_exact_interface(&self, interface_name: &str) -> Result<bool, String> {
+        #[cfg(unix)]
+        {
+            let socket_path = format!("/var/run/wireguard/{interface_name}.sock");
+            let socket_exists = Path::new(&socket_path).try_exists().map_err(|error| {
+                format!("Failed to inspect the WireGuard control socket: {error}")
+            })?;
+            if !socket_exists {
+                return Ok(false);
+            }
+
+            let handle = WgHandle::new(interface_name.to_string()).map_err(|error| {
+                format!("Failed to inspect the restored WireGuard interface: {error}")
+            })?;
+            handle.read_interface_data().map_err(|error| {
+                format!("Failed to inspect the restored WireGuard interface: {error}")
+            })?;
+            return Ok(true);
+        }
+
+        #[cfg(windows)]
+        {
+            // Enumerating adapters is read-only and lets a successful query
+            // prove absence without using wireguard-nt's open-or-create path.
+            // The interface name is passed through the environment rather
+            // than interpolated into PowerShell source.
+            let powershell = crate::platform::resolve_binary("powershell")?;
+            let output = tokio::process::Command::new(powershell)
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "$ErrorActionPreference='Stop'; try { $names = @(Get-NetAdapter -ErrorAction Stop | Select-Object -ExpandProperty Name); if ($names -contains $env:SORNG_WG_INTERFACE) { exit 0 } else { exit 3 } } catch { exit 4 }",
+                ])
+                .env("SORNG_WG_INTERFACE", interface_name)
+                .output()
+                .await
+                .map_err(|error| {
+                    format!("Failed to query Windows network adapters: {error}")
+                })?;
+
+            return match output.status.code() {
+                Some(0) => Ok(true),
+                Some(3) => Ok(false),
+                _ => Err(
+                    "Windows network-adapter query failed; WireGuard activity is uncertain"
+                        .to_string(),
+                ),
+            };
+        }
+
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = interface_name;
+            Err("WireGuard interface activity probing is unsupported on this platform".to_string())
+        }
+    }
+}
+
 struct WireGuardSetupPlan {
     interface: InterfaceConfiguration,
     dns: Vec<IpAddr>,
@@ -76,6 +147,11 @@ struct WireGuardSetupFailure<R> {
 
 const INCOMPLETE_TEARDOWN_ERROR: &str =
     "A previous WireGuard interface teardown is incomplete; retry disconnect before reconnecting";
+// Used only to validate every non-secret field when an IPC caller explicitly
+// clears the required inline private key. The placeholder is never persisted
+// or used to configure an interface.
+const PRIVATE_KEY_CLEAR_VALIDATION_PLACEHOLDER: &str =
+    "AAECAwQFBgcICQoLDA0OD/Dh0sO0pZaHeGlaSzwtHg8=";
 
 /// Owns a newly-created interface until all setup stages have succeeded.  The
 /// explicit rollback path reports teardown failures; `Drop` is a final safety
@@ -154,6 +230,41 @@ pub struct WireGuardConnection {
     pub local_ip: Option<String>,
     pub peer_ip: Option<String>,
     pub process_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct WireGuardSecretPresence {
+    pub private_key: bool,
+    pub preshared_key: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WireGuardConnectionView {
+    #[serde(flatten)]
+    pub connection: WireGuardConnection,
+    pub secret_presence: WireGuardSecretPresence,
+}
+
+impl WireGuardConnection {
+    pub fn into_redacted_view(mut self) -> WireGuardConnectionView {
+        let secret_presence = WireGuardSecretPresence {
+            private_key: self.config.private_key.is_some(),
+            preshared_key: self.config.preshared_key.is_some(),
+        };
+        self.config.private_key = None;
+        self.config.preshared_key = None;
+        WireGuardConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WireGuardSecretMutation {
+    pub clear_private_key: bool,
+    pub clear_preshared_key: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -593,6 +704,11 @@ pub struct WireGuardService {
     emitter: Option<DynEventEmitter>,
     storage: Option<sorng_storage::storage::SecureStorageState>,
     definitions_loaded: bool,
+    /// Profiles loaded from persisted definitions need one exact OS-level
+    /// observation because runtime handles and status are intentionally not
+    /// serialised. Fresh in-process profiles never need this fallback.
+    restored_profile_ids: HashSet<String>,
+    interface_activity_probe: Arc<dyn WireGuardInterfaceActivityProbe>,
 }
 
 impl WireGuardService {
@@ -603,6 +719,8 @@ impl WireGuardService {
             emitter: None,
             storage: None,
             definitions_loaded: true,
+            restored_profile_ids: HashSet::new(),
+            interface_activity_probe: Arc::new(SystemWireGuardInterfaceActivityProbe),
         }))
     }
 
@@ -613,6 +731,8 @@ impl WireGuardService {
             emitter: Some(emitter),
             storage: None,
             definitions_loaded: true,
+            restored_profile_ids: HashSet::new(),
+            interface_activity_probe: Arc::new(SystemWireGuardInterfaceActivityProbe),
         }))
     }
 
@@ -626,6 +746,8 @@ impl WireGuardService {
             emitter: Some(emitter),
             storage: Some(storage),
             definitions_loaded: false,
+            restored_profile_ids: HashSet::new(),
+            interface_activity_probe: Arc::new(SystemWireGuardInterfaceActivityProbe),
         }))
     }
 
@@ -805,6 +927,10 @@ impl WireGuardService {
             if let Err(error) = Self::reconcile_app_owned_interface(&interface_name) {
                 if let Some(connection) = self.connections.get_mut(connection_id) {
                     connection.status = WireGuardStatus::Error(error.clone());
+                    // Preserve the exact deterministic ownership hint when a
+                    // stale-interface inspection or cleanup failed. Activity
+                    // probes must not later collapse this state to inactive.
+                    connection.interface_name = Some(interface_name.clone());
                 }
                 self.emit_status(
                     connection_id,
@@ -826,6 +952,7 @@ impl WireGuardService {
 
         match result {
             Ok(local_ip) => {
+                self.restored_profile_ids.remove(connection_id);
                 let connection = self
                     .connections
                     .get_mut(connection_id)
@@ -858,6 +985,13 @@ impl WireGuardService {
             Err(err_msg) => {
                 if let Some(conn) = self.connections.get_mut(connection_id) {
                     conn.status = WireGuardStatus::Error(err_msg.clone());
+                    // A retained handle means rollback itself failed and the
+                    // exact interface remains owned. When setup rollback did
+                    // succeed, clear the transient name so inactivity is
+                    // unambiguous and a later connect can retry normally.
+                    if !self.wg_handles.contains_key(connection_id) {
+                        conn.interface_name = None;
+                    }
                 }
 
                 self.emit_status(
@@ -921,12 +1055,11 @@ impl WireGuardService {
         runtime: R,
         plan: &WireGuardSetupPlan,
     ) -> Result<(R, Option<String>), WireGuardSetupFailure<R>> {
-        let created = CreatedWireGuardInterface::create(runtime).map_err(|error| {
-            WireGuardSetupFailure {
+        let created =
+            CreatedWireGuardInterface::create(runtime).map_err(|error| WireGuardSetupFailure {
                 error,
                 retained_runtime: None,
-            }
-        })?;
+            })?;
         let setup_result = (|| {
             created
                 .runtime()
@@ -1125,6 +1258,7 @@ impl WireGuardService {
         connection.peer_ip = None;
         connection.interface_name = None;
         connection.process_id = None;
+        self.restored_profile_ids.remove(connection_id);
 
         self.emit_status(connection_id, "disconnected", serde_json::json!({}));
         Ok(())
@@ -1158,11 +1292,65 @@ impl WireGuardService {
         self.connections.values().cloned().collect()
     }
 
-    pub async fn is_connection_active(&self, connection_id: &str) -> bool {
-        if let Some(connection) = self.connections.get(connection_id) {
-            matches!(connection.status, WireGuardStatus::Connected)
-        } else {
-            false
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
+        let Some(connection) = self.connections.get(connection_id) else {
+            return Ok(false);
+        };
+
+        if let Some(handle) = self.wg_handles.get(connection_id) {
+            handle.read_interface_data().map_err(|error| {
+                format!(
+                    "Failed to inspect the owned WireGuard interface; ownership was retained: {error}"
+                )
+            })?;
+            return if matches!(connection.status, WireGuardStatus::Connected) {
+                Ok(true)
+            } else {
+                Err(
+                    "WireGuard retains a live interface handle, but readiness is not confirmed"
+                        .to_string(),
+                )
+            };
+        }
+
+        if connection.interface_name.is_some() || connection.process_id.is_some() {
+            return Err(
+                "WireGuard retains interface ownership metadata, but the interface could not be safely inspected"
+                    .to_string(),
+            );
+        }
+
+        if self.restored_profile_ids.contains(connection_id) {
+            // Persistence deliberately resets transient status and runtime
+            // handles. For a deterministic app-owned name, query that exact
+            // OS artifact before declaring the profile inactive. A custom
+            // configured name remains user-managed and is never guessed; its
+            // activity therefore remains uncertain until the user reconciles
+            // it explicitly.
+            if connection.config.interface_name.is_none() {
+                let interface_name = deterministic_wireguard_interface_name(connection_id)
+                    .ok_or_else(|| {
+                        "WireGuard profile id is invalid; restored interface activity is uncertain"
+                            .to_string()
+                    })?;
+                return self
+                    .interface_activity_probe
+                    .probe_exact_interface(&interface_name)
+                    .await;
+            }
+            return Err(
+                "WireGuard uses a custom interface name restored from storage; activity cannot be safely determined automatically"
+                    .to_string(),
+            );
+        }
+
+        match connection.status {
+            WireGuardStatus::Disconnected | WireGuardStatus::Error(_) => Ok(false),
+            _ => Err(
+                "WireGuard runtime state is transitional or inconsistent; activity could not be confirmed"
+                    .to_string(),
+            ),
         }
     }
 
@@ -1186,6 +1374,7 @@ impl WireGuardService {
 
         let previous = self.connections.clone();
         self.connections.remove(connection_id);
+        self.restored_profile_ids.remove(connection_id);
         self.persist_or_rollback(previous).await
     }
 
@@ -1218,6 +1407,16 @@ impl WireGuardService {
             // changing either the name or config.
             resolve_wireguard_config(new_config).await?;
         }
+        self.apply_connection_update(connection_id, name, config)
+            .await
+    }
+
+    async fn apply_connection_update(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        config: Option<WireGuardConfig>,
+    ) -> Result<(), String> {
         let previous = self.connections.clone();
         let connection = self
             .connections
@@ -1231,6 +1430,84 @@ impl WireGuardService {
             connection.config = new_config;
         }
         self.persist_or_rollback(previous).await
+    }
+
+    async fn update_connection_with_explicit_private_key_clear(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        config: WireGuardConfig,
+    ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        let current = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "WireGuard connection not found".to_string())?;
+        if !matches!(current.status, WireGuardStatus::Disconnected) {
+            return Err(
+                "WireGuard configuration can only be changed while the connection is disconnected"
+                    .to_string(),
+            );
+        }
+
+        let mut validation_config = config.clone();
+        validation_config.private_key = Some(PRIVATE_KEY_CLEAR_VALIDATION_PLACEHOLDER.to_string());
+        resolve_wireguard_config(&validation_config).await?;
+        self.apply_connection_update(connection_id, name, Some(config))
+            .await
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<WireGuardConfig>,
+        secret_mutation: WireGuardSecretMutation,
+    ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        if config.is_none()
+            && (secret_mutation.clear_private_key || secret_mutation.clear_preshared_key)
+        {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "WireGuard connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_private_key {
+                current.private_key = None;
+            }
+            if secret_mutation.clear_preshared_key {
+                current.preshared_key = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "WireGuard connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.private_key,
+                &mut submitted.private_key,
+                secret_mutation.clear_private_key,
+                "WireGuard private key",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.preshared_key,
+                &mut submitted.preshared_key,
+                secret_mutation.clear_preshared_key,
+                "WireGuard preshared key",
+            )?;
+        }
+        if secret_mutation.clear_private_key {
+            let config = config.expect("explicit private-key clear materializes current config");
+            self.update_connection_with_explicit_private_key_clear(connection_id, name, config)
+                .await
+        } else {
+            self.update_connection(connection_id, name, config).await
+        }
     }
 
     /// Generate a traditional WireGuard config-file string.
@@ -1355,6 +1632,7 @@ impl Persistable for WireGuardService {
                 ));
             }
         }
+        self.restored_profile_ids = restored.keys().cloned().collect();
         self.connections = restored;
         Ok(())
     }
@@ -1388,6 +1666,58 @@ mod tests {
             config_file: None,
             interface_name: None,
         }
+    }
+
+    struct MockWireGuardInterfaceActivityProbe {
+        result: Result<bool, String>,
+        calls: StdMutex<Vec<String>>,
+    }
+
+    impl MockWireGuardInterfaceActivityProbe {
+        fn new(result: Result<bool, String>) -> Self {
+            Self {
+                result,
+                calls: StdMutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl WireGuardInterfaceActivityProbe for MockWireGuardInterfaceActivityProbe {
+        async fn probe_exact_interface(&self, interface_name: &str) -> Result<bool, String> {
+            self.calls.lock().unwrap().push(interface_name.to_string());
+            self.result.clone()
+        }
+    }
+
+    async fn restored_service_with_activity_probe(
+        result: Result<bool, String>,
+    ) -> (
+        WireGuardServiceState,
+        String,
+        StdArc<MockWireGuardInterfaceActivityProbe>,
+    ) {
+        let source_state = WireGuardService::new();
+        let mut source = source_state.lock().await;
+        let id = source
+            .create_connection("Restored".to_string(), default_wg_config())
+            .await
+            .unwrap();
+        let encoded = source.serialize_definitions().unwrap();
+        drop(source);
+
+        let probe = StdArc::new(MockWireGuardInterfaceActivityProbe::new(result));
+        let restored_state = WireGuardService::new();
+        {
+            let mut restored = restored_state.lock().await;
+            restored.interface_activity_probe = probe.clone();
+            restored.deserialize_definitions(&encoded).unwrap();
+        }
+        (restored_state, id, probe)
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2371,14 +2701,117 @@ mod tests {
             .create_connection("Test".to_string(), default_wg_config())
             .await
             .unwrap();
-        assert!(!svc.is_connection_active(&id).await);
+        assert!(!svc.probe_connection_active(&id).await.unwrap());
     }
 
     #[tokio::test]
     async fn is_connection_active_nonexistent() {
         let state = WireGuardService::new();
-        let svc = state.lock().await;
-        assert!(!svc.is_connection_active("nonexistent").await);
+        let mut svc = state.lock().await;
+        assert!(!svc.probe_connection_active("nonexistent").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn activity_probe_never_reports_inactive_with_retained_interface_metadata() {
+        let state = WireGuardService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Retry cleanup".to_string(), default_wg_config())
+            .await
+            .unwrap();
+        let connection = service.connections.get_mut(&id).unwrap();
+        connection.status = WireGuardStatus::Error("teardown failed".to_string());
+        connection.interface_name = Some("sorng_retained".to_string());
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("ownership metadata"));
+        assert_eq!(
+            service.connections[&id].interface_name.as_deref(),
+            Some("sorng_retained")
+        );
+    }
+
+    #[tokio::test]
+    async fn activity_probe_fails_closed_for_connected_status_without_a_live_handle() {
+        let state = WireGuardService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Inconsistent".to_string(), default_wg_config())
+            .await
+            .unwrap();
+        service.connections.get_mut(&id).unwrap().status = WireGuardStatus::Connected;
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("inconsistent"));
+    }
+
+    #[tokio::test]
+    async fn restored_activity_probe_reports_exact_deterministic_interface_present() {
+        let (state, id, probe) = restored_service_with_activity_probe(Ok(true)).await;
+        let mut service = state.lock().await;
+
+        assert!(service.probe_connection_active(&id).await.unwrap());
+        assert_eq!(
+            probe.calls(),
+            vec![deterministic_wireguard_interface_name(&id).unwrap()]
+        );
+    }
+
+    #[tokio::test]
+    async fn restored_activity_probe_reports_exact_deterministic_interface_absent() {
+        let (state, id, probe) = restored_service_with_activity_probe(Ok(false)).await;
+        let mut service = state.lock().await;
+
+        assert!(!service.probe_connection_active(&id).await.unwrap());
+        assert_eq!(
+            probe.calls(),
+            vec![deterministic_wireguard_interface_name(&id).unwrap()]
+        );
+    }
+
+    #[tokio::test]
+    async fn restored_activity_probe_propagates_exact_interface_query_error() {
+        let (state, id, probe) =
+            restored_service_with_activity_probe(Err("adapter enumeration denied".to_string()))
+                .await;
+        let mut service = state.lock().await;
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("adapter enumeration denied"));
+        assert_eq!(
+            probe.calls(),
+            vec![deterministic_wireguard_interface_name(&id).unwrap()]
+        );
+    }
+
+    #[tokio::test]
+    async fn restored_activity_probe_never_guesses_a_custom_interface_name() {
+        let source_state = WireGuardService::new();
+        let mut source = source_state.lock().await;
+        let id = source
+            .create_connection("Custom".to_string(), default_wg_config())
+            .await
+            .unwrap();
+        // Windows rejects new custom names, but legacy persisted profiles can
+        // still contain one and must remain visible without being guessed.
+        source
+            .connections
+            .get_mut(&id)
+            .unwrap()
+            .config
+            .interface_name = Some("company-wg0".to_string());
+        let encoded = source.serialize_definitions().unwrap();
+        drop(source);
+
+        let probe = StdArc::new(MockWireGuardInterfaceActivityProbe::new(Ok(true)));
+        let restored_state = WireGuardService::new();
+        let mut restored = restored_state.lock().await;
+        restored.interface_activity_probe = probe.clone();
+        restored.deserialize_definitions(&encoded).unwrap();
+
+        let error = restored.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("custom interface name"));
+        assert!(probe.calls().is_empty());
     }
 
     // ── Peer building ──────────────────────────────────────────────────
@@ -2592,5 +3025,140 @@ mod tests {
             .unwrap();
         assert!(service.deserialize_definitions("not-json").is_err());
         assert!(service.connections.contains_key(&id));
+    }
+
+    #[test]
+    fn ipc_view_redacts_wireguard_keys_and_reports_presence() {
+        let mut config = default_wg_config();
+        config.preshared_key = Some(TEST_PRESHARED_KEY.to_string());
+        let view = WireGuardConnection {
+            id: "profile".to_string(),
+            name: "Office".to_string(),
+            config,
+            status: WireGuardStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            interface_name: None,
+            local_ip: None,
+            peer_ip: None,
+            process_id: None,
+        }
+        .into_redacted_view();
+
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains(TEST_PRIVATE_KEY));
+        assert!(!json.contains(TEST_PRESHARED_KEY));
+        assert_eq!(
+            view.secret_presence,
+            WireGuardSecretPresence {
+                private_key: true,
+                preshared_key: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn ipc_update_preserves_replaces_and_explicitly_clears_wireguard_secrets() {
+        let state = WireGuardService::new();
+        let mut service = state.lock().await;
+        let mut config = default_wg_config();
+        config.preshared_key = Some(TEST_PRESHARED_KEY.to_string());
+        let id = service
+            .create_connection("Office".to_string(), config)
+            .await
+            .unwrap();
+
+        let mut omitted = default_wg_config();
+        omitted.private_key = None;
+        omitted.preshared_key = None;
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(omitted),
+                WireGuardSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.private_key.as_deref(),
+            Some(TEST_PRIVATE_KEY)
+        );
+        assert_eq!(
+            service.connections[&id].config.preshared_key.as_deref(),
+            Some(TEST_PRESHARED_KEY)
+        );
+
+        let replacement_key = "3333333333333333333333333333333333333333333333333333333333333333";
+        let mut replacement = default_wg_config();
+        replacement.preshared_key = Some(replacement_key.to_string());
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(replacement),
+                WireGuardSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.preshared_key.as_deref(),
+            Some(replacement_key)
+        );
+
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                None,
+                WireGuardSecretMutation {
+                    clear_preshared_key: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(service.connections[&id].config.preshared_key.is_none());
+    }
+
+    #[tokio::test]
+    async fn ipc_update_can_explicitly_clear_private_key_but_connect_validation_stays_strict() {
+        let state = WireGuardService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Office".to_string(), default_wg_config())
+            .await
+            .unwrap();
+
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                None,
+                WireGuardSecretMutation {
+                    clear_private_key: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let stored = &service.connections[&id].config;
+        assert!(stored.private_key.is_none());
+        let error = resolve_wireguard_config(stored).await.unwrap_err();
+        assert!(error.contains("private key is required"));
+    }
+
+    #[tokio::test]
+    async fn create_still_rejects_a_missing_wireguard_private_key() {
+        let state = WireGuardService::new();
+        let mut service = state.lock().await;
+        let mut config = default_wg_config();
+        config.private_key = None;
+        let error = service
+            .create_connection("Invalid".to_string(), config)
+            .await
+            .unwrap_err();
+        assert!(error.contains("private key is required"));
     }
 }

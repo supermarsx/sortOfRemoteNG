@@ -259,7 +259,10 @@ impl ChainingService {
         }
 
         // Now update the chain status
-        let chain = self.chains.get_mut(chain_id).expect("chain verified to exist above");
+        let chain = self
+            .chains
+            .get_mut(chain_id)
+            .expect("chain verified to exist above");
         chain.status = ChainStatus::Connecting;
         chain.error = None;
 
@@ -332,7 +335,10 @@ impl ChainingService {
         }
 
         // Now update the chain status
-        let chain = self.chains.get_mut(chain_id).expect("chain verified to exist above");
+        let chain = self
+            .chains
+            .get_mut(chain_id)
+            .expect("chain verified to exist above");
         chain.status = ChainStatus::Disconnecting;
 
         // Update each layer status
@@ -380,10 +386,15 @@ impl ChainingService {
     }
 
     pub async fn delete_chain(&mut self, chain_id: &str) -> Result<(), String> {
-        if let Some(chain) = self.chains.get(chain_id) {
-            if let ChainStatus::Connected = chain.status {
-                self.disconnect_chain(chain_id).await?;
-            }
+        let may_retain_resources = self
+            .chains
+            .get(chain_id)
+            .is_some_and(|chain| !matches!(chain.status, ChainStatus::Disconnected));
+        if may_retain_resources {
+            // Connecting/Error chains can be partial starts and Disconnecting
+            // chains can be partial teardowns. Never discard their only retry
+            // definition until every layer reports successful cleanup.
+            self.disconnect_chain(chain_id).await?;
         }
 
         self.chains.remove(chain_id);
@@ -681,6 +692,7 @@ impl ChainingService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::{ProxyConfig, ProxyConnectionStatus, ProxyService};
 
     // For testing, we'll create a minimal chaining service
     // Note: In a real scenario, you'd want proper dependency injection or mocking
@@ -694,6 +706,43 @@ mod tests {
             status: ChainLayerStatus::Disconnected,
             local_port: None,
             error: None,
+        }
+    }
+
+    fn test_chaining_service(proxy_service: ProxyServiceState) -> ChainingServiceState {
+        ChainingService::new(
+            proxy_service,
+            crate::openvpn::OpenVPNService::new(),
+            crate::wireguard::WireGuardService::new(),
+            crate::zerotier::ZeroTierService::new(),
+            crate::tailscale::TailscaleService::new(),
+            crate::pptp::PPTPService::new(),
+            crate::l2tp::L2TPService::new(),
+            crate::ikev2::IKEv2Service::new(),
+            crate::ipsec::IPsecService::new(),
+            crate::sstp::SSTPService::new(),
+        )
+    }
+
+    fn test_proxy_config(proxy_type: &str) -> ProxyConfig {
+        ProxyConfig {
+            proxy_type: proxy_type.to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 9,
+            username: None,
+            password: None,
+            ssh_key_file: None,
+            ssh_key_passphrase: None,
+            ssh_host_key_verification: None,
+            ssh_known_hosts_file: None,
+            tunnel_domain: None,
+            tunnel_key: None,
+            tunnel_method: None,
+            custom_headers: None,
+            websocket_path: None,
+            quic_cert_file: None,
+            shadowsocks_method: None,
+            shadowsocks_plugin: None,
         }
     }
 
@@ -836,5 +885,95 @@ mod tests {
         assert_eq!(msg, "Chain failed");
         assert_eq!(chain.error, Some("Chain failed".to_string()));
     }
-}
 
+    #[tokio::test]
+    async fn delete_error_chain_tears_down_partial_provider_before_removal() {
+        let proxy_state = ProxyService::new();
+        let proxy_id = {
+            let mut proxy = proxy_state.lock().await;
+            let id = proxy
+                .create_proxy_connection(
+                    "target.example.test".to_string(),
+                    443,
+                    test_proxy_config("unsupported-for-test"),
+                )
+                .await
+                .unwrap();
+            proxy.connect_via_proxy(&id).await.unwrap_err();
+            assert!(matches!(
+                proxy.get_proxy_connection(&id).await.unwrap().status,
+                ProxyConnectionStatus::Error(_)
+            ));
+            id
+        };
+        let chaining_state = test_chaining_service(proxy_state.clone());
+        let mut service = chaining_state.lock().await;
+        let chain_id = service
+            .create_chain(
+                "Partial chain".to_string(),
+                None,
+                vec![ChainLayer {
+                    id: "proxy-layer".to_string(),
+                    connection_type: ConnectionType::Proxy,
+                    connection_id: proxy_id.clone(),
+                    position: 0,
+                    status: ChainLayerStatus::Connected,
+                    local_port: Some(49152),
+                    error: None,
+                }],
+            )
+            .await
+            .unwrap();
+        service.chains.get_mut(&chain_id).unwrap().status =
+            ChainStatus::Error("later layer failed".to_string());
+
+        service.delete_chain(&chain_id).await.unwrap();
+
+        assert!(service.get_chain(&chain_id).await.is_err());
+        drop(service);
+        assert!(matches!(
+            proxy_state
+                .lock()
+                .await
+                .get_proxy_connection(&proxy_id)
+                .await
+                .unwrap()
+                .status,
+            ProxyConnectionStatus::Disconnected
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_error_chain_preserves_definition_when_teardown_fails() {
+        let chaining_state = test_chaining_service(ProxyService::new());
+        let mut service = chaining_state.lock().await;
+        let chain_id = service
+            .create_chain(
+                "Retryable chain".to_string(),
+                None,
+                vec![ChainLayer {
+                    id: "openvpn-layer".to_string(),
+                    connection_type: ConnectionType::OpenVPN,
+                    connection_id: "missing-openvpn-profile".to_string(),
+                    position: 0,
+                    status: ChainLayerStatus::Connected,
+                    local_port: None,
+                    error: None,
+                }],
+            )
+            .await
+            .unwrap();
+        service.chains.get_mut(&chain_id).unwrap().status =
+            ChainStatus::Error("partial start".to_string());
+
+        let error = service.delete_chain(&chain_id).await.unwrap_err();
+
+        assert!(error.contains("OpenVPN connection not found"));
+        let retained = service.get_chain(&chain_id).await.unwrap();
+        assert!(matches!(retained.status, ChainStatus::Error(_)));
+        assert!(matches!(
+            retained.layers[0].status,
+            ChainLayerStatus::Error(_)
+        ));
+    }
+}

@@ -1,4 +1,5 @@
 use super::wireguard::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_wireguard_connection(
@@ -36,19 +37,34 @@ pub async fn connect_wireguard(
 pub async fn disconnect_wireguard(
     connection_id: String,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::WireGuard,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = wireguard_service.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
 pub async fn get_wireguard_connection(
     connection_id: String,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
-) -> Result<WireGuardConnection, String> {
+) -> Result<WireGuardConnectionView, String> {
     let mut service = wireguard_service.lock().await;
     service.ensure_persisted_loaded().await?;
-    service.get_connection(&connection_id).await
+    Ok(service
+        .get_connection(&connection_id)
+        .await?
+        .into_redacted_view())
 }
 
 #[tauri::command]
@@ -64,19 +80,36 @@ pub async fn get_wireguard_status(
 #[tauri::command]
 pub async fn list_wireguard_connections(
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
-) -> Result<Vec<WireGuardConnection>, String> {
+) -> Result<Vec<WireGuardConnectionView>, String> {
     let mut service = wireguard_service.lock().await;
     service.ensure_persisted_loaded().await?;
-    Ok(service.list_connections().await)
+    Ok(service
+        .list_connections()
+        .await
+        .into_iter()
+        .map(WireGuardConnection::into_redacted_view)
+        .collect())
 }
 
 #[tauri::command]
 pub async fn delete_wireguard_connection(
     connection_id: String,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::WireGuard,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = wireguard_service.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -84,10 +117,16 @@ pub async fn update_wireguard_connection(
     connection_id: String,
     name: Option<String>,
     config: Option<WireGuardConfig>,
+    secret_mutation: Option<WireGuardSecretMutation>,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<(), String> {
     let mut service = wireguard_service.lock().await;
     service
-        .update_connection(&connection_id, name, config)
+        .update_connection_from_ipc(
+            &connection_id,
+            name,
+            config,
+            secret_mutation.unwrap_or_default(),
+        )
         .await
 }

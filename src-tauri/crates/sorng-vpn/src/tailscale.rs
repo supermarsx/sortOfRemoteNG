@@ -29,6 +29,37 @@ pub struct TailscaleConnection {
     pub process_id: Option<u32>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct TailscaleSecretPresence {
+    pub auth_key: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TailscaleConnectionView {
+    #[serde(flatten)]
+    pub connection: TailscaleConnection,
+    pub secret_presence: TailscaleSecretPresence,
+}
+
+impl TailscaleConnection {
+    pub fn into_redacted_view(mut self) -> TailscaleConnectionView {
+        let secret_presence = TailscaleSecretPresence {
+            auth_key: self.config.auth_key.is_some(),
+        };
+        self.config.auth_key = None;
+        TailscaleConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct TailscaleSecretMutation {
+    pub clear_auth_key: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TailscaleStatus {
     Disconnected,
@@ -575,6 +606,12 @@ impl TailscaleService {
             &config,
             auth_key_file.as_ref().map(|file| file.path.as_path()),
         );
+        // `tailscale up` mutates one machine-global daemon and may return an
+        // error after applying some of that mutation. Record the exact profile
+        // owner before spawning it so lifecycle compensation can always probe
+        // and, when needed, issue the matching `down` instead of misclassifying
+        // a partial start as an external daemon.
+        self.active_profile_id = Some(connection_id.to_string());
         let output_result = self.command_runner.run(&args).await;
         drop(auth_key_file);
 
@@ -607,11 +644,6 @@ impl TailscaleService {
             }
             return Err(message);
         }
-
-        // We issued the machine-global `up`, so retain ownership even if the
-        // verification query fails. This lets only this profile perform the
-        // compensating global `down` rather than losing ownership knowledge.
-        self.active_profile_id = Some(connection_id.to_string());
 
         match self.get_status_info().await {
             Ok(status_info) if status_info.is_running() => {
@@ -737,19 +769,48 @@ impl TailscaleService {
             .collect()
     }
 
-    pub async fn is_connection_active(&self, connection_id: &str) -> bool {
-        if self.active_profile_id.as_deref() != Some(connection_id)
-            || !self
-                .connections
-                .get(connection_id)
-                .is_some_and(|connection| matches!(connection.status, TailscaleStatus::Connected))
-        {
-            return false;
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
+        if !self.connections.contains_key(connection_id) {
+            if self.active_profile_id.as_deref() == Some(connection_id) {
+                return Err(
+                    "Tailscale retains an owner token for a missing profile; activity is indeterminate"
+                        .to_string(),
+                );
+            }
+            return Ok(false);
+        }
+        if self.active_profile_id.as_deref() != Some(connection_id) {
+            return Ok(false);
         }
 
-        self.get_status_info()
-            .await
-            .is_ok_and(|status| status.is_running())
+        let status = self.get_status_info().await?;
+        if status.is_running() {
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("connection existence checked above");
+            connection.status = TailscaleStatus::Connected;
+            connection.connected_at.get_or_insert_with(Utc::now);
+            connection.tailnet_ip = status.tailnet_ip;
+            connection.hostname = status.hostname;
+            return Ok(true);
+        }
+
+        // The daemon itself has confirmed inactivity, so clearing the local
+        // owner token here keeps a lifecycle release from leaving a stale
+        // machine-global owner that would block another profile later.
+        self.active_profile_id = None;
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .expect("connection existence checked above");
+        connection.status = TailscaleStatus::Disconnected;
+        connection.connected_at = None;
+        connection.tailnet_ip = None;
+        connection.hostname = None;
+        connection.process_id = None;
+        Ok(false)
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
@@ -797,6 +858,40 @@ impl TailscaleService {
             connection.config = new_config;
         }
         self.persist_or_rollback(previous).await
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<TailscaleConfig>,
+        secret_mutation: TailscaleSecretMutation,
+    ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        if config.is_none() && secret_mutation.clear_auth_key {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "Tailscale connection not found".to_string())?
+                .config
+                .clone();
+            current.auth_key = None;
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "Tailscale connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.auth_key,
+                &mut submitted.auth_key,
+                secret_mutation.clear_auth_key,
+                "Tailscale auth key",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
     }
 
     fn connection_for_api(&self, connection: &TailscaleConnection) -> TailscaleConnection {
@@ -1475,14 +1570,14 @@ mod tests {
             .create_connection("Test".to_string(), default_ts_config())
             .await
             .unwrap();
-        assert!(!svc.is_connection_active(&id).await);
+        assert!(!svc.probe_connection_active(&id).await.unwrap());
     }
 
     #[tokio::test]
     async fn is_connection_active_nonexistent() {
         let state = TailscaleService::new();
-        let svc = state.lock().await;
-        assert!(!svc.is_connection_active("nonexistent").await);
+        let mut svc = state.lock().await;
+        assert!(!svc.probe_connection_active("nonexistent").await.unwrap());
     }
 
     #[tokio::test]
@@ -1490,7 +1585,6 @@ mod tests {
         let runner = MockTailscaleCommandRunner::with_responses(vec![
             status_command("Running"),
             status_command("Stopped"),
-            Err("status query unavailable".to_string()),
         ]);
         let state = state_with_runner(Arc::clone(&runner));
         let mut service = state.lock().await;
@@ -1501,16 +1595,43 @@ mod tests {
         service.connections.get_mut(&id).unwrap().status = TailscaleStatus::Connected;
         service.active_profile_id = Some(id.clone());
 
-        assert!(service.is_connection_active(&id).await);
-        assert!(!service.is_connection_active(&id).await);
-        assert!(!service.is_connection_active(&id).await);
+        assert!(service.probe_connection_active(&id).await.unwrap());
+        assert!(!service.probe_connection_active(&id).await.unwrap());
+        assert_eq!(service.active_profile_id, None);
+        assert!(matches!(
+            service.connections[&id].status,
+            TailscaleStatus::Disconnected
+        ));
         assert_eq!(
             runner.calls(),
             vec![
                 vec!["status".to_string(), "--json".to_string()],
                 vec!["status".to_string(), "--json".to_string()],
-                vec!["status".to_string(), "--json".to_string()],
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_owner_probe_queries_and_propagates_errors_despite_cached_error_status() {
+        let runner = MockTailscaleCommandRunner::with_responses(vec![Err(
+            "status query unavailable".to_string(),
+        )]);
+        let state = state_with_runner(Arc::clone(&runner));
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Office".to_string(), default_ts_config())
+            .await
+            .unwrap();
+        service.connections.get_mut(&id).unwrap().status =
+            TailscaleStatus::Error("prior verification failed".to_string());
+        service.active_profile_id = Some(id.clone());
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("status query unavailable"));
+        assert_eq!(service.active_profile_id.as_deref(), Some(id.as_str()));
+        assert_eq!(
+            runner.calls(),
+            vec![vec!["status".to_string(), "--json".to_string()]]
         );
     }
 
@@ -1593,7 +1714,7 @@ mod tests {
 
         assert!(error.contains("without a verified"));
         assert_eq!(service.active_profile_id, None);
-        assert!(!service.is_connection_active(&id).await);
+        assert!(!service.probe_connection_active(&id).await.unwrap());
         assert!(matches!(
             service.get_connection(&id).await.unwrap().status,
             TailscaleStatus::Error(_)
@@ -1618,7 +1739,7 @@ mod tests {
         connection.tailnet_ip = Some("100.64.0.9".to_string());
         service.active_profile_id = None;
 
-        assert!(!service.is_connection_active(&id).await);
+        assert!(!service.probe_connection_active(&id).await.unwrap());
         let view = service.get_connection(&id).await.unwrap();
         assert!(matches!(view.status, TailscaleStatus::Disconnected));
         assert!(view.connected_at.is_none());
@@ -1687,6 +1808,37 @@ mod tests {
         } else {
             panic!("connection should retain a redacted error");
         }
+    }
+
+    #[tokio::test]
+    async fn failed_up_retains_exact_owner_for_compensating_down() {
+        let runner = MockTailscaleCommandRunner::with_responses(vec![
+            status_command("Stopped"),
+            Ok(TailscaleCommandOutput {
+                success: false,
+                stdout: String::new(),
+                stderr: "up failed after a possible partial mutation".to_string(),
+            }),
+            successful_command(),
+        ]);
+        let state = state_with_runner(Arc::clone(&runner));
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Office".to_string(), default_ts_config())
+            .await
+            .unwrap();
+
+        let error = service.connect(&id).await.unwrap_err();
+
+        assert!(error.contains("possible partial mutation"));
+        assert_eq!(service.active_profile_id.as_deref(), Some(id.as_str()));
+        service.disconnect(&id).await.unwrap();
+        assert_eq!(service.active_profile_id, None);
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0], vec!["status", "--json"]);
+        assert_eq!(calls[1].first().map(String::as_str), Some("up"));
+        assert_eq!(calls[2], vec!["down"]);
     }
 
     #[tokio::test]
@@ -1899,5 +2051,85 @@ mod tests {
             .unwrap();
         assert!(service.deserialize_definitions("not-json").is_err());
         assert!(service.connections.contains_key(&id));
+    }
+
+    #[test]
+    fn ipc_view_redacts_tailscale_auth_key_and_reports_presence() {
+        let mut config = default_ts_config();
+        config.auth_key = Some("TAILSCALE-AUTH-KEY-SENTINEL".to_string());
+        let view = TailscaleConnection {
+            id: "profile".to_string(),
+            name: "Office".to_string(),
+            config,
+            status: TailscaleStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            tailnet_ip: None,
+            hostname: None,
+            process_id: None,
+        }
+        .into_redacted_view();
+
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("TAILSCALE-AUTH-KEY-SENTINEL"));
+        assert_eq!(
+            view.secret_presence,
+            TailscaleSecretPresence { auth_key: true }
+        );
+    }
+
+    #[tokio::test]
+    async fn ipc_update_preserves_replaces_and_explicitly_clears_tailscale_secret() {
+        let state = TailscaleService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Office".to_string(), default_ts_config())
+            .await
+            .unwrap();
+
+        let mut omitted = default_ts_config();
+        omitted.auth_key = Some(" ".to_string());
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(omitted),
+                TailscaleSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.auth_key.as_deref(),
+            Some("tskey-auth-xxx")
+        );
+
+        let mut replacement = default_ts_config();
+        replacement.auth_key = Some("tskey-auth-replacement".to_string());
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(replacement),
+                TailscaleSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.auth_key.as_deref(),
+            Some("tskey-auth-replacement")
+        );
+
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                None,
+                TailscaleSecretMutation {
+                    clear_auth_key: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(service.connections[&id].config.auth_key.is_none());
     }
 }

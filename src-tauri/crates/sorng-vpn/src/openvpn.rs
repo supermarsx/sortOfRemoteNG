@@ -32,6 +32,45 @@ pub struct OpenVPNConnection {
     pub remote_ip: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct OpenVPNSecretPresence {
+    pub password: bool,
+    pub inline_config: bool,
+    pub client_key: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OpenVPNConnectionView {
+    #[serde(flatten)]
+    pub connection: OpenVPNConnection,
+    pub secret_presence: OpenVPNSecretPresence,
+}
+
+impl OpenVPNConnection {
+    pub fn into_redacted_view(mut self) -> OpenVPNConnectionView {
+        let secret_presence = OpenVPNSecretPresence {
+            password: self.config.password.is_some(),
+            inline_config: self.config.inline_config.is_some(),
+            client_key: self.config.client_key.is_some(),
+        };
+        self.config.password = None;
+        self.config.inline_config = None;
+        self.config.client_key = None;
+        OpenVPNConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct OpenVPNSecretMutation {
+    pub clear_password: bool,
+    pub clear_inline_config: bool,
+    pub clear_client_key: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum OpenVPNStatus {
     Disconnected,
@@ -259,7 +298,7 @@ impl OpenVPNService {
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
         self.ensure_persisted_loaded().await?;
-        self.refresh_process_status(connection_id).await;
+        self.refresh_process_status(connection_id).await?;
 
         let config = self
             .connections
@@ -398,7 +437,7 @@ impl OpenVPNService {
         connection_id: &str,
     ) -> Result<OpenVPNConnection, String> {
         self.ensure_persisted_loaded().await?;
-        self.refresh_process_status(connection_id).await;
+        self.refresh_process_status(connection_id).await?;
         self.connections
             .get(connection_id)
             .cloned()
@@ -409,7 +448,7 @@ impl OpenVPNService {
         self.ensure_persisted_loaded().await?;
         let ids = self.connections.keys().cloned().collect::<Vec<_>>();
         for id in ids {
-            self.refresh_process_status(&id).await;
+            self.refresh_process_status(&id).await?;
         }
         Ok(self.connections.values().cloned().collect())
     }
@@ -434,7 +473,7 @@ impl OpenVPNService {
 
     pub async fn get_status(&mut self, connection_id: &str) -> Result<OpenVPNStatus, String> {
         self.ensure_persisted_loaded().await?;
-        self.refresh_process_status(connection_id).await;
+        self.refresh_process_status(connection_id).await?;
         let connection = self
             .connections
             .get(connection_id)
@@ -442,19 +481,34 @@ impl OpenVPNService {
         Ok(connection.status.clone())
     }
 
-    pub async fn is_connection_active(&mut self, connection_id: &str) -> bool {
-        if self.ensure_persisted_loaded().await.is_err() {
-            return false;
-        }
-        self.refresh_process_status(connection_id).await;
-        if let Some(connection) = self.connections.get(connection_id) {
-            matches!(connection.status, OpenVPNStatus::Connected)
-        } else {
-            false
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
+        self.refresh_process_status(connection_id).await?;
+        let Some(connection) = self.connections.get(connection_id) else {
+            return Ok(false);
+        };
+        let has_live_child = self.processes.contains_key(connection_id);
+        let has_owned_pid = connection.process_id.is_some();
+
+        match connection.status {
+            OpenVPNStatus::Connected if has_live_child => Ok(true),
+            OpenVPNStatus::Disconnected | OpenVPNStatus::Error(_)
+                if !has_live_child && !has_owned_pid =>
+            {
+                Ok(false)
+            }
+            _ if has_live_child || has_owned_pid => Err(
+                "OpenVPN still has an owned process, but its usable state could not be confirmed"
+                    .to_string(),
+            ),
+            _ => Err(
+                "OpenVPN runtime state is transitional or inconsistent; activity could not be confirmed"
+                    .to_string(),
+            ),
         }
     }
 
-    async fn refresh_process_status(&mut self, connection_id: &str) {
+    async fn refresh_process_status(&mut self, connection_id: &str) -> Result<(), String> {
         enum ProcessObservation {
             Exited(String),
             InspectionFailed(String, Option<u32>),
@@ -481,16 +535,15 @@ impl OpenVPNService {
                 );
             }
             Some(ProcessObservation::InspectionFailed(error, pid)) => {
-                self.set_connection_owned_error(
-                    connection_id,
-                    &format!(
-                        "Failed to inspect the owned OpenVPN process; ownership was retained: {error}"
-                    ),
-                    pid,
+                let message = format!(
+                    "Failed to inspect the owned OpenVPN process; ownership was retained: {error}"
                 );
+                self.set_connection_owned_error(connection_id, &message, pid);
+                return Err(message);
             }
             None => {}
         }
+        Ok(())
     }
 
     async fn cleanup_owned_process(&mut self, connection_id: &str) -> Result<(), String> {
@@ -861,6 +914,64 @@ impl OpenVPNService {
             connection.config = new_config;
         }
         self.persist_or_rollback(previous).await
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<OpenVPNConfig>,
+        secret_mutation: OpenVPNSecretMutation,
+    ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        if config.is_none()
+            && (secret_mutation.clear_password
+                || secret_mutation.clear_inline_config
+                || secret_mutation.clear_client_key)
+        {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "OpenVPN connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_password {
+                current.password = None;
+            }
+            if secret_mutation.clear_inline_config {
+                current.inline_config = None;
+            }
+            if secret_mutation.clear_client_key {
+                current.client_key = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "OpenVPN connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.password,
+                &mut submitted.password,
+                secret_mutation.clear_password,
+                "OpenVPN password",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.inline_config,
+                &mut submitted.inline_config,
+                secret_mutation.clear_inline_config,
+                "OpenVPN inline configuration",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.client_key,
+                &mut submitted.client_key,
+                secret_mutation.clear_client_key,
+                "OpenVPN client key",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
     }
 
     pub async fn set_connection_key_files(
@@ -2002,14 +2113,45 @@ mod tests {
             .create_connection("Test".to_string(), default_config())
             .await
             .unwrap();
-        assert!(!svc.is_connection_active(&id).await);
+        assert!(!svc.probe_connection_active(&id).await.unwrap());
     }
 
     #[tokio::test]
     async fn is_connection_active_false_for_nonexistent() {
         let state = OpenVPNService::new();
         let mut svc = state.lock().await;
-        assert!(!svc.is_connection_active("nonexistent").await);
+        assert!(!svc.probe_connection_active("nonexistent").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn activity_probe_never_reports_inactive_while_process_ownership_is_retained() {
+        let state = OpenVPNService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Owned error".to_string(), default_config())
+            .await
+            .unwrap();
+        let connection = service.connections.get_mut(&id).unwrap();
+        connection.status = OpenVPNStatus::Error("inspection failed".to_string());
+        connection.process_id = Some(4242);
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("owned process"));
+        assert_eq!(service.connections[&id].process_id, Some(4242));
+    }
+
+    #[tokio::test]
+    async fn activity_probe_fails_closed_for_connected_state_without_an_owned_process() {
+        let state = OpenVPNService::new();
+        let mut service = state.lock().await;
+        let id = service
+            .create_connection("Inconsistent".to_string(), default_config())
+            .await
+            .unwrap();
+        service.connections.get_mut(&id).unwrap().status = OpenVPNStatus::Connected;
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(error.contains("inconsistent"));
     }
 
     #[tokio::test]
@@ -2748,5 +2890,93 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "sentinel");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&directory);
+    }
+
+    #[test]
+    fn ipc_view_redacts_all_openvpn_secret_sentinels_and_reports_presence() {
+        let mut config = default_config();
+        config.password = Some("OPENVPN-PASSWORD-SENTINEL".to_string());
+        config.inline_config = Some(
+            "remote vpn.example.test 1194\n<key>OPENVPN-INLINE-KEY-SENTINEL</key>".to_string(),
+        );
+        config.client_key = Some("OPENVPN-CLIENT-KEY-SENTINEL".to_string());
+        let view = OpenVPNConnection {
+            id: "profile".to_string(),
+            name: "Office".to_string(),
+            config,
+            status: OpenVPNStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            process_id: None,
+            local_ip: None,
+            remote_ip: None,
+        }
+        .into_redacted_view();
+
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("OPENVPN-PASSWORD-SENTINEL"));
+        assert!(!json.contains("OPENVPN-INLINE-KEY-SENTINEL"));
+        assert!(!json.contains("OPENVPN-CLIENT-KEY-SENTINEL"));
+        assert_eq!(
+            view.secret_presence,
+            OpenVPNSecretPresence {
+                password: true,
+                inline_config: true,
+                client_key: true,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn ipc_update_preserves_replaces_and_explicitly_clears_openvpn_secrets() {
+        let state = OpenVPNService::new();
+        let mut service = state.lock().await;
+        let mut config = default_config();
+        config.password = Some("original-password".to_string());
+        let id = service
+            .create_connection("Office".to_string(), config)
+            .await
+            .unwrap();
+
+        let mut omitted = default_config();
+        omitted.password = Some("   ".to_string());
+        service
+            .update_connection_from_ipc(&id, None, Some(omitted), OpenVPNSecretMutation::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.password.as_deref(),
+            Some("original-password")
+        );
+
+        let mut replacement = default_config();
+        replacement.password = Some("replacement-password".to_string());
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                Some(replacement),
+                OpenVPNSecretMutation::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service.connections[&id].config.password.as_deref(),
+            Some("replacement-password")
+        );
+
+        service
+            .update_connection_from_ipc(
+                &id,
+                None,
+                None,
+                OpenVPNSecretMutation {
+                    clear_password: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(service.connections[&id].config.password.is_none());
     }
 }
