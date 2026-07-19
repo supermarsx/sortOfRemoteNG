@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { Connection } from '../../types/connection/connection';
-import { useSessionThumbnails } from './useSessionThumbnails';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Connection } from "../../types/connection/connection";
+import { useSessionThumbnails } from "./useSessionThumbnails";
 import {
   loadSessionHistory,
   saveSessionHistory,
   clearSessionHistory as clearStoredHistory,
+  resolveRdpHistoryConnection,
   RDPSessionHistoryEntry,
-} from '../../utils/rdp/rdpSessionHistory';
+} from "../../utils/rdp/rdpSessionHistory";
 
 export interface RDPSessionInfo {
   id: string;
@@ -38,9 +39,9 @@ export interface RDPStats {
   last_error?: string;
 }
 
-export type { RDPSessionHistoryEntry } from '../../utils/rdp/rdpSessionHistory';
+export type { RDPSessionHistoryEntry } from "../../utils/rdp/rdpSessionHistory";
 
-export type PanelTab = 'sessions' | 'logs' | 'history';
+export type PanelTab = "sessions" | "logs" | "history";
 
 export function formatUptime(secs: number): string {
   const h = Math.floor(secs / 3600);
@@ -64,7 +65,7 @@ interface UseRDPSessionPanelParams {
   connections: Connection[];
   activeBackendSessionIds?: string[];
   thumbnailsEnabled?: boolean;
-  thumbnailPolicy?: 'realtime' | 'on-blur' | 'on-detach' | 'manual';
+  thumbnailPolicy?: "realtime" | "on-blur" | "on-detach" | "manual";
   thumbnailInterval?: number;
 }
 
@@ -73,21 +74,22 @@ export function useRDPSessionPanel({
   connections,
   activeBackendSessionIds = [],
   thumbnailsEnabled = true,
-  thumbnailPolicy = 'realtime',
+  thumbnailPolicy = "realtime",
   thumbnailInterval = 5,
 }: UseRDPSessionPanelParams) {
   const [sessions, setSessions] = useState<RDPSessionInfo[]>([]);
   const [statsMap, setStatsMap] = useState<Record<string, RDPStats>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const autoRefreshRef = useRef(autoRefresh);
-  const [activeTab, setActiveTab] = useState<PanelTab>('sessions');
+  const [activeTab, setActiveTab] = useState<PanelTab>("sessions");
   const [rebootConfirmSessionId, setRebootConfirmSessionId] = useState<
     string | null
   >(null);
   const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
-  const [sessionHistory, setSessionHistory] = useState<RDPSessionHistoryEntry[]>(loadSessionHistory);
+  const [sessionHistory, setSessionHistory] =
+    useState<RDPSessionHistoryEntry[]>(loadSessionHistory);
 
   // Track previous sessions so we can detect disconnections
   const prevSessionsRef = useRef<RDPSessionInfo[]>([]);
@@ -96,9 +98,9 @@ export function useRDPSessionPanel({
     sessions,
     thumbnailInterval * 1000,
     isVisible &&
-      activeTab === 'sessions' &&
+      activeTab === "sessions" &&
       thumbnailsEnabled &&
-      thumbnailPolicy === 'realtime',
+      thumbnailPolicy === "realtime",
   );
 
   useEffect(() => {
@@ -106,9 +108,7 @@ export function useRDPSessionPanel({
   }, [autoRefresh]);
 
   const getSessionDisplayName = useCallback(
-    (
-      session: RDPSessionInfo,
-    ): { name: string; subtitle: string } => {
+    (session: RDPSessionInfo): { name: string; subtitle: string } => {
       let conn = session.connection_id
         ? connections.find((c) => c.id === session.connection_id)
         : undefined;
@@ -117,18 +117,18 @@ export function useRDPSessionPanel({
           (c) =>
             c.hostname === session.host &&
             (c.port || 3389) === session.port &&
-            c.protocol === 'rdp',
+            c.protocol === "rdp",
         );
       }
       if (conn) {
         return {
           name: conn.name,
-          subtitle: `${session.host}:${session.port}${session.username ? ` (${session.username})` : ''}`,
+          subtitle: `${session.host}:${session.port}${session.username ? ` (${session.username})` : ""}`,
         };
       }
       return {
         name: `${session.host}:${session.port}`,
-        subtitle: session.username || '',
+        subtitle: session.username || "",
       };
     },
     [connections],
@@ -153,7 +153,7 @@ export function useRDPSessionPanel({
           const stats = statsMap[s.id];
           const display = getSessionDisplayName(s);
           return {
-            connectionId: s.connection_id || '',
+            connectionId: s.connection_id || "",
             connectionName: display.name,
             hostname: s.host,
             port: s.port,
@@ -181,7 +181,7 @@ export function useRDPSessionPanel({
       const stats = statsMap[session.id];
       const display = getSessionDisplayName(session);
       const entry: RDPSessionHistoryEntry = {
-        connectionId: session.connection_id || '',
+        connectionId: session.connection_id || "",
         connectionName: display.name,
         hostname: session.host,
         port: session.port,
@@ -209,30 +209,20 @@ export function useRDPSessionPanel({
   }, []);
 
   const reconnectFromHistory = useCallback(
-    (entry: RDPSessionHistoryEntry) => {
-      // Find matching connection by connectionId or hostname+port
-      const conn = entry.connectionId
-        ? connections.find((c) => c.id === entry.connectionId)
-        : connections.find(
-            (c) =>
-              c.hostname === entry.hostname &&
-              (c.port || 3389) === entry.port &&
-              c.protocol === 'rdp',
-          );
-      return conn || null;
-    },
+    (entry: RDPSessionHistoryEntry) =>
+      resolveRdpHistoryConnection(entry, connections),
     [connections],
   );
 
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const list = await invoke<RDPSessionInfo[]>('list_rdp_sessions');
+      const list = await invoke<RDPSessionInfo[]>("list_rdp_sessions");
       setSessions(list);
       const newStats: Record<string, RDPStats> = {};
       for (const s of list) {
         try {
-          const st = await invoke<RDPStats>('get_rdp_stats', {
+          const st = await invoke<RDPStats>("get_rdp_stats", {
             sessionId: s.id,
           });
           newStats[s.id] = st;
@@ -241,7 +231,7 @@ export function useRDPSessionPanel({
         }
       }
       setStatsMap(newStats);
-      setError('');
+      setError("");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -267,7 +257,7 @@ export function useRDPSessionPanel({
       try {
         const session = sessions.find((s) => s.id === sessionId);
         if (session) addToHistory(session);
-        await invoke('disconnect_rdp', { sessionId });
+        await invoke("disconnect_rdp", { sessionId });
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       } catch (e) {
         setError(`Disconnect failed: ${String(e)}`);
@@ -279,7 +269,7 @@ export function useRDPSessionPanel({
   const handleDetach = useCallback(
     async (sessionId: string) => {
       try {
-        await invoke('detach_rdp_session', { sessionId });
+        await invoke("detach_rdp_session", { sessionId });
         fetchData();
       } catch (e) {
         setError(`Detach failed: ${String(e)}`);
@@ -291,7 +281,7 @@ export function useRDPSessionPanel({
   const handleSignOut = useCallback(
     async (sessionId: string) => {
       try {
-        await invoke('rdp_sign_out', { sessionId });
+        await invoke("rdp_sign_out", { sessionId });
         fetchData();
       } catch (e) {
         setError(`Sign out failed: ${String(e)}`);
@@ -303,7 +293,7 @@ export function useRDPSessionPanel({
   const handleForceReboot = useCallback(
     async (sessionId: string) => {
       try {
-        await invoke('rdp_force_reboot', { sessionId });
+        await invoke("rdp_force_reboot", { sessionId });
         fetchData();
       } catch (e) {
         setError(`Force reboot failed: ${String(e)}`);
@@ -316,7 +306,7 @@ export function useRDPSessionPanel({
     for (const s of sessions) {
       addToHistory(s);
       try {
-        await invoke('disconnect_rdp', { sessionId: s.id });
+        await invoke("disconnect_rdp", { sessionId: s.id });
       } catch {
         // best-effort
       }

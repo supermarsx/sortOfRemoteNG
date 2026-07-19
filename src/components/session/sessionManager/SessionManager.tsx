@@ -11,8 +11,6 @@ import {
   ExternalLink,
   ScrollText,
   StopCircle,
-  Clock,
-  User,
   ArrowUpDown,
   Server,
   History,
@@ -45,6 +43,7 @@ import {
   useUnifiedSessionManager,
   UnifiedSessionRow,
 } from "../../../hooks/session/useUnifiedSessionManager";
+import { RdpHistoryView } from "./RdpHistoryView";
 
 /* ═══════════════════════════════════════════════════════════════════
    Props
@@ -1194,8 +1193,13 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             </div>
           )}
           {view === "rdp-history" && (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <RdpHistoryView mgr={mgr} onReconnect={onReconnect} />
+            <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+              <RdpHistoryView
+                history={mgr.rdp.sessionHistory}
+                resolveConnection={mgr.rdp.reconnectFromHistory}
+                onClear={mgr.rdp.clearHistory}
+                onReconnect={onReconnect}
+              />
             </div>
           )}
           {view === "proxy-logs" && (
@@ -1226,96 +1230,6 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
         onCancel={() => mgr.rdp.setRebootConfirmSessionId(null)}
       />
     </>
-  );
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   RDP history sub-view (absorbed from RDPSessionPanel)
-   ═══════════════════════════════════════════════════════════════════ */
-
-const RdpHistoryView: React.FC<{
-  mgr: Mgr;
-  onReconnect?: (connection: Connection) => void;
-}> = ({ mgr, onReconnect }) => {
-  const history = mgr.rdp.sessionHistory;
-  if (history.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <EmptyState
-          icon={History}
-          message="No session history yet"
-          hint="Past RDP sessions appear here after disconnecting"
-        />
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border)]">
-        <span className="text-xs text-[var(--color-textMuted)]">
-          {history.length} entr{history.length === 1 ? "y" : "ies"}
-        </span>
-        <button
-          onClick={mgr.rdp.clearHistory}
-          className="sor-option-chip text-xs bg-error/10 hover:bg-error/20 text-error border-error/30"
-        >
-          Clear
-        </button>
-      </div>
-      <div>
-        {history.map((entry, idx) => {
-          const conn = mgr.rdp.reconnectFromHistory(entry);
-          const canReconnect = !!conn && !!onReconnect;
-          return (
-            <div
-              key={`${entry.disconnectedAt}-${idx}`}
-              className="group flex items-center gap-3 px-4 py-2 hover:bg-[var(--color-surfaceHover)] transition-colors"
-            >
-              <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[var(--color-textMuted)]" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[var(--color-text)] truncate">
-                    {entry.connectionName}
-                  </span>
-                  <span className="text-[11px] text-[var(--color-textMuted)] font-mono truncate">
-                    {entry.hostname}:{entry.port}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-3 mt-0.5 text-[11px] text-[var(--color-textMuted)]">
-                  <span className="flex items-center gap-1">
-                    <Clock size={9} />
-                    <span className="font-mono">
-                      {formatUptime(entry.duration)}
-                    </span>
-                  </span>
-                  <span className="font-mono">
-                    {entry.desktopWidth}&times;{entry.desktopHeight}
-                  </span>
-                  {entry.username && (
-                    <span className="flex items-center gap-0.5">
-                      <User size={9} />
-                      {entry.username}
-                    </span>
-                  )}
-                  {!canReconnect && <span className="italic">unavailable</span>}
-                </div>
-              </div>
-              {canReconnect && (
-                <button
-                  onClick={() => {
-                    if (conn && onReconnect) onReconnect(conn);
-                  }}
-                  className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-primary/15 text-[var(--color-textSecondary)] hover:text-primary transition-all"
-                  title="Reconnect"
-                >
-                  <RefreshCw size={13} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 };
 

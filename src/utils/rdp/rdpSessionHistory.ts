@@ -1,6 +1,7 @@
-import { SettingsManager } from '../settings/settingsManager';
+import { SettingsManager } from "../settings/settingsManager";
+import type { Connection } from "../../types/connection/connection";
 
-const STORAGE_KEY = 'rdp-session-history';
+const STORAGE_KEY = "rdp-session-history";
 const DEFAULT_MAX_ENTRIES = 1000;
 
 function getMaxEntries(): number {
@@ -25,6 +26,31 @@ export interface RDPSessionHistoryEntry {
   desktopHeight: number;
 }
 
+/** Resolve a persisted history row to its current saved RDP connection. */
+export function resolveRdpHistoryConnection(
+  entry: RDPSessionHistoryEntry,
+  connections: Connection[],
+): Connection | null {
+  const idMatch = entry.connectionId
+    ? connections.find(
+        (connection) =>
+          connection.id === entry.connectionId &&
+          connection.protocol.toLocaleLowerCase() === "rdp",
+      )
+    : undefined;
+  if (idMatch) return idMatch;
+
+  const historyHost = entry.hostname.trim().toLocaleLowerCase();
+  return (
+    connections.find(
+      (connection) =>
+        connection.protocol.toLocaleLowerCase() === "rdp" &&
+        connection.hostname.trim().toLocaleLowerCase() === historyHost &&
+        (connection.port || 3389) === entry.port,
+    ) || null
+  );
+}
+
 export function loadSessionHistory(): RDPSessionHistoryEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,7 +64,9 @@ export function saveSessionHistory(entries: RDPSessionHistoryEntry[]): void {
   try {
     const max = getMaxEntries();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, max)));
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function recordRdpSessionHistory(entry: RDPSessionHistoryEntry): void {
