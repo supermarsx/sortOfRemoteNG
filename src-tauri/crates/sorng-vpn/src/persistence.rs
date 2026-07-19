@@ -4,6 +4,75 @@
 //! to/from encrypted storage via `sorng-storage`.
 
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+/// Current on-disk schema for per-provider profile definitions.
+pub const PROFILE_SCHEMA_VERSION: u32 = 1;
+
+/// Result of attempting to restore a provider's profile definitions.
+///
+/// Locked storage is intentionally not an error: password/hybrid installs
+/// start before the user has supplied the master password. Callers keep their
+/// service in the "not loaded" state and retry after unlock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreOutcome {
+    Loaded,
+    Missing,
+    Locked,
+}
+
+#[derive(Serialize)]
+struct ProfileEnvelope<'a, T> {
+    schema_version: u32,
+    connections: &'a [T],
+}
+
+/// Serialize provider definitions in a versioned envelope.
+pub fn serialize_profile_definitions<T: Serialize>(connections: &[T]) -> Result<String, String> {
+    serde_json::to_string(&ProfileEnvelope {
+        schema_version: PROFILE_SCHEMA_VERSION,
+        connections,
+    })
+    .map_err(|e| format!("Failed to serialize VPN profile definitions: {e}"))
+}
+
+/// Deserialize the current envelope and the two shapes used by development
+/// builds before persistence was fully wired (a raw array or an id-keyed map).
+/// Unsupported future schemas fail closed so an older binary cannot overwrite
+/// newer profile data.
+pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Result<Vec<T>, String> {
+    let value: serde_json::Value = serde_json::from_str(data)
+        .map_err(|e| format!("VPN profile data is not valid JSON: {e}"))?;
+
+    match value {
+        serde_json::Value::Array(items) => serde_json::from_value(serde_json::Value::Array(items))
+            .map_err(|e| format!("Legacy VPN profile data is invalid: {e}")),
+        serde_json::Value::Object(mut object) => {
+            if let Some(connections) = object.remove("connections") {
+                let version = object
+                    .remove("schema_version")
+                    .or_else(|| object.remove("version"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                if version > u64::from(PROFILE_SCHEMA_VERSION) {
+                    return Err(format!(
+                        "VPN profile schema {version} is newer than supported schema {}",
+                        PROFILE_SCHEMA_VERSION
+                    ));
+                }
+                serde_json::from_value(connections)
+                    .map_err(|e| format!("VPN profile definitions are invalid: {e}"))
+            } else {
+                // Compatibility with the short-lived id-keyed HashMap shape.
+                let values = object.into_values().collect::<Vec<_>>();
+                serde_json::from_value(serde_json::Value::Array(values))
+                    .map_err(|e| format!("Legacy VPN profile map is invalid: {e}"))
+            }
+        }
+        _ => Err("VPN profile data must be an object or array".to_string()),
+    }
+}
 
 /// Trait for services that can persist their connection definitions.
 ///
@@ -46,20 +115,28 @@ pub async fn save_service_data<S: Persistable>(
 pub async fn load_service_data<S: Persistable>(
     service: &mut S,
     storage: &sorng_storage::storage::SecureStorageState,
-) -> Result<bool, String> {
+) -> Result<RestoreOutcome, String> {
     let key = service.storage_key();
     let storage = storage.lock().await;
     match storage.read_app_data(key).await {
         Ok(Some(data)) => {
             service.deserialize_definitions(&data)?;
             log::info!("Loaded persisted data for '{}'", key);
-            Ok(true)
+            Ok(RestoreOutcome::Loaded)
         }
         Ok(None) => {
             log::debug!("No persisted data found for '{}'", key);
-            Ok(false)
+            Ok(RestoreOutcome::Missing)
         }
         Err(e) => {
+            let lower = e.to_ascii_lowercase();
+            if lower.contains("unlock")
+                || lower.contains("encryption state is locked")
+                || lower.contains("database is encrypted")
+            {
+                log::debug!("Persisted data for '{}' is locked; restore deferred", key);
+                return Ok(RestoreOutcome::Locked);
+            }
             log::warn!("Failed to load persisted data for '{}': {}", key, e);
             Err(format!("Failed to load {}: {}", key, e))
         }
@@ -80,4 +157,55 @@ pub mod keys {
     pub const PROXY: &str = "proxy_connections";
     pub const UNIFIED_CHAINS: &str = "unified_chains";
     pub const LAYER_PROFILES: &str = "layer_profiles";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct TestProfile {
+        id: String,
+        name: String,
+    }
+
+    fn profile() -> TestProfile {
+        TestProfile {
+            id: "stable-id".to_string(),
+            name: "Office".to_string(),
+        }
+    }
+
+    #[test]
+    fn versioned_profile_envelope_round_trips() {
+        let encoded = serialize_profile_definitions(&[profile()]).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(value["schema_version"], PROFILE_SCHEMA_VERSION);
+
+        let decoded: Vec<TestProfile> = deserialize_profile_definitions(&encoded).unwrap();
+        assert_eq!(decoded, vec![profile()]);
+    }
+
+    #[test]
+    fn legacy_array_and_map_shapes_are_migrated() {
+        let legacy_array = serde_json::to_string(&vec![profile()]).unwrap();
+        let decoded: Vec<TestProfile> = deserialize_profile_definitions(&legacy_array).unwrap();
+        assert_eq!(decoded, vec![profile()]);
+
+        let legacy_map = serde_json::json!({ "stable-id": profile() }).to_string();
+        let decoded: Vec<TestProfile> = deserialize_profile_definitions(&legacy_map).unwrap();
+        assert_eq!(decoded, vec![profile()]);
+    }
+
+    #[test]
+    fn future_schema_and_corruption_fail_closed() {
+        let future = serde_json::json!({
+            "schema_version": PROFILE_SCHEMA_VERSION + 1,
+            "connections": [profile()]
+        })
+        .to_string();
+        assert!(deserialize_profile_definitions::<TestProfile>(&future).is_err());
+        assert!(deserialize_profile_definitions::<TestProfile>("not-json").is_err());
+    }
 }

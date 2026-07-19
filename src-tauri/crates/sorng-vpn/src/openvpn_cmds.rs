@@ -33,7 +33,7 @@ pub async fn get_openvpn_connection(
     connection_id: String,
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<OpenVPNConnection, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_connection(&connection_id).await
 }
 
@@ -41,8 +41,8 @@ pub async fn get_openvpn_connection(
 pub async fn list_openvpn_connections(
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<Vec<OpenVPNConnection>, String> {
-    let service = state.lock().await;
-    Ok(service.list_connections().await)
+    let mut service = state.lock().await;
+    service.list_connections().await
 }
 
 #[tauri::command]
@@ -59,7 +59,7 @@ pub async fn get_openvpn_status(
     connection_id: String,
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<OpenVPNStatus, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_status(&connection_id).await
 }
 
@@ -111,7 +111,9 @@ pub async fn update_openvpn_connection(
     state: tauri::State<'_, OpenVPNServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.update_connection(&connection_id, name, config).await
+    service
+        .update_connection(&connection_id, name, config)
+        .await
 }
 
 #[tauri::command]
@@ -122,4 +124,3 @@ pub async fn validate_ovpn_config(
     let service = state.lock().await;
     service.validate_ovpn_config(&ovpn_content).await
 }
-
