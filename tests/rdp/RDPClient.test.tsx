@@ -82,7 +82,8 @@ class MockResizeObserver {
   }
 }
 
-globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+globalThis.ResizeObserver =
+  MockResizeObserver as unknown as typeof ResizeObserver;
 
 // Mock Tauri window API (getCurrentWindow)
 vi.mock("@tauri-apps/api/window", () => ({
@@ -199,10 +200,13 @@ const hookWrapper = ({ children }: { children: React.ReactNode }) => (
   </ToastProvider>
 );
 
-const installOpenVpnLeaseRuntime = (options: {
-  connectError?: Error;
-  releaseErrors?: (ownerId: string, attempt: number) => string[];
-} = {}) => {
+const installOpenVpnLeaseRuntime = (
+  options: {
+    connectError?: Error;
+    disconnectError?: Error;
+    releaseErrors?: (ownerId: string, attempt: number) => string[];
+  } = {},
+) => {
   const acquiredOwners: string[] = [];
   const releaseCalls: string[] = [];
   const releaseAttempts = new Map<string, number>();
@@ -258,6 +262,10 @@ const installOpenVpnLeaseRuntime = (options: {
     if (cmd === "connect_rdp") {
       if (options.connectError) throw options.connectError;
       return "rdp-session-123";
+    }
+    if (cmd === "disconnect_rdp") {
+      if (options.disconnectError) throw options.disconnectError;
+      return undefined;
     }
     return undefined;
   });
@@ -391,6 +399,25 @@ describe("RDPClient", () => {
         );
       });
 
+      const acquireCallIndex = mockInvoke.mock.calls.findIndex(
+        ([command]) => command === "acquire_vpn_leases",
+      );
+      const acquireOwnerId = (
+        mockInvoke.mock.calls[acquireCallIndex]?.[1] as { ownerId: string }
+      ).ownerId;
+      const ownerSnapshotCallIndex =
+        connectionContextMocks.dispatch.mock.calls.findIndex(
+          ([action]) =>
+            action.type === "UPDATE_SESSION" &&
+            action.payload.vpnLeaseOwnerIds?.includes(acquireOwnerId),
+        );
+      expect(ownerSnapshotCallIndex).toBeGreaterThanOrEqual(0);
+      expect(
+        connectionContextMocks.dispatch.mock.invocationCallOrder[
+          ownerSnapshotCallIndex
+        ],
+      ).toBeLessThan(mockInvoke.mock.invocationCallOrder[acquireCallIndex]);
+
       let commands = mockInvoke.mock.calls.map(([command]) => command);
       expect(commands.indexOf("acquire_vpn_leases")).toBeLessThan(
         commands.indexOf("connect_rdp"),
@@ -472,7 +499,9 @@ describe("RDPClient", () => {
         wrapper: hookWrapper,
       });
 
-      await waitFor(() => expect(result.current.connectionStatus).toBe("error"));
+      await waitFor(() =>
+        expect(result.current.connectionStatus).toBe("error"),
+      );
       expect(acquiredOwners).toHaveLength(1);
       expect(releaseCalls).toEqual([acquiredOwners[0]]);
 
@@ -485,6 +514,86 @@ describe("RDPClient", () => {
         await result.current.handleDisconnect();
       });
       expect(releaseCalls).toHaveLength(2);
+    });
+
+    it("does not release the RDP owner when native disconnect fails", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+        disconnectError: new Error("native session still active"),
+      });
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() => {
+        expect(acquiredOwners).toHaveLength(1);
+        expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            backendSessionId: "rdp-session-123",
+          }),
+        });
+      });
+
+      let disconnected = true;
+      await act(async () => {
+        disconnected = await result.current.handleDisconnect();
+      });
+      expect(disconnected).toBe(false);
+      expect(releaseCalls).toEqual([]);
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          status: "error",
+          errorMessage: expect.stringMatching(/RDP disconnect failed/i),
+          vpnLeaseOwnerIds: [acquiredOwners[0]],
+        }),
+      });
+    });
+
+    it("keeps a failed post-disconnect owner visible and clears it on retry", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+        releaseErrors: (_ownerId, attempt) =>
+          attempt === 1 ? ["provider still stopping"] : [],
+      });
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() => expect(acquiredOwners).toHaveLength(1));
+
+      let disconnected = true;
+      await act(async () => {
+        disconnected = await result.current.handleDisconnect();
+      });
+      expect(disconnected).toBe(false);
+      expect(releaseCalls).toEqual([acquiredOwners[0]]);
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          backendSessionId: undefined,
+          status: "error",
+          errorMessage: expect.stringMatching(/VPN cleanup needs attention/i),
+          vpnLeaseOwnerIds: [acquiredOwners[0]],
+        }),
+      });
+
+      await act(async () => {
+        disconnected = await result.current.handleDisconnect();
+      });
+      expect(disconnected).toBe(true);
+      expect(releaseCalls).toEqual([acquiredOwners[0], acquiredOwners[0]]);
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          status: "disconnected",
+          vpnLeaseOwnerId: undefined,
+          vpnLeaseOwnerIds: undefined,
+        }),
+      });
     });
 
     it("keeps a new current owner while a prior handoff cleanup remains pending", async () => {
@@ -502,10 +611,9 @@ describe("RDPClient", () => {
         ...mockSession,
         vpnLeaseOwnerId: oldOwnerId,
       };
-      const { result } = renderHook(
-        () => useRDPClient(sessionWithOldOwner),
-        { wrapper: hookWrapper },
-      );
+      const { result } = renderHook(() => useRDPClient(sessionWithOldOwner), {
+        wrapper: hookWrapper,
+      });
 
       await waitFor(() => {
         expect(acquiredOwners).toHaveLength(1);
@@ -513,23 +621,19 @@ describe("RDPClient", () => {
           type: "UPDATE_SESSION",
           payload: expect.objectContaining({
             vpnLeaseOwnerId: acquiredOwners[0],
+            vpnLeaseOwnerIds: expect.arrayContaining([
+              oldOwnerId,
+              acquiredOwners[0],
+            ]),
           }),
         });
       });
       const currentOwnerId = acquiredOwners[0];
       expect(releaseCalls).toEqual([oldOwnerId]);
 
-      emitStatus(
-        "disconnected",
-        "Remote session closed",
-        "rdp-session-123",
-      );
+      emitStatus("disconnected", "Remote session closed", "rdp-session-123");
       await waitFor(() => {
-        expect(releaseCalls).toEqual([
-          oldOwnerId,
-          oldOwnerId,
-          currentOwnerId,
-        ]);
+        expect(releaseCalls).toEqual([oldOwnerId, oldOwnerId, currentOwnerId]);
       });
 
       // Pending/current/persisted sources are deduplicated, and successful
@@ -538,6 +642,44 @@ describe("RDPClient", () => {
         await result.current.handleDisconnect();
       });
       expect(releaseCalls).toHaveLength(3);
+    });
+
+    it("persists a failed prior owner with its replacement across a view-only unmount", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const oldOwnerId = "rdp-old-owner-for-detach";
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+        releaseErrors: (ownerId) =>
+          ownerId === oldOwnerId ? ["provider still stopping"] : [],
+      });
+      const sessionWithOldOwner = {
+        ...mockSession,
+        vpnLeaseOwnerId: oldOwnerId,
+        vpnLeaseOwnerIds: [oldOwnerId],
+      };
+      const view = renderHook(() => useRDPClient(sessionWithOldOwner), {
+        wrapper: hookWrapper,
+      });
+
+      await waitFor(() => {
+        expect(acquiredOwners).toHaveLength(1);
+        expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            vpnLeaseOwnerId: acquiredOwners[0],
+            vpnLeaseOwnerIds: expect.arrayContaining([
+              oldOwnerId,
+              acquiredOwners[0],
+            ]),
+          }),
+        });
+      });
+
+      view.unmount();
+      await act(async () => Promise.resolve());
+      expect(releaseCalls).toEqual([oldOwnerId]);
+      expect(releaseCalls).not.toContain(acquiredOwners[0]);
     });
 
     it("releases a stale handed-off VPN owner without touching its replacement", async () => {
@@ -657,6 +799,127 @@ describe("RDPClient", () => {
         releaseCalls.filter((ownerId) => ownerId === acquiredOwners[0]),
       ).toHaveLength(1);
       expect(releaseCalls).not.toContain(acquiredOwners[1]);
+    });
+
+    it("retains a stale RDP backend and its owner until native cleanup retry succeeds", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const acquiredOwners: string[] = [];
+      const liveOwners = new Set<string>();
+      const releaseCalls: string[] = [];
+      let finishStaleConnect!: (sessionId: string) => void;
+      const staleConnect = new Promise<string>((resolve) => {
+        finishStaleConnect = resolve;
+      });
+      let connectCount = 0;
+      let staleDisconnectAttempts = 0;
+
+      mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+        const invokeArgs = args as
+          | { ownerId?: string; sessionId?: string }
+          | undefined;
+        const ownerId = String(invokeArgs?.ownerId);
+        if (cmd === "list_rdp_sessions") return [];
+        if (cmd === "list_openvpn_connections") {
+          return [
+            {
+              id: "vpn-office",
+              name: "Office VPN",
+              config: {},
+              status: "disconnected",
+              created_at: "2026-07-19T00:00:00.000Z",
+            },
+          ];
+        }
+        if (
+          cmd === "list_wireguard_connections" ||
+          cmd === "list_tailscale_connections" ||
+          cmd === "list_zerotier_connections"
+        ) {
+          return [];
+        }
+        if (cmd === "acquire_vpn_leases") {
+          acquiredOwners.push(ownerId);
+          liveOwners.add(ownerId);
+          return { owner_id: ownerId, leases: [] };
+        }
+        if (cmd === "release_vpn_leases") {
+          releaseCalls.push(ownerId);
+          liveOwners.delete(ownerId);
+          return { owner_id: ownerId, released: [], errors: [] };
+        }
+        if (cmd === "detect_keyboard_layout") return 0x0409;
+        if (cmd === "connect_rdp") {
+          connectCount += 1;
+          return connectCount === 1 ? staleConnect : "rdp-replacement";
+        }
+        if (cmd === "disconnect_rdp") {
+          if (invokeArgs?.sessionId === "rdp-stale") {
+            staleDisconnectAttempts += 1;
+            if (staleDisconnectAttempts === 1) {
+              throw new Error("stale RDP backend still active");
+            }
+          }
+          return undefined;
+        }
+        return undefined;
+      });
+
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+      await waitFor(() => expect(connectCount).toBe(1));
+
+      let replacementInit!: Promise<void>;
+      act(() => {
+        replacementInit = result.current.initializeRDPConnection();
+      });
+      await waitFor(() => expect(connectCount).toBe(2));
+      await act(async () => replacementInit);
+      expect(liveOwners).toEqual(new Set(acquiredOwners));
+
+      await act(async () => {
+        finishStaleConnect("rdp-stale");
+        await staleConnect;
+      });
+      await waitFor(() => expect(staleDisconnectAttempts).toBe(1));
+      expect(releaseCalls).not.toContain(acquiredOwners[0]);
+      expect(liveOwners).toEqual(new Set(acquiredOwners));
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          backendSessionId: "rdp-stale",
+          status: "error",
+          errorMessage: expect.stringMatching(/cleanup failed/i),
+          vpnLeaseOwnerIds: expect.arrayContaining(acquiredOwners),
+        }),
+      });
+
+      let disconnected = false;
+      await act(async () => {
+        disconnected = await result.current.handleDisconnect();
+      });
+      expect(disconnected).toBe(true);
+      expect(staleDisconnectAttempts).toBe(2);
+      expect(liveOwners).toEqual(new Set());
+      expect(releaseCalls).toEqual(expect.arrayContaining(acquiredOwners));
+      const staleDisconnectCallOrders = mockInvoke.mock.calls
+        .map(([command, args], index) => ({ command, args, index }))
+        .filter(
+          ({ command, args }) =>
+            command === "disconnect_rdp" &&
+            (args as { sessionId?: string })?.sessionId === "rdp-stale",
+        )
+        .map(({ index }) => index);
+      const staleOwnerReleaseIndex = mockInvoke.mock.calls.findIndex(
+        ([command, args]) =>
+          command === "release_vpn_leases" &&
+          (args as { ownerId?: string })?.ownerId === acquiredOwners[0],
+      );
+      expect(staleOwnerReleaseIndex).toBeGreaterThan(
+        staleDisconnectCallOrders[1],
+      );
     });
 
     it("creates the resolved final SSH bastion before connecting RDP", async () => {
@@ -891,14 +1154,11 @@ describe("RDPClient", () => {
       });
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith(
-          "rdp_set_desktop_size",
-          {
-            sessionId: "rdp-session-123",
-            width: 1280,
-            height: 720,
-          },
-        );
+        expect(mockInvoke).toHaveBeenCalledWith("rdp_set_desktop_size", {
+          sessionId: "rdp-session-123",
+          width: 1280,
+          height: 720,
+        });
       });
     });
 
@@ -951,7 +1211,9 @@ describe("RDPClient", () => {
         expect(screen.getByText("connected")).toBeInTheDocument();
       });
 
-      const fullscreenButton = document.querySelector('[data-tooltip="Fullscreen"]') as HTMLElement;
+      const fullscreenButton = document.querySelector(
+        '[data-tooltip="Fullscreen"]',
+      ) as HTMLElement;
       fullscreenButton.click();
 
       expect(screen.getByText("connected")).toBeInTheDocument();
@@ -962,7 +1224,9 @@ describe("RDPClient", () => {
     it("should toggle settings panel", async () => {
       renderWithProviders(mockSession);
 
-      const settingsButton = document.querySelector('[data-tooltip="RDP Settings"]') as HTMLElement;
+      const settingsButton = document.querySelector(
+        '[data-tooltip="RDP Settings"]',
+      ) as HTMLElement;
       settingsButton.click();
 
       await waitFor(() => {
@@ -975,7 +1239,9 @@ describe("RDPClient", () => {
     it("should toggle internals panel", async () => {
       renderWithProviders(mockSession);
 
-      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      const internalsButton = document.querySelector(
+        '[data-tooltip="RDP Internals"]',
+      ) as HTMLElement;
       internalsButton.click();
 
       await waitFor(() => {
@@ -999,7 +1265,9 @@ describe("RDPClient", () => {
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
       // Open internals panel
-      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      const internalsButton = document.querySelector(
+        '[data-tooltip="RDP Internals"]',
+      ) as HTMLElement;
       internalsButton.click();
 
       // Simulate stats event
@@ -1043,7 +1311,9 @@ describe("RDPClient", () => {
 
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
-      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      const internalsButton = document.querySelector(
+        '[data-tooltip="RDP Internals"]',
+      ) as HTMLElement;
       internalsButton.click();
 
       await act(async () => {
@@ -1106,7 +1376,9 @@ describe("RDPClient", () => {
 
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
-      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      const internalsButton = document.querySelector(
+        '[data-tooltip="RDP Internals"]',
+      ) as HTMLElement;
       internalsButton.click();
 
       await act(async () => {
@@ -1203,7 +1475,9 @@ describe("RDPClient", () => {
 
       emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
 
-      const internalsButton = document.querySelector('[data-tooltip="RDP Internals"]') as HTMLElement;
+      const internalsButton = document.querySelector(
+        '[data-tooltip="RDP Internals"]',
+      ) as HTMLElement;
       internalsButton.click();
 
       await act(async () => {
@@ -1288,7 +1562,8 @@ describe("RDPClient", () => {
 
       await waitFor(() => {
         expect(
-          getStoredIdentity("192.168.1.100", 3389, "rdp", "test-connection")?.identity.fingerprint,
+          getStoredIdentity("192.168.1.100", 3389, "rdp", "test-connection")
+            ?.identity.fingerprint,
         ).toBe("SHA256:rdp-first-use");
       });
       expect(

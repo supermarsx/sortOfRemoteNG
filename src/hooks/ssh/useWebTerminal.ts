@@ -74,6 +74,53 @@ type SshHostKeyPromptEvent = {
   public_key: string | null;
 };
 
+interface VpnLeaseOwnerTracker {
+  current: string | null;
+  persisted: string | null;
+  pending: Set<string>;
+}
+
+const MAX_TRACKED_VPN_LEASE_OWNERS = 32;
+
+const trackedVpnLeaseOwnerIds = (tracker: VpnLeaseOwnerTracker): string[] => {
+  const owners = new Set(tracker.pending);
+  if (tracker.current) owners.add(tracker.current);
+  if (tracker.persisted) owners.add(tracker.persisted);
+  return [...owners];
+};
+
+const trackPendingVpnLeaseOwner = (
+  tracker: VpnLeaseOwnerTracker,
+  ownerId: string,
+): void => {
+  if (trackedVpnLeaseOwnerIds(tracker).includes(ownerId)) {
+    tracker.pending.add(ownerId);
+    return;
+  }
+  if (trackedVpnLeaseOwnerIds(tracker).length >= MAX_TRACKED_VPN_LEASE_OWNERS) {
+    throw new Error(
+      "VPN cleanup is still pending for too many SSH attempts. Retry disconnect before reconnecting.",
+    );
+  }
+  tracker.pending.add(ownerId);
+};
+
+const persistTrackedVpnLeaseOwners = (
+  tracker: VpnLeaseOwnerTracker,
+): Pick<ConnectionSession, "vpnLeaseOwnerId" | "vpnLeaseOwnerIds"> => {
+  const ownerIds = trackedVpnLeaseOwnerIds(tracker).slice(
+    0,
+    MAX_TRACKED_VPN_LEASE_OWNERS,
+  );
+  const primaryOwnerId =
+    tracker.current ?? tracker.persisted ?? ownerIds[0] ?? null;
+  tracker.persisted = primaryOwnerId;
+  return {
+    vpnLeaseOwnerId: primaryOwnerId ?? undefined,
+    vpnLeaseOwnerIds: ownerIds.length > 0 ? ownerIds : undefined,
+  };
+};
+
 /* ── Hook ──────────────────────────────────────────────────────── */
 
 export function useWebTerminal(
@@ -114,10 +161,28 @@ export function useWebTerminal(
 
   /* ── SSH refs ── */
   const sshSessionId = useRef<string | null>(null);
-  const vpnLeaseOwnerRef = useRef<string | null>(
-    session.vpnLeaseOwnerId ?? null,
-  );
+  const initialVpnLeaseOwners = [
+    ...new Set(
+      [...(session.vpnLeaseOwnerIds ?? []), session.vpnLeaseOwnerId].filter(
+        (ownerId): ownerId is string => Boolean(ownerId),
+      ),
+    ),
+  ].slice(0, MAX_TRACKED_VPN_LEASE_OWNERS);
+  const initialVpnLeaseOwner =
+    session.vpnLeaseOwnerId ?? initialVpnLeaseOwners[0] ?? null;
+  const vpnLeaseOwnersRef = useRef<VpnLeaseOwnerTracker>({
+    current: initialVpnLeaseOwner,
+    persisted: initialVpnLeaseOwner,
+    pending: new Set(
+      initialVpnLeaseOwners.filter(
+        (ownerId) => ownerId !== initialVpnLeaseOwner,
+      ),
+    ),
+  });
   const vpnLeaseReleasesRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const pendingSshBackendCleanupRef = useRef(new Set<string>());
+  const pendingSshBackendOwnersRef = useRef(new Map<string, string>());
+  const protectedVpnLeaseOwnersRef = useRef(new Set<string>());
   const sshInitGenRef = useRef(0);
   const isSshReady = useRef(false);
   const isConnecting = useRef(false);
@@ -661,52 +726,150 @@ export function useWebTerminal(
     [writeLine],
   );
 
-  const releaseOwnedVpnLeases = useCallback(async () => {
-    const ownerId =
-      vpnLeaseOwnerRef.current ?? sessionRef.current.vpnLeaseOwnerId ?? null;
-    if (!ownerId) return;
+  const settleVpnLeaseOwner = useCallback(
+    async (ownerId: string): Promise<boolean> => {
+      const tracked = vpnLeaseOwnersRef.current;
+      if (!trackedVpnLeaseOwnerIds(tracked).includes(ownerId)) return true;
 
-    const clean = await releaseVpnLeaseOwner(ownerId);
-    if (clean && vpnLeaseOwnerRef.current === ownerId) {
-      vpnLeaseOwnerRef.current = null;
-    }
-  }, [releaseVpnLeaseOwner]);
+      const clean = await releaseVpnLeaseOwner(ownerId);
+      const tracker = vpnLeaseOwnersRef.current;
+      if (!clean) {
+        trackPendingVpnLeaseOwner(tracker, ownerId);
+        const updatedSession = {
+          ...sessionRef.current,
+          ...persistTrackedVpnLeaseOwners(tracker),
+        };
+        sessionRef.current = updatedSession;
+        dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+        return false;
+      }
+
+      tracker.pending.delete(ownerId);
+      if (tracker.current === ownerId) tracker.current = null;
+      if (tracker.persisted === ownerId) tracker.persisted = null;
+      const updatedSession = {
+        ...sessionRef.current,
+        ...persistTrackedVpnLeaseOwners(tracker),
+      };
+      sessionRef.current = updatedSession;
+      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      return true;
+    },
+    [dispatch, releaseVpnLeaseOwner],
+  );
+
+  const releaseOwnedVpnLeases = useCallback(async (): Promise<boolean> => {
+    const ownerIds = trackedVpnLeaseOwnerIds(
+      vpnLeaseOwnersRef.current,
+    ).filter((ownerId) => !protectedVpnLeaseOwnersRef.current.has(ownerId));
+    const results = await Promise.all(
+      ownerIds.map((ownerId) => settleVpnLeaseOwner(ownerId)),
+    );
+    return results.every(Boolean);
+  }, [settleVpnLeaseOwner]);
 
   const disconnectCurrentSsh = useCallback(
-    async (preserveConnecting = false) => {
-      if (sshSessionId.current) {
-        const sid = sshSessionId.current;
-
+    async (preserveConnecting = false): Promise<boolean> => {
+      const sid =
+        sshSessionId.current ?? sessionRef.current.backendSessionId ?? null;
+      const backendSessionIds = [
+        ...new Set(
+          [
+            ...pendingSshBackendCleanupRef.current,
+            sid,
+            sessionRef.current.backendSessionId,
+          ].filter((sessionId): sessionId is string => Boolean(sessionId)),
+        ),
+      ];
+      const hadManagedState =
+        backendSessionIds.length > 0 ||
+        trackedVpnLeaseOwnerIds(vpnLeaseOwnersRef.current).length > 0;
+      for (const backendSessionId of backendSessionIds) {
         // Fire "disconnected" lifecycle event and unregister from scripts engine
         invoke("ssh_scripts_notify_event", {
           event: {
-            sessionId: sid,
+            sessionId: backendSessionId,
             eventType: "disconnected",
             timestamp: new Date().toISOString(),
           },
         }).catch(() => {});
-        invoke("ssh_scripts_unregister_session", { sessionId: sid }).catch(
-          () => {},
-        );
+        invoke("ssh_scripts_unregister_session", {
+          sessionId: backendSessionId,
+        }).catch(() => {});
 
-        await invoke("disconnect_ssh", { sessionId: sid }).catch(
-          () => undefined,
-        );
-        sshSessionId.current = null;
+        try {
+          await invoke("disconnect_ssh", { sessionId: backendSessionId });
+        } catch (disconnectError) {
+          pendingSshBackendCleanupRef.current.add(backendSessionId);
+          const message = `SSH disconnect failed: ${String(disconnectError)}`;
+          setStatusState("error");
+          setError(message);
+          const updatedSession = {
+            ...sessionRef.current,
+            backendSessionId,
+            status: "error" as const,
+            errorMessage: message,
+            ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+          };
+          sessionRef.current = updatedSession;
+          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          return false;
+        }
+        pendingSshBackendCleanupRef.current.delete(backendSessionId);
+        const pendingOwnerId =
+          pendingSshBackendOwnersRef.current.get(backendSessionId);
+        if (pendingOwnerId) {
+          protectedVpnLeaseOwnersRef.current.delete(pendingOwnerId);
+          pendingSshBackendOwnersRef.current.delete(backendSessionId);
+        }
+        if (sshSessionId.current === backendSessionId) {
+          sshSessionId.current = null;
+        }
+      }
+      if (backendSessionIds.length > 0) {
         isSshReady.current = false;
         if (!preserveConnecting) isConnecting.current = false;
-        setStatusState("idle");
-        setError("");
         writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
       }
-      await releaseOwnedVpnLeases();
+
+      const vpnClean = await releaseOwnedVpnLeases();
+      if (!vpnClean) {
+        const message =
+          "SSH disconnected, but VPN cleanup needs attention. Disconnect again to retry.";
+        setStatusState("error");
+        setError(message);
+        const updatedSession = {
+          ...sessionRef.current,
+          backendSessionId: undefined,
+          shellId: undefined,
+          status: "error" as const,
+          errorMessage: message,
+        };
+        sessionRef.current = updatedSession;
+        dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+        return false;
+      }
+
+      setStatusState("idle");
+      setError("");
+      if (!hadManagedState) return true;
+      const updatedSession = {
+        ...sessionRef.current,
+        backendSessionId: undefined,
+        shellId: undefined,
+        status: "disconnected" as const,
+        errorMessage: undefined,
+      };
+      sessionRef.current = updatedSession;
+      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      return true;
     },
-    [releaseOwnedVpnLeases, setStatusState, writeLine],
+    [dispatch, releaseOwnedVpnLeases, setStatusState, writeLine],
   );
 
-  const disconnectSsh = useCallback(async () => {
+  const disconnectSsh = useCallback(async (): Promise<boolean> => {
     sshInitGenRef.current++;
-    await disconnectCurrentSsh();
+    return disconnectCurrentSsh();
   }, [disconnectCurrentSsh]);
 
   const initSsh = useCallback(
@@ -729,48 +892,91 @@ export function useWebTerminal(
         const ownerId = attemptVpnLeaseOwnerId;
         if (!ownerId) return;
         attemptVpnLeaseOwnerId = null;
-        await releaseVpnLeaseOwner(ownerId);
-        if (vpnLeaseOwnerRef.current === ownerId) {
-          vpnLeaseOwnerRef.current = null;
-        }
+        protectedVpnLeaseOwnersRef.current.delete(ownerId);
+        await settleVpnLeaseOwner(ownerId);
       };
 
-      const cleanupAttemptSsh = async () => {
+      const cleanupAttemptSsh = async (): Promise<boolean> => {
         const sessionId = attemptSshSessionId;
-        if (!sessionId) return;
+        if (!sessionId) return true;
+        try {
+          await invoke("disconnect_ssh", { sessionId });
+        } catch (cleanupError) {
+          pendingSshBackendCleanupRef.current.add(sessionId);
+          if (attemptVpnLeaseOwnerId) {
+            pendingSshBackendOwnersRef.current.set(
+              sessionId,
+              attemptVpnLeaseOwnerId,
+            );
+          }
+          const message = `SSH stale session cleanup failed: ${String(cleanupError)}. Retry disconnect before releasing its VPN route.`;
+          setStatusState("error");
+          setError(message);
+          const updatedSession = {
+            ...sessionRef.current,
+            backendSessionId: sessionId,
+            status: "error" as const,
+            errorMessage: message,
+            ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+          };
+          sessionRef.current = updatedSession;
+          dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+          return false;
+        }
         attemptSshSessionId = null;
-        await invoke("disconnect_ssh", { sessionId }).catch(() => undefined);
+        pendingSshBackendCleanupRef.current.delete(sessionId);
+        pendingSshBackendOwnersRef.current.delete(sessionId);
         if (sshSessionId.current === sessionId) {
           sshSessionId.current = null;
         }
+        return true;
       };
 
       const stopIfStale = async () => {
         if (!stale()) return false;
-        await cleanupAttemptSsh();
-        await releaseAttemptVpnLease();
+        if (await cleanupAttemptSsh()) {
+          await releaseAttemptVpnLease();
+        }
         return true;
       };
 
       const handoffAttempt = async (targetSessionId: string) => {
-        const previousOwnerId =
-          vpnLeaseOwnerRef.current ?? currentSession.vpnLeaseOwnerId ?? null;
+        const tracker = vpnLeaseOwnersRef.current;
+        const primaryOwnerIds = [
+          ...new Set(
+            [tracker.current, tracker.persisted].filter(
+              (ownerId): ownerId is string => Boolean(ownerId),
+            ),
+          ),
+        ];
         const nextOwnerId = attemptVpnLeaseOwnerId;
+        const previousOwnerIds = primaryOwnerIds.filter(
+          (ownerId) => !protectedVpnLeaseOwnersRef.current.has(ownerId),
+        );
 
         sshSessionId.current = targetSessionId;
-        vpnLeaseOwnerRef.current = nextOwnerId;
+        for (const previousOwnerId of primaryOwnerIds) {
+          if (previousOwnerId !== nextOwnerId) {
+            trackPendingVpnLeaseOwner(tracker, previousOwnerId);
+          }
+        }
+        tracker.current = nextOwnerId;
+        if (nextOwnerId) tracker.pending.delete(nextOwnerId);
 
-        if (previousOwnerId && previousOwnerId !== nextOwnerId) {
-          await releaseVpnLeaseOwner(previousOwnerId);
+        for (const previousOwnerId of previousOwnerIds) {
+          if (previousOwnerId !== nextOwnerId) {
+            await settleVpnLeaseOwner(previousOwnerId);
+          }
         }
       };
 
       const commitAttemptHandoff = () => {
         attemptSshSessionId = null;
+        if (attemptVpnLeaseOwnerId) {
+          protectedVpnLeaseOwnersRef.current.delete(attemptVpnLeaseOwnerId);
+        }
         attemptVpnLeaseOwnerId = null;
       };
-
-      if (force) sshSessionId.current = null;
 
       const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? false;
       const currentSettings = settingsRef.current;
@@ -863,6 +1069,17 @@ export function useWebTerminal(
           currentSession.id,
           "ssh",
         );
+        protectedVpnLeaseOwnersRef.current.add(attemptVpnLeaseOwnerId);
+        trackPendingVpnLeaseOwner(
+          vpnLeaseOwnersRef.current,
+          attemptVpnLeaseOwnerId,
+        );
+        const trackedSession = {
+          ...sessionRef.current,
+          ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+        };
+        sessionRef.current = trackedSession;
+        dispatch({ type: "UPDATE_SESSION", payload: trackedSession });
         const leaseResult = await acquireSessionVpnLeases(
           attemptVpnLeaseOwnerId,
           steps,
@@ -909,16 +1126,18 @@ export function useWebTerminal(
               await handoffAttempt(currentSession.backendSessionId);
               if (await stopIfStale()) return;
               commitAttemptHandoff();
+              const updatedSession = {
+                ...currentSession,
+                shellId: existingShellId,
+                status: "connected" as const,
+                errorMessage: undefined,
+                networkPath: runtimePath?.snapshot,
+                ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+              };
+              sessionRef.current = updatedSession;
               dispatch({
                 type: "UPDATE_SESSION",
-                payload: {
-                  ...currentSession,
-                  shellId: existingShellId,
-                  status: "connected",
-                  errorMessage: undefined,
-                  networkPath: runtimePath?.snapshot,
-                  vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
-                },
+                payload: updatedSession,
               });
               writeLine("\x1b[32mReattached to existing SSH session\x1b[0m");
               setStatusState("connected");
@@ -931,16 +1150,18 @@ export function useWebTerminal(
             await handoffAttempt(currentSession.backendSessionId);
             if (await stopIfStale()) return;
             commitAttemptHandoff();
+            const updatedSession = {
+              ...currentSession,
+              shellId,
+              status: "connected" as const,
+              errorMessage: undefined,
+              networkPath: runtimePath?.snapshot,
+              ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+            };
+            sessionRef.current = updatedSession;
             dispatch({
               type: "UPDATE_SESSION",
-              payload: {
-                ...currentSession,
-                shellId,
-                status: "connected",
-                errorMessage: undefined,
-                networkPath: runtimePath?.snapshot,
-                vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
-              },
+              payload: updatedSession,
             });
             writeLine(
               "\x1b[32mRestarted shell on existing SSH connection\x1b[0m",
@@ -954,7 +1175,7 @@ export function useWebTerminal(
           }
         }
 
-        await disconnectCurrentSsh(true);
+        if (!(await disconnectCurrentSsh(true))) return;
         if (await stopIfStale()) return;
         runtimePath = await resolveAndAcquireVpnPath();
         if (await stopIfStale()) return;
@@ -1177,17 +1398,19 @@ export function useWebTerminal(
         await handoffAttempt(sessionId);
         if (await stopIfStale()) return;
         commitAttemptHandoff();
+        const updatedSession = {
+          ...currentSession,
+          backendSessionId: sessionId,
+          shellId,
+          status: "connected" as const,
+          errorMessage: undefined,
+          networkPath: runtimePath.snapshot,
+          ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+        };
+        sessionRef.current = updatedSession;
         dispatch({
           type: "UPDATE_SESSION",
-          payload: {
-            ...currentSession,
-            backendSessionId: sessionId,
-            shellId,
-            status: "connected",
-            errorMessage: undefined,
-            networkPath: runtimePath.snapshot,
-            vpnLeaseOwnerId: vpnLeaseOwnerRef.current ?? undefined,
-          },
+          payload: updatedSession,
         });
         writeLine("\x1b[32mShell started successfully\x1b[0m");
         setStatusState("connected");
@@ -1217,8 +1440,9 @@ export function useWebTerminal(
         // SSH backend first, then release only this attempt's VPN owner. A
         // superseded attempt must never touch the replacement's target/lease.
         const superseded = stale();
-        await cleanupAttemptSsh();
-        await releaseAttemptVpnLease();
+        const backendClean = await cleanupAttemptSsh();
+        if (backendClean) await releaseAttemptVpnLease();
+        if (!backendClean) return;
         if (superseded || stale()) return;
 
         // ── ProxyCommand import-confirmation gate ──
@@ -1279,13 +1503,15 @@ export function useWebTerminal(
             );
             setStatusState("error");
             setError("ProxyCommand not confirmed — connection aborted");
+            const updatedSession = {
+              ...sessionRef.current,
+              status: "error" as const,
+              errorMessage: "ProxyCommand not confirmed — connection aborted",
+            };
+            sessionRef.current = updatedSession;
             dispatch({
               type: "UPDATE_SESSION",
-              payload: {
-                ...currentSession,
-                status: "error",
-                errorMessage: "ProxyCommand not confirmed — connection aborted",
-              },
+              payload: updatedSession,
             });
             return;
           } catch (gateErr) {
@@ -1316,13 +1542,15 @@ export function useWebTerminal(
         });
         setStatusState("error");
         setError(classification.friendly);
+        const updatedSession = {
+          ...sessionRef.current,
+          status: "error" as const,
+          errorMessage: classification.friendly,
+        };
+        sessionRef.current = updatedSession;
         dispatch({
           type: "UPDATE_SESSION",
-          payload: {
-            ...currentSession,
-            status: "error",
-            errorMessage: classification.friendly,
-          },
+          payload: updatedSession,
         });
         writeLine(`\x1b[31m${classification.friendly}\x1b[0m`);
         writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
@@ -1346,9 +1574,9 @@ export function useWebTerminal(
       formatErrorDetails,
       isSsh,
       dispatch,
-      releaseVpnLeaseOwner,
       restoreBuffer,
       setStatusState,
+      settleVpnLeaseOwner,
       writeLine,
     ],
   );
@@ -1753,9 +1981,23 @@ export function useWebTerminal(
             if (event.payload.session_id !== sshSessionId.current) return;
             sshSessionId.current = null;
             isSshReady.current = false;
-            void releaseOwnedVpnLeases();
-            setStatusState("error");
-            setError("Shell closed");
+            void (async () => {
+              const vpnClean = await releaseOwnedVpnLeases();
+              const message = vpnClean
+                ? "Shell closed"
+                : "Shell closed; VPN cleanup needs attention. Disconnect again to retry.";
+              setStatusState("error");
+              setError(message);
+              const updatedSession = {
+                ...sessionRef.current,
+                backendSessionId: undefined,
+                shellId: undefined,
+                status: "error" as const,
+                errorMessage: message,
+              };
+              sessionRef.current = updatedSession;
+              dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+            })();
           },
         );
         if (!cancelled) closeUnlistenRef.current = unlistenClosed;
@@ -1858,7 +2100,7 @@ export function useWebTerminal(
   const handleReconnect = useCallback(async () => {
     if (!isSsh) return;
     setStatusState("connecting");
-    await disconnectSsh();
+    if (!(await disconnectSsh())) return;
     const currentSession = sessionRef.current;
     if (currentSession.backendSessionId || currentSession.shellId) {
       dispatch({

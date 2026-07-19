@@ -1402,8 +1402,18 @@ export interface ConnectionSession {
   // Backend session handles
   backendSessionId?: string;
   shellId?: string;
-  /** Opaque backend owner token for an SSH/RDP session's machine-wide VPN lease. */
+  /**
+   * Primary opaque backend owner token for an SSH/RDP session's machine-wide
+   * VPN lease. Kept for compatibility with persisted sessions created before
+   * multi-owner cleanup tracking was introduced.
+   */
   vpnLeaseOwnerId?: string;
+  /**
+   * Every distinct VPN owner still associated with this native session. This
+   * bounded snapshot keeps failed handoff cleanup retryable across view
+   * unmounts and Session Manager actions.
+   */
+  vpnLeaseOwnerIds?: string[];
 
   // Zoom level
   zoomLevel?: number;

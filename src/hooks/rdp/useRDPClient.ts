@@ -46,11 +46,45 @@ interface VpnLeaseOwnerTracker {
   pending: Set<string>;
 }
 
+const MAX_TRACKED_VPN_LEASE_OWNERS = 32;
+
 const trackedVpnLeaseOwnerIds = (tracker: VpnLeaseOwnerTracker): string[] => {
   const owners = new Set<string>(tracker.pending);
   if (tracker.current) owners.add(tracker.current);
   if (tracker.persisted) owners.add(tracker.persisted);
   return [...owners];
+};
+
+const trackPendingVpnLeaseOwner = (
+  tracker: VpnLeaseOwnerTracker,
+  ownerId: string,
+): void => {
+  if (trackedVpnLeaseOwnerIds(tracker).includes(ownerId)) {
+    tracker.pending.add(ownerId);
+    return;
+  }
+  if (trackedVpnLeaseOwnerIds(tracker).length >= MAX_TRACKED_VPN_LEASE_OWNERS) {
+    throw new Error(
+      'VPN cleanup is still pending for too many RDP attempts. Retry disconnect before reconnecting.',
+    );
+  }
+  tracker.pending.add(ownerId);
+};
+
+const persistTrackedVpnLeaseOwners = (
+  tracker: VpnLeaseOwnerTracker,
+): Pick<ConnectionSession, 'vpnLeaseOwnerId' | 'vpnLeaseOwnerIds'> => {
+  const ownerIds = trackedVpnLeaseOwnerIds(tracker).slice(
+    0,
+    MAX_TRACKED_VPN_LEASE_OWNERS,
+  );
+  const primaryOwnerId =
+    tracker.current ?? tracker.persisted ?? ownerIds[0] ?? null;
+  tracker.persisted = primaryOwnerId;
+  return {
+    vpnLeaseOwnerId: primaryOwnerId ?? undefined,
+    vpnLeaseOwnerIds: ownerIds.length > 0 ? ownerIds : undefined,
+  };
 };
 
 // ─── Hook ────────────────────────────────────────────────────────────
@@ -148,13 +182,28 @@ export function useRDPClient(session: ConnectionSession) {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  const pendingRdpBackendCleanupRef = useRef(new Set<string>());
+  const pendingRdpBackendOwnersRef = useRef(new Map<string, string>());
+  const protectedVpnLeaseOwnersRef = useRef(new Set<string>());
   // VPN ownership persists with a backend RDP session so a view-only unmount
   // can reattach without tearing down the path that session still needs.
-  const initialVpnLeaseOwner = session.vpnLeaseOwnerId ?? null;
+  const initialVpnLeaseOwners = [
+    ...new Set(
+      [...(session.vpnLeaseOwnerIds ?? []), session.vpnLeaseOwnerId].filter(
+        (ownerId): ownerId is string => Boolean(ownerId),
+      ),
+    ),
+  ].slice(0, MAX_TRACKED_VPN_LEASE_OWNERS);
+  const initialVpnLeaseOwner =
+    session.vpnLeaseOwnerId ?? initialVpnLeaseOwners[0] ?? null;
   const vpnLeaseOwnersRef = useRef<VpnLeaseOwnerTracker>({
     current: initialVpnLeaseOwner,
     persisted: initialVpnLeaseOwner,
-    pending: new Set(),
+    pending: new Set(
+      initialVpnLeaseOwners.filter(
+        (ownerId) => ownerId !== initialVpnLeaseOwner,
+      ),
+    ),
   });
   const vpnLeaseReleasesRef = useRef<Map<string, Promise<boolean>>>(new Map());
   // Tracks an SSH local-forward tunnel established for an imported mRemoteNG
@@ -263,30 +312,37 @@ export function useRDPClient(session: ConnectionSession) {
     const confirmed = await releaseVpnLeaseOwner(ownerId);
     const tracker = vpnLeaseOwnersRef.current;
     if (!confirmed) {
-      tracker.pending.add(ownerId);
+      trackPendingVpnLeaseOwner(tracker, ownerId);
+      const updatedSession = {
+        ...sessionRef.current,
+        ...persistTrackedVpnLeaseOwners(tracker),
+      };
+      sessionRef.current = updatedSession;
+      dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
       return false;
     }
 
     tracker.pending.delete(ownerId);
     if (tracker.current === ownerId) tracker.current = null;
-
-    if (tracker.persisted === ownerId) {
-      tracker.persisted = null;
-      const updatedSession = {
-        ...sessionRef.current,
-        vpnLeaseOwnerId: undefined,
-      };
-      sessionRef.current = updatedSession;
-      dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
-    }
+    if (tracker.persisted === ownerId) tracker.persisted = null;
+    const updatedSession = {
+      ...sessionRef.current,
+      ...persistTrackedVpnLeaseOwners(tracker),
+    };
+    sessionRef.current = updatedSession;
+    dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
     return true;
   }, [dispatch, releaseVpnLeaseOwner]);
 
-  const releaseOwnedVpnLeases = useCallback(async () => {
-    const ownerIds = trackedVpnLeaseOwnerIds(vpnLeaseOwnersRef.current);
+  const releaseOwnedVpnLeases = useCallback(async (): Promise<boolean> => {
+    const ownerIds = trackedVpnLeaseOwnerIds(vpnLeaseOwnersRef.current).filter(
+      ownerId => !protectedVpnLeaseOwnersRef.current.has(ownerId),
+    );
+    const results: boolean[] = [];
     for (const ownerId of ownerIds) {
-      await settleVpnLeaseOwner(ownerId);
+      results.push(await settleVpnLeaseOwner(ownerId));
     }
+    return results.every(Boolean);
   }, [settleVpnLeaseOwner]);
 
   // ─── Handlers ──────────────────────────────────────────────────────
@@ -403,21 +459,66 @@ export function useRDPClient(session: ConnectionSession) {
   const handleDisconnect = useCallback(async () => {
     initGenRef.current++; // abort any in-flight init
     const sid = sessionIdRef.current;
-    if (sid) {
+    const backendSessionIds = [
+      ...new Set(
+        [
+          ...pendingRdpBackendCleanupRef.current,
+          sid,
+          sessionRef.current.backendSessionId,
+        ].filter((sessionId): sessionId is string => Boolean(sessionId)),
+      ),
+    ];
+    for (const backendSessionId of backendSessionIds) {
       try {
-        await invoke('disconnect_rdp', { sessionId: sid });
+        await invoke('disconnect_rdp', { sessionId: backendSessionId });
       } catch (e) {
+        pendingRdpBackendCleanupRef.current.add(backendSessionId);
         debugLog(`Disconnect error: ${e}`);
+        const message = `RDP disconnect failed: ${String(e)}`;
+        const updatedSession = {
+          ...sessionRef.current,
+          backendSessionId,
+          status: 'error' as const,
+          errorMessage: message,
+          ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+        };
+        sessionRef.current = updatedSession;
+        dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
+        setConnectionStatus('error');
+        setStatusMessage(message);
+        return false;
+      }
+      pendingRdpBackendCleanupRef.current.delete(backendSessionId);
+      const pendingOwnerId =
+        pendingRdpBackendOwnersRef.current.get(backendSessionId);
+      if (pendingOwnerId) {
+        protectedVpnLeaseOwnersRef.current.delete(pendingOwnerId);
+        pendingRdpBackendOwnersRef.current.delete(backendSessionId);
+      }
+      if (sessionIdRef.current === backendSessionId) {
+        sessionIdRef.current = null;
       }
     }
     // Tear down any imported-mRemoteNG SSH tunnel backing this session.
     await teardownRdpTunnelRef.current();
-    await releaseOwnedVpnLeases();
+    const vpnClean = await releaseOwnedVpnLeases();
     sessionIdRef.current = null;
     setRdpSessionId(null);
     setIsConnected(false);
-    setConnectionStatus('disconnected');
-    setStatusMessage('Disconnected by user');
+    const cleanupMessage = vpnClean
+      ? undefined
+      : 'RDP disconnected, but VPN cleanup needs attention. Disconnect again to retry.';
+    setConnectionStatus(vpnClean ? 'disconnected' : 'error');
+    setStatusMessage(cleanupMessage ?? 'Disconnected by user');
+    const updatedSession = {
+      ...sessionRef.current,
+      backendSessionId: undefined,
+      status: vpnClean ? ('disconnected' as const) : ('error' as const),
+      errorMessage: cleanupMessage,
+      ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+    };
+    sessionRef.current = updatedSession;
+    dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
     pipelineRef.current!.destroy();
     {
       const perf = rdpSettingsRef.current.performance;
@@ -426,6 +527,7 @@ export function useRDPClient(session: ConnectionSession) {
         tripleBuffering: perf?.tripleBuffering ?? true,
       });
     }
+    return vpnClean;
   }, [releaseOwnedVpnLeases]);
 
   const handleCopyToClipboard = useCallback(async () => {
@@ -663,24 +765,36 @@ export function useRDPClient(session: ConnectionSession) {
       const ownerId = attemptVpnLeaseOwnerId;
       if (!ownerId) return;
       attemptVpnLeaseOwnerId = null;
+      protectedVpnLeaseOwnersRef.current.delete(ownerId);
       await settleVpnLeaseOwner(ownerId);
     };
 
-    const stopIfStale = async (cleanupTarget?: () => Promise<void>) => {
+    const stopIfStale = async (
+      cleanupTarget?: () => Promise<boolean | void>,
+    ) => {
       if (!stale()) return false;
-      if (cleanupTarget) await cleanupTarget();
-      await releaseAttemptVpnLease();
+      const targetClean = cleanupTarget ? await cleanupTarget() : true;
+      if (targetClean !== false) await releaseAttemptVpnLease();
       console.log(`[RDP init gen=${gen}] STALE, aborting`);
       return true;
     };
 
     const handoffVpnLease = async () => {
       const tracker = vpnLeaseOwnersRef.current;
-      const previousOwnerIds = trackedVpnLeaseOwnerIds(tracker);
+      const primaryOwnerIds = [
+        ...new Set(
+          [tracker.current, tracker.persisted].filter(
+            (ownerId): ownerId is string => Boolean(ownerId),
+          ),
+        ),
+      ];
       const nextOwnerId = attemptVpnLeaseOwnerId;
-      for (const previousOwnerId of previousOwnerIds) {
+      const previousOwnerIds = primaryOwnerIds.filter(
+        ownerId => !protectedVpnLeaseOwnersRef.current.has(ownerId),
+      );
+      for (const previousOwnerId of primaryOwnerIds) {
         if (previousOwnerId !== nextOwnerId) {
-          tracker.pending.add(previousOwnerId);
+          trackPendingVpnLeaseOwner(tracker, previousOwnerId);
         }
       }
       tracker.current = nextOwnerId;
@@ -696,6 +810,9 @@ export function useRDPClient(session: ConnectionSession) {
     };
 
     const commitVpnLeaseHandoff = () => {
+      if (attemptVpnLeaseOwnerId) {
+        protectedVpnLeaseOwnersRef.current.delete(attemptVpnLeaseOwnerId);
+      }
       attemptVpnLeaseOwnerId = null;
     };
 
@@ -767,7 +884,17 @@ export function useRDPClient(session: ConnectionSession) {
         if (runtimePath.transport.vpnPreSteps.length > 0) {
           setStatusMessage('Establishing VPN network path...');
           attemptVpnLeaseOwnerId = createVpnLeaseAttemptOwnerId(sess.id, 'rdp');
-          vpnLeaseOwnersRef.current.pending.add(attemptVpnLeaseOwnerId);
+          protectedVpnLeaseOwnersRef.current.add(attemptVpnLeaseOwnerId);
+          trackPendingVpnLeaseOwner(
+            vpnLeaseOwnersRef.current,
+            attemptVpnLeaseOwnerId,
+          );
+          const trackedSession = {
+            ...sessionRef.current,
+            ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+          };
+          sessionRef.current = trackedSession;
+          dispatch({ type: 'UPDATE_SESSION', payload: trackedSession });
           await acquireSessionVpnLeases(
             attemptVpnLeaseOwnerId,
             runtimePath.transport.vpnPreSteps,
@@ -849,11 +976,8 @@ export function useRDPClient(session: ConnectionSession) {
             name: conn?.name || sess.name,
             status: 'connected' as const,
             networkPath: runtimePath?.snapshot ?? sess.networkPath,
-            vpnLeaseOwnerId:
-              vpnLeaseOwnersRef.current.current ?? undefined,
+            ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
           };
-          vpnLeaseOwnersRef.current.persisted =
-            vpnLeaseOwnersRef.current.current;
           sessionRef.current = updatedSession;
           dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
           return;
@@ -968,13 +1092,35 @@ export function useRDPClient(session: ConnectionSession) {
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
 
-      const cleanupOrphanedRdp = async () => {
+      const cleanupOrphanedRdp = async (): Promise<boolean> => {
         try {
           await invoke('disconnect_rdp', { sessionId });
-        } catch {
-          // Best-effort cleanup for a superseded init.
+        } catch (cleanupError) {
+          pendingRdpBackendCleanupRef.current.add(sessionId);
+          if (attemptVpnLeaseOwnerId) {
+            pendingRdpBackendOwnersRef.current.set(
+              sessionId,
+              attemptVpnLeaseOwnerId,
+            );
+          }
+          const message = `RDP stale session cleanup failed: ${String(cleanupError)}. Retry disconnect before releasing its VPN route.`;
+          const updatedSession = {
+            ...sessionRef.current,
+            backendSessionId: sessionId,
+            status: 'error' as const,
+            errorMessage: message,
+            ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+          };
+          sessionRef.current = updatedSession;
+          dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
+          setConnectionStatus('error');
+          setStatusMessage(message);
+          return false;
         }
+        pendingRdpBackendCleanupRef.current.delete(sessionId);
+        pendingRdpBackendOwnersRef.current.delete(sessionId);
         await teardownRdpTunnel();
+        return true;
       };
       if (await stopIfStale(cleanupOrphanedRdp)) return;
 
@@ -992,10 +1138,8 @@ export function useRDPClient(session: ConnectionSession) {
         name: conn.name || sess.name,
         status: 'connecting' as const,
         networkPath: runtimePath.snapshot,
-        vpnLeaseOwnerId: vpnLeaseOwnersRef.current.current ?? undefined,
+        ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
       };
-      vpnLeaseOwnersRef.current.persisted =
-        vpnLeaseOwnersRef.current.current;
       sessionRef.current = updatedSession;
       dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
 
@@ -1030,12 +1174,40 @@ export function useRDPClient(session: ConnectionSession) {
     if (sid) {
       try {
         await invoke('disconnect_rdp', { sessionId: sid });
-      } catch { /* ignore */ }
+      } catch (error) {
+        const message = `RDP disconnect failed: ${String(error)}`;
+        const updatedSession = {
+          ...sessionRef.current,
+          status: 'error' as const,
+          errorMessage: message,
+          ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+        };
+        sessionRef.current = updatedSession;
+        dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
+        setConnectionStatus('error');
+        setStatusMessage(message);
+        return;
+      }
       sessionIdRef.current = null;
       setRdpSessionId(null);
     }
     await teardownRdpTunnelRef.current();
-    await releaseOwnedVpnLeases();
+    if (!(await releaseOwnedVpnLeases())) {
+      const message =
+        'RDP disconnected, but VPN cleanup needs attention. Retry reconnect to finish cleanup.';
+      const updatedSession = {
+        ...sessionRef.current,
+        backendSessionId: undefined,
+        status: 'error' as const,
+        errorMessage: message,
+        ...persistTrackedVpnLeaseOwners(vpnLeaseOwnersRef.current),
+      };
+      sessionRef.current = updatedSession;
+      dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
+      setConnectionStatus('error');
+      setStatusMessage(message);
+      return;
+    }
     // Always destroy and recreate the pipeline to ensure no stale state carries over
     pipelineRef.current!.destroy();
     {

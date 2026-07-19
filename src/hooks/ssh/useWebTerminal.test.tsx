@@ -306,6 +306,33 @@ describe("useWebTerminal input lifecycle", () => {
     });
   });
 
+  it("keeps the backend and VPN lease on a view-only unmount", async () => {
+    mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+    ];
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    view.unmount();
+    await act(async () => Promise.resolve());
+
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "disconnect_ssh",
+      ),
+    ).toHaveLength(0);
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "release_vpn_leases",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("keeps a replacement VPN lease when an overlapping SSH attempt goes stale", async () => {
     mocks.runtimePath.transport.vpnPreSteps = [
       { vpnType: "wireguard", connectionId: "wg-office" },
@@ -387,5 +414,195 @@ describe("useWebTerminal input lifecycle", () => {
     expect(mocks.invoke).not.toHaveBeenCalledWith("release_vpn_leases", {
       ownerId: acquiredOwners[1],
     });
+  });
+
+  it("retains a stale SSH backend and its owner until native cleanup retry succeeds", async () => {
+    mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+    ];
+    const liveOwners = new Set<string>();
+    const acquiredOwners: string[] = [];
+    const releaseCalls: string[] = [];
+    let finishStaleConnect!: (sessionId: string) => void;
+    const staleConnect = new Promise<string>((resolve) => {
+      finishStaleConnect = resolve;
+    });
+    let connectCalls = 0;
+    let staleDisconnectAttempts = 0;
+    mocks.invoke.mockImplementation(async (command: string, args?: unknown) => {
+      const invokeArgs = args as
+        | { ownerId?: string; sessionId?: string }
+        | undefined;
+      const ownerId = String(invokeArgs?.ownerId);
+      if (command === "acquire_vpn_leases") {
+        acquiredOwners.push(ownerId);
+        liveOwners.add(ownerId);
+        return { owner_id: ownerId, leases: [] };
+      }
+      if (command === "release_vpn_leases") {
+        releaseCalls.push(ownerId);
+        liveOwners.delete(ownerId);
+        return { owner_id: ownerId, released: [], errors: [] };
+      }
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return connectCalls === 1 ? staleConnect : "backend-ssh-replacement";
+      }
+      if (command === "start_shell") return "shell-ssh-replacement";
+      if (command === "disconnect_ssh") {
+        if (invokeArgs?.sessionId === "backend-ssh-stale") {
+          staleDisconnectAttempts += 1;
+          if (staleDisconnectAttempts === 1) {
+            throw new Error("stale backend still active");
+          }
+        }
+        return undefined;
+      }
+      return undefined;
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(connectCalls).toBe(1));
+
+    let replacementInit!: Promise<void>;
+    act(() => {
+      replacementInit = model!.handleReconnect();
+    });
+    await waitFor(() => expect(connectCalls).toBe(2));
+    await act(async () => replacementInit);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(liveOwners).toEqual(new Set(acquiredOwners));
+
+    await act(async () => {
+      finishStaleConnect("backend-ssh-stale");
+      await staleConnect;
+    });
+    await waitFor(() => expect(staleDisconnectAttempts).toBe(1));
+    expect(releaseCalls).not.toContain(acquiredOwners[0]);
+    expect(liveOwners).toEqual(new Set(acquiredOwners));
+    expect(mocks.context.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          backendSessionId: "backend-ssh-stale",
+          status: "error",
+          errorMessage: expect.stringMatching(/cleanup failed/i),
+          vpnLeaseOwnerIds: expect.arrayContaining(acquiredOwners),
+        }),
+      }),
+    );
+
+    let disconnected = false;
+    await act(async () => {
+      disconnected = (await model?.disconnectSsh()) ?? false;
+    });
+    expect(disconnected).toBe(true);
+    expect(staleDisconnectAttempts).toBe(2);
+    expect(liveOwners).toEqual(new Set());
+    expect(releaseCalls).toEqual(expect.arrayContaining(acquiredOwners));
+    const staleDisconnectCallOrders = mocks.invoke.mock.calls
+      .map(([command, args], index) => ({ command, args, index }))
+      .filter(
+        ({ command, args }) =>
+          command === "disconnect_ssh" &&
+          (args as { sessionId?: string })?.sessionId === "backend-ssh-stale",
+      )
+      .map(({ index }) => index);
+    const staleOwnerReleaseIndex = mocks.invoke.mock.calls.findIndex(
+      ([command, args]) =>
+        command === "release_vpn_leases" &&
+        (args as { ownerId?: string })?.ownerId === acquiredOwners[0],
+    );
+    expect(staleOwnerReleaseIndex).toBeGreaterThan(
+      staleDisconnectCallOrders[1],
+    );
+  });
+
+  it("retains a failed persisted-owner handoff and clears its snapshot only after retry succeeds", async () => {
+    const persistedOwner = "frontend-ssh-1:ssh:persisted";
+    mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+    ];
+    const releaseAttempts = new Map<string, number>();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "is_session_alive") return Promise.resolve(true);
+      if (command === "get_terminal_buffer") return Promise.resolve("");
+      if (command === "get_shell_info")
+        return Promise.resolve("existing-shell-1");
+      if (command === "disconnect_ssh") return Promise.resolve(undefined);
+      if (command === "acquire_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        return Promise.resolve({ owner_id: ownerId, leases: [] });
+      }
+      if (command === "release_vpn_leases") {
+        const ownerId = (args as { ownerId: string }).ownerId;
+        const attempts = (releaseAttempts.get(ownerId) ?? 0) + 1;
+        releaseAttempts.set(ownerId, attempts);
+        return Promise.resolve({
+          owner_id: ownerId,
+          released: [],
+          errors:
+            ownerId === persistedOwner && attempts === 1
+              ? ["provider busy"]
+              : [],
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const persistedSession: ConnectionSession = {
+      ...session,
+      status: "connected",
+      backendSessionId: "backend-ssh-persisted",
+      shellId: "existing-shell-1",
+      vpnLeaseOwnerId: persistedOwner,
+    };
+    const Harness = () => {
+      model = useWebTerminal(persistedSession);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const acquiredOwner = (
+      mocks.invoke.mock.calls.find(
+        ([command]) => command === "acquire_vpn_leases",
+      )?.[1] as { ownerId: string }
+    ).ownerId;
+    expect(releaseAttempts.get(persistedOwner)).toBe(1);
+    expect(mocks.context.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          vpnLeaseOwnerId: acquiredOwner,
+          vpnLeaseOwnerIds: expect.arrayContaining([
+            persistedOwner,
+            acquiredOwner,
+          ]),
+        }),
+      }),
+    );
+
+    await act(async () => {
+      await model?.disconnectSsh();
+    });
+    expect(releaseAttempts.get(persistedOwner)).toBe(2);
+    expect(releaseAttempts.get(acquiredOwner)).toBe(1);
+    expect(mocks.context.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          vpnLeaseOwnerId: undefined,
+          vpnLeaseOwnerIds: undefined,
+        }),
+      }),
+    );
+    const commands = mocks.invoke.mock.calls.map(([command]) => command);
+    expect(commands.lastIndexOf("disconnect_ssh")).toBeLessThan(
+      commands.lastIndexOf("release_vpn_leases"),
+    );
   });
 });
