@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RDPClient from "../../src/components/rdp/RDPClient";
 import { ConnectionSession } from "../../src/types/connection/connection";
@@ -111,13 +118,15 @@ vi.mock("../../src/components/rdp/rdpCanvas", () => ({
   },
 }));
 
+const connectionContextMocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+
 // Mock useConnections hook
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: {
       connections: [mockConnection],
     },
-    dispatch: vi.fn(),
+    dispatch: connectionContextMocks.dispatch,
   }),
 }));
 
@@ -184,11 +193,84 @@ const renderWithProviders = (session: ConnectionSession) => {
   );
 };
 
+const hookWrapper = ({ children }: { children: React.ReactNode }) => (
+  <ToastProvider>
+    <ConnectionProvider>{children}</ConnectionProvider>
+  </ToastProvider>
+);
+
+const installOpenVpnLeaseRuntime = (options: {
+  connectError?: Error;
+  releaseErrors?: (ownerId: string, attempt: number) => string[];
+} = {}) => {
+  const acquiredOwners: string[] = [];
+  const releaseCalls: string[] = [];
+  const releaseAttempts = new Map<string, number>();
+
+  mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+    const ownerId = String((args as { ownerId?: string } | undefined)?.ownerId);
+    if (cmd === "list_rdp_sessions") return [];
+    if (cmd === "list_openvpn_connections") {
+      return [
+        {
+          id: "vpn-office",
+          name: "Office VPN",
+          config: {},
+          status: "disconnected",
+          created_at: "2026-07-19T00:00:00.000Z",
+        },
+      ];
+    }
+    if (
+      cmd === "list_wireguard_connections" ||
+      cmd === "list_tailscale_connections" ||
+      cmd === "list_zerotier_connections"
+    ) {
+      return [];
+    }
+    if (cmd === "acquire_vpn_leases") {
+      acquiredOwners.push(ownerId);
+      return {
+        owner_id: ownerId,
+        leases: [
+          {
+            vpn_type: "openvpn",
+            connection_id: "vpn-office",
+            was_already_connected: false,
+            already_owned: false,
+            started_by_lifecycle: true,
+            lease_count: 1,
+          },
+        ],
+      };
+    }
+    if (cmd === "release_vpn_leases") {
+      releaseCalls.push(ownerId);
+      const attempt = (releaseAttempts.get(ownerId) ?? 0) + 1;
+      releaseAttempts.set(ownerId, attempt);
+      return {
+        owner_id: ownerId,
+        released: [],
+        errors: options.releaseErrors?.(ownerId, attempt) ?? [],
+      };
+    }
+    if (cmd === "detect_keyboard_layout") return 0x0409;
+    if (cmd === "connect_rdp") {
+      if (options.connectError) throw options.connectError;
+      return "rdp-session-123";
+    }
+    return undefined;
+  });
+
+  return { acquiredOwners, releaseCalls, releaseAttempts };
+};
+
 describe("RDPClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
+    connectionContextMocks.dispatch.mockReset();
     localStorage.clear();
     delete (mockConnection as any).security;
     delete (mockConnection as any).proxyChainId;
@@ -338,6 +420,126 @@ describe("RDPClient", () => {
       );
     });
 
+    it("clears a persisted VPN owner without releasing it again on a stale rerender", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime();
+      const { result, rerender } = renderHook(
+        ({ activeSession }: { activeSession: ConnectionSession }) =>
+          useRDPClient(activeSession),
+        {
+          initialProps: { activeSession: mockSession },
+          wrapper: hookWrapper,
+        },
+      );
+
+      await waitFor(() => expect(acquiredOwners).toHaveLength(1));
+      const ownerId = acquiredOwners[0];
+      rerender({
+        activeSession: { ...mockSession, vpnLeaseOwnerId: ownerId },
+      });
+
+      await act(async () => {
+        await result.current.handleDisconnect();
+      });
+      expect(releaseCalls).toEqual([ownerId]);
+      expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({ vpnLeaseOwnerId: undefined }),
+      });
+
+      // Simulate a stale parent render that still carries the released token.
+      rerender({
+        activeSession: { ...mockSession, vpnLeaseOwnerId: ownerId },
+      });
+      await act(async () => {
+        await result.current.handleDisconnect();
+      });
+      expect(releaseCalls).toEqual([ownerId]);
+    });
+
+    it("retains a failed attempt owner and releases it after a later retry", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+        connectError: new Error("RDP target refused the connection"),
+        releaseErrors: (_ownerId, attempt) =>
+          attempt === 1 ? ["OpenVPN remained active after disconnect"] : [],
+      });
+      const { result } = renderHook(() => useRDPClient(mockSession), {
+        wrapper: hookWrapper,
+      });
+
+      await waitFor(() => expect(result.current.connectionStatus).toBe("error"));
+      expect(acquiredOwners).toHaveLength(1);
+      expect(releaseCalls).toEqual([acquiredOwners[0]]);
+
+      await act(async () => {
+        await result.current.handleDisconnect();
+      });
+      expect(releaseCalls).toEqual([acquiredOwners[0], acquiredOwners[0]]);
+
+      await act(async () => {
+        await result.current.handleDisconnect();
+      });
+      expect(releaseCalls).toHaveLength(2);
+    });
+
+    it("keeps a new current owner while a prior handoff cleanup remains pending", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const oldOwnerId = "rdp-old-owner";
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime({
+        releaseErrors: (ownerId, attempt) =>
+          ownerId === oldOwnerId && attempt === 1
+            ? ["OpenVPN remained active after disconnect"]
+            : [],
+      });
+      const sessionWithOldOwner = {
+        ...mockSession,
+        vpnLeaseOwnerId: oldOwnerId,
+      };
+      const { result } = renderHook(
+        () => useRDPClient(sessionWithOldOwner),
+        { wrapper: hookWrapper },
+      );
+
+      await waitFor(() => {
+        expect(acquiredOwners).toHaveLength(1);
+        expect(connectionContextMocks.dispatch).toHaveBeenCalledWith({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            vpnLeaseOwnerId: acquiredOwners[0],
+          }),
+        });
+      });
+      const currentOwnerId = acquiredOwners[0];
+      expect(releaseCalls).toEqual([oldOwnerId]);
+
+      emitStatus(
+        "disconnected",
+        "Remote session closed",
+        "rdp-session-123",
+      );
+      await waitFor(() => {
+        expect(releaseCalls).toEqual([
+          oldOwnerId,
+          oldOwnerId,
+          currentOwnerId,
+        ]);
+      });
+
+      // Pending/current/persisted sources are deduplicated, and successful
+      // cleanup removes both tokens from every source.
+      await act(async () => {
+        await result.current.handleDisconnect();
+      });
+      expect(releaseCalls).toHaveLength(3);
+    });
+
     it("releases a stale handed-off VPN owner without touching its replacement", async () => {
       (mockConnection as any).security = {
         openvpn: { enabled: true, configId: "vpn-office" },
@@ -433,11 +635,11 @@ describe("RDPClient", () => {
         replacementInit = model!.initializeRDPConnection();
       });
       await waitFor(() => expect(connectCount).toBe(2));
-      await act(async () => replacementInit);
 
       await act(async () => {
         allowOldOwnerRelease();
         await oldOwnerReleaseGate;
+        await replacementInit;
       });
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
@@ -448,7 +650,12 @@ describe("RDPClient", () => {
       expect(acquiredOwners).toHaveLength(2);
       expect(acquiredOwners[0]).not.toBe(acquiredOwners[1]);
       expect(liveOwners).toEqual(new Set([acquiredOwners[1]]));
-      expect(releaseCalls).toContain(acquiredOwners[0]);
+      expect(
+        releaseCalls.filter((ownerId) => ownerId === "rdp-old-owner"),
+      ).toHaveLength(1);
+      expect(
+        releaseCalls.filter((ownerId) => ownerId === acquiredOwners[0]),
+      ).toHaveLength(1);
       expect(releaseCalls).not.toContain(acquiredOwners[1]);
     });
 
