@@ -67,6 +67,19 @@ interface SessionManagerProps {
 
 type Mgr = ReturnType<typeof useUnifiedSessionManager>;
 
+function formatSessionSourceSummary(mgr: Mgr): string {
+  const sources = [
+    [mgr.rdpRows.length, "RDP"],
+    [mgr.sshRows.length, "SSH"],
+    [mgr.proxyRows.length, "proxy"],
+    [mgr.frontendRows.length, "tabs"],
+  ] as const;
+
+  return sources
+    .map(([count, label]) => `${count.toLocaleString()} ${label}`)
+    .join(" · ");
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Sidebar views (Sessions + absorbed sub-views)
    ═══════════════════════════════════════════════════════════════════ */
@@ -735,7 +748,10 @@ const SessionsView: React.FC<{
         className="flex-1 min-h-0 overflow-auto p-3 overscroll-contain"
         data-testid="session-table-scroll-region"
       >
-        <div className="min-h-full rounded-lg border border-[var(--color-border)]">
+        <div
+          className="min-h-full w-max min-w-full rounded-lg border border-[var(--color-border)]"
+          data-testid="session-table-frame"
+        >
           <table
             className="w-full min-w-[1040px] border-collapse text-left text-xs"
             data-testid="session-management-table"
@@ -1076,6 +1092,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 
   // RDP history reconnect resolves to a saved connection
   const rdpHistory = mgr.rdp.sessionHistory;
+  const sessionSourceSummary = formatSessionSourceSummary(mgr);
 
   if (!isVisible) return null;
 
@@ -1120,10 +1137,13 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             })}
           </div>
           <div className="flex-shrink-0 p-3 border-t border-[var(--color-border)] space-y-2">
-            <div className="text-[10px] text-[var(--color-textMuted)]">
-              {mgr.rdpRows.length} RDP &middot; {mgr.sshRows.length} SSH
-              &middot; {mgr.proxyRows.length} proxy &middot;{" "}
-              {mgr.frontendRows.length} tabs
+            <div
+              className="text-[10px] text-[var(--color-textMuted)]"
+              aria-label={sessionSourceSummary}
+              aria-live="polite"
+              data-testid="session-source-summary"
+            >
+              {sessionSourceSummary}
             </div>
             <label className="flex items-center gap-1.5 text-[11px] text-[var(--color-textSecondary)] cursor-pointer">
               <Checkbox

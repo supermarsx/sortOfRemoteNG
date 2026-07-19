@@ -309,12 +309,33 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     ).toBeInTheDocument();
     const scrollRegion = screen.getByTestId("session-table-scroll-region");
     expect(scrollRegion).toHaveClass("flex-1", "min-h-0", "overflow-auto");
+    const tableFrame = screen.getByTestId("session-table-frame");
+    expect(tableFrame).toHaveClass("w-max", "min-w-full");
+    expect(tableFrame).not.toHaveClass(
+      "overflow-auto",
+      "overflow-x-auto",
+      "overflow-hidden",
+    );
     expect(scrollRegion.parentElement).toHaveClass(
       "flex",
       "flex-col",
       "min-h-0",
       "overflow-hidden",
     );
+  });
+
+  it("renders protocol counts with stable spacing and one accessible summary", async () => {
+    mockInvoke({
+      list_rdp_sessions: [],
+      get_proxy_session_details: [],
+      list_sessions: [],
+    });
+    renderManager({ activeBackendSessionIds: [] });
+
+    const summary = await screen.findByTestId("session-source-summary");
+    expect(summary).toHaveTextContent("0 RDP · 0 SSH · 0 proxy · 0 tabs");
+    expect(summary).toHaveAccessibleName("0 RDP · 0 SSH · 0 proxy · 0 tabs");
+    expect(summary).not.toHaveTextContent("0SSH");
   });
 
   it("filters to RDP only and hides proxy rows", async () => {
