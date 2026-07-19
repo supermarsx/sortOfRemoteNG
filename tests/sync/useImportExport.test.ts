@@ -2850,6 +2850,125 @@ describe("useImportExport", () => {
     warnSpy.mockRestore();
   });
 
+  it("confirmImport remaps VPN and tunnel-chain associations to created IDs", async () => {
+    const importedConnection = {
+      id: "conn-associated",
+      name: "Associated RDP",
+      protocol: "rdp",
+      hostname: "10.20.30.40",
+      port: 3389,
+      isGroup: false,
+      tags: [],
+      createdAt: FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
+      tunnelChainId: "chain-old",
+      security: {
+        openvpn: {
+          enabled: true,
+          configId: "vpn-old",
+        },
+        tunnelChain: [
+          {
+            id: "inline-layer-stable",
+            type: "openvpn",
+            enabled: true,
+            vpn: { configId: "vpn-old" },
+          },
+        ],
+      },
+    } as Connection;
+    mockImportConnections.mockResolvedValueOnce([importedConnection]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    mockCreateOpenVPN.mockResolvedValueOnce("vpn-new");
+    mockCreateTunnelChain.mockResolvedValueOnce({ id: "chain-new" });
+
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          vpnConnections: {
+            openvpn: [
+              {
+                id: "vpn-old",
+                name: "Imported OpenVPN",
+                config: { enabled: true, inlineConfig: "client\n" },
+                status: "Disconnected",
+                createdAt: FIXTURE_NOW,
+              },
+            ],
+            wireguard: [],
+            tailscale: [],
+            zerotier: [],
+          },
+          tunnelChainTemplates: [
+            {
+              id: "chain-old",
+              name: "Imported VPN chain",
+              layers: [
+                {
+                  id: "saved-layer-stable",
+                  type: "openvpn",
+                  enabled: true,
+                  vpn: { configId: "vpn-old" },
+                },
+              ],
+              description: "Uses the imported VPN",
+              tags: ["vpn"],
+              createdAt: FIXTURE_NOW,
+              updatedAt: FIXTURE_NOW,
+            },
+          ],
+        }),
+      ],
+      "associated-sidecars.json",
+      { type: "application/json" },
+    );
+
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("associated-sidecars.json");
+    });
+
+    expect(mockCreateOpenVPN).toHaveBeenCalledWith(
+      "Imported OpenVPN",
+      expect.objectContaining({ inlineConfig: "client\n" }),
+    );
+    expect(mockCreateTunnelChain).toHaveBeenCalledWith(
+      "Imported VPN chain",
+      [
+        expect.objectContaining({
+          id: "saved-layer-stable",
+          vpn: expect.objectContaining({ configId: "vpn-new" }),
+        }),
+      ],
+      { description: "Uses the imported VPN", tags: ["vpn"] },
+    );
+
+    const importedAction = mockDispatch.mock.calls
+      .map(([action]) => action)
+      .find(
+        (action) =>
+          action.type === "ADD_CONNECTION" &&
+          action.payload?.name === "Associated RDP",
+      );
+    expect(importedAction?.payload).toMatchObject({
+      tunnelChainId: "chain-new",
+      security: {
+        openvpn: { configId: "vpn-new" },
+        tunnelChain: [
+          {
+            id: "inline-layer-stable",
+            vpn: { configId: "vpn-new" },
+          },
+        ],
+      },
+    });
+  });
+
   it("confirmImport summarizes VPN-only imports when no filename is provided", async () => {
     mockImportConnections.mockResolvedValueOnce([]);
     mockDetectImportFormat.mockReturnValueOnce("json");
@@ -3332,6 +3451,16 @@ describe("useImportExport", () => {
         tunnelChainId: "tunnel-chain-1",
         security: {
           openvpn: { enabled: true, configId: "vpn-old" },
+          // Legacy inline layers used the layer ID as the VPN profile ID.
+          // Cloning must preserve the layer identity while writing the new
+          // provider profile ID to the canonical vpn.configId field.
+          tunnelChain: [
+            {
+              id: "vpn-old",
+              type: "openvpn",
+              enabled: true,
+            },
+          ],
         },
         createdAt: FIXTURE_NOW,
         updatedAt: FIXTURE_NOW,
@@ -3473,6 +3602,17 @@ describe("useImportExport", () => {
         }),
       ]),
     );
+    const clonedConnection = (
+      mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[]
+    )[0];
+    expect(clonedConnection.security?.tunnelChain).toEqual([
+      {
+        id: "vpn-old",
+        type: "openvpn",
+        enabled: true,
+        vpn: { configId: "vpn-new" },
+      },
+    ]);
     expect(result.current.cloneResult?.sidecarsCloned).toMatchObject({
       proxyProfiles: 1,
       proxyChains: 1,

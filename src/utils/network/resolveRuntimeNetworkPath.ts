@@ -10,6 +10,8 @@ import type {
   VpnPreStep,
 } from "../ssh/resolveChainConfig";
 import { ProxyOpenVPNManager } from "./proxyOpenVPNManager";
+import { normalizeExecutableVpnType } from "./vpnProviderCatalog";
+import { loadVpnProfileCatalog } from "./vpnProfiles";
 import {
   resolveNetworkPath,
   type CanonicalNetworkPathLayer,
@@ -75,12 +77,6 @@ type SocketHop =
   | { kind: "ssh"; config: ResolvedJumpHost };
 
 const SUPPORTED_PROXY_TYPES = new Set(["http", "https", "socks4", "socks5"]);
-const SUPPORTED_VPN_TYPES = new Set([
-  "openvpn",
-  "wireguard",
-  "tailscale",
-  "zerotier",
-]);
 const DIRECT_ONLY_PROTOCOLS = new Set<RuntimeNetworkPathProtocol>([
   "raw-tcp",
   "raw-udp",
@@ -161,11 +157,24 @@ export async function captureNetworkPathCatalog(
     }
   }
 
-  return {
+  const catalog: NetworkPathCatalog = {
     connections: connectionSnapshot,
     proxyCollection: snapshotProxyCollection(),
     connectionChains,
   };
+  const unresolved = resolveNetworkPath(connection, catalog);
+  if (
+    unresolved.layers.some(
+      (layer) =>
+        (layer.kind === "vpn" || layer.kind === "connection") &&
+        normalizeExecutableVpnType(layer.transport),
+    )
+  ) {
+    catalog.vpnProfiles = await loadVpnProfileCatalog(
+      ProxyOpenVPNManager.getInstance(),
+    );
+  }
+  return catalog;
 }
 
 function unsupported(
@@ -237,8 +246,8 @@ function toVpnStep(
   protocol: RuntimeNetworkPathProtocol,
   layer: Extract<CanonicalNetworkPathLayer, { kind: "vpn" | "connection" }>,
 ): VpnPreStep {
-  const vpnType = layer.transport.toLowerCase();
-  if (!SUPPORTED_VPN_TYPES.has(vpnType)) {
+  const vpnType = normalizeExecutableVpnType(layer.transport);
+  if (!vpnType) {
     unsupported(
       protocol,
       layer,
@@ -259,12 +268,9 @@ function toVpnStep(
   }
 
   return {
-    vpnType: vpnType as VpnPreStep["vpnType"],
+    vpnType,
     connectionId,
-    configId:
-      layer.kind === "vpn"
-        ? (layer.config.vpn?.configId ?? layer.config.mesh?.networkId)
-        : undefined,
+    configId: connectionId,
   };
 }
 
@@ -391,7 +397,9 @@ export function buildRuntimeNetworkPath(
     );
     const detail = issue?.message ?? "The configured path is invalid.";
     throw new RuntimeNetworkPathError(
-      "invalid-path",
+      issue?.code === "snapshot-unavailable"
+        ? "snapshot-unavailable"
+        : "invalid-path",
       `Network path blocked: ${detail}`,
     );
   }

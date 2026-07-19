@@ -1,38 +1,29 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 import {
-  ProxyOpenVPNManager,
-  OpenVPNConnection,
-  WireGuardConnection,
-  ZeroTierConnection,
-  TailscaleConnection,
-} from "../../utils/network/proxyOpenVPNManager";
+  getVpnProviderLabel,
+  normalizeExecutableVpnType,
+  type ExecutableVpnType,
+  type VpnProfileCatalogSnapshot,
+  type VpnProfileSummary,
+} from "../../utils/network/vpnProviderCatalog";
+import { loadVpnProfileCatalog } from "../../utils/network/vpnProfiles";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
-export type VpnTypeFilter = "all" | "openvpn" | "wireguard" | "tailscale" | "zerotier";
+export type VpnTypeFilter = "all" | ExecutableVpnType;
+export type NormalizedVpnConnection = VpnProfileSummary;
 
-export interface NormalizedVpnConnection {
-  id: string;
-  name: string;
-  vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
-  status: string;
-  host?: string;
-  port?: number;
-  localIp?: string;
-  createdAt: Date;
-  connectedAt?: Date;
-}
+const EMPTY_VPN_CONNECTIONS: readonly NormalizedVpnConnection[] = [];
 
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useVpnManager(isOpen: boolean) {
   const mgr = ProxyOpenVPNManager.getInstance();
 
-  const [openvpnConnections, setOpenvpnConnections] = useState<OpenVPNConnection[]>([]);
-  const [wireguardConnections, setWireguardConnections] = useState<WireGuardConnection[]>([]);
-  const [tailscaleConnections, setTailscaleConnections] = useState<TailscaleConnection[]>([]);
-  const [zerotierConnections, setZerotierConnections] = useState<ZeroTierConnection[]>([]);
+  const [profileCatalog, setProfileCatalog] =
+    useState<VpnProfileCatalogSnapshot>();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,19 +36,20 @@ export function useVpnManager(isOpen: boolean) {
     setIsLoading(true);
     setError(null);
     try {
-      const [ovpn, wg, ts, zt] = await Promise.allSettled([
-        mgr.listOpenVPNConnections(),
-        mgr.listWireGuardConnections(),
-        mgr.listTailscaleConnections(),
-        mgr.listZeroTierConnections(),
-      ]);
-
-      setOpenvpnConnections(ovpn.status === "fulfilled" ? ovpn.value : []);
-      setWireguardConnections(wg.status === "fulfilled" ? wg.value : []);
-      setTailscaleConnections(ts.status === "fulfilled" ? ts.value : []);
-      setZerotierConnections(zt.status === "fulfilled" ? zt.value : []);
+      const nextCatalog = await loadVpnProfileCatalog(mgr);
+      setProfileCatalog(nextCatalog);
+      const failedProviders = Object.entries(nextCatalog.providerStatus)
+        .filter(([, status]) => status === "error")
+        .map(([vpnType]) => getVpnProviderLabel(vpnType));
+      if (failedProviders.length > 0) {
+        setError(
+          `Could not load ${failedProviders.join(", ")} profiles. Their saved associations cannot be verified yet.`,
+        );
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load VPN connections");
+      setError(
+        err instanceof Error ? err.message : "Failed to load VPN connections",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -75,11 +67,15 @@ export function useVpnManager(isOpen: boolean) {
     if (!isOpen) return;
     let unlisten: UnlistenFn | undefined;
 
-    listen('vpn::status-changed', () => {
+    listen("vpn::status-changed", () => {
       loadConnections();
-    }).then(fn => { unlisten = fn; });
+    }).then((fn) => {
+      unlisten = fn;
+    });
 
-    return () => { unlisten?.(); };
+    return () => {
+      unlisten?.();
+    };
   }, [isOpen, loadConnections]);
 
   // ── Poll status at a regular interval ───────────────────────────
@@ -95,64 +91,7 @@ export function useVpnManager(isOpen: boolean) {
 
   // ── Normalize into a single list ─────────────────────────────────
 
-  const allConnections = useMemo<NormalizedVpnConnection[]>(() => {
-    const list: NormalizedVpnConnection[] = [];
-
-    for (const c of openvpnConnections) {
-      list.push({
-        id: c.id,
-        name: c.name,
-        vpnType: "openvpn",
-        status: c.status,
-        host: c.config?.remoteHost,
-        port: c.config?.remotePort,
-        localIp: c.localIp,
-        createdAt: c.createdAt,
-        connectedAt: c.connectedAt,
-      });
-    }
-    for (const c of wireguardConnections) {
-      list.push({
-        id: c.id,
-        name: c.name,
-        vpnType: "wireguard",
-        status: c.status,
-        host: c.config?.peer?.endpoint?.split(":")[0],
-        port: c.config?.peer?.endpoint
-          ? parseInt(c.config.peer.endpoint.split(":")[1], 10) || undefined
-          : undefined,
-        localIp: c.localIp,
-        createdAt: c.createdAt,
-        connectedAt: c.connectedAt,
-      });
-    }
-    for (const c of tailscaleConnections) {
-      list.push({
-        id: c.id,
-        name: c.name,
-        vpnType: "tailscale",
-        status: c.status,
-        host: c.config?.loginServer,
-        localIp: c.tailnetIp,
-        createdAt: c.createdAt,
-        connectedAt: c.connectedAt,
-      });
-    }
-    for (const c of zerotierConnections) {
-      list.push({
-        id: c.id,
-        name: c.name,
-        vpnType: "zerotier",
-        status: c.status,
-        host: c.config?.networkId,
-        localIp: undefined,
-        createdAt: c.createdAt,
-        connectedAt: c.connectedAt,
-      });
-    }
-
-    return list;
-  }, [openvpnConnections, wireguardConnections, tailscaleConnections, zerotierConnections]);
+  const allConnections = profileCatalog?.profiles ?? EMPTY_VPN_CONNECTIONS;
 
   // ── Filter connections ───────────────────────────────────────────
 
@@ -169,7 +108,7 @@ export function useVpnManager(isOpen: boolean) {
         (c) =>
           c.name.toLowerCase().includes(term) ||
           c.host?.toLowerCase().includes(term) ||
-          c.vpnType.toLowerCase().includes(term)
+          c.vpnType.toLowerCase().includes(term),
       );
     }
 
@@ -182,7 +121,8 @@ export function useVpnManager(isOpen: boolean) {
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        switch (vpnType) {
+        const provider = requireExecutableProvider(vpnType);
+        switch (provider) {
           case "openvpn":
             await mgr.connectOpenVPN(id);
             break;
@@ -198,17 +138,20 @@ export function useVpnManager(isOpen: boolean) {
         }
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to connect ${vpnType}`);
+        setError(
+          err instanceof Error ? err.message : `Failed to connect ${vpnType}`,
+        );
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
   );
 
   const disconnectVpn = useCallback(
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        switch (vpnType) {
+        const provider = requireExecutableProvider(vpnType);
+        switch (provider) {
           case "openvpn":
             await mgr.disconnectOpenVPN(id);
             break;
@@ -224,17 +167,22 @@ export function useVpnManager(isOpen: boolean) {
         }
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to disconnect ${vpnType}`);
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to disconnect ${vpnType}`,
+        );
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
   );
 
   const deleteVpn = useCallback(
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        switch (vpnType) {
+        const provider = requireExecutableProvider(vpnType);
+        switch (provider) {
           case "openvpn":
             await mgr.deleteOpenVPNConnection(id);
             break;
@@ -250,62 +198,94 @@ export function useVpnManager(isOpen: boolean) {
         }
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to delete ${vpnType} connection`);
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to delete ${vpnType} connection`,
+        );
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
   );
 
   const importOvpn = useCallback(
     async (name: string, configContent: string) => {
       try {
         setError(null);
-        await mgr.createOpenVPNConnection(name, {
-          enabled: true,
-          configFile: configContent,
-        });
+        await mgr.createOpenVPNConnectionFromOvpn(name, configContent);
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to import OpenVPN config");
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to import OpenVPN config",
+        );
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
+  );
+
+  const importWireGuard = useCallback(
+    async (name: string, configContent: string) => {
+      try {
+        setError(null);
+        await mgr.createWireGuardConnectionFromConf(name, configContent);
+        await loadConnections();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to import WireGuard config",
+        );
+        throw err;
+      }
+    },
+    [mgr, loadConnections],
   );
 
   const createVpn = useCallback(
     async (name: string, vpnType: string, config: Record<string, unknown>) => {
       try {
         setError(null);
-        switch (vpnType) {
+        const provider = requireExecutableProvider(vpnType);
+        switch (provider) {
           case "openvpn":
-            await mgr.createOpenVPNConnection(name, config as any);
+            await mgr.createOpenVPNConnection(name, config);
             break;
           case "wireguard":
-            await mgr.createWireGuardConnection(name, config as any);
+            await mgr.createWireGuardConnection(name, config);
             break;
           case "tailscale":
-            await mgr.createTailscaleConnection(name, config as any);
+            await mgr.createTailscaleConnection(name, config);
             break;
           case "zerotier":
-            await mgr.createZeroTierConnection(name, config as any);
+            await mgr.createZeroTierConnection(name, config);
             break;
-          default:
-            throw new Error(`Unsupported VPN type: ${vpnType}`);
         }
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to create ${vpnType} connection`);
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to create ${vpnType} connection`,
+        );
         throw err;
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
   );
 
   const updateVpn = useCallback(
-    async (id: string, vpnType: string, name?: string, config?: Record<string, unknown>) => {
+    async (
+      id: string,
+      vpnType: string,
+      name?: string,
+      config?: Record<string, unknown>,
+    ) => {
       try {
         setError(null);
-        switch (vpnType) {
+        const provider = requireExecutableProvider(vpnType);
+        switch (provider) {
           case "openvpn":
             await mgr.updateOpenVPNConnection(id, name, config);
             break;
@@ -318,20 +298,23 @@ export function useVpnManager(isOpen: boolean) {
           case "zerotier":
             await mgr.updateZeroTierConnection(id, name, config);
             break;
-          default:
-            throw new Error(`Unsupported VPN type: ${vpnType}`);
         }
         await loadConnections();
       } catch (err) {
-        setError(err instanceof Error ? err.message : `Failed to update ${vpnType} connection`);
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to update ${vpnType} connection`,
+        );
         throw err;
       }
     },
-    [mgr, loadConnections]
+    [mgr, loadConnections],
   );
 
   return {
     connections,
+    profileCatalog,
     isLoading,
     error,
     searchTerm,
@@ -343,7 +326,14 @@ export function useVpnManager(isOpen: boolean) {
     disconnectVpn,
     deleteVpn,
     importOvpn,
+    importWireGuard,
     createVpn,
     updateVpn,
   };
+}
+
+function requireExecutableProvider(vpnType: string): ExecutableVpnType {
+  const provider = normalizeExecutableVpnType(vpnType);
+  if (!provider) throw new Error(`Unsupported VPN type: ${vpnType}`);
+  return provider;
 }

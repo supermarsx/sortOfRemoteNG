@@ -7,6 +7,7 @@ import type {
 } from "../../types/connection/connection";
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { normalizePowerShellRemotingSettings } from "../../utils/powershell/normalizePowerShellRemoting";
+import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNetworkPath";
 import {
   buildPowerShellSessionOptions,
   PowerShellSequenceCursor,
@@ -72,6 +73,8 @@ export function usePowerShellSession(
   sessionRef.current = session;
   const connectionRef = useRef<Connection | undefined>(connection);
   connectionRef.current = connection;
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const backendRef = useRef<string | null>(session.backendSessionId ?? null);
@@ -239,6 +242,17 @@ export function usePowerShellSession(
         markConnected(existingId, false);
         return;
       }
+
+      // Shared connection/proxy/tunnel/VPN routes are intentionally not
+      // materialized by the current PowerShell backend. Resolve the canonical
+      // path before opening or replacing a backend actor so any configured
+      // route fails closed instead of being silently bypassed. Reattachment to
+      // an already-live detached actor remains unaffected above.
+      await resolveRuntimeNetworkPath(
+        currentConnection,
+        connectionsRef.current,
+        "powershell",
+      );
 
       if (existingId && forceNew) {
         await invoke("close_powershell_session", {

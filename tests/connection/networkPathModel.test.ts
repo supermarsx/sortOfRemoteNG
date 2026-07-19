@@ -9,6 +9,7 @@ import {
   getRloginNetworkPathCapability,
   getRuntimeNetworkPathProtocol,
   resetNetworkPath,
+  selectedInlineVpnId,
   setInlineVpn,
   setNetworkPathReference,
   withCurrentOrphanOption,
@@ -61,12 +62,14 @@ describe("networkPathModel", () => {
     expect(selectedVpn.tunnelChainId).toBeUndefined();
     expect(selectedVpn.security?.tunnelChain).toEqual([
       {
-        id: "vpn-stable-id",
+        id: "inline-vpn",
         name: "Production WireGuard",
         type: "wireguard",
         enabled: true,
+        vpn: { configId: "vpn-stable-id" },
       },
     ]);
+    expect(selectedInlineVpnId(selectedVpn)).toBe("vpn-stable-id");
   });
 
   it("resets only network-path fields and preserves unrelated security", () => {
@@ -77,6 +80,7 @@ describe("networkPathModel", () => {
         tunnelChainId: "tunnel-chain",
         security: {
           encryptionAlgorithm: "aes256",
+          openvpn: { enabled: true, configId: "legacy-vpn" },
           proxy: {
             type: "socks5",
             host: "proxy.example.test",
@@ -95,6 +99,7 @@ describe("networkPathModel", () => {
       security: { encryptionAlgorithm: "aes256" },
     });
     expect(reset.security?.proxy).toBeUndefined();
+    expect(reset.security?.openvpn).toBeUndefined();
     expect(reset.security?.tunnelChain).toBeUndefined();
   });
 

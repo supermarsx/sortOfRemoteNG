@@ -25,22 +25,17 @@ import {
 } from "../../../hooks/network/useVpnManager";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { parseWireGuardConf } from "../../../utils/network/parseWireGuardConf";
 import { ProxyOpenVPNManager } from "../../../utils/network/proxyOpenVPNManager";
 import { setPendingVpnEdit } from "../../../utils/network/vpnEditorStore";
+import {
+  EXECUTABLE_VPN_PROVIDERS,
+  getVpnProviderLabel,
+  type ExecutableVpnType,
+} from "../../../utils/network/vpnProviderCatalog";
 
 // ── Constants ───────────────────────────────────────────────────
 
-// Values are product names and stay untranslated; "all" is localised at the render site.
-const VPN_TYPE_LABELS: Record<VpnTypeFilter, string> = {
-  all: "All",
-  openvpn: "OpenVPN",
-  wireguard: "WireGuard",
-  tailscale: "Tailscale",
-  zerotier: "ZeroTier",
-};
-
-const VPN_TYPE_ICONS: Record<string, React.ReactNode> = {
+const VPN_TYPE_ICONS: Record<ExecutableVpnType, React.ReactNode> = {
   openvpn: <Shield size={14} />,
   wireguard: <Globe size={14} />,
   tailscale: <Wifi size={14} />,
@@ -151,7 +146,6 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
       if (!selected) return;
       const filePath = typeof selected === "string" ? selected : selected;
       const content = await readTextFile(filePath);
-      const parsed = parseWireGuardConf(content);
       const fileName =
         filePath.split(/[/\\]/).pop() ??
         t(
@@ -159,10 +153,7 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
           "Imported WireGuard",
         );
       const name = fileName.replace(/\.conf$/i, "");
-      await vpn.createVpn(name, "wireguard", {
-        enabled: true,
-        ...parsed,
-      } as any);
+      await vpn.importWireGuard(name, content);
     } catch (err) {
       console.error("Failed to import WireGuard config:", err);
     } finally {
@@ -303,7 +294,12 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
           />
         </div>
         <div className="flex items-center rounded-md border border-[var(--color-border)] overflow-hidden">
-          {(Object.keys(VPN_TYPE_LABELS) as VpnTypeFilter[]).map((type) => (
+          {(
+            [
+              "all",
+              ...EXECUTABLE_VPN_PROVIDERS.map((item) => item.type),
+            ] as VpnTypeFilter[]
+          ).map((type) => (
             <button
               key={type}
               onClick={() => vpn.setTypeFilter(type)}
@@ -315,7 +311,7 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
             >
               {type === "all"
                 ? t("proxyChainMenu.vpnConnections.filterAll", "All")
-                : VPN_TYPE_LABELS[type]}
+                : getVpnProviderLabel(type)}
             </button>
           ))}
         </div>

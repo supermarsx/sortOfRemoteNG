@@ -7,6 +7,10 @@ permalink: /import-export-clone/
 
 Portability workflows are designed around review before mutation. Import parses into a preview model, export makes inclusion choices explicit, and clone remaps database-owned sidecars instead of copying identifiers blindly.
 
+VPN sidecars are distinct from tunnel layers: a tunnel layer keeps its own layer ID and references the imported VPN profile through `vpn.configId`. Import and clone recreate the selected OpenVPN, WireGuard, Tailscale, or ZeroTier profile first, then remap every connection and saved tunnel chain to the new profile ID. Legacy mesh-network and layer-ID references are accepted as migration inputs and rewritten to `configId`; they are not confused with the new layer identity.
+
+OpenVPN imports retain the original `.ovpn` payload as the profile's authoritative configuration so inline certificates and keys are not lost to a partial browser-side parser. WireGuard imports likewise send the untouched `.conf` payload to the native parser, which validates the same one-interface/one-peer contract used at connection time. Imported secrets are never placed in command arguments or included in validation errors.
+
 ## Format coverage
 
 | Family               | Recognized formats                           |

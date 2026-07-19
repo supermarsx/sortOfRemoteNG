@@ -10,15 +10,22 @@
  *   4. Legacy `security.proxy` / `security.openvpn` / `security.sshTunnel`
  */
 
-import type { Connection, TunnelChainLayer } from '../../types/connection/connection';
-import { proxyCollectionManager } from '../connection/proxyCollectionManager';
-import { ProxyOpenVPNManager } from '../network/proxyOpenVPNManager';
-import type { SavedChainLayer, SSHJumpConfig } from '../../types/settings/vpnSettings';
+import type {
+  Connection,
+  TunnelChainLayer,
+} from "../../types/connection/connection";
+import { proxyCollectionManager } from "../connection/proxyCollectionManager";
+import { ProxyOpenVPNManager } from "../network/proxyOpenVPNManager";
+import { resolveTunnelLayerVpnProfileId } from "../network/vpnProviderCatalog";
+import type {
+  SavedChainLayer,
+  SSHJumpConfig,
+} from "../../types/settings/vpnSettings";
 
 // ── Result types ──────────────────────────────────────────────────
 
 export interface VpnPreStep {
-  vpnType: 'openvpn' | 'wireguard' | 'tailscale' | 'zerotier';
+  vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
   connectionId: string;
   configId?: string;
 }
@@ -54,7 +61,7 @@ export interface ResolvedProxyChain {
 }
 
 export interface ResolvedMixedChainHop {
-  type: 'ssh_jump' | 'proxy';
+  type: "ssh_jump" | "proxy";
   // SSH jump fields
   host?: string;
   port?: number;
@@ -122,7 +129,11 @@ export async function resolveChainConfig(
   // otherwise suppress the legacy fallbacks below and yield a silent no-op.
   // We only short-circuit when the chain actually produced a usable result.
   if (connection.security?.tunnelChain?.length) {
-    resolveTunnelChain(connection.security.tunnelChain, result, lookupConnection);
+    resolveTunnelChain(
+      connection.security.tunnelChain,
+      result,
+      lookupConnection,
+    );
     if (chainProducedResult(result)) {
       return result;
     }
@@ -191,16 +202,16 @@ function chainProducedResult(result: ResolvedChainConfig): boolean {
  * importer captured should not be silently overwritten).
  */
 function resolveJumpHostFields(
-  ssh: NonNullable<TunnelChainLayer['sshTunnel']>,
+  ssh: NonNullable<TunnelChainLayer["sshTunnel"]>,
   lookup: ConnectionLookup,
 ): ResolvedJumpHost {
   const ref =
     !ssh.host && ssh.connectionId ? lookup(ssh.connectionId) : undefined;
 
   return {
-    host: ssh.host || ref?.hostname || '',
+    host: ssh.host || ref?.hostname || "",
     port: ssh.port ?? ref?.port ?? 22,
-    username: ssh.username ?? ref?.username ?? '',
+    username: ssh.username ?? ref?.username ?? "",
     password: ssh.password ?? ref?.password ?? null,
     private_key_path: ssh.privateKey ?? ref?.privateKey ?? null,
     private_key_passphrase: ssh.passphrase ?? ref?.passphrase ?? null,
@@ -224,10 +235,16 @@ function resolveTunnelChainById(
   // Resolve tunnelProfileId references in layers
   const resolvedLayers = chain.layers.map((layer) => {
     if (layer.tunnelProfileId) {
-      const profile = proxyCollectionManager.getTunnelProfile(layer.tunnelProfileId);
+      const profile = proxyCollectionManager.getTunnelProfile(
+        layer.tunnelProfileId,
+      );
       if (profile) {
         // Merge profile config as base, layer overrides on top
-        return { ...profile.config, ...layer, type: layer.type || profile.type };
+        return {
+          ...profile.config,
+          ...layer,
+          type: layer.type || profile.type,
+        };
       }
     }
     return layer;
@@ -252,23 +269,22 @@ function resolveTunnelChain(
   for (const layer of enabledLayers) {
     switch (layer.type) {
       // ── VPN pre-steps ────────────────────────────────────
-      case 'openvpn':
-      case 'wireguard':
-      case 'tailscale':
-      case 'zerotier': {
-        const configId =
-          layer.vpn?.configId ?? layer.mesh?.networkId ?? undefined;
+      case "openvpn":
+      case "wireguard":
+      case "tailscale":
+      case "zerotier": {
+        const configId = resolveTunnelLayerVpnProfileId(layer);
         result.vpnPreSteps.push({
           vpnType: layer.type,
-          connectionId: layer.id,
+          connectionId: configId ?? "",
           configId,
         });
         break;
       }
 
       // ── Proxy hops ──────────────────────────────────────
-      case 'proxy':
-      case 'shadowsocks': {
+      case "proxy":
+      case "shadowsocks": {
         proxyLayers.push(layer);
         break;
       }
@@ -282,8 +298,8 @@ function resolveTunnelChain(
       // Both carry their bastion details in `layer.sshTunnel` (inline and/or
       // a `connectionId` reference resolved below), so we treat them alike
       // here instead of dropping `ssh-tunnel` and yielding an empty config.
-      case 'ssh-jump':
-      case 'ssh-tunnel': {
+      case "ssh-jump":
+      case "ssh-tunnel": {
         sshJumpLayers.push(layer);
         break;
       }
@@ -304,12 +320,12 @@ function resolveTunnelChain(
     const hops: ResolvedMixedChainHop[] = [];
     for (const layer of enabledLayers) {
       if (
-        (layer.type === 'ssh-jump' || layer.type === 'ssh-tunnel') &&
+        (layer.type === "ssh-jump" || layer.type === "ssh-tunnel") &&
         layer.sshTunnel
       ) {
         const jh = resolveJumpHostFields(layer.sshTunnel, lookup);
         hops.push({
-          type: 'ssh_jump',
+          type: "ssh_jump",
           host: jh.host,
           port: jh.port,
           username: jh.username,
@@ -319,11 +335,11 @@ function resolveTunnelChain(
           agent_forwarding: jh.agent_forwarding,
         });
       } else if (
-        (layer.type === 'proxy' || layer.type === 'shadowsocks') &&
+        (layer.type === "proxy" || layer.type === "shadowsocks") &&
         layer.proxy
       ) {
         hops.push({
-          type: 'proxy',
+          type: "proxy",
           proxy_type: layer.proxy.proxyType,
           host: layer.proxy.host,
           port: layer.proxy.port,
@@ -346,9 +362,9 @@ function resolveTunnelChain(
           const ref =
             !jh.host && jh.connectionId ? lookup(jh.connectionId) : undefined;
           result.jump_hosts.push({
-            host: jh.host || ref?.hostname || '',
+            host: jh.host || ref?.hostname || "",
             port: jh.port ?? ref?.port ?? 22,
-            username: jh.username ?? ref?.username ?? '',
+            username: jh.username ?? ref?.username ?? "",
           });
         }
       } else {
@@ -403,20 +419,20 @@ async function resolveProxyChainId(
 
   for (const layer of sortedLayers) {
     switch (layer.type) {
-      case 'openvpn':
-      case 'wireguard': {
+      case "openvpn":
+      case "wireguard": {
         result.vpnPreSteps.push({
           vpnType: layer.type,
-          connectionId: layer.vpnProfileId ?? layer.proxyProfileId ?? '',
+          connectionId: layer.vpnProfileId ?? layer.proxyProfileId ?? "",
           configId: layer.vpnProfileId,
         });
         break;
       }
-      case 'proxy': {
+      case "proxy": {
         proxyLayers.push(layer);
         break;
       }
-      case 'ssh-jump': {
+      case "ssh-jump": {
         sshJumpLayers.push(layer);
         break;
       }
@@ -431,26 +447,26 @@ async function resolveProxyChainId(
   if (hasMix) {
     const hops: ResolvedMixedChainHop[] = [];
     for (const layer of sortedLayers) {
-      if (layer.type === 'ssh-jump') {
+      if (layer.type === "ssh-jump") {
         const cfg = layer.inlineConfig as SSHJumpConfig | undefined;
         if (cfg) {
           hops.push({
-            type: 'ssh_jump',
+            type: "ssh_jump",
             host: cfg.host,
             port: cfg.port ?? 22,
-            username: cfg.username ?? '',
+            username: cfg.username ?? "",
             password: cfg.password ?? null,
             private_key_path: cfg.privateKey ?? null,
             private_key_passphrase: cfg.passphrase ?? null,
           });
         }
-      } else if (layer.type === 'proxy') {
+      } else if (layer.type === "proxy") {
         const profile = layer.proxyProfileId
           ? proxyCollectionManager.getProfile(layer.proxyProfileId)
           : undefined;
         if (profile) {
           hops.push({
-            type: 'proxy',
+            type: "proxy",
             proxy_type: profile.config.type,
             host: profile.config.host,
             port: profile.config.port,
@@ -475,14 +491,14 @@ async function resolveProxyChainId(
           result.jump_hosts.push({
             host: jh.host,
             port: jh.port ?? 22,
-            username: jh.username ?? '',
+            username: jh.username ?? "",
           });
         }
       } else {
         result.jump_hosts.push({
           host: cfg.host,
           port: cfg.port ?? 22,
-          username: cfg.username ?? '',
+          username: cfg.username ?? "",
           password: cfg.password ?? null,
           private_key_path: cfg.privateKey ?? null,
           private_key_passphrase: cfg.passphrase ?? null,
@@ -536,9 +552,9 @@ async function resolveConnectionChainId(
     for (const layer of sortedLayers) {
       // Connection chains use ConnectionType enum values
       switch (layer.connection_type) {
-        case 'OpenVPN': {
+        case "OpenVPN": {
           result.vpnPreSteps.push({
-            vpnType: 'openvpn',
+            vpnType: "openvpn",
             connectionId: layer.connection_id,
           });
           if (!result.openvpn_config) {
@@ -549,35 +565,35 @@ async function resolveConnectionChainId(
           }
           break;
         }
-        case 'WireGuard': {
+        case "WireGuard": {
           result.vpnPreSteps.push({
-            vpnType: 'wireguard',
+            vpnType: "wireguard",
             connectionId: layer.connection_id,
           });
           break;
         }
-        case 'Tailscale': {
+        case "Tailscale": {
           result.vpnPreSteps.push({
-            vpnType: 'tailscale',
+            vpnType: "tailscale",
             connectionId: layer.connection_id,
           });
           break;
         }
-        case 'ZeroTier': {
+        case "ZeroTier": {
           result.vpnPreSteps.push({
-            vpnType: 'zerotier',
+            vpnType: "zerotier",
             connectionId: layer.connection_id,
           });
           break;
         }
-        case 'Proxy': {
+        case "Proxy": {
           // Connection chains store proxy references by connection_id;
           // the actual proxy details would need to be looked up from
           // the proxy collection. We store what we have.
           if (!result.proxy_config) {
             result.proxy_config = {
-              proxy_type: 'socks5', // default; actual type from profile
-              host: '',
+              proxy_type: "socks5", // default; actual type from profile
+              host: "",
               port: layer.local_port ?? 0,
             };
           }
@@ -622,12 +638,12 @@ function resolveLegacySecurity(
   if (security.openvpn?.enabled) {
     const vpn = security.openvpn;
     result.openvpn_config = {
-      connection_id: vpn.configId ?? connection.id,
+      connection_id: vpn.configId ?? "",
       chain_position: vpn.chainPosition,
     };
     result.vpnPreSteps.push({
-      vpnType: 'openvpn',
-      connectionId: vpn.configId ?? connection.id,
+      vpnType: "openvpn",
+      connectionId: vpn.configId ?? "",
       configId: vpn.configId,
     });
   }

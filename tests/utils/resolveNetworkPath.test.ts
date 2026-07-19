@@ -151,6 +151,7 @@ function catalog(
   options: {
     connections?: Connection[];
     connectionChains?: ConnectionChain[];
+    vpnProfiles?: NetworkPathCatalog["vpnProfiles"];
   } = {},
 ): NetworkPathCatalog {
   return {
@@ -162,6 +163,7 @@ function catalog(
     },
     connections: options.connections ?? [],
     connectionChains: options.connectionChains ?? [],
+    vpnProfiles: options.vpnProfiles,
   };
 }
 
@@ -182,6 +184,7 @@ describe("resolveNetworkPath", () => {
       "proxy-chain",
       "tunnel-chain",
       "inline-tunnel",
+      "legacy-vpn",
       "legacy-proxy",
     ]);
     expect(result.layers).toEqual([]);
@@ -269,6 +272,134 @@ describe("resolveNetworkPath", () => {
     expect(result.validation.issues).toContainEqual(
       expect.objectContaining({ code: "disabled-layer", severity: "warning" }),
     );
+  });
+
+  it("resolves an imported VPN layer by configId rather than its layer ID", () => {
+    const result = resolveNetworkPath(
+      connection("target", {
+        security: {
+          tunnelChain: [
+            tunnelLayer("imported-layer-id", {
+              type: "wireguard",
+              proxy: undefined,
+              vpn: { configId: "wireguard-profile-id" },
+            }),
+          ],
+        },
+      }),
+      catalog(
+        {},
+        {
+          vpnProfiles: {
+            profiles: [
+              {
+                id: "wireguard-profile-id",
+                name: "Imported WireGuard",
+                vpnType: "wireguard",
+                status: "disconnected",
+                createdAt: new Date(NOW),
+              },
+            ],
+            providerStatus: { wireguard: "loaded" },
+          },
+        },
+      ),
+    );
+
+    expect(result.validation.valid).toBe(true);
+    expect(result.layers[0]).toMatchObject({
+      kind: "vpn",
+      transport: "wireguard",
+      source: { layerId: "imported-layer-id" },
+      config: { connectionId: "wireguard-profile-id" },
+    });
+  });
+
+  it("distinguishes a deleted VPN profile from an unavailable provider store", () => {
+    const target = connection("target", {
+      security: {
+        tunnelChain: [
+          tunnelLayer("layer-id", {
+            type: "openvpn",
+            proxy: undefined,
+            vpn: { configId: "deleted-profile" },
+          }),
+        ],
+      },
+    });
+
+    const deleted = resolveNetworkPath(
+      target,
+      catalog(
+        {},
+        {
+          vpnProfiles: {
+            profiles: [],
+            providerStatus: { openvpn: "loaded" },
+          },
+        },
+      ),
+    );
+    expect(deleted.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "missing-reference",
+        message: expect.stringMatching(/no longer exists/i),
+      }),
+    );
+
+    const unavailable = resolveNetworkPath(
+      target,
+      catalog(
+        {},
+        {
+          vpnProfiles: {
+            profiles: [],
+            providerStatus: { openvpn: "error" },
+          },
+        },
+      ),
+    );
+    expect(unavailable.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "snapshot-unavailable",
+        message: expect.stringMatching(/cannot be verified yet/i),
+      }),
+    );
+    expect(unavailable.validation.issues).not.toContainEqual(
+      expect.objectContaining({ code: "missing-reference" }),
+    );
+  });
+
+  it("keeps legacy profile IDs routable while exposing their migration source", () => {
+    const legacySecurity = resolveNetworkPath(
+      connection("target", {
+        security: {
+          openvpn: { enabled: true, configId: "legacy-openvpn-profile" },
+        },
+      }),
+    );
+    expect(legacySecurity.layers[0]).toMatchObject({
+      kind: "vpn",
+      transport: "openvpn",
+      source: { kind: "legacy-vpn" },
+      config: { connectionId: "legacy-openvpn-profile" },
+    });
+
+    const legacyLayerId = resolveNetworkPath(
+      connection("target", {
+        security: {
+          tunnelChain: [
+            tunnelLayer("legacy-profile-as-layer-id", {
+              type: "openvpn",
+              proxy: undefined,
+            }),
+          ],
+        },
+      }),
+    );
+    expect(legacyLayerId.layers[0]).toMatchObject({
+      config: { connectionId: "legacy-profile-as-layer-id" },
+    });
   });
 
   it("normalizes inline and referenced tunnel chains to equivalent runtime layers", () => {

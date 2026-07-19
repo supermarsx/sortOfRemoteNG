@@ -1,4 +1,4 @@
-import type { ProxyConfig } from './index';
+import type { ProxyConfig } from "./index";
 
 // Saved Proxy Profile
 export interface SavedProxyProfile {
@@ -14,22 +14,22 @@ export interface SavedProxyProfile {
 
 // SSH Chaining Method types (re-exported from connection.ts for convenience)
 export type SSHChainingMethod =
-  | 'proxyjump'       // Modern -J / ProxyJump (recommended)
-  | 'proxycommand'    // Classic ProxyCommand with nc/ncat/socat
-  | 'nested-ssh'      // Nested SSH commands (ssh -t host1 ssh host2)
-  | 'local-forward'   // Local port forwarding (-L)
-  | 'dynamic-socks'   // Dynamic SOCKS proxy (-D)
-  | 'stdio'           // stdio forwarding via ProxyUseFdpass
-  | 'agent-forward';  // SSH agent forwarding (-A)
+  | "proxyjump" // Modern -J / ProxyJump (recommended)
+  | "proxycommand" // Classic ProxyCommand with nc/ncat/socat
+  | "nested-ssh" // Nested SSH commands (ssh -t host1 ssh host2)
+  | "local-forward" // Local port forwarding (-L)
+  | "dynamic-socks" // Dynamic SOCKS proxy (-D)
+  | "stdio" // stdio forwarding via ProxyUseFdpass
+  | "agent-forward"; // SSH agent forwarding (-A)
 
 // Dynamic chaining strategy for the entire chain
 export type DynamicChainingStrategy =
-  | 'strict'          // All hops must succeed in order
-  | 'dynamic'         // Try hops dynamically, skip failed ones
-  | 'random'          // Randomize hop order (for anonymity)
-  | 'round-robin'     // Rotate through available paths
-  | 'failover'        // Use backup path on failure
-  | 'load-balance';   // Distribute across multiple paths
+  | "strict" // All hops must succeed in order
+  | "dynamic" // Try hops dynamically, skip failed ones
+  | "random" // Randomize hop order (for anonymity)
+  | "round-robin" // Rotate through available paths
+  | "failover" // Use backup path on failure
+  | "load-balance"; // Distribute across multiple paths
 
 // Proxy Chain Definition (for saved chains)
 export interface SavedProxyChain {
@@ -63,11 +63,31 @@ export interface SavedProxyChain {
 
 export interface SavedChainLayer {
   position: number;
-  proxyProfileId?: string;  // Reference to SavedProxyProfile
-  vpnProfileId?: string;    // Reference to saved VPN profile
-  type: 'proxy' | 'openvpn' | 'wireguard' | 'pptp' | 'l2tp' | 'ikev2' | 'ipsec' | 'sstp' | 'ssh-tunnel' | 'ssh-jump' | 'ssh-proxycmd';
+  proxyProfileId?: string; // Reference to SavedProxyProfile
+  vpnProfileId?: string; // Reference to saved VPN profile
+  type:
+    | "proxy"
+    | "openvpn"
+    | "wireguard"
+    | "pptp"
+    | "l2tp"
+    | "ikev2"
+    | "ipsec"
+    | "sstp"
+    | "ssh-tunnel"
+    | "ssh-jump"
+    | "ssh-proxycmd";
   // Inline config (alternative to profile reference)
-  inlineConfig?: ProxyConfig | OpenVPNConfig | WireGuardConfig | PPTPConfig | L2TPConfig | IKEv2Config | IPsecConfig | SSTPConfig | SSHJumpConfig;
+  inlineConfig?:
+    | ProxyConfig
+    | OpenVPNConfig
+    | WireGuardConfig
+    | PPTPConfig
+    | L2TPConfig
+    | IKEv2Config
+    | IPsecConfig
+    | SSTPConfig
+    | SSHJumpConfig;
 
   // Per-node SSH chaining method selection
   sshChainingMethod?: SSHChainingMethod;
@@ -97,11 +117,11 @@ export interface SSHJumpConfig {
   password?: string;
   privateKey?: string;
   passphrase?: string;
-  connectionId?: string;  // Or reference existing connection
+  connectionId?: string; // Or reference existing connection
 
   // For ProxyCommand style
   proxyCommand?: string;
-  proxyCommandTemplate?: 'nc' | 'ncat' | 'socat' | 'connect' | 'corkscrew';
+  proxyCommandTemplate?: "nc" | "ncat" | "socat" | "connect" | "corkscrew";
 
   // For nested SSH style
   allocateTty?: boolean;
@@ -135,6 +155,8 @@ export const defaultProxyCollectionData: ProxyCollectionData = {
 export interface OpenVPNConfig {
   enabled: boolean;
   configFile?: string;
+  /** Imported .ovpn content retained in encrypted backend profile storage. */
+  inlineConfig?: string;
   authFile?: string;
   caCert?: string;
   clientCert?: string;
@@ -147,7 +169,9 @@ export interface OpenVPNConfig {
   cipher?: string;
   auth?: string;
   tlsAuth?: boolean;
+  tlsAuthFile?: string;
   tlsCrypt?: boolean;
+  tlsCryptFile?: string;
   compression?: boolean;
   mssFix?: number;
   tunMtu?: number;
@@ -191,6 +215,9 @@ export interface WireGuardConfig {
     persistentKeepalive?: number;
   };
   configFile?: string;
+  listenPort?: number;
+  fwmark?: number;
+  interfaceName?: string;
 }
 
 export interface IKEv2Config {
@@ -318,6 +345,8 @@ export interface ZeroTierConfig {
   allowGlobal?: boolean;
   allowDefault?: boolean;
   allowDNS?: boolean;
+  zerotierHome?: string;
+  authtokenSecret?: string;
   customOptions?: string[];
 }
 
@@ -328,8 +357,15 @@ export interface TailscaleConfig {
   routes?: string[];
   exitNode?: string;
   advertiseRoutes?: string[];
+  advertiseTags?: string[];
   acceptRoutes?: boolean;
+  acceptDNS?: boolean;
+  hostname?: string;
+  exitNodeAllowLanAccess?: boolean;
   ssh?: boolean;
+  funnel?: boolean;
+  stateDir?: string;
+  socket?: string;
   customOptions?: string[];
 }
 
@@ -345,8 +381,22 @@ export interface EnsureVpnResult {
 
 export interface VpnStatusEvent {
   connectionId: string;
-  vpnType: 'openvpn' | 'wireguard' | 'tailscale' | 'zerotier' | 'pptp' | 'l2tp' | 'ikev2' | 'ipsec' | 'sstp';
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  vpnType:
+    | "openvpn"
+    | "wireguard"
+    | "tailscale"
+    | "zerotier"
+    | "pptp"
+    | "l2tp"
+    | "ikev2"
+    | "ipsec"
+    | "sstp";
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   error?: string;
   localIp?: string;
   remoteIp?: string;
@@ -356,7 +406,7 @@ export interface SavedTunnelChain {
   id: string;
   name: string;
   description?: string;
-  layers: import('../connection/connection').TunnelChainLayer[];
+  layers: import("../connection/connection").TunnelChainLayer[];
   createdAt: string;
   updatedAt: string;
   tags?: string[];
@@ -366,8 +416,8 @@ export interface SavedTunnelProfile {
   id: string;
   name: string;
   description?: string;
-  type: import('../connection/connection').TunnelType;
-  config: import('../connection/connection').TunnelChainLayer;
+  type: import("../connection/connection").TunnelType;
+  config: import("../connection/connection").TunnelChainLayer;
   createdAt: string;
   updatedAt: string;
   tags?: string[];

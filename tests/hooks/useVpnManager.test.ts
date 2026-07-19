@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 const mockMgr = {
   listOpenVPNConnections: vi.fn(),
@@ -19,7 +19,9 @@ const mockMgr = {
   disconnectZeroTier: vi.fn(),
   deleteZeroTierConnection: vi.fn(),
   createOpenVPNConnection: vi.fn(),
+  createOpenVPNConnectionFromOvpn: vi.fn(),
   createWireGuardConnection: vi.fn(),
+  createWireGuardConnectionFromConf: vi.fn(),
   createTailscaleConnection: vi.fn(),
   createZeroTierConnection: vi.fn(),
   updateOpenVPNConnection: vi.fn(),
@@ -28,21 +30,21 @@ const mockMgr = {
   updateZeroTierConnection: vi.fn(),
 };
 
-vi.mock('../../src/utils/network/proxyOpenVPNManager', () => ({
+vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
   ProxyOpenVPNManager: {
     getInstance: () => mockMgr,
   },
 }));
 
 // Mock tauri event listener
-vi.mock('@tauri-apps/api/event', () => ({
+vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
   emit: vi.fn(),
 }));
 
-import { useVpnManager } from '../../src/hooks/network/useVpnManager';
+import { useVpnManager } from "../../src/hooks/network/useVpnManager";
 
-describe('useVpnManager', () => {
+describe("useVpnManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -56,7 +58,7 @@ describe('useVpnManager', () => {
     vi.useRealTimers();
   });
 
-  it('loads all connection types on mount when isOpen', async () => {
+  it("loads all connection types on mount when isOpen", async () => {
     renderHook(() => useVpnManager(true));
 
     await waitFor(() => {
@@ -67,26 +69,26 @@ describe('useVpnManager', () => {
     });
   });
 
-  it('does not load when isOpen is false', async () => {
+  it("does not load when isOpen is false", async () => {
     renderHook(() => useVpnManager(false));
 
     // Wait a tick
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 50));
     expect(mockMgr.listOpenVPNConnections).not.toHaveBeenCalled();
     expect(mockMgr.listWireGuardConnections).not.toHaveBeenCalled();
     expect(mockMgr.listTailscaleConnections).not.toHaveBeenCalled();
     expect(mockMgr.listZeroTierConnections).not.toHaveBeenCalled();
   });
 
-  it('normalizes OpenVPN connections with host and port', async () => {
+  it("normalizes OpenVPN connections with host and port", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
       {
-        id: 'ovpn-1',
-        name: 'Office VPN',
-        status: 'connected',
-        config: { remoteHost: 'vpn.office.com', remotePort: 1194 },
-        localIp: '10.0.0.5',
-        createdAt: new Date('2025-01-01'),
+        id: "ovpn-1",
+        name: "Office VPN",
+        status: "connected",
+        config: { remoteHost: "vpn.office.com", remotePort: 1194 },
+        localIp: "10.0.0.5",
+        createdAt: new Date("2025-01-01"),
       },
     ]);
 
@@ -97,24 +99,24 @@ describe('useVpnManager', () => {
     });
 
     const conn = result.current.connections[0];
-    expect(conn.vpnType).toBe('openvpn');
-    expect(conn.name).toBe('Office VPN');
-    expect(conn.host).toBe('vpn.office.com');
+    expect(conn.vpnType).toBe("openvpn");
+    expect(conn.name).toBe("Office VPN");
+    expect(conn.host).toBe("vpn.office.com");
     expect(conn.port).toBe(1194);
-    expect(conn.localIp).toBe('10.0.0.5');
-    expect(conn.status).toBe('connected');
-    expect(conn.id).toBe('ovpn-1');
+    expect(conn.localIp).toBe("10.0.0.5");
+    expect(conn.status).toBe("connected");
+    expect(conn.id).toBe("ovpn-1");
   });
 
-  it('normalizes WireGuard connections with endpoint parsing', async () => {
+  it("normalizes WireGuard connections with endpoint parsing", async () => {
     mockMgr.listWireGuardConnections.mockResolvedValue([
       {
-        id: 'wg-1',
-        name: 'WG Tunnel',
-        status: 'connected',
-        config: { peer: { endpoint: '192.168.1.1:51820' } },
-        localIp: '10.0.0.2',
-        createdAt: new Date('2025-01-01'),
+        id: "wg-1",
+        name: "WG Tunnel",
+        status: "connected",
+        config: { peer: { endpoint: "192.168.1.1:51820" } },
+        localIp: "10.0.0.2",
+        createdAt: new Date("2025-01-01"),
       },
     ]);
 
@@ -125,20 +127,20 @@ describe('useVpnManager', () => {
     });
 
     const conn = result.current.connections[0];
-    expect(conn.vpnType).toBe('wireguard');
-    expect(conn.host).toBe('192.168.1.1');
+    expect(conn.vpnType).toBe("wireguard");
+    expect(conn.host).toBe("192.168.1.1");
     expect(conn.port).toBe(51820);
   });
 
-  it('normalizes Tailscale connections with loginServer', async () => {
+  it("normalizes Tailscale connections with loginServer", async () => {
     mockMgr.listTailscaleConnections.mockResolvedValue([
       {
-        id: 'ts-1',
-        name: 'My Tailscale',
-        status: 'connected',
-        config: { loginServer: 'https://login.tailscale.com' },
-        tailnetIp: '100.64.0.1',
-        createdAt: new Date('2025-01-01'),
+        id: "ts-1",
+        name: "My Tailscale",
+        status: "connected",
+        config: { loginServer: "https://login.tailscale.com" },
+        tailnetIp: "100.64.0.1",
+        createdAt: new Date("2025-01-01"),
       },
     ]);
 
@@ -149,19 +151,19 @@ describe('useVpnManager', () => {
     });
 
     const conn = result.current.connections[0];
-    expect(conn.vpnType).toBe('tailscale');
-    expect(conn.host).toBe('https://login.tailscale.com');
-    expect(conn.localIp).toBe('100.64.0.1');
+    expect(conn.vpnType).toBe("tailscale");
+    expect(conn.host).toBe("https://login.tailscale.com");
+    expect(conn.localIp).toBe("100.64.0.1");
   });
 
-  it('normalizes ZeroTier connections with networkId', async () => {
+  it("normalizes ZeroTier connections with networkId", async () => {
     mockMgr.listZeroTierConnections.mockResolvedValue([
       {
-        id: 'zt-1',
-        name: 'ZT Network',
-        status: 'connected',
-        config: { networkId: 'abcdef1234567890' },
-        createdAt: new Date('2025-01-01'),
+        id: "zt-1",
+        name: "ZT Network",
+        status: "connected",
+        config: { networkId: "abcdef1234567890" },
+        createdAt: new Date("2025-01-01"),
       },
     ]);
 
@@ -172,23 +174,47 @@ describe('useVpnManager', () => {
     });
 
     const conn = result.current.connections[0];
-    expect(conn.vpnType).toBe('zerotier');
-    expect(conn.host).toBe('abcdef1234567890');
+    expect(conn.vpnType).toBe("zerotier");
+    expect(conn.host).toBe("abcdef1234567890");
     expect(conn.localIp).toBeUndefined();
   });
 
-  it('combines all connection types into a single list', async () => {
+  it("combines all connection types into a single list", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'OVPN', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "OVPN",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listWireGuardConnections.mockResolvedValue([
-      { id: '2', name: 'WG', status: 'connected', config: { peer: {} }, createdAt: new Date() },
+      {
+        id: "2",
+        name: "WG",
+        status: "connected",
+        config: { peer: {} },
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listTailscaleConnections.mockResolvedValue([
-      { id: '3', name: 'TS', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "3",
+        name: "TS",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listZeroTierConnections.mockResolvedValue([
-      { id: '4', name: 'ZT', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "4",
+        name: "ZT",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -197,19 +223,31 @@ describe('useVpnManager', () => {
       expect(result.current.connections).toHaveLength(4);
     });
 
-    const types = result.current.connections.map(c => c.vpnType);
-    expect(types).toContain('openvpn');
-    expect(types).toContain('wireguard');
-    expect(types).toContain('tailscale');
-    expect(types).toContain('zerotier');
+    const types = result.current.connections.map((c) => c.vpnType);
+    expect(types).toContain("openvpn");
+    expect(types).toContain("wireguard");
+    expect(types).toContain("tailscale");
+    expect(types).toContain("zerotier");
   });
 
-  it('filters by VPN type', async () => {
+  it("filters by VPN type", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'OpenVPN 1', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "OpenVPN 1",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listWireGuardConnections.mockResolvedValue([
-      { id: '2', name: 'WG 1', status: 'connected', config: { peer: {} }, createdAt: new Date() },
+      {
+        id: "2",
+        name: "WG 1",
+        status: "connected",
+        config: { peer: {} },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -219,19 +257,31 @@ describe('useVpnManager', () => {
     });
 
     act(() => {
-      result.current.setTypeFilter('wireguard');
+      result.current.setTypeFilter("wireguard");
     });
     expect(result.current.connections).toHaveLength(1);
-    expect(result.current.connections[0].vpnType).toBe('wireguard');
-    expect(result.current.connections[0].name).toBe('WG 1');
+    expect(result.current.connections[0].vpnType).toBe("wireguard");
+    expect(result.current.connections[0].name).toBe("WG 1");
   });
 
   it('shows all connections when type filter is "all"', async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'OVPN', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "OVPN",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listWireGuardConnections.mockResolvedValue([
-      { id: '2', name: 'WG', status: 'disconnected', config: { peer: {} }, createdAt: new Date() },
+      {
+        id: "2",
+        name: "WG",
+        status: "disconnected",
+        config: { peer: {} },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -242,20 +292,32 @@ describe('useVpnManager', () => {
 
     // Filter then reset
     act(() => {
-      result.current.setTypeFilter('openvpn');
+      result.current.setTypeFilter("openvpn");
     });
     expect(result.current.connections).toHaveLength(1);
 
     act(() => {
-      result.current.setTypeFilter('all');
+      result.current.setTypeFilter("all");
     });
     expect(result.current.connections).toHaveLength(2);
   });
 
-  it('filters by search term matching name', async () => {
+  it("filters by search term matching name", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'Office VPN', status: 'disconnected', config: { remoteHost: 'vpn.office.com' }, createdAt: new Date() },
-      { id: '2', name: 'Home VPN', status: 'disconnected', config: { remoteHost: 'vpn.home.com' }, createdAt: new Date() },
+      {
+        id: "1",
+        name: "Office VPN",
+        status: "disconnected",
+        config: { remoteHost: "vpn.office.com" },
+        createdAt: new Date(),
+      },
+      {
+        id: "2",
+        name: "Home VPN",
+        status: "disconnected",
+        config: { remoteHost: "vpn.home.com" },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -265,16 +327,28 @@ describe('useVpnManager', () => {
     });
 
     act(() => {
-      result.current.setSearchTerm('office');
+      result.current.setSearchTerm("office");
     });
     expect(result.current.connections).toHaveLength(1);
-    expect(result.current.connections[0].name).toBe('Office VPN');
+    expect(result.current.connections[0].name).toBe("Office VPN");
   });
 
-  it('filters by search term matching host', async () => {
+  it("filters by search term matching host", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'VPN A', status: 'disconnected', config: { remoteHost: 'vpn.alpha.com' }, createdAt: new Date() },
-      { id: '2', name: 'VPN B', status: 'disconnected', config: { remoteHost: 'vpn.beta.com' }, createdAt: new Date() },
+      {
+        id: "1",
+        name: "VPN A",
+        status: "disconnected",
+        config: { remoteHost: "vpn.alpha.com" },
+        createdAt: new Date(),
+      },
+      {
+        id: "2",
+        name: "VPN B",
+        status: "disconnected",
+        config: { remoteHost: "vpn.beta.com" },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -284,18 +358,30 @@ describe('useVpnManager', () => {
     });
 
     act(() => {
-      result.current.setSearchTerm('beta');
+      result.current.setSearchTerm("beta");
     });
     expect(result.current.connections).toHaveLength(1);
-    expect(result.current.connections[0].name).toBe('VPN B');
+    expect(result.current.connections[0].name).toBe("VPN B");
   });
 
-  it('filters by search term matching vpnType', async () => {
+  it("filters by search term matching vpnType", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'My Connection', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "My Connection",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listWireGuardConnections.mockResolvedValue([
-      { id: '2', name: 'Another Connection', status: 'disconnected', config: { peer: {} }, createdAt: new Date() },
+      {
+        id: "2",
+        name: "Another Connection",
+        status: "disconnected",
+        config: { peer: {} },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -305,19 +391,37 @@ describe('useVpnManager', () => {
     });
 
     act(() => {
-      result.current.setSearchTerm('wireguard');
+      result.current.setSearchTerm("wireguard");
     });
     expect(result.current.connections).toHaveLength(1);
-    expect(result.current.connections[0].vpnType).toBe('wireguard');
+    expect(result.current.connections[0].vpnType).toBe("wireguard");
   });
 
-  it('combines type filter and search term', async () => {
+  it("combines type filter and search term", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'Office OVPN', status: 'disconnected', config: {}, createdAt: new Date() },
-      { id: '2', name: 'Home OVPN', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "Office OVPN",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
+      {
+        id: "2",
+        name: "Home OVPN",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
     mockMgr.listWireGuardConnections.mockResolvedValue([
-      { id: '3', name: 'Office WG', status: 'disconnected', config: { peer: {} }, createdAt: new Date() },
+      {
+        id: "3",
+        name: "Office WG",
+        status: "disconnected",
+        config: { peer: {} },
+        createdAt: new Date(),
+      },
     ]);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -327,66 +431,66 @@ describe('useVpnManager', () => {
     });
 
     act(() => {
-      result.current.setTypeFilter('openvpn');
-      result.current.setSearchTerm('office');
+      result.current.setTypeFilter("openvpn");
+      result.current.setSearchTerm("office");
     });
     expect(result.current.connections).toHaveLength(1);
-    expect(result.current.connections[0].name).toBe('Office OVPN');
+    expect(result.current.connections[0].name).toBe("Office OVPN");
   });
 
-  it('connects an OpenVPN connection', async () => {
+  it("connects an OpenVPN connection", async () => {
     mockMgr.connectOpenVPN.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.connectVpn("ovpn-1", "openvpn");
     });
 
-    expect(mockMgr.connectOpenVPN).toHaveBeenCalledWith('ovpn-1');
+    expect(mockMgr.connectOpenVPN).toHaveBeenCalledWith("ovpn-1");
   });
 
-  it('connects a WireGuard connection', async () => {
+  it("connects a WireGuard connection", async () => {
     mockMgr.connectWireGuard.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('wg-1', 'wireguard');
+      await result.current.connectVpn("wg-1", "wireguard");
     });
 
-    expect(mockMgr.connectWireGuard).toHaveBeenCalledWith('wg-1');
+    expect(mockMgr.connectWireGuard).toHaveBeenCalledWith("wg-1");
   });
 
-  it('connects a Tailscale connection', async () => {
+  it("connects a Tailscale connection", async () => {
     mockMgr.connectTailscale.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('ts-1', 'tailscale');
+      await result.current.connectVpn("ts-1", "tailscale");
     });
 
-    expect(mockMgr.connectTailscale).toHaveBeenCalledWith('ts-1');
+    expect(mockMgr.connectTailscale).toHaveBeenCalledWith("ts-1");
   });
 
-  it('connects a ZeroTier connection', async () => {
+  it("connects a ZeroTier connection", async () => {
     mockMgr.connectZeroTier.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('zt-1', 'zerotier');
+      await result.current.connectVpn("zt-1", "zerotier");
     });
 
-    expect(mockMgr.connectZeroTier).toHaveBeenCalledWith('zt-1');
+    expect(mockMgr.connectZeroTier).toHaveBeenCalledWith("zt-1");
   });
 
-  it('reloads connections after connect', async () => {
+  it("reloads connections after connect", async () => {
     mockMgr.connectOpenVPN.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -395,268 +499,330 @@ describe('useVpnManager', () => {
     const callCountBefore = mockMgr.listOpenVPNConnections.mock.calls.length;
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.connectVpn("ovpn-1", "openvpn");
     });
 
-    expect(mockMgr.listOpenVPNConnections.mock.calls.length).toBeGreaterThan(callCountBefore);
+    expect(mockMgr.listOpenVPNConnections.mock.calls.length).toBeGreaterThan(
+      callCountBefore,
+    );
   });
 
-  it('disconnects an OpenVPN connection', async () => {
+  it("disconnects an OpenVPN connection", async () => {
     mockMgr.disconnectOpenVPN.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.disconnectVpn('ovpn-1', 'openvpn');
+      await result.current.disconnectVpn("ovpn-1", "openvpn");
     });
 
-    expect(mockMgr.disconnectOpenVPN).toHaveBeenCalledWith('ovpn-1');
+    expect(mockMgr.disconnectOpenVPN).toHaveBeenCalledWith("ovpn-1");
   });
 
-  it('disconnects a WireGuard connection', async () => {
+  it("disconnects a WireGuard connection", async () => {
     mockMgr.disconnectWireGuard.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.disconnectVpn('wg-1', 'wireguard');
+      await result.current.disconnectVpn("wg-1", "wireguard");
     });
 
-    expect(mockMgr.disconnectWireGuard).toHaveBeenCalledWith('wg-1');
+    expect(mockMgr.disconnectWireGuard).toHaveBeenCalledWith("wg-1");
   });
 
-  it('deletes an OpenVPN connection', async () => {
+  it("deletes an OpenVPN connection", async () => {
     mockMgr.deleteOpenVPNConnection.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.deleteVpn('ovpn-1', 'openvpn');
+      await result.current.deleteVpn("ovpn-1", "openvpn");
     });
 
-    expect(mockMgr.deleteOpenVPNConnection).toHaveBeenCalledWith('ovpn-1');
+    expect(mockMgr.deleteOpenVPNConnection).toHaveBeenCalledWith("ovpn-1");
   });
 
-  it('deletes a Tailscale connection', async () => {
+  it("deletes a Tailscale connection", async () => {
     mockMgr.deleteTailscaleConnection.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.deleteVpn('ts-1', 'tailscale');
+      await result.current.deleteVpn("ts-1", "tailscale");
     });
 
-    expect(mockMgr.deleteTailscaleConnection).toHaveBeenCalledWith('ts-1');
+    expect(mockMgr.deleteTailscaleConnection).toHaveBeenCalledWith("ts-1");
   });
 
-  it('deletes a ZeroTier connection', async () => {
+  it("deletes a ZeroTier connection", async () => {
     mockMgr.deleteZeroTierConnection.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.deleteVpn('zt-1', 'zerotier');
+      await result.current.deleteVpn("zt-1", "zerotier");
     });
 
-    expect(mockMgr.deleteZeroTierConnection).toHaveBeenCalledWith('zt-1');
+    expect(mockMgr.deleteZeroTierConnection).toHaveBeenCalledWith("zt-1");
   });
 
-  it('creates an OpenVPN connection', async () => {
-    mockMgr.createOpenVPNConnection.mockResolvedValue('new-id');
+  it("creates an OpenVPN connection", async () => {
+    mockMgr.createOpenVPNConnection.mockResolvedValue("new-id");
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.createVpn('New VPN', 'openvpn', { remoteHost: 'vpn.test' });
+      await result.current.createVpn("New VPN", "openvpn", {
+        remoteHost: "vpn.test",
+      });
     });
 
-    expect(mockMgr.createOpenVPNConnection).toHaveBeenCalledWith('New VPN', { remoteHost: 'vpn.test' });
+    expect(mockMgr.createOpenVPNConnection).toHaveBeenCalledWith("New VPN", {
+      remoteHost: "vpn.test",
+    });
   });
 
-  it('creates a WireGuard connection', async () => {
-    mockMgr.createWireGuardConnection.mockResolvedValue('new-wg-id');
+  it("creates a WireGuard connection", async () => {
+    mockMgr.createWireGuardConnection.mockResolvedValue("new-wg-id");
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.createVpn('New WG', 'wireguard', { privateKey: 'key123' });
+      await result.current.createVpn("New WG", "wireguard", {
+        privateKey: "key123",
+      });
     });
 
-    expect(mockMgr.createWireGuardConnection).toHaveBeenCalledWith('New WG', { privateKey: 'key123' });
+    expect(mockMgr.createWireGuardConnection).toHaveBeenCalledWith("New WG", {
+      privateKey: "key123",
+    });
   });
 
-  it('creates a Tailscale connection', async () => {
-    mockMgr.createTailscaleConnection.mockResolvedValue('new-ts-id');
+  it("creates a Tailscale connection", async () => {
+    mockMgr.createTailscaleConnection.mockResolvedValue("new-ts-id");
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.createVpn('New TS', 'tailscale', { authKey: 'tskey-abc' });
+      await result.current.createVpn("New TS", "tailscale", {
+        authKey: "tskey-abc",
+      });
     });
 
-    expect(mockMgr.createTailscaleConnection).toHaveBeenCalledWith('New TS', { authKey: 'tskey-abc' });
+    expect(mockMgr.createTailscaleConnection).toHaveBeenCalledWith("New TS", {
+      authKey: "tskey-abc",
+    });
   });
 
-  it('creates a ZeroTier connection', async () => {
-    mockMgr.createZeroTierConnection.mockResolvedValue('new-zt-id');
+  it("creates a ZeroTier connection", async () => {
+    mockMgr.createZeroTierConnection.mockResolvedValue("new-zt-id");
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.createVpn('New ZT', 'zerotier', { networkId: 'abc123' });
+      await result.current.createVpn("New ZT", "zerotier", {
+        networkId: "abc123",
+      });
     });
 
-    expect(mockMgr.createZeroTierConnection).toHaveBeenCalledWith('New ZT', { networkId: 'abc123' });
+    expect(mockMgr.createZeroTierConnection).toHaveBeenCalledWith("New ZT", {
+      networkId: "abc123",
+    });
   });
 
-  it('throws on create with unsupported VPN type', async () => {
+  it("throws on create with unsupported VPN type", async () => {
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await expect(
       act(async () => {
-        await result.current.createVpn('Bad', 'unknowntype', {});
-      })
-    ).rejects.toThrow('Unsupported VPN type: unknowntype');
+        await result.current.createVpn("Bad", "unknowntype", {});
+      }),
+    ).rejects.toThrow("Unsupported VPN type: unknowntype");
   });
 
-  it('updates an OpenVPN connection', async () => {
+  it("updates an OpenVPN connection", async () => {
     mockMgr.updateOpenVPNConnection.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.updateVpn('ovpn-1', 'openvpn', 'Renamed OVPN', { remoteHost: 'new.host' });
+      await result.current.updateVpn("ovpn-1", "openvpn", "Renamed OVPN", {
+        remoteHost: "new.host",
+      });
     });
 
-    expect(mockMgr.updateOpenVPNConnection).toHaveBeenCalledWith('ovpn-1', 'Renamed OVPN', { remoteHost: 'new.host' });
+    expect(mockMgr.updateOpenVPNConnection).toHaveBeenCalledWith(
+      "ovpn-1",
+      "Renamed OVPN",
+      { remoteHost: "new.host" },
+    );
   });
 
-  it('updates a WireGuard connection', async () => {
+  it("updates a WireGuard connection", async () => {
     mockMgr.updateWireGuardConnection.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.updateVpn('wg-1', 'wireguard', 'Renamed WG', { privateKey: 'newkey' });
+      await result.current.updateVpn("wg-1", "wireguard", "Renamed WG", {
+        privateKey: "newkey",
+      });
     });
 
-    expect(mockMgr.updateWireGuardConnection).toHaveBeenCalledWith('wg-1', 'Renamed WG', { privateKey: 'newkey' });
+    expect(mockMgr.updateWireGuardConnection).toHaveBeenCalledWith(
+      "wg-1",
+      "Renamed WG",
+      { privateKey: "newkey" },
+    );
   });
 
-  it('throws on update with unsupported VPN type', async () => {
+  it("throws on update with unsupported VPN type", async () => {
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await expect(
       act(async () => {
-        await result.current.updateVpn('x', 'badtype', 'name', {});
-      })
-    ).rejects.toThrow('Unsupported VPN type: badtype');
+        await result.current.updateVpn("x", "badtype", "name", {});
+      }),
+    ).rejects.toThrow("Unsupported VPN type: badtype");
   });
 
-  it('imports an OpenVPN config', async () => {
-    mockMgr.createOpenVPNConnection.mockResolvedValue('imported-id');
+  it("imports an OpenVPN config", async () => {
+    mockMgr.createOpenVPNConnectionFromOvpn.mockResolvedValue("imported-id");
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.importOvpn('My Config', 'client\nremote vpn.example.com\n');
+      await result.current.importOvpn(
+        "My Config",
+        "client\nremote vpn.example.com\n",
+      );
     });
 
-    expect(mockMgr.createOpenVPNConnection).toHaveBeenCalledWith('My Config', {
-      enabled: true,
-      configFile: 'client\nremote vpn.example.com\n',
-    });
+    expect(mockMgr.createOpenVPNConnectionFromOvpn).toHaveBeenCalledWith(
+      "My Config",
+      "client\nremote vpn.example.com\n",
+    );
   });
 
-  it('sets error on failed connection', async () => {
-    mockMgr.connectOpenVPN.mockRejectedValue(new Error('Connection refused'));
+  it("imports a WireGuard config through the Rust-authoritative parser", async () => {
+    mockMgr.createWireGuardConnectionFromConf.mockResolvedValue(
+      "imported-wg-id",
+    );
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.importWireGuard(
+        "Office WG",
+        "[Interface]\nPrivateKey = private\n[Peer]\nPublicKey = public\n",
+      );
     });
 
-    expect(result.current.error).toBe('Connection refused');
+    expect(mockMgr.createWireGuardConnectionFromConf).toHaveBeenCalledWith(
+      "Office WG",
+      "[Interface]\nPrivateKey = private\n[Peer]\nPublicKey = public\n",
+    );
   });
 
-  it('sets error on failed disconnect', async () => {
-    mockMgr.disconnectWireGuard.mockRejectedValue(new Error('Timeout'));
+  it("sets error on failed connection", async () => {
+    mockMgr.connectOpenVPN.mockRejectedValue(new Error("Connection refused"));
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.disconnectVpn('wg-1', 'wireguard');
+      await result.current.connectVpn("ovpn-1", "openvpn");
     });
 
-    expect(result.current.error).toBe('Timeout');
+    expect(result.current.error).toBe("Connection refused");
   });
 
-  it('sets error on failed delete', async () => {
-    mockMgr.deleteOpenVPNConnection.mockRejectedValue(new Error('Not found'));
+  it("sets error on failed disconnect", async () => {
+    mockMgr.disconnectWireGuard.mockRejectedValue(new Error("Timeout"));
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.deleteVpn('ovpn-1', 'openvpn');
+      await result.current.disconnectVpn("wg-1", "wireguard");
     });
 
-    expect(result.current.error).toBe('Not found');
+    expect(result.current.error).toBe("Timeout");
   });
 
-  it('sets fallback error message for non-Error rejections', async () => {
-    mockMgr.connectOpenVPN.mockRejectedValue('string-error');
+  it("sets error on failed delete", async () => {
+    mockMgr.deleteOpenVPNConnection.mockRejectedValue(new Error("Not found"));
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.deleteVpn("ovpn-1", "openvpn");
     });
 
-    expect(result.current.error).toBe('Failed to connect openvpn');
+    expect(result.current.error).toBe("Not found");
   });
 
-  it('clears error before new action', async () => {
-    mockMgr.connectOpenVPN.mockRejectedValueOnce(new Error('First failure'));
+  it("sets fallback error message for non-Error rejections", async () => {
+    mockMgr.connectOpenVPN.mockRejectedValue("string-error");
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.connectVpn("ovpn-1", "openvpn");
+    });
+
+    expect(result.current.error).toBe("Failed to connect openvpn");
+  });
+
+  it("clears error before new action", async () => {
+    mockMgr.connectOpenVPN.mockRejectedValueOnce(new Error("First failure"));
     mockMgr.connectOpenVPN.mockResolvedValueOnce(undefined);
 
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.connectVpn("ovpn-1", "openvpn");
     });
-    expect(result.current.error).toBe('First failure');
+    expect(result.current.error).toBe("First failure");
 
     await act(async () => {
-      await result.current.connectVpn('ovpn-1', 'openvpn');
+      await result.current.connectVpn("ovpn-1", "openvpn");
     });
     expect(result.current.error).toBeNull();
   });
 
-  it('handles partial load failure gracefully', async () => {
+  it("handles partial load failure gracefully", async () => {
     mockMgr.listOpenVPNConnections.mockResolvedValue([
-      { id: '1', name: 'Works', status: 'disconnected', config: {}, createdAt: new Date() },
+      {
+        id: "1",
+        name: "Works",
+        status: "disconnected",
+        config: {},
+        createdAt: new Date(),
+      },
     ]);
-    mockMgr.listWireGuardConnections.mockRejectedValue(new Error('Service unavailable'));
+    mockMgr.listWireGuardConnections.mockRejectedValue(
+      new Error("Service unavailable"),
+    );
 
     const { result } = renderHook(() => useVpnManager(true));
 
@@ -666,15 +832,21 @@ describe('useVpnManager', () => {
     });
 
     // The OpenVPN connection should be present
-    expect(result.current.connections[0].name).toBe('Works');
-    expect(result.current.connections[0].vpnType).toBe('openvpn');
+    expect(result.current.connections[0].name).toBe("Works");
+    expect(result.current.connections[0].vpnType).toBe("openvpn");
+    expect(result.current.profileCatalog?.providerStatus.wireguard).toBe(
+      "error",
+    );
+    expect(result.current.error).toMatch(
+      /associations cannot be verified yet/i,
+    );
   });
 
-  it('handles all list calls failing gracefully', async () => {
-    mockMgr.listOpenVPNConnections.mockRejectedValue(new Error('fail'));
-    mockMgr.listWireGuardConnections.mockRejectedValue(new Error('fail'));
-    mockMgr.listTailscaleConnections.mockRejectedValue(new Error('fail'));
-    mockMgr.listZeroTierConnections.mockRejectedValue(new Error('fail'));
+  it("handles all list calls failing gracefully", async () => {
+    mockMgr.listOpenVPNConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listWireGuardConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listTailscaleConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listZeroTierConnections.mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useVpnManager(true));
 
@@ -683,13 +855,22 @@ describe('useVpnManager', () => {
     });
 
     expect(result.current.connections).toHaveLength(0);
+    expect(result.current.profileCatalog?.providerStatus).toEqual({
+      openvpn: "error",
+      wireguard: "error",
+      tailscale: "error",
+      zerotier: "error",
+    });
   });
 
-  it('exposes isLoading while loading', async () => {
+  it("exposes isLoading while loading", async () => {
     // Make the list calls take a while
     let resolveOvpn!: (v: any[]) => void;
     mockMgr.listOpenVPNConnections.mockImplementation(
-      () => new Promise(r => { resolveOvpn = r; })
+      () =>
+        new Promise((r) => {
+          resolveOvpn = r;
+        }),
     );
 
     const { result } = renderHook(() => useVpnManager(true));
@@ -707,16 +888,16 @@ describe('useVpnManager', () => {
     });
   });
 
-  it('initial state has empty search and all filter', () => {
+  it("initial state has empty search and all filter", () => {
     const { result } = renderHook(() => useVpnManager(false));
 
-    expect(result.current.searchTerm).toBe('');
-    expect(result.current.typeFilter).toBe('all');
+    expect(result.current.searchTerm).toBe("");
+    expect(result.current.typeFilter).toBe("all");
     expect(result.current.connections).toEqual([]);
     expect(result.current.error).toBeNull();
   });
 
-  it('can manually reload connections via loadConnections', async () => {
+  it("can manually reload connections via loadConnections", async () => {
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -726,6 +907,8 @@ describe('useVpnManager', () => {
       await result.current.loadConnections();
     });
 
-    expect(mockMgr.listOpenVPNConnections.mock.calls.length).toBeGreaterThan(callCount);
+    expect(mockMgr.listOpenVPNConnections.mock.calls.length).toBeGreaterThan(
+      callCount,
+    );
   });
 });

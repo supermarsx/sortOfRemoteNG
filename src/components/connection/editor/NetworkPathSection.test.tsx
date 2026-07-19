@@ -48,6 +48,7 @@ const Harness: React.FC<{
           inline: formData.security?.tunnelChain?.map((layer) => ({
             id: layer.id,
             type: layer.type,
+            profileId: layer.vpn?.configId,
           })),
         })}
       </output>
@@ -119,6 +120,10 @@ describe("NetworkPathSectionView", () => {
           },
         ],
       },
+      vpnProfiles: {
+        profiles: [vpn],
+        providerStatus: { openvpn: "loaded", wireguard: "loaded" },
+      },
     };
     const firstRender = render(
       <Harness
@@ -141,7 +146,7 @@ describe("NetworkPathSectionView", () => {
     );
 
     expect(screen.getByTestId("safe-form-state")).toHaveTextContent(
-      '"inline":[{"id":"vpn-stable-id","type":"wireguard"}]',
+      '"inline":[{"id":"inline-vpn","type":"wireguard","profileId":"vpn-stable-id"}]',
     );
     expect(screen.getByTestId("safe-form-state")).not.toHaveTextContent(
       '"tunnelChainId":"saved-tunnel"',
@@ -157,10 +162,11 @@ describe("NetworkPathSectionView", () => {
           security: {
             tunnelChain: [
               {
-                id: "vpn-stable-id",
+                id: "imported-layer-id",
                 name: "Production WireGuard",
                 type: "wireguard",
                 enabled: true,
+                vpn: { configId: "vpn-stable-id" },
               },
             ],
           },
@@ -193,6 +199,58 @@ describe("NetworkPathSectionView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear Proxy chain" }));
     expect(screen.getByLabelText("Proxy chain")).toHaveTextContent("None");
+  });
+
+  it("classifies a VPN reference as deleted only after its provider loads", () => {
+    const initial: Partial<Connection> = {
+      id: "ssh-vpn-orphan",
+      protocol: "ssh",
+      security: {
+        tunnelChain: [
+          {
+            id: "independent-layer-id",
+            type: "wireguard",
+            enabled: true,
+            vpn: { configId: "deleted-profile-id" },
+          },
+        ],
+      },
+    };
+
+    const loading = render(<Harness initial={initial} />);
+    expect(screen.getByLabelText("Inline VPN")).toHaveTextContent(
+      /Checking VPN connection/i,
+    );
+    loading.unmount();
+
+    const failedCatalog: NetworkPathCatalog = {
+      ...EMPTY_CATALOG,
+      vpnProfiles: {
+        profiles: [],
+        providerStatus: { wireguard: "error" },
+      },
+    };
+    const failed = render(
+      <Harness initial={initial} catalog={failedCatalog} />,
+    );
+    expect(screen.getByLabelText("Inline VPN")).toHaveTextContent(
+      /Unverified VPN connection/i,
+    );
+    expect(screen.queryByText(/no longer exists/i)).not.toBeInTheDocument();
+    failed.unmount();
+
+    const loadedCatalog: NetworkPathCatalog = {
+      ...EMPTY_CATALOG,
+      vpnProfiles: {
+        profiles: [],
+        providerStatus: { wireguard: "loaded" },
+      },
+    };
+    render(<Harness initial={initial} catalog={loadedCatalog} />);
+    expect(screen.getByLabelText("Inline VPN")).toHaveTextContent(
+      /Unavailable VPN connection/i,
+    );
+    expect(screen.getAllByText(/no longer exists/i)).toHaveLength(2);
   });
 
   it("shows RDP fail-closed support without exposing proxy secrets", () => {

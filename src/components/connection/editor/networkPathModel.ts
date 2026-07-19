@@ -15,6 +15,11 @@ import {
   type NetworkPathValidation,
 } from "../../../utils/network/resolveNetworkPath";
 import type { NormalizedVpnConnection } from "../../../hooks/network/useVpnManager";
+import {
+  isExecutableVpnType,
+  resolveTunnelLayerVpnProfileId,
+  withTunnelLayerVpnProfileId,
+} from "../../../utils/network/vpnProviderCatalog";
 import type { SelectOption } from "../../ui/forms";
 import type {
   RloginNetworkPathCapability,
@@ -22,8 +27,6 @@ import type {
 } from "../../../types/connection/rloginSettings";
 import type { RawSocketNetworkRouteKind } from "../../../types/protocols/rawSocket";
 import { getDefaultPort } from "../../../utils/discovery/defaultPorts";
-
-const VPN_TYPES = new Set(["openvpn", "wireguard", "tailscale", "zerotier"]);
 
 export interface NetworkPathRuntimeStatus {
   supported: boolean;
@@ -236,17 +239,23 @@ export function setInlineVpn(
   formData: Readonly<Partial<Connection>>,
   vpn?: Pick<NormalizedVpnConnection, "id" | "name" | "vpnType">,
 ): Partial<Connection> {
+  const currentVpnLayer = formData.security?.tunnelChain?.find((layer) =>
+    isExecutableVpnType(layer.type),
+  );
   const remaining = (formData.security?.tunnelChain ?? []).filter(
-    (layer) => !VPN_TYPES.has(layer.type),
+    (layer) => !isExecutableVpnType(layer.type),
   );
   const tunnelChain: TunnelChainLayer[] = vpn
     ? [
-        {
-          id: vpn.id,
-          name: vpn.name,
-          type: vpn.vpnType,
-          enabled: true,
-        },
+        withTunnelLayerVpnProfileId(
+          {
+            id: currentVpnLayer?.id || "inline-vpn",
+            name: vpn.name,
+            type: vpn.vpnType,
+            enabled: true,
+          },
+          vpn.id,
+        ),
         ...remaining,
       ]
     : remaining;
@@ -256,6 +265,7 @@ export function setInlineVpn(
     tunnelChainId: vpn ? undefined : formData.tunnelChainId,
     security: {
       ...formData.security,
+      openvpn: undefined,
       tunnelChain: tunnelChain.length > 0 ? tunnelChain : undefined,
     },
   };
@@ -281,6 +291,7 @@ export function resetNetworkPath(
     tunnelChainId: undefined,
     security: {
       ...formData.security,
+      openvpn: undefined,
       proxy: undefined,
       tunnelChain: undefined,
     },
@@ -291,10 +302,13 @@ export function selectedInlineVpnId(
   formData: Readonly<Partial<Connection>>,
 ): string {
   if (formData.tunnelChainId) return "";
-  return (
-    formData.security?.tunnelChain?.find((layer) => VPN_TYPES.has(layer.type))
-      ?.id ?? ""
+  const layer = formData.security?.tunnelChain?.find((candidate) =>
+    isExecutableVpnType(candidate.type),
   );
+  if (layer) return resolveTunnelLayerVpnProfileId(layer) ?? "";
+  return formData.security?.openvpn?.enabled
+    ? (formData.security.openvpn.configId ?? "")
+    : "";
 }
 
 export function withCurrentOrphanOption(

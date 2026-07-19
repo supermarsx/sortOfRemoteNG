@@ -13,7 +13,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useVpnEditor, type VpnEditorType } from "../../hooks/network/useVpnEditor";
+import {
+  useVpnEditor,
+  type VpnEditorType,
+} from "../../hooks/network/useVpnEditor";
+import {
+  EXECUTABLE_VPN_PROVIDERS,
+  getVpnProviderLabel,
+  type ExecutableVpnType,
+} from "../../utils/network/vpnProviderCatalog";
 
 type Mgr = ReturnType<typeof useVpnEditor>;
 
@@ -30,21 +38,18 @@ const checkCls = "flex items-center gap-2 text-sm text-[var(--color-text)]";
 
 // ── VPN type definitions ────────────────────────────────────────
 
-const VPN_TYPES: Array<{
-  value: VpnEditorType;
-  label: string;
-  icon: LucideIcon;
-}> = [
-  { value: "openvpn", label: "OpenVPN", icon: Shield },
-  { value: "wireguard", label: "WireGuard", icon: Globe },
-  { value: "tailscale", label: "Tailscale", icon: Wifi },
-  { value: "zerotier", label: "ZeroTier", icon: Globe },
-  { value: "pptp", label: "PPTP", icon: Shield },
-  { value: "l2tp", label: "L2TP/IPsec", icon: Shield },
-  { value: "ikev2", label: "IKEv2", icon: Shield },
-  { value: "ipsec", label: "IPsec", icon: Shield },
-  { value: "sstp", label: "SSTP", icon: Shield },
-];
+const VPN_TYPE_ICONS: Record<ExecutableVpnType, LucideIcon> = {
+  openvpn: Shield,
+  wireguard: Globe,
+  tailscale: Wifi,
+  zerotier: Globe,
+};
+
+const VPN_TYPES = EXECUTABLE_VPN_PROVIDERS.map((provider) => ({
+  value: provider.type,
+  label: provider.label,
+  icon: VPN_TYPE_ICONS[provider.type],
+}));
 
 // ── Shared sub-components ───────────────────────────────────────
 
@@ -165,57 +170,69 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { config, updateConfig } = mgr;
   const up = (k: string, v: any) => updateConfig({ [k]: v });
+  const hasConfigSource = [config.configFile, config.inlineConfig].some(
+    (value) => typeof value === "string" && value.trim() !== "",
+  );
 
   return (
     <div className="space-y-5">
+      {hasConfigSource && (
+        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-[var(--color-textSecondary)]">
+          The selected OpenVPN configuration is authoritative for server,
+          certificate, TLS, routing, and custom options. Only the authentication
+          override below is applied separately.
+        </div>
+      )}
       {/* Server */}
-      <div className="space-y-3">
-        <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
-          Server
+      {!hasConfigSource && (
+        <div className="space-y-3">
+          <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+            Server
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <FormField label="Remote Host" span={2}>
+              <input
+                type="text"
+                value={config.remoteHost ?? ""}
+                onChange={(e) => up("remoteHost", e.target.value)}
+                placeholder="vpn.example.com"
+                className={inputCls}
+              />
+            </FormField>
+            <FormField label="Port">
+              <input
+                type="number"
+                value={config.remotePort ?? 1194}
+                onChange={(e) =>
+                  up("remotePort", parseInt(e.target.value) || 1194)
+                }
+                className={inputCls}
+              />
+            </FormField>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Protocol">
+              <select
+                value={config.protocol ?? "udp"}
+                onChange={(e) => up("protocol", e.target.value)}
+                className={inputCls}
+              >
+                <option value="udp">UDP</option>
+                <option value="tcp">TCP</option>
+              </select>
+            </FormField>
+            <FormField label="Cipher">
+              <input
+                type="text"
+                value={config.cipher ?? ""}
+                onChange={(e) => up("cipher", e.target.value)}
+                placeholder="AES-256-GCM"
+                className={inputCls}
+              />
+            </FormField>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="Remote Host" span={2}>
-            <input
-              type="text"
-              value={config.remoteHost ?? ""}
-              onChange={(e) => up("remoteHost", e.target.value)}
-              placeholder="vpn.example.com"
-              className={inputCls}
-            />
-          </FormField>
-          <FormField label="Port">
-            <input
-              type="number"
-              value={config.remotePort ?? 1194}
-              onChange={(e) =>
-                up("remotePort", parseInt(e.target.value) || 1194)
-              }
-              className={inputCls}
-            />
-          </FormField>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Protocol">
-            <select
-              value={config.protocol ?? "udp"}
-              onChange={(e) => up("protocol", e.target.value)}
-              className={inputCls}
-            >
-              <option value="udp">UDP</option>
-              <option value="tcp">TCP</option>
-            </select>
-          </FormField>
-          <FormField label="Cipher">
-            <input
-              type="text"
-              value={config.cipher ?? ""}
-              onChange={(e) => up("cipher", e.target.value)}
-              placeholder="AES-256-GCM"
-              className={inputCls}
-            />
-          </FormField>
-        </div>
-      </div>
+      )}
 
       {/* Authentication */}
       <div className="space-y-3">
@@ -252,35 +269,61 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <FormField label="Config File (.ovpn)">
           <BrowseField
             value={config.configFile ?? ""}
-            onChange={(v) => up("configFile", v)}
+            onChange={(v) =>
+              updateConfig({
+                configFile: v,
+                ...(v ? { inlineConfig: undefined } : {}),
+              })
+            }
             label="OpenVPN Config"
             extensions={["ovpn", "conf"]}
           />
+          {config.inlineConfig && !config.configFile && (
+            <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-[var(--color-textMuted)]">
+              <p>
+                Imported configuration is stored securely with this profile.
+                Choose a file only to replace it.
+              </p>
+              <button
+                type="button"
+                onClick={() => up("inlineConfig", undefined)}
+                className="shrink-0 text-sky-300 hover:text-sky-200"
+              >
+                Switch to manual
+              </button>
+            </div>
+          )}
         </FormField>
-        <FormField label="CA Certificate">
-          <BrowseField
-            value={config.caCert ?? ""}
-            onChange={(v) => up("caCert", v)}
-            label="CA Certificate"
-            extensions={["crt", "pem", "ca"]}
-          />
-        </FormField>
-        <FormField label="Client Certificate">
-          <BrowseField
-            value={config.clientCert ?? ""}
-            onChange={(v) => up("clientCert", v)}
-            label="Client Cert"
-            extensions={["crt", "pem"]}
-          />
-        </FormField>
-        <FormField label="Client Key">
-          <BrowseField
-            value={config.clientKey ?? ""}
-            onChange={(v) => up("clientKey", v)}
-            label="Client Key"
-            extensions={["key", "pem"]}
-          />
-        </FormField>
+        {!hasConfigSource && (
+          <FormField label="CA Certificate">
+            <BrowseField
+              value={config.caCert ?? ""}
+              onChange={(v) => up("caCert", v)}
+              label="CA Certificate"
+              extensions={["crt", "pem", "ca"]}
+            />
+          </FormField>
+        )}
+        {!hasConfigSource && (
+          <FormField label="Client Certificate">
+            <BrowseField
+              value={config.clientCert ?? ""}
+              onChange={(v) => up("clientCert", v)}
+              label="Client Cert"
+              extensions={["crt", "pem"]}
+            />
+          </FormField>
+        )}
+        {!hasConfigSource && (
+          <FormField label="Client Key">
+            <BrowseField
+              value={config.clientKey ?? ""}
+              onChange={(v) => up("clientKey", v)}
+              label="Client Key"
+              extensions={["key", "pem"]}
+            />
+          </FormField>
+        )}
         <FormField label="Auth File">
           <BrowseField
             value={config.authFile ?? ""}
@@ -292,141 +335,195 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       </div>
 
       {/* Options */}
-      <div className="space-y-3">
-        <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
-          Options
+      {!hasConfigSource && (
+        <div className="space-y-3">
+          <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+            Options
+          </div>
+          <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.tlsAuth ?? false}
+                onChange={(e) =>
+                  updateConfig({
+                    tlsAuth: e.target.checked,
+                    ...(e.target.checked
+                      ? { tlsCrypt: false, tlsCryptFile: undefined }
+                      : {}),
+                  })
+                }
+              />
+              TLS Auth
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.tlsCrypt ?? false}
+                onChange={(e) =>
+                  updateConfig({
+                    tlsCrypt: e.target.checked,
+                    ...(e.target.checked
+                      ? { tlsAuth: false, tlsAuthFile: undefined }
+                      : {}),
+                  })
+                }
+              />
+              TLS Crypt
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.compression ?? false}
+                onChange={(e) => up("compression", e.target.checked)}
+              />
+              Compression
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.routeNoPull ?? false}
+                onChange={(e) => up("routeNoPull", e.target.checked)}
+              />
+              Route No Pull
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.mtuDiscover ?? false}
+                onChange={(e) => up("mtuDiscover", e.target.checked)}
+              />
+              MTU Discover
+            </label>
+          </div>
+          {(config.tlsAuth || config.tlsCrypt) && (
+            <div className="grid grid-cols-2 gap-3">
+              {config.tlsAuth && (
+                <FormField label="TLS Auth Key File">
+                  <BrowseField
+                    value={config.tlsAuthFile ?? ""}
+                    onChange={(value) => up("tlsAuthFile", value)}
+                    label="TLS Auth Key"
+                    extensions={["key", "pem"]}
+                  />
+                  {!config.tlsAuthFile && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      A key file is required for manual TLS Auth.
+                    </p>
+                  )}
+                </FormField>
+              )}
+              {config.tlsCrypt && (
+                <FormField label="TLS Crypt Key File">
+                  <BrowseField
+                    value={config.tlsCryptFile ?? ""}
+                    onChange={(value) => up("tlsCryptFile", value)}
+                    label="TLS Crypt Key"
+                    extensions={["key", "pem"]}
+                  />
+                  {!config.tlsCryptFile && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      A key file is required for manual TLS Crypt.
+                    </p>
+                  )}
+                </FormField>
+              )}
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-3">
+            <FormField label="MSS Fix">
+              <input
+                type="number"
+                value={config.mssFix ?? ""}
+                onChange={(e) =>
+                  up(
+                    "mssFix",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
+                placeholder="1450"
+                className={inputCls}
+              />
+            </FormField>
+            <FormField label="TUN MTU">
+              <input
+                type="number"
+                value={config.tunMtu ?? ""}
+                onChange={(e) =>
+                  up(
+                    "tunMtu",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
+                placeholder="1500"
+                className={inputCls}
+              />
+            </FormField>
+            <FormField label="Fragment">
+              <input
+                type="number"
+                value={config.fragment ?? ""}
+                onChange={(e) =>
+                  up(
+                    "fragment",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
+                placeholder=""
+                className={inputCls}
+              />
+            </FormField>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Keep-Alive Interval (s)">
+              <input
+                type="number"
+                value={config.keepAliveInterval ?? ""}
+                onChange={(e) =>
+                  up(
+                    "keepAliveInterval",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
+                placeholder="10"
+                className={inputCls}
+              />
+            </FormField>
+            <FormField label="Keep-Alive Timeout (s)">
+              <input
+                type="number"
+                value={config.keepAliveTimeout ?? ""}
+                onChange={(e) =>
+                  up(
+                    "keepAliveTimeout",
+                    e.target.value ? parseInt(e.target.value) : undefined,
+                  )
+                }
+                placeholder="60"
+                className={inputCls}
+              />
+            </FormField>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-x-4 gap-y-2">
-          <label className={checkCls}>
-            <input
-              type="checkbox"
-              checked={config.tlsAuth ?? false}
-              onChange={(e) => up("tlsAuth", e.target.checked)}
-            />
-            TLS Auth
-          </label>
-          <label className={checkCls}>
-            <input
-              type="checkbox"
-              checked={config.tlsCrypt ?? false}
-              onChange={(e) => up("tlsCrypt", e.target.checked)}
-            />
-            TLS Crypt
-          </label>
-          <label className={checkCls}>
-            <input
-              type="checkbox"
-              checked={config.compression ?? false}
-              onChange={(e) => up("compression", e.target.checked)}
-            />
-            Compression
-          </label>
-          <label className={checkCls}>
-            <input
-              type="checkbox"
-              checked={config.routeNoPull ?? false}
-              onChange={(e) => up("routeNoPull", e.target.checked)}
-            />
-            Route No Pull
-          </label>
-          <label className={checkCls}>
-            <input
-              type="checkbox"
-              checked={config.mtuDiscover ?? false}
-              onChange={(e) => up("mtuDiscover", e.target.checked)}
-            />
-            MTU Discover
-          </label>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <FormField label="MSS Fix">
-            <input
-              type="number"
-              value={config.mssFix ?? ""}
-              onChange={(e) =>
-                up(
-                  "mssFix",
-                  e.target.value ? parseInt(e.target.value) : undefined
-                )
-              }
-              placeholder="1450"
-              className={inputCls}
-            />
-          </FormField>
-          <FormField label="TUN MTU">
-            <input
-              type="number"
-              value={config.tunMtu ?? ""}
-              onChange={(e) =>
-                up(
-                  "tunMtu",
-                  e.target.value ? parseInt(e.target.value) : undefined
-                )
-              }
-              placeholder="1500"
-              className={inputCls}
-            />
-          </FormField>
-          <FormField label="Fragment">
-            <input
-              type="number"
-              value={config.fragment ?? ""}
-              onChange={(e) =>
-                up(
-                  "fragment",
-                  e.target.value ? parseInt(e.target.value) : undefined
-                )
-              }
-              placeholder=""
-              className={inputCls}
-            />
-          </FormField>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Keep-Alive Interval (s)">
-            <input
-              type="number"
-              value={config.keepAliveInterval ?? ""}
-              onChange={(e) =>
-                up(
-                  "keepAliveInterval",
-                  e.target.value ? parseInt(e.target.value) : undefined
-                )
-              }
-              placeholder="10"
-              className={inputCls}
-            />
-          </FormField>
-          <FormField label="Keep-Alive Timeout (s)">
-            <input
-              type="number"
-              value={config.keepAliveTimeout ?? ""}
-              onChange={(e) =>
-                up(
-                  "keepAliveTimeout",
-                  e.target.value ? parseInt(e.target.value) : undefined
-                )
-              }
-              placeholder="60"
-              className={inputCls}
-            />
-          </FormField>
-        </div>
-      </div>
+      )}
 
       {/* Custom Options */}
-      <div className="space-y-3">
-        <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
-          Custom Options
+      {!hasConfigSource && (
+        <div className="space-y-3">
+          <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+            Custom Options
+          </div>
+          <textarea
+            value={config.customOptions ?? ""}
+            onChange={(e) => up("customOptions", e.target.value)}
+            placeholder={
+              "One option per line, e.g.:\n--ping-restart 30\n--persist-tun"
+            }
+            rows={4}
+            className={inputCls + " resize-y font-mono"}
+          />
         </div>
-        <textarea
-          value={config.customOptions ?? ""}
-          onChange={(e) => up("customOptions", e.target.value)}
-          placeholder={"One option per line, e.g.:\n--ping-restart 30\n--persist-tun"}
-          rows={4}
-          className={inputCls + " resize-y font-mono"}
-        />
-      </div>
+      )}
     </div>
   );
 };
@@ -541,7 +638,7 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               onChange={(e) =>
                 up(
                   "persistentKeepalive",
-                  e.target.value ? parseInt(e.target.value) : undefined
+                  e.target.value ? parseInt(e.target.value) : undefined,
                 )
               }
               placeholder="25"
@@ -600,26 +697,15 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
         </FormField>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label="Routes">
-          <input
-            type="text"
-            value={config.routes ?? ""}
-            onChange={(e) => up("routes", e.target.value)}
-            placeholder="10.0.0.0/8, 192.168.0.0/16"
-            className={inputCls}
-          />
-        </FormField>
-        <FormField label="Advertise Routes">
-          <input
-            type="text"
-            value={config.advertiseRoutes ?? ""}
-            onChange={(e) => up("advertiseRoutes", e.target.value)}
-            placeholder="10.0.0.0/24"
-            className={inputCls}
-          />
-        </FormField>
-      </div>
+      <FormField label="Advertise Routes">
+        <input
+          type="text"
+          value={config.advertiseRoutes ?? ""}
+          onChange={(e) => up("advertiseRoutes", e.target.value)}
+          placeholder="10.0.0.0/24"
+          className={inputCls}
+        />
+      </FormField>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         <label className={checkCls}>
           <input
@@ -638,15 +724,6 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           Tailscale SSH
         </label>
       </div>
-      <FormField label="Custom Options">
-        <textarea
-          value={config.customOptions ?? ""}
-          onChange={(e) => up("customOptions", e.target.value)}
-          placeholder="Additional CLI flags, one per line"
-          rows={3}
-          className={inputCls + " resize-y font-mono"}
-        />
-      </FormField>
     </div>
   );
 };
@@ -702,15 +779,6 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           Allow DNS
         </label>
       </div>
-      <FormField label="Custom Options">
-        <textarea
-          value={config.customOptions ?? ""}
-          onChange={(e) => up("customOptions", e.target.value)}
-          placeholder="Additional CLI flags, one per line"
-          rows={3}
-          className={inputCls + " resize-y font-mono"}
-        />
-      </FormField>
     </div>
   );
 };
@@ -727,7 +795,8 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 mb-4">
         <p className="text-yellow-500 text-sm font-medium">Security Warning</p>
         <p className="text-yellow-500/80 text-xs mt-1">
-          PPTP uses MS-CHAPv2 which is cryptographically broken. Use IKEv2 or WireGuard instead when possible.
+          PPTP uses MS-CHAPv2 which is cryptographically broken. Use IKEv2 or
+          WireGuard instead when possible.
         </p>
       </div>
 
@@ -951,7 +1020,10 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.pppMru ?? ""}
               onChange={(e) =>
-                up("pppMru", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "pppMru",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="1400"
               className={inputCls}
@@ -962,7 +1034,10 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.pppMtu ?? ""}
               onChange={(e) =>
-                up("pppMtu", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "pppMtu",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="1400"
               className={inputCls}
@@ -975,7 +1050,10 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.lcpEchoInterval ?? ""}
               onChange={(e) =>
-                up("lcpEchoInterval", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "lcpEchoInterval",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="30"
               className={inputCls}
@@ -986,7 +1064,10 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.lcpEchoFailure ?? ""}
               onChange={(e) =>
-                up("lcpEchoFailure", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "lcpEchoFailure",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="4"
               className={inputCls}
@@ -1388,7 +1469,10 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.saLifetime ?? ""}
               onChange={(e) =>
-                up("saLifetime", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "saLifetime",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="28800"
               className={inputCls}
@@ -1399,7 +1483,10 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.dpdDelay ?? ""}
               onChange={(e) =>
-                up("dpdDelay", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "dpdDelay",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="30"
               className={inputCls}
@@ -1410,7 +1497,10 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="number"
               value={config.dpdTimeout ?? ""}
               onChange={(e) =>
-                up("dpdTimeout", e.target.value ? parseInt(e.target.value) : undefined)
+                up(
+                  "dpdTimeout",
+                  e.target.value ? parseInt(e.target.value) : undefined,
+                )
               }
               placeholder="150"
               className={inputCls}
@@ -1562,10 +1652,38 @@ const SSTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 // ── Section: Configuration (renders per-type form) ──────────────
 
 const ConfigurationSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  const typeLabel = VPN_TYPES.find((t) => t.value === mgr.vpnType)?.label ?? mgr.vpnType;
+  const typeLabel = getVpnProviderLabel(mgr.vpnType);
   return (
     <div className={sectionCls}>
       <div className={sectionHeadingCls}>{typeLabel} Configuration</div>
+      {mgr.unsupportedSettings.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">
+                This legacy profile contains settings the managed {typeLabel}{" "}
+                runtime cannot execute.
+              </p>
+              <p className="mt-1 text-[var(--color-textSecondary)]">
+                {mgr.unsupportedSettings.join(", ")}. They remain unchanged
+                until you explicitly remove them; saving and connecting stay
+                blocked in the meantime.
+              </p>
+              <button
+                type="button"
+                onClick={mgr.removeUnsupportedSettings}
+                className="mt-2 rounded border border-amber-500/40 px-2.5 py-1 font-medium text-amber-200 hover:bg-amber-500/15"
+              >
+                Remove unsupported settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {mgr.vpnType === "openvpn" && <OpenVpnConfigForm mgr={mgr} />}
       {mgr.vpnType === "wireguard" && <WireGuardConfigForm mgr={mgr} />}
       {mgr.vpnType === "tailscale" && <TailscaleConfigForm mgr={mgr} />}
@@ -1634,7 +1752,12 @@ interface VpnEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
-  editingConnection?: { id: string; vpnType: string; name: string; config: any } | null;
+  editingConnection?: {
+    id: string;
+    vpnType: string;
+    name: string;
+    config: any;
+  } | null;
 }
 
 const VpnEditor: React.FC<VpnEditorProps> = ({
@@ -1643,18 +1766,19 @@ const VpnEditor: React.FC<VpnEditorProps> = ({
   onSave,
   editingConnection,
 }) => {
-  const mgr = useVpnEditor(
-    isOpen,
-    editingConnection
-      ? {
-          id: editingConnection.id,
-          vpnType: editingConnection.vpnType as VpnEditorType,
-          name: editingConnection.name,
-          config: editingConnection.config,
-        }
-      : null,
-    onSave,
+  const normalizedEditingConnection = React.useMemo(
+    () =>
+      editingConnection
+        ? {
+            id: editingConnection.id,
+            vpnType: editingConnection.vpnType as VpnEditorType,
+            name: editingConnection.name,
+            config: editingConnection.config,
+          }
+        : null,
+    [editingConnection],
   );
+  const mgr = useVpnEditor(isOpen, normalizedEditingConnection, onSave);
 
   if (!isOpen) return null;
 

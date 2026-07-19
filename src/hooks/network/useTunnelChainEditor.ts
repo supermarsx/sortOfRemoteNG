@@ -1,6 +1,9 @@
-import { useState, useCallback } from 'react';
-import type { TunnelChainLayer, TunnelType } from '../../types/connection/connection';
-import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
+import { useState, useCallback } from "react";
+import type {
+  TunnelChainLayer,
+  TunnelType,
+} from "../../types/connection/connection";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 
 /** Chain metadata managed alongside layers. */
 export interface ChainMetadata {
@@ -16,31 +19,38 @@ export interface ChainMetadata {
 export function useTunnelChainEditor(initialChain?: TunnelChainLayer[]) {
   const [layers, setLayers] = useState<TunnelChainLayer[]>(initialChain ?? []);
   const [isDirty, setIsDirty] = useState(false);
-  const [metadata, setMetadata] = useState<ChainMetadata>({ name: '', description: '', tags: [] });
+  const [metadata, setMetadata] = useState<ChainMetadata>({
+    name: "",
+    description: "",
+    tags: [],
+  });
 
   const addLayer = useCallback((type: TunnelType) => {
     const newLayer: TunnelChainLayer = createDefaultLayer(type);
-    setLayers(prev => [...prev, newLayer]);
+    setLayers((prev) => [...prev, newLayer]);
     setIsDirty(true);
   }, []);
 
   const removeLayer = useCallback((id: string) => {
-    setLayers(prev => prev.filter(l => l.id !== id));
+    setLayers((prev) => prev.filter((l) => l.id !== id));
     setIsDirty(true);
   }, []);
 
-  const updateLayer = useCallback((id: string, updates: Partial<TunnelChainLayer>) => {
-    setLayers(prev =>
-      prev.map(l => (l.id === id ? { ...l, ...updates } : l))
-    );
-    setIsDirty(true);
-  }, []);
+  const updateLayer = useCallback(
+    (id: string, updates: Partial<TunnelChainLayer>) => {
+      setLayers((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...updates } : l)),
+      );
+      setIsDirty(true);
+    },
+    [],
+  );
 
-  const moveLayer = useCallback((id: string, direction: 'up' | 'down') => {
-    setLayers(prev => {
-      const idx = prev.findIndex(l => l.id === id);
+  const moveLayer = useCallback((id: string, direction: "up" | "down") => {
+    setLayers((prev) => {
+      const idx = prev.findIndex((l) => l.id === id);
       if (idx < 0) return prev;
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      const targetIdx = direction === "up" ? idx - 1 : idx + 1;
       if (targetIdx < 0 || targetIdx >= prev.length) return prev;
       const next = [...prev];
       [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
@@ -50,8 +60,8 @@ export function useTunnelChainEditor(initialChain?: TunnelChainLayer[]) {
   }, []);
 
   const toggleLayer = useCallback((id: string) => {
-    setLayers(prev =>
-      prev.map(l => (l.id === id ? { ...l, enabled: !l.enabled } : l))
+    setLayers((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, enabled: !l.enabled } : l)),
     );
     setIsDirty(true);
   }, []);
@@ -67,7 +77,7 @@ export function useTunnelChainEditor(initialChain?: TunnelChainLayer[]) {
   }, []);
 
   const updateMetadata = useCallback((updates: Partial<ChainMetadata>) => {
-    setMetadata(prev => ({ ...prev, ...updates }));
+    setMetadata((prev) => ({ ...prev, ...updates }));
     setIsDirty(true);
   }, []);
 
@@ -81,19 +91,27 @@ export function useTunnelChainEditor(initialChain?: TunnelChainLayer[]) {
       tunnelProfileId: profileId,
       name: profile.name,
     };
-    setLayers(prev => [...prev, newLayer]);
+    setLayers((prev) => [...prev, newLayer]);
     setIsDirty(true);
   }, []);
 
-  const loadChain = useCallback((chain: { name?: string; description?: string; tags?: string[]; layers: TunnelChainLayer[] }) => {
-    setLayers(chain.layers.map(l => ({ ...l })));
-    setMetadata({
-      name: chain.name ?? '',
-      description: chain.description ?? '',
-      tags: chain.tags ?? [],
-    });
-    setIsDirty(false);
-  }, []);
+  const loadChain = useCallback(
+    (chain: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      layers: TunnelChainLayer[];
+    }) => {
+      setLayers(chain.layers.map((l) => ({ ...l })));
+      setMetadata({
+        name: chain.name ?? "",
+        description: chain.description ?? "",
+        tags: chain.tags ?? [],
+      });
+      setIsDirty(false);
+    },
+    [],
+  );
 
   return {
     layers,
@@ -125,99 +143,102 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
   };
 
   switch (type) {
-    case 'proxy':
+    case "proxy":
       return {
         ...base,
-        name: 'Proxy',
+        name: "Proxy",
         proxy: {
-          proxyType: 'socks5',
-          host: '',
+          proxyType: "socks5",
+          host: "",
           port: 1080,
         },
       };
-    case 'ssh-tunnel':
+    case "ssh-tunnel":
       return {
         ...base,
-        name: 'SSH Tunnel',
+        name: "SSH Tunnel",
         sshTunnel: {
-          forwardType: 'local',
-          host: '',
+          forwardType: "local",
+          host: "",
           port: 22,
-          username: '',
+          username: "",
         },
       };
-    case 'ssh-jump':
+    case "ssh-jump":
       return {
         ...base,
-        name: 'SSH Jump Host',
-        sshChainingMethod: 'proxyjump',
+        name: "SSH Jump Host",
+        sshChainingMethod: "proxyjump",
         sshTunnel: {
-          forwardType: 'local',
-          host: '',
+          forwardType: "local",
+          host: "",
           port: 22,
-          username: '',
+          username: "",
         },
       };
-    case 'ssh-proxycmd':
+    case "ssh-proxycmd":
       return {
         ...base,
-        name: 'SSH ProxyCommand',
+        name: "SSH ProxyCommand",
         sshTunnel: {
-          forwardType: 'local',
-          proxyCommand: { template: 'nc' },
+          forwardType: "local",
+          proxyCommand: { template: "nc" },
         },
       };
-    case 'ssh-stdio':
+    case "ssh-stdio":
       return {
         ...base,
-        name: 'SSH Stdio',
+        name: "SSH Stdio",
         sshTunnel: {
-          forwardType: 'local',
+          forwardType: "local",
         },
       };
-    case 'openvpn':
+    case "openvpn":
       return {
         ...base,
-        name: 'OpenVPN',
+        name: "OpenVPN",
         vpn: {
-          protocol: 'udp',
+          configId: "",
+          protocol: "udp",
         },
       };
-    case 'wireguard':
+    case "wireguard":
       return {
         ...base,
-        name: 'WireGuard',
-        vpn: {},
+        name: "WireGuard",
+        vpn: { configId: "" },
       };
-    case 'tailscale':
+    case "tailscale":
       return {
         ...base,
-        name: 'Tailscale',
+        name: "Tailscale",
+        vpn: { configId: "" },
         mesh: {},
       };
-    case 'zerotier':
+    case "zerotier":
       return {
         ...base,
-        name: 'ZeroTier',
+        name: "ZeroTier",
+        vpn: { configId: "" },
         mesh: {},
       };
-    case 'shadowsocks':
+    case "shadowsocks":
       return {
         ...base,
-        name: 'Shadowsocks',
+        name: "Shadowsocks",
         proxy: {
-          proxyType: 'socks5',
-          host: '',
+          proxyType: "socks5",
+          host: "",
           port: 8388,
         },
       };
-    case 'tor':
+    case "tor":
       return {
         ...base,
-        name: 'Tor',
+        name: "Tor",
         proxy: {
-          proxyType: 'socks5',
-          host: '127.0.0.1',
+          proxyType: "socks5",
+          host: "127.0.0.1",
           port: 9050,
         },
       };

@@ -27,6 +27,10 @@ import type {
   NetworkPathCatalog,
   NetworkPathSourceKind,
 } from "../../../utils/network/resolveNetworkPath";
+import {
+  normalizeExecutableVpnType,
+  type ExecutableVpnType,
+} from "../../../utils/network/vpnProviderCatalog";
 import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
 import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
 import RloginOptions from "../../connectionEditor/RloginOptions";
@@ -84,6 +88,7 @@ const SOURCE_LABELS: Record<NetworkPathSourceKind, string> = {
   "proxy-chain": "Proxy chain",
   "tunnel-chain": "Tunnel chain",
   "inline-tunnel": "Inline VPN / tunnel",
+  "legacy-vpn": "Legacy OpenVPN",
   "legacy-proxy": "Per-connection proxy",
 };
 
@@ -175,17 +180,25 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
     "tunnel chain",
   );
   const inlineVpnId = selectedInlineVpnId(formData);
-  const vpnOptions = withCurrentOrphanOption(
-    [
-      { value: "", label: "None" },
-      ...vpnConnections.map((vpn) => ({
-        value: vpn.id,
-        label: `${vpn.name} (${vpn.vpnType}; ${vpn.status})`,
-      })),
-    ],
-    inlineVpnId,
-    "VPN connection",
-  );
+  const inlineVpnType = selectedVpnType(formData);
+  const providerStatus = inlineVpnType
+    ? catalog.vpnProfiles?.providerStatus[inlineVpnType]
+    : undefined;
+  const availableVpnOptions = [
+    { value: "", label: "None" },
+    ...vpnConnections.map((vpn) => ({
+      value: vpn.id,
+      label: `${vpn.name} (${vpn.vpnType}; ${vpn.status})`,
+    })),
+  ];
+  const vpnOptions =
+    providerStatus === "loaded"
+      ? withCurrentOrphanOption(
+          availableVpnOptions,
+          inlineVpnId,
+          "VPN connection",
+        )
+      : withPendingVpnOption(availableVpnOptions, inlineVpnId, providerStatus);
 
   const updateReference = (
     field: "connectionChainId" | "proxyChainId" | "tunnelChainId",
@@ -223,9 +236,9 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
             </p>
           </div>
           <p className="mt-1 break-words text-[11px] leading-4 text-[var(--color-textMuted)]">
-            Connection chain → Proxy chain → Tunnel source → Per-connection
-            proxy. Sources compose in that order. A saved tunnel chain replaces
-            inline VPN/tunnel layers automatically.
+            Connection chain → Proxy chain → Tunnel source → Legacy VPN →
+            Per-connection proxy. Sources compose in that order. A saved tunnel
+            chain replaces inline VPN/tunnel layers automatically.
           </p>
         </div>
         <button
@@ -692,8 +705,14 @@ const NetworkPathSection: React.FC<NetworkPathSectionProps> = (props) => {
       connections: state.connections,
       proxyCollection,
       connectionChains,
+      vpnProfiles: vpnManager.profileCatalog,
     }),
-    [connectionChains, proxyCollection, state.connections],
+    [
+      connectionChains,
+      proxyCollection,
+      state.connections,
+      vpnManager.profileCatalog,
+    ],
   );
 
   return (
@@ -709,3 +728,37 @@ const NetworkPathSection: React.FC<NetworkPathSectionProps> = (props) => {
 };
 
 export default NetworkPathSection;
+
+function selectedVpnType(
+  formData: Readonly<Partial<Connection>>,
+): ExecutableVpnType | undefined {
+  if (formData.tunnelChainId) return undefined;
+  const inline = formData.security?.tunnelChain?.find((layer) =>
+    normalizeExecutableVpnType(layer.type),
+  );
+  return (
+    normalizeExecutableVpnType(inline?.type) ??
+    (formData.security?.openvpn?.enabled ? "openvpn" : undefined)
+  );
+}
+
+function withPendingVpnOption(
+  options: Array<{ value: string; label: string }>,
+  currentId: string,
+  status: "error" | undefined,
+): Array<{ value: string; label: string; title?: string }> {
+  if (!currentId || options.some((option) => option.value === currentId)) {
+    return options;
+  }
+  const unavailable = status === "error";
+  return [
+    ...options,
+    {
+      value: currentId,
+      label: `${unavailable ? "Unverified" : "Checking"} VPN connection (${currentId})`,
+      title: unavailable
+        ? "The provider profile store could not be loaded. This association has not been classified as deleted."
+        : "The provider profile store is still loading.",
+    },
+  ];
+}

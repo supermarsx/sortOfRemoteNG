@@ -13,6 +13,13 @@ import type {
   SSHJumpConfig,
 } from "../../types/settings/settings";
 import type { ChainLayer, ConnectionChain } from "./proxyOpenVPNManager";
+import {
+  getVpnProviderLabel,
+  normalizeExecutableVpnType,
+  resolveTunnelLayerVpnProfileId,
+  type ExecutableVpnType,
+  type VpnProfileCatalogSnapshot,
+} from "./vpnProviderCatalog";
 
 /** Marker used by {@link redactNetworkPathSecrets}. */
 export const NETWORK_PATH_REDACTED = "[REDACTED]" as const;
@@ -34,6 +41,7 @@ export const NETWORK_PATH_POLICY = Object.freeze({
     "proxy-chain",
     "tunnel-chain",
     "inline-tunnel",
+    "legacy-vpn",
     "legacy-proxy",
   ] as const,
   tunnelSelection:
@@ -49,6 +57,7 @@ export type NetworkPathSourceKind =
   | "proxy-chain"
   | "tunnel-chain"
   | "inline-tunnel"
+  | "legacy-vpn"
   | "legacy-proxy";
 
 export interface NetworkPathLayerSource {
@@ -137,6 +146,7 @@ export type NetworkPathIssueCode =
   | "empty-chain"
   | "cycle"
   | "invalid-layer"
+  | "snapshot-unavailable"
   | "shadowed-source"
   | "duplicate-position";
 
@@ -190,6 +200,8 @@ export interface NetworkPathCatalog {
   >;
   /** Snapshot returned by ProxyOpenVPNManager.listConnectionChains(). */
   connectionChains?: readonly ConnectionChain[];
+  /** Per-provider VPN profile snapshot; absent means not loaded yet. */
+  vpnProfiles?: Readonly<VpnProfileCatalogSnapshot>;
 }
 
 interface ResolutionScope {
@@ -207,6 +219,7 @@ interface ResolutionState {
   tunnelChains: Map<string, ProxyCollectionData["tunnelChains"][number]>;
   tunnelProfiles: Map<string, SavedTunnelProfile>;
   connectionChains: Map<string, ConnectionChain>;
+  vpnProfiles?: Readonly<VpnProfileCatalogSnapshot>;
 }
 
 const SSH_TUNNEL_TYPES = new Set<TunnelType>([
@@ -214,13 +227,6 @@ const SSH_TUNNEL_TYPES = new Set<TunnelType>([
   "ssh-jump",
   "ssh-proxycmd",
   "ssh-stdio",
-]);
-
-const VPN_TUNNEL_TYPES = new Set<TunnelType>([
-  "openvpn",
-  "wireguard",
-  "tailscale",
-  "zerotier",
 ]);
 
 const EMPTY_PROXY_COLLECTION: NetworkPathCatalog["proxyCollection"] = {
@@ -250,6 +256,7 @@ export function resolveNetworkPath(
     tunnelChains: indexById(proxyCollection?.tunnelChains ?? []),
     tunnelProfiles: indexById(proxyCollection?.tunnelProfiles ?? []),
     connectionChains: indexById(catalog.connectionChains ?? []),
+    vpnProfiles: catalog.vpnProfiles,
   };
 
   // The target itself participates in cycle detection even when the supplied
@@ -334,6 +341,47 @@ function appendConnectionSources(
     );
   }
 
+  const legacyOpenVpn = connection.security?.openvpn;
+  if (legacyOpenVpn?.enabled) {
+    if (connection.tunnelChainId || inlineTunnelLayers.length > 0) {
+      addIssue(
+        state,
+        "shadowed-source",
+        "warning",
+        "The legacy OpenVPN reference is shadowed by the selected tunnel path.",
+        {
+          kind: "legacy-vpn",
+          ownerConnectionId,
+          referenceId: legacyOpenVpn.configId,
+        },
+      );
+    } else {
+      const source: NetworkPathLayerSource = {
+        kind: "legacy-vpn",
+        ownerConnectionId,
+        referenceId: legacyOpenVpn.configId,
+      };
+      if (
+        validateVpnProfileReference(
+          "openvpn",
+          legacyOpenVpn.configId,
+          source,
+          state,
+        )
+      ) {
+        appendLayer(state, {
+          kind: "vpn",
+          transport: "openvpn",
+          source,
+          config: {
+            connectionId: legacyOpenVpn.configId,
+            vpn: { configId: legacyOpenVpn.configId },
+          },
+        });
+      }
+    }
+  }
+
   if (connection.security?.proxy) {
     appendLegacyProxy(connection.security.proxy, ownerConnectionId, state);
   }
@@ -391,6 +439,19 @@ function appendConnectionChain(
 
     if (String(layer.connection_type) === "Proxy") {
       appendProxyProfile(layer.connection_id, layerSource, state);
+      return;
+    }
+
+    const vpnType = normalizeExecutableVpnType(layer.connection_type);
+    if (
+      vpnType &&
+      !validateVpnProfileReference(
+        vpnType,
+        layer.connection_id,
+        layerSource,
+        state,
+      )
+    ) {
       return;
     }
 
@@ -592,6 +653,13 @@ function appendSavedChainLayer(
       "A VPN chain layer has neither a profile reference nor inline configuration.",
       source,
     );
+    return;
+  }
+  const vpnType = normalizeExecutableVpnType(layer.type);
+  if (
+    vpnType &&
+    !validateVpnProfileReference(vpnType, connectionId, source, state)
+  ) {
     return;
   }
   appendLayer(state, {
@@ -842,13 +910,18 @@ function appendTunnelLayer(
     return;
   }
 
-  if (VPN_TUNNEL_TYPES.has(layer.type)) {
+  const vpnType = normalizeExecutableVpnType(layer.type);
+  if (vpnType) {
+    const connectionId = resolveTunnelLayerVpnProfileId(layer);
+    if (!validateVpnProfileReference(vpnType, connectionId, source, state)) {
+      return;
+    }
     appendLayer(state, {
       kind: "vpn",
-      transport: layer.type,
+      transport: vpnType,
       source,
       config: {
-        connectionId: layer.id,
+        connectionId,
         vpn: cloneValue(layer.vpn),
         mesh: cloneValue(layer.mesh),
       },
@@ -867,6 +940,57 @@ function appendTunnelLayer(
       nodeChainConfig: cloneValue(layer.nodeChainConfig),
     },
   });
+}
+
+function validateVpnProfileReference(
+  vpnType: ExecutableVpnType,
+  profileId: string | undefined,
+  source: NetworkPathLayerSource,
+  state: ResolutionState,
+): boolean {
+  if (!profileId) {
+    addIssue(
+      state,
+      "invalid-layer",
+      "error",
+      `${getVpnProviderLabel(vpnType)} layer has no saved VPN profile reference.`,
+      source,
+    );
+    return false;
+  }
+
+  const snapshot = state.vpnProfiles;
+  const providerStatus = snapshot?.providerStatus[vpnType];
+  if (!snapshot || !providerStatus) {
+    // The editor may still be loading. Do not call a profile deleted until the
+    // corresponding provider snapshot has completed successfully.
+    return true;
+  }
+  if (providerStatus === "error") {
+    addIssue(
+      state,
+      "snapshot-unavailable",
+      "error",
+      `${getVpnProviderLabel(vpnType)} profiles could not be loaded, so VPN profile "${profileId}" cannot be verified yet.`,
+      { ...source, profileId },
+    );
+    return false;
+  }
+
+  const profile = snapshot.profiles.find(
+    (candidate) => candidate.vpnType === vpnType && candidate.id === profileId,
+  );
+  if (!profile) {
+    addIssue(
+      state,
+      "missing-reference",
+      "error",
+      `${getVpnProviderLabel(vpnType)} profile "${profileId}" no longer exists. Clear the VPN association or select another profile.`,
+      { ...source, profileId },
+    );
+    return false;
+  }
+  return true;
 }
 
 function isSshTunnelType(

@@ -4,6 +4,12 @@ import { useTranslation } from "react-i18next";
 import type { TunnelChainLayer } from "../../../types/connection/connection";
 import type { SavedTunnelChain } from "../../../types/settings/vpnSettings";
 import type { TunnelChainManager } from "../../../hooks/network/useTunnelChainManager";
+import {
+  getVpnProviderLabel,
+  normalizeExecutableVpnType,
+  resolveTunnelLayerVpnProfileId,
+  type VpnProfileCatalogSnapshot,
+} from "../../../utils/network/vpnProviderCatalog";
 import { getTypeIcon, getTypeLabel } from "./tunnelChainShared.helpers";
 
 // ── Per-layer config forms ──────────────────────────────────────
@@ -107,31 +113,69 @@ export function SshJumpLayerConfig({
 export function VpnLayerConfig({
   layer,
   onUpdate,
+  vpnProfileCatalog,
 }: {
   layer: TunnelChainLayer;
   onUpdate: (u: Partial<TunnelChainLayer>) => void;
+  vpnProfileCatalog?: Readonly<VpnProfileCatalogSnapshot>;
 }) {
-  const vpn = layer.vpn ?? {};
-  const up = (updates: Partial<typeof vpn>) =>
-    onUpdate({ vpn: { ...vpn, ...updates } });
+  const provider = normalizeExecutableVpnType(layer.type);
+  if (!provider) return null;
+
+  const currentId = resolveTunnelLayerVpnProfileId(layer) ?? "";
+  const profiles =
+    vpnProfileCatalog?.profiles.filter(
+      (profile) => profile.vpnType === provider,
+    ) ?? [];
+  const providerStatus = vpnProfileCatalog?.providerStatus[provider];
+  const currentProfile = profiles.find((profile) => profile.id === currentId);
+  const currentLabel =
+    currentId && !currentProfile
+      ? providerStatus === "loaded"
+        ? `Unavailable profile (${currentId})`
+        : providerStatus === "error"
+          ? `Unverified profile (${currentId})`
+          : `Checking profile (${currentId})`
+      : undefined;
+
+  const updateProfile = (configId: string) => {
+    const mesh = layer.mesh
+      ? { ...layer.mesh, networkId: undefined, authKey: undefined }
+      : undefined;
+    onUpdate({
+      vpn: {
+        ...layer.vpn,
+        // An explicit empty value suppresses the legacy layer-ID fallback.
+        configId,
+        configFile: undefined,
+      },
+      ...(mesh ? { mesh } : {}),
+    });
+  };
 
   return (
-    <div className="grid grid-cols-3 gap-2 mt-2">
-      <input
-        type="text"
-        placeholder="Config ID or path"
-        value={vpn.configId ?? vpn.configFile ?? ""}
-        onChange={(e) => up({ configId: e.target.value })}
-        className="col-span-2 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
+    <div className="mt-2 space-y-1.5">
       <select
-        value={vpn.protocol ?? "udp"}
-        onChange={(e) => up({ protocol: e.target.value as any })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
+        value={currentId}
+        onChange={(event) => updateProfile(event.target.value)}
+        className="w-full px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
       >
-        <option value="udp">UDP</option>
-        <option value="tcp">TCP</option>
+        <option value="">
+          Select {getVpnProviderLabel(provider)} profile…
+        </option>
+        {currentLabel && <option value={currentId}>{currentLabel}</option>}
+        {profiles.map((profile) => (
+          <option key={profile.id} value={profile.id}>
+            {profile.name} ({profile.status})
+          </option>
+        ))}
       </select>
+      {providerStatus === "error" && (
+        <p className="text-[11px] text-amber-400">
+          The provider store could not be loaded. Existing references remain
+          unverified and are not classified as deleted.
+        </p>
+      )}
     </div>
   );
 }
@@ -139,31 +183,18 @@ export function VpnLayerConfig({
 export function MeshLayerConfig({
   layer,
   onUpdate,
+  vpnProfileCatalog,
 }: {
   layer: TunnelChainLayer;
   onUpdate: (u: Partial<TunnelChainLayer>) => void;
+  vpnProfileCatalog?: Readonly<VpnProfileCatalogSnapshot>;
 }) {
-  const mesh = layer.mesh ?? {};
-  const up = (updates: Partial<typeof mesh>) =>
-    onUpdate({ mesh: { ...mesh, ...updates } });
-
   return (
-    <div className="grid grid-cols-2 gap-2 mt-2">
-      <input
-        type="text"
-        placeholder="Network ID"
-        value={mesh.networkId ?? ""}
-        onChange={(e) => up({ networkId: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-      <input
-        type="text"
-        placeholder="Auth Key"
-        value={mesh.authKey ?? ""}
-        onChange={(e) => up({ authKey: e.target.value })}
-        className="col-span-1 px-2 py-1 text-xs rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)]"
-      />
-    </div>
+    <VpnLayerConfig
+      layer={layer}
+      onUpdate={onUpdate}
+      vpnProfileCatalog={vpnProfileCatalog}
+    />
   );
 }
 
@@ -201,9 +232,11 @@ export function TunnelLayerConfig({
 export function LayerConfigForm({
   layer,
   onUpdate,
+  vpnProfileCatalog,
 }: {
   layer: TunnelChainLayer;
   onUpdate: (u: Partial<TunnelChainLayer>) => void;
+  vpnProfileCatalog?: Readonly<VpnProfileCatalogSnapshot>;
 }) {
   switch (layer.type) {
     case "proxy":
@@ -217,10 +250,22 @@ export function LayerConfigForm({
       return <SshJumpLayerConfig layer={layer} onUpdate={onUpdate} />;
     case "openvpn":
     case "wireguard":
-      return <VpnLayerConfig layer={layer} onUpdate={onUpdate} />;
+      return (
+        <VpnLayerConfig
+          layer={layer}
+          onUpdate={onUpdate}
+          vpnProfileCatalog={vpnProfileCatalog}
+        />
+      );
     case "tailscale":
     case "zerotier":
-      return <MeshLayerConfig layer={layer} onUpdate={onUpdate} />;
+      return (
+        <MeshLayerConfig
+          layer={layer}
+          onUpdate={onUpdate}
+          vpnProfileCatalog={vpnProfileCatalog}
+        />
+      );
     case "stunnel":
     case "chisel":
     case "ngrok":

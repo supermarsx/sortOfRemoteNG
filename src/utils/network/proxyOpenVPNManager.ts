@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 import {
   ProxyConfig,
   OpenVPNConfig,
@@ -10,21 +10,34 @@ import {
   IPsecConfig,
   SoftEtherConfig,
   ZeroTierConfig,
-  TailscaleConfig
-} from '../../types/settings/settings';
+  TailscaleConfig,
+} from "../../types/settings/settings";
+import {
+  fromOpenVpnIpcConnection,
+  fromTailscaleIpcConnection,
+  fromWireGuardIpcConnection,
+  fromZeroTierIpcConnection,
+  normalizeVpnStatus,
+  requireVpnConnectionId,
+  toOpenVpnIpcConfig,
+  toTailscaleIpcConfig,
+  toWireGuardIpcConfig,
+  toZeroTierIpcConfig,
+  type VpnConnectionStatus,
+} from "./vpnIpcAdapter";
 
 export enum ConnectionType {
-  Proxy = 'Proxy',
-  OpenVPN = 'OpenVPN',
-  WireGuard = 'WireGuard',
-  IKEv2 = 'IKEv2',
-  SSTP = 'SSTP',
-  L2TP = 'L2TP',
-  PPTP = 'PPTP',
-  IPsec = 'IPsec',
-  SoftEther = 'SoftEther',
-  ZeroTier = 'ZeroTier',
-  Tailscale = 'Tailscale',
+  Proxy = "Proxy",
+  OpenVPN = "OpenVPN",
+  WireGuard = "WireGuard",
+  IKEv2 = "IKEv2",
+  SSTP = "SSTP",
+  L2TP = "L2TP",
+  PPTP = "PPTP",
+  IPsec = "IPsec",
+  SoftEther = "SoftEther",
+  ZeroTier = "ZeroTier",
+  Tailscale = "Tailscale",
 }
 
 export interface ChainLayer {
@@ -38,11 +51,11 @@ export interface ChainLayer {
 }
 
 export enum ChainLayerStatus {
-  Disconnected = 'Disconnected',
-  Connecting = 'Connecting',
-  Connected = 'Connected',
-  Disconnecting = 'Disconnecting',
-  Error = 'Error',
+  Disconnected = "Disconnected",
+  Connecting = "Connecting",
+  Connected = "Connected",
+  Disconnecting = "Disconnecting",
+  Error = "Error",
 }
 
 export interface ConnectionChain {
@@ -58,11 +71,11 @@ export interface ConnectionChain {
 }
 
 export enum ChainStatus {
-  Disconnected = 'Disconnected',
-  Connecting = 'Connecting',
-  Connected = 'Connected',
-  Disconnecting = 'Disconnecting',
-  Error = 'Error',
+  Disconnected = "Disconnected",
+  Connecting = "Connecting",
+  Connected = "Connected",
+  Disconnecting = "Disconnecting",
+  Error = "Error",
 }
 
 export interface ProxyConnection {
@@ -71,7 +84,7 @@ export interface ProxyConnection {
   targetPort: number;
   proxyConfig: ProxyConfig;
   localPort?: number;
-  status: 'connecting' | 'connected' | 'disconnected' | 'error';
+  status: "connecting" | "connected" | "disconnected" | "error";
   chainPosition?: number;
   upstreamConnection?: string; // ID of the connection this proxy routes through
 }
@@ -80,7 +93,7 @@ export interface OpenVPNConnection {
   id: string;
   name: string;
   config: OpenVPNConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status: VpnConnectionStatus;
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -92,7 +105,7 @@ export interface WireGuardConnection {
   id: string;
   name: string;
   config: WireGuardConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status: VpnConnectionStatus;
   createdAt: Date;
   connectedAt?: Date;
   interfaceName?: string;
@@ -105,7 +118,12 @@ export interface IKEv2Connection {
   id: string;
   name: string;
   config: IKEv2Config;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -117,7 +135,12 @@ export interface SSTPConnection {
   id: string;
   name: string;
   config: SSTPConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -129,7 +152,12 @@ export interface L2TPConnection {
   id: string;
   name: string;
   config: L2TPConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -141,7 +169,12 @@ export interface PPTPConnection {
   id: string;
   name: string;
   config: PPTPConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -153,7 +186,12 @@ export interface IPsecConnection {
   id: string;
   name: string;
   config: IPsecConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -165,7 +203,12 @@ export interface SoftEtherConnection {
   id: string;
   name: string;
   config: SoftEtherConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | "disconnecting"
+    | "error";
   createdAt: Date;
   connectedAt?: Date;
   localIp?: string;
@@ -177,7 +220,7 @@ export interface ZeroTierConnection {
   id: string;
   name: string;
   config: ZeroTierConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status: VpnConnectionStatus;
   createdAt: Date;
   connectedAt?: Date;
   nodeId?: string;
@@ -189,7 +232,7 @@ export interface TailscaleConnection {
   id: string;
   name: string;
   config: TailscaleConfig;
-  status: 'disconnected' | 'connecting' | 'connected' | 'disconnecting' | 'error';
+  status: VpnConnectionStatus;
   createdAt: Date;
   connectedAt?: Date;
   nodeIp?: string;
@@ -199,14 +242,36 @@ export interface TailscaleConnection {
 
 export interface ChainHop {
   id: string;
-  type: 'proxy' | 'openvpn' | 'wireguard' | 'ikev2' | 'sstp' | 'l2tp' | 'pptp' | 'ipsec' | 'softether' | 'zerotier' | 'tailscale';
-  config: ProxyConfig | OpenVPNConfig | WireGuardConfig | IKEv2Config | SSTPConfig | L2TPConfig | PPTPConfig | IPsecConfig | SoftEtherConfig | ZeroTierConfig | TailscaleConfig;
+  type:
+    | "proxy"
+    | "openvpn"
+    | "wireguard"
+    | "ikev2"
+    | "sstp"
+    | "l2tp"
+    | "pptp"
+    | "ipsec"
+    | "softether"
+    | "zerotier"
+    | "tailscale";
+  config:
+    | ProxyConfig
+    | OpenVPNConfig
+    | WireGuardConfig
+    | IKEv2Config
+    | SSTPConfig
+    | L2TPConfig
+    | PPTPConfig
+    | IPsecConfig
+    | SoftEtherConfig
+    | ZeroTierConfig
+    | TailscaleConfig;
   position: number;
   targetHost?: string;
   targetPort?: number;
   upstreamHop?: string; // ID of the hop this routes through
   localPort?: number;
-  status: 'pending' | 'connecting' | 'connected' | 'error';
+  status: "pending" | "connecting" | "connected" | "error";
   error?: string;
 }
 
@@ -236,9 +301,9 @@ export class ProxyOpenVPNManager {
   async createProxyConnection(
     targetHost: string,
     targetPort: number,
-    proxyConfig: ProxyConfig
+    proxyConfig: ProxyConfig,
   ): Promise<string> {
-    return await invoke('create_proxy_connection', {
+    return await invoke("create_proxy_connection", {
       targetHost,
       targetPort,
       proxyConfig,
@@ -246,449 +311,615 @@ export class ProxyOpenVPNManager {
   }
 
   async connectViaProxy(connectionId: string): Promise<number> {
-    return await invoke('connect_via_proxy', { connectionId });
+    return await invoke("connect_via_proxy", { connectionId });
   }
 
   async disconnectProxy(connectionId: string): Promise<void> {
-    return await invoke('disconnect_proxy', { connectionId });
+    return await invoke("disconnect_proxy", { connectionId });
   }
 
   async getProxyConnection(connectionId: string): Promise<ProxyConnection> {
-    return await invoke('get_proxy_connection', { connectionId });
+    return await invoke("get_proxy_connection", { connectionId });
   }
 
   async listProxyConnections(): Promise<ProxyConnection[]> {
-    return await invoke('list_proxy_connections');
+    return await invoke("list_proxy_connections");
   }
 
   async deleteProxyConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_proxy_connection', { connectionId });
+    return await invoke("delete_proxy_connection", { connectionId });
   }
 
   // OpenVPN Management Methods
-  async createOpenVPNConnection(name: string, config: OpenVPNConfig): Promise<string> {
-    return await invoke('create_openvpn_connection', { name, config });
+  async createOpenVPNConnection(
+    name: string,
+    config: OpenVPNConfig | Record<string, unknown>,
+  ): Promise<string> {
+    const id = await invoke("create_openvpn_connection", {
+      name,
+      config: toOpenVpnIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "OpenVPN");
+  }
+
+  async createOpenVPNConnectionFromOvpn(
+    name: string,
+    ovpnContent: string,
+  ): Promise<string> {
+    const id = await invoke("create_openvpn_connection_from_ovpn", {
+      name,
+      ovpnContent,
+    });
+    return requireVpnConnectionId(id, "OpenVPN");
   }
 
   async connectOpenVPN(connectionId: string): Promise<void> {
-    return await invoke('connect_openvpn', { connectionId });
+    return await invoke("connect_openvpn", { connectionId });
   }
 
   async disconnectOpenVPN(connectionId: string): Promise<void> {
-    return await invoke('disconnect_openvpn', { connectionId });
+    return await invoke("disconnect_openvpn", { connectionId });
   }
 
   async getOpenVPNConnection(connectionId: string): Promise<OpenVPNConnection> {
-    const result: any = await invoke('get_openvpn_connection', { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    };
+    return fromOpenVpnIpcConnection(
+      await invoke("get_openvpn_connection", { connectionId }),
+    );
   }
 
   async listOpenVPNConnections(): Promise<OpenVPNConnection[]> {
-    const results: any[] = await invoke('list_openvpn_connections');
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    }));
+    const results = await invoke<unknown>("list_openvpn_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("OpenVPN connection list response is malformed");
+    }
+    return results.map(fromOpenVpnIpcConnection);
   }
 
   async deleteOpenVPNConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_openvpn_connection', { connectionId });
+    return await invoke("delete_openvpn_connection", { connectionId });
   }
 
-  async updateOpenVPNConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_openvpn_connection', { connectionId, name, config });
+  async updateOpenVPNConnection(
+    connectionId: string,
+    name?: string,
+    config?: OpenVPNConfig | Record<string, unknown>,
+  ): Promise<void> {
+    return await invoke("update_openvpn_connection", {
+      connectionId,
+      name,
+      config: config ? toOpenVpnIpcConfig(config) : undefined,
+    });
   }
 
   async getOpenVPNStatus(connectionId: string): Promise<string> {
-    return await invoke('get_openvpn_status', { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_openvpn_status", { connectionId }),
+    );
   }
 
   // WireGuard Management Methods
-  async createWireGuardConnection(name: string, config: WireGuardConfig): Promise<string> {
-    return await invoke('create_wireguard_connection', { name, config });
+  async createWireGuardConnection(
+    name: string,
+    config: WireGuardConfig | Record<string, unknown>,
+  ): Promise<string> {
+    const id = await invoke("create_wireguard_connection", {
+      name,
+      config: toWireGuardIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "WireGuard");
+  }
+
+  async createWireGuardConnectionFromConf(
+    name: string,
+    content: string,
+  ): Promise<string> {
+    const id = await invoke("create_wireguard_connection_from_conf", {
+      name,
+      content,
+    });
+    return requireVpnConnectionId(id, "WireGuard");
   }
 
   async connectWireGuard(connectionId: string): Promise<void> {
-    return await invoke('connect_wireguard', { connectionId });
+    return await invoke("connect_wireguard", { connectionId });
   }
 
   async disconnectWireGuard(connectionId: string): Promise<void> {
-    return await invoke('disconnect_wireguard', { connectionId });
+    return await invoke("disconnect_wireguard", { connectionId });
   }
 
-  async getWireGuardConnection(connectionId: string): Promise<WireGuardConnection> {
-    const result: any = await invoke('get_wireguard_connection', { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    };
+  async getWireGuardConnection(
+    connectionId: string,
+  ): Promise<WireGuardConnection> {
+    return fromWireGuardIpcConnection(
+      await invoke("get_wireguard_connection", { connectionId }),
+    );
   }
 
   async listWireGuardConnections(): Promise<WireGuardConnection[]> {
-    const results: any[] = await invoke('list_wireguard_connections');
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    }));
+    const results = await invoke<unknown>("list_wireguard_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("WireGuard connection list response is malformed");
+    }
+    return results.map(fromWireGuardIpcConnection);
   }
 
   async deleteWireGuardConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_wireguard_connection', { connectionId });
+    return await invoke("delete_wireguard_connection", { connectionId });
   }
 
-  async updateWireGuardConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_wireguard_connection', { connectionId, name, config });
+  async updateWireGuardConnection(
+    connectionId: string,
+    name?: string,
+    config?: WireGuardConfig | Record<string, unknown>,
+  ): Promise<void> {
+    return await invoke("update_wireguard_connection", {
+      connectionId,
+      name,
+      config: config ? toWireGuardIpcConfig(config) : undefined,
+    });
   }
 
   async getWireGuardStatus(connectionId: string): Promise<string> {
-    return await invoke('get_wireguard_status', { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_wireguard_status", { connectionId }),
+    );
   }
 
   // IKEv2 Management Methods
-  async createIKEv2Connection(name: string, config: IKEv2Config): Promise<string> {
-    return await invoke('create_ikev2_connection', { name, config });
+  async createIKEv2Connection(
+    name: string,
+    config: IKEv2Config,
+  ): Promise<string> {
+    return await invoke("create_ikev2_connection", { name, config });
   }
 
   async connectIKEv2(connectionId: string): Promise<void> {
-    return await invoke('connect_ikev2', { connectionId });
+    return await invoke("connect_ikev2", { connectionId });
   }
 
   async disconnectIKEv2(connectionId: string): Promise<void> {
-    return await invoke('disconnect_ikev2', { connectionId });
+    return await invoke("disconnect_ikev2", { connectionId });
   }
 
   async getIKEv2Connection(connectionId: string): Promise<IKEv2Connection> {
-    const result: any = await invoke('get_ikev2_connection', { connectionId });
+    const result: any = await invoke("get_ikev2_connection", { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listIKEv2Connections(): Promise<IKEv2Connection[]> {
-    const results: any[] = await invoke('list_ikev2_connections');
+    const results: any[] = await invoke("list_ikev2_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deleteIKEv2Connection(connectionId: string): Promise<void> {
-    return await invoke('delete_ikev2_connection', { connectionId });
+    return await invoke("delete_ikev2_connection", { connectionId });
   }
 
   async getIKEv2Status(connectionId: string): Promise<string> {
-    return await invoke('get_ikev2_status', { connectionId });
+    return await invoke("get_ikev2_status", { connectionId });
   }
 
-  async updateIKEv2Connection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_ikev2_connection', { connectionId, name, config });
+  async updateIKEv2Connection(
+    connectionId: string,
+    name?: string,
+    config?: any,
+  ): Promise<void> {
+    return await invoke("update_ikev2_connection", {
+      connectionId,
+      name,
+      config,
+    });
   }
 
   // SSTP Management Methods
-  async createSSTPConnection(name: string, config: SSTPConfig): Promise<string> {
-    return await invoke('create_sstp_connection', { name, config });
+  async createSSTPConnection(
+    name: string,
+    config: SSTPConfig,
+  ): Promise<string> {
+    return await invoke("create_sstp_connection", { name, config });
   }
 
   async connectSSTP(connectionId: string): Promise<void> {
-    return await invoke('connect_sstp', { connectionId });
+    return await invoke("connect_sstp", { connectionId });
   }
 
   async disconnectSSTP(connectionId: string): Promise<void> {
-    return await invoke('disconnect_sstp', { connectionId });
+    return await invoke("disconnect_sstp", { connectionId });
   }
 
   async getSSTPConnection(connectionId: string): Promise<SSTPConnection> {
-    const result: any = await invoke('get_sstp_connection', { connectionId });
+    const result: any = await invoke("get_sstp_connection", { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listSSTPConnections(): Promise<SSTPConnection[]> {
-    const results: any[] = await invoke('list_sstp_connections');
+    const results: any[] = await invoke("list_sstp_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deleteSSTPConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_sstp_connection', { connectionId });
+    return await invoke("delete_sstp_connection", { connectionId });
   }
 
   async getSSTPStatus(connectionId: string): Promise<string> {
-    return await invoke('get_sstp_status', { connectionId });
+    return await invoke("get_sstp_status", { connectionId });
   }
 
-  async updateSSTPConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_sstp_connection', { connectionId, name, config });
+  async updateSSTPConnection(
+    connectionId: string,
+    name?: string,
+    config?: any,
+  ): Promise<void> {
+    return await invoke("update_sstp_connection", {
+      connectionId,
+      name,
+      config,
+    });
   }
 
   // L2TP Management Methods
-  async createL2TPConnection(name: string, config: L2TPConfig): Promise<string> {
-    return await invoke('create_l2tp_connection', { name, config });
+  async createL2TPConnection(
+    name: string,
+    config: L2TPConfig,
+  ): Promise<string> {
+    return await invoke("create_l2tp_connection", { name, config });
   }
 
   async connectL2TP(connectionId: string): Promise<void> {
-    return await invoke('connect_l2tp', { connectionId });
+    return await invoke("connect_l2tp", { connectionId });
   }
 
   async disconnectL2TP(connectionId: string): Promise<void> {
-    return await invoke('disconnect_l2tp', { connectionId });
+    return await invoke("disconnect_l2tp", { connectionId });
   }
 
   async getL2TPConnection(connectionId: string): Promise<L2TPConnection> {
-    const result: any = await invoke('get_l2tp_connection', { connectionId });
+    const result: any = await invoke("get_l2tp_connection", { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listL2TPConnections(): Promise<L2TPConnection[]> {
-    const results: any[] = await invoke('list_l2tp_connections');
+    const results: any[] = await invoke("list_l2tp_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deleteL2TPConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_l2tp_connection', { connectionId });
+    return await invoke("delete_l2tp_connection", { connectionId });
   }
 
   async getL2TPStatus(connectionId: string): Promise<string> {
-    return await invoke('get_l2tp_status', { connectionId });
+    return await invoke("get_l2tp_status", { connectionId });
   }
 
-  async updateL2TPConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_l2tp_connection', { connectionId, name, config });
+  async updateL2TPConnection(
+    connectionId: string,
+    name?: string,
+    config?: any,
+  ): Promise<void> {
+    return await invoke("update_l2tp_connection", {
+      connectionId,
+      name,
+      config,
+    });
   }
 
   // PPTP Management Methods
-  async createPPTPConnection(name: string, config: PPTPConfig): Promise<string> {
-    return await invoke('create_pptp_connection', { name, config });
+  async createPPTPConnection(
+    name: string,
+    config: PPTPConfig,
+  ): Promise<string> {
+    return await invoke("create_pptp_connection", { name, config });
   }
 
   async connectPPTP(connectionId: string): Promise<void> {
-    return await invoke('connect_pptp', { connectionId });
+    return await invoke("connect_pptp", { connectionId });
   }
 
   async disconnectPPTP(connectionId: string): Promise<void> {
-    return await invoke('disconnect_pptp', { connectionId });
+    return await invoke("disconnect_pptp", { connectionId });
   }
 
   async getPPTPConnection(connectionId: string): Promise<PPTPConnection> {
-    const result: any = await invoke('get_pptp_connection', { connectionId });
+    const result: any = await invoke("get_pptp_connection", { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listPPTPConnections(): Promise<PPTPConnection[]> {
-    const results: any[] = await invoke('list_pptp_connections');
+    const results: any[] = await invoke("list_pptp_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deletePPTPConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_pptp_connection', { connectionId });
+    return await invoke("delete_pptp_connection", { connectionId });
   }
 
   async getPPTPStatus(connectionId: string): Promise<string> {
-    return await invoke('get_pptp_status', { connectionId });
+    return await invoke("get_pptp_status", { connectionId });
   }
 
-  async updatePPTPConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_pptp_connection', { connectionId, name, config });
+  async updatePPTPConnection(
+    connectionId: string,
+    name?: string,
+    config?: any,
+  ): Promise<void> {
+    return await invoke("update_pptp_connection", {
+      connectionId,
+      name,
+      config,
+    });
   }
 
   // IPsec Management Methods
-  async createIPsecConnection(name: string, config: IPsecConfig): Promise<string> {
-    return await invoke('create_ipsec_connection', { name, config });
+  async createIPsecConnection(
+    name: string,
+    config: IPsecConfig,
+  ): Promise<string> {
+    return await invoke("create_ipsec_connection", { name, config });
   }
 
   async connectIPsec(connectionId: string): Promise<void> {
-    return await invoke('connect_ipsec', { connectionId });
+    return await invoke("connect_ipsec", { connectionId });
   }
 
   async disconnectIPsec(connectionId: string): Promise<void> {
-    return await invoke('disconnect_ipsec', { connectionId });
+    return await invoke("disconnect_ipsec", { connectionId });
   }
 
   async getIPsecConnection(connectionId: string): Promise<IPsecConnection> {
-    const result: any = await invoke('get_ipsec_connection', { connectionId });
+    const result: any = await invoke("get_ipsec_connection", { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listIPsecConnections(): Promise<IPsecConnection[]> {
-    const results: any[] = await invoke('list_ipsec_connections');
+    const results: any[] = await invoke("list_ipsec_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deleteIPsecConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_ipsec_connection', { connectionId });
+    return await invoke("delete_ipsec_connection", { connectionId });
   }
 
   async getIPsecStatus(connectionId: string): Promise<string> {
-    return await invoke('get_ipsec_status', { connectionId });
+    return await invoke("get_ipsec_status", { connectionId });
   }
 
-  async updateIPsecConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_ipsec_connection', { connectionId, name, config });
+  async updateIPsecConnection(
+    connectionId: string,
+    name?: string,
+    config?: any,
+  ): Promise<void> {
+    return await invoke("update_ipsec_connection", {
+      connectionId,
+      name,
+      config,
+    });
   }
 
   // SoftEther Management Methods
-  async createSoftEtherConnection(name: string, config: SoftEtherConfig): Promise<string> {
-    return await invoke('create_softether_connection', { name, config });
+  async createSoftEtherConnection(
+    name: string,
+    config: SoftEtherConfig,
+  ): Promise<string> {
+    return await invoke("create_softether_connection", { name, config });
   }
 
   async connectSoftEther(connectionId: string): Promise<void> {
-    return await invoke('connect_softether', { connectionId });
+    return await invoke("connect_softether", { connectionId });
   }
 
   async disconnectSoftEther(connectionId: string): Promise<void> {
-    return await invoke('disconnect_softether', { connectionId });
+    return await invoke("disconnect_softether", { connectionId });
   }
 
-  async getSoftEtherConnection(connectionId: string): Promise<SoftEtherConnection> {
-    const result: any = await invoke('get_softether_connection', { connectionId });
+  async getSoftEtherConnection(
+    connectionId: string,
+  ): Promise<SoftEtherConnection> {
+    const result: any = await invoke("get_softether_connection", {
+      connectionId,
+    });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listSoftEtherConnections(): Promise<SoftEtherConnection[]> {
-    const results: any[] = await invoke('list_softether_connections');
+    const results: any[] = await invoke("list_softether_connections");
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     }));
   }
 
   async deleteSoftEtherConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_softether_connection', { connectionId });
+    return await invoke("delete_softether_connection", { connectionId });
   }
 
   async getSoftEtherStatus(connectionId: string): Promise<string> {
-    return await invoke('get_softether_status', { connectionId });
+    return await invoke("get_softether_status", { connectionId });
   }
 
   // ZeroTier Management Methods
-  async createZeroTierConnection(name: string, config: ZeroTierConfig): Promise<string> {
-    return await invoke('create_zerotier_connection', { name, config });
+  async createZeroTierConnection(
+    name: string,
+    config: ZeroTierConfig | Record<string, unknown>,
+  ): Promise<string> {
+    const id = await invoke("create_zerotier_connection", {
+      name,
+      config: toZeroTierIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "ZeroTier");
   }
 
   async connectZeroTier(connectionId: string): Promise<void> {
-    return await invoke('connect_zerotier', { connectionId });
+    return await invoke("connect_zerotier", { connectionId });
   }
 
   async disconnectZeroTier(connectionId: string): Promise<void> {
-    return await invoke('disconnect_zerotier', { connectionId });
+    return await invoke("disconnect_zerotier", { connectionId });
   }
 
-  async getZeroTierConnection(connectionId: string): Promise<ZeroTierConnection> {
-    const result: any = await invoke('get_zerotier_connection', { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    };
+  async getZeroTierConnection(
+    connectionId: string,
+  ): Promise<ZeroTierConnection> {
+    return fromZeroTierIpcConnection(
+      await invoke("get_zerotier_connection", { connectionId }),
+    );
   }
 
   async listZeroTierConnections(): Promise<ZeroTierConnection[]> {
-    const results: any[] = await invoke('list_zerotier_connections');
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    }));
+    const results = await invoke<unknown>("list_zerotier_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("ZeroTier connection list response is malformed");
+    }
+    return results.map(fromZeroTierIpcConnection);
   }
 
   async deleteZeroTierConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_zerotier_connection', { connectionId });
+    return await invoke("delete_zerotier_connection", { connectionId });
   }
 
-  async updateZeroTierConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_zerotier_connection', { connectionId, name, config });
+  async updateZeroTierConnection(
+    connectionId: string,
+    name?: string,
+    config?: ZeroTierConfig | Record<string, unknown>,
+  ): Promise<void> {
+    return await invoke("update_zerotier_connection", {
+      connectionId,
+      name,
+      config: config ? toZeroTierIpcConfig(config) : undefined,
+    });
   }
 
   async getZeroTierStatus(connectionId: string): Promise<string> {
-    return await invoke('get_zerotier_status', { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_zerotier_status", { connectionId }),
+    );
   }
 
   // Tailscale Management Methods
-  async createTailscaleConnection(name: string, config: TailscaleConfig): Promise<string> {
-    return await invoke('create_tailscale_connection', { name, config });
+  async createTailscaleConnection(
+    name: string,
+    config: TailscaleConfig | Record<string, unknown>,
+  ): Promise<string> {
+    const id = await invoke("create_tailscale_connection", {
+      name,
+      config: toTailscaleIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "Tailscale");
   }
 
   async connectTailscale(connectionId: string): Promise<void> {
-    return await invoke('connect_tailscale', { connectionId });
+    return await invoke("connect_tailscale", { connectionId });
   }
 
   async disconnectTailscale(connectionId: string): Promise<void> {
-    return await invoke('disconnect_tailscale', { connectionId });
+    return await invoke("disconnect_tailscale", { connectionId });
   }
 
-  async getTailscaleConnection(connectionId: string): Promise<TailscaleConnection> {
-    const result: any = await invoke('get_tailscale_connection', { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    };
+  async getTailscaleConnection(
+    connectionId: string,
+  ): Promise<TailscaleConnection> {
+    return fromTailscaleIpcConnection(
+      await invoke("get_tailscale_connection", { connectionId }),
+    );
   }
 
   async listTailscaleConnections(): Promise<TailscaleConnection[]> {
-    const results: any[] = await invoke('list_tailscale_connections');
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
-    }));
+    const results = await invoke<unknown>("list_tailscale_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("Tailscale connection list response is malformed");
+    }
+    return results.map(fromTailscaleIpcConnection);
   }
 
   async deleteTailscaleConnection(connectionId: string): Promise<void> {
-    return await invoke('delete_tailscale_connection', { connectionId });
+    return await invoke("delete_tailscale_connection", { connectionId });
   }
 
-  async updateTailscaleConnection(connectionId: string, name?: string, config?: any): Promise<void> {
-    return await invoke('update_tailscale_connection', { connectionId, name, config });
+  async updateTailscaleConnection(
+    connectionId: string,
+    name?: string,
+    config?: TailscaleConfig | Record<string, unknown>,
+  ): Promise<void> {
+    return await invoke("update_tailscale_connection", {
+      connectionId,
+      name,
+      config: config ? toTailscaleIpcConfig(config) : undefined,
+    });
   }
 
   async getTailscaleStatus(connectionId: string): Promise<string> {
-    return await invoke('get_tailscale_status', { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_tailscale_status", { connectionId }),
+    );
   }
 
   // Utility Methods
@@ -697,18 +928,31 @@ export class ProxyOpenVPNManager {
     targetPort: number,
     proxyConfig?: ProxyConfig,
     vpnConfig?: {
-      type: 'openvpn' | 'wireguard' | 'ikev2' | 'sstp' | 'l2tp' | 'pptp' | 'ipsec' | 'softether' | 'zerotier' | 'tailscale';
+      type:
+        | "openvpn"
+        | "wireguard"
+        | "ikev2"
+        | "sstp"
+        | "l2tp"
+        | "pptp"
+        | "ipsec"
+        | "softether"
+        | "zerotier"
+        | "tailscale";
       enabled: boolean;
       configId?: string;
       chainPosition?: number;
-    }
+    },
   ): Promise<{ localPort?: number; vpnActive?: boolean }> {
     const result: { localPort?: number; vpnActive?: boolean } = {};
 
     // Handle VPN connections first
     if (vpnConfig?.enabled && vpnConfig.configId) {
-      const status = await this.getVPNStatus(vpnConfig.type, vpnConfig.configId);
-      if (status !== 'Connected') {
+      const status = await this.getVPNStatus(
+        vpnConfig.type,
+        vpnConfig.configId,
+      );
+      if (status.toLowerCase() !== "connected") {
         await this.connectVPN(vpnConfig.type, vpnConfig.configId);
       }
       result.vpnActive = true;
@@ -719,7 +963,7 @@ export class ProxyOpenVPNManager {
       const proxyConnectionId = await this.createProxyConnection(
         targetHost,
         targetPort,
-        proxyConfig
+        proxyConfig,
       );
       const localPort = await this.connectViaProxy(proxyConnectionId);
       result.localPort = localPort;
@@ -728,81 +972,90 @@ export class ProxyOpenVPNManager {
     return result;
   }
 
-  private async getVPNStatus(vpnType: string, connectionId: string): Promise<string> {
+  private async getVPNStatus(
+    vpnType: string,
+    connectionId: string,
+  ): Promise<string> {
     switch (vpnType) {
-      case 'openvpn':
+      case "openvpn":
         return await this.getOpenVPNStatus(connectionId);
-      case 'wireguard':
+      case "wireguard":
         return await this.getWireGuardStatus(connectionId);
-      case 'ikev2':
+      case "ikev2":
         return await this.getIKEv2Status(connectionId);
-      case 'sstp':
+      case "sstp":
         return await this.getSSTPStatus(connectionId);
-      case 'l2tp':
+      case "l2tp":
         return await this.getL2TPStatus(connectionId);
-      case 'pptp':
+      case "pptp":
         return await this.getPPTPStatus(connectionId);
-      case 'ipsec':
+      case "ipsec":
         return await this.getIPsecStatus(connectionId);
-      case 'softether':
+      case "softether":
         return await this.getSoftEtherStatus(connectionId);
-      case 'zerotier':
+      case "zerotier":
         return await this.getZeroTierStatus(connectionId);
-      case 'tailscale':
+      case "tailscale":
         return await this.getTailscaleStatus(connectionId);
       default:
         throw new Error(`Unsupported VPN type: ${vpnType}`);
     }
   }
 
-  private async connectVPN(vpnType: string, connectionId: string): Promise<void> {
+  private async connectVPN(
+    vpnType: string,
+    connectionId: string,
+  ): Promise<void> {
     switch (vpnType) {
-      case 'openvpn':
+      case "openvpn":
         return await this.connectOpenVPN(connectionId);
-      case 'wireguard':
+      case "wireguard":
         return await this.connectWireGuard(connectionId);
-      case 'ikev2':
+      case "ikev2":
         return await this.connectIKEv2(connectionId);
-      case 'sstp':
+      case "sstp":
         return await this.connectSSTP(connectionId);
-      case 'l2tp':
+      case "l2tp":
         return await this.connectL2TP(connectionId);
-      case 'pptp':
+      case "pptp":
         return await this.connectPPTP(connectionId);
-      case 'ipsec':
+      case "ipsec":
         return await this.connectIPsec(connectionId);
-      case 'softether':
+      case "softether":
         return await this.connectSoftEther(connectionId);
-      case 'zerotier':
+      case "zerotier":
         return await this.connectZeroTier(connectionId);
-      case 'tailscale':
+      case "tailscale":
         return await this.connectTailscale(connectionId);
       default:
         throw new Error(`Unsupported VPN type: ${vpnType}`);
     }
   }
 
-  private async disconnectVPN(vpnType: string, connectionId: string): Promise<void> {
+  private async disconnectVPN(
+    vpnType: string,
+    connectionId: string,
+  ): Promise<void> {
     switch (vpnType) {
-      case 'openvpn':
+      case "openvpn":
         return await this.disconnectOpenVPN(connectionId);
-      case 'wireguard':
+      case "wireguard":
         return await this.disconnectWireGuard(connectionId);
-      case 'ikev2':
+      case "ikev2":
         return await this.disconnectIKEv2(connectionId);
-      case 'sstp':
+      case "sstp":
         return await this.disconnectSSTP(connectionId);
-      case 'l2tp':
+      case "l2tp":
         return await this.disconnectL2TP(connectionId);
-      case 'pptp':
+      case "pptp":
         return await this.disconnectPPTP(connectionId);
-      case 'ipsec':
+      case "ipsec":
         return await this.disconnectIPsec(connectionId);
-      case 'softether':
+      case "softether":
         return await this.disconnectSoftEther(connectionId);
-      case 'zerotier':
+      case "zerotier":
         return await this.disconnectZeroTier(connectionId);
-      case 'tailscale':
+      case "tailscale":
         return await this.disconnectTailscale(connectionId);
       default:
         throw new Error(`Unsupported VPN type: ${vpnType}`);
@@ -811,14 +1064,14 @@ export class ProxyOpenVPNManager {
 
   async cleanupConnections(
     proxyConnectionId?: string,
-    vpnConnection?: { type: string; id: string }
+    vpnConnection?: { type: string; id: string },
   ): Promise<void> {
     if (proxyConnectionId) {
       try {
         await this.disconnectProxy(proxyConnectionId);
         await this.deleteProxyConnection(proxyConnectionId);
       } catch (error) {
-        console.warn('Failed to cleanup proxy connection:', error);
+        console.warn("Failed to cleanup proxy connection:", error);
       }
     }
 
@@ -826,7 +1079,10 @@ export class ProxyOpenVPNManager {
       try {
         await this.disconnectVPN(vpnConnection.type, vpnConnection.id);
       } catch (error) {
-        console.warn(`Failed to cleanup ${vpnConnection.type} connection:`, error);
+        console.warn(
+          `Failed to cleanup ${vpnConnection.type} connection:`,
+          error,
+        );
       }
     }
   }
@@ -834,11 +1090,33 @@ export class ProxyOpenVPNManager {
   // Connection chaining utilities
   async createConnectionChainFromConfigs(
     connections: Array<{
-      type: 'proxy' | 'openvpn' | 'wireguard' | 'ikev2' | 'sstp' | 'l2tp' | 'pptp' | 'ipsec' | 'softether' | 'zerotier' | 'tailscale';
-      config: ProxyConfig | OpenVPNConfig | WireGuardConfig | IKEv2Config | SSTPConfig | L2TPConfig | PPTPConfig | IPsecConfig | SoftEtherConfig | ZeroTierConfig | TailscaleConfig;
+      type:
+        | "proxy"
+        | "openvpn"
+        | "wireguard"
+        | "ikev2"
+        | "sstp"
+        | "l2tp"
+        | "pptp"
+        | "ipsec"
+        | "softether"
+        | "zerotier"
+        | "tailscale";
+      config:
+        | ProxyConfig
+        | OpenVPNConfig
+        | WireGuardConfig
+        | IKEv2Config
+        | SSTPConfig
+        | L2TPConfig
+        | PPTPConfig
+        | IPsecConfig
+        | SoftEtherConfig
+        | ZeroTierConfig
+        | TailscaleConfig;
       targetHost?: string;
       targetPort?: number;
-    }>
+    }>,
   ): Promise<{
     proxyConnections: string[];
     vpnConnections: Array<{ type: string; id: string }>;
@@ -850,7 +1128,7 @@ export class ProxyOpenVPNManager {
 
     // Sort by chain position for VPN connections
     const sortedConnections = connections.sort((a, b) => {
-      if (a.type !== 'proxy' && b.type !== 'proxy') {
+      if (a.type !== "proxy" && b.type !== "proxy") {
         const aPos = (a.config as any).chainPosition || 0;
         const bPos = (b.config as any).chainPosition || 0;
         return aPos - bPos;
@@ -859,18 +1137,26 @@ export class ProxyOpenVPNManager {
     });
 
     for (const connection of sortedConnections) {
-      if (connection.type === 'proxy' && connection.targetHost && connection.targetPort) {
+      if (
+        connection.type === "proxy" &&
+        connection.targetHost &&
+        connection.targetPort
+      ) {
         const proxyConfig = connection.config as ProxyConfig;
         const proxyId = await this.createProxyConnection(
           connection.targetHost,
           connection.targetPort,
-          proxyConfig
+          proxyConfig,
         );
         finalLocalPort = await this.connectViaProxy(proxyId);
         proxyConnections.push(proxyId);
-      } else if (connection.type !== 'proxy') {
+      } else if (connection.type !== "proxy") {
         // Handle VPN connections
-        const vpnId = await this.createVPNConnection(connection.type, `Chain ${connection.type} ${vpnConnections.length + 1}`, connection.config);
+        const vpnId = await this.createVPNConnection(
+          connection.type,
+          `Chain ${connection.type} ${vpnConnections.length + 1}`,
+          connection.config,
+        );
         await this.connectVPN(connection.type, vpnId);
         vpnConnections.push({ type: connection.type, id: vpnId });
       }
@@ -886,29 +1172,44 @@ export class ProxyOpenVPNManager {
   private async createVPNConnection(
     vpnType: string,
     name: string,
-    config: any
+    config: any,
   ): Promise<string> {
     switch (vpnType) {
-      case 'openvpn':
-        return await this.createOpenVPNConnection(name, config as OpenVPNConfig);
-      case 'wireguard':
-        return await this.createWireGuardConnection(name, config as WireGuardConfig);
-      case 'ikev2':
+      case "openvpn":
+        return await this.createOpenVPNConnection(
+          name,
+          config as OpenVPNConfig,
+        );
+      case "wireguard":
+        return await this.createWireGuardConnection(
+          name,
+          config as WireGuardConfig,
+        );
+      case "ikev2":
         return await this.createIKEv2Connection(name, config as IKEv2Config);
-      case 'sstp':
+      case "sstp":
         return await this.createSSTPConnection(name, config as SSTPConfig);
-      case 'l2tp':
+      case "l2tp":
         return await this.createL2TPConnection(name, config as L2TPConfig);
-      case 'pptp':
+      case "pptp":
         return await this.createPPTPConnection(name, config as PPTPConfig);
-      case 'ipsec':
+      case "ipsec":
         return await this.createIPsecConnection(name, config as IPsecConfig);
-      case 'softether':
-        return await this.createSoftEtherConnection(name, config as SoftEtherConfig);
-      case 'zerotier':
-        return await this.createZeroTierConnection(name, config as ZeroTierConfig);
-      case 'tailscale':
-        return await this.createTailscaleConnection(name, config as TailscaleConfig);
+      case "softether":
+        return await this.createSoftEtherConnection(
+          name,
+          config as SoftEtherConfig,
+        );
+      case "zerotier":
+        return await this.createZeroTierConnection(
+          name,
+          config as ZeroTierConfig,
+        );
+      case "tailscale":
+        return await this.createTailscaleConnection(
+          name,
+          config as TailscaleConfig,
+        );
       default:
         throw new Error(`Unsupported VPN type: ${vpnType}`);
     }
@@ -916,7 +1217,7 @@ export class ProxyOpenVPNManager {
 
   async disconnectChain(
     proxyConnections: string[],
-    vpnConnections: Array<{ type: string; id: string }>
+    vpnConnections: Array<{ type: string; id: string }>,
   ): Promise<void> {
     // Disconnect proxies in reverse order
     for (const proxyId of proxyConnections.reverse()) {
@@ -934,32 +1235,38 @@ export class ProxyOpenVPNManager {
         await this.disconnectVPN(vpnConn.type, vpnConn.id);
         await this.deleteVPNConnection(vpnConn.type, vpnConn.id);
       } catch (error) {
-        console.warn(`Failed to disconnect ${vpnConn.type} ${vpnConn.id}:`, error);
+        console.warn(
+          `Failed to disconnect ${vpnConn.type} ${vpnConn.id}:`,
+          error,
+        );
       }
     }
   }
 
-  private async deleteVPNConnection(vpnType: string, connectionId: string): Promise<void> {
+  private async deleteVPNConnection(
+    vpnType: string,
+    connectionId: string,
+  ): Promise<void> {
     switch (vpnType) {
-      case 'openvpn':
+      case "openvpn":
         return await this.deleteOpenVPNConnection(connectionId);
-      case 'wireguard':
+      case "wireguard":
         return await this.deleteWireGuardConnection(connectionId);
-      case 'ikev2':
+      case "ikev2":
         return await this.deleteIKEv2Connection(connectionId);
-      case 'sstp':
+      case "sstp":
         return await this.deleteSSTPConnection(connectionId);
-      case 'l2tp':
+      case "l2tp":
         return await this.deleteL2TPConnection(connectionId);
-      case 'pptp':
+      case "pptp":
         return await this.deletePPTPConnection(connectionId);
-      case 'ipsec':
+      case "ipsec":
         return await this.deleteIPsecConnection(connectionId);
-      case 'softether':
+      case "softether":
         return await this.deleteSoftEtherConnection(connectionId);
-      case 'zerotier':
+      case "zerotier":
         return await this.deleteZeroTierConnection(connectionId);
-      case 'tailscale':
+      case "tailscale":
         return await this.deleteTailscaleConnection(connectionId);
       default:
         throw new Error(`Unsupported VPN type: ${vpnType}`);
@@ -969,9 +1276,9 @@ export class ProxyOpenVPNManager {
   // Advanced Chaining Capabilities
   async createAdvancedChain(
     name: string,
-    hops: Omit<ChainHop, 'id' | 'status' | 'error'>[],
+    hops: Omit<ChainHop, "id" | "status" | "error">[],
     targetHost: string,
-    targetPort: number
+    targetPort: number,
   ): Promise<AdvancedConnectionChain> {
     const chainId = `chain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -985,10 +1292,10 @@ export class ProxyOpenVPNManager {
     const chain: AdvancedConnectionChain = {
       id: chainId,
       name,
-      hops: sortedHops.map(hop => ({
+      hops: sortedHops.map((hop) => ({
         ...hop,
         id: `${chainId}_hop_${hop.position}`,
-        status: 'pending' as const,
+        status: "pending" as const,
       })),
       targetHost,
       targetPort,
@@ -999,7 +1306,9 @@ export class ProxyOpenVPNManager {
     return chain;
   }
 
-  async connectAdvancedChain(chain: AdvancedConnectionChain): Promise<AdvancedConnectionChain> {
+  async connectAdvancedChain(
+    chain: AdvancedConnectionChain,
+  ): Promise<AdvancedConnectionChain> {
     const updatedChain = { ...chain, status: ChainStatus.Connecting };
 
     try {
@@ -1010,19 +1319,19 @@ export class ProxyOpenVPNManager {
 
       for (let i = chain.hops.length - 1; i >= 0; i--) {
         const hop = chain.hops[i];
-        const hopIndex = chain.hops.findIndex(h => h.id === hop.id);
+        const hopIndex = chain.hops.findIndex((h) => h.id === hop.id);
 
         try {
-          updatedChain.hops[hopIndex].status = 'connecting';
+          updatedChain.hops[hopIndex].status = "connecting";
 
-          if (hop.type === 'openvpn') {
+          if (hop.type === "openvpn") {
             const vpnConfig = hop.config as OpenVPNConfig;
             const vpnId = await this.createOpenVPNConnection(
               `${chain.name} - VPN Hop ${hop.position}`,
-              vpnConfig
+              vpnConfig,
             );
             await this.connectOpenVPN(vpnId);
-            updatedChain.hops[hopIndex].status = 'connected';
+            updatedChain.hops[hopIndex].status = "connected";
 
             // Update the target for the next hop to route through this VPN
             if (i > 0) {
@@ -1030,28 +1339,27 @@ export class ProxyOpenVPNManager {
               // This is complex - we'd need to determine the VPN's local IP
               // For now, we'll assume the next hop knows how to route through the VPN
             }
-
-          } else if (hop.type === 'proxy') {
+          } else if (hop.type === "proxy") {
             const proxyConfig = hop.config as ProxyConfig;
             const proxyId = await this.createProxyConnection(
               currentTargetHost,
               currentTargetPort,
-              proxyConfig
+              proxyConfig,
             );
 
             const localPort = await this.connectViaProxy(proxyId);
-            updatedChain.hops[hopIndex].status = 'connected';
+            updatedChain.hops[hopIndex].status = "connected";
             updatedChain.hops[hopIndex].localPort = localPort;
 
             // Update target for next hop
-            currentTargetHost = '127.0.0.1';
+            currentTargetHost = "127.0.0.1";
             currentTargetPort = localPort;
             finalLocalPort = localPort;
           }
-
         } catch (error) {
-          updatedChain.hops[hopIndex].status = 'error';
-          updatedChain.hops[hopIndex].error = error instanceof Error ? error.message : String(error);
+          updatedChain.hops[hopIndex].status = "error";
+          updatedChain.hops[hopIndex].error =
+            error instanceof Error ? error.message : String(error);
           throw error;
         }
       }
@@ -1059,7 +1367,6 @@ export class ProxyOpenVPNManager {
       updatedChain.status = ChainStatus.Connected;
       updatedChain.connectedAt = new Date();
       updatedChain.finalLocalPort = finalLocalPort;
-
     } catch (error) {
       updatedChain.status = ChainStatus.Error;
       // Cleanup any partially established connections
@@ -1076,63 +1383,79 @@ export class ProxyOpenVPNManager {
 
     // Collect all connection IDs
     for (const hop of chain.hops) {
-      if (hop.type === 'proxy') {
+      if (hop.type === "proxy") {
         // We need to reconstruct the proxy connection ID
         // This is a limitation - we should store the actual connection IDs
         proxyConnections.push(`${chain.id}_proxy_${hop.position}`);
-      } else if (hop.type === 'openvpn') {
-        vpnConnections.push({ type: 'openvpn', id: `${chain.name} - VPN Hop ${hop.position}` });
+      } else if (hop.type === "openvpn") {
+        vpnConnections.push({
+          type: "openvpn",
+          id: `${chain.name} - VPN Hop ${hop.position}`,
+        });
       }
     }
 
     await this.disconnectChain(proxyConnections, vpnConnections);
   }
 
-  async validateChainConfig(hops: Omit<ChainHop, 'id' | 'status' | 'error'>[]): Promise<void> {
+  async validateChainConfig(
+    hops: Omit<ChainHop, "id" | "status" | "error">[],
+  ): Promise<void> {
     if (hops.length === 0) {
-      throw new Error('Chain must have at least one hop');
+      throw new Error("Chain must have at least one hop");
     }
 
     // Check for duplicate positions
-    const positions = hops.map(h => h.position);
+    const positions = hops.map((h) => h.position);
     if (new Set(positions).size !== positions.length) {
-      throw new Error('Chain hop positions must be unique');
+      throw new Error("Chain hop positions must be unique");
     }
 
     // Validate position ordering (should start from 0 or 1)
     const minPosition = Math.min(...positions);
     if (minPosition < 0) {
-      throw new Error('Chain hop positions must be non-negative');
+      throw new Error("Chain hop positions must be non-negative");
     }
 
     // Check for VPN positioning constraints
-    const vpnHops = hops.filter(h => h.type === 'openvpn');
+    const vpnHops = hops.filter((h) => h.type === "openvpn");
     if (vpnHops.length > 1) {
       // Multiple VPNs are allowed but should be at the beginning
-      const vpnPositions = vpnHops.map(h => h.position).sort((a, b) => a - b);
-      const nonVpnHops = hops.filter(h => h.type !== 'openvpn');
+      const vpnPositions = vpnHops.map((h) => h.position).sort((a, b) => a - b);
+      const nonVpnHops = hops.filter((h) => h.type !== "openvpn");
       const minVpnPos = Math.min(...vpnPositions);
-      const maxNonVpnPos = nonVpnHops.length > 0 ? Math.max(...nonVpnHops.map(h => h.position)) : -1;
+      const maxNonVpnPos =
+        nonVpnHops.length > 0
+          ? Math.max(...nonVpnHops.map((h) => h.position))
+          : -1;
 
       if (minVpnPos > maxNonVpnPos) {
-        throw new Error('VPN hops should generally be positioned before proxy hops for optimal routing');
+        throw new Error(
+          "VPN hops should generally be positioned before proxy hops for optimal routing",
+        );
       }
     }
 
     // Validate proxy configurations
     for (const hop of hops) {
-      if (hop.type === 'proxy') {
+      if (hop.type === "proxy") {
         const proxyConfig = hop.config as ProxyConfig;
         if (!proxyConfig.enabled) {
-          throw new Error(`Proxy hop at position ${hop.position} is not enabled`);
+          throw new Error(
+            `Proxy hop at position ${hop.position} is not enabled`,
+          );
         }
         if (!proxyConfig.host || proxyConfig.port <= 0) {
-          throw new Error(`Proxy hop at position ${hop.position} has invalid host/port configuration`);
+          throw new Error(
+            `Proxy hop at position ${hop.position} has invalid host/port configuration`,
+          );
         }
-      } else if (hop.type === 'openvpn') {
+      } else if (hop.type === "openvpn") {
         const vpnConfig = hop.config as OpenVPNConfig;
         if (!vpnConfig.remoteHost && !vpnConfig.configFile) {
-          throw new Error(`OpenVPN hop at position ${hop.position} must have either remote host or config file`);
+          throw new Error(
+            `OpenVPN hop at position ${hop.position} must have either remote host or config file`,
+          );
         }
       }
     }
@@ -1142,7 +1465,7 @@ export class ProxyOpenVPNManager {
   async createProxyChain(
     proxies: Array<{ config: ProxyConfig; position: number }>,
     targetHost: string,
-    targetPort: number
+    targetPort: number,
   ): Promise<{ chainId: string; finalLocalPort: number; proxyIds: string[] }> {
     const chainId = `proxy_chain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const proxyIds: string[] = [];
@@ -1158,14 +1481,14 @@ export class ProxyOpenVPNManager {
       const proxyId = await this.createProxyConnection(
         currentTargetHost,
         currentTargetPort,
-        proxy.config
+        proxy.config,
       );
 
       const localPort = await this.connectViaProxy(proxyId);
       proxyIds.push(proxyId);
 
       // Next proxy routes through this one
-      currentTargetHost = '127.0.0.1';
+      currentTargetHost = "127.0.0.1";
       currentTargetPort = localPort;
       finalLocalPort = localPort;
     }
@@ -1183,7 +1506,7 @@ export class ProxyOpenVPNManager {
     proxyConfigs: ProxyConfig[],
     targetHost: string,
     targetPort: number,
-    comboType: 'vpn-first' | 'proxy-first' | 'interleaved'
+    comboType: "vpn-first" | "proxy-first" | "interleaved",
   ): Promise<{
     chainId: string;
     vpnId?: string;
@@ -1196,27 +1519,30 @@ export class ProxyOpenVPNManager {
     let finalLocalPort: number | undefined;
 
     switch (comboType) {
-      case 'vpn-first':
+      case "vpn-first":
         // Connect VPN first, then route proxies through it
-        vpnId = await this.createOpenVPNConnection(`Combo VPN - ${chainId}`, vpnConfig);
+        vpnId = await this.createOpenVPNConnection(
+          `Combo VPN - ${chainId}`,
+          vpnConfig,
+        );
         await this.connectOpenVPN(vpnId);
 
         // Create proxy chain that routes through the VPN
         const proxyChain = await this.createProxyChain(
           proxyConfigs.map((config, index) => ({ config, position: index })),
           targetHost,
-          targetPort
+          targetPort,
         );
         proxyIds.push(...proxyChain.proxyIds);
         finalLocalPort = proxyChain.finalLocalPort;
         break;
 
-      case 'proxy-first':
+      case "proxy-first":
         // Create proxy chain first, then route VPN through the final proxy
         const proxyChainResult = await this.createProxyChain(
           proxyConfigs.map((config, index) => ({ config, position: index })),
           targetHost,
-          targetPort
+          targetPort,
         );
         proxyIds.push(...proxyChainResult.proxyIds);
 
@@ -1226,12 +1552,15 @@ export class ProxyOpenVPNManager {
           // Modify VPN to route through the proxy chain
           // This would require updating the VPN config to use the proxy
         };
-        vpnId = await this.createOpenVPNConnection(`Combo VPN - ${chainId}`, modifiedVpnConfig);
+        vpnId = await this.createOpenVPNConnection(
+          `Combo VPN - ${chainId}`,
+          modifiedVpnConfig,
+        );
         await this.connectOpenVPN(vpnId);
         finalLocalPort = proxyChainResult.finalLocalPort;
         break;
 
-      case 'interleaved':
+      case "interleaved":
         // Alternate between VPN and proxy connections
         let currentHost = targetHost;
         let currentPort = targetPort;
@@ -1242,18 +1571,21 @@ export class ProxyOpenVPNManager {
             const proxyId = await this.createProxyConnection(
               currentHost,
               currentPort,
-              proxyConfigs[i]
+              proxyConfigs[i],
             );
             const localPort = await this.connectViaProxy(proxyId);
             proxyIds.push(proxyId);
-            currentHost = '127.0.0.1';
+            currentHost = "127.0.0.1";
             currentPort = localPort;
             finalLocalPort = localPort;
           }
 
           // Add VPN if this is the last iteration or at specific intervals
           if (i === proxyConfigs.length - 1) {
-            vpnId = await this.createOpenVPNConnection(`Combo VPN - ${chainId}`, vpnConfig);
+            vpnId = await this.createOpenVPNConnection(
+              `Combo VPN - ${chainId}`,
+              vpnConfig,
+            );
             await this.connectOpenVPN(vpnId);
           }
         }
@@ -1269,9 +1601,7 @@ export class ProxyOpenVPNManager {
   }
 
   // Chain Optimization and Analysis
-  async analyzeChainPerformance(
-    chain: AdvancedConnectionChain
-  ): Promise<{
+  async analyzeChainPerformance(chain: AdvancedConnectionChain): Promise<{
     totalLatency: number;
     bandwidth: number;
     reliability: number;
@@ -1284,14 +1614,14 @@ export class ProxyOpenVPNManager {
       bandwidth: 50, // Mbps
       reliability: 0.95, // 95%
       recommendations: [
-        'Consider moving VPN closer to target for better performance',
-        'Proxy chain is optimal for current configuration',
+        "Consider moving VPN closer to target for better performance",
+        "Proxy chain is optimal for current configuration",
       ],
     };
   }
 
   async optimizeChain(
-    chain: AdvancedConnectionChain
+    chain: AdvancedConnectionChain,
   ): Promise<AdvancedConnectionChain> {
     // Analyze current chain and suggest optimizations
     const analysis = await this.analyzeChainPerformance(chain);
@@ -1300,13 +1630,16 @@ export class ProxyOpenVPNManager {
     const optimizedHops = [...chain.hops];
 
     // Example optimization: move VPNs to the beginning
-    const vpnHops = optimizedHops.filter(h => h.type === 'openvpn');
-    const proxyHops = optimizedHops.filter(h => h.type === 'proxy');
+    const vpnHops = optimizedHops.filter((h) => h.type === "openvpn");
+    const proxyHops = optimizedHops.filter((h) => h.type === "proxy");
 
     // Reorder: VPNs first, then proxies
     const reorderedHops = [
       ...vpnHops.map((hop, index) => ({ ...hop, position: index })),
-      ...proxyHops.map((hop, index) => ({ ...hop, position: vpnHops.length + index })),
+      ...proxyHops.map((hop, index) => ({
+        ...hop,
+        position: vpnHops.length + index,
+      })),
     ];
 
     return {
@@ -1319,15 +1652,15 @@ export class ProxyOpenVPNManager {
   // Dynamic Chain Management
   async reconfigureChain(
     chainId: string,
-    newHops: Omit<ChainHop, 'id' | 'status' | 'error'>[]
+    newHops: Omit<ChainHop, "id" | "status" | "error">[],
   ): Promise<AdvancedConnectionChain> {
     // Find existing chain (this would need to be stored)
     // For now, create a new optimized chain
     const newChain = await this.createAdvancedChain(
       `Reconfigured Chain ${chainId}`,
       newHops,
-      'target-host', // This should come from existing chain
-      22 // This should come from existing chain
+      "target-host", // This should come from existing chain
+      22, // This should come from existing chain
     );
 
     return newChain;
@@ -1335,12 +1668,20 @@ export class ProxyOpenVPNManager {
 
   // Chain Monitoring and Health Checks
   async monitorChain(chain: AdvancedConnectionChain): Promise<{
-    overallHealth: 'healthy' | 'degraded' | 'unhealthy';
-    hopStatuses: Array<{ hopId: string; health: 'healthy' | 'degraded' | 'unhealthy'; metrics: any }>;
+    overallHealth: "healthy" | "degraded" | "unhealthy";
+    hopStatuses: Array<{
+      hopId: string;
+      health: "healthy" | "degraded" | "unhealthy";
+      metrics: any;
+    }>;
     recommendations: string[];
   }> {
-    const hopStatuses: Array<{ hopId: string; health: 'healthy' | 'degraded' | 'unhealthy'; metrics: any }> = [];
-    let overallHealth: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+    const hopStatuses: Array<{
+      hopId: string;
+      health: "healthy" | "degraded" | "unhealthy";
+      metrics: any;
+    }> = [];
+    let overallHealth: "healthy" | "degraded" | "unhealthy" = "healthy";
 
     for (const hop of chain.hops) {
       // Perform health check for each hop
@@ -1351,10 +1692,10 @@ export class ProxyOpenVPNManager {
         metrics: health.metrics,
       });
 
-      if (health.status === 'unhealthy') {
-        overallHealth = 'unhealthy';
-      } else if (health.status === 'degraded' && overallHealth === 'healthy') {
-        overallHealth = 'degraded';
+      if (health.status === "unhealthy") {
+        overallHealth = "unhealthy";
+      } else if (health.status === "degraded" && overallHealth === "healthy") {
+        overallHealth = "degraded";
       }
     }
 
@@ -1368,49 +1709,59 @@ export class ProxyOpenVPNManager {
   }
 
   private async checkHopHealth(hop: ChainHop): Promise<{
-    status: 'healthy' | 'degraded' | 'unhealthy';
+    status: "healthy" | "degraded" | "unhealthy";
     metrics: any;
   }> {
     // Implement health checking logic for each hop type
-    if (hop.type === 'proxy') {
+    if (hop.type === "proxy") {
       // Check proxy connectivity and latency
       return {
-        status: 'healthy',
+        status: "healthy",
         metrics: { latency: 50, successRate: 0.98 },
       };
-    } else if (hop.type === 'openvpn') {
+    } else if (hop.type === "openvpn") {
       // Check VPN connectivity and tunnel status
       return {
-        status: 'healthy',
+        status: "healthy",
         metrics: { latency: 100, bytesTransferred: 1024000 },
       };
     }
 
     return {
-      status: 'healthy',
+      status: "healthy",
       metrics: {},
     };
   }
 
   private generateHealthRecommendations(
-    hopStatuses: Array<{ hopId: string; health: 'healthy' | 'degraded' | 'unhealthy'; metrics: any }>
+    hopStatuses: Array<{
+      hopId: string;
+      health: "healthy" | "degraded" | "unhealthy";
+      metrics: any;
+    }>,
   ): string[] {
     const recommendations: string[] = [];
 
-    const unhealthyHops = hopStatuses.filter(h => h.health === 'unhealthy');
+    const unhealthyHops = hopStatuses.filter((h) => h.health === "unhealthy");
     if (unhealthyHops.length > 0) {
-      recommendations.push(`Replace or reconfigure ${unhealthyHops.length} unhealthy hop(s)`);
+      recommendations.push(
+        `Replace or reconfigure ${unhealthyHops.length} unhealthy hop(s)`,
+      );
     }
 
-    const degradedHops = hopStatuses.filter(h => h.health === 'degraded');
+    const degradedHops = hopStatuses.filter((h) => h.health === "degraded");
     if (degradedHops.length > 0) {
-      recommendations.push(`Monitor ${degradedHops.length} degraded hop(s) for potential issues`);
+      recommendations.push(
+        `Monitor ${degradedHops.length} degraded hop(s) for potential issues`,
+      );
     }
 
     // Add more sophisticated recommendations based on metrics
-    const highLatencyHops = hopStatuses.filter(h => h.metrics.latency > 200);
+    const highLatencyHops = hopStatuses.filter((h) => h.metrics.latency > 200);
     if (highLatencyHops.length > 0) {
-      recommendations.push('Consider optimizing high-latency hops or reordering the chain');
+      recommendations.push(
+        "Consider optimizing high-latency hops or reordering the chain",
+      );
     }
 
     return recommendations;
@@ -1420,9 +1771,9 @@ export class ProxyOpenVPNManager {
   async createConnectionChain(
     name: string,
     description: string | undefined,
-    layers: ChainLayer[]
+    layers: ChainLayer[],
   ): Promise<string> {
-    return await invoke('create_connection_chain', {
+    return await invoke("create_connection_chain", {
       name,
       description,
       layers,
@@ -1430,40 +1781,44 @@ export class ProxyOpenVPNManager {
   }
 
   async connectConnectionChain(chainId: string): Promise<void> {
-    return await invoke('connect_connection_chain', { chainId });
+    return await invoke("connect_connection_chain", { chainId });
   }
 
   async disconnectConnectionChain(chainId: string): Promise<void> {
-    return await invoke('disconnect_connection_chain', { chainId });
+    return await invoke("disconnect_connection_chain", { chainId });
   }
 
   async getConnectionChain(chainId: string): Promise<ConnectionChain> {
-    const result: any = await invoke('get_connection_chain', { chainId });
+    const result: any = await invoke("get_connection_chain", { chainId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at ? new Date(result.connected_at) : undefined,
+      connectedAt: result.connected_at
+        ? new Date(result.connected_at)
+        : undefined,
     };
   }
 
   async listConnectionChains(): Promise<ConnectionChain[]> {
-    const results: any[] = await invoke('list_connection_chains');
+    const results: any[] = await invoke("list_connection_chains");
     return results.map((chain: any) => ({
       ...chain,
       createdAt: new Date(chain.created_at),
-      connectedAt: chain.connected_at ? new Date(chain.connected_at) : undefined,
+      connectedAt: chain.connected_at
+        ? new Date(chain.connected_at)
+        : undefined,
     }));
   }
 
   async deleteConnectionChain(chainId: string): Promise<void> {
-    return await invoke('delete_connection_chain', { chainId });
+    return await invoke("delete_connection_chain", { chainId });
   }
 
   async updateConnectionChainLayers(
     chainId: string,
-    layers: ChainLayer[]
+    layers: ChainLayer[],
   ): Promise<void> {
-    return await invoke('update_connection_chain_layers', {
+    return await invoke("update_connection_chain_layers", {
       chainId,
       layers,
     });

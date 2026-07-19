@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     invoke: vi.fn(),
     dispatch: vi.fn(),
     useConnections: vi.fn(),
+    resolveRuntimeNetworkPath: vi.fn(),
   };
 });
 
@@ -38,6 +39,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("../../contexts/useConnections", () => ({
   useConnections: () => mocks.useConnections(),
+}));
+
+vi.mock("../../utils/network/resolveRuntimeNetworkPath", () => ({
+  resolveRuntimeNetworkPath: (...args: unknown[]) =>
+    mocks.resolveRuntimeNetworkPath(...args),
 }));
 
 import { usePowerShellSession } from "./usePowerShellSession";
@@ -131,6 +137,8 @@ beforeEach(() => {
   mocks.channels.length = 0;
   mocks.invoke.mockReset();
   mocks.dispatch.mockReset();
+  mocks.resolveRuntimeNetworkPath.mockReset();
+  mocks.resolveRuntimeNetworkPath.mockResolvedValue(undefined);
   mocks.useConnections.mockReturnValue({
     state: { connections: [connection], sessions: [] },
     dispatch: mocks.dispatch,
@@ -152,6 +160,94 @@ beforeEach(() => {
 });
 
 describe("usePowerShellSession", () => {
+  it("blocks a configured shared network path before opening a new backend", async () => {
+    const routedConnection: Connection = {
+      ...connection,
+      tunnelChainId: "vpn-tunnel-chain",
+    };
+    mocks.useConnections.mockReturnValue({
+      state: { connections: [routedConnection], sessions: [] },
+      dispatch: mocks.dispatch,
+    });
+    mocks.resolveRuntimeNetworkPath.mockRejectedValueOnce(
+      new Error(
+        "PowerShell Remoting cannot use network-path layer 1 (openvpn).",
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      usePowerShellSession(frontendSession()),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(result.current.error).toMatch(/cannot use network-path layer/i);
+    expect(mocks.resolveRuntimeNetworkPath).toHaveBeenCalledWith(
+      routedConnection,
+      [routedConnection],
+      "powershell",
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "open_powershell_session",
+      expect.anything(),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({ status: "error" }),
+      }),
+    );
+  });
+
+  it("preflights a shared path before replacing a backend during reconnect", async () => {
+    const routedConnection: Connection = {
+      ...connection,
+      security: {
+        tunnelChain: [
+          {
+            id: "vpn-layer",
+            name: "OpenVPN",
+            type: "openvpn",
+            enabled: true,
+            vpn: { configId: "vpn-profile" },
+          },
+        ],
+      },
+    };
+    mocks.useConnections.mockReturnValue({
+      state: { connections: [routedConnection], sessions: [] },
+      dispatch: mocks.dispatch,
+    });
+    mocks.resolveRuntimeNetworkPath.mockRejectedValueOnce(
+      new Error(
+        "PowerShell Remoting cannot use network-path layer 1 (openvpn).",
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      usePowerShellSession(
+        frontendSession({
+          status: "reconnecting",
+          backendSessionId: "backend-ps-1",
+          reconnectAttempts: 1,
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("failed"));
+    expect(mocks.resolveRuntimeNetworkPath).toHaveBeenCalledWith(
+      routedConnection,
+      [routedConnection],
+      "powershell",
+    );
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) =>
+          command === "open_powershell_session" ||
+          command === "close_powershell_session",
+      ),
+    ).toBe(false);
+  });
+
   it("ignores Strict Mode's stale cleanup and closes the backend exactly once", async () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <StrictMode>{children}</StrictMode>
@@ -313,6 +409,7 @@ describe("usePowerShellSession", () => {
     );
     await waitFor(() => expect(result.current.events).toHaveLength(1));
     expect(result.current.replayTruncated).toBe(true);
+    expect(mocks.resolveRuntimeNetworkPath).not.toHaveBeenCalled();
 
     window.dispatchEvent(
       new CustomEvent("sorng:session-will-detach", {

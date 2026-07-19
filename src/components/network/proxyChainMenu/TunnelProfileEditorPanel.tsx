@@ -8,6 +8,7 @@ import type {
 } from "../../../types/connection/connection";
 import { TUNNEL_TYPE_OPTIONS, getTypeLabel } from "./tunnelChainShared.helpers";
 import { LayerConfigForm } from "./tunnelChainShared";
+import { useVpnManager } from "../../../hooks/network/useVpnManager";
 
 // Reuse createDefaultLayer from useTunnelChainEditor
 function createDefaultLayer(type: TunnelType): TunnelChainLayer {
@@ -47,13 +48,27 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
         sshTunnel: { forwardType: "local" },
       };
     case "openvpn":
-      return { ...base, name: "OpenVPN", vpn: { protocol: "udp" } };
+      return {
+        ...base,
+        name: "OpenVPN",
+        vpn: { configId: "", protocol: "udp" },
+      };
     case "wireguard":
-      return { ...base, name: "WireGuard", vpn: {} };
+      return { ...base, name: "WireGuard", vpn: { configId: "" } };
     case "tailscale":
-      return { ...base, name: "Tailscale", mesh: {} };
+      return {
+        ...base,
+        name: "Tailscale",
+        vpn: { configId: "" },
+        mesh: {},
+      };
     case "zerotier":
-      return { ...base, name: "ZeroTier", mesh: {} };
+      return {
+        ...base,
+        name: "ZeroTier",
+        vpn: { configId: "" },
+        mesh: {},
+      };
     case "shadowsocks":
       return {
         ...base,
@@ -85,6 +100,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
   editingProfileId,
 }) => {
   const { t } = useTranslation();
+  const vpnManager = useVpnManager(isOpen);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -325,6 +341,7 @@ const TunnelProfileEditorPanel: React.FC<TunnelProfileEditorPanelProps> = ({
           </h3>
           <LayerConfigForm
             layer={layerConfig}
+            vpnProfileCatalog={vpnManager.profileCatalog}
             onUpdate={(updates) =>
               setLayerConfig((prev) => ({ ...prev, ...updates }))
             }

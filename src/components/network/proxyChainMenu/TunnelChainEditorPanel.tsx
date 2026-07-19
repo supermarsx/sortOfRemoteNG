@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTunnelChainEditor } from "../../../hooks/network/useTunnelChainEditor";
+import { useVpnManager } from "../../../hooks/network/useVpnManager";
 import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
 import type {
   TunnelType,
@@ -43,6 +44,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
 }) => {
   const { t } = useTranslation();
   const editor = useTunnelChainEditor();
+  const vpnManager = useVpnManager(isOpen);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [expandedLayer, setExpandedLayer] = useState<string | null>(null);
@@ -458,6 +460,7 @@ const TunnelChainEditorPanel: React.FC<TunnelChainEditorPanelProps> = ({
                     </div>
                     <LayerConfigForm
                       layer={layer}
+                      vpnProfileCatalog={vpnManager.profileCatalog}
                       onUpdate={(updates) =>
                         editor.updateLayer(layer.id, updates)
                       }

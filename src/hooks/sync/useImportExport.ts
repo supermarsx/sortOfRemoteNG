@@ -60,6 +60,10 @@ import {
   type ImportFormat,
 } from "../../components/ImportExport/utils";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
+import {
+  resolveTunnelLayerVpnProfileId,
+  withTunnelLayerVpnProfileId,
+} from "../../utils/network/vpnProviderCatalog";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import { generateId } from "../../utils/core/id";
 import {
@@ -733,7 +737,7 @@ const collectConnectionSidecarReferences = (connections: Connection[]) => {
     const legacyOpenVpnId = connection.security?.openvpn?.configId;
     if (legacyOpenVpnId) vpnConnectionIds.add(legacyOpenVpnId);
     connection.security?.tunnelChain?.forEach((layer) => {
-      const layerVpnId = layer.vpn?.configId;
+      const layerVpnId = resolveTunnelLayerVpnProfileId(layer);
       if (layerVpnId) vpnConnectionIds.add(layerVpnId);
     });
   });
@@ -741,23 +745,14 @@ const collectConnectionSidecarReferences = (connections: Connection[]) => {
   return { proxyChainIds, tunnelChainIds, vpnConnectionIds };
 };
 
-const remapConnectionSidecars = (
+const remapConnectionVpnReferences = (
   connection: Connection,
-  result: CloneSidecarResult,
+  vpnConnectionIds: Map<string, string>,
 ): Connection => {
   let next: Connection = connection;
-  const proxyChainId = connection.proxyChainId
-    ? result.idMaps.proxyChainIds.get(connection.proxyChainId)
-    : undefined;
-  const tunnelChainId = connection.tunnelChainId
-    ? result.idMaps.tunnelChainIds.get(connection.tunnelChainId)
-    : undefined;
   const legacyOpenVpnId = connection.security?.openvpn?.configId
-    ? result.idMaps.vpnConnectionIds.get(connection.security.openvpn.configId)
+    ? vpnConnectionIds.get(connection.security.openvpn.configId)
     : undefined;
-
-  if (proxyChainId) next = { ...next, proxyChainId };
-  if (tunnelChainId) next = { ...next, tunnelChainId };
   if (legacyOpenVpnId) {
     next = {
       ...next,
@@ -773,22 +768,44 @@ const remapConnectionSidecars = (
   }
 
   const tunnelChain = next.security?.tunnelChain;
-  if (tunnelChain?.some((layer) => layer.vpn?.configId)) {
+  if (tunnelChain?.some((layer) => resolveTunnelLayerVpnProfileId(layer))) {
     next = {
       ...next,
       security: {
         ...next.security,
         tunnelChain: tunnelChain.map((layer) => {
-          const layerVpnId = layer.vpn?.configId
-            ? result.idMaps.vpnConnectionIds.get(layer.vpn.configId)
+          const currentVpnId = resolveTunnelLayerVpnProfileId(layer);
+          const layerVpnId = currentVpnId
+            ? vpnConnectionIds.get(currentVpnId)
             : undefined;
           return layerVpnId
-            ? { ...layer, vpn: { ...layer.vpn, configId: layerVpnId } }
+            ? withTunnelLayerVpnProfileId(layer, layerVpnId)
             : layer;
         }),
       },
     };
   }
+
+  return next;
+};
+
+const remapConnectionSidecars = (
+  connection: Connection,
+  result: CloneSidecarResult,
+): Connection => {
+  let next = remapConnectionVpnReferences(
+    connection,
+    result.idMaps.vpnConnectionIds,
+  );
+  const proxyChainId = connection.proxyChainId
+    ? result.idMaps.proxyChainIds.get(connection.proxyChainId)
+    : undefined;
+  const tunnelChainId = connection.tunnelChainId
+    ? result.idMaps.tunnelChainIds.get(connection.tunnelChainId)
+    : undefined;
+
+  if (proxyChainId) next = { ...next, proxyChainId };
+  if (tunnelChainId) next = { ...next, tunnelChainId };
 
   return next;
 };
@@ -816,11 +833,12 @@ const remapTunnelChain = (
 ): ExportTunnelChain => ({
   ...chain,
   layers: chain.layers.map((layer) => {
-    const mappedVpnId = layer.vpn?.configId
-      ? vpnConnectionIds.get(layer.vpn.configId)
+    const currentVpnId = resolveTunnelLayerVpnProfileId(layer);
+    const mappedVpnId = currentVpnId
+      ? vpnConnectionIds.get(currentVpnId)
       : undefined;
     return mappedVpnId
-      ? { ...layer, vpn: { ...layer.vpn, configId: mappedVpnId } }
+      ? withTunnelLayerVpnProfileId(layer, mappedVpnId)
       : layer;
   }),
 });
@@ -2419,8 +2437,8 @@ export function useImportExport({
     });
     tunnelChainById.forEach((chain) => {
       chain.layers.forEach((layer) => {
-        if (layer.vpn?.configId)
-          references.vpnConnectionIds.add(layer.vpn.configId);
+        const vpnProfileId = resolveTunnelLayerVpnProfileId(layer);
+        if (vpnProfileId) references.vpnConnectionIds.add(vpnProfileId);
       });
     });
 
@@ -3907,10 +3925,16 @@ ${tableRows}
         addTags,
         preserveFolders: importOptions.preserveFolders,
       });
-      const connectionsToImport = applied.remapped;
-      const sshTunnelsImportedCount = importOptions.includeSshTunnels
-        ? connectionsToImport.filter(hasConnectionSshTunnel).length
-        : 0;
+      const baseConnectionsToImport = applied.remapped;
+
+      const selectedVpnItems =
+        selectedPreviewItems?.filter(
+          (item) => item.kind === "vpn" && item.vpnType && item.vpnConnection,
+        ) ?? [];
+      const selectedTunnelChainItems =
+        selectedPreviewItems?.filter(
+          (item) => item.kind === "tunnelChain" && item.tunnelChainTemplate,
+        ) ?? [];
 
       const currentDatabase = databaseManager.getCurrentDatabase();
       const targetDatabases = getImportTargetDatabases();
@@ -3928,6 +3952,97 @@ ${tableRows}
         return;
       }
 
+      // Restore selected VPN connections
+      let vpnImportedCount = 0;
+      const importedVpnIds = new Map<string, string>();
+      if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
+        const proxyMgr = ProxyOpenVPNManager.getInstance();
+
+        for (const item of selectedVpnItems) {
+          const conn = item.vpnConnection;
+          if (!conn || !item.vpnType) continue;
+          try {
+            let createdId: string;
+            if (item.vpnType === "openvpn") {
+              const openvpn = conn as ImportVpnData["openvpn"][number];
+              createdId = await proxyMgr.createOpenVPNConnection(
+                openvpn.name,
+                openvpn.config,
+              );
+            } else if (item.vpnType === "wireguard") {
+              const wireguard = conn as ImportVpnData["wireguard"][number];
+              createdId = await proxyMgr.createWireGuardConnection(
+                wireguard.name,
+                wireguard.config,
+              );
+            } else if (item.vpnType === "tailscale") {
+              const tailscale = conn as ImportVpnData["tailscale"][number];
+              createdId = await proxyMgr.createTailscaleConnection(
+                tailscale.name,
+                tailscale.config,
+              );
+            } else if (item.vpnType === "zerotier") {
+              const zerotier = conn as ImportVpnData["zerotier"][number];
+              createdId = await proxyMgr.createZeroTierConnection(
+                zerotier.name,
+                zerotier.config,
+              );
+            } else {
+              continue;
+            }
+            if (conn.id) importedVpnIds.set(conn.id, createdId);
+            vpnImportedCount++;
+          } catch (e) {
+            console.warn(`VPN import skip (${item.vpnType}):`, e);
+          }
+        }
+      }
+
+      // Restore selected tunnel chain templates
+      let tunnelChainsImportedCount = 0;
+      const importedTunnelChainIds = new Map<string, string>();
+      if (
+        importOptions.includeTunnelChains &&
+        selectedTunnelChainItems.length > 0
+      ) {
+        for (const item of selectedTunnelChainItems) {
+          const chain = item.tunnelChainTemplate;
+          if (!chain) continue;
+          try {
+            const remappedChain = remapTunnelChain(chain, importedVpnIds);
+            const created = await proxyCollectionManager.createTunnelChain(
+              remappedChain.name,
+              remappedChain.layers,
+              {
+                description: remappedChain.description,
+                tags: remappedChain.tags,
+              },
+            );
+            if (chain.id) importedTunnelChainIds.set(chain.id, created.id);
+            tunnelChainsImportedCount++;
+          } catch (e) {
+            console.warn("Tunnel chain import skip:", e);
+          }
+        }
+      }
+
+      // Sidecars receive fresh app-local IDs. Rewrite every imported
+      // connection only after the selected VPN profiles and saved chains have
+      // been created, while preserving stable layer IDs inside inline chains.
+      const connectionsToImport = baseConnectionsToImport.map((connection) => {
+        const remapped = remapConnectionVpnReferences(
+          connection,
+          importedVpnIds,
+        );
+        const tunnelChainId = remapped.tunnelChainId
+          ? importedTunnelChainIds.get(remapped.tunnelChainId)
+          : undefined;
+        return tunnelChainId ? { ...remapped, tunnelChainId } : remapped;
+      });
+      const sshTunnelsImportedCount = importOptions.includeSshTunnels
+        ? connectionsToImport.filter(hasConnectionSshTunnel).length
+        : 0;
+
       for (const targetDatabase of targetDatabases) {
         if (targetDatabase.id === currentDatabase?.id) {
           connectionsToImport.forEach((conn) => {
@@ -3938,78 +4053,6 @@ ${tableRows}
             targetDatabase.id,
             connectionsToImport,
           );
-        }
-      }
-
-      const selectedVpnItems =
-        selectedPreviewItems?.filter(
-          (item) => item.kind === "vpn" && item.vpnType && item.vpnConnection,
-        ) ?? [];
-      const selectedTunnelChainItems =
-        selectedPreviewItems?.filter(
-          (item) => item.kind === "tunnelChain" && item.tunnelChainTemplate,
-        ) ?? [];
-
-      // Restore selected VPN connections
-      let vpnImportedCount = 0;
-      if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
-        const proxyMgr = ProxyOpenVPNManager.getInstance();
-
-        for (const item of selectedVpnItems) {
-          const conn = item.vpnConnection;
-          if (!conn || !item.vpnType) continue;
-          try {
-            if (item.vpnType === "openvpn") {
-              const openvpn = conn as ImportVpnData["openvpn"][number];
-              await proxyMgr.createOpenVPNConnection(
-                openvpn.name,
-                openvpn.config,
-              );
-            } else if (item.vpnType === "wireguard") {
-              const wireguard = conn as ImportVpnData["wireguard"][number];
-              await proxyMgr.createWireGuardConnection(
-                wireguard.name,
-                wireguard.config,
-              );
-            } else if (item.vpnType === "tailscale") {
-              const tailscale = conn as ImportVpnData["tailscale"][number];
-              await proxyMgr.createTailscaleConnection(
-                tailscale.name,
-                tailscale.config,
-              );
-            } else if (item.vpnType === "zerotier") {
-              const zerotier = conn as ImportVpnData["zerotier"][number];
-              await proxyMgr.createZeroTierConnection(
-                zerotier.name,
-                zerotier.config,
-              );
-            }
-            vpnImportedCount++;
-          } catch (e) {
-            console.warn(`VPN import skip (${item.vpnType}):`, e);
-          }
-        }
-      }
-
-      // Restore selected tunnel chain templates
-      let tunnelChainsImportedCount = 0;
-      if (
-        importOptions.includeTunnelChains &&
-        selectedTunnelChainItems.length > 0
-      ) {
-        for (const item of selectedTunnelChainItems) {
-          const chain = item.tunnelChainTemplate;
-          if (!chain) continue;
-          try {
-            await proxyCollectionManager.createTunnelChain(
-              chain.name,
-              chain.layers,
-              { description: chain.description, tags: chain.tags },
-            );
-            tunnelChainsImportedCount++;
-          } catch (e) {
-            console.warn("Tunnel chain import skip:", e);
-          }
         }
       }
 

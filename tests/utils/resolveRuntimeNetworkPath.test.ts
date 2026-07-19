@@ -220,6 +220,91 @@ describe("buildRuntimeNetworkPath", () => {
     ).toThrowError(/Network path blocked.*does not exist/i);
   });
 
+  it("emits the persisted VPN profile ID for an imported layer", () => {
+    const target = connection("ssh", {
+      security: {
+        tunnelChain: [
+          layer("imported-layer-id", {
+            type: "wireguard",
+            vpn: { configId: "persisted-wireguard-profile" },
+          }),
+        ],
+      },
+    });
+    const catalog: NetworkPathCatalog = {
+      ...EMPTY_CATALOG,
+      vpnProfiles: {
+        profiles: [
+          {
+            id: "persisted-wireguard-profile",
+            name: "Production WireGuard",
+            vpnType: "wireguard",
+            status: "disconnected",
+            createdAt: new Date("2026-07-19T00:00:00.000Z"),
+          },
+        ],
+        providerStatus: { wireguard: "loaded" },
+      },
+    };
+
+    const runtime = buildRuntimeNetworkPath(target, catalog, "ssh");
+    expect(runtime.transport.vpnPreSteps).toEqual([
+      {
+        vpnType: "wireguard",
+        connectionId: "persisted-wireguard-profile",
+        configId: "persisted-wireguard-profile",
+      },
+    ]);
+  });
+
+  it("fails with the correct cause for deleted and unreadable VPN profiles", () => {
+    const target = connection("ssh", {
+      security: {
+        tunnelChain: [
+          layer("layer-id", {
+            type: "openvpn",
+            vpn: { configId: "profile-id" },
+          }),
+        ],
+      },
+    });
+
+    expect(() =>
+      buildRuntimeNetworkPath(
+        target,
+        {
+          ...EMPTY_CATALOG,
+          vpnProfiles: {
+            profiles: [],
+            providerStatus: { openvpn: "loaded" },
+          },
+        },
+        "ssh",
+      ),
+    ).toThrowError(/no longer exists/i);
+
+    try {
+      buildRuntimeNetworkPath(
+        target,
+        {
+          ...EMPTY_CATALOG,
+          vpnProfiles: {
+            profiles: [],
+            providerStatus: { openvpn: "error" },
+          },
+        },
+        "ssh",
+      );
+      throw new Error("expected snapshot failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeNetworkPathError);
+      expect((error as RuntimeNetworkPathError).code).toBe(
+        "snapshot-unavailable",
+      );
+      expect((error as Error).message).toMatch(/cannot be verified yet/i);
+    }
+  });
+
   it("fails closed for unsupported nested ProxyCommand layers", () => {
     const target = connection("ssh", {
       security: {
