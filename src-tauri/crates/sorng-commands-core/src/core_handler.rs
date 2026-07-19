@@ -251,6 +251,7 @@ pub fn is_command(command: &str) -> bool {
             | "delete_proxy_chain"
             | "get_proxy_chain_health"
             | "create_wireguard_connection"
+            | "create_wireguard_connection_from_conf"
             | "connect_wireguard"
             | "disconnect_wireguard"
             | "get_wireguard_connection"
@@ -1559,6 +1560,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         proxy_commands::delete_proxy_chain,
         proxy_commands::get_proxy_chain_health,
         wireguard_commands::create_wireguard_connection,
+        wireguard_commands::create_wireguard_connection_from_conf,
         wireguard_commands::connect_wireguard,
         wireguard_commands::disconnect_wireguard,
         wireguard_commands::get_wireguard_connection,

@@ -10,6 +10,19 @@ pub async fn create_wireguard_connection(
     service.create_connection(name, config).await
 }
 
+/// Import an exact standard WireGuard `.conf` payload. Tauri invokes this as
+/// `create_wireguard_connection_from_conf` with `{ name, content }` and returns
+/// the newly persisted profile ID as a string.
+#[tauri::command]
+pub async fn create_wireguard_connection_from_conf(
+    name: String,
+    content: String,
+    wireguard_service: tauri::State<'_, WireGuardServiceState>,
+) -> Result<String, String> {
+    let mut service = wireguard_service.lock().await;
+    service.create_connection_from_conf(name, content).await
+}
+
 #[tauri::command]
 pub async fn connect_wireguard(
     connection_id: String,
@@ -33,7 +46,8 @@ pub async fn get_wireguard_connection(
     connection_id: String,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<WireGuardConnection, String> {
-    let service = wireguard_service.lock().await;
+    let mut service = wireguard_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     service.get_connection(&connection_id).await
 }
 
@@ -42,7 +56,8 @@ pub async fn get_wireguard_status(
     connection_id: String,
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<WireGuardStatus, String> {
-    let service = wireguard_service.lock().await;
+    let mut service = wireguard_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     Ok(service.get_connection(&connection_id).await?.status)
 }
 
@@ -50,7 +65,8 @@ pub async fn get_wireguard_status(
 pub async fn list_wireguard_connections(
     wireguard_service: tauri::State<'_, WireGuardServiceState>,
 ) -> Result<Vec<WireGuardConnection>, String> {
-    let service = wireguard_service.lock().await;
+    let mut service = wireguard_service.lock().await;
+    service.ensure_persisted_loaded().await?;
     Ok(service.list_connections().await)
 }
 

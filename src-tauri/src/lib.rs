@@ -99,22 +99,77 @@ mod ssh_tunnel_tests;
 /// Per-connection spans are created by the protocol crates (`sorng-ssh`,
 /// `sorng-sftp`, `sorng-rdp`, `sorng-vnc`, `sorng-vpn`) via their
 /// `conn_span(id)` helper which attaches the `conn_id` field (t3-e23).
+fn tracing_metadata_is_safe(target: &str, level: &tracing::Level) -> bool {
+    let is_defguard_wireguard =
+        target == "defguard_wireguard_rs" || target.starts_with("defguard_wireguard_rs::");
+    !is_defguard_wireguard
+        || matches!(
+            *level,
+            tracing::Level::ERROR | tracing::Level::WARN | tracing::Level::INFO
+        )
+}
+
 fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    use tracing_subscriber::{
+        filter::{filter_fn, FilterExt},
+        layer::SubscriberExt,
+        util::SubscriberInitExt,
+        EnvFilter, Layer, Registry,
+    };
+    let environment_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // defguard-wireguard-rs logs InterfaceConfiguration with Debug, which
+    // includes `prvkey`. This independent AND predicate cannot be overridden
+    // by a more specific RUST_LOG directive.
+    let secret_safety_filter =
+        filter_fn(|metadata| tracing_metadata_is_safe(metadata.target(), metadata.level()));
 
     #[cfg(feature = "logs-json")]
     {
-        let _ = tracing_subscriber::fmt()
+        let format_layer = tracing_subscriber::fmt::layer()
             .json()
             .with_current_span(true)
-            .with_span_list(true)
-            .with_env_filter(filter)
+            .with_span_list(true);
+        let _ = Registry::default()
+            .with(format_layer.with_filter(environment_filter.and(secret_safety_filter)))
             .try_init();
     }
     #[cfg(not(feature = "logs-json"))]
     {
-        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+        let format_layer = tracing_subscriber::fmt::layer();
+        let _ = Registry::default()
+            .with(format_layer.with_filter(environment_filter.and(secret_safety_filter)))
+            .try_init();
+    }
+}
+
+#[cfg(test)]
+mod tracing_filter_tests {
+    use super::tracing_metadata_is_safe;
+    use tracing::Level;
+
+    #[test]
+    fn defguard_wireguard_debug_and_trace_are_always_rejected() {
+        assert!(!tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_userspace",
+            &Level::DEBUG
+        ));
+        assert!(!tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_windows",
+            &Level::TRACE
+        ));
+    }
+
+    #[test]
+    fn defguard_wireguard_info_and_unrelated_debug_are_allowed() {
+        assert!(tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_linux",
+            &Level::INFO
+        ));
+        assert!(tracing_metadata_is_safe(
+            "sorng_vpn::wireguard",
+            &Level::DEBUG
+        ));
     }
 }
 
