@@ -6,26 +6,43 @@
 use super::pdu::*;
 
 // SCARD IOCTL codes (MS-RDPESC 2.2.2.19)
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_ESTABLISH_CONTEXT: u32 = 0x0009_0014;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_RELEASE_CONTEXT: u32 = 0x0009_0018;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_IS_VALID_CONTEXT: u32 = 0x0009_001C;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_LIST_READERS_A: u32 = 0x0009_0028;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_LIST_READERS_W: u32 = 0x0009_002C;
-#[allow(dead_code)]
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_CONNECT_A: u32 = 0x0009_00AC;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_CONNECT_W: u32 = 0x0009_00B0;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_DISCONNECT: u32 = 0x0009_00B4;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_GET_STATUS_CHANGE_A: u32 = 0x0009_00A0;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_GET_STATUS_CHANGE_W: u32 = 0x0009_00A4;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_BEGIN_TRANSACTION: u32 = 0x0009_00BC;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_END_TRANSACTION: u32 = 0x0009_00C0;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_TRANSMIT: u32 = 0x0009_00C4;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_STATUS_A: u32 = 0x0009_00C8;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_STATUS_W: u32 = 0x0009_00CC;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_CANCEL: u32 = 0x0009_00D8;
+#[cfg(target_os = "windows")]
 const SCARD_IOCTL_ACCESS_STARTED_EVENT: u32 = 0x0009_00E0;
 
 /// SCARD return codes
+#[cfg(target_os = "windows")]
 const SCARD_S_SUCCESS: u32 = 0x0000_0000;
 const SCARD_E_NO_SERVICE: u32 = 0x8010_001D;
 
@@ -164,7 +181,8 @@ impl SmartCardDevice {
                 out.extend_from_slice(&0x8010_000Au32.to_le_bytes()); // SCARD_E_TIMEOUT
                 self.ioctl_success_response(&out)
             }
-            SCARD_IOCTL_CONNECT_W
+            SCARD_IOCTL_CONNECT_A
+            | SCARD_IOCTL_CONNECT_W
             | SCARD_IOCTL_DISCONNECT
             | SCARD_IOCTL_BEGIN_TRANSACTION
             | SCARD_IOCTL_END_TRANSACTION
@@ -194,6 +212,7 @@ impl SmartCardDevice {
         }
     }
 
+    #[cfg(target_os = "windows")]
     fn ioctl_success_response(&self, data: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(4 + data.len());
         out.extend_from_slice(&(data.len() as u32).to_le_bytes()); // OutputBufferLength
@@ -257,7 +276,6 @@ mod tests {
     #[test]
     fn ioctl_short_data_returns_error() {
         let mut d = dev();
-        let _data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
         // The handle_ioctl is reached via IRP_MJ_DEVICE_CONTROL
         let (status, out) =
             unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 4, 0, &[0u8; 4]));
@@ -312,16 +330,26 @@ mod tests {
         }
 
         #[test]
-        fn ioctl_connect_returns_no_service() {
-            let mut d = dev();
-            let data = make_ioctl_data(SCARD_IOCTL_CONNECT_W);
-            let (status, out) =
-                unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 13, 0, &data));
-            assert_eq!(status, STATUS_SUCCESS);
-            let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
-            assert!(buf_len >= 4);
-            let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
-            assert_eq!(scard_status, SCARD_E_NO_SERVICE);
+        fn ioctl_connect_variants_return_no_service() {
+            for (index, ioctl_code) in [SCARD_IOCTL_CONNECT_A, SCARD_IOCTL_CONNECT_W]
+                .into_iter()
+                .enumerate()
+            {
+                let mut d = dev();
+                let data = make_ioctl_data(ioctl_code);
+                let (status, out) = unwrap_completion(d.handle_irp(
+                    IRP_MJ_DEVICE_CONTROL,
+                    0,
+                    13 + index as u32,
+                    0,
+                    &data,
+                ));
+                assert_eq!(status, STATUS_SUCCESS);
+                let buf_len = u32::from_le_bytes(out[0..4].try_into().unwrap());
+                assert!(buf_len >= 4);
+                let scard_status = u32::from_le_bytes(out[4..8].try_into().unwrap());
+                assert_eq!(scard_status, SCARD_E_NO_SERVICE);
+            }
         }
 
         #[test]
@@ -361,7 +389,7 @@ mod tests {
         #[test]
         fn ioctl_returns_no_service_on_non_windows() {
             let mut d = dev();
-            let data = make_ioctl_data(SCARD_IOCTL_ESTABLISH_CONTEXT);
+            let data = make_ioctl_data(0x0009_0014); // SCARD_IOCTL_ESTABLISH_CONTEXT
             let (status, out) =
                 unwrap_completion(d.handle_irp(IRP_MJ_DEVICE_CONTROL, 0, 10, 0, &data));
             assert_eq!(status, STATUS_SUCCESS);
