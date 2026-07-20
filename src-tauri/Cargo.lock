@@ -6106,7 +6106,7 @@ dependencies = [
  "ecb",
  "md-5 0.10.6",
  "packed_struct",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rc4",
  "sha1 0.10.6",
  "sha2 0.10.9",
@@ -6910,7 +6910,7 @@ checksum = "7da1d65da6dd5d1e44199ac0f58712d241c0f439f80adea8924d832384087f85"
 dependencies = [
  "base64 0.22.1",
  "indexmap 2.14.0",
- "quick-xml 0.41.0",
+ "quick-xml",
  "serde",
  "time",
 ]
@@ -7222,7 +7222,7 @@ dependencies = [
  "aes 0.8.4",
  "async-trait",
  "indexmap 2.14.0",
- "quick-xml 0.36.2",
+ "quick-xml",
  "rand 0.8.6",
  "rsa 0.9.10",
  "sha1 0.10.6",
@@ -7283,15 +7283,6 @@ name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
-
-[[package]]
-name = "quick-xml"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "quick-xml"
@@ -9517,7 +9508,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "percent-encoding",
- "quick-xml 0.41.0",
+ "quick-xml",
  "sha2 0.10.9",
 ]
 
@@ -10645,7 +10636,7 @@ dependencies = [
  "chrono",
  "futures",
  "log",
- "quick-xml 0.41.0",
+ "quick-xml",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -10663,7 +10654,7 @@ dependencies = [
  "chrono",
  "futures",
  "log",
- "quick-xml 0.41.0",
+ "quick-xml",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -10760,7 +10751,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "log",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rand 0.8.6",
  "serde",
  "serde_json",
@@ -10986,7 +10977,7 @@ dependencies = [
  "hmac 0.12.1",
  "log",
  "pbkdf2 0.12.2",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rand 0.8.6",
  "serde",
  "serde_json",
@@ -11126,7 +11117,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rand 0.8.6",
  "regex",
  "reqwest 0.12.28",
@@ -11503,7 +11494,7 @@ dependencies = [
  "log",
  "md-5 0.10.6",
  "psrp-rs",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rand 0.8.6",
  "rcgen",
  "regex",
@@ -12630,7 +12621,7 @@ dependencies = [
  "hmac 0.12.1",
  "log",
  "md-5 0.10.6",
- "quick-xml 0.41.0",
+ "quick-xml",
  "rand 0.8.6",
  "regex",
  "reqwest 0.12.28",

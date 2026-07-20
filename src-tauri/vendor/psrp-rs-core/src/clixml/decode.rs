@@ -511,13 +511,40 @@ fn read_text(reader: &mut Reader<&[u8]>, closing: &str) -> Result<String> {
             .map_err(|e| PsrpError::clixml(e.to_string()))?
         {
             Event::Text(t) => {
-                out.push_str(&t.unescape().map_err(|e| PsrpError::clixml(e.to_string()))?);
+                let decoded = t
+                    .xml10_content()
+                    .map_err(|e| PsrpError::clixml(e.to_string()))?;
+                out.push_str(&decoded);
             }
             Event::CData(c) => {
                 out.push_str(
                     std::str::from_utf8(c.as_ref())
                         .map_err(|e| PsrpError::clixml(e.to_string()))?,
                 );
+            }
+            Event::GeneralRef(reference) => {
+                if let Some(ch) = reference
+                    .resolve_char_ref()
+                    .map_err(|e| PsrpError::clixml(e.to_string()))?
+                {
+                    out.push(ch);
+                } else {
+                    let name = reference
+                        .decode()
+                        .map_err(|e| PsrpError::clixml(e.to_string()))?;
+                    out.push(match name.as_ref() {
+                        "lt" => '<',
+                        "gt" => '>',
+                        "amp" => '&',
+                        "apos" => '\'',
+                        "quot" => '"',
+                        other => {
+                            return Err(PsrpError::clixml(format!(
+                                "unrecognized XML entity '&{other};'"
+                            )));
+                        }
+                    });
+                }
             }
             Event::End(e) if e.name().as_ref() == closing.as_bytes() => break,
             Event::Eof => {
@@ -645,6 +672,13 @@ mod tests {
         let xml = "\u{FEFF}  <S>&lt;hi&amp;&gt;</S>";
         let got = parse_clixml(xml).unwrap();
         assert_eq!(got[0], PsValue::String("<hi&>".into()));
+    }
+
+    #[test]
+    fn character_references_decode_and_unknown_entities_fail_closed() {
+        let got = parse_clixml("<S>&#65;&#x1F642;&quot;&apos;</S>").unwrap();
+        assert_eq!(got[0], PsValue::String("A🙂\"'".into()));
+        assert!(parse_clixml("<S>&unknown;</S>").is_err());
     }
 
     #[test]
