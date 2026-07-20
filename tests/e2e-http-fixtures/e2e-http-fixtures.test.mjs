@@ -48,3 +48,30 @@ test("preparation rejects a directory where a mounted file is required", (contex
     /Cannot prepare nginx configuration; expected a file path but found another filesystem entry/,
   );
 });
+
+test("compose healthchecks use probes shipped by the VNC and FTP images", () => {
+  const compose = readFileSync(
+    new URL("../../e2e/docker-compose.yml", import.meta.url),
+    "utf8",
+  );
+  const lines = compose.split(/\r?\n/);
+  const serviceBlock = (name) => {
+    const start = lines.indexOf(`  ${name}:`);
+    assert.notEqual(start, -1, `expected compose service ${name}`);
+    const nextService = lines.findIndex(
+      (line, index) => index > start && /^  [a-z0-9][a-z0-9-]*:$/u.test(line),
+    );
+    return lines
+      .slice(start, nextService === -1 ? undefined : nextService)
+      .join("\n");
+  };
+
+  assert.match(
+    serviceBlock("test-vnc"),
+    /test: \["CMD", "bash", "-c", "exec 3<>\/dev\/tcp\/localhost\/5901"\]/,
+  );
+  assert.match(
+    serviceBlock("test-ftp"),
+    /test: \["CMD", "bash", "-c", "exec 3<>\/dev\/tcp\/localhost\/21"\]/,
+  );
+});

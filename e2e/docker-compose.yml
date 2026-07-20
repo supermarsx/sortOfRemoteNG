@@ -42,7 +42,7 @@ services:
       - VNC_PW=${VNC_PASSWORD}
       - VNC_RESOLUTION=1280x720
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "5901"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/5901"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -91,7 +91,7 @@ services:
       - PASV_MAX_PORT=21110
       - PASV_ADDRESS=127.0.0.1
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "21"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/21"]
       interval: 5s
       timeout: 3s
       retries: 10
