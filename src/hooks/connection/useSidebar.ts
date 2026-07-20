@@ -26,7 +26,17 @@ export function useSidebar() {
   const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
 
   useEffect(() => {
-    SecureStorage.isStorageEncrypted().then(setIsStorageEncrypted);
+    let isMounted = true;
+    SecureStorage.isStorageEncrypted()
+      .then((encrypted) => {
+        if (isMounted) {
+          setIsStorageEncrypted(encrypted);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const allTags = useMemo(
