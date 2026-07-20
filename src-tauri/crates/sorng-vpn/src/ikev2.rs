@@ -1,4 +1,6 @@
+#[cfg(windows)]
 use crate::platform;
+#[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::strongswan_helper;
@@ -123,6 +125,7 @@ impl IKEv2Service {
 
         connection.status = IKEv2Status::Connecting;
         let config = connection.config.clone();
+        #[cfg(windows)]
         let entry_name = format!("SoRNG_IKEv2_{}", &connection_id[..8]);
 
         #[cfg(windows)]

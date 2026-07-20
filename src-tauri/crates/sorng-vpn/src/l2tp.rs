@@ -1,4 +1,5 @@
 use crate::platform;
+#[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::strongswan_helper;
@@ -119,6 +120,7 @@ impl L2TPService {
 
         connection.status = L2TPStatus::Connecting;
         let config = connection.config.clone();
+        #[cfg(windows)]
         let entry_name = format!("SoRNG_L2TP_{}", &connection_id[..8]);
 
         #[cfg(windows)]

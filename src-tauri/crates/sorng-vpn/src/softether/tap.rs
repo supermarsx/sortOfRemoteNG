@@ -176,7 +176,7 @@ impl TapDevice {
             let mut cfg = tun::Configuration::default();
             cfg.layer(tun::Layer::L2).up();
             if let Some(ref n) = req_name {
-                cfg.name(n);
+                cfg.tun_name(n);
             }
             match tun::create(&cfg) {
                 Ok(dev) => {
@@ -199,7 +199,7 @@ impl TapDevice {
                             msg
                         ))
                     } else {
-                        DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, msg))
+                        DeviceError::Io(std::io::Error::other(msg))
                     };
                     Err(mapped)
                 }

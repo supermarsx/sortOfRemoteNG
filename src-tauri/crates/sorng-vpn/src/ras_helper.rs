@@ -1,6 +1,7 @@
 //! Windows RAS (Remote Access Service) helper for VPN protocols.
 //! Provides shared functions for PPTP, L2TP, IKEv2, and SSTP connections.
 
+#[cfg(windows)]
 use crate::platform;
 
 /// Create a Windows VPN connection entry via PowerShell.

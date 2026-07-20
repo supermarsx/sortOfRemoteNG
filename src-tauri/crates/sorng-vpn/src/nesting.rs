@@ -203,6 +203,7 @@ pub async fn add_nesting_route(
 
 /// Remove a previously added nesting route.
 pub async fn remove_nesting_route(route: &AppliedRoute) -> Result<(), String> {
+    #[cfg(windows)]
     let dest = route.destination.split('/').next().unwrap_or(&route.destination);
 
     #[cfg(windows)]

@@ -1,3 +1,4 @@
+#[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::platform;
@@ -123,6 +124,7 @@ impl PPTPService {
 
         connection.status = PPTPStatus::Connecting;
         let config = connection.config.clone();
+        #[cfg(windows)]
         let entry_name = format!("SoRNG_PPTP_{}", &connection_id[..8]);
 
         #[cfg(windows)]
