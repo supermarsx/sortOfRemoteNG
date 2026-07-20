@@ -3010,7 +3010,7 @@ fn run_rdp_session_inner(
                 log_sink,
             )
         },
-        |cmd_rx, delay| sleep_with_shutdown_check(cmd_rx, delay),
+        sleep_with_shutdown_check,
     )
 }
 

@@ -401,12 +401,10 @@ pub fn parse_card_status_colons(output: &str) -> SmartCardInfo {
                     });
                 }
             }
-            "extcap" => {
-                if fields.len() > 1 {
-                    for cap in fields[1].split(',') {
-                        if !cap.is_empty() {
-                            info.extended_capabilities.push(cap.to_string());
-                        }
+            "extcap" if fields.len() > 1 => {
+                for cap in fields[1].split(',') {
+                    if !cap.is_empty() {
+                        info.extended_capabilities.push(cap.to_string());
                     }
                 }
             }

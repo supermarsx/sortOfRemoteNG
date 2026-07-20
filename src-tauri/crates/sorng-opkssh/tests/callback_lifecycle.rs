@@ -3,7 +3,7 @@ use sorng_opkssh::{OpksshBackendKind, OpksshLoginOptions, OpksshService};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -64,9 +64,9 @@ fn main() {
 }
 "#;
 
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+fn env_lock() -> &'static AsyncMutex<()> {
+    static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
 fn fake_cli_path() -> PathBuf {
@@ -180,7 +180,7 @@ fn configure_fake_cli_env(home: &Path, key_path: &Path) -> EnvGuard {
 
 #[tokio::test(flavor = "current_thread")]
 async fn cancelling_a_login_operation_remains_local_and_keeps_callback_ownership_explicit() {
-    let _env_lock = env_lock().lock().expect("env lock");
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-cancel");
     let key_path = home.join(".ssh").join("id_ecdsa-cancel");
     let _env = configure_fake_cli_env(&home, &key_path);

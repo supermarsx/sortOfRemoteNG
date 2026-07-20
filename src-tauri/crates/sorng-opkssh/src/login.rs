@@ -96,7 +96,7 @@ async fn finalize_if_finished(entry: &SharedLoginOperation) -> Result<(), String
         if pending
             .task
             .as_ref()
-            .map_or(false, |task| task.is_finished())
+            .is_some_and(|task| task.is_finished())
         {
             pending.task.take()
         } else {

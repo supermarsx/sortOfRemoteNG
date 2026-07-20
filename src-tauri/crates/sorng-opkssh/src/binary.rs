@@ -310,16 +310,16 @@ fn load_vendor_wrapper_from_path(
 ) -> Result<VendorWrapperRuntimeStatus, String> {
     let library = pinned_vendor_library(path)?;
 
-    let abi_version = load_vendor_probe_u32(&library, b"sorng_opkssh_vendor_abi_version\0", path)?;
+    let abi_version = load_vendor_probe_u32(library, b"sorng_opkssh_vendor_abi_version\0", path)?;
     let embedded_runtime_present =
-        load_vendor_probe_u32(&library, b"sorng_opkssh_vendor_embedded_runtime\0", path)? != 0;
+        load_vendor_probe_u32(library, b"sorng_opkssh_vendor_embedded_runtime\0", path)? != 0;
     let backend_callable =
-        load_vendor_probe_u32(&library, b"sorng_opkssh_vendor_backend_callable\0", path)? != 0;
+        load_vendor_probe_u32(library, b"sorng_opkssh_vendor_backend_callable\0", path)? != 0;
     let config_load_supported =
-        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_config_load_supported\0")
+        load_optional_vendor_probe_u32(library, b"sorng_opkssh_vendor_config_load_supported\0")
             .is_some_and(|supported| supported != 0);
     let login_supported =
-        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_login_supported\0")
+        load_optional_vendor_probe_u32(library, b"sorng_opkssh_vendor_login_supported\0")
             .is_some_and(|supported| supported != 0);
 
     Ok(VendorWrapperRuntimeStatus {
@@ -457,7 +457,7 @@ fn load_client_config_json_from_library_path(
     let library = pinned_vendor_library(library_path)?;
 
     let config_load_supported =
-        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_config_load_supported\0")
+        load_optional_vendor_probe_u32(library, b"sorng_opkssh_vendor_config_load_supported\0")
             .is_some_and(|supported| supported != 0);
     if !config_load_supported {
         return Ok(None);
@@ -517,7 +517,7 @@ fn load_login_json_from_library_path(
     let library = pinned_vendor_library(library_path)?;
 
     let login_supported =
-        load_optional_vendor_probe_u32(&library, b"sorng_opkssh_vendor_login_supported\0")
+        load_optional_vendor_probe_u32(library, b"sorng_opkssh_vendor_login_supported\0")
             .is_some_and(|supported| supported != 0);
     if !login_supported {
         return Ok(None);

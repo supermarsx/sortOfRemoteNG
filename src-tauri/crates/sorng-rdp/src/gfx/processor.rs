@@ -348,7 +348,7 @@ impl GfxProcessor {
                     // Bounded per-frame publish: keep the frames/ack counters
                     // approximately live in the shared handle without locking the
                     // mutex on every frame (publish on transitions + every 30th).
-                    if self.total_frames_decoded % 30 == 0 {
+                    if self.total_frames_decoded.is_multiple_of(30) {
                         self.publish();
                     }
 

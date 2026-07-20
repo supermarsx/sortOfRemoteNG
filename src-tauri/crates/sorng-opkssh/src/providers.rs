@@ -419,9 +419,9 @@ fn empty_client_config(path: &Path) -> OpksshClientConfig {
     })
 }
 
-fn existing_secret_by_alias<'a>(
-    existing: Option<&'a OpksshClientConfig>,
-) -> HashMap<String, &'a CustomProvider> {
+fn existing_secret_by_alias(
+    existing: Option<&OpksshClientConfig>,
+) -> HashMap<String, &CustomProvider> {
     let mut existing_by_alias = HashMap::new();
 
     let Some(existing) = existing else {

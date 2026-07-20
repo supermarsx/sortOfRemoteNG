@@ -108,7 +108,7 @@ impl KeyStore {
         }
 
         let id = key.id.clone();
-        debug!("Adding key {} ({})", &id, key.comment);
+        debug!("Adding key {} ({})", id, key.comment);
 
         self.blob_index
             .insert(key.public_key_blob.clone(), id.clone());

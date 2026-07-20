@@ -41,7 +41,7 @@ pub fn evaluate(
     }
 
     let mut sorted = entries.to_vec();
-    sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp)); // newest first
+    sorted.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp)); // newest first
 
     let now = Utc::now();
     let mut keep_ids: std::collections::HashSet<String> = std::collections::HashSet::new();

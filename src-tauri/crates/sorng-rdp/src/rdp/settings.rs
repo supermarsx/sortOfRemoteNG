@@ -110,9 +110,10 @@ pub struct DriveRedirectionPayload {
     pub preferred_letter: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ClipboardDirection {
+    #[default]
     Bidirectional,
     #[serde(alias = "c2s")]
     ClientToServer,
@@ -120,12 +121,6 @@ pub enum ClipboardDirection {
     ServerToClient,
     #[serde(alias = "none")]
     Disabled,
-}
-
-impl Default for ClipboardDirection {
-    fn default() -> Self {
-        Self::Bidirectional
-    }
 }
 
 impl ClipboardDirection {
@@ -244,17 +239,12 @@ mod tests {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum PrinterOutputMode {
+    #[default]
     SpoolFile,
     NativePrint,
-}
-
-impl Default for PrinterOutputMode {
-    fn default() -> Self {
-        Self::SpoolFile
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

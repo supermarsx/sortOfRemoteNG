@@ -404,7 +404,7 @@ impl FwknopManager {
         let allow_ip =
             map.get("ALLOW_IP")
                 .cloned()
-                .and_then(|v| if v == "resolve" { None } else { Some(v) });
+                .filter(|v| v != "resolve");
 
         let resolve_ip_url = map.get("RESOLVE_IP_URL").cloned();
 

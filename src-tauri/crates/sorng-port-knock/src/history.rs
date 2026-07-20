@@ -108,7 +108,7 @@ impl KnockHistory {
             .collect();
 
         // Most recent first for offset/limit
-        results.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        results.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
 
         if let Some(offset) = filter.offset {
             results = results.into_iter().skip(offset as usize).collect();

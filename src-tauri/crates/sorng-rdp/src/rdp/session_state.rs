@@ -125,9 +125,10 @@ pub enum TerminationReason {
     Failed(FailureClass),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
+    #[default]
     Idle,
     Resolving,
     Connecting,
@@ -140,12 +141,6 @@ pub enum SessionState {
     Draining(DrainReason),
     Disconnecting(DisconnectReason),
     Terminated(TerminationReason),
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 impl SessionState {

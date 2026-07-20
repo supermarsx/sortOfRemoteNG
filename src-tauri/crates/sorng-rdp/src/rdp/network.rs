@@ -463,14 +463,14 @@ fn extract_san(tbs: &x509_cert::TbsCertificate) -> Vec<String> {
                 return san
                     .0
                     .iter()
-                    .filter_map(|name| match name {
-                        GeneralName::DnsName(dns) => Some(format!("DNS:{dns}")),
-                        GeneralName::Rfc822Name(email) => Some(format!("email:{email}")),
-                        GeneralName::UniformResourceIdentifier(uri) => Some(format!("URI:{uri}")),
+                    .map(|name| match name {
+                        GeneralName::DnsName(dns) => format!("DNS:{dns}"),
+                        GeneralName::Rfc822Name(email) => format!("email:{email}"),
+                        GeneralName::UniformResourceIdentifier(uri) => format!("URI:{uri}"),
                         GeneralName::IpAddress(oct) => {
                             let raw = oct.as_bytes();
                             if raw.len() == 4 {
-                                Some(format!("IP:{}.{}.{}.{}", raw[0], raw[1], raw[2], raw[3]))
+                                format!("IP:{}.{}.{}.{}", raw[0], raw[1], raw[2], raw[3])
                             } else if raw.len() == 16 {
                                 let parts: Vec<String> = raw
                                     .chunks(2)
@@ -482,13 +482,13 @@ fn extract_san(tbs: &x509_cert::TbsCertificate) -> Vec<String> {
                                         )
                                     })
                                     .collect();
-                                Some(format!("IP:{}", parts.join(":")))
+                                format!("IP:{}", parts.join(":"))
                             } else {
-                                Some(format!("IP:<{} bytes>", raw.len()))
+                                format!("IP:<{} bytes>", raw.len())
                             }
                         }
-                        GeneralName::DirectoryName(dn) => Some(format!("dirName:{dn}")),
-                        _ => Some("other".to_string()),
+                        GeneralName::DirectoryName(dn) => format!("dirName:{dn}"),
+                        _ => "other".to_string(),
                     })
                     .collect();
             }

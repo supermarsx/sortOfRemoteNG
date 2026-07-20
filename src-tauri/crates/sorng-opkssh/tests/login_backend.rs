@@ -7,7 +7,7 @@ use sorng_opkssh::{
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -72,9 +72,9 @@ const DETERMINISTIC_FAKE_OIDC_ENV: &str = "SORNG_OPKSSH_TEST_FAKE_OIDC_LOGIN";
 const DETERMINISTIC_FAKE_OIDC_USERNAME_ENV: &str = "SORNG_OPKSSH_TEST_FAKE_OIDC_USERNAME";
 const DETERMINISTIC_FAKE_OIDC_PASSWORD_ENV: &str = "SORNG_OPKSSH_TEST_FAKE_OIDC_PASSWORD";
 
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+fn env_lock() -> &'static AsyncMutex<()> {
+    static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
 /// Resolve a path to its canonical form so two strings that name the *same*
@@ -390,9 +390,7 @@ fn fake_wrapper_login_response(key_path: &Path, identity: &str, provider: &str) 
 
 #[tokio::test(flavor = "current_thread")]
 async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_contract() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-status");
     let key_path = home.join(".ssh").join("id_ecdsa");
     let _env = configure_fake_cli_env(&home, &key_path, "status@example.com");
@@ -549,9 +547,7 @@ async fn service_status_prefers_cli_fallback_over_the_current_library_runtime_co
 
 #[tokio::test(flavor = "current_thread")]
 async fn service_status_can_query_a_runtime_loaded_wrapper_without_claiming_library_login() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-runtime-wrapper");
     let key_path = home.join(".ssh").join("id_ecdsa-runtime-wrapper");
     let config_dir = home.join(".opk");
@@ -636,9 +632,7 @@ async fn service_status_can_query_a_runtime_loaded_wrapper_without_claiming_libr
 
 #[tokio::test(flavor = "current_thread")]
 async fn refresh_client_config_uses_a_runtime_loaded_wrapper_when_the_bridge_is_callable() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-config-home-runtime-wrapper");
     let key_path = home.join(".ssh").join("id_ecdsa-config-wrapper");
     let config_dir = home.join(".opk");
@@ -705,9 +699,7 @@ async fn refresh_client_config_uses_a_runtime_loaded_wrapper_when_the_bridge_is_
 
 #[tokio::test(flavor = "current_thread")]
 async fn library_login_wrapper_returns_a_redacted_result_from_the_operation_path() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-library-run");
     let key_path = home.join(".ssh").join("id_ecdsa-library");
     let config_dir = home.join(".opk");
@@ -777,9 +769,7 @@ async fn library_login_wrapper_returns_a_redacted_result_from_the_operation_path
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires SORNG_OPKSSH_VENDOR_LIBRARY to point at a built vendor wrapper"]
 async fn real_vendor_wrapper_override_can_be_loaded_and_queried() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
         "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
     );
@@ -819,9 +809,7 @@ async fn real_vendor_wrapper_override_can_be_loaded_and_queried() {
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires SORNG_OPKSSH_VENDOR_LIBRARY to point at a built vendor wrapper"]
 async fn real_vendor_wrapper_override_can_refresh_client_config() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
         "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
     );
@@ -878,9 +866,7 @@ providers:
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "requires SORNG_OPKSSH_VENDOR_LIBRARY to point at a built vendor wrapper"]
 async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cli_fallback() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
         "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
     );
@@ -932,9 +918,7 @@ async fn real_vendor_wrapper_override_surfaces_a_library_login_result_without_cl
 #[ignore = "requires SORNG_OPKSSH_VENDOR_LIBRARY to point at a built vendor wrapper"]
 async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login_without_cli_fallback(
 ) {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let override_path = std::env::var_os(VENDOR_LIBRARY_OVERRIDE_ENV).expect(
         "set SORNG_OPKSSH_VENDOR_LIBRARY to a built vendor wrapper before running this test",
     );
@@ -998,9 +982,7 @@ async fn real_vendor_wrapper_override_can_complete_deterministic_fake_oidc_login
 
 #[tokio::test(flavor = "current_thread")]
 async fn service_status_honors_backend_mode_from_env_without_disabling_cli_fallback() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-env-mode");
     let key_path = home.join(".ssh").join("id_ecdsa-env");
     let vendor_dir = unique_temp_dir("sorng-opkssh-env-mode-wrapper");
@@ -1034,9 +1016,7 @@ async fn service_status_honors_backend_mode_from_env_without_disabling_cli_fallb
 
 #[tokio::test(flavor = "current_thread")]
 async fn blocking_login_wrapper_returns_a_redacted_result_from_the_operation_path() {
-    let _env_lock = env_lock()
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner());
+    let _env_lock = env_lock().lock().await;
     let home = unique_temp_dir("sorng-opkssh-login-home-run");
     let key_path = home.join(".ssh").join("id_ecdsa-workflow");
     let identity = "workflow@example.com";

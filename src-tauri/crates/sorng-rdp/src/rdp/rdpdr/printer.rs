@@ -224,7 +224,7 @@ fn try_native_print(path: &std::path::Path) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!("native print command exited with status {status}"));
+        Err(format!("native print command exited with status {status}"))
     }
 
     #[cfg(not(target_os = "windows"))]

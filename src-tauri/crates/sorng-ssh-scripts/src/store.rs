@@ -254,7 +254,7 @@ impl ScriptStore {
             .cloned()
             .collect();
 
-        matching.sort_by(|a, b| a.priority.cmp(&b.priority));
+        matching.sort_by_key(|script| script.priority);
         matching
     }
 

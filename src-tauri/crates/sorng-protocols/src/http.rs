@@ -1542,18 +1542,18 @@ pub fn parse_tls_certificate_details(der: &[u8], fingerprint: &str) -> ParsedTls
         let oid_l = Oid::from(&[2, 5, 4, 7]).expect("valid OID constant");
         let oid_email = Oid::from(&[1, 2, 840, 113549, 1, 9, 1]).expect("valid OID constant");
 
-        details.subject_cn = extract_dn_attr(&cert.subject(), &oid_cn);
-        details.subject_org = extract_dn_attr(&cert.subject(), &oid_o);
-        details.subject_ou = extract_dn_attr(&cert.subject(), &oid_ou);
-        details.subject_country = extract_dn_attr(&cert.subject(), &oid_c);
-        details.subject_state = extract_dn_attr(&cert.subject(), &oid_st);
-        details.subject_locality = extract_dn_attr(&cert.subject(), &oid_l);
-        details.subject_email = extract_dn_attr(&cert.subject(), &oid_email);
+        details.subject_cn = extract_dn_attr(cert.subject(), &oid_cn);
+        details.subject_org = extract_dn_attr(cert.subject(), &oid_o);
+        details.subject_ou = extract_dn_attr(cert.subject(), &oid_ou);
+        details.subject_country = extract_dn_attr(cert.subject(), &oid_c);
+        details.subject_state = extract_dn_attr(cert.subject(), &oid_st);
+        details.subject_locality = extract_dn_attr(cert.subject(), &oid_l);
+        details.subject_email = extract_dn_attr(cert.subject(), &oid_email);
 
         // ── Issuer DN components ──
-        details.issuer_cn = extract_dn_attr(&cert.issuer(), &oid_cn);
-        details.issuer_org = extract_dn_attr(&cert.issuer(), &oid_o);
-        details.issuer_country = extract_dn_attr(&cert.issuer(), &oid_c);
+        details.issuer_cn = extract_dn_attr(cert.issuer(), &oid_cn);
+        details.issuer_org = extract_dn_attr(cert.issuer(), &oid_o);
+        details.issuer_country = extract_dn_attr(cert.issuer(), &oid_c);
 
         // ── Key algorithm and size ──
         let (key_algo, key_sz) = resolve_key_algorithm_and_size(&cert);

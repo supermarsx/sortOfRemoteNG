@@ -58,18 +58,15 @@ impl Scheduler {
             ScriptTrigger::Cron {
                 expression,
                 timezone: _,
-            } => match compute_next_cron(expression) {
-                Some(next) => (Some(next), 0),
-                None => return None,
-            },
+            } => (Some(compute_next_cron(expression)?), 0),
             ScriptTrigger::Scheduled {
                 at,
                 daily,
                 timezone: _,
-            } => match compute_next_scheduled(at, *daily) {
-                Some(next) => (Some(next), if *daily { 0 } else { 1 }),
-                None => return None,
-            },
+            } => (
+                Some(compute_next_scheduled(at, *daily)?),
+                if *daily { 0 } else { 1 },
+            ),
             _ => return None, // not a time-based trigger
         };
 

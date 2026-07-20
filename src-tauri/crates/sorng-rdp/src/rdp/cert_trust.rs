@@ -28,11 +28,11 @@ impl ServerCertValidationMode {
             .security
             .as_ref()
             .and_then(|security| security.server_cert_validation.as_deref())
-            .map(Self::from_str)
+            .map(Self::from_value)
             .unwrap_or(Self::Validate)
     }
 
-    pub fn from_str(value: &str) -> Self {
+    pub fn from_value(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "warn" => Self::Warn,
             "ignore" => Self::Ignore,
@@ -399,9 +399,9 @@ impl SessionPromptContext {
 }
 
 thread_local! {
-    static SESSION_CONTEXT: RefCell<Option<SessionPromptContext>> = RefCell::new(None);
-    static HANDSHAKE_PORT: RefCell<Option<u16>> = RefCell::new(None);
-    static LAST_VERIFY_OUTCOME: RefCell<Option<VerifyOutcome>> = RefCell::new(None);
+    static SESSION_CONTEXT: RefCell<Option<SessionPromptContext>> = const { RefCell::new(None) };
+    static HANDSHAKE_PORT: RefCell<Option<u16>> = const { RefCell::new(None) };
+    static LAST_VERIFY_OUTCOME: RefCell<Option<VerifyOutcome>> = const { RefCell::new(None) };
 }
 
 /// Outcome of the most recent `evaluate_certificate_trust` call on this thread.

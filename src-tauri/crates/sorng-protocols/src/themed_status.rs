@@ -341,10 +341,10 @@ pub fn presentation_for(code: u16) -> StatusPresentation {
 /// Map a [`StatusTone`] to its (rgb-triplet, hex) accent colour,
 /// pulled from the snapshotted theme so the page matches the user's
 /// current theme selection (P7).
-fn tone_accent<'a>(
+fn tone_accent(
     tone: StatusTone,
-    theme: &'a crate::theme_tokens::ThemeTokens,
-) -> (&'a str, &'a str) {
+    theme: &crate::theme_tokens::ThemeTokens,
+) -> (&str, &str) {
     match tone {
         StatusTone::Error => theme.error_pair(),
         StatusTone::Warn => theme.warning_pair(),
