@@ -315,33 +315,34 @@ pub fn build_remote_viewer_settings(
     Ok(lines.join("\n"))
 }
 
+#[cfg(target_os = "windows")]
+fn windows_remote_viewer_candidate(root: impl Into<PathBuf>) -> PathBuf {
+    root.into()
+        .join("VirtViewer")
+        .join("bin")
+        .join("remote-viewer.exe")
+}
+
+#[cfg(target_os = "windows")]
 fn standard_remote_viewer_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(program_files) = std::env::var_os("ProgramFiles") {
-            candidates.push(
-                PathBuf::from(program_files)
-                    .join("VirtViewer")
-                    .join("bin")
-                    .join("remote-viewer.exe"),
-            );
-        }
-        if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
-            candidates.push(
-                PathBuf::from(program_files_x86)
-                    .join("VirtViewer")
-                    .join("bin")
-                    .join("remote-viewer.exe"),
-            );
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        candidates.push(PathBuf::from("/opt/homebrew/bin/remote-viewer"));
-        candidates.push(PathBuf::from("/usr/local/bin/remote-viewer"));
-    }
-    candidates
+    ["ProgramFiles", "ProgramFiles(x86)"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(windows_remote_viewer_candidate)
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn standard_remote_viewer_candidates() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from("/opt/homebrew/bin/remote-viewer"),
+        PathBuf::from("/usr/local/bin/remote-viewer"),
+    ]
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn standard_remote_viewer_candidates() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 #[cfg(target_os = "windows")]
@@ -550,6 +551,33 @@ fn redact_retained_config(config: &mut SpiceConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[test]
+    fn other_platforms_rely_on_path_lookup() {
+        assert!(standard_remote_viewer_candidates().is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_standard_remote_viewer_candidates_cover_common_prefixes() {
+        assert_eq!(
+            standard_remote_viewer_candidates(),
+            vec![
+                PathBuf::from("/opt/homebrew/bin/remote-viewer"),
+                PathBuf::from("/usr/local/bin/remote-viewer"),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_standard_remote_viewer_candidates_use_virtviewer_layout() {
+        assert_eq!(
+            windows_remote_viewer_candidate(PathBuf::from(r"C:\Program Files")),
+            PathBuf::from(r"C:\Program Files\VirtViewer\bin\remote-viewer.exe")
+        );
+    }
 
     #[test]
     fn settings_use_stdin_contract_and_map_supported_controls() {
