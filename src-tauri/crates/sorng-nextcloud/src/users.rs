@@ -124,10 +124,7 @@ pub fn capability_str(caps: &ServerCapabilities, path: &str) -> Option<String> {
     if let Some(ref c) = caps.capabilities {
         let mut current = &c.0;
         for key in path.split('.') {
-            match current.get(key) {
-                Some(v) => current = v,
-                None => return None,
-            }
+            current = current.get(key)?;
         }
         current.as_str().map(|s| s.to_string())
     } else {

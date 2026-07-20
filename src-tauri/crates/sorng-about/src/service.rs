@@ -52,7 +52,7 @@ impl AboutService {
             .into_iter()
             .map(|(license, count)| LicenseCount { license, count })
             .collect();
-        distribution.sort_by(|a, b| b.count.cmp(&a.count));
+        distribution.sort_by_key(|entry| std::cmp::Reverse(entry.count));
 
         LicenseSummary {
             total_rust_deps: rust.len() as u32,

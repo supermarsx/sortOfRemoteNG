@@ -27,7 +27,7 @@ impl SnippetManager {
     /// Get all snippets sorted by usage count (most popular first).
     pub fn list(&self) -> Vec<&CommandSnippet> {
         let mut list: Vec<&CommandSnippet> = self.snippets.values().collect();
-        list.sort_by(|a, b| b.usage_count.cmp(&a.usage_count));
+        list.sort_by_key(|snippet| std::cmp::Reverse(snippet.usage_count));
         list
     }
 
@@ -48,7 +48,7 @@ impl SnippetManager {
                     || s.tags.iter().any(|t| t.to_lowercase().contains(&lower))
             })
             .collect();
-        results.sort_by(|a, b| b.usage_count.cmp(&a.usage_count));
+        results.sort_by_key(|snippet| std::cmp::Reverse(snippet.usage_count));
         results
     }
 

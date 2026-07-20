@@ -301,7 +301,7 @@ impl HistoryEngine {
 
         let unique = cmd_counts.len();
         let mut top: Vec<(String, u64)> = cmd_counts.into_iter().collect();
-        top.sort_by(|a, b| b.1.cmp(&a.1));
+        top.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         top.truncate(20);
 
         (total, unique, top, host_counts)

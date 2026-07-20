@@ -40,7 +40,8 @@ impl ScpService {
 
         self.queue.push(entry.clone());
         // Sort by priority (higher = first)
-        self.queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.queue
+            .sort_by_key(|item| std::cmp::Reverse(item.priority));
         Ok(entry)
     }
 
@@ -238,7 +239,8 @@ impl ScpService {
 
         entry.priority = priority;
         // Re-sort
-        self.queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.queue
+            .sort_by_key(|item| std::cmp::Reverse(item.priority));
         Ok(())
     }
 

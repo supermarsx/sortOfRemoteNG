@@ -109,15 +109,13 @@ impl RenewalScheduler {
                     });
                 }
             }
-            RenewalResult::Failed => {
-                if self.config.notify_on_failure {
-                    self.events.push(LetsEncryptEvent::RenewalFailed {
-                        certificate_id: attempt.certificate_id.clone(),
-                        domains: Vec::new(),
-                        error: attempt.error.clone().unwrap_or_default(),
-                        retry_number: attempt.retry_number,
-                    });
-                }
+            RenewalResult::Failed if self.config.notify_on_failure => {
+                self.events.push(LetsEncryptEvent::RenewalFailed {
+                    certificate_id: attempt.certificate_id.clone(),
+                    domains: Vec::new(),
+                    error: attempt.error.clone().unwrap_or_default(),
+                    retry_number: attempt.retry_number,
+                });
             }
             _ => {}
         }

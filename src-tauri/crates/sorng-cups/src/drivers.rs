@@ -275,7 +275,7 @@ pub async fn recommend_driver(
         .collect();
 
     // Sort descending by score.
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     scored.truncate(max_results);
 
     let drivers = scored.into_iter().map(|(_, d)| d).collect();

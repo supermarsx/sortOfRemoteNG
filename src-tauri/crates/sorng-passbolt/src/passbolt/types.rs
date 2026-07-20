@@ -1412,14 +1412,16 @@ mod tests {
 
     #[test]
     fn test_resource_serialize_skip_none() {
-        let mut r = Resource::default();
-        r.id = "abc".into();
-        r.name = Some("test".into());
-        r.created = "2024-01-01T00:00:00Z".into();
-        r.modified = "2024-01-01T00:00:00Z".into();
-        r.created_by = "user1".into();
-        r.modified_by = "user1".into();
-        r.resource_type_id = "rt1".into();
+        let r = Resource {
+            id: "abc".into(),
+            name: Some("test".into()),
+            created: "2024-01-01T00:00:00Z".into(),
+            modified: "2024-01-01T00:00:00Z".into(),
+            created_by: "user1".into(),
+            modified_by: "user1".into(),
+            resource_type_id: "rt1".into(),
+            ..Resource::default()
+        };
         let json = serde_json::to_string(&r).unwrap();
         assert!(!json.contains("metadata_key_id"));
         assert!(json.contains("\"name\":\"test\""));

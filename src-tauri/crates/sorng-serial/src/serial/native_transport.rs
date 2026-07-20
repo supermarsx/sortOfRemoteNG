@@ -153,7 +153,7 @@ impl SerialTransport for NativeTransport {
 
                 let mut port = builder
                     .open()
-                    .map_err(|e| format!("Failed to open {}: {}", &port_name, e))?;
+                    .map_err(|e| format!("Failed to open {}: {}", port_name, e))?;
 
                 // Apply write timeout
                 if write_timeout > 0 {

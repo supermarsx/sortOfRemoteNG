@@ -12,10 +12,6 @@
 //! - Encryption (AES-256-GCM)
 //! - Backup verification and integrity checking
 
-#[cfg(test)]
-use aes_gcm::aead::{Aead, KeyInit};
-#[cfg(test)]
-use aes_gcm::{Aes256Gcm, Nonce};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -897,7 +893,7 @@ impl BackupService {
         for listing in self.list_backups_all_targets().await? {
             all.extend(listing.backups);
         }
-        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        all.sort_by_key(|backup| std::cmp::Reverse(backup.created_at));
         Ok(all)
     }
 
@@ -1024,7 +1020,9 @@ impl BackupService {
                     payload_hash,
                 });
             }
-            listing.backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            listing
+                .backups
+                .sort_by_key(|backup| std::cmp::Reverse(backup.created_at));
             out.push(listing);
         }
         Ok(out)
@@ -1404,7 +1402,7 @@ fn cleanup_backups_in_dir(dir: &Path, keep_last: usize) -> Result<(), String> {
             .unwrap_or(0);
         backups.push((path, created));
     }
-    backups.sort_by(|a, b| b.1.cmp(&a.1));
+    backups.sort_by_key(|backup| std::cmp::Reverse(backup.1));
     for (path, _) in backups.iter().skip(keep_last) {
         let _ = fs::remove_file(path);
         // Sidecar lives alongside as `<name>.meta.json`.
@@ -2338,7 +2336,7 @@ mod tests {
         let tmp = fresh_temp_dir("v2_legacy");
         let state = BackupService::new(tmp.to_string_lossy().to_string());
         let mut svc = state.lock().await;
-        let mut cfg = build_test_config(&tmp);
+        let cfg = build_test_config(&tmp);
         svc.update_config(cfg);
 
         let data = serde_json::json!({ "connections": [] });

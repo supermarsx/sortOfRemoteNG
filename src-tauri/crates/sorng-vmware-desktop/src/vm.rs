@@ -151,19 +151,19 @@ pub async fn create_vm(
             format!(
                 "{}\\Documents\\Virtual Machines\\{}",
                 std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".to_string()),
-                &req.name
+                req.name
             )
         } else if cfg!(target_os = "macos") {
             format!(
                 "{}/Virtual Machines.localized/{}",
                 std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string()),
-                &req.name
+                req.name
             )
         } else {
             format!(
                 "{}/vmware/{}",
                 std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()),
-                &req.name
+                req.name
             )
         }
     });
@@ -175,7 +175,7 @@ pub async fn create_vm(
         "{}{}{}.vmx",
         target_dir,
         std::path::MAIN_SEPARATOR,
-        &req.name
+        req.name
     );
 
     // Generate VMDK
@@ -184,7 +184,7 @@ pub async fn create_vm(
         "{}{}{}.vmdk",
         target_dir,
         std::path::MAIN_SEPARATOR,
-        &req.name
+        req.name
     );
     vmrun
         .create_disk(&vmdk_path, disk_size, req.disk_type.as_deref(), None)

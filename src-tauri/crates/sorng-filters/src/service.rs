@@ -87,7 +87,7 @@ impl FilterService {
 
     pub fn list_filters(&self) -> Vec<&SmartFilter> {
         let mut filters: Vec<&SmartFilter> = self.filters.values().collect();
-        filters.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        filters.sort_by_key(|filter| filter.name.to_lowercase());
         filters
     }
 

@@ -226,11 +226,9 @@ impl SpamAssassinConfigManager {
                         i += 1;
                     }
                 }
-                "-u" | "--username" => {
-                    if i + 1 < opt_parts.len() {
-                        config.username = Some(opt_parts[i + 1].to_string());
-                        i += 1;
-                    }
+                "-u" | "--username" if i + 1 < opt_parts.len() => {
+                    config.username = Some(opt_parts[i + 1].to_string());
+                    i += 1;
                 }
                 _ => {}
             }

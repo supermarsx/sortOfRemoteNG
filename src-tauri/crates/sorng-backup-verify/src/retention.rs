@@ -118,7 +118,7 @@ impl RetentionEngine {
 
         // Sort entries by timestamp descending (newest first)
         let mut sorted: Vec<&&CatalogEntry> = entries.iter().collect();
-        sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        sorted.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
 
         // Track which slots we've filled
         let mut daily_slots = 0u32;

@@ -131,7 +131,7 @@ impl HetznerClient {
         response: reqwest::Response,
     ) -> HetznerResult<T> {
         let status = response.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             let body = response
                 .text()
                 .await
@@ -236,7 +236,7 @@ impl HetznerClient {
             .await
             .map_err(|e| HetznerError::connection_failed(format!("Request failed: {e}")))?;
         let status = response.status().as_u16();
-        if status >= 200 && status < 300 {
+        if (200..300).contains(&status) {
             Ok(())
         } else {
             let body = response.text().await.unwrap_or_default();

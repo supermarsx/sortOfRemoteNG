@@ -399,7 +399,7 @@ impl SnippetEngine {
             .values()
             .map(|s| (s.name.clone(), s.use_count))
             .collect();
-        top.sort_by(|a, b| b.1.cmp(&a.1));
+        top.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         top.truncate(10);
         (total, builtin, custom, top)
     }

@@ -1,4 +1,5 @@
 use crate::google_passwords::types::{Credential, CredentialFilter, PasswordStrength};
+use std::cmp::Reverse;
 
 /// Filter credentials based on the given criteria.
 pub fn filter_credentials(
@@ -157,6 +158,6 @@ pub fn count_by_folder(credentials: &[Credential]) -> Vec<(String, usize)> {
         *counts.entry(folder).or_default() += 1;
     }
     let mut result: Vec<_> = counts.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }

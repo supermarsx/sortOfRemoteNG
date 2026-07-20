@@ -74,7 +74,7 @@ impl MarketplaceService {
     pub fn get_popular(&self, limit: usize) -> Vec<MarketplaceListing> {
         let mut listings: Vec<MarketplaceListing> =
             self.registry.listings.values().cloned().collect();
-        listings.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+        listings.sort_by_key(|listing| std::cmp::Reverse(listing.downloads));
         listings.truncate(limit);
         listings
     }

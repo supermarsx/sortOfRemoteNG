@@ -2,6 +2,7 @@ use crate::dashlane::types::{
     CreateCredentialRequest, CredentialFilter, DashlaneCredential, DashlaneError,
     UpdateCredentialRequest,
 };
+use std::cmp::Reverse;
 
 /// Filter credentials based on various criteria.
 pub fn filter_credentials(
@@ -42,8 +43,8 @@ pub fn filter_credentials(
 
     if let Some(ref sort_by) = filter.sort_by {
         match sort_by.as_str() {
-            "title" => result.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
-            "url" => result.sort_by(|a, b| a.url.to_lowercase().cmp(&b.url.to_lowercase())),
+            "title" => result.sort_by_key(|item| item.title.to_lowercase()),
+            "url" => result.sort_by_key(|item| item.url.to_lowercase()),
             "modified" => result.sort_by(|a, b| b.modified_at.cmp(&a.modified_at)),
             "last_used" => result.sort_by(|a, b| b.last_used_at.cmp(&a.last_used_at)),
             _ => {}
@@ -189,7 +190,7 @@ pub fn count_by_category(credentials: &[DashlaneCredential]) -> Vec<(String, usi
         *map.entry(cat).or_default() += 1;
     }
     let mut result: Vec<_> = map.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }
 

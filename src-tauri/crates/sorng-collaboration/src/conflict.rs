@@ -138,7 +138,7 @@ impl ConflictResolver {
     /// Returns operations in resolved order (no remaining conflicts).
     pub fn resolve_batch(&mut self, mut operations: Vec<SyncOperation>) -> Vec<SyncOperation> {
         // Sort by timestamp first as a baseline
-        operations.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        operations.sort_by_key(|operation| operation.timestamp);
 
         // Group by resource
         let mut by_resource: std::collections::HashMap<String, Vec<SyncOperation>> =
@@ -194,7 +194,7 @@ impl ConflictResolver {
         }
 
         // Final sort by timestamp
-        resolved_ops.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        resolved_ops.sort_by_key(|operation| operation.timestamp);
         resolved_ops
     }
 

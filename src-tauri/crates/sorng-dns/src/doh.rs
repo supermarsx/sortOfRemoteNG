@@ -109,7 +109,7 @@ async fn execute_doh_json_query(
     let url = format!(
         "{}?name={}&type={}&cd={}&do={}",
         build_doh_url(server),
-        &query.name,
+        query.name,
         query.record_type.as_str(),
         if query.cd { "1" } else { "0" },
         if query.dnssec { "1" } else { "0" }

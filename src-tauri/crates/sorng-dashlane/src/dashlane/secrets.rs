@@ -76,5 +76,5 @@ pub fn update_secret(
 
 /// Sort secrets by title.
 pub fn sort_by_title(secrets: &mut [DashlaneSecret]) {
-    secrets.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    secrets.sort_by_key(|secret| secret.title.to_lowercase());
 }

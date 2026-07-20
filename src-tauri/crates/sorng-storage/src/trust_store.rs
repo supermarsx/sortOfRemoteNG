@@ -613,15 +613,12 @@ impl TrustStoreService {
         let with_history = records.iter().filter(|r| !r.history.is_empty()).count() as u64;
         let total_checks: u64 = records.iter().map(|r| r.stats.total_checks).sum();
         let total_mismatches: u64 = records.iter().map(|r| r.stats.mismatch_count).sum();
-        let avg_score = if total > 0 {
-            (records
-                .iter()
-                .map(|r| r.stats.trust_score as u64)
-                .sum::<u64>()
-                / total) as u8
-        } else {
-            0
-        };
+        let avg_score = records
+            .iter()
+            .map(|r| r.stats.trust_score as u64)
+            .sum::<u64>()
+            .checked_div(total)
+            .unwrap_or(0) as u8;
 
         TrustSummary {
             total_records: total,
@@ -714,10 +711,8 @@ fn verify_identity_in_data(
                         };
                     }
                 }
-                TrustPolicy::TrustOnVerify => {
-                    if !record.user_approved {
-                        return TrustVerifyResult::PendingVerification { identity };
-                    }
+                TrustPolicy::TrustOnVerify if !record.user_approved => {
+                    return TrustVerifyResult::PendingVerification { identity };
                 }
                 _ => {}
             }

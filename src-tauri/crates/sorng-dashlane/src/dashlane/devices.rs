@@ -1,5 +1,6 @@
 use crate::dashlane::api_client::DashlaneApiClient;
 use crate::dashlane::types::{DashlaneError, RegisteredDevice};
+use std::cmp::Reverse;
 
 /// List all registered devices.
 pub async fn list_devices(
@@ -53,6 +54,6 @@ pub fn count_by_platform(devices: &[RegisteredDevice]) -> Vec<(String, usize)> {
         *map.entry(platform).or_default() += 1;
     }
     let mut result: Vec<_> = map.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }

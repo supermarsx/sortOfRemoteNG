@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 pub const PUBLIC_ENDPOINT_URL: &str =
     "https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdaterStatusValue {
+    #[default]
     Idle,
     Checking,
     UpToDate,
@@ -19,23 +20,12 @@ pub enum UpdaterStatusValue {
     Error,
 }
 
-impl Default for UpdaterStatusValue {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdaterEndpointMode {
+    #[default]
     PublicOnly,
     PrivateThenPublic,
-}
-
-impl Default for UpdaterEndpointMode {
-    fn default() -> Self {
-        Self::PublicOnly
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

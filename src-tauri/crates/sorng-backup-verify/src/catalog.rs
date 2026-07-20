@@ -202,7 +202,7 @@ impl BackupCatalog {
             .filter(|e| e.policy_id == entry.policy_id && e.target_id == entry.target_id)
             .filter(|e| e.timestamp < entry.timestamp)
             .collect();
-        candidates.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        candidates.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
 
         for candidate in candidates {
             chain.push(candidate);

@@ -872,10 +872,8 @@ impl KeePassService {
                         "password" => entry.password = value.clone(),
                         "url" => entry.url = value.clone(),
                         "notes" => entry.notes = value.clone(),
-                        "group_path" => {
-                            if !value.is_empty() {
-                                entry.group_path = Some(value.clone());
-                            }
+                        "group_path" if !value.is_empty() => {
+                            entry.group_path = Some(value.clone());
                         }
                         _ => {}
                     }

@@ -247,8 +247,8 @@ impl BackupScheduler {
         if let Some(started) = job.started_at {
             let duration = (now - started).num_seconds() as u64;
             job.duration_secs = Some(duration);
-            if duration > 0 {
-                job.transfer_speed_bps = size_bytes * 8 / duration;
+            if let Some(duration) = std::num::NonZeroU64::new(duration) {
+                job.transfer_speed_bps = size_bytes * 8 / duration.get();
             }
         }
         job.size_bytes = size_bytes;

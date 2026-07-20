@@ -202,7 +202,7 @@ impl SessionManager {
             .map(|(id, s)| (id.clone(), s.ended_at.unwrap_or(s.created_at)))
             .collect();
 
-        ended.sort_by(|a, b| b.1.cmp(&a.1));
+        ended.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
         // Keep the most recent `keep_recent` ended sessions, remove the rest
         if ended.len() > keep_recent {

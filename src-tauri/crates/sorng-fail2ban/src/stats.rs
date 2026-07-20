@@ -83,7 +83,7 @@ pub async fn top_banned_ips(
         })
         .collect();
 
-    summaries.sort_by(|a, b| b.total_bans.cmp(&a.total_bans));
+    summaries.sort_by_key(|summary| std::cmp::Reverse(summary.total_bans));
     summaries.truncate(limit);
 
     Ok(summaries)
@@ -120,11 +120,11 @@ pub async fn log_stats(
     }
 
     let mut top_banned_ips: Vec<(String, u64)> = bans_per_ip.into_iter().collect();
-    top_banned_ips.sort_by(|a, b| b.1.cmp(&a.1));
+    top_banned_ips.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     top_banned_ips.truncate(20);
 
     let mut bans_by_jail: Vec<(String, u64)> = bans_per_jail.into_iter().collect();
-    bans_by_jail.sort_by(|a, b| b.1.cmp(&a.1));
+    bans_by_jail.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     Ok(LogStats {
         total_entries: entries.len() as u64,

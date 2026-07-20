@@ -413,9 +413,11 @@ mod tests {
         let mut client = PassboltApiClient::new("https://example.com", true, 30).unwrap();
         assert!(!client.is_authenticated());
 
-        let mut session = SessionState::default();
-        session.authenticated = true;
-        session.access_token = Some("test-token".into());
+        let session = SessionState {
+            authenticated: true,
+            access_token: Some("test-token".into()),
+            ..SessionState::default()
+        };
         client.set_session(session);
 
         assert!(client.is_authenticated());

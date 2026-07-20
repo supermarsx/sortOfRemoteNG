@@ -171,12 +171,12 @@ pub fn probe_host() -> Result<(), KafkaError> {
     // librdkafka is inside the binary and the probe is definitionally Ok.
     #[cfg(feature = "cmake-build")]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(all(feature = "dynamic-linking", not(feature = "cmake-build")))]
     {
-        return probe_host_dynamic();
+        probe_host_dynamic()
     }
 
     #[cfg(not(any(feature = "cmake-build", feature = "dynamic-linking")))]

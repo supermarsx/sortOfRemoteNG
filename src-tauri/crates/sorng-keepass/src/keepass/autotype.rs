@@ -393,10 +393,8 @@ impl KeePassService {
                         has_enter = true;
                     }
                 }
-                AutoTypeToken::Literal(text) => {
-                    if text.contains('{') && !text.contains('}') {
-                        warnings.push(format!("Possible malformed placeholder: {}", text));
-                    }
+                AutoTypeToken::Literal(text) if text.contains('{') && !text.contains('}') => {
+                    warnings.push(format!("Possible malformed placeholder: {}", text));
                 }
                 _ => {}
             }

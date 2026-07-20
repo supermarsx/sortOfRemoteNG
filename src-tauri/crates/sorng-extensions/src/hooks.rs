@@ -134,7 +134,7 @@ impl HookManager {
         });
 
         // Keep sorted by priority (highest first).
-        entries.sort_by(|a, b| b.priority.cmp(&a.priority));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
 
         debug!(
             "Registered hook {}::{} on {} (priority {})",

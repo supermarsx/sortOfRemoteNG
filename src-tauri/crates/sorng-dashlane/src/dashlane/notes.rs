@@ -81,7 +81,7 @@ pub fn update_note(
 
 /// Sort notes by title.
 pub fn sort_by_title(notes: &mut [SecureNote]) {
-    notes.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    notes.sort_by_key(|note| note.title.to_lowercase());
 }
 
 /// Sort notes by modification date (newest first).

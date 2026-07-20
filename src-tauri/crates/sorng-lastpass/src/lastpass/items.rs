@@ -1,6 +1,7 @@
 use crate::lastpass::types::{
     Account, AccountListParams, CreateAccountRequest, UpdateAccountRequest,
 };
+use std::cmp::Reverse;
 
 /// Filter accounts by search parameters.
 pub fn filter_accounts(accounts: &[Account], params: &AccountListParams) -> Vec<Account> {
@@ -167,6 +168,6 @@ pub fn count_by_group(accounts: &[Account]) -> Vec<(String, usize)> {
         *counts.entry(group).or_default() += 1;
     }
     let mut result: Vec<_> = counts.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }

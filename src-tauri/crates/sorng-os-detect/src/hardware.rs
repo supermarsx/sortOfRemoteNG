@@ -410,10 +410,8 @@ fn parse_lscpu(stdout: &str) -> CpuInfo {
                 "Vendor ID" => vendor = Some(val.to_string()),
                 "Architecture" => arch = parse_architecture(val),
                 "Flags" => flags = val.split_whitespace().map(|s| s.to_string()).collect(),
-                "L3 cache" | "L2 cache" => {
-                    if cache_size.is_none() {
-                        cache_size = Some(val.to_string());
-                    }
+                "L3 cache" | "L2 cache" if cache_size.is_none() => {
+                    cache_size = Some(val.to_string());
                 }
                 _ => {}
             }

@@ -80,7 +80,7 @@ pub fn build_latency_sparklines(entries: &[&ConnectionHealthEntry], count: usize
 /// Build the alert feed widget data.
 pub fn build_alert_feed(alerts: &[DashboardAlert], count: usize) -> Value {
     let mut sorted = alerts.to_vec();
-    sorted.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    sorted.sort_by_key(|widget| std::cmp::Reverse(widget.timestamp));
     sorted.truncate(count);
 
     let items: Vec<Value> = sorted

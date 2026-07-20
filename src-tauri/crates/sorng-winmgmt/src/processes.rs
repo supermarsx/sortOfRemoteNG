@@ -8,6 +8,7 @@ use crate::transport::{parse_wmi_datetime, WmiTransport};
 use crate::types::*;
 use crate::wql::{WqlBuilder, WqlQueries};
 use log::{debug, info};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 /// Manages remote Windows processes via WMI.
@@ -24,7 +25,7 @@ impl ProcessManager {
         let rows = transport.wql_query(&query).await?;
         let mut processes: Vec<WindowsProcess> = rows.iter().map(Self::row_to_process).collect();
         // Default sort by working set descending
-        processes.sort_by(|a, b| b.working_set_size.cmp(&a.working_set_size));
+        processes.sort_by_key(|process| Reverse(process.working_set_size));
         Ok(processes)
     }
 
@@ -349,7 +350,7 @@ impl ProcessManager {
 
         // Top N by memory
         let mut by_mem = all.clone();
-        by_mem.sort_by(|a, b| b.working_set_size.cmp(&a.working_set_size));
+        by_mem.sort_by_key(|process| Reverse(process.working_set_size));
         let top_by_memory: Vec<(String, u64)> = by_mem
             .iter()
             .take(10)
@@ -358,7 +359,7 @@ impl ProcessManager {
 
         // Top N by handles
         let mut by_handles = all.clone();
-        by_handles.sort_by(|a, b| b.handle_count.cmp(&a.handle_count));
+        by_handles.sort_by_key(|process| Reverse(process.handle_count));
         let top_by_handles: Vec<(String, u32)> = by_handles
             .iter()
             .take(10)

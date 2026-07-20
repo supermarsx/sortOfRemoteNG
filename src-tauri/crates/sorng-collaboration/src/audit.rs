@@ -122,7 +122,7 @@ impl AuditLog {
             .filter(|e| e.user_id == user_id)
             .collect();
 
-        all_entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        all_entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
         all_entries.into_iter().take(limit).cloned().collect()
     }
 

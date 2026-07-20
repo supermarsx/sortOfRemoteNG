@@ -84,7 +84,7 @@ pub fn top_process_names(server: HANDLE, n: usize) -> TsResult<Vec<(String, usiz
         *map.entry(name).or_insert(0) += 1;
     }
     let mut vec: Vec<(String, usize)> = map.into_iter().collect();
-    vec.sort_by(|a, b| b.1.cmp(&a.1));
+    vec.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     vec.truncate(n);
     Ok(vec)
 }

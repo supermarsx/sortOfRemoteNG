@@ -185,28 +185,6 @@ impl SecureStorage {
         Ok(combined)
     }
 
-    /// Decrypt data with AES-256-GCM.
-    /// Test-only inverse of [`Self::encrypt_bytes`]. Used by the
-    /// legacy-rejection test that proves the load path no longer
-    /// accepts SORNG_ENC: fixtures.
-    #[cfg(test)]
-    fn decrypt_bytes(combined: &[u8], password: &str) -> Result<Vec<u8>, String> {
-        if combined.len() < 44 {
-            return Err("Encrypted data too short".to_string());
-        }
-        let salt = &combined[..32];
-        let nonce_bytes = &combined[32..44];
-        let ciphertext = &combined[44..];
-
-        let key = Self::derive_encryption_key(password, salt);
-        let cipher = Aes256Gcm::new(&key.into());
-        let nonce = Nonce::from_slice(nonce_bytes);
-
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| format!("Decryption failed (wrong password?): {:?}", e))
-    }
-
     /// Saves data to persistent storage.
     ///
     /// Serializes the provided data to JSON format and writes it to the storage file.
@@ -551,12 +529,10 @@ mod connections_dispatch_tests {
     //          vault eviction simulations.
     // ────────────────────────────────────────────────────────────────
 
-    fn unlocked_state_with_bytes(bytes: [u8; 32]) -> impl std::future::Future<Output = Arc<EncryptionState>> {
-        async move {
-            let s = EncryptionState::new();
-            s.install(MasterDek::from_bytes(&bytes).unwrap()).await;
-            Arc::new(s)
-        }
+    async fn unlocked_state_with_bytes(bytes: [u8; 32]) -> Arc<EncryptionState> {
+        let s = EncryptionState::new();
+        s.install(MasterDek::from_bytes(&bytes).unwrap()).await;
+        Arc::new(s)
     }
 
     #[tokio::test]

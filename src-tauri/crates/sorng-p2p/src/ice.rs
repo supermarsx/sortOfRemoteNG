@@ -181,7 +181,8 @@ impl IceAgent {
         }
 
         // Sort by priority (highest first)
-        self.check_list.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.check_list
+            .sort_by_key(|pair| std::cmp::Reverse(pair.priority));
 
         // Unfreeze the first pair in each foundation group
         let mut seen_foundations = std::collections::HashSet::new();
@@ -273,7 +274,8 @@ impl IceAgent {
         // In regular nomination, choose the best valid pair
         if self.nomination == IceNomination::Regular && !self.valid_pairs.is_empty() {
             // Sort valid pairs by priority
-            self.valid_pairs.sort_by(|a, b| b.priority.cmp(&a.priority));
+            self.valid_pairs
+                .sort_by_key(|pair| std::cmp::Reverse(pair.priority));
             let best = self.valid_pairs[0].clone();
             self.nominated_pair = Some(best.clone());
             self.state = IceState::Completed;

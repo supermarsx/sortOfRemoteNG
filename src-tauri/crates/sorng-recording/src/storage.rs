@@ -176,7 +176,7 @@ pub fn load_all_envelopes(root: &Path) -> RecordingResult<Vec<SavedRecordingEnve
             }
         }
     }
-    envelopes.sort_by(|a, b| b.saved_at.cmp(&a.saved_at));
+    envelopes.sort_by_key(|envelope| std::cmp::Reverse(envelope.saved_at));
     Ok(envelopes)
 }
 
@@ -269,7 +269,7 @@ pub fn load_all_macros(root: &Path) -> RecordingResult<Vec<MacroRecording>> {
             }
         }
     }
-    macros.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    macros.sort_by_key(|recording| std::cmp::Reverse(recording.updated_at));
     Ok(macros)
 }
 
@@ -343,7 +343,7 @@ pub fn cleanup_old_envelopes(root: &Path, days: u64) -> RecordingResult<usize> {
 pub fn enforce_storage_limit(root: &Path, max_bytes: u64) -> RecordingResult<usize> {
     let mut envelopes = load_all_envelopes(root)?;
     // Sort oldest first
-    envelopes.sort_by(|a, b| a.saved_at.cmp(&b.saved_at));
+    envelopes.sort_by_key(|envelope| envelope.saved_at);
 
     let mut total = storage_size(root)?;
     let mut deleted = 0;
@@ -577,7 +577,7 @@ pub async fn load_all_envelopes_dispatched(
     // readdir order).
     let mut out: Vec<SavedRecordingEnvelope> =
         by_id.into_iter().map(|(_, (_, env))| env).collect();
-    out.sort_by(|a, b| b.saved_at.cmp(&a.saved_at));
+    out.sort_by_key(|envelope| std::cmp::Reverse(envelope.saved_at));
     Ok(out)
 }
 
@@ -701,7 +701,7 @@ pub async fn load_all_macros_dispatched(
         }
     }
     let mut out: Vec<MacroRecording> = by_id.into_iter().map(|(_, (_, m))| m).collect();
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|recording| std::cmp::Reverse(recording.updated_at));
     Ok(out)
 }
 
@@ -1759,8 +1759,10 @@ mod enc_dispatch_tests {
     /// assertion order is independent of which stage ran first, and
     /// flips its cancel flag after a configurable number of `step`
     /// calls so the cancel path can be exercised deterministically.
+    type MigrationEvent = (MigrationStage, usize, usize, String, bool);
+
     struct RecordingReporter {
-        events: std::sync::Mutex<Vec<(MigrationStage, usize, usize, String, bool)>>,
+        events: std::sync::Mutex<Vec<MigrationEvent>>,
         totals: std::sync::Mutex<Vec<(MigrationStage, usize)>>,
         cancel_after: std::sync::atomic::AtomicUsize,
         steps_seen: std::sync::atomic::AtomicUsize,

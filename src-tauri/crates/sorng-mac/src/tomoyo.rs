@@ -24,8 +24,7 @@ pub fn parse_tomoyo_status(output: &str) -> TomoyoStatus {
             // `"learning domains: 2"` shapes.
             if let Some(n) = line
                 .split(|c: char| !c.is_ascii_digit())
-                .filter(|t| !t.is_empty())
-                .last()
+                .rfind(|token| !token.is_empty())
                 .and_then(|t| t.parse::<u32>().ok())
             {
                 return n;

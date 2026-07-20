@@ -343,7 +343,7 @@ impl Scheduler {
             None => Box::new(self.history.iter()),
         };
         let mut items: Vec<&TaskExecutionRecord> = iter.collect();
-        items.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        items.sort_by_key(|item| std::cmp::Reverse(item.started_at));
         items.truncate(limit);
         items
     }

@@ -84,7 +84,7 @@ impl ConversationStore {
 
     pub fn list_all(&self) -> Vec<&Conversation> {
         let mut convs: Vec<_> = self.conversations.values().collect();
-        convs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        convs.sort_by_key(|conversation| std::cmp::Reverse(conversation.updated_at));
         convs
     }
 
@@ -119,7 +119,7 @@ impl ConversationStore {
                 }
             })
             .collect();
-        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        summaries.sort_by_key(|summary| std::cmp::Reverse(summary.updated_at));
         summaries
     }
 

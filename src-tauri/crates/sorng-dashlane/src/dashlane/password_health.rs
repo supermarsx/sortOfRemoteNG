@@ -103,7 +103,7 @@ pub fn analyze_password_health(credentials: &[DashlaneCredential]) -> PasswordHe
         (100.0 - penalty_weak - penalty_reused - penalty_compromised - penalty_old).max(0.0) as u32;
 
     // Sort details by strength (worst first)
-    details.sort_by(|a, b| a.strength.cmp(&b.strength));
+    details.sort_by_key(|detail| detail.strength);
 
     PasswordHealthScore {
         overall_score: overall,

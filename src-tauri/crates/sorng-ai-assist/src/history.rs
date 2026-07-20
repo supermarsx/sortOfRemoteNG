@@ -25,7 +25,7 @@ impl HistoryAnalyzer {
         let unique_commands = freq.len();
 
         let mut top_commands: Vec<(String, u64)> = freq.into_iter().collect();
-        top_commands.sort_by(|a, b| b.1.cmp(&a.1));
+        top_commands.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         top_commands.truncate(20);
 
         let patterns = Self::detect_patterns(entries);
@@ -101,7 +101,7 @@ impl HistoryAnalyzer {
             });
         }
 
-        patterns.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+        patterns.sort_by_key(|pattern| std::cmp::Reverse(pattern.frequency));
         patterns.truncate(20);
         patterns
     }

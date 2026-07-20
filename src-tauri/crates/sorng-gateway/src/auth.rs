@@ -132,7 +132,7 @@ impl GatewayAuthService {
         let mut salt = [0u8; 16];
         rand::rngs::OsRng.fill_bytes(&mut salt);
         let mut hasher = Sha256::new();
-        hasher.update(&salt);
+        hasher.update(salt);
         hasher.update(plaintext.as_bytes());
         let hash = hasher.finalize();
         format!("{}:{}", hex::encode(salt), hex::encode(hash))

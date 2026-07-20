@@ -8,6 +8,7 @@ use crate::types::*;
 use crate::wql::{WqlBuilder, WqlQueries};
 use chrono::Utc;
 use log::{debug, info};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 /// Manages remote Windows Event Logs via WMI.
@@ -87,9 +88,9 @@ impl EventLogManager {
 
         // Sort
         if filter.newest_first {
-            entries.sort_by(|a, b| b.time_generated.cmp(&a.time_generated));
+            entries.sort_by_key(|entry| Reverse(entry.time_generated));
         } else {
-            entries.sort_by(|a, b| a.time_generated.cmp(&b.time_generated));
+            entries.sort_by_key(|entry| entry.time_generated);
         }
 
         // Apply limit
@@ -293,7 +294,7 @@ impl EventLogManager {
         }
 
         let mut sorted: Vec<(String, u64)> = counts.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|entry| Reverse(entry.1));
         sorted.truncate(limit);
         Ok(sorted)
     }

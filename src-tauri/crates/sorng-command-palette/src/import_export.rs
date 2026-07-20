@@ -1310,16 +1310,16 @@ fn filter_history(entries: &[HistoryEntry], options: &HistoryExportOptions) -> V
 fn sort_history(mut entries: Vec<HistoryEntry>, order: HistorySortOrder) -> Vec<HistoryEntry> {
     match order {
         HistorySortOrder::MostRecent => {
-            entries.sort_by(|a, b| b.last_used.cmp(&a.last_used));
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.last_used));
         }
         HistorySortOrder::MostUsed => {
-            entries.sort_by(|a, b| b.use_count.cmp(&a.use_count));
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.use_count));
         }
         HistorySortOrder::Alphabetical => {
-            entries.sort_by(|a, b| a.command.to_lowercase().cmp(&b.command.to_lowercase()));
+            entries.sort_by_key(|entry| entry.command.to_lowercase());
         }
         HistorySortOrder::Chronological => {
-            entries.sort_by(|a, b| a.first_used.cmp(&b.first_used));
+            entries.sort_by_key(|entry| entry.first_used);
         }
     }
     entries

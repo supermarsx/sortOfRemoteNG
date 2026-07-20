@@ -82,7 +82,7 @@ impl SerialService {
         // Check for duplicate port
         {
             let sessions = self.sessions.read().await;
-            for (_, handle) in sessions.iter() {
+            for handle in sessions.values() {
                 if handle.port_name == config.port_name && handle.is_connected() {
                     return Err(format!(
                         "Port {} is already in use by session {}",

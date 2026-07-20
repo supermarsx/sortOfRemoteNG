@@ -75,7 +75,7 @@ impl MarketplaceRegistry {
                     .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             }
             SearchSort::Downloads => {
-                candidates.sort_by(|a, b| b.0.downloads.cmp(&a.0.downloads));
+                candidates.sort_by_key(|a| std::cmp::Reverse(a.0.downloads));
             }
             SearchSort::Rating => {
                 candidates.sort_by(|a, b| {
@@ -85,7 +85,7 @@ impl MarketplaceRegistry {
                 });
             }
             SearchSort::RecentlyUpdated => {
-                candidates.sort_by(|a, b| b.0.updated_at.cmp(&a.0.updated_at));
+                candidates.sort_by_key(|a| std::cmp::Reverse(a.0.updated_at));
             }
             SearchSort::Name => {
                 candidates.sort_by(|a, b| a.0.display_name.cmp(&b.0.display_name));

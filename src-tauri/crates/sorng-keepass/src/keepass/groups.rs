@@ -461,7 +461,7 @@ impl KeePassService {
             .cloned()
             .collect();
 
-        children.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        children.sort_by_key(|group| group.name.to_lowercase());
         Ok(children)
     }
 
@@ -510,7 +510,7 @@ impl KeePassService {
             .into_iter()
             .map(|(tag, count)| TagCount { tag, count })
             .collect();
-        tags.sort_by(|a, b| b.count.cmp(&a.count));
+        tags.sort_by_key(|tag| std::cmp::Reverse(tag.count));
         Ok(tags)
     }
 

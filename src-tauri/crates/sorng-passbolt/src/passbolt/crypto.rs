@@ -253,10 +253,7 @@ impl PgpContext {
 pub fn parse_armored_key(armored: &str, expect_secret: bool) -> Result<PgpKey, PassboltError> {
     let trimmed = armored.trim();
 
-    if expect_secret {
-        let key = parse_secret_key(trimmed)?;
-        Ok(secret_key_metadata(trimmed, &key))
-    } else if trimmed.contains("PRIVATE KEY") {
+    if expect_secret || trimmed.contains("PRIVATE KEY") {
         let key = parse_secret_key(trimmed)?;
         Ok(secret_key_metadata(trimmed, &key))
     } else {

@@ -618,7 +618,7 @@ impl KeePassService {
             .into_iter()
             .map(|(tag, count)| TagCount { tag, count })
             .collect();
-        most_used_tags.sort_by(|a, b| b.count.cmp(&a.count));
+        most_used_tags.sort_by_key(|tag| std::cmp::Reverse(tag.count));
         most_used_tags.truncate(20);
 
         // Group distribution

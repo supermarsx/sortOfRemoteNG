@@ -63,10 +63,9 @@ fn parse_mlsd(line: &str) -> Option<FtpEntry> {
     // The last space-preceded token after "; " is the filename.
     let (facts_str, name) = if let Some(pos) = line.find("; ") {
         (&line[..pos + 1], line[pos + 2..].to_string())
-    } else if let Some(pos) = line.rfind(' ') {
-        (&line[..pos], line[pos + 1..].to_string())
     } else {
-        return None;
+        let pos = line.rfind(' ')?;
+        (&line[..pos], line[pos + 1..].to_string())
     };
 
     if name.is_empty() {

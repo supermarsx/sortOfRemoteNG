@@ -143,7 +143,7 @@ impl KeePassService {
         }
 
         // Sort by title
-        results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        results.sort_by_key(|entry| entry.title.to_lowercase());
 
         Ok(results)
     }
@@ -279,7 +279,7 @@ impl KeePassService {
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
 
-        results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        results.sort_by_key(|entry| entry.title.to_lowercase());
         Ok(results)
     }
 
@@ -317,7 +317,7 @@ impl KeePassService {
             .map(|e| Self::entry_to_summary(e, &now))
             .collect();
 
-        results.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        results.sort_by_key(|entry| entry.title.to_lowercase());
         Ok(results)
     }
 

@@ -121,7 +121,7 @@ impl CommandPaletteService {
             }
         }
         let mut most_active: Vec<(String, usize)> = session_counts.into_iter().collect();
-        most_active.sort_by(|a, b| b.1.cmp(&a.1));
+        most_active.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         most_active.truncate(20);
 
         PaletteStats {

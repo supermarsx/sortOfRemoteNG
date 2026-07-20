@@ -150,11 +150,7 @@ pub fn get_activity_heatmap(timestamps: &[u64], bucket_count: usize) -> Vec<f64>
     let mut counts = vec![0u64; bucket_count];
 
     for &ts in timestamps {
-        let idx = if bucket_width == 0 {
-            0
-        } else {
-            ((ts / bucket_width) as usize).min(bucket_count - 1)
-        };
+        let idx = (ts.checked_div(bucket_width).unwrap_or(0) as usize).min(bucket_count - 1);
         counts[idx] += 1;
     }
 

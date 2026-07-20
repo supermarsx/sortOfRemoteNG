@@ -346,7 +346,7 @@ impl MssqlService {
                 .iter()
                 .map(|c| c.name().to_string())
                 .collect();
-            for (col_data, name) in trow.into_iter().zip(col_names.into_iter()) {
+            for (col_data, name) in trow.into_iter().zip(col_names) {
                 let val = Self::column_data_to_json(&col_data);
                 map.insert(name, val);
             }

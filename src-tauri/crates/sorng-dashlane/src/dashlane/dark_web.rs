@@ -1,4 +1,5 @@
 use crate::dashlane::types::{AlertSeverity, AlertStatus, DarkWebAlert};
+use std::cmp::Reverse;
 
 /// Filter alerts by status.
 pub fn filter_by_status(alerts: &[DarkWebAlert], status: AlertStatus) -> Vec<DarkWebAlert> {
@@ -72,7 +73,7 @@ pub fn group_by_email(alerts: &[DarkWebAlert]) -> Vec<(String, Vec<DarkWebAlert>
             .push(alert.clone());
     }
     let mut result: Vec<_> = map.into_iter().collect();
-    result.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    result.sort_by_key(|item| Reverse(item.1.len()));
     result
 }
 
@@ -85,7 +86,7 @@ pub fn count_by_severity(alerts: &[DarkWebAlert]) -> Vec<(String, usize)> {
         *map.entry(sev).or_default() += 1;
     }
     let mut result: Vec<_> = map.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }
 
@@ -99,7 +100,7 @@ pub fn get_breach_summary(alerts: &[DarkWebAlert]) -> Vec<(String, usize)> {
         }
     }
     let mut result: Vec<_> = map.into_iter().collect();
-    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result.sort_by_key(|item| Reverse(item.1));
     result
 }
 
