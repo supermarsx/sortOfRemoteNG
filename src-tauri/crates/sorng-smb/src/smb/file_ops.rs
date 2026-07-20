@@ -1284,7 +1284,7 @@ mod unix_impl {
     fn base64_encode(input: &[u8]) -> String {
         const ALPHA: &[u8] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+        let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
         for chunk in input.chunks(3) {
             let b0 = chunk[0];
             let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
@@ -1325,7 +1325,7 @@ mod unix_impl {
             bits += 6;
             if bits >= 8 {
                 bits -= 8;
-                out.push((buf >> bits) as u8 & 0xff);
+                out.push((buf >> bits) as u8);
             }
         }
         Ok(out)
@@ -1365,8 +1365,19 @@ mod unix_impl {
 
         #[test]
         fn b64_roundtrip() {
-            let data = b"hello smb";
-            assert_eq!(base64_decode(&base64_encode(data)).unwrap(), data);
+            let cases: &[(&[u8], &str)] = &[
+                (b"", ""),
+                (b"h", "aA=="),
+                (b"hi", "aGk="),
+                (b"hey", "aGV5"),
+                (b"hello smb", "aGVsbG8gc21i"),
+                (&[0xff, 0x00, 0x80], "/wCA"),
+            ];
+
+            for (data, encoded) in cases {
+                assert_eq!(base64_encode(data), *encoded);
+                assert_eq!(base64_decode(encoded).unwrap(), *data);
+            }
         }
     }
 }

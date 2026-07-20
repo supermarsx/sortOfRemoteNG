@@ -5,9 +5,12 @@
 //! Provides the `TermServServiceState` type alias for Tauri managed state.
 
 use crate::types::*;
+#[cfg(windows)]
 use chrono::Utc;
+#[cfg(windows)]
 use log::info;
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;

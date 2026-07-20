@@ -7,6 +7,7 @@ use super::error::MremotengResult;
 use super::types::*;
 
 /// PuTTY registry path constant.
+#[cfg(target_os = "windows")]
 const PUTTY_SESSIONS_PATH: &str = r"Software\SimonTatham\PuTTY\Sessions";
 
 /// Parse a PuTTY `.reg` export file into `PuttySession` objects.

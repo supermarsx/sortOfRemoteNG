@@ -647,7 +647,6 @@ pub fn encode_send_data_request<T: Encode>(
     Ok(written)
 }
 
-#[expect(single_use_lifetimes)] // anonymous lifetimes in `impl Trait` are unstable
 fn create_gcc_blocks<'a>(
     config: &Config,
     selected_protocol: nego::SecurityProtocol,
