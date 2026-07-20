@@ -52,6 +52,7 @@ target/reports/
 /.artifacts/
 .wdio-drivers/
 /e2e/screenshots/**/failure-*.png
+/e2e/.generated/
 /.kilo/
 /generate_fixture.rs
 /test_encryption.rs

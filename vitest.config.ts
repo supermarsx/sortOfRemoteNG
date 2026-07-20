@@ -9,6 +9,7 @@ import react from "@vitejs/plugin-react";
  */
 export const NODE_TEST_SUITE_EXCLUDES = [
   "tests/readme-screenshot/**/*.mjs",
+  "tests/e2e-http-fixtures/**/*.mjs",
   "tests/release/**/*.mjs",
   "tests/versioning/**/*.mjs",
 ] as const;

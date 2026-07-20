@@ -53,11 +53,13 @@ services:
       - "8080:80"
       - "8443:443"
     volumes:
-      - ./fixtures/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./fixtures/htpasswd:/etc/nginx/.htpasswd:ro
-      - ./fixtures/ssl:/etc/nginx/ssl:ro
+      # Generated immediately before Compose by
+      # scripts/ci/e2e-http-fixtures.mjs. No private key is committed.
+      - ./.generated/http/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./.generated/http/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./.generated/http/ssl:/etc/nginx/ssl:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
       interval: 5s
       timeout: 3s
       retries: 10
