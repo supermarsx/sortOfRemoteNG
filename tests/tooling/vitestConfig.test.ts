@@ -9,6 +9,7 @@ describe("ordinary Vitest discovery", () => {
 
     expect(NODE_TEST_SUITE_EXCLUDES).toEqual([
       "tests/readme-screenshot/**/*.mjs",
+      "tests/e2e-http-fixtures/**/*.mjs",
       "tests/release/**/*.mjs",
       "tests/versioning/**/*.mjs",
     ]);
