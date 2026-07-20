@@ -715,8 +715,7 @@ mod tests {
         assert!(matches!(se, DataplaneSupervisorError::Dataplane(_)));
         let devv: DataplaneSupervisorError = DeviceError::Closed.into();
         assert!(matches!(devv, DataplaneSupervisorError::Device(_)));
-        let iov: DataplaneSupervisorError =
-            std::io::Error::new(std::io::ErrorKind::Other, "x").into();
+        let iov: DataplaneSupervisorError = std::io::Error::other("x").into();
         assert!(matches!(iov, DataplaneSupervisorError::Tls(_)));
     }
 
@@ -907,19 +906,16 @@ mod tests {
             if tokio::time::Instant::now() >= deadline {
                 panic!("keepalive never observed");
             }
-            match tokio::time::timeout(
+            if let Ok(Ok(frames)) = tokio::time::timeout(
                 Duration::from_millis(200),
                 read_one_record(&mut server_side),
             )
             .await
             {
-                Ok(Ok(frames)) => {
-                    if frames.iter().any(|f| matches!(f, DataFrame::KeepAlive)) {
-                        sup.shutdown().await.expect("shutdown");
-                        return;
-                    }
+                if frames.iter().any(|f| matches!(f, DataFrame::KeepAlive)) {
+                    sup.shutdown().await.expect("shutdown");
+                    return;
                 }
-                _ => {}
             }
         }
     }
@@ -1048,9 +1044,9 @@ mod tests {
         ).is_transient());
         assert!(DataplaneSupervisorError::KeepaliveTimeout.is_transient());
         assert!(DataplaneSupervisorError::Device(DeviceError::Closed).is_transient());
-        assert!(DataplaneSupervisorError::Device(
-            DeviceError::Io(io::Error::new(io::ErrorKind::Other, "x"))
-        ).is_transient());
+        assert!(
+            DataplaneSupervisorError::Device(DeviceError::Io(io::Error::other("x"))).is_transient()
+        );
         // Fatal: framing / permission / driver / panic.
         assert!(!DataplaneSupervisorError::Dataplane(DataplaneError::Truncated).is_transient());
         assert!(!DataplaneSupervisorError::Device(

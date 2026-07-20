@@ -2491,7 +2491,7 @@ mod tests {
             other => panic!("expected Disconnected, got {:?}", other),
         }
         // And the handle slot is cleared.
-        assert!(svc.dataplane_handles.get(&id).is_none());
+        assert!(!svc.dataplane_handles.contains_key(&id));
     }
 
     #[tokio::test]
@@ -2572,7 +2572,7 @@ mod tests {
         assert!(svc.dataplane_handles.contains_key(&id));
 
         svc.delete_connection(&id).await.expect("delete");
-        assert!(svc.dataplane_handles.get(&id).is_none());
+        assert!(!svc.dataplane_handles.contains_key(&id));
     }
 
     // ─── t33-P3: connect() → data-plane integration ─────────────────
@@ -2635,10 +2635,10 @@ mod tests {
             SoftEtherStatus::Error(_) => {}
             other => panic!("expected Error, got {:?}", other),
         }
-        assert!(svc.session_streams.get(&id).is_none());
-        assert!(svc.derived_keys.get(&id).is_none());
-        assert!(svc.session_keys.get(&id).is_none());
-        assert!(svc.dataplane_handles.get(&id).is_none());
+        assert!(!svc.session_streams.contains_key(&id));
+        assert!(!svc.derived_keys.contains_key(&id));
+        assert!(!svc.session_keys.contains_key(&id));
+        assert!(!svc.dataplane_handles.contains_key(&id));
     }
 
     /// A live data-plane (modelled via `spawn_dataplane_over_stream`,
@@ -2685,11 +2685,11 @@ mod tests {
             SoftEtherStatus::Disconnected => {}
             other => panic!("expected Disconnected, got {:?}", other),
         }
-        assert!(svc.dataplane_handles.get(&id).is_none());
-        assert!(svc.session_streams.get(&id).is_none());
-        assert!(svc.derived_keys.get(&id).is_none());
-        assert!(svc.session_keys.get(&id).is_none());
-        assert!(svc.udp_accel_handles.get(&id).is_none());
+        assert!(!svc.dataplane_handles.contains_key(&id));
+        assert!(!svc.session_streams.contains_key(&id));
+        assert!(!svc.derived_keys.contains_key(&id));
+        assert!(!svc.session_keys.contains_key(&id));
+        assert!(!svc.udp_accel_handles.contains_key(&id));
     }
 
     /// HOST-GATED (P5): full connect() against a live `UseFastRC4`-capable

@@ -2,7 +2,7 @@
 //!
 //! A [`DataplaneDevice`] is the sink/source of raw layer-2 Ethernet
 //! frames — the "TAP side" of a SoftEther session. SE-5a ships the trait
-//! + an `MpscDevice` test mock; SE-5b wires a real `wintun`/`tun-tap`
+//! and an `MpscDevice` test mock; SE-5b wires a real `wintun`/`tun-tap`
 //! implementation behind the same trait.
 //!
 //! # Contract

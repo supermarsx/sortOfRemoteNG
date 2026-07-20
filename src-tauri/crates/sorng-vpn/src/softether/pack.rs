@@ -1680,7 +1680,7 @@ mod golden_vectors {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
         ];
         assert_golden(
-            &GOLDEN[..],
+            GOLDEN,
             || {
                 let mut p = Pack::new();
                 p.add_int("a", 10).unwrap();

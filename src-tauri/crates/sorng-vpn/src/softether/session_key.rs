@@ -105,7 +105,7 @@ pub enum CipherState {
     /// 16-byte key for this direction (`rc4_key_*`, Cedar
     /// `Protocol.c:6086-6092`) — never from a locally-derived key. Fully
     /// opaque PRGA state; advances on every byte enciphered.
-    Rc4(Rc4),
+    Rc4(Box<Rc4>),
     /// ChaCha20-Poly1305 AEAD (SoftEther Protocol V2, t4-e14). Negotiated
     /// when the peer advertises a `ChaCha20-Poly1305`-family cipher in
     /// the Welcome PACK. See `DEFERRED(SE-7-V2, 2026-04-21)` on
@@ -236,8 +236,8 @@ pub fn build_v1_session_keys(
     let (client_to_server, server_to_client) = if use_encrypt && use_fast_rc4 {
         match keys {
             Some(k) => (
-                CipherState::Rc4(Rc4::new(&k.client_to_server)),
-                CipherState::Rc4(Rc4::new(&k.server_to_client)),
+                CipherState::Rc4(Box::new(Rc4::new(&k.client_to_server))),
+                CipherState::Rc4(Box::new(Rc4::new(&k.server_to_client))),
             ),
             None => {
                 // Fast-RC4 was negotiated but the server's 16-byte keys

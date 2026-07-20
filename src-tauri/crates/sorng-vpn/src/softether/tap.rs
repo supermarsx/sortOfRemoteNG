@@ -653,7 +653,7 @@ mod windows_tap {
                         return Err(std::io::Error::from_raw_os_error(err as i32));
                     }
                     WaitForSingleObject(self.read_event, INFINITE);
-                    let got = GetOverlappedResult(self.handle, &mut ov, &mut read, FALSE);
+                    let got = GetOverlappedResult(self.handle, &ov, &mut read, FALSE);
                     if got == FALSE {
                         let err = GetLastError();
                         return Err(std::io::Error::from_raw_os_error(err as i32));
@@ -682,7 +682,7 @@ mod windows_tap {
                         return Err(std::io::Error::from_raw_os_error(err as i32));
                     }
                     WaitForSingleObject(self.write_event, INFINITE);
-                    let got = GetOverlappedResult(self.handle, &mut ov, &mut written, FALSE);
+                    let got = GetOverlappedResult(self.handle, &ov, &mut written, FALSE);
                     if got == FALSE {
                         let err = GetLastError();
                         return Err(std::io::Error::from_raw_os_error(err as i32));

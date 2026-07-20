@@ -2089,8 +2089,7 @@ mod tests {
             };
 
             let failure = WireGuardService::configure_created_runtime(runtime, &plan)
-                .err()
-                .expect("injected setup failure must remain fatal");
+                .expect_err("injected setup failure must remain fatal");
             let error = failure.error;
             assert!(failure.retained_runtime.is_none());
             assert!(error.contains("injected"), "stage {stage:?}: {error}");

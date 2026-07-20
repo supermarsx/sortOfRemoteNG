@@ -129,7 +129,7 @@ pub fn sha0(data: &[u8]) -> [u8; SHA0_SIZE] {
         let (mut a, mut b, mut c, mut d, mut e) =
             (state[0], state[1], state[2], state[3], state[4]);
 
-        for t in 0..80 {
+        for (t, word) in w.iter().enumerate() {
             let (f, k) = match t {
                 0..=19 => ((b & c) | ((!b) & d), 0x5A82_7999),
                 20..=39 => (b ^ c ^ d, 0x6ED9_EBA1),
@@ -141,7 +141,7 @@ pub fn sha0(data: &[u8]) -> [u8; SHA0_SIZE] {
                 .wrapping_add(f)
                 .wrapping_add(e)
                 .wrapping_add(k)
-                .wrapping_add(w[t]);
+                .wrapping_add(*word);
             e = d;
             d = c;
             c = b.rotate_left(30);

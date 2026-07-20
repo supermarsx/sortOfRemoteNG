@@ -231,11 +231,22 @@ pub fn udp_accel_calc_key(
 /// peers (fresh-enough monotonicity is enforced on RX via the replay
 /// window). `data` is the inner Ethernet frame (may be empty — that's
 /// a keepalive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UdpAccelTicks {
+    pub my_tick: u64,
+    pub your_tick: u64,
+}
+
+impl UdpAccelTicks {
+    pub const fn new(my_tick: u64, your_tick: u64) -> Self {
+        Self { my_tick, your_tick }
+    }
+}
+
 pub fn build_v1_packet(
     iv: &[u8; UDP_ACCEL_IV_SIZE_V1],
     cookie: u32,
-    my_tick: u64,
-    your_tick: u64,
+    ticks: UdpAccelTicks,
     data: &[u8],
     flag: u8,
     common_key: &[u8; UDP_ACCEL_COMMON_KEY_SIZE_V1],
@@ -260,9 +271,9 @@ pub fn build_v1_packet(
     // on recv — big-endian on wire).
     buf.extend_from_slice(&cookie.to_be_bytes());
     // My Tick (u64 big-endian)
-    buf.extend_from_slice(&my_tick.to_be_bytes());
+    buf.extend_from_slice(&ticks.my_tick.to_be_bytes());
     // Your Tick
-    buf.extend_from_slice(&your_tick.to_be_bytes());
+    buf.extend_from_slice(&ticks.your_tick.to_be_bytes());
     // inner_size (u16 big-endian)
     buf.extend_from_slice(&(data.len() as u16).to_be_bytes());
     // Flag byte
@@ -587,10 +598,10 @@ where
                                     if pkt.my_tick > last_my_tick {
                                         last_my_tick = pkt.my_tick;
                                     }
-                                    if !pkt.data.is_empty() {
-                                        if udp_to_dev_tx.send(pkt.data).await.is_err() {
-                                            return;
-                                        }
+                                    if !pkt.data.is_empty()
+                                        && udp_to_dev_tx.send(pkt.data).await.is_err()
+                                    {
+                                        return;
                                     }
                                 }
                                 Err(UdpAccelError::DecryptFailed)
@@ -646,8 +657,7 @@ async fn send_one(
     let pkt = build_v1_packet(
         &iv,
         cfg.your_cookie,
-        now_tick_ms(),
-        your_tick,
+        UdpAccelTicks::new(now_tick_ms(), your_tick),
         data,
         flag,
         &cfg.common_key,
@@ -691,8 +701,16 @@ mod tests {
     fn build_then_parse_round_trips_encrypted() {
         let iv = [0x42u8; 20];
         let data = b"hello-udp-world";
-        let pkt = build_v1_packet(&iv, 0xDEAD_BEEF, 100, 50, data, 0, &TEST_KEY, true)
-            .expect("build");
+        let pkt = build_v1_packet(
+            &iv,
+            0xDEAD_BEEF,
+            UdpAccelTicks::new(100, 50),
+            data,
+            0,
+            &TEST_KEY,
+            true,
+        )
+        .expect("build");
         let parsed =
             parse_v1_packet(&pkt, &TEST_KEY, 0xDEAD_BEEF, true).expect("parse");
         assert_eq!(parsed.cookie, 0xDEAD_BEEF);
@@ -704,8 +722,8 @@ mod tests {
     #[test]
     fn build_then_parse_round_trips_plaintext() {
         let iv = [0x42u8; 20];
-        let pkt =
-            build_v1_packet(&iv, 1, 1, 1, b"x", 0, &TEST_KEY, false).expect("build");
+        let pkt = build_v1_packet(&iv, 1, UdpAccelTicks::new(1, 1), b"x", 0, &TEST_KEY, false)
+            .expect("build");
         let parsed = parse_v1_packet(&pkt, &TEST_KEY, 1, false).expect("parse");
         assert_eq!(parsed.data, b"x");
     }
@@ -713,19 +731,19 @@ mod tests {
     #[test]
     fn parse_rejects_wrong_cookie() {
         let iv = [0xAAu8; 20];
-        let pkt = build_v1_packet(&iv, 1, 0, 0, b"", 0, &TEST_KEY, true).expect("build");
-        let err =
-            parse_v1_packet(&pkt, &TEST_KEY, 0xFFFF_FFFF, true).expect_err("mismatch");
+        let pkt = build_v1_packet(&iv, 1, UdpAccelTicks::new(0, 0), b"", 0, &TEST_KEY, true)
+            .expect("build");
+        let err = parse_v1_packet(&pkt, &TEST_KEY, 0xFFFF_FFFF, true).expect_err("mismatch");
         assert!(matches!(err, UdpAccelError::DecryptFailed));
     }
 
     #[test]
     fn parse_rejects_wrong_key() {
         let iv = [0xAAu8; 20];
-        let pkt = build_v1_packet(&iv, 1, 0, 0, b"", 0, &TEST_KEY, true).expect("build");
+        let pkt = build_v1_packet(&iv, 1, UdpAccelTicks::new(0, 0), b"", 0, &TEST_KEY, true)
+            .expect("build");
         let other = [0u8; 20];
-        let err =
-            parse_v1_packet(&pkt, &other, 1, true).expect_err("wrong key");
+        let err = parse_v1_packet(&pkt, &other, 1, true).expect_err("wrong key");
         assert!(matches!(err, UdpAccelError::DecryptFailed));
     }
 
@@ -741,7 +759,7 @@ mod tests {
     fn build_rejects_oversized_frame() {
         let iv = [0u8; 20];
         let data = vec![0u8; UDP_ACCEL_SUPPORTED_MAX_PAYLOAD_SIZE + 1];
-        let err = build_v1_packet(&iv, 1, 0, 0, &data, 0, &TEST_KEY, true)
+        let err = build_v1_packet(&iv, 1, UdpAccelTicks::new(0, 0), &data, 0, &TEST_KEY, true)
             .expect_err("oversize");
         assert!(matches!(err, UdpAccelError::OversizedFrame(_)));
     }
@@ -751,15 +769,18 @@ mod tests {
         let iv_a = [0x01u8; 20];
         let iv_b = [0x02u8; 20];
         let data = b"same-data";
-        let a = build_v1_packet(&iv_a, 1, 0, 0, data, 0, &TEST_KEY, true).unwrap();
-        let b = build_v1_packet(&iv_b, 1, 0, 0, data, 0, &TEST_KEY, true).unwrap();
+        let a =
+            build_v1_packet(&iv_a, 1, UdpAccelTicks::new(0, 0), data, 0, &TEST_KEY, true).unwrap();
+        let b =
+            build_v1_packet(&iv_b, 1, UdpAccelTicks::new(0, 0), data, 0, &TEST_KEY, true).unwrap();
         assert_ne!(a[20..], b[20..], "ciphertext must diverge with IV");
     }
 
     #[test]
     fn build_v1_keepalive_has_zero_length_data() {
         let iv = [0u8; 20];
-        let pkt = build_v1_packet(&iv, 1, 0, 0, &[], 0, &TEST_KEY, true).unwrap();
+        let pkt =
+            build_v1_packet(&iv, 1, UdpAccelTicks::new(0, 0), &[], 0, &TEST_KEY, true).unwrap();
         let parsed = parse_v1_packet(&pkt, &TEST_KEY, 1, true).unwrap();
         assert!(parsed.data.is_empty());
     }
@@ -767,7 +788,8 @@ mod tests {
     #[test]
     fn bit_flip_in_ciphertext_fails_verify() {
         let iv = [0u8; 20];
-        let mut pkt = build_v1_packet(&iv, 1, 0, 0, b"abc", 0, &TEST_KEY, true).unwrap();
+        let mut pkt =
+            build_v1_packet(&iv, 1, UdpAccelTicks::new(0, 0), b"abc", 0, &TEST_KEY, true).unwrap();
         // Flip one byte inside the ciphertext region (after IV).
         let flip_at = pkt.len() - 5;
         pkt[flip_at] ^= 0x01;
@@ -787,7 +809,16 @@ mod tests {
     #[test]
     fn parse_flag_is_preserved() {
         let iv = [0u8; 20];
-        let pkt = build_v1_packet(&iv, 1, 0, 0, b"d", 0x7F, &TEST_KEY, true).unwrap();
+        let pkt = build_v1_packet(
+            &iv,
+            1,
+            UdpAccelTicks::new(0, 0),
+            b"d",
+            0x7F,
+            &TEST_KEY,
+            true,
+        )
+        .unwrap();
         let parsed = parse_v1_packet(&pkt, &TEST_KEY, 1, true).unwrap();
         assert_eq!(parsed.flag, 0x7F);
     }
@@ -852,8 +883,7 @@ mod tests {
         let pkt = build_v1_packet(
             &iv,
             cfg.my_cookie, // client expects this cookie
-            1000,
-            0,
+            UdpAccelTicks::new(1000, 0),
             b"from-server-eth",
             0,
             &TEST_KEY,
@@ -957,8 +987,16 @@ mod tests {
         server.send_to(&[0u8; 10], client_addr).await.unwrap();
         // Then a valid packet.
         let iv = [1u8; 20];
-        let pkt = build_v1_packet(&iv, cfg.my_cookie, 1, 0, b"ok", 0, &TEST_KEY, true)
-            .unwrap();
+        let pkt = build_v1_packet(
+            &iv,
+            cfg.my_cookie,
+            UdpAccelTicks::new(1, 0),
+            b"ok",
+            0,
+            &TEST_KEY,
+            true,
+        )
+        .unwrap();
         server.send_to(&pkt, client_addr).await.unwrap();
 
         let got = tokio::time::timeout(Duration::from_millis(500), handle.rx.recv())

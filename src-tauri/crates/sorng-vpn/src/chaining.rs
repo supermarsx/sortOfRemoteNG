@@ -20,6 +20,23 @@ use crate::zerotier::ZeroTierServiceState;
 
 pub type ChainingServiceState = Arc<Mutex<ChainingService>>;
 
+/// Provider services used by connection chains.
+///
+/// Grouping the backends keeps construction explicit while allowing new VPN
+/// providers to be wired without growing positional constructor signatures.
+pub struct ChainingServices {
+    pub proxy: ProxyServiceState,
+    pub openvpn: OpenVPNServiceState,
+    pub wireguard: WireGuardServiceState,
+    pub zerotier: ZeroTierServiceState,
+    pub tailscale: TailscaleServiceState,
+    pub pptp: PPTPServiceState,
+    pub l2tp: L2TPServiceState,
+    pub ikev2: IKEv2ServiceState,
+    pub ipsec: IPsecServiceState,
+    pub sstp: SSTPServiceState,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ConnectionType {
     Proxy,
@@ -100,64 +117,33 @@ pub struct ChainingService {
 }
 
 impl ChainingService {
-    pub fn new(
-        proxy_service: ProxyServiceState,
-        openvpn_service: OpenVPNServiceState,
-        wireguard_service: WireGuardServiceState,
-        zerotier_service: ZeroTierServiceState,
-        tailscale_service: TailscaleServiceState,
-        pptp_service: PPTPServiceState,
-        l2tp_service: L2TPServiceState,
-        ikev2_service: IKEv2ServiceState,
-        ipsec_service: IPsecServiceState,
-        sstp_service: SSTPServiceState,
-    ) -> ChainingServiceState {
-        Arc::new(Mutex::new(ChainingService {
-            chains: HashMap::new(),
-            proxy_service,
-            openvpn_service,
-            wireguard_service,
-            zerotier_service,
-            tailscale_service,
-            pptp_service,
-            l2tp_service,
-            ikev2_service,
-            ipsec_service,
-            sstp_service,
-            #[cfg(feature = "vpn-softether")]
-            softether_service: None,
-            emitter: None,
-        }))
+    pub fn new(services: ChainingServices) -> ChainingServiceState {
+        Self::build(services, None)
     }
 
     pub fn new_with_emitter(
-        proxy_service: ProxyServiceState,
-        openvpn_service: OpenVPNServiceState,
-        wireguard_service: WireGuardServiceState,
-        zerotier_service: ZeroTierServiceState,
-        tailscale_service: TailscaleServiceState,
-        pptp_service: PPTPServiceState,
-        l2tp_service: L2TPServiceState,
-        ikev2_service: IKEv2ServiceState,
-        ipsec_service: IPsecServiceState,
-        sstp_service: SSTPServiceState,
+        services: ChainingServices,
         emitter: DynEventEmitter,
     ) -> ChainingServiceState {
+        Self::build(services, Some(emitter))
+    }
+
+    fn build(services: ChainingServices, emitter: Option<DynEventEmitter>) -> ChainingServiceState {
         Arc::new(Mutex::new(ChainingService {
             chains: HashMap::new(),
-            proxy_service,
-            openvpn_service,
-            wireguard_service,
-            zerotier_service,
-            tailscale_service,
-            pptp_service,
-            l2tp_service,
-            ikev2_service,
-            ipsec_service,
-            sstp_service,
+            proxy_service: services.proxy,
+            openvpn_service: services.openvpn,
+            wireguard_service: services.wireguard,
+            zerotier_service: services.zerotier,
+            tailscale_service: services.tailscale,
+            pptp_service: services.pptp,
+            l2tp_service: services.l2tp,
+            ikev2_service: services.ikev2,
+            ipsec_service: services.ipsec,
+            sstp_service: services.sstp,
             #[cfg(feature = "vpn-softether")]
             softether_service: None,
-            emitter: Some(emitter),
+            emitter,
         }))
     }
 
@@ -710,18 +696,18 @@ mod tests {
     }
 
     fn test_chaining_service(proxy_service: ProxyServiceState) -> ChainingServiceState {
-        ChainingService::new(
-            proxy_service,
-            crate::openvpn::OpenVPNService::new(),
-            crate::wireguard::WireGuardService::new(),
-            crate::zerotier::ZeroTierService::new(),
-            crate::tailscale::TailscaleService::new(),
-            crate::pptp::PPTPService::new(),
-            crate::l2tp::L2TPService::new(),
-            crate::ikev2::IKEv2Service::new(),
-            crate::ipsec::IPsecService::new(),
-            crate::sstp::SSTPService::new(),
-        )
+        ChainingService::new(ChainingServices {
+            proxy: proxy_service,
+            openvpn: crate::openvpn::OpenVPNService::new(),
+            wireguard: crate::wireguard::WireGuardService::new(),
+            zerotier: crate::zerotier::ZeroTierService::new(),
+            tailscale: crate::tailscale::TailscaleService::new(),
+            pptp: crate::pptp::PPTPService::new(),
+            l2tp: crate::l2tp::L2TPService::new(),
+            ikev2: crate::ikev2::IKEv2Service::new(),
+            ipsec: crate::ipsec::IPsecService::new(),
+            sstp: crate::sstp::SSTPService::new(),
+        })
     }
 
     fn test_proxy_config(proxy_type: &str) -> ProxyConfig {

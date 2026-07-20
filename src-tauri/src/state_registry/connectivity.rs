@@ -167,7 +167,7 @@ pub(crate) fn register(
     // SoftEther — per plan §1.4 + e04 handoff. Scaffolded native Rust client
     // (TCP+TLS watermark handshake + tokio::task::spawn session loop).
     // Attach to chaining service via `set_softether_service` so the existing
-    // `ChainingService::new_with_emitter` 10-arg signature stays stable.
+    // Attach SoftEther after the base provider bundle is constructed.
     // Gated behind `vpn-softether` feature (off by default in 1.0).
     #[cfg(feature = "vpn-softether")]
     let softether_service = SoftEtherService::new_with_emitter(emitter.clone());
@@ -175,16 +175,18 @@ pub(crate) fn register(
     app.manage(softether_service.clone());
 
     let chaining_service = ChainingService::new_with_emitter(
-        proxy_service.clone(),
-        openvpn_service.clone(),
-        wireguard_service.clone(),
-        zerotier_service.clone(),
-        tailscale_service.clone(),
-        pptp_service.clone(),
-        l2tp_service.clone(),
-        ikev2_service.clone(),
-        ipsec_service.clone(),
-        sstp_service.clone(),
+        crate::chaining::ChainingServices {
+            proxy: proxy_service.clone(),
+            openvpn: openvpn_service.clone(),
+            wireguard: wireguard_service.clone(),
+            zerotier: zerotier_service.clone(),
+            tailscale: tailscale_service.clone(),
+            pptp: pptp_service.clone(),
+            l2tp: l2tp_service.clone(),
+            ikev2: ikev2_service.clone(),
+            ipsec: ipsec_service.clone(),
+            sstp: sstp_service.clone(),
+        },
         emitter.clone(),
     );
     // Wire SoftEther into the chain BEFORE moving chaining_service into
