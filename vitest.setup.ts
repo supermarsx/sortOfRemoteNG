@@ -1,14 +1,17 @@
 import "@testing-library/jest-dom";
 // Provide a browser-like IndexedDB implementation for tests
 import "fake-indexeddb/auto";
+import { beforeEach, vi } from "vitest";
+import { resetSessionLifecycleAllocatorForTests } from "./src/utils/session/sessionLifecycle";
+
+beforeEach(() => {
+  resetSessionLifecycleAllocatorForTests();
+});
 
 // jsdom does not implement scrollIntoView; stub it globally for custom Select tests
 if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => {};
 }
-
-// Mock Tauri API
-import { vi } from "vitest";
 
 const createMemoryStorage = (): Storage => {
   const store = new Map<string, string>();
@@ -94,7 +97,6 @@ vi.mock("@tauri-apps/api/core", () => ({
     toJSON: vi.fn(() => "channel:0"),
   })),
 }));
-
 
 // Mock Tauri plugin-fs
 vi.mock("@tauri-apps/plugin-fs", () => ({
