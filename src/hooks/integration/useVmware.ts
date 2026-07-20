@@ -47,13 +47,15 @@ export const vmwareApi = {
   // Connection
   connect: (args: VmwareConnectArgs) =>
     invoke<string>("vmware_connect", {
-      host: args.host,
-      port: args.port,
-      username: args.username,
-      password: args.password,
-      insecure: args.insecure,
-      timeoutSecs: args.timeoutSecs,
-      proxyUrl: args.proxyUrl ?? null,
+      args: {
+        host: args.host,
+        port: args.port,
+        username: args.username,
+        password: args.password,
+        insecure: args.insecure,
+        timeoutSecs: args.timeoutSecs,
+        proxyUrl: args.proxyUrl ?? null,
+      },
     }),
   disconnect: () => invoke<void>("vmware_disconnect"),
   checkSession: () => invoke<boolean>("vmware_check_session"),

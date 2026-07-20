@@ -1,7 +1,5 @@
 // Tauri commands for X2Go remote desktop sessions.
 
-use tauri;
-
 use super::service::X2goServiceState;
 use super::types::*;
 

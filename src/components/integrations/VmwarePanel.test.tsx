@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -91,11 +86,15 @@ describe("VmwarePanel", () => {
       expect(invokeMock).toHaveBeenCalledWith(
         "vmware_connect",
         expect.objectContaining({
-          host: "vcenter.lab.local",
-          username: "administrator@vsphere.local",
-          password: "hunter2",
-          port: 443,
-          insecure: true,
+          args: expect.objectContaining({
+            host: "vcenter.lab.local",
+            username: "administrator@vsphere.local",
+            password: "hunter2",
+            port: 443,
+            insecure: true,
+            timeoutSecs: 30,
+            proxyUrl: null,
+          }),
         }),
       ),
     );

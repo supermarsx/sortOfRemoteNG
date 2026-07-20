@@ -322,20 +322,16 @@ impl PrometheusService {
         &self,
         id: &str,
         silence_id: &str,
-        matchers: Vec<SilenceMatcher>,
-        starts_at: &str,
-        ends_at: &str,
-        created_by: &str,
-        comment: &str,
+        request: CreateSilenceRequest,
     ) -> PrometheusResult<String> {
         SilenceManager::update(
             self.client(id)?,
             silence_id,
-            matchers,
-            starts_at,
-            ends_at,
-            created_by,
-            comment,
+            request.matchers,
+            &request.starts_at,
+            &request.ends_at,
+            &request.created_by,
+            &request.comment,
         )
         .await
     }

@@ -148,10 +148,12 @@ async fn full_rotation_walks_every_artifact_and_re_keys_each() {
         // / encryption flags needed — the v2 envelope path is selected
         // by the presence of an unlocked EncryptionState, not by
         // BackupConfig.
-        let mut cfg = BackupConfig::default();
-        cfg.destination_path = backup_dir.to_string_lossy().to_string();
-        cfg.compress_backups = false;
-        cfg.max_backups_to_keep = 0;
+        let cfg = BackupConfig {
+            destination_path: backup_dir.to_string_lossy().to_string(),
+            compress_backups: false,
+            max_backups_to_keep: 0,
+            ..BackupConfig::default()
+        };
         svc.update_config(cfg);
         svc.set_encryption_state(enc_state.clone());
     }

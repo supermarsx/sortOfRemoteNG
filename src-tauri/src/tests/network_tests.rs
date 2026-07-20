@@ -131,9 +131,8 @@ async fn test_ping_invalid_via_service() {
 
     // Either an error or a clean `success=false` is acceptable; the
     // contract is "doesn't panic and doesn't return success=true".
-    match result {
-        Ok(success) => assert!(!success, "TEST-NET-1 address must not be reachable"),
-        Err(_) => {}
+    if let Ok(success) = result {
+        assert!(!success, "TEST-NET-1 address must not be reachable");
     }
 }
 

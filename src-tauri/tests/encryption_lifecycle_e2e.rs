@@ -12,10 +12,10 @@
 //!      under DEK A, rotate only one to DEK B (simulating an
 //!      orchestrator that crashed after settings but before connections
 //!      + recording), then re-install DEK A from a snapshot (the user's
-//!      portable `.dek` import) and confirm the not-yet-rotated
-//!      artifacts decode while the rotated one does not. This proves
-//!      portable-import is a safe recovery rail for half-finished
-//!      rotations — the user can re-run rotation to finish the job.
+//!        portable `.dek` import) and confirm the not-yet-rotated
+//!        artifacts decode while the rotated one does not. This proves
+//!        portable-import is a safe recovery rail for half-finished
+//!        rotations — the user can re-run rotation to finish the job.
 //!   3. **Audit log records lock reason.** Every lock reason emitted by
 //!      the auto-lock policies (`manual`, `shortcut`, `idle`, `blur`,
 //!      `minimize`, `visibility-hidden`) round-trips through

@@ -1,7 +1,5 @@
 // Tauri commands for XDMCP remote display sessions.
 
-use tauri;
-
 use super::service::XdmcpServiceState;
 use super::types::*;
 

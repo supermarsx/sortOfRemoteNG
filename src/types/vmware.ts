@@ -14,8 +14,7 @@
 //  Connection / Config
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** Flat arguments accepted by the `vmware_connect` command (not a nested config
- *  object — the command takes these as top-level params). */
+/** Connection options nested under the `args` parameter of `vmware_connect`. */
 export interface VmwareConnectArgs {
   host: string;
   port?: number;

@@ -143,36 +143,6 @@ fn init_tracing() {
     }
 }
 
-#[cfg(test)]
-mod tracing_filter_tests {
-    use super::tracing_metadata_is_safe;
-    use tracing::Level;
-
-    #[test]
-    fn defguard_wireguard_debug_and_trace_are_always_rejected() {
-        assert!(!tracing_metadata_is_safe(
-            "defguard_wireguard_rs::wgapi_userspace",
-            &Level::DEBUG
-        ));
-        assert!(!tracing_metadata_is_safe(
-            "defguard_wireguard_rs::wgapi_windows",
-            &Level::TRACE
-        ));
-    }
-
-    #[test]
-    fn defguard_wireguard_info_and_unrelated_debug_are_allowed() {
-        assert!(tracing_metadata_is_safe(
-            "defguard_wireguard_rs::wgapi_linux",
-            &Level::INFO
-        ));
-        assert!(tracing_metadata_is_safe(
-            "sorng_vpn::wireguard",
-            &Level::DEBUG
-        ));
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
 pub fn run() {
@@ -207,4 +177,34 @@ pub fn run() {
         .invoke_handler(invoke_handler::build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tracing_filter_tests {
+    use super::tracing_metadata_is_safe;
+    use tracing::Level;
+
+    #[test]
+    fn defguard_wireguard_debug_and_trace_are_always_rejected() {
+        assert!(!tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_userspace",
+            &Level::DEBUG
+        ));
+        assert!(!tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_windows",
+            &Level::TRACE
+        ));
+    }
+
+    #[test]
+    fn defguard_wireguard_info_and_unrelated_debug_are_allowed() {
+        assert!(tracing_metadata_is_safe(
+            "defguard_wireguard_rs::wgapi_linux",
+            &Level::INFO
+        ));
+        assert!(tracing_metadata_is_safe(
+            "sorng_vpn::wireguard",
+            &Level::DEBUG
+        ));
+    }
 }

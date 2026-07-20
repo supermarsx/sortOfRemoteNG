@@ -264,9 +264,8 @@ pub fn safe_write(canonical: &Path, payload: &[u8]) -> Result<(), FileStoreError
             "read-back bytes do not match what we wrote".into(),
         ));
     }
-    parse_and_verify(&written).map_err(|e| {
+    parse_and_verify(&written).inspect_err(|_| {
         let _ = std::fs::remove_file(&tmp);
-        e
     })?;
 
     // Step 4: shift current to .bak (overwriting any prior .bak).

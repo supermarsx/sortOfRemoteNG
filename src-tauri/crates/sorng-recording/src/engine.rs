@@ -1217,7 +1217,7 @@ impl RecordingEngine {
         if self.library.len() >= self.config.max_stored_recordings {
             // Remove oldest
             if !self.library.is_empty() {
-                self.library.sort_by(|a, b| a.saved_at.cmp(&b.saved_at));
+                self.library.sort_by_key(|recording| recording.saved_at);
                 self.library.remove(0);
             }
         }
@@ -1394,6 +1394,14 @@ impl RecordingEngine {
     }
 }
 
+/// The managed Tauri state type.
+pub type RecordingEngineState = Arc<Mutex<RecordingEngine>>;
+
+/// Create a new engine wrapped in Arc<Mutex<…>> ready for `app.manage()`.
+pub fn new_engine_state() -> RecordingEngineState {
+    Arc::new(Mutex::new(RecordingEngine::new()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1460,12 +1468,4 @@ mod tests {
         );
         assert!(blob.contains("[redacted]"));
     }
-}
-
-/// The managed Tauri state type.
-pub type RecordingEngineState = Arc<Mutex<RecordingEngine>>;
-
-/// Create a new engine wrapped in Arc<Mutex<…>> ready for `app.manage()`.
-pub fn new_engine_state() -> RecordingEngineState {
-    Arc::new(Mutex::new(RecordingEngine::new()))
 }

@@ -508,24 +508,12 @@ pub async fn prometheus_update_silence(
     state: State<'_, PrometheusServiceState>,
     id: String,
     silence_id: String,
-    matchers: Vec<SilenceMatcher>,
-    starts_at: String,
-    ends_at: String,
-    created_by: String,
-    comment: String,
+    request: CreateSilenceRequest,
 ) -> CmdResult<String> {
     state
         .lock()
         .await
-        .update_silence(
-            &id,
-            &silence_id,
-            matchers,
-            &starts_at,
-            &ends_at,
-            &created_by,
-            &comment,
-        )
+        .update_silence(&id, &silence_id, request)
         .await
         .map_err(map_err)
 }

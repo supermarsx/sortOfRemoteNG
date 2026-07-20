@@ -723,44 +723,6 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod encryption_bootstrap_tests {
-    use super::{
-        classify_dek_wrapper_probe, probe_dek_wrapper, should_bootstrap_vault, DekWrapperProbe,
-    };
-
-    #[test]
-    fn password_or_hybrid_wrapper_blocks_vault_dek_bootstrap() {
-        let temp = tempfile::tempdir().unwrap();
-        std::fs::write(temp.path().join("dek.enc"), b"password wrapper fixture").unwrap();
-        let probe = probe_dek_wrapper(temp.path());
-        assert_eq!(probe, DekWrapperProbe::Present);
-        assert!(!should_bootstrap_vault(probe, true));
-    }
-
-    #[test]
-    fn fresh_vault_install_bootstraps_only_when_keychain_is_available() {
-        let temp = tempfile::tempdir().unwrap();
-        let probe = probe_dek_wrapper(temp.path());
-        assert_eq!(probe, DekWrapperProbe::ConfirmedMissing);
-        assert!(should_bootstrap_vault(probe, true));
-        assert!(!should_bootstrap_vault(probe, false));
-    }
-
-    #[test]
-    fn unreadable_wrapper_probe_fails_closed_without_exposing_error_details() {
-        let secret = "TOP-SECRET-DEK-PATH-271c";
-        let probe = classify_dek_wrapper_probe(Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            format!("access denied at C:/private/{secret}/dek.enc"),
-        )));
-
-        assert_eq!(probe, DekWrapperProbe::ProbeFailed);
-        assert!(!should_bootstrap_vault(probe, true));
-        assert!(!format!("{probe:?}").contains(secret));
-    }
-}
-
 /// Read the persisted app settings as raw JSON, or `None` when the encryption
 /// state is unavailable/locked or no settings exist yet. Shared by the REST API
 /// startup path so config is resolved from the same store the UI writes to.
@@ -809,4 +771,42 @@ async fn persist_generated_api_secrets(
     }
     let patch = serde_json::json!({ "restApi": serde_json::Value::Object(rest) });
     crate::app_settings_commands::write_app_settings_inner(app_dir, &enc_state, patch).await
+}
+
+#[cfg(test)]
+mod encryption_bootstrap_tests {
+    use super::{
+        classify_dek_wrapper_probe, probe_dek_wrapper, should_bootstrap_vault, DekWrapperProbe,
+    };
+
+    #[test]
+    fn password_or_hybrid_wrapper_blocks_vault_dek_bootstrap() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("dek.enc"), b"password wrapper fixture").unwrap();
+        let probe = probe_dek_wrapper(temp.path());
+        assert_eq!(probe, DekWrapperProbe::Present);
+        assert!(!should_bootstrap_vault(probe, true));
+    }
+
+    #[test]
+    fn fresh_vault_install_bootstraps_only_when_keychain_is_available() {
+        let temp = tempfile::tempdir().unwrap();
+        let probe = probe_dek_wrapper(temp.path());
+        assert_eq!(probe, DekWrapperProbe::ConfirmedMissing);
+        assert!(should_bootstrap_vault(probe, true));
+        assert!(!should_bootstrap_vault(probe, false));
+    }
+
+    #[test]
+    fn unreadable_wrapper_probe_fails_closed_without_exposing_error_details() {
+        let secret = "TOP-SECRET-DEK-PATH-271c";
+        let probe = classify_dek_wrapper_probe(Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("access denied at C:/private/{secret}/dek.enc"),
+        )));
+
+        assert_eq!(probe, DekWrapperProbe::ProbeFailed);
+        assert!(!should_bootstrap_vault(probe, true));
+        assert!(!format!("{probe:?}").contains(secret));
+    }
 }

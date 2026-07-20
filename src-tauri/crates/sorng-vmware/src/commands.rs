@@ -10,25 +10,31 @@ use tauri::State;
 
 // ── Connection ──────────────────────────────────────────────────────
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VmwareConnectArgs {
+    pub host: String,
+    pub port: Option<u16>,
+    pub username: String,
+    pub password: String,
+    pub insecure: Option<bool>,
+    pub timeout_secs: Option<u64>,
+    pub proxy_url: Option<String>,
+}
+
 #[tauri::command]
 pub async fn vmware_connect(
     state: State<'_, VmwareServiceState>,
-    host: String,
-    port: Option<u16>,
-    username: String,
-    password: String,
-    insecure: Option<bool>,
-    timeout_secs: Option<u64>,
-    proxy_url: Option<String>,
+    args: VmwareConnectArgs,
 ) -> Result<String, String> {
     let config = VsphereConfig {
-        host,
-        port: port.unwrap_or(443),
-        username,
-        password,
-        insecure: insecure.unwrap_or(true),
-        timeout_secs: timeout_secs.unwrap_or(30),
-        proxy_url,
+        host: args.host,
+        port: args.port.unwrap_or(443),
+        username: args.username,
+        password: args.password,
+        insecure: args.insecure.unwrap_or(true),
+        timeout_secs: args.timeout_secs.unwrap_or(30),
+        proxy_url: args.proxy_url,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())
