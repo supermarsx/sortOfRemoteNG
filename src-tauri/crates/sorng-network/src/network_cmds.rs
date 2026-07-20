@@ -42,6 +42,7 @@ pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, Strin
     let gateway = get_default_gateway()?;
 
     let start = std::time::Instant::now();
+    #[cfg(target_os = "windows")]
     let timeout_ms = (timeout_secs.unwrap_or(5) * 1000) as u32;
 
     // Use ICMP ping directly - gateways typically don't have TCP services open
