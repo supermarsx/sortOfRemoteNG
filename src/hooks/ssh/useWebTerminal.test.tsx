@@ -1,6 +1,11 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../types/connection/connection";
+import {
+  hasSessionLifecycleActorAttempt,
+  resetSessionLifecycleAllocatorForTests,
+} from "../../utils/session/sessionLifecycle";
+import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNetworkPath";
 
 const mocks = vi.hoisted(() => {
   class MockTerminal {
@@ -80,6 +85,7 @@ const mocks = vi.hoisted(() => {
     settings: {},
   };
   const runtimePath = {
+    protocol: "ssh" as const,
     transport: {
       vpnPreSteps: [] as Array<{
         vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
@@ -91,6 +97,7 @@ const mocks = vi.hoisted(() => {
       mixed_chain: null,
       openvpn_config: null,
     },
+    rdpTunnel: null,
     snapshot: { version: 1 as const, transports: [], connectionIds: [] },
     redactionSecrets: [],
   };
@@ -176,6 +183,8 @@ vi.mock("./useSSHCommandHistory", () => ({
 
 import { useWebTerminal, type WebTerminalMgr } from "./useWebTerminal";
 
+const mockedResolveRuntimeNetworkPath = vi.mocked(resolveRuntimeNetworkPath);
+
 const session: ConnectionSession = {
   id: "frontend-ssh-1",
   connectionId: mocks.connection.id,
@@ -187,6 +196,7 @@ const session: ConnectionSession = {
 };
 
 beforeEach(() => {
+  resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
@@ -194,6 +204,8 @@ beforeEach(() => {
   mocks.idleMacroRecorder.recordInput.mockReset();
   mocks.macroRecorder = mocks.idleMacroRecorder;
   mocks.runtimePath.transport.vpnPreSteps = [];
+  mockedResolveRuntimeNetworkPath.mockReset();
+  mockedResolveRuntimeNetworkPath.mockResolvedValue(mocks.runtimePath);
   mocks.invoke.mockImplementation((command: string, args?: unknown) => {
     const ownerId = String((args as { ownerId?: string } | undefined)?.ownerId);
     if (command === "acquire_vpn_leases") {
@@ -279,7 +291,7 @@ describe("useWebTerminal input lifecycle", () => {
     expect(mocks.invoke).toHaveBeenCalledWith(
       "acquire_vpn_leases",
       expect.objectContaining({
-        ownerId: expect.stringMatching(/^frontend-ssh-1:ssh:\d+$/),
+        ownerId: expect.stringMatching(/^frontend-ssh-1:ssh:[0-9a-f-]+$/i),
         requests: [
           {
             vpn_type: "wireguard",
@@ -331,6 +343,111 @@ describe("useWebTerminal input lifecycle", () => {
         ([command]) => command === "release_vpn_leases",
       ),
     ).toHaveLength(0);
+  });
+
+  it("cancels the exact hung SSH reservation when props move from A to B", async () => {
+    const fallbackInvoke = mocks.invoke.getMockImplementation();
+    const hungConnect = new Promise<string>(() => undefined);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "connect_ssh") return hungConnect;
+      return fallbackInvoke?.(command, args);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({
+      activeSession,
+    }: {
+      activeSession: ConnectionSession;
+    }) => {
+      model = useWebTerminal(activeSession);
+      return <div ref={model.containerRef} />;
+    };
+    const sessionB: ConnectionSession = {
+      ...session,
+      id: "frontend-terminal-b",
+      protocol: "telnet",
+    };
+
+    const view = render(<Harness activeSession={session} />);
+    await waitFor(() =>
+      expect(hasSessionLifecycleActorAttempt(session.id)).toBe(true),
+    );
+    const reservationDispatchIndex =
+      mocks.context.dispatch.mock.calls.findIndex(
+        ([action]) =>
+          typeof action.payload?.lifecycleActorReservationId === "number",
+      );
+    expect(reservationDispatchIndex).toBeGreaterThanOrEqual(0);
+    expect(
+      mocks.context.dispatch.mock.invocationCallOrder[reservationDispatchIndex],
+    ).toBeLessThan(mocks.invoke.mock.invocationCallOrder[0]);
+
+    view.rerender(<Harness activeSession={sessionB} />);
+    await waitFor(() => {
+      expect(hasSessionLifecycleActorAttempt(session.id)).toBe(false);
+      expect(hasSessionLifecycleActorAttempt(sessionB.id)).toBe(false);
+    });
+    view.unmount();
+  });
+
+  it("aborts after a deferred path resolve when quarantine lands mid-init", async () => {
+    mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+    ];
+    let resumePath!: () => void;
+    mockedResolveRuntimeNetworkPath.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resumePath = () => resolve(mocks.runtimePath);
+      }),
+    );
+    const Harness = ({
+      activeSession,
+    }: {
+      activeSession: ConnectionSession;
+    }) => {
+      const model = useWebTerminal(activeSession);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness activeSession={session} />);
+    await waitFor(() => {
+      expect(hasSessionLifecycleActorAttempt(session.id)).toBe(true);
+      expect(mockedResolveRuntimeNetworkPath).toHaveBeenCalled();
+    });
+
+    const quarantined: ConnectionSession = {
+      ...session,
+      status: "error",
+      vpnLeaseCleanupQuarantine: {
+        proofs: [
+          {
+            kind: "binding",
+            ownerId: "owner-quarantined",
+            backendSessionId: "backend-quarantined",
+            protocol: "ssh",
+            status: "cleanup-pending",
+          },
+        ],
+        proofIncomplete: false,
+      },
+    };
+    await act(async () => {
+      view.rerender(<Harness activeSession={quarantined} />);
+    });
+    await act(async () => {
+      resumePath();
+    });
+
+    await waitFor(() =>
+      expect(hasSessionLifecycleActorAttempt(session.id)).toBe(false),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "acquire_vpn_leases",
+      expect.anything(),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "connect_ssh",
+      expect.anything(),
+    );
+    view.unmount();
   });
 
   it("keeps a replacement VPN lease when an overlapping SSH attempt goes stale", async () => {

@@ -6,18 +6,28 @@ import { StatusChecker } from "../../utils/connection/statusChecker";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { ThemeManager } from "../../utils/settings/themeManager";
 import { SecureStorage } from "../../utils/storage/storage";
-import { Connection, ConnectionSession } from "../../types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../types/connection/connection";
 import i18n, { loadLanguage, resolveSupportedLanguage } from "../../i18n";
 import { IndexedDbService } from "../../utils/storage/indexedDbService";
 import {
   isRealConnectionSession,
   realConnectionCount,
 } from "../../utils/session/sessionClassification";
+import {
+  parsePersistedConnectionSession,
+  serializePersistedConnectionSession,
+  type PersistedConnectionSession,
+} from "../../utils/session/sessionPersistence";
+import { hasSessionVpnCleanupQuarantine } from "../../utils/session/sessionLifecycle";
 
 import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
 
 const CLEAN_EXIT_KEY = "mremote-clean-exit";
 const LAST_SESSION_KEY = "mremote-last-session-time";
+const INVALID_ACTIVE_SESSIONS_KEY = "mremote-invalid-active-sessions";
 
 /** Read and consume the safe-mode flag set by the BSOD recovery screen. */
 function consumeSafeMode(): "once" | "permanent" | null {
@@ -43,21 +53,7 @@ function consumeSafeMode(): "once" | "permanent" | null {
 interface Options {
   handleConnect: (connection: Connection) => void;
   restoreSession?: (
-    sessionData: {
-      id: string;
-      connectionId: string;
-      name: string;
-      protocol: string;
-      hostname: string;
-      status: string;
-      backendSessionId?: string;
-      shellId?: string;
-      zoomLevel?: number;
-      layout?: ConnectionSession["layout"];
-      group?: string;
-      startTime?: string;
-      lastActivity?: string;
-    },
+    sessionData: PersistedConnectionSession,
     connection: Connection,
   ) => Promise<void>;
   setShowDatabasePanel: (value: boolean) => void;
@@ -95,7 +91,10 @@ export const useAppLifecycle = ({
   const [initProgress, setInitProgress] = useState(0);
   const [initStatus, setInitStatus] = useState("Initializing...");
   const [didUnexpectedClose, setDidUnexpectedClose] = useState(false);
-  const [criticalError, setCriticalError] = useState<{ title: string; detail: string } | null>(null);
+  const [criticalError, setCriticalError] = useState<{
+    title: string;
+    detail: string;
+  } | null>(null);
   const hasReconnected = useRef(false);
   const initStarted = useRef(false);
   const initializedRef = useRef(false);
@@ -180,7 +179,8 @@ export const useAppLifecycle = ({
       if (settings.detectUnexpectedClose && !safeMode) {
         parallelTasks.push(
           (async () => {
-            const localCleanExit = localStorage.getItem(CLEAN_EXIT_KEY) === "true";
+            const localCleanExit =
+              localStorage.getItem(CLEAN_EXIT_KEY) === "true";
             const [dbCleanExit, lastSession] = await Promise.all([
               IndexedDbService.getItem<boolean>(CLEAN_EXIT_KEY),
               IndexedDbService.getItem<number>(LAST_SESSION_KEY),
@@ -217,9 +217,8 @@ export const useAppLifecycle = ({
       // `databaseManager.getAllDatabases()` is called.
       if (!safeMode) {
         try {
-          const { migrateIndexedDbToFiles } = await import(
-            "../../utils/connection/indexedDbMigration"
-          );
+          const { migrateIndexedDbToFiles } =
+            await import("../../utils/connection/indexedDbMigration");
           const report = await migrateIndexedDbToFiles();
           if (report.migrated > 0 || report.failed > 0) {
             settingsManager.logAction(
@@ -248,19 +247,28 @@ export const useAppLifecycle = ({
       if (safeMode) {
         console.log("Safe mode: skipping auto-open collection");
         setShowDatabasePanel(true);
-      } else if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
+      } else if (
+        settings.autoOpenLastCollection &&
+        settings.lastOpenedCollectionId
+      ) {
         try {
           const collections = await databaseManager.getAllDatabases();
-          const lastCollection = collections.find(c => c.id === settings.lastOpenedCollectionId);
+          const lastCollection = collections.find(
+            (c) => c.id === settings.lastOpenedCollectionId,
+          );
 
           if (lastCollection) {
             if (lastCollection.isEncrypted) {
-              console.log(`Last collection "${lastCollection.name}" requires password, showing selector`);
+              console.log(
+                `Last collection "${lastCollection.name}" requires password, showing selector`,
+              );
               setShowDatabasePanel(true);
             } else {
               await databaseManager.selectDatabase(lastCollection.id);
               await loadData();
-              console.log(`Auto-opened last collection: ${lastCollection.name}`);
+              console.log(
+                `Auto-opened last collection: ${lastCollection.name}`,
+              );
               settingsManager.logAction(
                 "info",
                 "Collection auto-opened",
@@ -269,7 +277,9 @@ export const useAppLifecycle = ({
               );
             }
           } else {
-            console.log("Last opened collection no longer exists, showing selector");
+            console.log(
+              "Last opened collection no longer exists, showing selector",
+            );
             setShowDatabasePanel(true);
           }
         } catch (error) {
@@ -305,18 +315,25 @@ export const useAppLifecycle = ({
         msg,
       );
     }
-  }, [settingsManager, themeManager, i18n, loadData, setShowDatabasePanel, databaseManager]);
+  }, [
+    settingsManager,
+    themeManager,
+    i18n,
+    loadData,
+    setShowDatabasePanel,
+    databaseManager,
+  ]);
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
       const settings = settingsManager.getSettings();
-      
+
       // Mark as clean exit when user intentionally closes
       if (settings.detectUnexpectedClose) {
         // Use synchronous localStorage as IndexedDB won't complete in time
         localStorage.setItem(CLEAN_EXIT_KEY, "true");
       }
-      
+
       // Only real connections trigger the warn-on-exit prompt —
       // a Settings or Wake-on-LAN tab being open does not justify
       // interrupting the exit flow.
@@ -370,9 +387,10 @@ export const useAppLifecycle = ({
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     const settings = settingsManager.getSettings();
-    const singleWindowInterval = settings.singleWindowMode && !safeModeRef.current
-      ? setInterval(checkSingleWindow, 5000)
-      : null;
+    const singleWindowInterval =
+      settings.singleWindowMode && !safeModeRef.current
+        ? setInterval(checkSingleWindow, 5000)
+        : null;
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
@@ -381,12 +399,7 @@ export const useAppLifecycle = ({
       }
       statusChecker.cleanup();
     };
-  }, [
-    handleBeforeUnload,
-    checkSingleWindow,
-    settingsManager,
-    statusChecker,
-  ]);
+  }, [handleBeforeUnload, checkSingleWindow, settingsManager, statusChecker]);
 
   useEffect(() => {
     if (isInitialized) {
@@ -420,24 +433,24 @@ export const useAppLifecycle = ({
       const savedSessions = sessionStorage.getItem("mremote-active-sessions");
       if (savedSessions && !hasReconnected.current) {
         try {
-          const sessions: Array<{
-            id: string;
-            connectionId: string;
-            name: string;
-            protocol: string;
-            hostname: string;
-            status: string;
-            backendSessionId?: string;
-            shellId?: string;
-            zoomLevel?: number;
-            layout?: ConnectionSession["layout"];
-            group?: string;
-            startTime?: string;
-            lastActivity?: string;
-          }> = JSON.parse(savedSessions);
+          const rawSessions: unknown = JSON.parse(savedSessions);
+          if (!Array.isArray(rawSessions)) {
+            throw new Error("Saved session payload is not an array.");
+          }
           sessionStorage.removeItem("mremote-active-sessions");
+          const invalidSessions: unknown[] = [];
 
-          sessions.forEach((sessionData) => {
+          rawSessions.forEach((rawSession) => {
+            const parsed = parsePersistedConnectionSession(rawSession);
+            if (!parsed.valid) {
+              invalidSessions.push(rawSession);
+              console.error(
+                "Refusing to restore unsafe saved session:",
+                parsed.reason,
+              );
+              return;
+            }
+            const sessionData = parsed.session;
             const connection = state.connections.find(
               (c) => c.id === sessionData.connectionId,
             );
@@ -452,6 +465,10 @@ export const useAppLifecycle = ({
                   restoreSession(sessionData, connection).finally(() => {
                     reconnectingSessions.current.delete(sessionData.id);
                   });
+                } else if (hasSessionVpnCleanupQuarantine(sessionData)) {
+                  // Never bypass quarantine through the legacy new-session
+                  // fallback. A restore-capable owner can surface it safely.
+                  reconnectingSessions.current.delete(sessionData.id);
                 } else {
                   // Fallback to handleConnect for new sessions
                   handleConnect(connection);
@@ -460,6 +477,14 @@ export const useAppLifecycle = ({
               }, 1000);
             }
           });
+          if (invalidSessions.length > 0) {
+            sessionStorage.setItem(
+              INVALID_ACTIVE_SESSIONS_KEY,
+              JSON.stringify(invalidSessions),
+            );
+          } else {
+            sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
+          }
         } catch (error) {
           console.error("Failed to restore sessions:", error);
         }
@@ -484,35 +509,28 @@ export const useAppLifecycle = ({
     // would discard anyway.
     const restorable = state.sessions.filter(isRealConnectionSession);
     if (settings.reconnectOnReload && restorable.length > 0) {
-      const sessionData = restorable.map((session) => ({
-        id: session.id,
-        connectionId: session.connectionId,
-        name: session.name,
-        protocol: session.protocol,
-        hostname: session.hostname,
-        status: session.status,
-        backendSessionId: session.backendSessionId,
-        shellId: session.shellId,
-        zoomLevel: session.zoomLevel,
-        layout: session.layout,
-        group: session.group,
-        startTime:
-          session.startTime instanceof Date
-            ? session.startTime.toISOString()
-            : session.startTime,
-        lastActivity:
-          session.lastActivity instanceof Date
-            ? session.lastActivity?.toISOString()
-            : session.lastActivity,
-      }));
-      sessionStorage.setItem(
-        "mremote-active-sessions",
-        JSON.stringify(sessionData),
-      );
+      try {
+        const sessionData = restorable.map(serializePersistedConnectionSession);
+        sessionStorage.setItem(
+          "mremote-active-sessions",
+          JSON.stringify(sessionData),
+        );
+      } catch (error) {
+        // Preserve the last known-safe snapshot rather than overwriting it
+        // with ownership data that cannot be cleaned deterministically.
+        console.error("Refusing to persist unsafe active session:", error);
+      }
     } else if (restorable.length === 0) {
       sessionStorage.removeItem("mremote-active-sessions");
     }
   }, [state.sessions, settingsManager]);
 
-  return { isInitialized, initProgress, initStatus, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false), criticalError };
+  return {
+    isInitialized,
+    initProgress,
+    initStatus,
+    didUnexpectedClose,
+    dismissUnexpectedClose: () => setDidUnexpectedClose(false),
+    criticalError,
+  };
 };

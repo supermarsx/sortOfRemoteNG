@@ -73,6 +73,17 @@ const frontendSession = (
   hostname: `${id}.example.test`,
   backendSessionId,
   vpnLeaseOwnerId,
+  vpnLeaseOwnerIds: vpnLeaseOwnerId ? [vpnLeaseOwnerId] : undefined,
+  vpnLeaseBindings: vpnLeaseOwnerId
+    ? [
+        {
+          ownerId: vpnLeaseOwnerId,
+          backendSessionId,
+          protocol: "rdp",
+          status: "active",
+        },
+      ]
+    : undefined,
 });
 
 const stats = (sessionId: string) => ({
@@ -97,6 +108,86 @@ beforeEach(() => {
 });
 
 describe("useRDPSessionPanel VPN cleanup", () => {
+  it("uses persisted remount bindings to retry stale A without touching live B", async () => {
+    const conn = connection("rdp-remount-connection");
+    const stale = nativeSession("rdp-stale-a", conn.id);
+    const live = nativeSession("rdp-live-b", conn.id);
+    mocks.sessions = [
+      {
+        ...frontendSession("frontend-remount", live.id, conn.id, "owner-b"),
+        vpnLeaseOwnerIds: ["owner-a", "owner-b"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-a",
+            backendSessionId: stale.id,
+            protocol: "rdp",
+            status: "cleanup-pending",
+          },
+          {
+            ownerId: "owner-b",
+            backendSessionId: live.id,
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
+      },
+    ];
+    mocks.invoke.mockImplementation(
+      (command: string, args?: { ownerId?: string; sessionId?: string }) => {
+        if (command === "list_rdp_sessions")
+          return Promise.resolve([stale, live]);
+        if (command === "get_rdp_stats")
+          return Promise.resolve(stats(args?.sessionId ?? "unknown"));
+        if (command === "disconnect_rdp") return Promise.resolve(undefined);
+        if (command === "release_vpn_leases") {
+          return Promise.resolve({
+            owner_id: args?.ownerId,
+            released: [],
+            errors: [],
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const { result } = renderHook(() =>
+      useRDPSessionPanel({ isVisible: true, connections: [conn] }),
+    );
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2));
+    await act(async () => {
+      expect(await result.current.handleDisconnect(stale.id)).toBe(true);
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: stale.id,
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_rdp", {
+      sessionId: live.id,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-a",
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-b",
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        backendSessionId: live.id,
+        status: "connected",
+        vpnLeaseOwnerId: "owner-b",
+        vpnLeaseOwnerIds: ["owner-b"],
+        vpnLeaseBindings: [
+          expect.objectContaining({
+            ownerId: "owner-b",
+            backendSessionId: live.id,
+            status: "active",
+          }),
+        ],
+      }),
+    });
+  });
+
   it("disconnects RDP before releasing all owners and retains partial failures for retry", async () => {
     const conn = connection("rdp-connection");
     const row = nativeSession("rdp-native-1", conn.id);
@@ -104,6 +195,20 @@ describe("useRDPSessionPanel VPN cleanup", () => {
       {
         ...frontendSession("frontend-a", row.id, conn.id, "owner-a"),
         vpnLeaseOwnerIds: ["owner-previous", "owner-a"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-previous",
+            backendSessionId: row.id,
+            protocol: "rdp",
+            status: "active",
+          },
+          {
+            ownerId: "owner-a",
+            backendSessionId: row.id,
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
         layout: {
           x: 0,
           y: 0,
@@ -158,9 +263,16 @@ describe("useRDPSessionPanel VPN cleanup", () => {
         payload: expect.objectContaining({
           id: "frontend-a",
           status: "error",
-          backendSessionId: row.id,
+          backendSessionId: undefined,
           vpnLeaseOwnerId: "owner-a",
           vpnLeaseOwnerIds: ["owner-a"],
+          vpnLeaseBindings: [
+            expect.objectContaining({
+              ownerId: "owner-a",
+              backendSessionId: row.id,
+              status: "backend-closed",
+            }),
+          ],
         }),
       }),
     );

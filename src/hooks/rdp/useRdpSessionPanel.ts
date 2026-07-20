@@ -14,10 +14,8 @@ import {
   RDPSessionHistoryEntry,
 } from "../../utils/rdp/rdpSessionHistory";
 import {
-  cleanupSessionVpnLeases,
+  cleanupSessionVpnBackend,
   findAssociatedVpnSessions,
-  remainingSessionVpnLeaseOwnerFields,
-  sessionVpnLeaseOwnerIds,
   vpnLeaseCleanupFailureMessage,
 } from "../../utils/network/sessionVpnLeaseCleanup";
 
@@ -293,59 +291,38 @@ export function useRDPSessionPanel({
           nativeSession.connection_id,
         );
 
-      try {
-        if (!backendClosedRef.current.has(sessionId)) {
+      const cleanup = await cleanupSessionVpnBackend({
+        sessions: associatedSessions,
+        protocol: "rdp",
+        backendSessionId: sessionId,
+        backendAlreadyClosed: backendClosedRef.current.has(sessionId),
+        closeBackend: async () => {
           await invoke("disconnect_rdp", { sessionId });
           addToHistory(nativeSession);
           backendClosedRef.current.add(sessionId);
-        }
-      } catch (e) {
-        setError(`Disconnect failed: ${String(e)}`);
-        return false;
-      }
-
-      const cleanup = await cleanupSessionVpnLeases(associatedSessions);
-      const releasedOwners = new Set(cleanup.releasedOwnerIds);
-      const failedOwners = new Set(
-        cleanup.failures.map((failure) => failure.ownerId),
-      );
-      const cleanupError =
-        cleanup.failures.length > 0
-          ? vpnLeaseCleanupFailureMessage("rdp", cleanup)
-          : "";
-
-      associatedSessions.forEach((session) => {
-        const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
-          failedOwners.has(ownerId),
-        );
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...session,
-            backendSessionId: failed ? sessionId : undefined,
-            status: failed ? "error" : "disconnected",
-            errorMessage: failed ? cleanupError : undefined,
-            ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
-            lastActivity: new Date(),
-          },
-        });
+        },
+        onSessionsUpdated: (updatedSessions) => {
+          const snapshot = updatedSessions.map((session) => ({ ...session }));
+          associatedSessionsRef.current.set(sessionId, snapshot);
+          snapshot.forEach((session) => {
+            dispatch({ type: "UPDATE_SESSION", payload: session });
+          });
+        },
       });
+      if (cleanup.backendClosed) backendClosedRef.current.add(sessionId);
+      const cleanupFailed =
+        !cleanup.backendClosed ||
+        cleanup.failures.length > 0 ||
+        Boolean(cleanup.blockedReason);
+      const cleanupError =
+        cleanup.blockedReason ??
+        (cleanup.failures.length > 0
+          ? vpnLeaseCleanupFailureMessage("rdp", cleanup)
+          : "RDP cleanup could not be completed. Retry disconnect.");
 
-      if (cleanup.failures.length > 0) {
+      if (cleanupFailed) {
         retainedCleanupRowsRef.current.set(sessionId, nativeSession);
-        associatedSessionsRef.current.set(
-          sessionId,
-          associatedSessions.map((session) => {
-            const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
-              failedOwners.has(ownerId),
-            );
-            return {
-              ...session,
-              backendSessionId: failed ? sessionId : undefined,
-              ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
-            };
-          }),
-        );
+        associatedSessionsRef.current.set(sessionId, cleanup.sessions);
         setSessions((current) =>
           current.some((session) => session.id === sessionId)
             ? current

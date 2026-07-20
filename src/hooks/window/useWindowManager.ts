@@ -8,7 +8,11 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { ConnectionSession, Connection, TabGroup } from "../../types/connection/connection";
+import {
+  ConnectionSession,
+  Connection,
+  TabGroup,
+} from "../../types/connection/connection";
 import { ConnectionAction } from "../../contexts/ConnectionContextTypes";
 import {
   WindowId,
@@ -16,7 +20,13 @@ import {
   WindowRegistry,
   WindowCommand,
   WindowSessionSync,
+  SessionLifecyclePatch,
+  WINDOW_SESSION_CLOSE_RESULT_EVENT,
 } from "../../types/windowManager";
+import {
+  advanceSessionLifecycleAuthority,
+  applySessionLifecyclePatch,
+} from "../../utils/session/sessionLifecycle";
 
 interface UseWindowManagerParams {
   sessions: ConnectionSession[];
@@ -24,7 +34,10 @@ interface UseWindowManagerParams {
   tabGroups: TabGroup[];
   dispatch: React.Dispatch<ConnectionAction>;
   setActiveSessionId: (id: string | undefined) => void;
-  handleSessionClose: (sessionId: string) => Promise<boolean | void>;
+  handleSessionClose: (
+    sessionId: string,
+    authoritativeSession?: ConnectionSession,
+  ) => Promise<boolean | void>;
   /** Called when a drop from main lands on empty space — should create a new detached window. */
   handleSessionDetach?: (sessionId: string) => void;
 }
@@ -87,41 +100,73 @@ export function useWindowManager({
 
   // ── Push session data to a detached window ─────────────────────────
 
-  const syncWindow = useCallback(
-    async (windowId: WindowId) => {
-      if (windowId === "main") return;
-      const entry = registry.current.windows.get(windowId);
-      if (!entry) return;
+  const syncWindow = useCallback(async (windowId: WindowId) => {
+    if (windowId === "main") return;
+    const entry = registry.current.windows.get(windowId);
+    if (!entry) return;
 
-      const windowSessions = entry.sessionIds
-        .map((id) => sessionsRef.current.find((s) => s.id === id))
-        .filter(Boolean) as ConnectionSession[];
+    const windowSessions = entry.sessionIds
+      .map((id) => sessionsRef.current.find((s) => s.id === id))
+      .filter(Boolean) as ConnectionSession[];
 
-      const neededConnIds = new Set(windowSessions.map((s) => s.connectionId));
-      const windowConns = connectionsRef.current.filter((c) =>
-        neededConnIds.has(c.id),
-      );
+    const neededConnIds = new Set(windowSessions.map((s) => s.connectionId));
+    const windowConns = connectionsRef.current.filter((c) =>
+      neededConnIds.has(c.id),
+    );
 
-      // Include tab groups that are relevant to this window's sessions
-      const windowGroupIds = new Set(windowSessions.map((s) => s.tabGroupId).filter(Boolean));
-      const windowTabGroups = tabGroupsRef.current.filter((g) => windowGroupIds.has(g.id));
+    // Include tab groups that are relevant to this window's sessions
+    const windowGroupIds = new Set(
+      windowSessions.map((s) => s.tabGroupId).filter(Boolean),
+    );
+    const windowTabGroups = tabGroupsRef.current.filter((g) =>
+      windowGroupIds.has(g.id),
+    );
 
-      const payload: WindowSessionSync = {
-        windowId,
-        sessions: windowSessions,
-        connections: windowConns,
-        tabGroups: windowTabGroups,
-        activeSessionId: entry.activeSessionId,
-      };
+    const payload: WindowSessionSync = {
+      windowId,
+      sessions: windowSessions,
+      connections: windowConns,
+      tabGroups: windowTabGroups,
+      activeSessionId: entry.activeSessionId,
+    };
 
-      try {
-        const { emitTo } = await import("@tauri-apps/api/event");
-        await emitTo(windowId, "wm:sync", payload);
-      } catch {
-        // Window might have closed — ignore
+    try {
+      const { emitTo } = await import("@tauri-apps/api/event");
+      await emitTo(windowId, "wm:sync", payload);
+    } catch {
+      // Window might have closed — ignore
+    }
+  }, []);
+
+  const releaseClosedSessionOwnership = useCallback(
+    async (sessionId: string, requestedSource?: WindowId) => {
+      const registeredOwner = registry.current.sessionOwnership.get(sessionId);
+      const sourceWindow = requestedSource ?? registeredOwner;
+      if (!sourceWindow) return;
+
+      const sourceEntry = registry.current.windows.get(sourceWindow);
+      if (sourceEntry) {
+        const closedIndex = sourceEntry.sessionIds.indexOf(sessionId);
+        if (closedIndex >= 0) {
+          sourceEntry.sessionIds = sourceEntry.sessionIds.filter(
+            (id) => id !== sessionId,
+          );
+          if (sourceEntry.activeSessionId === sessionId) {
+            sourceEntry.activeSessionId =
+              sourceEntry.sessionIds[closedIndex] ??
+              sourceEntry.sessionIds[closedIndex - 1];
+          }
+        }
+      }
+
+      if (registeredOwner === sourceWindow) {
+        registry.current.sessionOwnership.delete(sessionId);
+      }
+      if (sourceWindow !== "main") {
+        await syncWindow(sourceWindow);
       }
     },
-    [],
+    [syncWindow],
   );
 
   // ── Sync detached windows when their sessions change ───────────────
@@ -161,12 +206,30 @@ export function useWindowManager({
 
   // ── Command handlers ───────────────────────────────────────────────
 
+  const mergeLifecyclePatch = useCallback(
+    (sessionId: string, lifecycle?: SessionLifecyclePatch) => {
+      const session = sessionsRef.current.find((item) => item.id === sessionId);
+      if (!session || !lifecycle) return session;
+      const currentOwner = registry.current.sessionOwnership.get(sessionId);
+      if (
+        lifecycle.writerId &&
+        currentOwner &&
+        lifecycle.writerId !== currentOwner
+      ) {
+        return session;
+      }
+      const merged = applySessionLifecyclePatch(session, lifecycle);
+      sessionsRef.current = sessionsRef.current.map((item) =>
+        item.id === sessionId ? merged : item,
+      );
+      dispatch({ type: "UPDATE_SESSION", payload: merged });
+      return merged;
+    },
+    [dispatch],
+  );
+
   const handleMoveSession = useCallback(
-    async (
-      sessionId: string,
-      targetWindow: WindowId,
-      insertIndex?: number,
-    ) => {
+    async (sessionId: string, targetWindow: WindowId, insertIndex?: number) => {
       const currentOwner = registry.current.sessionOwnership.get(sessionId);
       if (!currentOwner || currentOwner === targetWindow) return;
 
@@ -189,31 +252,39 @@ export function useWindowManager({
         targetEntry.activeSessionId = sessionId;
       }
 
-      // Update ownership
-      registry.current.sessionOwnership.set(sessionId, targetWindow);
-
       // Update session's layout in main state
       const isDetached = targetWindow !== "main";
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (session) {
+        const transferred = advanceSessionLifecycleAuthority(
+          session,
+          targetWindow,
+        );
+        const movedSession: ConnectionSession = {
+          ...transferred,
+          layout: {
+            ...(transferred.layout ?? {
+              x: 0,
+              y: 0,
+              width: 800,
+              height: 600,
+              zIndex: 1,
+            }),
+            isDetached,
+            windowId: isDetached ? targetWindow : undefined,
+          },
+        };
+        sessionsRef.current = sessionsRef.current.map((item) =>
+          item.id === sessionId ? movedSession : item,
+        );
         dispatch({
           type: "UPDATE_SESSION",
-          payload: {
-            ...session,
-            layout: {
-              ...(session.layout ?? {
-                x: 0,
-                y: 0,
-                width: 800,
-                height: 600,
-                zIndex: 1,
-              }),
-              isDetached,
-              windowId: isDetached ? targetWindow : undefined,
-            },
-          },
+          payload: movedSession,
         });
       }
+
+      // Commit registry ownership only after the lifecycle writer transfer.
+      registry.current.sessionOwnership.set(sessionId, targetWindow);
 
       // If moving to main, activate it
       if (targetWindow === "main") {
@@ -245,17 +316,30 @@ export function useWindowManager({
   );
 
   const handleReattachSession = useCallback(
-    (sessionId: string, terminalBuffer?: string) => {
+    (
+      sessionId: string,
+      terminalBuffer?: string,
+      lifecycle?: SessionLifecyclePatch,
+    ) => {
       // Move to main + update terminal buffer
-      const session = sessionsRef.current.find((s) => s.id === sessionId);
+      const session =
+        mergeLifecyclePatch(sessionId, lifecycle) ??
+        sessionsRef.current.find((s) => s.id === sessionId);
       if (session) {
+        const mainOwnedSession = advanceSessionLifecycleAuthority(
+          session,
+          "main",
+        );
+        sessionsRef.current = sessionsRef.current.map((item) =>
+          item.id === sessionId ? mainOwnedSession : item,
+        );
         dispatch({
           type: "UPDATE_SESSION",
           payload: {
-            ...session,
-            terminalBuffer: terminalBuffer || session.terminalBuffer,
+            ...mainOwnedSession,
+            terminalBuffer: terminalBuffer || mainOwnedSession.terminalBuffer,
             layout: {
-              ...(session.layout ?? {
+              ...(mainOwnedSession.layout ?? {
                 x: 0,
                 y: 0,
                 width: 800,
@@ -278,12 +362,14 @@ export function useWindowManager({
 
           // Close empty windows
           if (entry.sessionIds.length === 0) {
-            import("@tauri-apps/api/window").then(({ getAllWindows }) =>
-              getAllWindows().then((ws) => {
-                const w = ws.find((x) => x.label === currentOwner);
-                w?.close().catch(() => {});
-              }),
-            ).catch(() => {});
+            import("@tauri-apps/api/window")
+              .then(({ getAllWindows }) =>
+                getAllWindows().then((ws) => {
+                  const w = ws.find((x) => x.label === currentOwner);
+                  w?.close().catch(() => {});
+                }),
+              )
+              .catch(() => {});
             registry.current.windows.delete(currentOwner);
           }
         }
@@ -296,7 +382,7 @@ export function useWindowManager({
       }
       setActiveSessionId(sessionId);
     },
-    [dispatch, setActiveSessionId, syncWindow],
+    [dispatch, mergeLifecyclePatch, setActiveSessionId, syncWindow],
   );
 
   const handleDropOnWindow = useCallback(
@@ -364,6 +450,12 @@ export function useWindowManager({
           syncWindow(cmd.windowId);
           break;
         case "MOVE_SESSION":
+          if (
+            (registry.current.sessionOwnership.get(cmd.sessionId) ?? "main") !==
+            (cmd.sourceWindow ?? "main")
+          ) {
+            break;
+          }
           await handleMoveSession(
             cmd.sessionId,
             cmd.targetWindow,
@@ -371,10 +463,105 @@ export function useWindowManager({
           );
           break;
         case "CLOSE_SESSION":
-          await handleSessionClose(cmd.sessionId);
+          {
+            const currentOwner = registry.current.sessionOwnership.get(
+              cmd.sessionId,
+            );
+            const claimedSource =
+              cmd.sourceWindow ??
+              (cmd.lifecycle?.writerId as WindowId | undefined);
+            if (
+              currentOwner &&
+              claimedSource &&
+              claimedSource !== currentOwner
+            ) {
+              if (cmd.requestId && cmd.sourceWindow) {
+                try {
+                  const { emitTo } = await import("@tauri-apps/api/event");
+                  await emitTo(
+                    cmd.sourceWindow,
+                    WINDOW_SESSION_CLOSE_RESULT_EVENT,
+                    {
+                      requestId: cmd.requestId,
+                      sessionId: cmd.sessionId,
+                      success: false,
+                    },
+                  );
+                } catch (error) {
+                  console.error(
+                    "Failed to reject stale detached session close:",
+                    error,
+                  );
+                }
+              }
+              break;
+            }
+          }
+          if (cmd.requestId && cmd.sourceWindow) {
+            let success = false;
+            try {
+              success =
+                (await handleSessionClose(
+                  cmd.sessionId,
+                  mergeLifecyclePatch(cmd.sessionId, cmd.lifecycle),
+                )) === true;
+              if (success) {
+                await releaseClosedSessionOwnership(
+                  cmd.sessionId,
+                  cmd.sourceWindow,
+                );
+              }
+            } catch (error) {
+              console.error(
+                "Authoritative detached session close failed:",
+                error,
+              );
+            }
+            try {
+              const { emitTo } = await import("@tauri-apps/api/event");
+              await emitTo(
+                cmd.sourceWindow,
+                WINDOW_SESSION_CLOSE_RESULT_EVENT,
+                {
+                  requestId: cmd.requestId,
+                  sessionId: cmd.sessionId,
+                  success,
+                },
+              );
+            } catch (error) {
+              console.error(
+                "Failed to acknowledge detached session close:",
+                error,
+              );
+            }
+          } else {
+            const success =
+              (await handleSessionClose(
+                cmd.sessionId,
+                mergeLifecyclePatch(cmd.sessionId, cmd.lifecycle),
+              )) === true;
+            if (success) {
+              await releaseClosedSessionOwnership(cmd.sessionId);
+            }
+          }
           break;
         case "REATTACH_SESSION":
-          handleReattachSession(cmd.sessionId, cmd.terminalBuffer);
+          if (
+            (registry.current.sessionOwnership.get(cmd.sessionId) ?? "main") !==
+            (cmd.sourceWindow ??
+              (cmd.lifecycle?.writerId as WindowId | undefined) ??
+              "main")
+          ) {
+            break;
+          }
+          handleReattachSession(
+            cmd.sessionId,
+            cmd.terminalBuffer,
+            cmd.lifecycle,
+          );
+          break;
+        case "SYNC_SESSION_LIFECYCLE":
+          mergeLifecyclePatch(cmd.sessionId, cmd.lifecycle);
           break;
         case "REORDER_SESSIONS": {
           const entry = registry.current.windows.get(cmd.windowId);
@@ -393,6 +580,12 @@ export function useWindowManager({
           break;
         }
         case "DROP_ON_WINDOW":
+          if (
+            (registry.current.sessionOwnership.get(cmd.sessionId) ?? "main") !==
+            cmd.sourceWindow
+          ) {
+            break;
+          }
           await handleDropOnWindow(
             cmd.sessionId,
             cmd.sourceWindow,
@@ -401,32 +594,56 @@ export function useWindowManager({
           );
           break;
         case "RENAME_SESSION": {
-          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
-          if (session) dispatch({ type: "UPDATE_SESSION", payload: { ...session, name: cmd.name } });
+          const session = sessionsRef.current.find(
+            (s) => s.id === cmd.sessionId,
+          );
+          if (session)
+            dispatch({
+              type: "UPDATE_SESSION",
+              payload: { ...session, name: cmd.name },
+            });
           break;
         }
         case "RECONNECT_SESSION": {
           // Close then reconnect via detach handler
-          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
+          const session = sessionsRef.current.find(
+            (s) => s.id === cmd.sessionId,
+          );
           if (session) {
             await handleSessionClose(cmd.sessionId);
-            const conn = connectionsRef.current.find((c) => c.id === session.connectionId);
+            const conn = connectionsRef.current.find(
+              (c) => c.id === session.connectionId,
+            );
             if (conn) {
               // Dispatch a custom event that App.tsx listens for
-              window.dispatchEvent(new CustomEvent("wm-reconnect", { detail: { connectionId: conn.id } }));
+              window.dispatchEvent(
+                new CustomEvent("wm-reconnect", {
+                  detail: { connectionId: conn.id },
+                }),
+              );
             }
           }
           break;
         }
         case "DUPLICATE_SESSION": {
-          const session = sessionsRef.current.find((s) => s.id === cmd.sessionId);
+          const session = sessionsRef.current.find(
+            (s) => s.id === cmd.sessionId,
+          );
           if (session) {
-            window.dispatchEvent(new CustomEvent("wm-duplicate-session", { detail: { sessionId: cmd.sessionId } }));
+            window.dispatchEvent(
+              new CustomEvent("wm-duplicate-session", {
+                detail: { sessionId: cmd.sessionId },
+              }),
+            );
           }
           break;
         }
         case "REVEAL_IN_SIDEBAR":
-          window.dispatchEvent(new CustomEvent("reveal-connection", { detail: { connectionId: cmd.connectionId } }));
+          window.dispatchEvent(
+            new CustomEvent("reveal-connection", {
+              detail: { connectionId: cmd.connectionId },
+            }),
+          );
           break;
       }
     },
@@ -437,6 +654,8 @@ export function useWindowManager({
       handleReattachSession,
       handleWindowClosing,
       handleDropOnWindow,
+      mergeLifecyclePatch,
+      releaseClosedSessionOwnership,
       dispatch,
     ],
   );
@@ -450,14 +669,16 @@ export function useWindowManager({
     let unlisten: (() => void) | null = null;
     let mounted = true;
 
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<WindowCommand>("wm:command", (event) => {
-        handleCommandRef.current(event.payload);
-      }).then((fn) => {
-        if (mounted) unlisten = fn;
-        else fn();
-      });
-    }).catch(() => {});
+    import("@tauri-apps/api/event")
+      .then(({ listen }) => {
+        listen<WindowCommand>("wm:command", (event) => {
+          handleCommandRef.current(event.payload);
+        }).then((fn) => {
+          if (mounted) unlisten = fn;
+          else fn();
+        });
+      })
+      .catch(() => {});
 
     return () => {
       mounted = false;
@@ -473,41 +694,56 @@ export function useWindowManager({
     const cleanups: Array<() => void> = [];
     let mounted = true;
 
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      // Connect in new window: find the session by connectionId, then detach
-      listen<{ connectionId: string }>("connect-in-new-window", (event) => {
-        const { connectionId } = event.payload;
-        // Wait for session to appear in state
-        const check = () => {
-          const session = sessionsRef.current.find(s => s.connectionId === connectionId && !s.layout?.isDetached);
-          if (session && detachRef.current) {
-            detachRef.current(session.id);
-          } else {
-            // Retry briefly
-            setTimeout(check, 200);
-          }
-        };
-        setTimeout(check, 100);
-      }).then(fn => { if (mounted) cleanups.push(fn); else fn(); });
+    import("@tauri-apps/api/event")
+      .then(({ listen }) => {
+        // Connect in new window: find the session by connectionId, then detach
+        listen<{ connectionId: string }>("connect-in-new-window", (event) => {
+          const { connectionId } = event.payload;
+          // Wait for session to appear in state
+          const check = () => {
+            const session = sessionsRef.current.find(
+              (s) => s.connectionId === connectionId && !s.layout?.isDetached,
+            );
+            if (session && detachRef.current) {
+              detachRef.current(session.id);
+            } else {
+              // Retry briefly
+              setTimeout(check, 200);
+            }
+          };
+          setTimeout(check, 100);
+        }).then((fn) => {
+          if (mounted) cleanups.push(fn);
+          else fn();
+        });
 
-      // Connect in specific window: find session, then move it
-      listen<{ connectionId: string; targetWindow: string }>("connect-in-window", (event) => {
-        const { connectionId, targetWindow } = event.payload;
-        const check = () => {
-          const session = sessionsRef.current.find(s => s.connectionId === connectionId && !s.layout?.isDetached);
-          if (session) {
-            handleMoveSession(session.id, targetWindow as WindowId);
-          } else {
-            setTimeout(check, 200);
-          }
-        };
-        setTimeout(check, 100);
-      }).then(fn => { if (mounted) cleanups.push(fn); else fn(); });
-    }).catch(() => {});
+        // Connect in specific window: find session, then move it
+        listen<{ connectionId: string; targetWindow: string }>(
+          "connect-in-window",
+          (event) => {
+            const { connectionId, targetWindow } = event.payload;
+            const check = () => {
+              const session = sessionsRef.current.find(
+                (s) => s.connectionId === connectionId && !s.layout?.isDetached,
+              );
+              if (session) {
+                handleMoveSession(session.id, targetWindow as WindowId);
+              } else {
+                setTimeout(check, 200);
+              }
+            };
+            setTimeout(check, 100);
+          },
+        ).then((fn) => {
+          if (mounted) cleanups.push(fn);
+          else fn();
+        });
+      })
+      .catch(() => {});
 
     return () => {
       mounted = false;
-      cleanups.forEach(fn => fn());
+      cleanups.forEach((fn) => fn());
     };
   }, [handleMoveSession]);
 

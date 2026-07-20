@@ -111,4 +111,23 @@ describe("session VPN lease IPC", () => {
     expect(staleOwner).not.toBe(replacementOwner);
     expect(liveOwners).toEqual(new Set([replacementOwner]));
   });
+
+  it("keeps owner ids unique across module reloads and renderer scopes", async () => {
+    const first = createVpnLeaseAttemptOwnerId("shared-session", "ssh");
+    vi.resetModules();
+    const reloaded = await import("../../src/utils/network/vpnSessionLeases");
+    const second = reloaded.createVpnLeaseAttemptOwnerId(
+      "shared-session",
+      "ssh",
+    );
+    const detached = reloaded.createVpnLeaseAttemptOwnerId(
+      "shared-session",
+      "rdp",
+    );
+
+    expect(first).toMatch(/^shared-session:ssh:/);
+    expect(second).toMatch(/^shared-session:ssh:/);
+    expect(detached).toMatch(/^shared-session:rdp:/);
+    expect(new Set([first, second, detached]).size).toBe(3);
+  });
 });

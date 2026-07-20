@@ -20,6 +20,10 @@ import {
   formatConnectionDiff,
 } from "../utils/connection/diffConnection";
 import { normalizeAdvancedProtocolConnection } from "../utils/connection/normalizeAdvancedProtocolConnection";
+import {
+  mergeLocalSessionUpdate,
+  reconcileSessionLifecycleSnapshot,
+} from "../utils/session/sessionLifecycle";
 
 const initialState: ConnectionState = {
   connections: [],
@@ -57,7 +61,9 @@ function flattenConnectionIds(connections: Connection[]): string[] {
   return result;
 }
 
-const connectionReducer = (
+// Exported for deterministic reducer regression coverage.
+// eslint-disable-next-line react-refresh/only-export-components
+export const connectionReducer = (
   state: ConnectionState,
   action: ConnectionAction,
 ): ConnectionState => {
@@ -177,11 +183,12 @@ const connectionReducer = (
       return { ...state, sessions: [...state.sessions, session] };
     }
     case "UPDATE_SESSION":
-      // Modify an existing session
       return {
         ...state,
         sessions: state.sessions.map((session) =>
-          session.id === action.payload.id ? action.payload : session,
+          session.id === action.payload.id
+            ? mergeLocalSessionUpdate(session, action.payload)
+            : session,
         ),
       };
     case "REMOVE_SESSION":
@@ -193,8 +200,20 @@ const connectionReducer = (
         ),
       };
     case "SET_SESSIONS":
-      // Replace the entire sessions array (used by detached windows receiving wm:sync)
-      return { ...state, sessions: action.payload };
+      // Full main-window snapshots may arrive after a detached viewer already
+      // acquired a newer native actor/VPN binding. Reconcile by lifecycle
+      // revision instead of last-write-wins replacement.
+      return {
+        ...state,
+        sessions: action.payload.map((incoming) => {
+          const current = state.sessions.find(
+            (session) => session.id === incoming.id,
+          );
+          return current
+            ? reconcileSessionLifecycleSnapshot(current, incoming)
+            : incoming;
+        }),
+      };
     case "REORDER_SESSIONS":
       // Reorder sessions by moving from one index to another
       const { fromIndex, toIndex } = action.payload;

@@ -141,6 +141,15 @@ const session = (
   backendSessionId: "shared-native-ssh",
   shellId: `shell-${id}`,
   vpnLeaseOwnerId: ownerId,
+  vpnLeaseOwnerIds: [ownerId],
+  vpnLeaseBindings: [
+    {
+      ownerId,
+      backendSessionId: "shared-native-ssh",
+      protocol: "ssh",
+      status: "active",
+    },
+  ],
 });
 
 beforeEach(() => {
@@ -153,7 +162,7 @@ beforeEach(() => {
 });
 
 describe("useSessionManager VPN cleanup", () => {
-  it("retries an orphaned RDP cleanup row without re-detaching its closed backend", async () => {
+  it("retries durable closed RDP bindings without closing the backend twice", async () => {
     mocks.settings.rdpSessionClosePolicy = "detach";
     const rdpConnection: Connection = {
       ...connection("rdp-orphan-connection"),
@@ -168,6 +177,20 @@ describe("useSessionManager VPN cleanup", () => {
       errorMessage:
         "RDP disconnected, but VPN cleanup needs attention. Retry disconnect to finish cleanup.",
       vpnLeaseOwnerIds: ["owner-previous", "owner-current"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-previous",
+          backendSessionId: "native-rdp-closed",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+        {
+          ownerId: "owner-current",
+          backendSessionId: "native-rdp-closed",
+          protocol: "rdp",
+          status: "backend-closed",
+        },
+      ],
     };
     mocks.state.connections = [rdpConnection];
     mocks.state.sessions = [orphanedSession];
@@ -220,6 +243,20 @@ describe("useSessionManager VPN cleanup", () => {
       protocol: "rdp",
       backendSessionId: "native-rdp",
       vpnLeaseOwnerIds: ["owner-previous", "owner-current"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-previous",
+          backendSessionId: "native-rdp",
+          protocol: "rdp",
+          status: "active",
+        },
+        {
+          ownerId: "owner-current",
+          backendSessionId: "native-rdp",
+          protocol: "rdp",
+          status: "active",
+        },
+      ],
     };
     mocks.state.connections = [rdpConnection];
     mocks.state.sessions = [rdpSession];
@@ -302,16 +339,23 @@ describe("useSessionManager VPN cleanup", () => {
     expect(mocks.state.sessions.find((row) => row.id === "frontend-a")).toEqual(
       expect.objectContaining({
         vpnLeaseOwnerId: undefined,
-        status: "error",
-        backendSessionId: "shared-native-ssh",
-        errorMessage: expect.stringMatching(/VPN cleanup needs attention/i),
+        status: "disconnected",
+        backendSessionId: undefined,
+        errorMessage: undefined,
       }),
     );
     expect(mocks.state.sessions.find((row) => row.id === "frontend-b")).toEqual(
       expect.objectContaining({
         vpnLeaseOwnerId: "owner-b",
         status: "error",
-        backendSessionId: "shared-native-ssh",
+        backendSessionId: undefined,
+        vpnLeaseBindings: [
+          expect.objectContaining({
+            ownerId: "owner-b",
+            backendSessionId: "shared-native-ssh",
+            status: "backend-closed",
+          }),
+        ],
         errorMessage: expect.stringMatching(/VPN cleanup needs attention/i),
       }),
     );

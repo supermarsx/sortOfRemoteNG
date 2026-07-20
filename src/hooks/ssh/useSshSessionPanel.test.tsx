@@ -43,6 +43,17 @@ const frontendSession = (
   hostname: `${id}.example.test`,
   backendSessionId,
   vpnLeaseOwnerId,
+  vpnLeaseOwnerIds: vpnLeaseOwnerId ? [vpnLeaseOwnerId] : undefined,
+  vpnLeaseBindings: vpnLeaseOwnerId
+    ? [
+        {
+          ownerId: vpnLeaseOwnerId,
+          backendSessionId,
+          protocol: "ssh",
+          status: "active",
+        },
+      ]
+    : undefined,
 });
 
 beforeEach(() => {
@@ -52,12 +63,100 @@ beforeEach(() => {
 });
 
 describe("useSshSessionPanel VPN cleanup", () => {
+  it("uses persisted remount bindings to retry stale A without touching live B", async () => {
+    const stale = nativeSession("ssh-stale-a");
+    const live = nativeSession("ssh-live-b");
+    mocks.sessions = [
+      {
+        ...frontendSession("frontend-remount", live.id, "owner-b"),
+        vpnLeaseOwnerIds: ["owner-a", "owner-b"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-a",
+            backendSessionId: stale.id,
+            protocol: "ssh",
+            status: "cleanup-pending",
+          },
+          {
+            ownerId: "owner-b",
+            backendSessionId: live.id,
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
+      },
+    ];
+    mocks.invoke.mockImplementation(
+      (command: string, args?: { ownerId?: string }) => {
+        if (command === "list_sessions") return Promise.resolve([stale, live]);
+        if (command === "disconnect_ssh") return Promise.resolve(undefined);
+        if (command === "release_vpn_leases") {
+          return Promise.resolve({
+            owner_id: args?.ownerId,
+            released: [],
+            errors: [],
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const { result } = renderHook(() => useSshSessionPanel(true));
+    await waitFor(() => expect(result.current.sessions).toHaveLength(2));
+    await act(async () => {
+      expect(await result.current.handleDisconnect(stale.id)).toBe(true);
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: stale.id,
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: live.id,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-a",
+    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-b",
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        backendSessionId: live.id,
+        status: "connected",
+        vpnLeaseOwnerId: "owner-b",
+        vpnLeaseOwnerIds: ["owner-b"],
+        vpnLeaseBindings: [
+          expect.objectContaining({
+            ownerId: "owner-b",
+            backendSessionId: live.id,
+            status: "active",
+          }),
+        ],
+      }),
+    });
+  });
+
   it("closes SSH first, retains failed owners for retry, and clears every owner on success", async () => {
     const row = nativeSession("ssh-native-1");
     mocks.sessions = [
       {
         ...frontendSession("frontend-a", row.id, "owner-a"),
         vpnLeaseOwnerIds: ["owner-previous", "owner-a"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-previous",
+            backendSessionId: row.id,
+            protocol: "ssh",
+            status: "active",
+          },
+          {
+            ownerId: "owner-a",
+            backendSessionId: row.id,
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
       },
       frontendSession("frontend-b", row.id, "owner-b"),
     ];

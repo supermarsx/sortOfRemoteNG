@@ -1,15 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { VpnPreStep } from "../ssh/resolveChainConfig";
 
-let vpnLeaseAttemptSequence = 0;
+function secureLeaseAttemptId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    // RFC 4122 v4 layout for webviews that expose getRandomValues but not UUID.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0"));
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+  }
+  throw new Error("Secure randomness is unavailable for VPN lease ownership");
+}
 
-/** Create a process-unique owner so stale async attempts cannot release a replacement. */
+/** Create a cross-webview owner so reloads cannot collide with replacements. */
 export function createVpnLeaseAttemptOwnerId(
   sessionId: string,
   scope: "ssh" | "rdp",
 ): string {
-  vpnLeaseAttemptSequence += 1;
-  return `${sessionId}:${scope}:${vpnLeaseAttemptSequence}`;
+  return `${sessionId}:${scope}:${secureLeaseAttemptId()}`;
 }
 
 export interface AcquiredVpnLease {

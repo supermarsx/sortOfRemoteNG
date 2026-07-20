@@ -1,4 +1,11 @@
-import { Connection, ConnectionSession, TabGroup } from "./connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+  SessionVpnLeaseBinding,
+  SessionVpnLeaseCleanupQuarantine,
+  SessionVpnLeaseReleaseTombstone,
+  TabGroup,
+} from "./connection/connection";
 
 /** Identifies which window a session lives in. */
 export type WindowId = "main" | `detached-${string}`;
@@ -20,11 +27,59 @@ export interface WindowRegistry {
   sessionOwnership: Map<string, WindowId>;
 }
 
+/**
+ * The only session lifecycle data a detached webview may send to main.
+ * Nullable values explicitly clear an optional field across JSON IPC; omitted
+ * values leave the canonical main-window value untouched.
+ */
+export interface SessionLifecyclePatch {
+  /** Sender's monotonic lifecycle version. Older/equal patches are ignored. */
+  revision?: number;
+  /** Native actor generation, ordered independently from status/cleanup writes. */
+  actorGeneration?: number;
+  /** Explicit writer provenance used to resolve equal-generation conflicts. */
+  writerId?: string;
+  backendSessionId?: string | null;
+  shellId?: string | null;
+  vpnLeaseOwnerId?: string | null;
+  vpnLeaseOwnerIds?: string[] | null;
+  vpnLeaseBindings?: SessionVpnLeaseBinding[] | null;
+  vpnLeaseReleaseTombstones?: SessionVpnLeaseReleaseTombstone[] | null;
+  vpnLeaseCleanupQuarantine?: SessionVpnLeaseCleanupQuarantine | null;
+  status?: ConnectionSession["status"];
+  errorMessage?: string | null;
+  lastActivity?: string | null;
+}
+
 /** Commands sent from any window to the main window's WindowManager. */
 export type WindowCommand =
-  | { type: "MOVE_SESSION"; sessionId: string; targetWindow: WindowId; insertIndex?: number }
-  | { type: "CLOSE_SESSION"; sessionId: string }
-  | { type: "REATTACH_SESSION"; sessionId: string; terminalBuffer?: string }
+  | {
+      type: "MOVE_SESSION";
+      sessionId: string;
+      targetWindow: WindowId;
+      sourceWindow?: WindowId;
+      insertIndex?: number;
+    }
+  | {
+      type: "CLOSE_SESSION";
+      sessionId: string;
+      lifecycle?: SessionLifecyclePatch;
+      /** Detached-window close acknowledgement correlation. */
+      requestId?: string;
+      sourceWindow?: WindowId;
+    }
+  | {
+      type: "REATTACH_SESSION";
+      sessionId: string;
+      terminalBuffer?: string;
+      lifecycle?: SessionLifecyclePatch;
+      sourceWindow?: WindowId;
+    }
+  | {
+      type: "SYNC_SESSION_LIFECYCLE";
+      sessionId: string;
+      lifecycle: SessionLifecyclePatch;
+    }
   | { type: "REORDER_SESSIONS"; windowId: WindowId; sessionIds: string[] }
   | { type: "WINDOW_READY"; windowId: WindowId }
   | { type: "WINDOW_CLOSING"; windowId: WindowId }
@@ -48,4 +103,13 @@ export interface WindowSessionSync {
   connections: Connection[];
   tabGroups: TabGroup[];
   activeSessionId?: string;
+}
+
+export const WINDOW_SESSION_CLOSE_RESULT_EVENT = "wm:close-result";
+
+/** Result returned by the main-window authoritative session closer. */
+export interface WindowSessionCloseResult {
+  requestId: string;
+  sessionId: string;
+  success: boolean;
 }

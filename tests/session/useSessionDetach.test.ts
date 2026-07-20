@@ -6,6 +6,7 @@ import type {
   ConnectionSession,
   Connection,
 } from "../../src/types/connection/connection";
+import { resetSessionLifecycleAllocatorForTests } from "../../src/utils/session/sessionLifecycle";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -13,20 +14,41 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, f?: string) => f || k }),
 }));
 
-const mockListen = vi.fn().mockResolvedValue(vi.fn());
-const mockEmit = vi.fn();
+const terminalBufferListeners = new Set<(event: any) => void>();
+let autoReplyTerminalBuffer = true;
+const mockListen = vi.fn((eventName: string, handler: (event: any) => void) => {
+  if (eventName === "terminal-buffer-response") {
+    terminalBufferListeners.add(handler);
+  }
+  return Promise.resolve(() => terminalBufferListeners.delete(handler));
+});
+const mockEmit = vi.fn((eventName: string, payload: any) => {
+  if (eventName === "request-terminal-buffer" && autoReplyTerminalBuffer) {
+    queueMicrotask(() => {
+      terminalBufferListeners.forEach((handler) =>
+        handler({ payload: { sessionId: payload.sessionId, buffer: "" } }),
+      );
+    });
+  }
+  return Promise.resolve();
+});
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (...args: any[]) => mockListen(...args),
-  emit: (...args: any[]) => mockEmit(...args),
+  listen: (eventName: string, handler: (event: any) => void) =>
+    mockListen(eventName, handler),
+  emit: (eventName: string, payload: any) => mockEmit(eventName, payload),
 }));
 
 const mockSetFocus = vi.fn().mockResolvedValue(undefined);
 const mockOnce = vi.fn((_event, cb) => cb());
+const mockWebviewCreate = vi.fn();
 
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   WebviewWindow: class MockWebviewWindow {
     static getByLabel = vi.fn().mockResolvedValue(null);
+    constructor(...args: any[]) {
+      mockWebviewCreate(args[0], args[1]);
+    }
     once = mockOnce;
     setFocus = mockSetFocus;
   },
@@ -97,21 +119,26 @@ function renderDetach(overrides: Record<string, any> = {}) {
     registerWindow: vi.fn(),
   };
   const opts = { ...defaults, ...overrides };
-  return {
-    ...renderHook(() =>
-      useSessionDetach(
-        opts.sessions,
-        opts.connections,
-        opts.visibleSessions,
-        opts.activeSessionId,
-        opts.dispatch,
-        opts.setActiveSessionId,
-        opts.registerWindow,
-      ),
+  const rendered = renderHook(() =>
+    useSessionDetach(
+      opts.sessions,
+      opts.connections,
+      opts.visibleSessions,
+      opts.activeSessionId,
+      opts.dispatch,
+      opts.setActiveSessionId,
+      opts.registerWindow,
     ),
+  );
+  return {
+    ...rendered,
     dispatch: opts.dispatch,
     setActiveSessionId: opts.setActiveSessionId,
     registerWindow: opts.registerWindow,
+    updateProps: (next: Record<string, any>) => {
+      Object.assign(opts, next);
+      rendered.rerender();
+    },
   };
 }
 
@@ -119,7 +146,10 @@ function renderDetach(overrides: Record<string, any> = {}) {
 
 describe("useSessionDetach", () => {
   beforeEach(() => {
+    resetSessionLifecycleAllocatorForTests();
     vi.clearAllMocks();
+    terminalBufferListeners.clear();
+    autoReplyTerminalBuffer = true;
     localStorage.clear();
     (invoke as Mock).mockResolvedValue(undefined);
     // Set up Tauri flag
@@ -205,6 +235,149 @@ describe("useSessionDetach", () => {
     expect(invoke).toHaveBeenCalledWith("detach_rdp_session", {
       sessionId: "be-s2",
     });
+  });
+
+  it("detaches a replacement RDP backend that appears while the old detach is in flight", async () => {
+    let finishOldDetach!: () => void;
+    const oldDetach = new Promise<void>((resolve) => {
+      finishOldDetach = resolve;
+    });
+    (invoke as Mock).mockImplementation((command: string, args: any) => {
+      if (command === "detach_rdp_session" && args.sessionId === "be-old") {
+        return oldDetach;
+      }
+      return Promise.resolve();
+    });
+    const original = makeSession("race-rdp", "rdp", {
+      backendSessionId: "be-old",
+    });
+    const replacement = {
+      ...original,
+      backendSessionId: "be-new",
+      shellId: "replacement-viewer",
+    };
+    const rendered = renderDetach({
+      sessions: [original],
+      connections: [makeConnection("conn-race-rdp", "rdp")],
+      visibleSessions: [original],
+      activeSessionId: "race-rdp",
+    });
+
+    let detachPromise!: Promise<void>;
+    act(() => {
+      detachPromise = rendered.result.current.handleSessionDetach("race-rdp");
+    });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("detach_rdp_session", {
+        sessionId: "be-old",
+      });
+    });
+
+    act(() => {
+      rendered.updateProps({
+        sessions: [replacement],
+        visibleSessions: [replacement],
+      });
+      finishOldDetach();
+    });
+    await act(async () => detachPromise);
+
+    expect(invoke).toHaveBeenCalledWith("detach_rdp_session", {
+      sessionId: "be-new",
+    });
+    expect(
+      JSON.parse(localStorage.getItem("detached-session-race-rdp")!).session,
+    ).toEqual(
+      expect.objectContaining({
+        backendSessionId: "be-new",
+        shellId: "replacement-viewer",
+      }),
+    );
+    expect(rendered.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        backendSessionId: "be-new",
+        shellId: "replacement-viewer",
+      }),
+    });
+    const replacementDetachOrder = (invoke as Mock).mock.invocationCallOrder[
+      (invoke as Mock).mock.calls.findIndex(
+        ([command, args]) =>
+          command === "detach_rdp_session" && args.sessionId === "be-new",
+      )
+    ];
+    expect(replacementDetachOrder).toBeLessThan(
+      mockWebviewCreate.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("awaits the latest WinRM backend handoff before persisting or opening", async () => {
+    autoReplyTerminalBuffer = false;
+    const opening = makeSession("ps-race", "winrm", {
+      backendSessionId: undefined,
+      status: "connecting",
+    });
+    const opened = {
+      ...opening,
+      backendSessionId: "ps-backend-new",
+      status: "connected" as const,
+      lastActivity: new Date("2026-07-19T10:00:00.000Z"),
+    };
+    const rendered = renderDetach({
+      sessions: [opening],
+      connections: [makeConnection("conn-ps-race", "winrm")],
+      visibleSessions: [opening],
+      activeSessionId: "ps-race",
+    });
+
+    let detachPromise!: Promise<void>;
+    act(() => {
+      detachPromise = rendered.result.current.handleSessionDetach("ps-race");
+    });
+    await waitFor(() => {
+      expect(mockEmit).toHaveBeenCalledWith("request-terminal-buffer", {
+        sessionId: "ps-race",
+      });
+    });
+
+    act(() => {
+      rendered.updateProps({ sessions: [opened], visibleSessions: [opened] });
+      terminalBufferListeners.forEach((handler) =>
+        handler({
+          payload: { sessionId: "ps-race", buffer: "latest-buffer" },
+        }),
+      );
+    });
+    await act(async () => detachPromise);
+
+    expect(invoke).toHaveBeenCalledWith("detach_powershell_session", {
+      sessionId: "ps-backend-new",
+    });
+    const stored = JSON.parse(
+      localStorage.getItem("detached-session-ps-race")!,
+    );
+    expect(stored.session).toEqual(
+      expect.objectContaining({
+        backendSessionId: "ps-backend-new",
+        status: "connected",
+        terminalBuffer: "latest-buffer",
+      }),
+    );
+    expect(rendered.dispatch).toHaveBeenLastCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        backendSessionId: "ps-backend-new",
+        status: "connected",
+      }),
+    });
+    const powershellDetach = (invoke as Mock).mock.invocationCallOrder[
+      (invoke as Mock).mock.calls.findIndex(
+        ([command]) => command === "detach_powershell_session",
+      )
+    ];
+    expect(powershellDetach).toBeLessThan(
+      mockWebviewCreate.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not call detach_rdp_session for SSH sessions", async () => {
@@ -298,6 +471,17 @@ describe("useSessionDetach", () => {
       status: "connected",
       vpnLeaseOwnerId: "owner-current",
       vpnLeaseOwnerIds: ["owner-old", "owner-current"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-current",
+          backendSessionId: "be-rdp1",
+          protocol: "rdp",
+          status: "active",
+        },
+      ],
+      lifecycleActorGeneration: 4,
+      lifecycleWriterId: "detached-rdp1",
+      lifecycleRevision: 9,
       layout: {
         x: 0,
         y: 0,
@@ -319,6 +503,17 @@ describe("useSessionDetach", () => {
         id: "rdp1",
         vpnLeaseOwnerId: "owner-current",
         vpnLeaseOwnerIds: ["owner-old", "owner-current"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-current",
+            backendSessionId: "be-rdp1",
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
+        lifecycleActorGeneration: 5,
+        lifecycleWriterId: "main",
+        lifecycleRevision: 10,
         layout: expect.objectContaining({
           isDetached: false,
           windowId: undefined,
@@ -369,19 +564,112 @@ describe("useSessionDetach", () => {
     });
   });
 
-  it("continues gracefully when detach_rdp_session fails", async () => {
-    (invoke as Mock).mockRejectedValueOnce(new Error("backend error"));
-    const { result, dispatch } = renderDetach();
-    await act(async () => {
-      await result.current.handleSessionDetach("s2");
+  it.each([
+    { protocol: "rdp", command: "detach_rdp_session" },
+    { protocol: "raw", command: "detach_raw_socket" },
+    { protocol: "winrm", command: "detach_powershell_session" },
+  ])(
+    "fails closed without persisting or opening when $command fails",
+    async ({ protocol, command }) => {
+      const failing = makeSession("handoff-failure", protocol);
+      const preserveSignal = vi.fn();
+      window.addEventListener("sorng:session-will-detach", preserveSignal);
+      (invoke as Mock).mockImplementation((invokedCommand: string) =>
+        invokedCommand === command
+          ? Promise.reject(new Error("backend error"))
+          : Promise.resolve(undefined),
+      );
+      const rendered = renderDetach({
+        sessions: [failing],
+        connections: [makeConnection("conn-handoff-failure", protocol)],
+        visibleSessions: [failing],
+        activeSessionId: failing.id,
+      });
+
+      await act(async () => {
+        await rendered.result.current.handleSessionDetach(failing.id);
+      });
+
+      expect(invoke).toHaveBeenCalledWith(
+        command,
+        expect.objectContaining(
+          protocol === "rdp"
+            ? { sessionId: failing.backendSessionId }
+            : { sessionId: failing.backendSessionId },
+        ),
+      );
+      expect(localStorage.getItem(`detached-session-${failing.id}`)).toBeNull();
+      expect(rendered.dispatch).not.toHaveBeenCalled();
+      expect(rendered.setActiveSessionId).not.toHaveBeenCalled();
+      expect(rendered.registerWindow).not.toHaveBeenCalled();
+      expect(mockWebviewCreate).not.toHaveBeenCalled();
+      expect(preserveSignal).not.toHaveBeenCalled();
+      window.removeEventListener("sorng:session-will-detach", preserveSignal);
+    },
+  );
+
+  it("waits for a connecting WinRM actor and detaches it before opening", async () => {
+    const opening = makeSession("winrm-delayed", "winrm", {
+      backendSessionId: undefined,
+      status: "connecting",
     });
-    // Should still dispatch the UPDATE_SESSION
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "UPDATE_SESSION",
-        payload: expect.objectContaining({ id: "s2" }),
-      }),
+    const opened = {
+      ...opening,
+      backendSessionId: "powershell-delayed-actor",
+      status: "connected" as const,
+    };
+    const rendered = renderDetach({
+      sessions: [opening],
+      connections: [makeConnection("conn-winrm-delayed", "winrm")],
+      visibleSessions: [opening],
+      activeSessionId: opening.id,
+    });
+
+    let detachPromise!: Promise<void>;
+    act(() => {
+      detachPromise = rendered.result.current.handleSessionDetach(opening.id);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    act(() => {
+      rendered.updateProps({ sessions: [opened], visibleSessions: [opened] });
+    });
+    await act(async () => detachPromise);
+
+    expect(invoke).toHaveBeenCalledWith("detach_powershell_session", {
+      sessionId: "powershell-delayed-actor",
+    });
+    expect(mockWebviewCreate).toHaveBeenCalledOnce();
+    expect(
+      JSON.parse(localStorage.getItem("detached-session-winrm-delayed")!)
+        .session.backendSessionId,
+    ).toBe("powershell-delayed-actor");
+  });
+
+  it("aborts a still-connecting WinRM detach when no actor becomes available", async () => {
+    const opening = makeSession("winrm-unresolved", "winrm", {
+      backendSessionId: undefined,
+      status: "connecting",
+    });
+    const { result, dispatch, registerWindow } = renderDetach({
+      sessions: [opening],
+      connections: [makeConnection("conn-winrm-unresolved", "winrm")],
+      visibleSessions: [opening],
+      activeSessionId: opening.id,
+    });
+    await act(async () => {
+      await result.current.handleSessionDetach(opening.id);
+    });
+
+    expect(invoke).not.toHaveBeenCalledWith(
+      "detach_powershell_session",
+      expect.anything(),
     );
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(registerWindow).not.toHaveBeenCalled();
+    expect(mockWebviewCreate).not.toHaveBeenCalled();
+    expect(
+      localStorage.getItem("detached-session-winrm-unresolved"),
+    ).toBeNull();
   });
 
   it("sets disconnected existing RDP session to connecting on reattach", () => {

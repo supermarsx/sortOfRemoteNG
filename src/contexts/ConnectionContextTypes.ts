@@ -37,14 +37,23 @@ export type ConnectionAction =
   | { type: "UPDATE_CONNECTION"; payload: Connection }
   | { type: "DELETE_CONNECTION"; payload: string }
   | { type: "SELECT_CONNECTION"; payload: Connection | null }
-  | { type: "TOGGLE_SELECT_CONNECTION"; payload: { id: string; ctrl: boolean; shift: boolean } }
+  | {
+      type: "TOGGLE_SELECT_CONNECTION";
+      payload: { id: string; ctrl: boolean; shift: boolean };
+    }
   | { type: "CLEAR_SELECTION" }
   | { type: "SET_FILTER"; payload: Partial<ConnectionFilter> }
   | { type: "ADD_SESSION"; payload: ConnectionSession }
-  | { type: "UPDATE_SESSION"; payload: ConnectionSession }
+  | {
+      type: "UPDATE_SESSION";
+      payload: Pick<ConnectionSession, "id"> & Partial<ConnectionSession>;
+    }
   | { type: "REMOVE_SESSION"; payload: string }
   | { type: "SET_SESSIONS"; payload: ConnectionSession[] }
-  | { type: "REORDER_SESSIONS"; payload: { fromIndex: number; toIndex: number } }
+  | {
+      type: "REORDER_SESSIONS";
+      payload: { fromIndex: number; toIndex: number };
+    }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "TOGGLE_SIDEBAR" }
   | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean }
@@ -60,4 +69,6 @@ export interface ConnectionContextType {
   loadData: () => Promise<void>;
 }
 
-export const ConnectionContext = createContext<ConnectionContextType | undefined>(undefined);
+export const ConnectionContext = createContext<
+  ConnectionContextType | undefined
+>(undefined);

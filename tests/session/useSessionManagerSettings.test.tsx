@@ -385,6 +385,153 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
+  it("rebuilds exact VPN ownership when restoring a saved session", async () => {
+    const connection = makeConnection();
+    const { result } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.restoreSession(
+        {
+          id: "restored-vpn-session",
+          connectionId: connection.id,
+          name: connection.name,
+          protocol: connection.protocol,
+          hostname: connection.hostname,
+          status: "connected",
+          backendSessionId: "backend-restored",
+          vpnLeaseOwnerId: "owner-restored",
+          vpnLeaseOwnerIds: ["owner-restored"],
+          vpnLeaseBindings: [
+            {
+              ownerId: "owner-restored",
+              backendSessionId: "backend-restored",
+              protocol: "ssh",
+              status: "active",
+            },
+          ],
+          lifecycleRevision: 8,
+        },
+        connection,
+      );
+    });
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({
+        id: "restored-vpn-session",
+        backendSessionId: "backend-restored",
+        vpnLeaseOwnerId: "owner-restored",
+        vpnLeaseOwnerIds: ["owner-restored"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-restored",
+            backendSessionId: "backend-restored",
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
+        lifecycleRevision: 9,
+      }),
+    });
+  });
+
+  it("restores quarantined cleanup as a visible error with zero reconnect side effects", async () => {
+    const connection = makeConnection();
+    const quarantine = {
+      proofs: [
+        {
+          kind: "binding" as const,
+          ownerId: "owner-quarantined",
+          backendSessionId: "backend-quarantined",
+          protocol: "ssh" as const,
+          status: "cleanup-pending" as const,
+        },
+      ],
+      proofIncomplete: false,
+    };
+    const { result } = renderHook(() => useSessionManager());
+    connectionMocks.dispatch.mockClear();
+    connectionMocks.invoke.mockClear();
+    connectionMocks.executeScriptsForTrigger.mockClear();
+
+    await act(async () => {
+      await result.current.restoreSession(
+        {
+          id: "restored-quarantined",
+          connectionId: connection.id,
+          name: connection.name,
+          protocol: connection.protocol,
+          hostname: connection.hostname,
+          status: "error",
+          vpnLeaseCleanupQuarantine: quarantine,
+        },
+        connection,
+      );
+    });
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({
+        id: "restored-quarantined",
+        status: "error",
+        errorMessage: expect.stringMatching(/quarantined.*manual cleanup/i),
+        vpnLeaseCleanupQuarantine: quarantine,
+      }),
+    });
+    expect(connectionMocks.invoke).not.toHaveBeenCalled();
+    expect(connectionMocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+    expect(connectionMocks.startChecking).not.toHaveBeenCalled();
+  });
+
+  it("keeps a quarantined manual reconnect visibly blocked with zero side effects", async () => {
+    const connection = makeConnection({ id: "conn-quarantined" });
+    const session = makeSession({
+      id: "session-quarantined",
+      connectionId: connection.id,
+      status: "error",
+      vpnLeaseCleanupQuarantine: {
+        proofs: [
+          {
+            kind: "binding",
+            ownerId: "owner-quarantined",
+            backendSessionId: "backend-quarantined",
+            protocol: "ssh",
+            status: "cleanup-pending",
+          },
+        ],
+        proofIncomplete: false,
+      },
+    });
+    connectionMocks.state = {
+      sessions: [session],
+      connections: [connection],
+    };
+    const { result } = renderHook(() => useSessionManager());
+    connectionMocks.dispatch.mockClear();
+    connectionMocks.invoke.mockClear();
+
+    await act(async () => {
+      await result.current.handleReconnect(session);
+    });
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "UPDATE_SESSION",
+      payload: expect.objectContaining({
+        id: session.id,
+        status: "error",
+        errorMessage: expect.stringMatching(/quarantined.*manual cleanup/i),
+        vpnLeaseCleanupQuarantine: session.vpnLeaseCleanupQuarantine,
+      }),
+    });
+    expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ status: "reconnecting" }),
+      }),
+    );
+    expect(connectionMocks.invoke).not.toHaveBeenCalled();
+    expect(connectionMocks.executeScriptsForTrigger).not.toHaveBeenCalled();
+  });
+
   it("allows per-connection warnOnClose=false to override a global warning", async () => {
     const connection = makeConnection({
       id: "conn-existing",

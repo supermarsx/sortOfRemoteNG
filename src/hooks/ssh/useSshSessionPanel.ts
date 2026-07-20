@@ -3,10 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
-  cleanupSessionVpnLeases,
+  cleanupSessionVpnBackend,
   findAssociatedVpnSessions,
-  remainingSessionVpnLeaseOwnerFields,
-  sessionVpnLeaseOwnerIds,
   vpnLeaseCleanupFailureMessage,
 } from "../../utils/network/sessionVpnLeaseCleanup";
 
@@ -138,59 +136,37 @@ export function useSshSessionPanel(isVisible: boolean) {
           sessionId,
         );
 
-      try {
-        if (!backendClosedRef.current.has(sessionId)) {
+      const cleanup = await cleanupSessionVpnBackend({
+        sessions: associatedSessions,
+        protocol: "ssh",
+        backendSessionId: sessionId,
+        backendAlreadyClosed: backendClosedRef.current.has(sessionId),
+        closeBackend: async () => {
           await invoke("disconnect_ssh", { sessionId });
           backendClosedRef.current.add(sessionId);
-        }
-      } catch (cause) {
-        setError(
-          `Disconnect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
-        return false;
-      }
-
-      const cleanup = await cleanupSessionVpnLeases(associatedSessions);
-      const releasedOwners = new Set(cleanup.releasedOwnerIds);
-      const failedOwners = new Set(
-        cleanup.failures.map((failure) => failure.ownerId),
-      );
-      const cleanupError =
-        cleanup.failures.length > 0
-          ? vpnLeaseCleanupFailureMessage("ssh", cleanup)
-          : "";
-
-      associatedSessions.forEach((session) => {
-        const failed = sessionVpnLeaseOwnerIds(session).some((ownerId) =>
-          failedOwners.has(ownerId),
-        );
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: {
-            ...session,
-            backendSessionId: undefined,
-            shellId: undefined,
-            status: failed ? "error" : "disconnected",
-            errorMessage: failed ? cleanupError : undefined,
-            ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
-            lastActivity: new Date(),
-          },
-        });
+        },
+        onSessionsUpdated: (updatedSessions) => {
+          const snapshot = updatedSessions.map((session) => ({ ...session }));
+          associatedSessionsRef.current.set(sessionId, snapshot);
+          snapshot.forEach((session) => {
+            dispatch({ type: "UPDATE_SESSION", payload: session });
+          });
+        },
       });
+      if (cleanup.backendClosed) backendClosedRef.current.add(sessionId);
+      const cleanupFailed =
+        !cleanup.backendClosed ||
+        cleanup.failures.length > 0 ||
+        Boolean(cleanup.blockedReason);
+      const cleanupError =
+        cleanup.blockedReason ??
+        (cleanup.failures.length > 0
+          ? vpnLeaseCleanupFailureMessage("ssh", cleanup)
+          : "SSH cleanup could not be completed. Retry disconnect.");
 
-      if (cleanup.failures.length > 0) {
+      if (cleanupFailed) {
         retainedCleanupRowsRef.current.set(sessionId, nativeSession);
-        associatedSessionsRef.current.set(
-          sessionId,
-          associatedSessions.map((session) => {
-            return {
-              ...session,
-              backendSessionId: undefined,
-              shellId: undefined,
-              ...remainingSessionVpnLeaseOwnerFields(session, releasedOwners),
-            };
-          }),
-        );
+        associatedSessionsRef.current.set(sessionId, cleanup.sessions);
         setSessions((current) =>
           current.some((session) => session.id === sessionId)
             ? current

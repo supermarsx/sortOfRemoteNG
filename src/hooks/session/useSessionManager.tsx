@@ -35,16 +35,21 @@ import {
 import { sanitizeBehaviorText } from "../../utils/behavior/template";
 import { BehaviorWindowActionRuntime } from "../../utils/behavior/windowActions";
 import {
-  cleanupSessionVpnLeases,
+  cleanupSessionVpnBackend,
   findAssociatedVpnSessions,
-  remainingSessionVpnLeaseOwnerFields,
-  vpnLeaseCleanupFailureMessage,
+  sessionVpnBackendIds,
+  sessionVpnLeaseOwnerIds,
 } from "../../utils/network/sessionVpnLeaseCleanup";
 import {
   useSessionLifecycleEvents,
   type SessionLifecycleNotification,
   type SessionReconnectRequest,
 } from "./useSessionLifecycleEvents";
+import type { PersistedConnectionSession } from "../../utils/session/sessionPersistence";
+import {
+  hasSessionVpnCleanupQuarantine,
+  VPN_CLEANUP_QUARANTINE_ERROR,
+} from "../../utils/session/sessionLifecycle";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -193,6 +198,7 @@ export const useSessionManager = () => {
     session: ConnectionSession,
     connection: Connection,
   ) => {
+    if (hasSessionVpnCleanupQuarantine(session)) return;
     const settings = settingsManager.getSettings();
     const startTime = Date.now();
 
@@ -447,6 +453,17 @@ export const useSessionManager = () => {
     session: ConnectionSession,
     connection: Connection,
   ) => {
+    if (hasSessionVpnCleanupQuarantine(session)) {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          status: "error",
+          errorMessage: VPN_CLEANUP_QUARANTINE_ERROR,
+        },
+      });
+      return;
+    }
     const updatedSession: ConnectionSession = {
       ...session,
       status: "reconnecting",
@@ -477,6 +494,17 @@ export const useSessionManager = () => {
       stateRef.current.sessions.find(
         (candidate) => candidate.id === request.session.id,
       ) ?? request.session;
+    if (hasSessionVpnCleanupQuarantine(latest)) {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...latest,
+          status: "error",
+          errorMessage: VPN_CLEANUP_QUARANTINE_ERROR,
+        },
+      });
+      return false;
+    }
     const attempts = latest.reconnectAttempts ?? 0;
     const maxAttempts =
       request.action.maxAttempts ?? latest.maxReconnectAttempts ?? 0;
@@ -607,10 +635,26 @@ export const useSessionManager = () => {
    * Closes an active session and performs cleanup.
    * @param sessionId - ID of the session to close.
    */
-  const handleSessionClose = async (sessionId: string): Promise<boolean> => {
-    const currentState = stateRef.current;
-    const session = currentState.sessions.find((s) => s.id === sessionId);
-    if (!session) return false;
+  const handleSessionClose = async (
+    sessionId: string,
+    authoritativeSession?: ConnectionSession,
+  ): Promise<boolean> => {
+    const storedState = stateRef.current;
+    const storedSession = storedState.sessions.find((s) => s.id === sessionId);
+    if (!storedSession) return false;
+    const session =
+      authoritativeSession?.id === sessionId
+        ? { ...storedSession, ...authoritativeSession }
+        : storedSession;
+    const currentState =
+      session === storedSession
+        ? storedState
+        : {
+            ...storedState,
+            sessions: storedState.sessions.map((candidate) =>
+              candidate.id === sessionId ? session : candidate,
+            ),
+          };
 
     // Tool/winmgmt tabs just get removed — no connection lifecycle.
     if (
@@ -630,7 +674,12 @@ export const useSessionManager = () => {
     let preserveRdpBackend = false;
     const retryingVpnCleanup =
       session.status === "error" &&
-      session.errorMessage?.includes("VPN cleanup needs attention") === true;
+      ((session.vpnLeaseBindings ?? []).some(
+        (binding) => binding.status !== "active",
+      ) ||
+        session.errorMessage?.includes("VPN cleanup needs attention") ===
+          true ||
+        session.errorMessage?.includes("VPN ownership") === true);
 
     // Integration tabs have no transport cleanup or legacy disconnect script,
     // but still own a real per-connection lifecycle.
@@ -779,95 +828,80 @@ export const useSessionManager = () => {
     const vpnBackedProtocol =
       session.protocol === "ssh" ||
       (session.protocol === "rdp" && disconnectRdpBackend);
-    const associatedVpnSessions = vpnBackedProtocol
-      ? findAssociatedVpnSessions(
-          currentState.sessions,
-          session.protocol as "ssh" | "rdp",
-          session.backendSessionId ?? session.connectionId,
-          session.connectionId,
-        )
-      : [];
-    if (
-      vpnBackedProtocol &&
-      !associatedVpnSessions.some((candidate) => candidate.id === session.id)
-    ) {
-      associatedVpnSessions.push(session);
-    }
-    if (
-      session.protocol === "ssh" &&
-      session.backendSessionId &&
-      !retryingVpnCleanup
-    ) {
-      try {
-        await invoke("disconnect_ssh", { sessionId: session.backendSessionId });
-      } catch (error) {
-        console.error("Failed to disconnect SSH session:", error);
-        const message = `SSH disconnect failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: { ...session, status: "error", errorMessage: message },
-        });
-        return false;
-      }
-    }
-
-    if (
-      session.protocol === "rdp" &&
-      disconnectRdpBackend &&
-      !retryingVpnCleanup &&
-      (session.backendSessionId || session.status !== "error")
-    ) {
-      try {
-        await invoke("disconnect_rdp", {
-          sessionId: session.backendSessionId,
-          connectionId: session.connectionId,
-        });
-      } catch (error) {
-        console.error("Failed to disconnect RDP session:", error);
-        const message = `RDP disconnect failed: ${sanitizeBehaviorText(error) || "Unknown error"}`;
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: { ...session, status: "error", errorMessage: message },
-        });
-        return false;
-      }
-    }
-
     if (vpnBackedProtocol) {
-      const cleanup = await cleanupSessionVpnLeases(associatedVpnSessions);
-      const releasedOwners = new Set(cleanup.releasedOwnerIds);
-      const cleanupError =
-        cleanup.failures.length > 0
-          ? vpnLeaseCleanupFailureMessage(
-              session.protocol as "ssh" | "rdp",
-              cleanup,
-            )
-          : "";
+      const protocol = session.protocol as "ssh" | "rdp";
+      let workingSessions = [...currentState.sessions];
+      let targetSession =
+        workingSessions.find((candidate) => candidate.id === session.id) ??
+        session;
+      const backendSessionIds = sessionVpnBackendIds(targetSession, protocol);
 
-      associatedVpnSessions.forEach((candidate) => {
+      // An old owner-only cleanup row has no durable proof that its actor was
+      // closed. Releasing it would risk tearing down a live replacement route.
+      if (
+        backendSessionIds.length === 0 &&
+        sessionVpnLeaseOwnerIds(targetSession).length > 0
+      ) {
+        const message = `${protocol.toUpperCase()} VPN ownership is from an older uncorrelated session record and cannot be released automatically. Verify the route in the VPN manager and remove it manually.`;
         dispatch({
           type: "UPDATE_SESSION",
           payload: {
-            ...candidate,
-            backendSessionId:
-              cleanup.failures.length > 0
-                ? candidate.backendSessionId
-                : undefined,
-            shellId:
-              cleanup.failures.length === 0 &&
-              candidate.protocol.toLowerCase() === "ssh"
-                ? undefined
-                : candidate.shellId,
-            status: cleanup.failures.length > 0 ? "error" : "disconnected",
-            errorMessage:
-              cleanup.failures.length > 0 ? cleanupError : undefined,
-            ...remainingSessionVpnLeaseOwnerFields(candidate, releasedOwners),
+            ...targetSession,
+            status: "error",
+            errorMessage: message,
             lastActivity: new Date(),
           },
         });
-      });
+        return false;
+      }
 
-      if (cleanup.failures.length > 0) return false;
+      let cleanupFailed = false;
+      for (const backendSessionId of backendSessionIds) {
+        const associated = findAssociatedVpnSessions(
+          workingSessions,
+          protocol,
+          backendSessionId,
+          targetSession.connectionId,
+        );
+        if (
+          !associated.some((candidate) => candidate.id === targetSession.id)
+        ) {
+          associated.push(targetSession);
+        }
+        const cleanup = await cleanupSessionVpnBackend({
+          sessions: associated,
+          protocol,
+          backendSessionId,
+          closeBackend: () =>
+            invoke(protocol === "ssh" ? "disconnect_ssh" : "disconnect_rdp", {
+              sessionId: backendSessionId,
+            }),
+          onSessionsUpdated: (updatedSessions) => {
+            const updatedById = new Map(
+              updatedSessions.map((candidate) => [candidate.id, candidate]),
+            );
+            workingSessions = workingSessions.map(
+              (candidate) => updatedById.get(candidate.id) ?? candidate,
+            );
+            updatedSessions.forEach((candidate) => {
+              dispatch({ type: "UPDATE_SESSION", payload: candidate });
+            });
+            targetSession =
+              workingSessions.find(
+                (candidate) => candidate.id === targetSession.id,
+              ) ?? targetSession;
+          },
+        });
+        if (
+          !cleanup.backendClosed ||
+          cleanup.failures.length > 0 ||
+          cleanup.blockedReason
+        ) {
+          cleanupFailed = true;
+        }
+      }
+
+      if (cleanupFailed) return false;
     }
 
     if (session.protocol === "raw" && session.backendSessionId) {
@@ -1176,24 +1210,11 @@ export const useSessionManager = () => {
    * @param connection - The connection definition.
    */
   const restoreSession = async (
-    sessionData: {
-      id: string;
-      connectionId: string;
-      name: string;
-      protocol: string;
-      hostname: string;
-      status: string;
-      backendSessionId?: string;
-      shellId?: string;
-      zoomLevel?: number;
-      layout?: ConnectionSession["layout"];
-      group?: string;
-      startTime?: string;
-      lastActivity?: string;
-    },
+    sessionData: PersistedConnectionSession,
     connection: Connection,
   ) => {
     const settings = settingsManager.getSettings();
+    const cleanupQuarantined = hasSessionVpnCleanupQuarantine(sessionData);
 
     // Check if session already exists (avoid duplicates)
     const existingSession = state.sessions.find(
@@ -1214,7 +1235,7 @@ export const useSessionManager = () => {
       id: sessionData.id,
       connectionId: sessionData.connectionId,
       name: sessionData.name || connection.name,
-      status: "reconnecting", // Start as reconnecting since we need to re-establish
+      status: cleanupQuarantined ? "error" : "reconnecting",
       startTime: sessionData.startTime
         ? new Date(sessionData.startTime)
         : new Date(),
@@ -1227,6 +1248,17 @@ export const useSessionManager = () => {
       ),
       backendSessionId: sessionData.backendSessionId,
       shellId: sessionData.shellId,
+      vpnLeaseOwnerId: sessionData.vpnLeaseOwnerId,
+      vpnLeaseOwnerIds: sessionData.vpnLeaseOwnerIds,
+      vpnLeaseBindings: sessionData.vpnLeaseBindings,
+      vpnLeaseReleaseTombstones: sessionData.vpnLeaseReleaseTombstones,
+      vpnLeaseCleanupQuarantine: sessionData.vpnLeaseCleanupQuarantine,
+      errorMessage: cleanupQuarantined
+        ? VPN_CLEANUP_QUARANTINE_ERROR
+        : undefined,
+      lifecycleRevision: (sessionData.lifecycleRevision ?? 0) + 1,
+      lifecycleActorGeneration: (sessionData.lifecycleActorGeneration ?? 0) + 1,
+      lifecycleWriterId: "main",
       zoomLevel: sessionData.zoomLevel,
       layout: sessionData.layout,
       group: sessionData.group,
@@ -1237,6 +1269,8 @@ export const useSessionManager = () => {
 
     dispatch({ type: "ADD_SESSION", payload: restoredSession });
     setActiveSessionId(restoredSession.id);
+
+    if (cleanupQuarantined) return;
 
     await lifecycle.emitStarted(restoredSession, connection, {
       reason: "restore",

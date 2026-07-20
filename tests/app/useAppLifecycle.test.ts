@@ -8,6 +8,10 @@ import i18n, { loadLanguage } from "../../src/i18n";
 
 const lifecycleMocks = vi.hoisted(() => ({
   loadData: vi.fn(),
+  state: {
+    sessions: [] as any[],
+    connections: [] as any[],
+  },
 }));
 
 // Mock i18next and related modules
@@ -41,10 +45,7 @@ vi.mock("react-i18next", () => ({
 // Mock the ConnectionProvider context
 vi.mock("../../src/contexts/useConnections", () => ({
   useConnections: () => ({
-    state: {
-      sessions: [],
-      connections: [],
-    },
+    state: lifecycleMocks.state,
     addConnection: vi.fn(),
     removeConnection: vi.fn(),
     updateConnection: vi.fn(),
@@ -62,6 +63,8 @@ describe("useAppLifecycle", () => {
     vi.clearAllMocks();
     lifecycleMocks.loadData.mockReset();
     lifecycleMocks.loadData.mockResolvedValue(undefined);
+    lifecycleMocks.state = { sessions: [], connections: [] };
+    sessionStorage.clear();
 
     // Setup mock instances
     mockSettingsManager = {
@@ -103,6 +106,7 @@ describe("useAppLifecycle", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.documentElement.removeAttribute("dir");
+    sessionStorage.clear();
   });
 
   it("should initialize app successfully", async () => {
@@ -329,6 +333,71 @@ describe("useAppLifecycle", () => {
       "Application initialized",
       undefined,
       "sortOfRemoteNG started successfully",
+    );
+  });
+
+  it("persists exact VPN ownership for reload restoration", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      reconnectOnReload: true,
+    });
+    lifecycleMocks.state.sessions = [
+      {
+        id: "session-vpn",
+        connectionId: "connection-vpn",
+        name: "VPN SSH",
+        protocol: "ssh",
+        hostname: "host.example",
+        status: "connected",
+        startTime: new Date("2026-07-19T08:00:00.000Z"),
+        backendSessionId: "backend-vpn",
+        vpnLeaseOwnerId: "owner-vpn",
+        vpnLeaseOwnerIds: ["owner-vpn"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-vpn",
+            backendSessionId: "backend-vpn",
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
+        lifecycleRevision: 4,
+      },
+    ];
+
+    renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem("mremote-active-sessions")).not.toBeNull();
+    });
+    const [saved] = JSON.parse(
+      sessionStorage.getItem("mremote-active-sessions")!,
+    );
+    expect(saved).toEqual(
+      expect.objectContaining({
+        backendSessionId: "backend-vpn",
+        vpnLeaseOwnerId: "owner-vpn",
+        vpnLeaseOwnerIds: ["owner-vpn"],
+        vpnLeaseBindings: [
+          {
+            ownerId: "owner-vpn",
+            backendSessionId: "backend-vpn",
+            protocol: "ssh",
+            status: "active",
+          },
+        ],
+        lifecycleRevision: 4,
+      }),
     );
   });
 });

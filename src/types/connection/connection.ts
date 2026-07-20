@@ -1363,6 +1363,40 @@ export function createSSHJumpLayer(
   };
 }
 
+export const MAX_SESSION_VPN_LEASE_BINDINGS = 32;
+
+export interface SessionVpnLeaseBinding {
+  /** Opaque owner passed to the native VPN lease manager. */
+  ownerId: string;
+  /** Exact native SSH/RDP actor whose lifetime protects this lease. */
+  backendSessionId: string;
+  protocol: "ssh" | "rdp";
+  /**
+   * `backend-closed` is durable proof that owner release may be retried without
+   * closing a replacement actor. `cleanup-pending` means the actor close failed.
+   */
+  status: "active" | "cleanup-pending" | "backend-closed";
+}
+
+export type SessionVpnLeaseReleaseTombstone = Pick<
+  SessionVpnLeaseBinding,
+  "ownerId" | "backendSessionId" | "protocol"
+>;
+
+export type SessionVpnLeaseCleanupProof =
+  | ({ kind: "binding" } & SessionVpnLeaseBinding)
+  | ({ kind: "release-tombstone" } & SessionVpnLeaseReleaseTombstone);
+
+/**
+ * Exact cleanup evidence that could not fit the normal bounded ownership
+ * arrays. Any populated quarantine is fail-closed until cleanup/manual repair.
+ */
+export interface SessionVpnLeaseCleanupQuarantine {
+  proofs: SessionVpnLeaseCleanupProof[];
+  /** Some additional proof could not be represented even in quarantine. */
+  proofIncomplete: boolean;
+}
+
 export interface ConnectionSession {
   id: string;
   connectionId: string;
@@ -1402,6 +1436,14 @@ export interface ConnectionSession {
   // Backend session handles
   backendSessionId?: string;
   shellId?: string;
+  /** Monotonic version for cross-window native actor/VPN ownership state. */
+  lifecycleRevision?: number;
+  /** Monotonic native actor generation; cleanup of A cannot supersede live B. */
+  lifecycleActorGeneration?: number;
+  /** Last lifecycle writer (main or detached window label) for tie-breaking. */
+  lifecycleWriterId?: string;
+  /** In-process reservation identity; never persisted or sent over window IPC. */
+  lifecycleActorReservationId?: number;
   /**
    * Primary opaque backend owner token for an SSH/RDP session's machine-wide
    * VPN lease. Kept for compatibility with persisted sessions created before
@@ -1414,6 +1456,16 @@ export interface ConnectionSession {
    * unmounts and Session Manager actions.
    */
   vpnLeaseOwnerIds?: string[];
+  /**
+   * Durable backend-to-owner correlation for safe cleanup across reloads,
+   * detached windows, failed stale attempts, and Session Manager retries.
+   * The list is bounded by {@link MAX_SESSION_VPN_LEASE_BINDINGS}.
+   */
+  vpnLeaseBindings?: SessionVpnLeaseBinding[];
+  /** Bounded exact release proofs that prevent stale windows resurrecting leases. */
+  vpnLeaseReleaseTombstones?: SessionVpnLeaseReleaseTombstone[];
+  /** Fail-closed overflow ledger for exact VPN cleanup/release evidence. */
+  vpnLeaseCleanupQuarantine?: SessionVpnLeaseCleanupQuarantine;
 
   // Zoom level
   zoomLevel?: number;

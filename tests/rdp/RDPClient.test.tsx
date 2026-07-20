@@ -8,11 +8,18 @@ import {
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RDPClient from "../../src/components/rdp/RDPClient";
-import { ConnectionSession } from "../../src/types/connection/connection";
+import {
+  ConnectionSession,
+  MAX_SESSION_VPN_LEASE_BINDINGS,
+} from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { getStoredIdentity } from "../../src/utils/auth/trustStore";
 import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
+import {
+  hasSessionLifecycleActorAttempt,
+  resetSessionLifecycleAllocatorForTests,
+} from "../../src/utils/session/sessionLifecycle";
 
 // Mock Tauri invoke + Channel
 vi.mock("@tauri-apps/api/core", () => ({
@@ -275,6 +282,7 @@ const installOpenVpnLeaseRuntime = (
 
 describe("RDPClient", () => {
   beforeEach(() => {
+    resetSessionLifecycleAllocatorForTests();
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
@@ -383,7 +391,9 @@ describe("RDPClient", () => {
         expect(mockInvoke).toHaveBeenCalledWith(
           "acquire_vpn_leases",
           expect.objectContaining({
-            ownerId: expect.stringMatching(/^test-rdp-session:rdp:\d+$/),
+            ownerId: expect.stringMatching(
+              /^test-rdp-session:rdp:[0-9a-f-]+$/i,
+            ),
             requests: [
               {
                 vpn_type: "openvpn",
@@ -438,7 +448,7 @@ describe("RDPClient", () => {
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
-          ownerId: expect.stringMatching(/^test-rdp-session:rdp:\d+$/),
+          ownerId: expect.stringMatching(/^test-rdp-session:rdp:[0-9a-f-]+$/i),
         });
       });
       commands = mockInvoke.mock.calls.map(([command]) => command);
@@ -514,6 +524,77 @@ describe("RDPClient", () => {
         await result.current.handleDisconnect();
       });
       expect(releaseCalls).toHaveLength(2);
+    });
+
+    it("closes a post-create RDP actor before releasing its VPN when binding throws", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const invalidOwnershipSession: ConnectionSession = {
+        ...mockSession,
+        vpnLeaseBindings: [
+          {
+            ownerId: "",
+            backendSessionId: "invalid-existing-actor",
+            protocol: "rdp",
+            status: "active",
+          },
+        ],
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime();
+      const { result } = renderHook(
+        () => useRDPClient(invalidOwnershipSession),
+        { wrapper: hookWrapper },
+      );
+
+      await waitFor(() =>
+        expect(result.current.connectionStatus).toBe("error"),
+      );
+      expect(acquiredOwners).toHaveLength(1);
+      expect(releaseCalls).toEqual([acquiredOwners[0]]);
+      const commands = mockInvoke.mock.calls.map(([command]) => command);
+      expect(commands.indexOf("connect_rdp")).toBeGreaterThanOrEqual(0);
+      expect(commands.indexOf("connect_rdp")).toBeLessThan(
+        commands.indexOf("disconnect_rdp"),
+      );
+      expect(commands.indexOf("disconnect_rdp")).toBeLessThan(
+        commands.indexOf("release_vpn_leases"),
+      );
+      expect(mockInvoke).toHaveBeenCalledWith("disconnect_rdp", {
+        sessionId: "rdp-session-123",
+      });
+    });
+
+    it("fails before VPN acquisition or RDP creation at the binding safety cap", async () => {
+      (mockConnection as any).security = {
+        openvpn: { enabled: true, configId: "vpn-office" },
+      };
+      const cappedSession: ConnectionSession = {
+        ...mockSession,
+        vpnLeaseBindings: Array.from(
+          { length: MAX_SESSION_VPN_LEASE_BINDINGS },
+          (_, index) => ({
+            ownerId: `capped-owner-${index}`,
+            backendSessionId: `capped-backend-${index}`,
+            protocol: "rdp" as const,
+            status: "cleanup-pending" as const,
+          }),
+        ),
+      };
+      const { acquiredOwners, releaseCalls } = installOpenVpnLeaseRuntime();
+      const { result } = renderHook(() => useRDPClient(cappedSession), {
+        wrapper: hookWrapper,
+      });
+
+      await waitFor(() =>
+        expect(result.current.connectionStatus).toBe("error"),
+      );
+      expect(acquiredOwners).toEqual([]);
+      expect(releaseCalls).toEqual([]);
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "connect_rdp",
+        expect.anything(),
+      );
     });
 
     it("does not release the RDP owner when native disconnect fails", async () => {
@@ -633,8 +714,14 @@ describe("RDPClient", () => {
 
       emitStatus("disconnected", "Remote session closed", "rdp-session-123");
       await waitFor(() => {
-        expect(releaseCalls).toEqual([oldOwnerId, oldOwnerId, currentOwnerId]);
+        expect(releaseCalls).toHaveLength(3);
       });
+      expect(
+        releaseCalls.filter((ownerId) => ownerId === oldOwnerId),
+      ).toHaveLength(2);
+      expect(
+        releaseCalls.filter((ownerId) => ownerId === currentOwnerId),
+      ).toHaveLength(1);
 
       // Pending/current/persisted sources are deduplicated, and successful
       // cleanup removes both tokens from every source.
@@ -1629,6 +1716,112 @@ describe("RDPClient", () => {
   });
 
   describe("Cleanup", () => {
+    it("aborts after deferred discovery when quarantine lands mid-init", async () => {
+      let resumeDiscovery!: () => void;
+      mockInvoke.mockImplementation((command: string) => {
+        if (command === "list_rdp_sessions") {
+          return new Promise((resolve) => {
+            resumeDiscovery = () => resolve([]);
+          });
+        }
+        return Promise.resolve(undefined);
+      });
+      const view = renderHook(
+        ({ activeSession }: { activeSession: ConnectionSession }) =>
+          useRDPClient(activeSession),
+        {
+          initialProps: { activeSession: mockSession },
+          wrapper: hookWrapper,
+        },
+      );
+      await waitFor(() => {
+        expect(hasSessionLifecycleActorAttempt(mockSession.id)).toBe(true);
+        expect(mockInvoke).toHaveBeenCalledWith("list_rdp_sessions");
+      });
+
+      const quarantined: ConnectionSession = {
+        ...mockSession,
+        status: "error",
+        vpnLeaseCleanupQuarantine: {
+          proofs: [
+            {
+              kind: "binding",
+              ownerId: "owner-quarantined",
+              backendSessionId: "backend-quarantined",
+              protocol: "rdp",
+              status: "cleanup-pending",
+            },
+          ],
+          proofIncomplete: false,
+        },
+      };
+      await act(async () => {
+        view.rerender({ activeSession: quarantined });
+        await Promise.resolve();
+        resumeDiscovery();
+      });
+
+      await waitFor(() =>
+        expect(hasSessionLifecycleActorAttempt(mockSession.id)).toBe(false),
+      );
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "acquire_vpn_leases",
+        expect.anything(),
+      );
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "connect_rdp",
+        expect.anything(),
+      );
+      view.unmount();
+    });
+
+    it("cancels the exact hung RDP reservation when props move from A to B", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      mockInvoke.mockImplementation((command, args) => {
+        if (command === "list_rdp_sessions") {
+          return new Promise<never>(() => undefined);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+      const sessionB: ConnectionSession = {
+        ...mockSession,
+        id: "test-rdp-session-b",
+      };
+      const view = renderHook(
+        ({ activeSession }: { activeSession: ConnectionSession }) =>
+          useRDPClient(activeSession),
+        {
+          initialProps: { activeSession: mockSession },
+          wrapper: hookWrapper,
+        },
+      );
+      await waitFor(() =>
+        expect(hasSessionLifecycleActorAttempt(mockSession.id)).toBe(true),
+      );
+      const reservationDispatchIndex =
+        connectionContextMocks.dispatch.mock.calls.findIndex(
+          ([action]) =>
+            typeof action.payload?.lifecycleActorReservationId === "number",
+        );
+      expect(reservationDispatchIndex).toBeGreaterThanOrEqual(0);
+      expect(
+        connectionContextMocks.dispatch.mock.invocationCallOrder[
+          reservationDispatchIndex
+        ],
+      ).toBeLessThan(mockInvoke.mock.invocationCallOrder[0]);
+
+      view.rerender({ activeSession: sessionB });
+      await waitFor(() => {
+        expect(hasSessionLifecycleActorAttempt(mockSession.id)).toBe(false);
+        expect(hasSessionLifecycleActorAttempt(sessionB.id)).toBe(true);
+      });
+
+      view.unmount();
+      expect(hasSessionLifecycleActorAttempt(sessionB.id)).toBe(false);
+    });
+
     it("should cleanup on unmount", async () => {
       const { unmount } = renderWithProviders(mockSession);
 
