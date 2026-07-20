@@ -169,6 +169,105 @@ describe("session VPN lease cleanup", () => {
     ]);
   });
 
+  it("retains a shared owner until every correlated backend is closed", async () => {
+    const session: ConnectionSession = {
+      ...baseSession(),
+      status: "connected",
+      backendSessionId: "native-b",
+      shellId: "shell-b",
+      vpnLeaseOwnerId: "owner-shared",
+      vpnLeaseOwnerIds: ["owner-shared"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-shared",
+          backendSessionId: "native-a",
+          protocol: "ssh",
+          status: "cleanup-pending",
+        },
+        {
+          ownerId: "owner-shared",
+          backendSessionId: "native-b",
+          protocol: "ssh",
+          status: "active",
+        },
+      ],
+    };
+    const closeA = vi.fn(async () => undefined);
+
+    const first = await cleanupSessionVpnBackend({
+      sessions: [session],
+      protocol: "ssh",
+      backendSessionId: "native-a",
+      closeBackend: closeA,
+    });
+
+    expect(closeA).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(
+      expect.objectContaining({
+        backendClosed: true,
+        releasedOwnerIds: [],
+        failures: [],
+        blockedReason: expect.stringMatching(/live replacement backend/i),
+      }),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-shared",
+    });
+    expect(first.sessions[0]).toEqual(
+      expect.objectContaining({
+        backendSessionId: "native-b",
+        shellId: "shell-b",
+        status: "error",
+        vpnLeaseOwnerId: "owner-shared",
+        vpnLeaseOwnerIds: ["owner-shared"],
+        vpnLeaseBindings: [
+          expect.objectContaining({
+            ownerId: "owner-shared",
+            backendSessionId: "native-a",
+            status: "backend-closed",
+          }),
+          expect.objectContaining({
+            ownerId: "owner-shared",
+            backendSessionId: "native-b",
+            status: "active",
+          }),
+        ],
+      }),
+    );
+
+    const closeB = vi.fn(async () => undefined);
+    const second = await cleanupSessionVpnBackend({
+      sessions: first.sessions,
+      protocol: "ssh",
+      backendSessionId: "native-b",
+      closeBackend: closeB,
+    });
+
+    expect(closeB).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledWith("release_vpn_leases", {
+      ownerId: "owner-shared",
+    });
+    expect(second).toEqual(
+      expect.objectContaining({
+        backendClosed: true,
+        releasedOwnerIds: ["owner-shared"],
+        failures: [],
+        blockedReason: undefined,
+      }),
+    );
+    expect(second.sessions[0]).toEqual(
+      expect.objectContaining({
+        backendSessionId: undefined,
+        shellId: undefined,
+        status: "disconnected",
+        vpnLeaseOwnerId: undefined,
+        vpnLeaseOwnerIds: undefined,
+        vpnLeaseBindings: undefined,
+      }),
+    );
+  });
+
   it("migrates a safe legacy one-backend one-owner row before closing it", async () => {
     const session: ConnectionSession = {
       ...baseSession(),
