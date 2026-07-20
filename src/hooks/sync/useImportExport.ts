@@ -81,6 +81,13 @@ import {
   serializeDatasetsToNativeCsv,
   stripArdAppleAccountCredentials,
 } from "../../components/ImportExport/advancedProtocolPortability";
+import {
+  getVpnPortabilityWarnings,
+  isVpnProfileExecutable,
+  normalizeVpnImportData,
+  prepareVpnConnectionForTransfer,
+  prepareVpnDataForTransfer,
+} from "../../components/ImportExport/vpnPortability";
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
   search: "",
@@ -178,6 +185,7 @@ interface ExportDatabaseDataset {
 
 interface ExportSidecars {
   vpnConnections?: ImportVpnData;
+  vpnWarnings?: string[];
   tunnelChainTemplates?: ImportResult["tunnelChainTemplates"];
   proxyProfiles?: ReturnType<typeof proxyCollectionManager.getProfiles>;
   proxyChains?: ReturnType<typeof proxyCollectionManager.getChains>;
@@ -206,6 +214,7 @@ interface CloneSidecarResult {
   };
   counts: CloneSidecarCounts;
   errors: string[];
+  warnings: string[];
 }
 
 interface ExportBuildResult {
@@ -789,14 +798,79 @@ const remapConnectionVpnReferences = (
   return next;
 };
 
+const remapConnectionVpnReferencesStrict = (
+  connection: Connection,
+  vpnConnectionIds: Map<string, string>,
+  onUnresolved: (profileId: string) => void,
+  requiresMapping: (profileId: string) => boolean = () => true,
+): Connection => {
+  let nextSecurity = connection.security
+    ? { ...connection.security }
+    : undefined;
+  const legacyOpenVpnId = connection.security?.openvpn?.configId;
+  if (legacyOpenVpnId) {
+    const mapped = vpnConnectionIds.get(legacyOpenVpnId);
+    if (mapped) {
+      nextSecurity = {
+        ...nextSecurity,
+        openvpn: {
+          ...connection.security?.openvpn,
+          enabled: connection.security?.openvpn?.enabled ?? true,
+          configId: mapped,
+        },
+      };
+    } else if (requiresMapping(legacyOpenVpnId)) {
+      onUnresolved(legacyOpenVpnId);
+      if (nextSecurity) {
+        const { openvpn: _unresolvedOpenVpn, ...rest } = nextSecurity;
+        nextSecurity = rest;
+      }
+    }
+  }
+
+  const tunnelChain = connection.security?.tunnelChain;
+  if (tunnelChain) {
+    const remappedLayers = tunnelChain.flatMap((layer) => {
+      const currentVpnId = resolveTunnelLayerVpnProfileId(layer);
+      if (!currentVpnId) return [layer];
+      const mapped = vpnConnectionIds.get(currentVpnId);
+      if (!mapped && requiresMapping(currentVpnId)) {
+        onUnresolved(currentVpnId);
+        return [];
+      }
+      return mapped ? [withTunnelLayerVpnProfileId(layer, mapped)] : [layer];
+    });
+    nextSecurity = {
+      ...nextSecurity,
+      ...(remappedLayers.length > 0
+        ? { tunnelChain: remappedLayers }
+        : { tunnelChain: undefined }),
+    };
+  }
+
+  return nextSecurity ? { ...connection, security: nextSecurity } : connection;
+};
+
 const remapConnectionSidecars = (
   connection: Connection,
   result: CloneSidecarResult,
+  options: {
+    requireVpnMapping: boolean;
+    requireProxyChainMapping: boolean;
+    requireTunnelChainMapping: boolean;
+  },
 ): Connection => {
-  let next = remapConnectionVpnReferences(
-    connection,
-    result.idMaps.vpnConnectionIds,
-  );
+  let next = options.requireVpnMapping
+    ? remapConnectionVpnReferencesStrict(
+        connection,
+        result.idMaps.vpnConnectionIds,
+        (profileId) => {
+          result.warnings.push(
+            `Connection "${connection.name}" had unresolved VPN profile ${profileId}; that association was removed.`,
+          );
+        },
+      )
+    : remapConnectionVpnReferences(connection, result.idMaps.vpnConnectionIds);
   const proxyChainId = connection.proxyChainId
     ? result.idMaps.proxyChainIds.get(connection.proxyChainId)
     : undefined;
@@ -804,8 +878,26 @@ const remapConnectionSidecars = (
     ? result.idMaps.tunnelChainIds.get(connection.tunnelChainId)
     : undefined;
 
-  if (proxyChainId) next = { ...next, proxyChainId };
-  if (tunnelChainId) next = { ...next, tunnelChainId };
+  if (proxyChainId) {
+    next = { ...next, proxyChainId };
+  } else if (connection.proxyChainId && options.requireProxyChainMapping) {
+    result.warnings.push(
+      `Connection "${connection.name}" had unresolved proxy chain ${connection.proxyChainId}; that association was removed.`,
+    );
+    const { proxyChainId: _unresolvedProxyChainId, ...withoutProxyChain } =
+      next;
+    next = withoutProxyChain as Connection;
+  }
+  if (tunnelChainId) {
+    next = { ...next, tunnelChainId };
+  } else if (connection.tunnelChainId && options.requireTunnelChainMapping) {
+    result.warnings.push(
+      `Connection "${connection.name}" had unresolved tunnel chain ${connection.tunnelChainId}; that association was removed.`,
+    );
+    const { tunnelChainId: _unresolvedTunnelChainId, ...withoutTunnelChain } =
+      next;
+    next = withoutTunnelChain as Connection;
+  }
 
   return next;
 };
@@ -1115,6 +1207,14 @@ const buildImportPreviewItems = (
           message: "VPN configuration is required.",
         });
       }
+      getVpnPortabilityWarnings(vpnConnection).forEach((message) => {
+        issues.push({
+          severity: "warning",
+          code: "vpn_credentials_unresolved",
+          field: "config",
+          message,
+        });
+      });
       const importable = !issues.some((issue) => issue.severity === "error");
       sidecarItems.push({
         id: `vpn:${vpnType}:${safeString(vpnConnection.id) || index}:${sourceIndex}`,
@@ -2072,21 +2172,6 @@ export function useImportExport({
     });
   };
 
-  const normalizeVpnImportData = (
-    value: unknown,
-  ): ImportVpnData | undefined => {
-    if (!value || typeof value !== "object") return undefined;
-
-    const candidate = value as Partial<Record<keyof ImportVpnData, unknown>>;
-
-    return {
-      openvpn: Array.isArray(candidate.openvpn) ? candidate.openvpn : [],
-      wireguard: Array.isArray(candidate.wireguard) ? candidate.wireguard : [],
-      tailscale: Array.isArray(candidate.tailscale) ? candidate.tailscale : [],
-      zerotier: Array.isArray(candidate.zerotier) ? candidate.zerotier : [],
-    };
-  };
-
   const importPreviewItems =
     importResult?.previewItems ?? EMPTY_IMPORT_PREVIEW_ITEMS;
   const visiblePreviewItems = useMemo(
@@ -2298,7 +2383,10 @@ export function useImportExport({
 
   const loadSidecarsForInclusion = async (
     inclusion: ExportInclusionConfig,
-    options?: { includeProxyCollectionsWhenAll?: boolean },
+    options?: {
+      includeProxyCollectionsWhenAll?: boolean;
+      includeCredentials?: boolean;
+    },
   ): Promise<ExportSidecars> => {
     const sidecars: ExportSidecars = {};
 
@@ -2323,7 +2411,7 @@ export function useImportExport({
               (item) => item.id != null && includedVpnIds.has(item.id),
             );
 
-      sidecars.vpnConnections = {
+      const selectedVpnConnections: ImportVpnData = {
         openvpn: keepVpn(
           vpnOpenVPN.status === "fulfilled" ? vpnOpenVPN.value : [],
         ),
@@ -2337,6 +2425,12 @@ export function useImportExport({
           vpnZeroTier.status === "fulfilled" ? vpnZeroTier.value : [],
         ),
       };
+      const prepared = prepareVpnDataForTransfer(
+        selectedVpnConnections,
+        options?.includeCredentials ?? inclusion.includeCredentials,
+      );
+      sidecars.vpnConnections = prepared.data;
+      sidecars.vpnWarnings = prepared.warnings;
     }
 
     if (inclusion.includeTunnelChains) {
@@ -2388,6 +2482,7 @@ export function useImportExport({
   ): Promise<CloneSidecarResult> => {
     const sidecars = await loadSidecarsForInclusion(inclusion, {
       includeProxyCollectionsWhenAll: true,
+      includeCredentials: cloneIncludeCredentials,
     });
     const result: CloneSidecarResult = {
       connections,
@@ -2399,6 +2494,7 @@ export function useImportExport({
       },
       counts: createEmptyCloneSidecarCounts(),
       errors: [],
+      warnings: [...(sidecars.vpnWarnings ?? [])],
     };
 
     const references = collectConnectionSidecarReferences(connections);
@@ -2463,6 +2559,11 @@ export function useImportExport({
     addVpnItems("tailscale", sidecars.vpnConnections?.tailscale);
     addVpnItems("zerotier", sidecars.vpnConnections?.zerotier);
 
+    const explicitVpnAllowlist =
+      (inclusion.includedVpnConnectionIds ?? []).length > 0
+        ? new Set(inclusion.includedVpnConnectionIds)
+        : null;
+
     if (inclusion.includeVpnData) {
       const proxyMgr = ProxyOpenVPNManager.getInstance();
       const [openvpn, wireguard, tailscale, zerotier] =
@@ -2485,7 +2586,25 @@ export function useImportExport({
             references.vpnConnectionIds.has(connection.id) &&
             !selectedVpnById.has(connection.id)
           ) {
-            selectedVpnById.set(connection.id, { type, connection });
+            if (
+              explicitVpnAllowlist &&
+              !explicitVpnAllowlist.has(connection.id)
+            ) {
+              result.warnings.push(
+                `VPN profile "${connection.name}" (${connection.id}) was excluded by the explicit clone VPN selection; its associations and dependent chains were omitted.`,
+              );
+              return;
+            }
+            const prepared = prepareVpnConnectionForTransfer(
+              type,
+              connection,
+              cloneIncludeCredentials,
+            );
+            result.warnings.push(...prepared.warnings);
+            selectedVpnById.set(connection.id, {
+              type,
+              connection: prepared.connection,
+            });
           }
         });
       };
@@ -2517,6 +2636,12 @@ export function useImportExport({
 
     const proxyMgr = ProxyOpenVPNManager.getInstance();
     for (const { type, connection } of selectedVpnById.values()) {
+      if (!isVpnProfileExecutable(type, connection)) {
+        result.warnings.push(
+          `VPN profile "${connection.name}" was omitted because its credentials are unavailable. Recreate it with credentials before restoring associations.`,
+        );
+        continue;
+      }
       try {
         let createdId: string;
         if (type === "openvpn") {
@@ -2555,6 +2680,24 @@ export function useImportExport({
 
     for (const chain of proxyChainById.values()) {
       try {
+        const unresolvedVpnIds = Array.from(
+          new Set(
+            chain.layers
+              .map((layer) => layer.vpnProfileId)
+              .filter(
+                (id): id is string =>
+                  Boolean(id) &&
+                  inclusion.includeVpnData &&
+                  !result.idMaps.vpnConnectionIds.has(id as string),
+              ),
+          ),
+        );
+        if (unresolvedVpnIds.length > 0) {
+          result.warnings.push(
+            `Proxy chain "${chain.name}" was omitted because VPN profile(s) ${unresolvedVpnIds.join(", ")} were not cloned.`,
+          );
+          continue;
+        }
         const remapped = remapProxyChain(
           chain,
           result.idMaps.proxyProfileIds,
@@ -2579,6 +2722,24 @@ export function useImportExport({
 
     for (const chain of tunnelChainById.values()) {
       try {
+        const unresolvedVpnIds = Array.from(
+          new Set(
+            chain.layers
+              .map(resolveTunnelLayerVpnProfileId)
+              .filter(
+                (id): id is string =>
+                  Boolean(id) &&
+                  inclusion.includeVpnData &&
+                  !result.idMaps.vpnConnectionIds.has(id as string),
+              ),
+          ),
+        );
+        if (unresolvedVpnIds.length > 0) {
+          result.warnings.push(
+            `Tunnel chain "${chain.name}" was omitted because VPN profile(s) ${unresolvedVpnIds.join(", ")} were not cloned.`,
+          );
+          continue;
+        }
         const remapped = remapTunnelChain(
           chain,
           result.idMaps.vpnConnectionIds,
@@ -2606,8 +2767,13 @@ export function useImportExport({
       result.counts.tunnelChains +
       result.counts.vpnConnections;
     result.connections = connections.map((connection) =>
-      remapConnectionSidecars(connection, result),
+      remapConnectionSidecars(connection, result, {
+        requireVpnMapping: inclusion.includeVpnData,
+        requireProxyChainMapping: inclusion.includeTunnelChains,
+        requireTunnelChainMapping: inclusion.includeTunnelChains,
+      }),
     );
+    result.warnings = Array.from(new Set(result.warnings));
 
     return result;
   };
@@ -2624,8 +2790,9 @@ export function useImportExport({
   const buildExportWarnings = (
     datasets: ExportDatabaseDataset[],
     options: ExportDatabaseOption[],
+    sidecars: ExportSidecars,
   ): string[] => {
-    const warnings: string[] = [];
+    const warnings: string[] = [...(sidecars.vpnWarnings ?? [])];
     const lockedSkippedCount = options.filter(
       (option) => option.isEncrypted && !option.isExportable,
     ).length;
@@ -2645,6 +2812,11 @@ export function useImportExport({
       !exportInclusion.includeCredentials
     ) {
       warnings.push("Credentials and private secret fields were redacted.");
+    }
+    if (exportInclusion.includeVpnData && !exportInclusion.includeCredentials) {
+      warnings.push(
+        "VPN profiles were exported as non-executable recovery records with credentials and credential paths removed; import and clone omit them and their dependent associations.",
+      );
     }
     if (!exportInclusion.includeSettings) {
       warnings.push(
@@ -3158,7 +3330,23 @@ ${tableRows}
       switch (exportFormat) {
         case "json": {
           const sidecars = await loadExportSidecars();
-          const warnings = buildExportWarnings(datasets, options);
+          const exportedVpnCount = sidecars.vpnConnections
+            ? sidecars.vpnConnections.openvpn.length +
+              sidecars.vpnConnections.wireguard.length +
+              sidecars.vpnConnections.tailscale.length +
+              sidecars.vpnConnections.zerotier.length
+            : 0;
+          if (
+            exportedVpnCount > 0 &&
+            exportInclusion.includeCredentials &&
+            !shouldUsePasswordEncryption
+          ) {
+            toast.error(
+              "VPN credentials can only be exported in an encrypted JSON file. Enable encryption, enter a password, or exclude credentials.",
+            );
+            return;
+          }
+          const warnings = buildExportWarnings(datasets, options, sidecars);
           const exportMetadata = exportInclusion.includeExportMetadata
             ? buildExportMetadata({
                 datasets,
@@ -3496,9 +3684,23 @@ ${tableRows}
       if (detectedFormat === "json") {
         try {
           const parsed = JSON.parse(processedContent);
-          vpnConnections = normalizeVpnImportData(parsed.vpnConnections);
-          if (Array.isArray(parsed.tunnelChainTemplates)) {
-            tunnelChainTemplates = parsed.tunnelChainTemplates;
+          const legacySidecars =
+            parsed && typeof parsed.sidecars === "object"
+              ? parsed.sidecars
+              : undefined;
+          vpnConnections = normalizeVpnImportData(
+            parsed.vpnConnections ??
+              parsed.vpn_connections ??
+              legacySidecars?.vpnConnections ??
+              legacySidecars?.vpn_connections,
+          );
+          const importedTunnelChains =
+            parsed.tunnelChainTemplates ??
+            parsed.tunnel_chain_templates ??
+            legacySidecars?.tunnelChainTemplates ??
+            legacySidecars?.tunnel_chain_templates;
+          if (Array.isArray(importedTunnelChains)) {
+            tunnelChainTemplates = importedTunnelChains;
           }
         } catch {
           // Not a JSON file or no VPN data -- ignore
@@ -3955,6 +4157,7 @@ ${tableRows}
       // Restore selected VPN connections
       let vpnImportedCount = 0;
       const importedVpnIds = new Map<string, string>();
+      const vpnImportWarnings: string[] = [];
       if (importOptions.includeVpnData && selectedVpnItems.length > 0) {
         const proxyMgr = ProxyOpenVPNManager.getInstance();
 
@@ -3962,27 +4165,44 @@ ${tableRows}
           const conn = item.vpnConnection;
           if (!conn || !item.vpnType) continue;
           try {
+            const prepared = prepareVpnConnectionForTransfer(
+              item.vpnType,
+              conn,
+              importOptions.includeCredentials,
+            );
+            vpnImportWarnings.push(...prepared.warnings);
+            const portableConnection = prepared.connection as typeof conn;
+            if (!isVpnProfileExecutable(item.vpnType, portableConnection)) {
+              vpnImportWarnings.push(
+                `VPN profile "${portableConnection.name}" was omitted because its credentials are unavailable. Recreate it with credentials before restoring associations.`,
+              );
+              continue;
+            }
             let createdId: string;
             if (item.vpnType === "openvpn") {
-              const openvpn = conn as ImportVpnData["openvpn"][number];
+              const openvpn =
+                portableConnection as ImportVpnData["openvpn"][number];
               createdId = await proxyMgr.createOpenVPNConnection(
                 openvpn.name,
                 openvpn.config,
               );
             } else if (item.vpnType === "wireguard") {
-              const wireguard = conn as ImportVpnData["wireguard"][number];
+              const wireguard =
+                portableConnection as ImportVpnData["wireguard"][number];
               createdId = await proxyMgr.createWireGuardConnection(
                 wireguard.name,
                 wireguard.config,
               );
             } else if (item.vpnType === "tailscale") {
-              const tailscale = conn as ImportVpnData["tailscale"][number];
+              const tailscale =
+                portableConnection as ImportVpnData["tailscale"][number];
               createdId = await proxyMgr.createTailscaleConnection(
                 tailscale.name,
                 tailscale.config,
               );
             } else if (item.vpnType === "zerotier") {
-              const zerotier = conn as ImportVpnData["zerotier"][number];
+              const zerotier =
+                portableConnection as ImportVpnData["zerotier"][number];
               createdId = await proxyMgr.createZeroTierConnection(
                 zerotier.name,
                 zerotier.config,
@@ -4009,6 +4229,22 @@ ${tableRows}
           const chain = item.tunnelChainTemplate;
           if (!chain) continue;
           try {
+            const unresolvedVpnIds = Array.from(
+              new Set(
+                chain.layers
+                  .map(resolveTunnelLayerVpnProfileId)
+                  .filter(
+                    (id): id is string =>
+                      Boolean(id) && !importedVpnIds.has(id as string),
+                  ),
+              ),
+            );
+            if (unresolvedVpnIds.length > 0) {
+              vpnImportWarnings.push(
+                `Tunnel chain "${chain.name}" was omitted because VPN profile(s) ${unresolvedVpnIds.join(", ")} were not imported.`,
+              );
+              continue;
+            }
             const remappedChain = remapTunnelChain(chain, importedVpnIds);
             const created = await proxyCollectionManager.createTunnelChain(
               remappedChain.name,
@@ -4030,14 +4266,26 @@ ${tableRows}
       // connection only after the selected VPN profiles and saved chains have
       // been created, while preserving stable layer IDs inside inline chains.
       const connectionsToImport = baseConnectionsToImport.map((connection) => {
-        const remapped = remapConnectionVpnReferences(
+        const remapped = remapConnectionVpnReferencesStrict(
           connection,
           importedVpnIds,
+          (profileId) => {
+            vpnImportWarnings.push(
+              `Connection "${connection.name}" had unresolved VPN profile ${profileId}; that association was removed.`,
+            );
+          },
         );
-        const tunnelChainId = remapped.tunnelChainId
-          ? importedTunnelChainIds.get(remapped.tunnelChainId)
-          : undefined;
-        return tunnelChainId ? { ...remapped, tunnelChainId } : remapped;
+        if (!remapped.tunnelChainId) return remapped;
+        const tunnelChainId = importedTunnelChainIds.get(
+          remapped.tunnelChainId,
+        );
+        if (tunnelChainId) return { ...remapped, tunnelChainId };
+        vpnImportWarnings.push(
+          `Connection "${connection.name}" had unresolved tunnel chain ${remapped.tunnelChainId}; that association was removed.`,
+        );
+        const { tunnelChainId: _unresolvedTunnelChainId, ...withoutChain } =
+          remapped;
+        return withoutChain as Connection;
       });
       const sshTunnelsImportedCount = importOptions.includeSshTunnels
         ? connectionsToImport.filter(hasConnectionSshTunnel).length
@@ -4069,6 +4317,10 @@ ${tableRows}
       }
       if (sshTunnelsImportedCount > 0) {
         parts.push(`${sshTunnelsImportedCount} SSH tunnel(s)`);
+      }
+
+      if (vpnImportWarnings.length > 0) {
+        toast.warning(Array.from(new Set(vpnImportWarnings)).join(" "));
       }
       const summary = parts.join(", ") || "0 items";
       const singleTarget =
@@ -4265,6 +4517,7 @@ ${tableRows}
       let totalRenamed = 0;
       let totalSkipped = 0;
       const errors: string[] = [...sidecarClone.errors];
+      const warnings: string[] = [...sidecarClone.warnings];
 
       for (const targetId of targetIds) {
         const targetOption = targetOptionsById.get(targetId);
@@ -4359,6 +4612,7 @@ ${tableRows}
         skipped: totalSkipped,
         sidecarsCloned: sidecarClone.counts,
         errors,
+        warnings,
         perTarget,
       };
       setCloneResult(result);
@@ -4379,6 +4633,9 @@ ${tableRows}
             ? `Cloned ${totalCloned} connection(s)${targetSummary}${renameNote}${skipNote}${sidecarNote}.`
             : `Cloned ${sidecarClone.counts.total} sidecar definition(s).`,
         );
+        if (warnings.length > 0) {
+          toast.warning(warnings.join(" "));
+        }
       } else if (errors.length > 0) {
         toast.error(`Clone partially failed: ${errors.join("; ")}`);
       }

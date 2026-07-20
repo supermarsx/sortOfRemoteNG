@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ExportTab, {
   type ExportConfig,
 } from "../../src/components/ImportExport/ExportTab";
@@ -13,6 +19,29 @@ vi.mock("react-i18next", () => ({
     t: (key: string, options?: { defaultValue?: string }) =>
       options?.defaultValue ?? key,
   }),
+}));
+
+const {
+  mockListOpenVPN,
+  mockListWireGuard,
+  mockListTailscale,
+  mockListZeroTier,
+} = vi.hoisted(() => ({
+  mockListOpenVPN: vi.fn(),
+  mockListWireGuard: vi.fn(),
+  mockListTailscale: vi.fn(),
+  mockListZeroTier: vi.fn(),
+}));
+
+vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
+  ProxyOpenVPNManager: {
+    getInstance: () => ({
+      listOpenVPNConnections: mockListOpenVPN,
+      listWireGuardConnections: mockListWireGuard,
+      listTailscaleConnections: mockListTailscale,
+      listZeroTierConnections: mockListZeroTier,
+    }),
+  },
 }));
 
 const connections: Connection[] = [
@@ -131,6 +160,17 @@ function advanceExportTo(stepId: string) {
 }
 
 describe("ExportTab", () => {
+  beforeEach(() => {
+    mockListOpenVPN.mockReset();
+    mockListOpenVPN.mockResolvedValue([]);
+    mockListWireGuard.mockReset();
+    mockListWireGuard.mockResolvedValue([]);
+    mockListTailscale.mockReset();
+    mockListTailscale.mockResolvedValue([]);
+    mockListZeroTier.mockReset();
+    mockListZeroTier.mockResolvedValue([]);
+  });
+
   it("labels advanced protocols and warns when mRemoteNG cannot preserve settings", () => {
     const rawUdp: Connection = {
       ...connections[0],
@@ -257,7 +297,7 @@ describe("ExportTab", () => {
       "1",
     );
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "0",
+      "1",
     );
   });
 
@@ -440,6 +480,54 @@ describe("ExportTab", () => {
     expect(onConfigChange).toHaveBeenCalledWith({ password: "top-secret" });
   });
 
+  it("keeps the credential choice available for VPN-only exports and requires protection", async () => {
+    mockListOpenVPN.mockResolvedValueOnce([
+      { id: "vpn-only", name: "VPN only profile" },
+    ]);
+    const vpnOnlyConfig: ExportConfig = {
+      ...defaultConfig,
+      includePasswords: true,
+      inclusion: {
+        ...defaultConfig.inclusion,
+        includeConnections: false,
+        includeCredentials: true,
+        includeSettings: false,
+        includeFolderItems: false,
+        includeEmptyFolders: false,
+        includeTabGroups: false,
+        includeColorTags: false,
+        includeVpnData: true,
+        includeTunnelChains: false,
+        includeExportMetadata: false,
+        includeDatabaseMetadata: false,
+      },
+      includeVpnData: true,
+      includeTunnelChains: false,
+      includeTabGroups: false,
+      includeColorTags: false,
+    };
+    renderExportTab({ config: vpnOnlyConfig, connections: [] });
+
+    await waitFor(() => {
+      expect(mockListOpenVPN).toHaveBeenCalled();
+    });
+    advanceExportTo("content");
+    expect(
+      screen.getByRole("checkbox", { name: "exportTab.includePasswords" }),
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("export-wizard-step-format"));
+    expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
+      "VPN credentials contain private keys, tokens, raw configurations, and local credential paths",
+    );
+
+    advanceExportTo("encryption");
+    fireEvent.click(screen.getByTestId("export-wizard-next"));
+    expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
+      /VPN credentials require JSON format, encryption, and an export password/i,
+    );
+  });
+
   it("disables export until the config is valid and then submits", () => {
     const { handleExport, rerender } = renderExportTab({
       connections: [],
@@ -589,7 +677,7 @@ describe("ExportTab", () => {
     );
     advanceExportTo("review");
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "2",
+      "3",
     );
   });
 

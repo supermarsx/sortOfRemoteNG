@@ -1,15 +1,21 @@
-import { Connection, type TunnelChainLayer } from '../../types/connection/connection';
-import type { ExportFormat, ExportSecuritySettings } from '../../types/settings/settings';
+import {
+  Connection,
+  type TunnelChainLayer,
+} from "../../types/connection/connection";
+import type {
+  ExportFormat,
+  ExportSecuritySettings,
+} from "../../types/settings/settings";
 import {
   OpenVPNConnection,
   WireGuardConnection,
   TailscaleConnection,
   ZeroTierConnection,
-} from '../../utils/network/proxyOpenVPNManager';
-import { SavedTunnelChain } from '../../types/settings/settings';
+} from "../../utils/network/proxyOpenVPNManager";
+import { SavedTunnelChain } from "../../types/settings/settings";
 
-export type ExportScopeMode = 'current' | 'selected' | 'all';
-export type ImportTargetMode = 'current' | 'selected' | 'all';
+export type ExportScopeMode = "current" | "selected" | "all";
+export type ImportTargetMode = "current" | "selected" | "all";
 
 export interface ExportInclusionConfig {
   includeConnections: boolean;
@@ -23,7 +29,7 @@ export interface ExportInclusionConfig {
   includeTunnelChains: boolean;
   includeExportMetadata: boolean;
   includeDatabaseMetadata: boolean;
-  includedProtocols: Connection['protocol'][];
+  includedProtocols: Connection["protocol"][];
   /** Specific connection ids to include. Empty array = all connections. */
   includedConnectionIds?: string[];
   /** Specific folder/group ids to include. Empty array = all folders. */
@@ -40,7 +46,9 @@ export interface ExportInclusionConfig {
   includedVpnConnectionIds?: string[];
 }
 
-export interface ExportConfigUpdate extends Partial<Omit<ExportConfig, 'inclusion'>> {
+export interface ExportConfigUpdate extends Partial<
+  Omit<ExportConfig, "inclusion">
+> {
   inclusion?: Partial<ExportInclusionConfig>;
 }
 
@@ -73,26 +81,41 @@ export interface ExportConfig {
   includeColorTags: boolean;
   strengthSettings: Pick<
     ExportSecuritySettings,
-    | 'showPasswordStrength'
-    | 'showEntropyBits'
-    | 'minimumPasswordScore'
-    | 'enforceMinimumPasswordScore'
-    | 'detectCommonPasswords'
-    | 'detectRepeatedCharacters'
-    | 'detectSequentialPatterns'
-    | 'rewardUncommonSymbols'
-    | 'customCommonPasswords'
+    | "showPasswordStrength"
+    | "showEntropyBits"
+    | "minimumPasswordScore"
+    | "enforceMinimumPasswordScore"
+    | "detectCommonPasswords"
+    | "detectRepeatedCharacters"
+    | "detectSequentialPatterns"
+    | "rewardUncommonSymbols"
+    | "customCommonPasswords"
   >;
 }
 
 export interface ImportVpnData {
-  openvpn: OpenVPNConnection[];
-  wireguard: WireGuardConnection[];
-  tailscale: TailscaleConnection[];
-  zerotier: ZeroTierConnection[];
+  openvpn: PortableVpnConnection<OpenVPNConnection>[];
+  wireguard: PortableVpnConnection<WireGuardConnection>[];
+  tailscale: PortableVpnConnection<TailscaleConnection>[];
+  zerotier: PortableVpnConnection<ZeroTierConnection>[];
 }
 
-export type ImportIssueSeverity = 'error' | 'warning' | 'info';
+export interface VpnPortabilityMetadata {
+  version: 1;
+  credentials: "included" | "redacted" | "unavailable";
+  executable: boolean;
+  warnings: string[];
+}
+
+export type PortableVpnConnection<T> = T & {
+  portability?: VpnPortabilityMetadata;
+  /** Backend list DTOs expose presence without returning the stored secret. */
+  secretPresence?: Record<string, boolean>;
+  /** Accepted only as a migration input from older native backups. */
+  secret_presence?: Record<string, boolean>;
+};
+
+export type ImportIssueSeverity = "error" | "warning" | "info";
 
 export interface ImportIssue {
   severity: ImportIssueSeverity;
@@ -102,13 +125,18 @@ export interface ImportIssue {
   source?: string;
 }
 
-export type ImportPreviewItemKind = 'connection' | 'folder' | 'vpn' | 'tunnelChain' | 'sshTunnel';
+export type ImportPreviewItemKind =
+  | "connection"
+  | "folder"
+  | "vpn"
+  | "tunnelChain"
+  | "sshTunnel";
 
 export type ImportConflictStatus =
-  | 'none'
-  | 'sameId'
-  | 'sameName'
-  | 'sameEndpoint';
+  | "none"
+  | "sameId"
+  | "sameName"
+  | "sameEndpoint";
 
 export interface ImportPreviewItem {
   id: string;
@@ -116,7 +144,7 @@ export interface ImportPreviewItem {
   sourceIndex: number;
   sourcePath: string;
   name: string;
-  protocol?: Connection['protocol'];
+  protocol?: Connection["protocol"];
   hostname?: string;
   port?: number;
   username?: string;
@@ -146,7 +174,7 @@ export interface ImportSourceMetadata {
   formatForced?: boolean;
   formatWarning?: string;
   detectedAt: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   encrypted: boolean;
   sourceApplication?: string;
   rootName?: string;
@@ -172,7 +200,13 @@ export interface ImportSourceMetadata {
     dataRows: number;
   };
   json?: {
-    shape: 'array' | 'connections-object' | 'collection-export' | 'database-package' | 'object' | 'unknown';
+    shape:
+      | "array"
+      | "connections-object"
+      | "collection-export"
+      | "database-package"
+      | "object"
+      | "unknown";
     topLevelKeys: string[];
   };
   xml?: {
@@ -183,11 +217,11 @@ export interface ImportSourceMetadata {
 
 export interface ImportFilterState {
   search: string;
-  protocol: 'all' | Connection['protocol'];
-  issueSeverity: 'all' | ImportIssueSeverity;
-  itemKind: 'all' | ImportPreviewItemKind;
-  selection: 'all' | 'selected' | 'unselected';
-  conflict: 'all' | 'conflicts' | 'clean';
+  protocol: "all" | Connection["protocol"];
+  issueSeverity: "all" | ImportIssueSeverity;
+  itemKind: "all" | ImportPreviewItemKind;
+  selection: "all" | "selected" | "unselected";
+  conflict: "all" | "conflicts" | "clean";
   missingHostnameOnly: boolean;
   withCredentialsOnly: boolean;
 }
@@ -198,7 +232,7 @@ export interface ImportOptions {
   includeVpnData: boolean;
   includeTunnelChains: boolean;
   includeSshTunnels: boolean;
-  conflictPolicy: 'duplicate' | 'skip' | 'rename';
+  conflictPolicy: "duplicate" | "skip" | "rename";
   addTags: string;
   switchToTargetDatabaseAfterImport: boolean;
 }
@@ -239,7 +273,7 @@ export interface CloneConfig {
 
   /** Conflict-resolution policy applied per target. Defaults to
    *  `duplicate` since clone is an explicit copy action. */
-  conflictPolicy: ImportOptions['conflictPolicy'];
+  conflictPolicy: ImportOptions["conflictPolicy"];
 
   /** Optional comma-separated list of tags to add to every cloned
    *  connection (mirrors Import's `addTags` field). */
@@ -257,7 +291,9 @@ export interface CloneConfig {
   switchToTargetDatabaseAfterClone: boolean;
 }
 
-export interface CloneConfigUpdate extends Partial<Omit<CloneConfig, 'inclusion'>> {
+export interface CloneConfigUpdate extends Partial<
+  Omit<CloneConfig, "inclusion">
+> {
   inclusion?: Partial<ExportInclusionConfig>;
 }
 
@@ -268,7 +304,7 @@ export interface CloneSourceCatalogItem {
   connectionId: string;
   name: string;
   path: string;
-  protocol: Connection['protocol'];
+  protocol: Connection["protocol"];
   protocolLabel?: string;
   hostname?: string;
   tags: string[];
@@ -293,6 +329,7 @@ export interface CloneResult {
     vpnConnections: number;
   };
   errors: string[];
+  warnings?: string[];
   /** Per-destination outcome so the UI can show which target landed
    *  fully, which failed, and which had nothing to copy. */
   perTarget: Array<{

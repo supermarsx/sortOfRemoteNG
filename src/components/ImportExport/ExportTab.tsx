@@ -478,6 +478,13 @@ const ExportTab: React.FC<ExportTabProps> = ({
   const singleDatabaseFormatBlocked =
     multiDatabaseExport &&
     (config.format === "xml" || config.format === "mremoteng");
+  const vpnCredentialsRequireProtection =
+    inclusion.includeVpnData &&
+    inclusion.includeCredentials &&
+    vpnConnections.length > 0;
+  const vpnCredentialsUnprotected =
+    vpnCredentialsRequireProtection &&
+    (config.format !== "json" || !config.encrypted || !config.password);
   const compatibilityWarnings = [
     ...(config.format === "json"
       ? []
@@ -491,6 +498,21 @@ const ExportTab: React.FC<ExportTabProps> = ({
     ...(config.format !== "json" && inclusion.includeCredentials
       ? [t("exportTab.warningPasswordsSkipped")]
       : []),
+    ...(vpnCredentialsRequireProtection
+      ? [
+          t("exportTab.warningVpnCredentialsRequireEncryption", {
+            defaultValue:
+              "VPN credentials contain private keys, tokens, raw configurations, and local credential paths. They can only be written to an encrypted JSON export.",
+          }),
+        ]
+      : inclusion.includeVpnData && !inclusion.includeCredentials
+        ? [
+            t("exportTab.warningVpnCredentialsRedacted", {
+              defaultValue:
+                "VPN profiles will be exported as non-executable recovery records. Import and clone omit them, and remove dependent associations, until credentials are available.",
+            }),
+          ]
+        : []),
     ...(config.format !== "json" &&
     (inclusion.includeVpnData ||
       inclusion.includeTunnelChains ||
@@ -700,6 +722,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
     isProcessing ||
     effectiveDatabaseCount === 0 ||
     singleDatabaseFormatBlocked ||
+    vpnCredentialsUnprotected ||
     (config.encrypted && !config.password) ||
     passwordTooWeak;
   const scorePercent = Math.max(8, ((strength.score + 1) / 5) * 100);
@@ -836,9 +859,9 @@ const ExportTab: React.FC<ExportTabProps> = ({
       label: t("exportTab.includePasswords"),
       description: t("exportTab.includeCredentialsDescription", {
         defaultValue:
-          "Keep passwords, keys, tokens, and other private fields in JSON exports.",
+          "Keep connection and VPN passwords, keys, tokens, raw configurations, and private paths. VPN credentials require an encrypted JSON export.",
       }),
-      disabled: !inclusion.includeConnections,
+      disabled: !inclusion.includeConnections && !inclusion.includeVpnData,
     },
     {
       id: "includeSettings",
@@ -1298,6 +1321,9 @@ const ExportTab: React.FC<ExportTabProps> = ({
       if (stepId === "encryption" && config.encrypted && !config.password) {
         return "Enter an encryption password before continuing.";
       }
+      if (stepId === "encryption" && vpnCredentialsUnprotected) {
+        return "VPN credentials require JSON format, encryption, and an export password.";
+      }
       if (stepId === "encryption" && passwordTooWeak) {
         return "Use a password that meets the configured minimum strength.";
       }
@@ -1311,6 +1337,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       hasExportContent,
       passwordTooWeak,
       singleDatabaseFormatBlocked,
+      vpnCredentialsUnprotected,
     ],
   );
   const wizard = useWizardNavigation(wizardSteps, validateWizardStep);

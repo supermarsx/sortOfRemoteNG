@@ -1082,6 +1082,14 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     Switch to the first target database after the clone finishes
                   </label>
                 </div>
+                {inclusion.includeVpnData && !includeCredentials && (
+                  <p className="text-xs text-warning">
+                    VPN profiles cannot be cloned without their private
+                    material. They will be omitted, affected associations will
+                    be removed, and dependent chains will be skipped with
+                    warnings.
+                  </p>
+                )}
               </div>
             )}
           </AccordionSection>
@@ -1178,6 +1186,13 @@ const CloneTab: React.FC<CloneTabProps> = ({
                       cloned
                     </div>
                   )}
+                {cloneResult.warnings && cloneResult.warnings.length > 0 && (
+                  <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[10px] text-warning">
+                    {cloneResult.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </AccordionSection>

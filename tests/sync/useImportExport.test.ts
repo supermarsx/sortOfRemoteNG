@@ -720,12 +720,30 @@ describe("useImportExport", () => {
       .calls[0][0] as Blob;
     const exportedJson = JSON.parse(await exportedBlob.text());
 
-    expect(exportedJson.vpnConnections).toEqual({
-      openvpn: [{ name: "OpenVPN A", config: "ovpn-config" }],
+    expect(exportedJson.vpnConnections).toMatchObject({
+      openvpn: [
+        {
+          name: "OpenVPN A",
+          config: { enabled: false },
+          portability: { credentials: "redacted", executable: false },
+        },
+      ],
       wireguard: [],
-      tailscale: [{ name: "Tailnet A", config: "tail-config" }],
+      tailscale: [
+        {
+          name: "Tailnet A",
+          config: { enabled: false },
+          portability: { credentials: "redacted", executable: false },
+        },
+      ],
       zerotier: [],
     });
+    expect(JSON.stringify(exportedJson.vpnConnections)).not.toContain(
+      "ovpn-config",
+    );
+    expect(JSON.stringify(exportedJson.vpnConnections)).not.toContain(
+      "tail-config",
+    );
     expect(exportedJson.tunnelChainTemplates).toEqual([
       {
         id: "chain-1",
@@ -764,6 +782,7 @@ describe("useImportExport", () => {
       result.current.setExportEncrypted(true);
       result.current.setExportPassword("json-secret");
       result.current.setExportKeyDerivationIterations(640000);
+      result.current.setIncludePasswords(true);
     });
 
     await act(async () => {
@@ -790,6 +809,84 @@ describe("useImportExport", () => {
       "json-secret",
       { iterations: 640000 },
     );
+  });
+
+  it("refuses plaintext JSON when actual VPN credentials are selected", async () => {
+    mockListTailscale.mockResolvedValueOnce([
+      {
+        id: "tailscale-sensitive",
+        name: "Sensitive tailnet",
+        config: { enabled: true, authKey: "ts-secret-auth-key" },
+        status: "disconnected",
+        createdAt: new Date(FIXTURE_NOW),
+      },
+    ]);
+    const { result } = renderImportExport();
+
+    act(() => {
+      result.current.setIncludePasswords(true);
+    });
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    expect(globalThis.URL.createObjectURL).not.toHaveBeenCalled();
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "VPN credentials can only be exported in an encrypted JSON file. Enable encryption, enter a password, or exclude credentials.",
+    );
+  });
+
+  it("supports a VPN-only export while sanitizing credentials", async () => {
+    const restoreBlob = stubReadableBlob();
+    mockListOpenVPN.mockResolvedValueOnce([
+      {
+        id: "vpn-only",
+        name: "VPN only",
+        config: {
+          enabled: true,
+          remoteHost: "vpn-only.example.test",
+          username: "vpn-only-user",
+          password: "vpn-only-password",
+          inlineConfig: "vpn-only-private-config",
+        },
+        status: "disconnected",
+        createdAt: new Date(FIXTURE_NOW),
+      },
+    ]);
+    const { result } = renderImportExport();
+    act(() => {
+      result.current.updateExportInclusion({
+        includeConnections: false,
+        includeCredentials: false,
+        includeSettings: false,
+        includeFolderItems: false,
+        includeEmptyFolders: false,
+        includeTabGroups: false,
+        includeColorTags: false,
+        includeVpnData: true,
+        includeTunnelChains: false,
+        includeExportMetadata: false,
+        includeDatabaseMetadata: false,
+      });
+    });
+
+    await act(async () => {
+      await result.current.handleExport();
+    });
+
+    const { text } = await getLastDownloadedText();
+    const payload = JSON.parse(text);
+    expect(payload.connections).toEqual([]);
+    expect(payload.vpnConnections.openvpn[0]).toMatchObject({
+      id: "vpn-only",
+      config: { enabled: false, remoteHost: "vpn-only.example.test" },
+      portability: { credentials: "redacted", executable: false },
+    });
+    expect(text).not.toContain("vpn-only-user");
+    expect(text).not.toContain("vpn-only-password");
+    expect(text).not.toContain("vpn-only-private-config");
+
+    restoreBlob();
   });
 
   it("handleExport JSON encrypts the assembled multi-database package", async () => {
@@ -1313,12 +1410,30 @@ describe("useImportExport", () => {
     const exportedBlob = objectUrlCalls[objectUrlCalls.length - 1][0] as Blob;
     const exportedJson = JSON.parse(await exportedBlob.text());
 
-    expect(exportedJson.vpnConnections).toEqual({
+    expect(exportedJson.vpnConnections).toMatchObject({
       openvpn: [],
-      wireguard: [{ name: "WireGuard A", config: "wg-config" }],
+      wireguard: [
+        {
+          name: "WireGuard A",
+          config: { enabled: false },
+          portability: { credentials: "redacted", executable: false },
+        },
+      ],
       tailscale: [],
-      zerotier: [{ name: "ZeroTier A", config: "zt-config" }],
+      zerotier: [
+        {
+          name: "ZeroTier A",
+          config: { enabled: false },
+          portability: { credentials: "redacted", executable: false },
+        },
+      ],
     });
+    expect(JSON.stringify(exportedJson.vpnConnections)).not.toContain(
+      "wg-config",
+    );
+    expect(JSON.stringify(exportedJson.vpnConnections)).not.toContain(
+      "zt-config",
+    );
 
     vi.stubGlobal("Blob", OriginalBlob);
   });
@@ -2969,6 +3084,257 @@ describe("useImportExport", () => {
     });
   });
 
+  it("omits VPN profiles and associations when import credentials are excluded", async () => {
+    const importedConnection = {
+      id: "conn-sanitized-vpn",
+      name: "Sanitized VPN target",
+      protocol: "rdp",
+      hostname: "10.20.30.50",
+      port: 3389,
+      isGroup: false,
+      tags: [],
+      createdAt: FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
+      security: {
+        tunnelChain: [
+          {
+            id: "stable-sanitized-layer",
+            type: "wireguard",
+            enabled: true,
+            vpn: { configId: "wg-sensitive" },
+          },
+        ],
+      },
+    } as Connection;
+    mockImportConnections.mockResolvedValueOnce([importedConnection]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    mockCreateWireGuard.mockResolvedValueOnce("wg-sanitized-new");
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          vpnConnections: {
+            openvpn: [],
+            wireguard: [
+              {
+                id: "wg-sensitive",
+                name: "Sensitive WireGuard",
+                config: {
+                  enabled: true,
+                  configFile: "C:/private/wg.conf",
+                  interface: {
+                    privateKey: "wg-private-secret",
+                    address: ["10.90.0.2/32"],
+                    preUp: ["private-hook"],
+                  },
+                  peer: {
+                    publicKey: "wg-public",
+                    presharedKey: "wg-preshared-secret",
+                    endpoint: "wg.example.test:51820",
+                    allowedIPs: ["10.90.0.0/16"],
+                  },
+                },
+              },
+            ],
+            tailscale: [],
+            zerotier: [],
+          },
+        }),
+      ],
+      "sanitized-vpn-import.json",
+      { type: "application/json" },
+    );
+
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+      result.current.updateImportOptions({ includeCredentials: false });
+    });
+    await act(async () => {
+      await result.current.confirmImport("sanitized-vpn-import.json");
+    });
+
+    expect(mockCreateWireGuard).not.toHaveBeenCalled();
+    const importedAction = mockDispatch.mock.calls
+      .map(([action]) => action)
+      .find(
+        (action) =>
+          action.type === "ADD_CONNECTION" &&
+          action.payload?.name === "Sanitized VPN target",
+      );
+    expect(importedAction?.payload.security.tunnelChain).toBeUndefined();
+    expect(mockToast.warning).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'VPN profile "Sensitive WireGuard" was omitted because its credentials are unavailable',
+      ),
+    );
+    expect(mockToast.warning).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Connection "Sanitized VPN target" had unresolved VPN profile wg-sensitive',
+      ),
+    );
+  });
+
+  it("removes unresolved VPN associations and omits dependent chains with warnings", async () => {
+    const importedConnection = {
+      id: "conn-unresolved-vpn",
+      name: "Unresolved VPN target",
+      protocol: "rdp",
+      hostname: "10.20.30.60",
+      port: 3389,
+      isGroup: false,
+      tags: [],
+      createdAt: FIXTURE_NOW,
+      updatedAt: FIXTURE_NOW,
+      tunnelChainId: "chain-unresolved",
+      security: {
+        openvpn: { enabled: true, configId: "vpn-unresolved" },
+        tunnelChain: [
+          {
+            id: "stable-unresolved-layer",
+            type: "openvpn",
+            enabled: true,
+            vpn: { configId: "vpn-unresolved" },
+          },
+        ],
+      },
+    } as Connection;
+    mockImportConnections.mockResolvedValueOnce([importedConnection]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          vpnConnections: {
+            openvpn: [
+              {
+                id: "vpn-unresolved",
+                name: "Unresolved OpenVPN",
+                config: { enabled: true, remoteHost: "vpn.example.test" },
+                portability: {
+                  version: 1,
+                  credentials: "unavailable",
+                  executable: false,
+                  warnings: ["Stored OpenVPN secret was unavailable."],
+                },
+              },
+            ],
+            wireguard: [],
+            tailscale: [],
+            zerotier: [],
+          },
+          tunnelChainTemplates: [
+            {
+              id: "chain-unresolved",
+              name: "Unresolved VPN chain",
+              layers: [
+                {
+                  id: "stable-chain-layer",
+                  type: "openvpn",
+                  enabled: true,
+                  vpn: { configId: "vpn-unresolved" },
+                },
+              ],
+            },
+          ],
+        }),
+      ],
+      "unresolved-vpn-import.json",
+      { type: "application/json" },
+    );
+
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    await act(async () => {
+      await result.current.confirmImport("unresolved-vpn-import.json");
+    });
+
+    expect(mockCreateOpenVPN).not.toHaveBeenCalled();
+    expect(mockCreateTunnelChain).not.toHaveBeenCalled();
+    const importedAction = mockDispatch.mock.calls
+      .map(([action]) => action)
+      .find(
+        (action) =>
+          action.type === "ADD_CONNECTION" &&
+          action.payload?.name === "Unresolved VPN target",
+      );
+    expect(importedAction?.payload).not.toHaveProperty("tunnelChainId");
+    expect(importedAction?.payload.security).not.toHaveProperty("openvpn");
+    expect(importedAction?.payload.security.tunnelChain).toBeUndefined();
+    expect(mockToast.warning).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Tunnel chain "Unresolved VPN chain" was omitted',
+      ),
+    );
+    expect(mockToast.warning).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Connection "Unresolved VPN target" had unresolved VPN profile',
+      ),
+    );
+  });
+
+  it("accepts legacy snake_case VPN sidecar wrappers", async () => {
+    mockImportConnections.mockResolvedValueOnce([]);
+    mockDetectImportFormat.mockReturnValueOnce("json");
+    const { result } = renderImportExport();
+    const file = new File(
+      [
+        JSON.stringify({
+          sidecars: {
+            vpn_connections: {
+              open_vpn: [
+                {
+                  id: "legacy-ovpn",
+                  name: "Legacy OpenVPN",
+                  config: {
+                    remote_host: "legacy.example.test",
+                    remote_port: 443,
+                    inline_config: "legacy-private-config",
+                  },
+                },
+              ],
+              wire_guard: [],
+              tail_scale: [],
+              zero_tier: [],
+            },
+          },
+        }),
+      ],
+      "legacy-sidecars.json",
+      { type: "application/json" },
+    );
+
+    await act(async () => {
+      await result.current.handleFileSelect({
+        target: { files: [file] },
+      } as unknown as React.ChangeEvent<HTMLInputElement>);
+    });
+    expect(result.current.importPreviewItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "vpn",
+          name: "Legacy OpenVPN",
+          vpnType: "openvpn",
+        }),
+      ]),
+    );
+    await act(async () => {
+      await result.current.confirmImport("legacy-sidecars.json");
+    });
+    expect(mockCreateOpenVPN).toHaveBeenCalledWith(
+      "Legacy OpenVPN",
+      expect.objectContaining({
+        remoteHost: "legacy.example.test",
+        remotePort: 443,
+        inlineConfig: "legacy-private-config",
+      }),
+    );
+  });
+
   it("confirmImport summarizes VPN-only imports when no filename is provided", async () => {
     mockImportConnections.mockResolvedValueOnce([]);
     mockDetectImportFormat.mockReturnValueOnce("json");
@@ -3514,15 +3880,22 @@ describe("useImportExport", () => {
     mockGetChain.mockReturnValue(proxyChain);
     mockGetTunnelChains.mockReturnValue([tunnelChain]);
     mockGetTunnelChain.mockReturnValue(tunnelChain);
-    mockListOpenVPN.mockResolvedValue([
-      {
-        id: "vpn-old",
-        name: "VPN Old",
-        config: { remoteHost: "vpn.local" },
-        status: "disconnected",
-        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    const rawOpenVpnProfile = {
+      id: "vpn-old",
+      name: "VPN Old",
+      config: {
+        enabled: true,
+        remoteHost: "vpn.local",
+        username: "clone-private-user",
+        password: "clone-private-password",
+        inlineConfig: "clone-private-config",
+        clientKey: "clone-private-key",
+        authFile: "C:/private/clone-auth.txt",
       },
-    ]);
+      status: "disconnected" as const,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    mockListOpenVPN.mockResolvedValue([rawOpenVpnProfile]);
     mockCreateProfile.mockResolvedValue({ ...proxyProfile, id: "profile-new" });
     mockCreateOpenVPN.mockResolvedValue("vpn-new");
     mockCreateChain.mockResolvedValue({ ...proxyChain, id: "proxy-chain-new" });
@@ -3554,6 +3927,61 @@ describe("useImportExport", () => {
       await result.current.handleClone();
     });
 
+    expect(mockCreateOpenVPN).toHaveBeenCalledWith(
+      "VPN Old",
+      expect.objectContaining({
+        remoteHost: "vpn.local",
+        password: "clone-private-password",
+      }),
+    );
+    expect(mockCreateTunnelChain).toHaveBeenCalledWith(
+      "Tunnel Chain",
+      [
+        expect.objectContaining({
+          id: "layer-1",
+          vpn: { configId: "vpn-new" },
+        }),
+      ],
+      { description: undefined, tags: undefined },
+    );
+    const credentialedClone = (
+      mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[]
+    )[0];
+    expect(credentialedClone.security?.tunnelChain).toEqual([
+      expect.objectContaining({
+        id: "vpn-old",
+        vpn: { configId: "vpn-new" },
+      }),
+    ]);
+    expect(result.current.cloneResult?.sidecarsCloned).toMatchObject({
+      proxyProfiles: 1,
+      proxyChains: 1,
+      tunnelChains: 1,
+      vpnConnections: 1,
+      total: 4,
+    });
+
+    mockCreateProfile.mockClear();
+    mockCreateOpenVPN.mockClear();
+    mockCreateChain.mockClear();
+    mockCreateTunnelChain.mockClear();
+    mockAppendConnectionsToDatabase.mockClear();
+    mockListOpenVPN.mockReset();
+    mockListOpenVPN
+      // Simulate a profile missing from the primary sidecar load but returned
+      // by the dependency recovery re-list.
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([rawOpenVpnProfile]);
+    act(() => {
+      result.current.setCloneIncludeCredentials(false);
+      result.current.updateCloneInclusion({
+        includedVpnConnectionIds: [],
+      });
+    });
+    await act(async () => {
+      await result.current.handleClone();
+    });
+
     expect(mockCreateProfile).toHaveBeenCalledWith(
       "HTTP Proxy",
       { type: "http", host: "proxy.local", port: 8080 },
@@ -3563,9 +3991,7 @@ describe("useImportExport", () => {
         isDefault: false,
       },
     );
-    expect(mockCreateOpenVPN).toHaveBeenCalledWith("VPN Old", {
-      remoteHost: "vpn.local",
-    });
+    expect(mockCreateOpenVPN).not.toHaveBeenCalled();
     expect(mockCreateChain).toHaveBeenCalledWith(
       "Proxy Chain",
       [{ position: 0, type: "proxy", proxyProfileId: "profile-new" }],
@@ -3574,52 +4000,100 @@ describe("useImportExport", () => {
         tags: undefined,
       },
     );
-    expect(mockCreateTunnelChain).toHaveBeenCalledWith(
-      "Tunnel Chain",
-      [
-        {
-          id: "layer-1",
-          type: "openvpn",
-          enabled: true,
-          vpn: { configId: "vpn-new" },
-        },
-      ],
-      {
-        description: undefined,
-        tags: undefined,
-      },
-    );
+    expect(mockCreateTunnelChain).not.toHaveBeenCalled();
     expect(mockAppendConnectionsToDatabase).toHaveBeenCalledWith(
       "col-3",
       expect.arrayContaining([
         expect.objectContaining({
           name: "Sidecar SSH",
           proxyChainId: "proxy-chain-new",
-          tunnelChainId: "tunnel-chain-new",
-          security: expect.objectContaining({
-            openvpn: expect.objectContaining({ configId: "vpn-new" }),
-          }),
         }),
       ]),
     );
     const clonedConnection = (
       mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[]
     )[0];
-    expect(clonedConnection.security?.tunnelChain).toEqual([
-      {
-        id: "vpn-old",
-        type: "openvpn",
-        enabled: true,
-        vpn: { configId: "vpn-new" },
-      },
-    ]);
+    expect(clonedConnection).not.toHaveProperty("tunnelChainId");
+    expect(clonedConnection.security).not.toHaveProperty("openvpn");
+    expect(clonedConnection.security?.tunnelChain).toBeUndefined();
+    const credentialFreeCloneEffects = JSON.stringify({
+      createCalls: mockCreateOpenVPN.mock.calls,
+      tunnelChainCalls: mockCreateTunnelChain.mock.calls,
+      appendedConnections: mockAppendConnectionsToDatabase.mock.calls,
+      result: result.current.cloneResult,
+    });
+    for (const secret of [
+      "clone-private-user",
+      "clone-private-password",
+      "clone-private-config",
+      "clone-private-key",
+      "C:/private/clone-auth.txt",
+    ]) {
+      expect(credentialFreeCloneEffects).not.toContain(secret);
+    }
     expect(result.current.cloneResult?.sidecarsCloned).toMatchObject({
       proxyProfiles: 1,
       proxyChains: 1,
-      tunnelChains: 1,
-      vpnConnections: 1,
-      total: 4,
+      tunnelChains: 0,
+      vpnConnections: 0,
+      total: 2,
     });
+    expect(result.current.cloneResult?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("OpenVPN credentials"),
+        expect.stringContaining(
+          'VPN profile "VPN Old" was omitted because its credentials are unavailable',
+        ),
+        expect.stringContaining(
+          'Tunnel chain "Tunnel Chain" was omitted because VPN profile(s) vpn-old were not cloned',
+        ),
+        expect.stringContaining(
+          'Connection "Sidecar SSH" had unresolved VPN profile vpn-old',
+        ),
+      ]),
+    );
+
+    mockCreateProfile.mockClear();
+    mockCreateOpenVPN.mockClear();
+    mockCreateChain.mockClear();
+    mockCreateTunnelChain.mockClear();
+    mockAppendConnectionsToDatabase.mockClear();
+    mockListOpenVPN.mockReset();
+    mockListOpenVPN.mockResolvedValue([rawOpenVpnProfile]);
+    act(() => {
+      result.current.setCloneIncludeCredentials(true);
+      result.current.updateCloneInclusion({
+        // A non-empty selection is an authoritative allowlist. Dependency
+        // recovery must not override this exclusion even when credentials are
+        // otherwise permitted.
+        includedVpnConnectionIds: ["vpn-explicitly-unselected"],
+      });
+    });
+    await act(async () => {
+      await result.current.handleClone();
+    });
+
+    expect(mockCreateOpenVPN).not.toHaveBeenCalled();
+    expect(mockCreateTunnelChain).not.toHaveBeenCalled();
+    const allowlistedClone = (
+      mockAppendConnectionsToDatabase.mock.calls[0][1] as Connection[]
+    )[0];
+    expect(allowlistedClone).not.toHaveProperty("tunnelChainId");
+    expect(allowlistedClone.security).not.toHaveProperty("openvpn");
+    expect(allowlistedClone.security?.tunnelChain).toBeUndefined();
+    expect(result.current.cloneResult?.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'VPN profile "VPN Old" (vpn-old) was excluded by the explicit clone VPN selection',
+        ),
+        expect.stringContaining(
+          'Tunnel chain "Tunnel Chain" was omitted because VPN profile(s) vpn-old were not cloned',
+        ),
+        expect.stringContaining(
+          'Connection "Sidecar SSH" had unresolved VPN profile vpn-old',
+        ),
+      ]),
+    );
   });
 
   // ── Error handling ──────────────────────────────────────────
