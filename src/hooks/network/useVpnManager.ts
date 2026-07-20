@@ -122,6 +122,12 @@ export function useVpnManager(isOpen: boolean) {
       try {
         setError(null);
         const provider = requireExecutableProvider(vpnType);
+        const profile = allConnections.find(
+          (candidate) => candidate.id === id && candidate.vpnType === provider,
+        );
+        if (profile?.connectDisabledReason) {
+          throw new Error(profile.connectDisabledReason);
+        }
         switch (provider) {
           case "openvpn":
             await mgr.connectOpenVPN(id);
@@ -143,7 +149,7 @@ export function useVpnManager(isOpen: boolean) {
         );
       }
     },
-    [mgr, loadConnections],
+    [mgr, loadConnections, allConnections],
   );
 
   const disconnectVpn = useCallback(

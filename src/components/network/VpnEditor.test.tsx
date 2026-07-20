@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { VpnEditor } from "./VpnEditor";
 
@@ -26,6 +26,103 @@ describe("VpnEditor OpenVPN configuration sources", () => {
     });
 
     expect(screen.getByRole("button", { name: "Create VPN" })).toBeEnabled();
+  });
+
+  it("shows stored secrets without prefilling them and makes clear intent explicit", () => {
+    render(
+      <VpnEditor
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        editingConnection={{
+          id: "openvpn-office",
+          vpnType: "openvpn",
+          name: "Office VPN",
+          config: { remoteHost: "vpn.example.com" },
+          secretPresence: {
+            password: true,
+            inlineConfig: false,
+            clientKey: false,
+          },
+        }}
+      />,
+    );
+
+    const password = screen.getByPlaceholderText(
+      "Stored secret — leave blank to keep",
+    );
+    expect(password).toHaveValue("");
+    const field = password.parentElement;
+    expect(field).not.toBeNull();
+    fireEvent.click(
+      within(field!).getByRole("button", { name: "Clear stored secret" }),
+    );
+    expect(
+      within(field!).getByText(/stored secret will be cleared/i),
+    ).toBeInTheDocument();
+
+    fireEvent.change(password, { target: { value: "replacement-secret" } });
+    expect(
+      within(field!).getByText(/new value will replace the stored secret/i),
+    ).toBeInTheDocument();
+    expect(
+      within(field!).queryByText(/stored secret will be cleared/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("makes an intentionally keyless WireGuard profile visible", () => {
+    render(
+      <VpnEditor
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        editingConnection={{
+          id: "wg-keyless",
+          vpnType: "wireguard",
+          name: "Keyless WireGuard",
+          config: {
+            interface: { privateKey: "", address: [] },
+            peer: { publicKey: "peer-public", allowedIPs: ["0.0.0.0/0"] },
+          },
+          secretPresence: { privateKey: false, presharedKey: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/profile has no private key/i)).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Base64-encoded private key"),
+    ).toHaveValue("");
+  });
+
+  it("shows ZeroTier identity and token presence without returning either secret", () => {
+    render(
+      <VpnEditor
+        isOpen
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        editingConnection={{
+          id: "zt-office",
+          vpnType: "zerotier",
+          name: "Office ZeroTier",
+          config: {
+            networkId: "8056c2e21c000001",
+            identity: { public: "public-id", secret: "" },
+          },
+          secretPresence: {
+            identitySecret: true,
+            authtokenSecret: true,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByDisplayValue("public-id")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/stored identity secret/i)).toHaveValue(
+      "",
+    );
+    expect(screen.getByPlaceholderText(/stored auth token/i)).toHaveValue("");
+    expect(screen.getAllByText(/stored securely/i)).toHaveLength(2);
   });
 
   it("keeps manual TLS Auth and TLS Crypt mutually exclusive", () => {

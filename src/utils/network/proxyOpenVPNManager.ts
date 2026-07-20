@@ -19,11 +19,23 @@ import {
   fromZeroTierIpcConnection,
   normalizeVpnStatus,
   requireVpnConnectionId,
+  toOpenVpnIpcSecretMutation,
   toOpenVpnIpcConfig,
+  toTailscaleIpcSecretMutation,
   toTailscaleIpcConfig,
+  toWireGuardIpcSecretMutation,
   toWireGuardIpcConfig,
+  toZeroTierIpcSecretMutation,
   toZeroTierIpcConfig,
+  type OpenVpnSecretMutation,
+  type OpenVpnSecretPresence,
+  type TailscaleSecretMutation,
+  type TailscaleSecretPresence,
   type VpnConnectionStatus,
+  type WireGuardSecretMutation,
+  type WireGuardSecretPresence,
+  type ZeroTierSecretMutation,
+  type ZeroTierSecretPresence,
 } from "./vpnIpcAdapter";
 
 export enum ConnectionType {
@@ -99,6 +111,7 @@ export interface OpenVPNConnection {
   localIp?: string;
   remoteIp?: string;
   chainPosition?: number;
+  secretPresence?: OpenVpnSecretPresence;
 }
 
 export interface WireGuardConnection {
@@ -112,6 +125,7 @@ export interface WireGuardConnection {
   localIp?: string;
   peerIp?: string;
   chainPosition?: number;
+  secretPresence?: WireGuardSecretPresence;
 }
 
 export interface IKEv2Connection {
@@ -226,6 +240,7 @@ export interface ZeroTierConnection {
   nodeId?: string;
   networkId?: string;
   chainPosition?: number;
+  secretPresence?: ZeroTierSecretPresence;
 }
 
 export interface TailscaleConnection {
@@ -238,6 +253,7 @@ export interface TailscaleConnection {
   nodeIp?: string;
   tailnetIp?: string;
   chainPosition?: number;
+  secretPresence?: TailscaleSecretPresence;
 }
 
 export interface ChainHop {
@@ -383,11 +399,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: OpenVPNConfig | Record<string, unknown>,
+    secretMutation?: OpenVpnSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toOpenVpnIpcConfig(config) : undefined;
+    const ipcSecretMutation = toOpenVpnIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_openvpn_connection", {
       connectionId,
       name,
-      config: config ? toOpenVpnIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -452,11 +475,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: WireGuardConfig | Record<string, unknown>,
+    secretMutation?: WireGuardSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toWireGuardIpcConfig(config) : undefined;
+    const ipcSecretMutation = toWireGuardIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_wireguard_connection", {
       connectionId,
       name,
-      config: config ? toWireGuardIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -850,11 +880,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: ZeroTierConfig | Record<string, unknown>,
+    secretMutation?: ZeroTierSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toZeroTierIpcConfig(config) : undefined;
+    const ipcSecretMutation = toZeroTierIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_zerotier_connection", {
       connectionId,
       name,
-      config: config ? toZeroTierIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -908,11 +945,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: TailscaleConfig | Record<string, unknown>,
+    secretMutation?: TailscaleSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toTailscaleIpcConfig(config) : undefined;
+    const ipcSecretMutation = toTailscaleIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_tailscale_connection", {
       connectionId,
       name,
-      config: config ? toTailscaleIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 

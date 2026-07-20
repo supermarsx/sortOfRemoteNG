@@ -132,6 +132,34 @@ describe("useVpnManager", () => {
     expect(conn.port).toBe(51820);
   });
 
+  it("exposes deliberately keyless WireGuard state and refuses to connect it", async () => {
+    mockMgr.listWireGuardConnections.mockResolvedValue([
+      {
+        id: "wg-keyless",
+        name: "Keyless WG",
+        status: "disconnected",
+        config: {
+          interface: { privateKey: "", address: [] },
+          peer: { publicKey: "peer-public", allowedIPs: ["0.0.0.0/0"] },
+        },
+        secretPresence: { privateKey: false, presharedKey: false },
+        createdAt: new Date("2025-01-01"),
+      },
+    ]);
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() => expect(result.current.connections).toHaveLength(1));
+
+    expect(result.current.connections[0].connectDisabledReason).toMatch(
+      /private key is not stored/i,
+    );
+    await act(async () => {
+      await result.current.connectVpn("wg-keyless", "wireguard");
+    });
+    expect(mockMgr.connectWireGuard).not.toHaveBeenCalled();
+    expect(result.current.error).toMatch(/private key is not stored/i);
+  });
+
   it("normalizes Tailscale connections with loginServer", async () => {
     mockMgr.listTailscaleConnections.mockResolvedValue([
       {

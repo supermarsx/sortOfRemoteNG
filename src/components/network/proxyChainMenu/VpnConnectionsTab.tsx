@@ -27,6 +27,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { ProxyOpenVPNManager } from "../../../utils/network/proxyOpenVPNManager";
 import { setPendingVpnEdit } from "../../../utils/network/vpnEditorStore";
+import type { VpnSecretPresence } from "../../../utils/network/vpnIpcAdapter";
 import {
   EXECUTABLE_VPN_PROVIDERS,
   getVpnProviderLabel,
@@ -166,26 +167,31 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
       try {
         const proxyMgr = ProxyOpenVPNManager.getInstance();
         let fullConfig: Record<string, any> = {};
+        let secretPresence: VpnSecretPresence | undefined;
 
         switch (conn.vpnType) {
           case "openvpn": {
             const full = await proxyMgr.getOpenVPNConnection(conn.id);
             fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
             break;
           }
           case "wireguard": {
             const full = await proxyMgr.getWireGuardConnection(conn.id);
             fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
             break;
           }
           case "tailscale": {
             const full = await proxyMgr.getTailscaleConnection(conn.id);
             fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
             break;
           }
           case "zerotier": {
             const full = await proxyMgr.getZeroTierConnection(conn.id);
             fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
             break;
           }
         }
@@ -195,6 +201,7 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
           vpnType: conn.vpnType,
           name: conn.name,
           config: fullConfig,
+          secretPresence,
         });
         mgr.handleNewVpn();
       } catch (err) {
@@ -368,6 +375,11 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
                       : conn.vpnType}
                     {conn.localIp && ` \u2014 ${conn.localIp}`}
                   </div>
+                  {conn.connectDisabledReason && (
+                    <div className="mt-1 text-[11px] text-amber-400">
+                      {conn.connectDisabledReason}
+                    </div>
+                  )}
                 </div>
                 <StatusBadge status={conn.status} />
               </div>
@@ -383,8 +395,12 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
                 ) : (
                   <button
                     onClick={() => vpn.connectVpn(conn.id, conn.vpnType)}
-                    className="p-1.5 rounded-md hover:bg-green-500/15 text-[var(--color-textSecondary)] hover:text-green-400 transition-colors"
-                    title={t("proxyChainMenu.common.connect", "Connect")}
+                    disabled={Boolean(conn.connectDisabledReason)}
+                    className="p-1.5 rounded-md hover:bg-green-500/15 text-[var(--color-textSecondary)] hover:text-green-400 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--color-textSecondary)]"
+                    title={
+                      conn.connectDisabledReason ??
+                      t("proxyChainMenu.common.connect", "Connect")
+                    }
                   >
                     <Play size={14} />
                   </button>

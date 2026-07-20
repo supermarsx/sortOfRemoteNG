@@ -8,6 +8,10 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 import { ProxyOpenVPNManager } from "../../src/utils/network/proxyOpenVPNManager";
 import {
   fromOpenVpnIpcConnection,
+  fromTailscaleIpcConnection,
+  fromWireGuardIpcConnection,
+  fromZeroTierIpcConnection,
+  isMaskedSecretPlaceholder,
   normalizeVpnStatus,
   toOpenVpnIpcConfig,
   toTailscaleIpcConfig,
@@ -146,6 +150,8 @@ describe("VPN IPC provider boundary", () => {
 
     expect(toZeroTierIpcConfig(zeroTierConfig)).toEqual({
       network_id: "8056c2e21c000001",
+      identity_public: "zt-public",
+      identity_secret: "zt-secret",
       allow_managed: true,
       allow_global: false,
       allow_default: false,
@@ -275,7 +281,12 @@ describe("VPN IPC provider boundary", () => {
       status: "connected",
       config: {
         remoteHost: "vpn.example.com",
-        inlineConfig: "client\nremote vpn.example.com\n",
+        inlineConfig: undefined,
+      },
+      secretPresence: {
+        password: true,
+        inlineConfig: true,
+        clientKey: false,
       },
       localIp: "10.9.0.2",
     });
@@ -297,6 +308,7 @@ describe("VPN IPC provider boundary", () => {
           fwmark: 42,
           interfaceName: "sorng-wg-office",
         }),
+        secretPresence: { privateKey: true, presharedKey: false },
       }),
     ]);
     await expect(manager.listTailscaleConnections()).resolves.toEqual([
@@ -304,11 +316,12 @@ describe("VPN IPC provider boundary", () => {
         id: "ts-id",
         status: "connecting",
         config: expect.objectContaining({
-          authKey: "tskey-secret",
+          authKey: undefined,
           acceptDNS: true,
           hostname: "office-node",
           exitNodeAllowLanAccess: false,
         }),
+        secretPresence: { authKey: true },
       }),
     ]);
     await expect(manager.listZeroTierConnections()).resolves.toEqual([
@@ -318,8 +331,9 @@ describe("VPN IPC provider boundary", () => {
         config: expect.objectContaining({
           networkId: "8056c2e21c000001",
           zerotierHome: "C:/ZeroTier",
-          authtokenSecret: "zt-authtoken",
+          authtokenSecret: undefined,
         }),
+        secretPresence: { identitySecret: true, authtokenSecret: true },
       }),
     ]);
 
@@ -359,9 +373,251 @@ describe("VPN IPC provider boundary", () => {
     expect(normalizeVpnStatus({ FutureState: secret })).toBe("error");
   });
 
+  it("accepts flat and wrapped redacted DTOs while never exposing returned secret values", () => {
+    const openvpn = fromOpenVpnIpcConnection({
+      ...rustOpenVpn(),
+      secret_presence: {
+        password: true,
+        inline_config: true,
+        client_key: true,
+      },
+    });
+    const wireguard = fromWireGuardIpcConnection({
+      connection: rustWireGuard(),
+      secret_presence: { private_key: true, preshared_key: true },
+    });
+    const tailscale = fromTailscaleIpcConnection({
+      ...rustTailscale(),
+      secret_presence: { auth_key: true },
+    });
+    const zerotier = fromZeroTierIpcConnection({
+      connection: rustZeroTier(),
+      secretPresence: { identitySecret: true, authtokenSecret: true },
+    });
+
+    expect(openvpn.config).toMatchObject({
+      password: undefined,
+      inlineConfig: undefined,
+      clientKey: undefined,
+    });
+    expect(openvpn.secretPresence).toEqual({
+      password: true,
+      inlineConfig: true,
+      clientKey: true,
+    });
+    expect(wireguard.config.interface.privateKey).toBe("");
+    expect(wireguard.config.peer.presharedKey).toBeUndefined();
+    expect(wireguard.secretPresence).toEqual({
+      privateKey: true,
+      presharedKey: true,
+    });
+    expect(tailscale.config.authKey).toBeUndefined();
+    expect(tailscale.secretPresence.authKey).toBe(true);
+    expect(zerotier.config.identity?.secret).toBe("");
+    expect(zerotier.config.authtokenSecret).toBeUndefined();
+    expect(zerotier.secretPresence).toEqual({
+      identitySecret: true,
+      authtokenSecret: true,
+    });
+  });
+
+  it("preserves blank secrets, replaces explicit values, clears only through typed top-level mutations, and rejects conflicts", async () => {
+    const manager = ProxyOpenVPNManager.getInstance();
+    invokeMock.mockResolvedValue(undefined);
+
+    const cases = [
+      {
+        update: (config: Record<string, unknown>, mutation?: any) =>
+          manager.updateOpenVPNConnection("ovpn", undefined, config, mutation),
+        command: "update_openvpn_connection",
+        blank: { enabled: true, password: "   " },
+        replace: { enabled: true, password: "new-openvpn" },
+        ipcField: "password",
+        clear: { clearPassword: true },
+        ipcClear: "clear_password",
+      },
+      {
+        update: (config: Record<string, unknown>, mutation?: any) =>
+          manager.updateWireGuardConnection("wg", undefined, config, mutation),
+        command: "update_wireguard_connection",
+        blank: {
+          enabled: true,
+          interface: { privateKey: " ", address: [] },
+          peer: { publicKey: "public", allowedIPs: [] },
+        },
+        replace: {
+          enabled: true,
+          interface: { privateKey: "new-wireguard", address: [] },
+          peer: { publicKey: "public", allowedIPs: [] },
+        },
+        ipcField: "private_key",
+        clear: { clearPrivateKey: true },
+        ipcClear: "clear_private_key",
+      },
+      {
+        update: (config: Record<string, unknown>, mutation?: any) =>
+          manager.updateTailscaleConnection("ts", undefined, config, mutation),
+        command: "update_tailscale_connection",
+        blank: { enabled: true, authKey: "" },
+        replace: { enabled: true, authKey: "new-tail-key" },
+        ipcField: "auth_key",
+        clear: { clearAuthKey: true },
+        ipcClear: "clear_auth_key",
+      },
+      {
+        update: (config: Record<string, unknown>, mutation?: any) =>
+          manager.updateZeroTierConnection("zt", undefined, config, mutation),
+        command: "update_zerotier_connection",
+        blank: {
+          enabled: true,
+          networkId: "8056c2e21c000001",
+          authtokenSecret: " ",
+        },
+        replace: {
+          enabled: true,
+          networkId: "8056c2e21c000001",
+          authtokenSecret: "new-zt-token",
+        },
+        ipcField: "authtoken_secret",
+        clear: { clearAuthtokenSecret: true },
+        ipcClear: "clear_authtoken_secret",
+      },
+    ] as const;
+
+    for (const item of cases) {
+      invokeMock.mockClear();
+      await item.update(item.blank);
+      let payload = invokeMock.mock.calls[0][1] as Record<string, any>;
+      expect(payload.config).not.toHaveProperty(item.ipcField);
+      expect(payload).not.toHaveProperty("secretMutation");
+
+      invokeMock.mockClear();
+      await item.update(item.replace);
+      payload = invokeMock.mock.calls[0][1] as Record<string, any>;
+      expect(payload.config[item.ipcField]).toBeTruthy();
+      expect(payload).not.toHaveProperty("secretMutation");
+
+      invokeMock.mockClear();
+      await item.update(item.blank, item.clear);
+      payload = invokeMock.mock.calls[0][1] as Record<string, any>;
+      expect(invokeMock.mock.calls[0][0]).toBe(item.command);
+      expect(payload.config).not.toHaveProperty(item.ipcField);
+      expect(payload.secretMutation[item.ipcClear]).toBe(true);
+
+      invokeMock.mockClear();
+      await expect(item.update(item.replace, item.clear)).rejects.toThrow(
+        "cannot be replaced and cleared",
+      );
+      expect(invokeMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects masked secret sentinels for every executable provider", () => {
+    expect(isMaskedSecretPlaceholder("••••••••")).toBe(true);
+    expect(isMaskedSecretPlaceholder("******** (stored)")).toBe(true);
+    expect(isMaskedSecretPlaceholder("[REDACTED]")).toBe(true);
+    const calls = [
+      () => toOpenVpnIpcConfig({ enabled: true, password: "********" }),
+      () =>
+        toWireGuardIpcConfig({
+          enabled: true,
+          interface: { privateKey: "••••••••", address: [] },
+          peer: { publicKey: "public", allowedIPs: [] },
+        }),
+      () => toTailscaleIpcConfig({ enabled: true, authKey: "<redacted>" }),
+      () =>
+        toZeroTierIpcConfig({
+          enabled: true,
+          networkId: "8056c2e21c000001",
+          authtokenSecret: "stored secret",
+        }),
+    ];
+    calls.forEach((call) =>
+      expect(call).toThrow("masked values cannot be saved"),
+    );
+  });
+
+  it("applies the same preserve, replace, and clear contract to secondary provider secrets", async () => {
+    const manager = ProxyOpenVPNManager.getInstance();
+    invokeMock.mockResolvedValue(undefined);
+
+    await manager.updateOpenVPNConnection(
+      "ovpn-secondary",
+      undefined,
+      { enabled: true, inlineConfig: " ", clientKey: "" },
+      { clearInlineConfig: true, clearClientKey: true },
+    );
+    expect(invokeMock).toHaveBeenLastCalledWith("update_openvpn_connection", {
+      connectionId: "ovpn-secondary",
+      name: undefined,
+      config: expect.not.objectContaining({
+        inline_config: expect.anything(),
+        client_key: expect.anything(),
+      }),
+      secretMutation: {
+        clear_password: false,
+        clear_inline_config: true,
+        clear_client_key: true,
+      },
+    });
+
+    await manager.updateWireGuardConnection("wg-secondary", undefined, {
+      enabled: true,
+      interface: { privateKey: "", address: [] },
+      peer: {
+        publicKey: "peer-public",
+        presharedKey: "new-preshared",
+        allowedIPs: [],
+      },
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith(
+      "update_wireguard_connection",
+      expect.objectContaining({
+        config: expect.objectContaining({ preshared_key: "new-preshared" }),
+      }),
+    );
+
+    await manager.updateZeroTierConnection("zt-secondary", undefined, {
+      enabled: true,
+      networkId: "8056c2e21c000001",
+      identity: { public: "public-id", secret: "new-identity-secret" },
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith(
+      "update_zerotier_connection",
+      expect.objectContaining({
+        config: expect.objectContaining({
+          identity_public: "public-id",
+          identity_secret: "new-identity-secret",
+        }),
+      }),
+    );
+
+    await manager.updateZeroTierConnection(
+      "zt-secondary",
+      undefined,
+      {
+        enabled: true,
+        networkId: "8056c2e21c000001",
+        identity: { public: "public-id", secret: "" },
+      },
+      { clearIdentitySecret: true },
+    );
+    expect(invokeMock).toHaveBeenLastCalledWith(
+      "update_zerotier_connection",
+      expect.objectContaining({
+        config: expect.not.objectContaining({
+          identity_secret: expect.anything(),
+        }),
+        secretMutation: expect.objectContaining({
+          clear_identity_secret: true,
+        }),
+      }),
+    );
+  });
+
   it("flattens normalized persisted configs back into editable form state", () => {
     expect(toVpnEditorFormConfig("wireguard", wireGuardConfig)).toMatchObject({
-      privateKey: "wg-private",
+      privateKey: undefined,
       address: "10.8.0.2/32",
       allowedIPs: "10.20.0.0/16",
       endpoint: "vpn.example.com:51820",
@@ -376,7 +632,7 @@ describe("VPN IPC provider boundary", () => {
         keepAlive: { interval: 10, timeout: 60 },
       }),
     ).toMatchObject({
-      inlineConfig: "client\nremote vpn.example.com\n",
+      inlineConfig: undefined,
       keepAliveInterval: 10,
       keepAliveTimeout: 60,
       customOptions: "--persist-tun",
@@ -554,7 +810,7 @@ describe("VPN IPC provider boundary", () => {
       getUnsupportedVpnEditorSettings("zerotier", {
         identity: { public: "public-id", secret: "secret-node-id" },
       }),
-    ).toEqual(["custom node identity"]);
+    ).toEqual([]);
   });
 
   it("requires separate TLS key files only for manual OpenVPN profiles", () => {

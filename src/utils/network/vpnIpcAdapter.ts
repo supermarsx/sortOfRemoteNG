@@ -12,6 +12,56 @@ export type VpnConnectionStatus =
   | "disconnecting"
   | "error";
 
+export interface OpenVpnSecretPresence {
+  [key: string]: boolean;
+  password: boolean;
+  inlineConfig: boolean;
+  clientKey: boolean;
+}
+
+export interface WireGuardSecretPresence {
+  [key: string]: boolean;
+  privateKey: boolean;
+  presharedKey: boolean;
+}
+
+export interface TailscaleSecretPresence {
+  [key: string]: boolean;
+  authKey: boolean;
+}
+
+export interface ZeroTierSecretPresence {
+  [key: string]: boolean;
+  identitySecret: boolean;
+  authtokenSecret: boolean;
+}
+
+export interface OpenVpnSecretMutation {
+  clearPassword?: boolean;
+  clearInlineConfig?: boolean;
+  clearClientKey?: boolean;
+}
+
+export interface WireGuardSecretMutation {
+  clearPrivateKey?: boolean;
+  clearPresharedKey?: boolean;
+}
+
+export interface TailscaleSecretMutation {
+  clearAuthKey?: boolean;
+}
+
+export interface ZeroTierSecretMutation {
+  clearIdentitySecret?: boolean;
+  clearAuthtokenSecret?: boolean;
+}
+
+export type VpnSecretPresence =
+  | OpenVpnSecretPresence
+  | WireGuardSecretPresence
+  | TailscaleSecretPresence
+  | ZeroTierSecretPresence;
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface OpenVpnIpcConnection {
@@ -23,6 +73,7 @@ export interface OpenVpnIpcConnection {
   connectedAt?: Date;
   localIp?: string;
   remoteIp?: string;
+  secretPresence: OpenVpnSecretPresence;
 }
 
 export interface WireGuardIpcConnection {
@@ -35,6 +86,7 @@ export interface WireGuardIpcConnection {
   interfaceName?: string;
   localIp?: string;
   peerIp?: string;
+  secretPresence: WireGuardSecretPresence;
 }
 
 export interface TailscaleIpcConnection {
@@ -45,6 +97,7 @@ export interface TailscaleIpcConnection {
   createdAt: Date;
   connectedAt?: Date;
   tailnetIp?: string;
+  secretPresence: TailscaleSecretPresence;
 }
 
 export interface ZeroTierIpcConnection {
@@ -55,6 +108,7 @@ export interface ZeroTierIpcConnection {
   createdAt: Date;
   connectedAt?: Date;
   networkId?: string;
+  secretPresence: ZeroTierSecretPresence;
 }
 
 /**
@@ -66,13 +120,13 @@ export function toOpenVpnIpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "OpenVPN config");
   return compact({
     config_file: optionalString(source.configFile),
-    inline_config: optionalString(source.inlineConfig),
+    inline_config: optionalSecret(source.inlineConfig, "OpenVPN inline config"),
     auth_file: optionalString(source.authFile),
     ca_cert: optionalString(source.caCert),
     client_cert: optionalString(source.clientCert),
-    client_key: optionalString(source.clientKey),
+    client_key: optionalSecret(source.clientKey, "OpenVPN client key"),
     username: optionalString(source.username),
-    password: optionalString(source.password),
+    password: optionalSecret(source.password, "OpenVPN password"),
     remote_host: optionalString(source.remoteHost),
     remote_port: optionalNumber(source.remotePort),
     protocol: optionalEnum(source.protocol, ["udp", "tcp"]),
@@ -100,9 +154,15 @@ export function toWireGuardIpcConfig(config: unknown): UnknownRecord {
   const interfaceConfig = optionalRecord(source.interface);
   const peerConfig = optionalRecord(source.peer);
   return compact({
-    private_key: optionalNonEmptyString(interfaceConfig.privateKey),
+    private_key: optionalSecret(
+      interfaceConfig.privateKey,
+      "WireGuard private key",
+    ),
     public_key: optionalNonEmptyString(peerConfig.publicKey),
-    preshared_key: optionalNonEmptyString(peerConfig.presharedKey),
+    preshared_key: optionalSecret(
+      peerConfig.presharedKey,
+      "WireGuard preshared key",
+    ),
     endpoint: optionalNonEmptyString(peerConfig.endpoint),
     addresses: stringArray(interfaceConfig.address),
     allowed_ips: stringArray(peerConfig.allowedIPs),
@@ -123,7 +183,7 @@ export function toWireGuardIpcConfig(config: unknown): UnknownRecord {
 export function toTailscaleIpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "Tailscale config");
   return compact({
-    auth_key: optionalString(source.authKey),
+    auth_key: optionalSecret(source.authKey, "Tailscale auth key"),
     login_server: optionalString(source.loginServer),
     accept_routes: optionalBoolean(source.acceptRoutes),
     accept_dns: optionalBoolean(source.acceptDNS),
@@ -141,32 +201,108 @@ export function toTailscaleIpcConfig(config: unknown): UnknownRecord {
 
 export function toZeroTierIpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "ZeroTier config");
+  const identity = optionalRecord(source.identity);
   return compact({
     network_id: requiredString(source.networkId, "ZeroTier network id"),
+    identity_public: optionalNonEmptyString(identity.public),
+    identity_secret: optionalSecret(
+      identity.secret,
+      "ZeroTier identity secret",
+    ),
     allow_managed: optionalBoolean(source.allowManaged),
     allow_global: optionalBoolean(source.allowGlobal),
     allow_default: optionalBoolean(source.allowDefault),
     allow_dns: optionalBoolean(source.allowDNS),
     zerotier_home: optionalString(source.zerotierHome),
-    authtoken_secret: optionalString(source.authtokenSecret),
+    authtoken_secret: optionalSecret(
+      source.authtokenSecret,
+      "ZeroTier auth token",
+    ),
   });
+}
+
+export function toOpenVpnIpcSecretMutation(
+  mutation: OpenVpnSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_password: mutation.clearPassword === true,
+    clear_inline_config: mutation.clearInlineConfig === true,
+    clear_client_key: mutation.clearClientKey === true,
+  };
+  rejectReplaceAndClear(config, [
+    ["password", result.clear_password, "OpenVPN password"],
+    ["inline_config", result.clear_inline_config, "OpenVPN inline config"],
+    ["client_key", result.clear_client_key, "OpenVPN client key"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toWireGuardIpcSecretMutation(
+  mutation: WireGuardSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_private_key: mutation.clearPrivateKey === true,
+    clear_preshared_key: mutation.clearPresharedKey === true,
+  };
+  rejectReplaceAndClear(config, [
+    ["private_key", result.clear_private_key, "WireGuard private key"],
+    ["preshared_key", result.clear_preshared_key, "WireGuard preshared key"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toTailscaleIpcSecretMutation(
+  mutation: TailscaleSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = { clear_auth_key: mutation.clearAuthKey === true };
+  rejectReplaceAndClear(config, [
+    ["auth_key", result.clear_auth_key, "Tailscale auth key"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toZeroTierIpcSecretMutation(
+  mutation: ZeroTierSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_identity_secret: mutation.clearIdentitySecret === true,
+    clear_authtoken_secret: mutation.clearAuthtokenSecret === true,
+  };
+  rejectReplaceAndClear(config, [
+    [
+      "identity_secret",
+      result.clear_identity_secret,
+      "ZeroTier identity secret",
+    ],
+    ["authtoken_secret", result.clear_authtoken_secret, "ZeroTier auth token"],
+  ]);
+  return anyTrue(result) ? result : undefined;
 }
 
 export function fromOpenVpnIpcConnection(value: unknown): OpenVpnIpcConnection {
   const raw = connectionRecord(value, "OpenVPN");
   const config = record(raw.config, "OpenVPN config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "OpenVPN"),
     config: {
       enabled: true,
       configFile: optionalString(config.config_file),
-      inlineConfig: optionalString(config.inline_config),
+      inlineConfig: undefined,
       authFile: optionalString(config.auth_file),
       caCert: optionalString(config.ca_cert),
       clientCert: optionalString(config.client_cert),
-      clientKey: optionalString(config.client_key),
+      clientKey: undefined,
       username: optionalString(config.username),
-      password: optionalString(config.password),
+      password: undefined,
       remoteHost: optionalString(config.remote_host),
       remotePort: optionalNumber(config.remote_port),
       protocol: optionalEnum(config.protocol, ["udp", "tcp"]),
@@ -189,6 +325,19 @@ export function fromOpenVpnIpcConnection(value: unknown): OpenVpnIpcConnection {
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      password:
+        optionalBoolean(presence.password) === true ||
+        hasNonEmpty(config.password),
+      inlineConfig:
+        optionalBoolean(presence.inline_config) === true ||
+        optionalBoolean(presence.inlineConfig) === true ||
+        hasNonEmpty(config.inline_config),
+      clientKey:
+        optionalBoolean(presence.client_key) === true ||
+        optionalBoolean(presence.clientKey) === true ||
+        hasNonEmpty(config.client_key),
+    },
   };
 }
 
@@ -197,13 +346,14 @@ export function fromWireGuardIpcConnection(
 ): WireGuardIpcConnection {
   const raw = connectionRecord(value, "WireGuard");
   const config = record(raw.config, "WireGuard config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "WireGuard"),
     config: {
       enabled: true,
       configFile: optionalString(config.config_file),
       interface: {
-        privateKey: optionalString(config.private_key) ?? "",
+        privateKey: "",
         address: stringArray(config.addresses),
         dns: stringArray(config.dns_servers),
         mtu: optionalNumber(config.mtu),
@@ -214,7 +364,7 @@ export function fromWireGuardIpcConnection(
       },
       peer: {
         publicKey: optionalString(config.public_key) ?? "",
-        presharedKey: optionalString(config.preshared_key),
+        presharedKey: undefined,
         endpoint: optionalString(config.endpoint),
         allowedIPs: stringArray(config.allowed_ips),
         persistentKeepalive: optionalNumber(config.persistent_keepalive),
@@ -226,6 +376,16 @@ export function fromWireGuardIpcConnection(
     interfaceName: optionalString(raw.interface_name),
     localIp: optionalString(raw.local_ip),
     peerIp: optionalString(raw.peer_ip),
+    secretPresence: {
+      privateKey:
+        optionalBoolean(presence.private_key) === true ||
+        optionalBoolean(presence.privateKey) === true ||
+        hasNonEmpty(config.private_key),
+      presharedKey:
+        optionalBoolean(presence.preshared_key) === true ||
+        optionalBoolean(presence.presharedKey) === true ||
+        hasNonEmpty(config.preshared_key),
+    },
   };
 }
 
@@ -234,11 +394,12 @@ export function fromTailscaleIpcConnection(
 ): TailscaleIpcConnection {
   const raw = connectionRecord(value, "Tailscale");
   const config = record(raw.config, "Tailscale config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "Tailscale"),
     config: {
       enabled: true,
-      authKey: optionalString(config.auth_key),
+      authKey: undefined,
       loginServer: optionalString(config.login_server),
       advertiseRoutes: stringArray(config.advertise_routes),
       advertiseTags: stringArray(config.advertise_tags),
@@ -255,6 +416,12 @@ export function fromTailscaleIpcConnection(
       socket: optionalString(config.socket),
     },
     tailnetIp: optionalString(raw.tailnet_ip),
+    secretPresence: {
+      authKey:
+        optionalBoolean(presence.auth_key) === true ||
+        optionalBoolean(presence.authKey) === true ||
+        hasNonEmpty(config.auth_key),
+    },
   };
 }
 
@@ -263,26 +430,36 @@ export function fromZeroTierIpcConnection(
 ): ZeroTierIpcConnection {
   const raw = connectionRecord(value, "ZeroTier");
   const config = record(raw.config, "ZeroTier config");
+  const presence = secretPresenceRecord(value, raw);
   const networkId = requiredString(config.network_id, "ZeroTier network id");
   const identityPublic = optionalString(config.identity_public);
-  const identitySecret = optionalString(config.identity_secret);
   return {
     ...commonConnection(raw, "ZeroTier"),
     config: {
       enabled: true,
       networkId,
       identity:
-        identityPublic !== undefined && identitySecret !== undefined
-          ? { public: identityPublic, secret: identitySecret }
+        identityPublic !== undefined
+          ? { public: identityPublic, secret: "" }
           : undefined,
       allowManaged: optionalBoolean(config.allow_managed),
       allowGlobal: optionalBoolean(config.allow_global),
       allowDefault: optionalBoolean(config.allow_default),
       allowDNS: optionalBoolean(config.allow_dns),
       zerotierHome: optionalString(config.zerotier_home),
-      authtokenSecret: optionalString(config.authtoken_secret),
+      authtokenSecret: undefined,
     },
     networkId: optionalString(raw.network_id) ?? networkId,
+    secretPresence: {
+      identitySecret:
+        optionalBoolean(presence.identity_secret) === true ||
+        optionalBoolean(presence.identitySecret) === true ||
+        hasNonEmpty(config.identity_secret),
+      authtokenSecret:
+        optionalBoolean(presence.authtoken_secret) === true ||
+        optionalBoolean(presence.authtokenSecret) === true ||
+        hasNonEmpty(config.authtoken_secret),
+    },
   };
 }
 
@@ -327,7 +504,20 @@ function commonConnection(raw: UnknownRecord, provider: string) {
 }
 
 function connectionRecord(value: unknown, provider: string): UnknownRecord {
-  return record(value, `${provider} connection`);
+  const outer = record(value, `${provider} connection`);
+  return isRecord(outer.connection)
+    ? record(outer.connection, `${provider} connection`)
+    : outer;
+}
+
+function secretPresenceRecord(
+  value: unknown,
+  raw: UnknownRecord,
+): UnknownRecord {
+  const outer = isRecord(value) ? value : {};
+  return optionalRecord(
+    outer.secret_presence ?? outer.secretPresence ?? raw.secret_presence,
+  );
 }
 
 function record(value: unknown, label: string): UnknownRecord {
@@ -353,6 +543,48 @@ function optionalString(value: unknown): string | undefined {
 function optionalNonEmptyString(value: unknown): string | undefined {
   const result = optionalString(value)?.trim();
   return result || undefined;
+}
+
+function optionalSecret(value: unknown, label: string): string | undefined {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  if (isMaskedSecretPlaceholder(value)) {
+    throw new Error(
+      `${label} must be entered explicitly; masked values cannot be saved`,
+    );
+  }
+  return value;
+}
+
+export function isMaskedSecretPlaceholder(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim();
+  return (
+    /^[*\u2022\u25cf\u00b7]{4,}(?:\s*\((?:stored|redacted|unchanged)\))?$/i.test(
+      normalized,
+    ) || /^(?:<|\[)?(?:redacted|stored(?: secret)?)(?:>|\])?$/i.test(normalized)
+  );
+}
+
+function hasNonEmpty(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function rejectReplaceAndClear(
+  config: UnknownRecord | undefined,
+  fields: Array<[string, boolean, string]>,
+): void {
+  if (!config) return;
+  for (const [field, clear, label] of fields) {
+    if (clear && hasNonEmpty(config[field])) {
+      throw new Error(
+        `${label} cannot be replaced and cleared in the same update`,
+      );
+    }
+  }
+}
+
+function anyTrue(value: Record<string, boolean>): boolean {
+  return Object.values(value).some(Boolean);
 }
 
 function optionalNumber(value: unknown): number | undefined {

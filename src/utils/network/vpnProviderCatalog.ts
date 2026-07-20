@@ -125,6 +125,8 @@ export interface VpnProfileSummary {
   localIp?: string;
   createdAt: Date;
   connectedAt?: Date;
+  /** Present when the saved profile is intentionally not runnable yet. */
+  connectDisabledReason?: string;
 }
 
 export type VpnProviderSnapshotStatus = "loaded" | "error";

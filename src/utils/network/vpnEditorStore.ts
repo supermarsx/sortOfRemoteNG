@@ -6,9 +6,10 @@
 
 export interface VpnEditingData {
   id: string;
-  vpnType: 'openvpn' | 'wireguard' | 'tailscale' | 'zerotier';
+  vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
   name: string;
   config: Record<string, any>;
+  secretPresence?: VpnSecretPresence;
 }
 
 let pendingEdit: VpnEditingData | null = null;
@@ -22,3 +23,4 @@ export function consumePendingVpnEdit(): VpnEditingData | null {
   pendingEdit = null;
   return data;
 }
+import type { VpnSecretPresence } from "./vpnIpcAdapter";

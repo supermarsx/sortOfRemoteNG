@@ -93,6 +93,11 @@ function normalizeWireGuard(
     host: endpoint.host,
     port: endpoint.port,
     localIp: connection.localIp,
+    connectDisabledReason:
+      connection.secretPresence?.privateKey === false &&
+      !connection.config?.configFile
+        ? "WireGuard private key is not stored. Edit the profile and supply a key before connecting."
+        : undefined,
   });
 }
 
@@ -120,7 +125,10 @@ function common(
     connectedAt?: Date;
   },
   vpnType: ExecutableVpnType,
-  details: Pick<VpnProfileSummary, "host" | "port" | "localIp">,
+  details: Pick<
+    VpnProfileSummary,
+    "host" | "port" | "localIp" | "connectDisabledReason"
+  >,
 ): VpnProfileSummary {
   return {
     id: connection.id,

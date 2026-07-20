@@ -15,8 +15,10 @@ import {
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   useVpnEditor,
+  type VpnEditorSecretField,
   type VpnEditorType,
 } from "../../hooks/network/useVpnEditor";
+import type { VpnSecretPresence } from "../../utils/network/vpnIpcAdapter";
 import {
   EXECUTABLE_VPN_PROVIDERS,
   getVpnProviderLabel,
@@ -108,6 +110,52 @@ function BrowseField({
   );
 }
 
+function SecretStatus({
+  mgr,
+  field,
+}: {
+  mgr: Mgr;
+  field: VpnEditorSecretField;
+}) {
+  const state = mgr.getSecretState(field);
+  if (state.clearRequested) {
+    return (
+      <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-amber-400">
+        <span>Stored secret will be cleared when this profile is updated.</span>
+        <button
+          type="button"
+          onClick={() => mgr.undoClearSecret(field)}
+          className="shrink-0 hover:text-amber-300"
+        >
+          Undo clear
+        </button>
+      </div>
+    );
+  }
+  if (state.replacementEntered) {
+    return (
+      <p className="mt-1 text-[11px] text-sky-300">
+        {state.stored
+          ? "New value will replace the stored secret."
+          : "New secret will be stored securely."}
+      </p>
+    );
+  }
+  if (!state.stored) return null;
+  return (
+    <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-emerald-400">
+      <span>Stored securely. Leave blank to keep this secret.</span>
+      <button
+        type="button"
+        onClick={() => mgr.clearSecret(field)}
+        className="shrink-0 text-red-300 hover:text-red-200"
+      >
+        Clear stored secret
+      </button>
+    </div>
+  );
+}
+
 // ── Section: Basic Info ─────────────────────────────────────────
 
 const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
@@ -170,9 +218,12 @@ const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { config, updateConfig } = mgr;
   const up = (k: string, v: any) => updateConfig({ [k]: v });
-  const hasConfigSource = [config.configFile, config.inlineConfig].some(
-    (value) => typeof value === "string" && value.trim() !== "",
-  );
+  const inlineState = mgr.getSecretState("inlineConfig");
+  const hasConfigSource =
+    [config.configFile, config.inlineConfig].some(
+      (value) => typeof value === "string" && value.trim() !== "",
+    ) ||
+    (inlineState.stored && !inlineState.clearRequested);
 
   return (
     <div className="space-y-5">
@@ -254,9 +305,14 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("password").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter password"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="password" />
           </FormField>
         </div>
       </div>
@@ -272,13 +328,12 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             onChange={(v) =>
               updateConfig({
                 configFile: v,
-                ...(v ? { inlineConfig: undefined } : {}),
               })
             }
             label="OpenVPN Config"
             extensions={["ovpn", "conf"]}
           />
-          {config.inlineConfig && !config.configFile && (
+          {(config.inlineConfig || inlineState.stored) && (
             <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-[var(--color-textMuted)]">
               <p>
                 Imported configuration is stored securely with this profile.
@@ -286,13 +341,36 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               </p>
               <button
                 type="button"
-                onClick={() => up("inlineConfig", undefined)}
+                onClick={() =>
+                  inlineState.stored
+                    ? mgr.clearSecret("inlineConfig")
+                    : up("inlineConfig", undefined)
+                }
                 className="shrink-0 text-sky-300 hover:text-sky-200"
               >
                 Switch to manual
               </button>
             </div>
           )}
+        </FormField>
+        <FormField label="Inline Configuration">
+          <textarea
+            value={config.inlineConfig ?? ""}
+            onChange={(event) => up("inlineConfig", event.target.value)}
+            placeholder={
+              inlineState.stored
+                ? "Stored inline configuration — leave blank to keep"
+                : "Paste OpenVPN client configuration"
+            }
+            rows={4}
+            className={inputCls + " resize-y font-mono"}
+          />
+          {config.configFile && (
+            <p className="mt-1 text-[11px] text-[var(--color-textMuted)]">
+              The selected config file takes precedence over inline content.
+            </p>
+          )}
+          <SecretStatus mgr={mgr} field="inlineConfig" />
         </FormField>
         {!hasConfigSource && (
           <FormField label="CA Certificate">
@@ -322,6 +400,12 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               label="Client Key"
               extensions={["key", "pem"]}
             />
+            <SecretStatus mgr={mgr} field="clientKey" />
+          </FormField>
+        )}
+        {hasConfigSource && mgr.getSecretState("clientKey").stored && (
+          <FormField label="Client Key">
+            <SecretStatus mgr={mgr} field="clientKey" />
           </FormField>
         )}
         <FormField label="Auth File">
@@ -533,9 +617,20 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { config, updateConfig } = mgr;
   const up = (k: string, v: any) => updateConfig({ [k]: v });
+  const privateKeyState = mgr.getSecretState("privateKey");
+  const keyless =
+    !config.configFile &&
+    !privateKeyState.stored &&
+    !privateKeyState.replacementEntered;
 
   return (
     <div className="space-y-5">
+      {keyless && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          This WireGuard profile has no private key. It can be saved, but
+          connecting remains disabled until a key or a config file is supplied.
+        </div>
+      )}
       {/* Config File */}
       <div className="space-y-3">
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
@@ -561,9 +656,14 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             type="password"
             value={config.privateKey ?? ""}
             onChange={(e) => up("privateKey", e.target.value)}
-            placeholder="Base64-encoded private key"
+            placeholder={
+              privateKeyState.stored
+                ? "Stored private key — leave blank to keep"
+                : "Base64-encoded private key"
+            }
             className={inputCls}
           />
+          <SecretStatus mgr={mgr} field="privateKey" />
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Address(es)">
@@ -617,9 +717,14 @@ const WireGuardConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             type="password"
             value={config.presharedKey ?? ""}
             onChange={(e) => up("presharedKey", e.target.value)}
-            placeholder="Optional preshared key"
+            placeholder={
+              mgr.getSecretState("presharedKey").stored
+                ? "Stored preshared key — leave blank to keep"
+                : "Optional preshared key"
+            }
             className={inputCls}
           />
+          <SecretStatus mgr={mgr} field="presharedKey" />
         </FormField>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Endpoint">
@@ -673,9 +778,14 @@ const TailscaleConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           type="password"
           value={config.authKey ?? ""}
           onChange={(e) => up("authKey", e.target.value)}
-          placeholder="tskey-auth-..."
+          placeholder={
+            mgr.getSecretState("authKey").stored
+              ? "Stored auth key — leave blank to keep"
+              : "tskey-auth-..."
+          }
           className={inputCls}
         />
+        <SecretStatus mgr={mgr} field="authKey" />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Login Server">
@@ -744,6 +854,45 @@ const ZeroTierConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           placeholder="16-character hex network ID"
           className={inputCls}
         />
+      </FormField>
+      <div className="grid grid-cols-2 gap-3">
+        <FormField label="Identity Public Key">
+          <input
+            type="text"
+            value={config.identityPublic ?? ""}
+            onChange={(event) => up("identityPublic", event.target.value)}
+            placeholder="Optional public identity"
+            className={inputCls}
+          />
+        </FormField>
+        <FormField label="Identity Secret">
+          <input
+            type="password"
+            value={config.identitySecret ?? ""}
+            onChange={(event) => up("identitySecret", event.target.value)}
+            placeholder={
+              mgr.getSecretState("identitySecret").stored
+                ? "Stored identity secret — leave blank to keep"
+                : "Optional identity secret"
+            }
+            className={inputCls}
+          />
+          <SecretStatus mgr={mgr} field="identitySecret" />
+        </FormField>
+      </div>
+      <FormField label="Auth Token Secret">
+        <input
+          type="password"
+          value={config.authtokenSecret ?? ""}
+          onChange={(event) => up("authtokenSecret", event.target.value)}
+          placeholder={
+            mgr.getSecretState("authtokenSecret").stored
+              ? "Stored auth token — leave blank to keep"
+              : "Optional local API auth token"
+          }
+          className={inputCls}
+        />
+        <SecretStatus mgr={mgr} field="authtokenSecret" />
       </FormField>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         <label className={checkCls}>
@@ -1757,6 +1906,7 @@ interface VpnEditorProps {
     vpnType: string;
     name: string;
     config: any;
+    secretPresence?: VpnSecretPresence;
   } | null;
 }
 
@@ -1774,6 +1924,7 @@ const VpnEditor: React.FC<VpnEditorProps> = ({
             vpnType: editingConnection.vpnType as VpnEditorType,
             name: editingConnection.name,
             config: editingConnection.config,
+            secretPresence: editingConnection.secretPresence,
           }
         : null,
     [editingConnection],

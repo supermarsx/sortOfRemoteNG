@@ -5,6 +5,14 @@ import {
   getVpnProviderLabel,
   type LegacyVpnEditorType,
 } from "../../utils/network/vpnProviderCatalog";
+import {
+  isMaskedSecretPlaceholder,
+  type OpenVpnSecretMutation,
+  type TailscaleSecretMutation,
+  type VpnSecretPresence,
+  type WireGuardSecretMutation,
+  type ZeroTierSecretMutation,
+} from "../../utils/network/vpnIpcAdapter";
 
 export type VpnEditorType = LegacyVpnEditorType;
 
@@ -13,7 +21,20 @@ export interface VpnEditingConnection {
   vpnType: VpnEditorType;
   name: string;
   config: Record<string, any>;
+  secretPresence?: VpnSecretPresence;
 }
+
+export type VpnEditorSecretField =
+  | "password"
+  | "inlineConfig"
+  | "clientKey"
+  | "privateKey"
+  | "presharedKey"
+  | "authKey"
+  | "identitySecret"
+  | "authtokenSecret";
+
+type EditorSecretState = Partial<Record<VpnEditorSecretField, boolean>>;
 
 export function getUnsupportedVpnEditorSettings(
   vpnType: VpnEditorType,
@@ -39,9 +60,6 @@ export function getUnsupportedVpnEditorSettings(
         : []),
       ...(nonEmptyString(config.socket) ? ["custom daemon socket"] : []),
     ];
-  }
-  if (vpnType === "zerotier" && config.identity) {
-    return ["custom node identity"];
   }
   return [];
 }
@@ -84,6 +102,8 @@ export function useVpnEditor(
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [storedSecrets, setStoredSecrets] = useState<EditorSecretState>({});
+  const [secretClears, setSecretClears] = useState<EditorSecretState>({});
 
   const resetForm = useCallback(() => {
     setName("");
@@ -94,6 +114,8 @@ export function useVpnEditor(
     setTagInput("");
     setError(null);
     setEditingId(null);
+    setStoredSecrets({});
+    setSecretClears({});
   }, []);
 
   // Populate form when editing, reset when creating
@@ -109,6 +131,13 @@ export function useVpnEditor(
       setName(toEdit.name);
       setVpnType(toEdit.vpnType as VpnEditorType);
       setConfig(toVpnEditorFormConfig(toEdit.vpnType, toEdit.config ?? {}));
+      setStoredSecrets(
+        mergeEditorSecretPresence(
+          inferEditorSecretPresence(toEdit.vpnType, toEdit.config ?? {}),
+          normalizeEditorSecretPresence(toEdit.vpnType, toEdit.secretPresence),
+        ),
+      );
+      setSecretClears({});
       setDescription("");
       setTags([]);
       setEditingId(toEdit.id);
@@ -130,10 +159,52 @@ export function useVpnEditor(
 
   const updateConfig = useCallback((updates: Record<string, any>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
+    setSecretClears((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      for (const [field, value] of Object.entries(updates)) {
+        if (
+          isVpnEditorSecretField(field) &&
+          nonEmptyString(value) &&
+          next[field]
+        ) {
+          next[field] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
   }, []);
 
+  const clearSecret = useCallback((field: VpnEditorSecretField) => {
+    setConfig((previous) => ({ ...previous, [field]: undefined }));
+    setSecretClears((previous) => ({ ...previous, [field]: true }));
+  }, []);
+
+  const undoClearSecret = useCallback((field: VpnEditorSecretField) => {
+    setSecretClears((previous) => ({ ...previous, [field]: false }));
+  }, []);
+
+  const getSecretState = useCallback(
+    (field: VpnEditorSecretField) => ({
+      stored: storedSecrets[field] === true,
+      clearRequested: secretClears[field] === true,
+      replacementEntered: nonEmptyString(config[field]),
+    }),
+    [config, secretClears, storedSecrets],
+  );
+
   const unsupportedSettings = getUnsupportedVpnEditorSettings(vpnType, config);
-  const validationError = getVpnEditorValidationError(vpnType, config);
+  const validationConfig =
+    vpnType === "openvpn" &&
+    storedSecrets.inlineConfig === true &&
+    secretClears.inlineConfig !== true &&
+    !nonEmptyString(config.inlineConfig)
+      ? { ...config, inlineConfig: "stored-inline-config" }
+      : config;
+  const validationError =
+    getVpnEditorValidationError(vpnType, validationConfig) ??
+    getSecretEditorValidationError(config, secretClears);
   const removeUnsupportedSettings = useCallback(() => {
     setError(null);
     setConfig((previous) => {
@@ -294,6 +365,12 @@ export function useVpnEditor(
           cfg.allowDefault = config.allowDefault;
         if (config.allowDNS !== undefined) cfg.allowDNS = config.allowDNS;
         if (config.zerotierHome) cfg.zerotierHome = config.zerotierHome;
+        if (config.identityPublic || config.identitySecret) {
+          cfg.identity = {
+            public: config.identityPublic || undefined,
+            secret: config.identitySecret || undefined,
+          };
+        }
         if (config.authtokenSecret)
           cfg.authtokenSecret = config.authtokenSecret;
         return cfg;
@@ -419,6 +496,46 @@ export function useVpnEditor(
     }
   }, [vpnType, config]);
 
+  const buildSecretMutation = useCallback(():
+    | OpenVpnSecretMutation
+    | WireGuardSecretMutation
+    | TailscaleSecretMutation
+    | ZeroTierSecretMutation
+    | undefined => {
+    switch (vpnType) {
+      case "openvpn": {
+        const mutation: OpenVpnSecretMutation = {
+          clearPassword: secretClears.password === true,
+          clearInlineConfig: secretClears.inlineConfig === true,
+          clearClientKey: secretClears.clientKey === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "wireguard": {
+        const mutation: WireGuardSecretMutation = {
+          clearPrivateKey: secretClears.privateKey === true,
+          clearPresharedKey: secretClears.presharedKey === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "tailscale": {
+        const mutation: TailscaleSecretMutation = {
+          clearAuthKey: secretClears.authKey === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "zerotier": {
+        const mutation: ZeroTierSecretMutation = {
+          clearIdentitySecret: secretClears.identitySecret === true,
+          clearAuthtokenSecret: secretClears.authtokenSecret === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      default:
+        return undefined;
+    }
+  }, [secretClears, vpnType]);
+
   // Save
   const handleSave = useCallback(async () => {
     if (!name.trim()) return;
@@ -436,36 +553,73 @@ export function useVpnEditor(
     setError(null);
     try {
       const typedConfig = buildTypedConfig();
+      const secretMutation = buildSecretMutation();
       if (editingId) {
         // Update existing connection
         switch (vpnType) {
           case "openvpn":
-            await mgr.updateOpenVPNConnection(
-              editingId,
-              name.trim(),
-              typedConfig as any,
-            );
+            if (secretMutation) {
+              await mgr.updateOpenVPNConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+                secretMutation as OpenVpnSecretMutation,
+              );
+            } else {
+              await mgr.updateOpenVPNConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+              );
+            }
             break;
           case "wireguard":
-            await mgr.updateWireGuardConnection(
-              editingId,
-              name.trim(),
-              typedConfig as any,
-            );
+            if (secretMutation) {
+              await mgr.updateWireGuardConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+                secretMutation as WireGuardSecretMutation,
+              );
+            } else {
+              await mgr.updateWireGuardConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+              );
+            }
             break;
           case "tailscale":
-            await mgr.updateTailscaleConnection(
-              editingId,
-              name.trim(),
-              typedConfig as any,
-            );
+            if (secretMutation) {
+              await mgr.updateTailscaleConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+                secretMutation as TailscaleSecretMutation,
+              );
+            } else {
+              await mgr.updateTailscaleConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+              );
+            }
             break;
           case "zerotier":
-            await mgr.updateZeroTierConnection(
-              editingId,
-              name.trim(),
-              typedConfig as any,
-            );
+            if (secretMutation) {
+              await mgr.updateZeroTierConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+                secretMutation as ZeroTierSecretMutation,
+              );
+            } else {
+              await mgr.updateZeroTierConnection(
+                editingId,
+                name.trim(),
+                typedConfig as any,
+              );
+            }
             break;
           case "pptp":
             await mgr.updatePPTPConnection(
@@ -555,6 +709,7 @@ export function useVpnEditor(
     vpnType,
     editingId,
     buildTypedConfig,
+    buildSecretMutation,
     mgr,
     resetForm,
     onSave,
@@ -577,6 +732,9 @@ export function useVpnEditor(
     config,
     updateConfig,
     setConfig,
+    clearSecret,
+    undoClearSecret,
+    getSecretState,
     unsupportedSettings,
     removeUnsupportedSettings,
     tags,
@@ -605,8 +763,17 @@ export function toVpnEditorFormConfig(
 ): Record<string, any> {
   switch (vpnType) {
     case "openvpn":
+      const {
+        password: _password,
+        inlineConfig: _inlineConfig,
+        clientKey: _clientKey,
+        ...safeOpenVpn
+      } = source;
       return {
-        ...source,
+        ...safeOpenVpn,
+        password: undefined,
+        inlineConfig: undefined,
+        clientKey: undefined,
         keepAliveInterval: source.keepAlive?.interval,
         keepAliveTimeout: source.keepAlive?.timeout,
         customOptions: joinLines(source.customOptions),
@@ -614,13 +781,13 @@ export function toVpnEditorFormConfig(
     case "wireguard":
       return {
         configFile: source.configFile,
-        privateKey: source.interface?.privateKey,
+        privateKey: undefined,
         address: joinCsv(source.interface?.address),
         dns: joinCsv(source.interface?.dns),
         mtu: source.interface?.mtu,
         table: source.interface?.table,
         publicKey: source.peer?.publicKey,
-        presharedKey: source.peer?.presharedKey,
+        presharedKey: undefined,
         endpoint: source.peer?.endpoint,
         allowedIPs: joinCsv(source.peer?.allowedIPs),
         persistentKeepalive: source.peer?.persistentKeepalive,
@@ -629,9 +796,18 @@ export function toVpnEditorFormConfig(
         interfaceName: source.interfaceName,
       };
     case "tailscale":
+      const { authKey: _authKey, ...safeTailscale } = source;
+      return {
+        ...safeTailscale,
+        authKey: undefined,
+        advertiseRoutes: joinCsv(source.advertiseRoutes),
+      };
+    case "zerotier":
       return {
         ...source,
-        advertiseRoutes: joinCsv(source.advertiseRoutes),
+        identityPublic: source.identity?.public,
+        identitySecret: undefined,
+        authtokenSecret: undefined,
       };
     default:
       return source;
@@ -650,6 +826,113 @@ function joinCsv(value: unknown): string {
 
 function nonEmptyString(value: unknown): boolean {
   return typeof value === "string" && value.trim() !== "";
+}
+
+function isVpnEditorSecretField(value: string): value is VpnEditorSecretField {
+  return [
+    "password",
+    "inlineConfig",
+    "clientKey",
+    "privateKey",
+    "presharedKey",
+    "authKey",
+    "identitySecret",
+    "authtokenSecret",
+  ].includes(value);
+}
+
+function normalizeEditorSecretPresence(
+  vpnType: VpnEditorType,
+  presence: VpnSecretPresence | undefined,
+): EditorSecretState {
+  const source = (presence ?? {}) as Record<string, unknown>;
+  switch (vpnType) {
+    case "openvpn":
+      return {
+        password: source.password === true,
+        inlineConfig: source.inlineConfig === true,
+        clientKey: source.clientKey === true,
+      };
+    case "wireguard":
+      return {
+        privateKey: source.privateKey === true,
+        presharedKey: source.presharedKey === true,
+      };
+    case "tailscale":
+      return { authKey: source.authKey === true };
+    case "zerotier":
+      return {
+        identitySecret: source.identitySecret === true,
+        authtokenSecret: source.authtokenSecret === true,
+      };
+    default:
+      return {};
+  }
+}
+
+function inferEditorSecretPresence(
+  vpnType: VpnEditorType,
+  config: Record<string, any>,
+): EditorSecretState {
+  switch (vpnType) {
+    case "openvpn":
+      return {
+        password: nonEmptyString(config.password),
+        inlineConfig: nonEmptyString(config.inlineConfig),
+        clientKey: nonEmptyString(config.clientKey),
+      };
+    case "wireguard":
+      return {
+        privateKey: nonEmptyString(config.interface?.privateKey),
+        presharedKey: nonEmptyString(config.peer?.presharedKey),
+      };
+    case "tailscale":
+      return { authKey: nonEmptyString(config.authKey) };
+    case "zerotier":
+      return {
+        identitySecret: nonEmptyString(config.identity?.secret),
+        authtokenSecret: nonEmptyString(config.authtokenSecret),
+      };
+    default:
+      return {};
+  }
+}
+
+function mergeEditorSecretPresence(
+  inferred: EditorSecretState,
+  declared: EditorSecretState,
+): EditorSecretState {
+  const result = { ...inferred };
+  for (const field of Object.keys(declared) as VpnEditorSecretField[]) {
+    result[field] = inferred[field] === true || declared[field] === true;
+  }
+  return result;
+}
+
+function getSecretEditorValidationError(
+  config: Record<string, any>,
+  clears: EditorSecretState,
+): string | null {
+  for (const field of Object.keys(clears) as VpnEditorSecretField[]) {
+    if (clears[field] && nonEmptyString(config[field])) {
+      return "A secret cannot be replaced and cleared in the same update.";
+    }
+  }
+  for (const field of [
+    "password",
+    "inlineConfig",
+    "clientKey",
+    "privateKey",
+    "presharedKey",
+    "authKey",
+    "identitySecret",
+    "authtokenSecret",
+  ] as VpnEditorSecretField[]) {
+    if (isMaskedSecretPlaceholder(config[field])) {
+      return "Masked secret placeholders cannot be saved. Enter a new value or leave the field blank.";
+    }
+  }
+  return null;
 }
 
 function joinLines(value: unknown): string {
