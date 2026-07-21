@@ -214,7 +214,7 @@ test("release matrix bounds Cargo parallelism below the workstation default", ()
   assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
 });
 
-test("Linux release bounds final codegen and links through one-thread LLD immediately before building", () => {
+test("Linux release bounds final optimization, swap, and linking immediately before building", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
   const buildJob = releaseWorkflow.slice(buildStart, publishStart);
@@ -241,6 +241,43 @@ test("Linux release bounds final codegen and links through one-thread LLD immedi
       '          linker_wrapper="$RUNNER_TEMP/sorng-linux-linker"',
       '          linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"',
       '          linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"',
+      '          swap_file="$RUNNER_TEMP/sorng-release.swap"',
+      "          swap_size_bytes=$((16 * 1024 * 1024 * 1024))",
+      "          disk_floor_bytes=$((32 * 1024 * 1024 * 1024))",
+      "",
+      "          # Linux hosted runners were lost twice under final release codegen.",
+      "          # Keep 32 GiB of disk free for build outputs after adding bounded swap.",
+      "          available_bytes=$(df -B1 --output=avail \"$RUNNER_TEMP\" | tail -n 1 | tr -d '[:space:]')",
+      '          [[ "$available_bytes" =~ ^[0-9]+$ ]]',
+      "          required_bytes=$((swap_size_bytes + disk_floor_bytes))",
+      "          if (( available_bytes < required_bytes )); then",
+      '            echo "::error::Linux release requires $required_bytes free bytes before provisioning swap; found $available_bytes."',
+      "            exit 1",
+      "          fi",
+      '          if [ -e "$swap_file" ] || [ -L "$swap_file" ]; then',
+      '            echo "::error::Refusing to replace unexpected pre-existing swap path $swap_file."',
+      "            exit 1",
+      "          fi",
+      '          sudo fallocate -l "$swap_size_bytes" "$swap_file"',
+      "          remaining_bytes=$(df -B1 --output=avail \"$RUNNER_TEMP\" | tail -n 1 | tr -d '[:space:]')",
+      '          [[ "$remaining_bytes" =~ ^[0-9]+$ ]]',
+      "          if (( remaining_bytes < disk_floor_bytes )); then",
+      '            echo "::error::Linux release requires $disk_floor_bytes free bytes after provisioning swap; found $remaining_bytes."',
+      "            exit 1",
+      "          fi",
+      '          sudo chmod 0600 "$swap_file"',
+      '          test "$(stat -c \'%a\' "$swap_file")" = 600',
+      '          test "$(stat -c \'%s\' "$swap_file")" -eq "$swap_size_bytes"',
+      "          page_size_bytes=$(getconf PAGESIZE)",
+      '          [[ "$page_size_bytes" =~ ^[0-9]+$ ]]',
+      "          expected_active_swap_size=$((swap_size_bytes - page_size_bytes))",
+      '          sudo mkswap "$swap_file"',
+      '          sudo swapon "$swap_file"',
+      "          active_swap_size=$(\n            sudo swapon --show=NAME,SIZE --bytes --noheadings --raw |\n              awk -v path=\"$swap_file\" '$1 == path { print $2 }'\n          )",
+      '          test "$active_swap_size" -eq "$expected_active_swap_size"',
+      "",
+      "          # Hosted runners are ephemeral; keep the verified swap active through",
+      "          # bundle staging so both LLVM and LLD retain the added headroom.",
       "",
       "          command -v clang-18",
       "          command -v ld.lld-18",
@@ -263,6 +300,7 @@ test("Linux release bounds final codegen and links through one-thread LLD immedi
       "",
       '          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"',
       '          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"',
+      '          echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=1" >> "$GITHUB_ENV"',
       '          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"',
       "          free -h",
       '          df -h "$GITHUB_WORKSPACE"',
@@ -278,6 +316,10 @@ test("Linux release bounds final codegen and links through one-thread LLD immedi
     1,
   );
   assert.equal(
+    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_OPT_LEVEL/g) ?? []).length,
+    1,
+  );
+  assert.equal(
     (
       releaseWorkflow.match(/CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/g) ??
       []
@@ -286,7 +328,14 @@ test("Linux release bounds final codegen and links through one-thread LLD immedi
   );
   assert.doesNotMatch(
     buildDefinition,
-    /CARGO_PROFILE_RELEASE_(?:LTO|CODEGEN_UNITS)|CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
+    /CARGO_PROFILE_RELEASE_(?:LTO|CODEGEN_UNITS|OPT_LEVEL)|CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
+  );
+  const outsideResourceStep =
+    releaseWorkflow.slice(0, buildStart + resourceStepStart) +
+    releaseWorkflow.slice(buildStart + nativeBuildStart);
+  assert.doesNotMatch(
+    outsideResourceStep,
+    /sorng-release\.swap|\b(?:fallocate|mkswap|swapon)\b/,
   );
   assert.doesNotMatch(
     buildJob,
@@ -319,6 +368,7 @@ test("Linux release bounds final codegen and links through one-thread LLD immedi
   );
   assert.match(releaseProfile, /^lto = "thin"$/m);
   assert.match(releaseProfile, /^codegen-units = 1$/m);
+  assert.doesNotMatch(releaseProfile, /^opt-level\s*=/m);
   assert.doesNotMatch(buildJob, /timeout-minutes:/);
   assert.match(
     buildDefinition,
