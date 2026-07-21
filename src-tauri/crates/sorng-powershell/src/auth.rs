@@ -443,11 +443,9 @@ impl KerberosAuth {
         };
         let kerberos_config = KerberosConfig {
             kdc_url: kdc_url_parsed,
-            client_computer_name: Some(
-                std::env::var("COMPUTERNAME")
-                    .or_else(|_| std::env::var("HOSTNAME"))
-                    .unwrap_or_else(|_| "WORKSTATION".into()),
-            ),
+            client_computer_name: std::env::var("COMPUTERNAME")
+                .or_else(|_| std::env::var("HOSTNAME"))
+                .unwrap_or_else(|_| "WORKSTATION".into()),
         };
 
         let mut kerberos = sspi::Kerberos::new_client_from_config(kerberos_config)

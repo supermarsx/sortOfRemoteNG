@@ -34,8 +34,8 @@ futures = { workspace = true }
 hex = { workspace = true }
 dirs = { workspace = true }
 psrp-rs = { path = "../../vendor/psrp-rs-core", default-features = false }
-russh = { version = "=0.49.2", default-features = false }
-ssh-key = { version = "0.6", features = ["ed25519", "encryption", "std"] }
+russh = { version = "=0.61.2", default-features = false, features = ["ring"] }
+ssh-key = { version = "=0.7.0-rc.10", features = ["ed25519", "encryption", "std"] }
 zeroize = { workspace = true }
 
 # Route WinRM/PowerShell TLS certificate decisions through the backend Trust
@@ -47,7 +47,7 @@ sorng-storage = { path = "../sorng-storage" }
 # Default features pull in aws-lc-rs which installs the rustls default
 # crypto provider globally — disable defaults since sorng-app installs
 # the ring provider.  We only need base SSPI + Kerberos builder types.
-sspi = { version = "0.18", default-features = false }
+sspi = { git = "https://github.com/Devolutions/sspi-rs.git", rev = "095e3f341c74d57daafb015bfb0226188e9e8e18", default-features = false }
 
 [dev-dependencies]
 rcgen = "0.12"

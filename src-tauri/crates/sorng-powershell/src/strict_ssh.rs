@@ -544,7 +544,6 @@ struct StrictClientHandler {
     rejection: Arc<Mutex<Option<String>>>,
 }
 
-#[async_trait]
 impl russh::client::Handler for StrictClientHandler {
     type Error = russh::Error;
 
@@ -667,9 +666,7 @@ impl StrictSshPsrpTransport {
                         .map_err(|error| {
                             protocol(format!("SSH private key load failed: {error}"))
                         })?;
-                    let key = PrivateKeyWithHashAlg::new(Arc::new(private_key), None).map_err(
-                        |error| protocol(format!("SSH private key setup failed: {error}")),
-                    )?;
+                    let key = PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
                     handle
                         .authenticate_publickey(&config.username, key)
                         .await
@@ -683,7 +680,7 @@ impl StrictSshPsrpTransport {
         .await
         .map_err(|_| protocol("SSH authentication timed out"))??;
 
-        if !authenticated {
+        if !authenticated.success() {
             return Err(protocol("SSH authentication was rejected"));
         }
 
@@ -1265,6 +1262,11 @@ mod tests {
         assert_eq!(preferred.kex[0], russh::kex::CURVE25519);
         assert!(!preferred.kex.contains(&russh::kex::CURVE25519_PRE_RFC_8731));
         assert!(!preferred.kex.contains(&russh::kex::DH_G14_SHA256));
+        assert!(!preferred.cipher.contains(&russh::cipher::NONE));
+        assert!(!preferred.cipher.contains(&russh::cipher::AES_128_CBC));
+        assert!(!preferred.mac.contains(&russh::mac::NONE));
+        assert!(!preferred.mac.contains(&russh::mac::HMAC_SHA1));
+        assert!(!preferred.mac.contains(&russh::mac::HMAC_SHA1_ETM));
     }
 
     #[test]
