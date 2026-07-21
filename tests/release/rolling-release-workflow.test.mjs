@@ -170,7 +170,7 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
   assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
 });
 
-test("release matrix bounds Cargo parallelism below the workstation default", () => {
+test("release matrix maps exact hosted-runner resource profiles", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
   const buildJob = releaseWorkflow.slice(buildStart, publishStart);
@@ -180,41 +180,150 @@ test("release matrix bounds Cargo parallelism below the workstation default", ()
     buildDefinition.indexOf("      matrix:"),
     buildDefinition.indexOf("    runs-on:"),
   );
-  const jobsByArtifact = Object.fromEntries(
+  const profilesByArtifact = Object.fromEntries(
     matrixDefinition
       .split(/^          - artifact_id: /m)
       .slice(1)
       .map((entry) => {
         const [artifactId, ...entryLines] = entry.split("\n");
-        const jobCount = entryLines
-          .join("\n")
-          .match(/^\s+cargo_build_jobs: (\d+)$/m)?.[1];
-        return [artifactId.trim(), jobCount];
+        const fields = Object.fromEntries(
+          entryLines.flatMap((line) => {
+            const match = line.match(/^\s+([a-z_]+):\s+(?:"([^"]+)"|(\S+))$/);
+            return match ? [[match[1], match[2] ?? match[3]]] : [];
+          }),
+        );
+        return [artifactId.trim(), fields];
       }),
   );
 
   assert.match(cargoConfig, /^jobs = 28$/m);
-  assert.deepEqual(jobsByArtifact, {
-    "linux-x86_64": "1",
-    "darwin-aarch64": "2",
-    "darwin-x86_64": "2",
-    "windows-x86_64": "2",
+  assert.deepEqual(profilesByArtifact, {
+    "linux-x86_64": {
+      os: "ubuntu-24.04",
+      platform: "linux",
+      rust_target: "x86_64-unknown-linux-gnu",
+      bundles: "appimage,deb",
+      cargo_build_jobs: "1",
+      release_lto: "off",
+      release_codegen_units: "16",
+      release_opt_level: "1",
+    },
+    "darwin-aarch64": {
+      os: "macos-15",
+      platform: "macos",
+      rust_target: "aarch64-apple-darwin",
+      bundles: "dmg,app",
+      cargo_build_jobs: "2",
+      release_lto: "thin",
+      release_codegen_units: "1",
+      release_opt_level: "3",
+    },
+    "darwin-x86_64": {
+      os: "macos-15-intel",
+      platform: "macos",
+      rust_target: "x86_64-apple-darwin",
+      bundles: "dmg,app",
+      cargo_build_jobs: "2",
+      release_lto: "thin",
+      release_codegen_units: "1",
+      release_opt_level: "3",
+    },
+    "windows-x86_64": {
+      os: "windows-2022",
+      platform: "windows",
+      rust_target: "x86_64-pc-windows-msvc",
+      bundles: "msi,nsis",
+      cargo_build_jobs: "1",
+      release_lto: "off",
+      release_codegen_units: "16",
+      release_opt_level: "1",
+    },
   });
-  assert.match(
-    buildDefinition,
-    /^      CARGO_BUILD_JOBS: \$\{\{ matrix\.cargo_build_jobs \}\}$/m,
-  );
   assert.equal(
-    (releaseWorkflow.match(/^\s+CARGO_BUILD_JOBS:/gm) ?? []).length,
-    1,
+    (
+      matrixDefinition.match(
+        /^\s+(?:cargo_build_jobs|release_lto|release_codegen_units|release_opt_level): "[^"]+"$/gm,
+      ) ?? []
+    ).length,
+    16,
   );
+  for (const [environmentName, matrixField] of Object.entries({
+    CARGO_BUILD_JOBS: "cargo_build_jobs",
+    CARGO_PROFILE_RELEASE_LTO: "release_lto",
+    CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "release_codegen_units",
+    CARGO_PROFILE_RELEASE_OPT_LEVEL: "release_opt_level",
+  })) {
+    assert.match(
+      buildDefinition,
+      new RegExp(
+        `^      ${environmentName}: \\$\\{\\{ matrix\\.${matrixField} \\}\\}$`,
+        "m",
+      ),
+    );
+    assert.equal(
+      (
+        releaseWorkflow.match(new RegExp(`^\\s+${environmentName}:`, "gm")) ??
+        []
+      ).length,
+      1,
+    );
+    assert.doesNotMatch(buildSteps, new RegExp(environmentName));
+    assert.doesNotMatch(
+      releaseWorkflow.slice(0, buildStart),
+      new RegExp(environmentName),
+    );
+    assert.doesNotMatch(
+      releaseWorkflow.slice(publishStart),
+      new RegExp(environmentName),
+    );
+  }
   assert.doesNotMatch(buildJob, /CARGO_BUILD_JOBS:\s*["']?28/);
-  assert.doesNotMatch(buildSteps, /CARGO_BUILD_JOBS/);
-  assert.doesNotMatch(releaseWorkflow.slice(0, buildStart), /CARGO_BUILD_JOBS/);
-  assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
 });
 
-test("Linux release bounds final optimization, swap, and linking immediately before building", () => {
+test("resource controls preserve release features and signing inputs", () => {
+  const releaseFeatures = releaseWorkflow.match(
+    /^  RELEASE_FEATURES: >-\r?\n    ([^\r\n]+)$/m,
+  )?.[1];
+  assert.equal(
+    releaseFeatures,
+    "cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether",
+  );
+  assert.equal(
+    (releaseWorkflow.match(/^  RELEASE_FEATURES:/gm) ?? []).length,
+    1,
+  );
+
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const tauriBuild = buildJob.slice(
+    buildJob.indexOf("- name: Build native bundles with static Kafka"),
+    buildJob.indexOf("- name: Notarize and staple macOS disk image"),
+  );
+  const signingEnvironment = tauriBuild.slice(
+    tauriBuild.indexOf("        env:"),
+    tauriBuild.indexOf("        with:"),
+  );
+  assert.equal(
+    signingEnvironment.trimEnd(),
+    [
+      "        env:",
+      "          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}",
+      "          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}",
+      "          APPLE_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}",
+      "          APPLE_PASSWORD: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}",
+      "          APPLE_TEAM_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}",
+      "          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && steps.apple_certificate.outputs.identity || '' }}",
+    ].join("\n"),
+  );
+  assert.match(
+    tauriBuild,
+    /args: >-\s+--target \$\{\{ matrix\.rust_target \}\}\s+--bundles \$\{\{ matrix\.bundles \}\}\s+--config src-tauri\/tauri\.release\.conf\.json\s+--features \$\{\{ env\.RELEASE_FEATURES \}\}\s+-- --no-default-features/,
+  );
+});
+
+test("platform resource inspection is exact and immediately precedes native building", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
   const buildJob = releaseWorkflow.slice(buildStart, publishStart);
@@ -222,14 +331,21 @@ test("Linux release bounds final optimization, swap, and linking immediately bef
   const resourceStepStart = buildJob.indexOf(
     "- name: Bound and inspect Linux release resources",
   );
+  const windowsResourceStepStart = buildJob.indexOf(
+    "- name: Inspect Windows release resources",
+  );
   const nativeBuildStart = buildJob.indexOf(
     "- name: Build native bundles with static Kafka",
   );
 
   assert.ok(resourceStepStart >= 0);
-  assert.ok(nativeBuildStart > resourceStepStart);
+  assert.ok(windowsResourceStepStart > resourceStepStart);
+  assert.ok(nativeBuildStart > windowsResourceStepStart);
 
-  const resourceStep = buildJob.slice(resourceStepStart, nativeBuildStart);
+  const resourceStep = buildJob.slice(
+    resourceStepStart,
+    windowsResourceStepStart,
+  );
   assert.equal(
     resourceStep.trimEnd(),
     [
@@ -298,26 +414,52 @@ test("Linux release bounds final optimization, swap, and linking immediately bef
       "          readelf -h \"$linker_probe_binary\" | grep -Eq 'Class:[[:space:]]+ELF64'",
       '          "$linker_probe_binary"',
       "",
-      '          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"',
-      '          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"',
-      '          echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=1" >> "$GITHUB_ENV"',
       '          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"',
       "          free -h",
       '          df -h "$GITHUB_WORKSPACE"',
     ].join("\n"),
   );
-  assert.equal(
-    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_LTO/g) ?? []).length,
-    1,
+  const windowsResourceStep = buildJob.slice(
+    windowsResourceStepStart,
+    nativeBuildStart,
   );
   assert.equal(
-    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_CODEGEN_UNITS/g) ?? [])
-      .length,
-    1,
+    windowsResourceStep.trimEnd(),
+    [
+      "- name: Inspect Windows release resources",
+      "        if: matrix.platform == 'windows'",
+      "        shell: pwsh",
+      "        run: |",
+      '          $ErrorActionPreference = "Stop"',
+      "          $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem",
+      "          $pageFiles = @(Get-CimInstance -ClassName Win32_PageFileUsage)",
+      '          $workspaceDriveName = (Get-Item -LiteralPath $env:GITHUB_WORKSPACE).PSDrive.Name + ":"',
+      "          $workspaceDrive = Get-CimInstance -ClassName Win32_LogicalDisk |",
+      "            Where-Object { $_.DeviceID -eq $workspaceDriveName } |",
+      "            Select-Object -First 1",
+      "          if (-not $workspaceDrive) {",
+      '            throw "Unable to inspect workspace drive $workspaceDriveName."',
+      "          }",
+      "",
+      '          Write-Host "physical_total_bytes=$([uint64]$operatingSystem.TotalVisibleMemorySize * 1KB)"',
+      '          Write-Host "physical_free_bytes=$([uint64]$operatingSystem.FreePhysicalMemory * 1KB)"',
+      '          Write-Host "virtual_total_bytes=$([uint64]$operatingSystem.TotalVirtualMemorySize * 1KB)"',
+      '          Write-Host "virtual_free_bytes=$([uint64]$operatingSystem.FreeVirtualMemory * 1KB)"',
+      '          Write-Host "workspace_drive=$workspaceDriveName"',
+      '          Write-Host "workspace_drive_size_bytes=$([uint64]$workspaceDrive.Size)"',
+      '          Write-Host "workspace_drive_free_bytes=$([uint64]$workspaceDrive.FreeSpace)"',
+      '          Write-Host "pagefile_count=$($pageFiles.Count)"',
+      "          foreach ($pageFile in $pageFiles) {",
+      '            Write-Host "pagefile_name=$($pageFile.Name)"',
+      '            Write-Host "pagefile_allocated_bytes=$([uint64]$pageFile.AllocatedBaseSize * 1MB)"',
+      '            Write-Host "pagefile_current_usage_bytes=$([uint64]$pageFile.CurrentUsage * 1MB)"',
+      '            Write-Host "pagefile_peak_usage_bytes=$([uint64]$pageFile.PeakUsage * 1MB)"',
+      "          }",
+    ].join("\n"),
   );
-  assert.equal(
-    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_OPT_LEVEL/g) ?? []).length,
-    1,
+  assert.doesNotMatch(
+    windowsResourceStep,
+    /\b(?:Set|New|Remove)-CimInstance\b|\b(?:Set|New|Remove)-Item\b|\bFormat-Volume\b|\bResize-Partition\b/,
   );
   assert.equal(
     (
@@ -328,7 +470,7 @@ test("Linux release bounds final optimization, swap, and linking immediately bef
   );
   assert.doesNotMatch(
     buildDefinition,
-    /CARGO_PROFILE_RELEASE_(?:LTO|CODEGEN_UNITS|OPT_LEVEL)|CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
+    /CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
   );
   const outsideResourceStep =
     releaseWorkflow.slice(0, buildStart + resourceStepStart) +
@@ -359,6 +501,24 @@ test("Linux release bounds final optimization, swap, and linking immediately bef
       "[target.x86_64-unknown-linux-gnu]",
       "rustflags = [",
       '  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",',
+      "]",
+    ].join("\n"),
+  );
+  const windowsMsvcTargetConfig = cargoConfig.slice(
+    cargoConfig.indexOf("[target.x86_64-pc-windows-msvc]"),
+    cargoConfig.indexOf("[target.x86_64-unknown-linux-gnu]"),
+  );
+  const activeWindowsMsvcTargetConfig = windowsMsvcTargetConfig
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .join("\n");
+  assert.equal(
+    activeWindowsMsvcTargetConfig,
+    [
+      "[target.x86_64-pc-windows-msvc]",
+      "rustflags = [",
+      '  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",',
+      '  "-C", "link-arg=/threads:8",',
       "]",
     ].join("\n"),
   );

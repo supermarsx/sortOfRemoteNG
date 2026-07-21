@@ -321,31 +321,46 @@ jobs:
             platform: linux
             rust_target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
-            cargo_build_jobs: 1
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "1"
           - artifact_id: darwin-aarch64
             os: macos-15
             platform: macos
             rust_target: aarch64-apple-darwin
             bundles: dmg,app
-            cargo_build_jobs: 2
+            cargo_build_jobs: "2"
+            release_lto: "thin"
+            release_codegen_units: "1"
+            release_opt_level: "3"
           - artifact_id: darwin-x86_64
             os: macos-15-intel
             platform: macos
             rust_target: x86_64-apple-darwin
             bundles: dmg,app
-            cargo_build_jobs: 2
+            cargo_build_jobs: "2"
+            release_lto: "thin"
+            release_codegen_units: "1"
+            release_opt_level: "3"
           - artifact_id: windows-x86_64
             os: windows-2022
             platform: windows
             rust_target: x86_64-pc-windows-msvc
             bundles: msi,nsis
-            cargo_build_jobs: 2
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "1"
     runs-on: ${{ matrix.os }}
     env:
-      # The checked-in Cargo config is tuned for a 200 GB workstation. Bound
-      # hosted-runner parallelism for both Rust and kafka-static's CMake build.
-      # Linux x64 needs the lower peak after losing the runner at two jobs.
+      # The checked-in Cargo config is tuned for a 200 GB workstation. Keep
+      # macOS release settings unchanged while bounding Linux and Windows peak
+      # memory on hosted runners for both Rust and kafka-static's CMake build.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
+      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ matrix.release_opt_level }}
       SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
       - name: Checkout immutable release snapshot
@@ -580,12 +595,39 @@ jobs:
           readelf -h "$linker_probe_binary" | grep -Eq 'Class:[[:space:]]+ELF64'
           "$linker_probe_binary"
 
-          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
-          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
-          echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=1" >> "$GITHUB_ENV"
           echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"
           free -h
           df -h "$GITHUB_WORKSPACE"
+
+      - name: Inspect Windows release resources
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem
+          $pageFiles = @(Get-CimInstance -ClassName Win32_PageFileUsage)
+          $workspaceDriveName = (Get-Item -LiteralPath $env:GITHUB_WORKSPACE).PSDrive.Name + ":"
+          $workspaceDrive = Get-CimInstance -ClassName Win32_LogicalDisk |
+            Where-Object { $_.DeviceID -eq $workspaceDriveName } |
+            Select-Object -First 1
+          if (-not $workspaceDrive) {
+            throw "Unable to inspect workspace drive $workspaceDriveName."
+          }
+
+          Write-Host "physical_total_bytes=$([uint64]$operatingSystem.TotalVisibleMemorySize * 1KB)"
+          Write-Host "physical_free_bytes=$([uint64]$operatingSystem.FreePhysicalMemory * 1KB)"
+          Write-Host "virtual_total_bytes=$([uint64]$operatingSystem.TotalVirtualMemorySize * 1KB)"
+          Write-Host "virtual_free_bytes=$([uint64]$operatingSystem.FreeVirtualMemory * 1KB)"
+          Write-Host "workspace_drive=$workspaceDriveName"
+          Write-Host "workspace_drive_size_bytes=$([uint64]$workspaceDrive.Size)"
+          Write-Host "workspace_drive_free_bytes=$([uint64]$workspaceDrive.FreeSpace)"
+          Write-Host "pagefile_count=$($pageFiles.Count)"
+          foreach ($pageFile in $pageFiles) {
+            Write-Host "pagefile_name=$($pageFile.Name)"
+            Write-Host "pagefile_allocated_bytes=$([uint64]$pageFile.AllocatedBaseSize * 1MB)"
+            Write-Host "pagefile_current_usage_bytes=$([uint64]$pageFile.CurrentUsage * 1MB)"
+            Write-Host "pagefile_peak_usage_bytes=$([uint64]$pageFile.PeakUsage * 1MB)"
+          }
 
       - name: Build native bundles with static Kafka
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
