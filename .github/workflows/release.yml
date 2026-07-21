@@ -513,6 +513,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && steps.apple_certificate.outputs.identity || '' }}
         with:
           includeUpdaterJson: false
+          tauriScript: npm run tauri
           args: >-
             --target ${{ matrix.rust_target }}
             --bundles ${{ matrix.bundles }}

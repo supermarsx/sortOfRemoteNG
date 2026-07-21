@@ -147,6 +147,21 @@ test("release builds distinct macOS architectures through static Kafka", () => {
   assert.doesNotMatch(releaseWorkflow, /--features full(?:\s|$)/m);
 });
 
+test("release builds force the npm Tauri runner instead of lockfile autodetection", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const tauriBuild = buildJob.slice(
+    buildJob.indexOf("- name: Build native bundles with static Kafka"),
+    buildJob.indexOf("- name: Notarize and staple macOS disk image"),
+  );
+
+  assert.match(buildJob, /Install JavaScript dependencies[\s\S]*?run: npm ci/);
+  assert.match(tauriBuild, /tauriScript: npm run tauri/);
+  assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
+});
+
 test("updater private key material is scoped to key checks and Tauri build", () => {
   const buildJob = releaseWorkflow.slice(
     releaseWorkflow.indexOf("  build:"),
