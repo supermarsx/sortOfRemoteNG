@@ -514,7 +514,35 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         run: |
+          set -euo pipefail
+          linker_wrapper="$RUNNER_TEMP/sorng-linux-linker"
+          linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"
+          linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"
+
+          command -v clang-18
+          command -v ld.lld-18
+          /usr/bin/clang-18 --version
+          /usr/bin/ld.lld-18 --version
+
+          cat > "$linker_wrapper" <<'LINKER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec /usr/bin/clang-18 -fuse-ld=lld-18 -Wl,--threads=1 "$@"
+          LINKER
+          chmod 0755 "$linker_wrapper"
+
+          printf '%s\n' 'int main(void) { return 0; }' > "$linker_probe_source"
+          linker_probe_output=$(
+            "$linker_wrapper" -Wl,-v "$linker_probe_source" -o "$linker_probe_binary" 2>&1
+          )
+          printf '%s\n' "$linker_probe_output"
+          grep -Eq 'LLD 18(\.|[[:space:]])' <<< "$linker_probe_output"
+          readelf -h "$linker_probe_binary" | grep -Eq 'Class:[[:space:]]+ELF64'
+          "$linker_probe_binary"
+
           echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"
           free -h
           df -h "$GITHUB_WORKSPACE"
 

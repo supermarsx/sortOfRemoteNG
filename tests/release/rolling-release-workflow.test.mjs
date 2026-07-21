@@ -214,7 +214,7 @@ test("release matrix bounds Cargo parallelism below the workstation default", ()
   assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
 });
 
-test("Linux release disables LTO and reports resource headroom immediately before building", () => {
+test("Linux release bounds final codegen and links through one-thread LLD immediately before building", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
   const buildJob = releaseWorkflow.slice(buildStart, publishStart);
@@ -237,7 +237,33 @@ test("Linux release disables LTO and reports resource headroom immediately befor
       "        if: matrix.platform == 'linux'",
       "        shell: bash",
       "        run: |",
+      "          set -euo pipefail",
+      '          linker_wrapper="$RUNNER_TEMP/sorng-linux-linker"',
+      '          linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"',
+      '          linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"',
+      "",
+      "          command -v clang-18",
+      "          command -v ld.lld-18",
+      "          /usr/bin/clang-18 --version",
+      "          /usr/bin/ld.lld-18 --version",
+      "",
+      "          cat > \"$linker_wrapper\" <<'LINKER'",
+      "          #!/usr/bin/env bash",
+      "          set -euo pipefail",
+      '          exec /usr/bin/clang-18 -fuse-ld=lld-18 -Wl,--threads=1 "$@"',
+      "          LINKER",
+      '          chmod 0755 "$linker_wrapper"',
+      "",
+      "          printf '%s\\n' 'int main(void) { return 0; }' > \"$linker_probe_source\"",
+      '          linker_probe_output=$(\n            "$linker_wrapper" -Wl,-v "$linker_probe_source" -o "$linker_probe_binary" 2>&1\n          )',
+      "          printf '%s\\n' \"$linker_probe_output\"",
+      "          grep -Eq 'LLD 18(\\.|[[:space:]])' <<< \"$linker_probe_output\"",
+      "          readelf -h \"$linker_probe_binary\" | grep -Eq 'Class:[[:space:]]+ELF64'",
+      '          "$linker_probe_binary"',
+      "",
       '          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"',
+      '          echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"',
+      '          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"',
       "          free -h",
       '          df -h "$GITHUB_WORKSPACE"',
     ].join("\n"),
@@ -246,8 +272,53 @@ test("Linux release disables LTO and reports resource headroom immediately befor
     (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_LTO/g) ?? []).length,
     1,
   );
-  assert.doesNotMatch(buildDefinition, /CARGO_PROFILE_RELEASE_LTO/);
-  assert.match(cargoManifest, /\[profile\.release\]\s*(?:#.*\s*)*lto = "thin"/);
+  assert.equal(
+    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_CODEGEN_UNITS/g) ?? [])
+      .length,
+    1,
+  );
+  assert.equal(
+    (
+      releaseWorkflow.match(/CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/g) ??
+      []
+    ).length,
+    1,
+  );
+  assert.doesNotMatch(
+    buildDefinition,
+    /CARGO_PROFILE_RELEASE_(?:LTO|CODEGEN_UNITS)|CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
+  );
+  assert.doesNotMatch(
+    buildJob,
+    /^\s+(?:RUSTFLAGS|CC|CXX|LD|LDFLAGS|CMAKE(?:_[A-Z0-9_]+)?):/m,
+  );
+  assert.doesNotMatch(
+    buildJob,
+    /^\s*(?:export\s+)?(?:RUSTFLAGS|CC|CXX|LD|LDFLAGS|CMAKE(?:_[A-Z0-9_]+)?)=/m,
+  );
+  const linuxTargetConfig = cargoConfig.slice(
+    cargoConfig.indexOf("[target.x86_64-unknown-linux-gnu]"),
+    cargoConfig.indexOf("[target.x86_64-apple-darwin]"),
+  );
+  const activeLinuxTargetConfig = linuxTargetConfig
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .join("\n");
+  assert.equal(
+    activeLinuxTargetConfig,
+    [
+      "[target.x86_64-unknown-linux-gnu]",
+      "rustflags = [",
+      '  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",',
+      "]",
+    ].join("\n"),
+  );
+  const releaseProfile = cargoManifest.slice(
+    cargoManifest.indexOf("[profile.release]"),
+    cargoManifest.indexOf("[patch.crates-io]"),
+  );
+  assert.match(releaseProfile, /^lto = "thin"$/m);
+  assert.match(releaseProfile, /^codegen-units = 1$/m);
   assert.doesNotMatch(buildJob, /timeout-minutes:/);
   assert.match(
     buildDefinition,
