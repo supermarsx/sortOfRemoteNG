@@ -22,6 +22,10 @@ const dependabotConfig = readFileSync(
   new URL("../../.github/dependabot.yml", import.meta.url),
   "utf8",
 );
+const cargoConfig = readFileSync(
+  new URL("../../src-tauri/.cargo/config.toml", import.meta.url),
+  "utf8",
+);
 const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
@@ -160,6 +164,22 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
   assert.match(buildJob, /Install JavaScript dependencies[\s\S]*?run: npm ci/);
   assert.match(tauriBuild, /tauriScript: npm run tauri/);
   assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
+});
+
+test("release matrix bounds Cargo parallelism below the workstation default", () => {
+  const buildStart = releaseWorkflow.indexOf("  build:");
+  const publishStart = releaseWorkflow.indexOf("  publish:");
+  const buildJob = releaseWorkflow.slice(buildStart, publishStart);
+  const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
+
+  assert.match(cargoConfig, /^jobs = 28$/m);
+  assert.match(buildDefinition, /^      CARGO_BUILD_JOBS: "2"$/m);
+  assert.equal(
+    (releaseWorkflow.match(/^\s+CARGO_BUILD_JOBS:\s*"2"\s*$/gm) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(releaseWorkflow.slice(0, buildStart), /CARGO_BUILD_JOBS/);
+  assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
 });
 
 test("updater private key material is scoped to key checks and Tauri build", () => {

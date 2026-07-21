@@ -338,6 +338,9 @@ jobs:
             bundles: msi,nsis
     runs-on: ${{ matrix.os }}
     env:
+      # The checked-in Cargo config is tuned for a 200 GB workstation. Bound
+      # hosted-runner parallelism for both Rust and kafka-static's CMake build.
+      CARGO_BUILD_JOBS: "2"
       SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
       - name: Checkout immutable release snapshot
