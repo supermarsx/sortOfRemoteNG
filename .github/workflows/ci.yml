@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ["**"]
 
+# Enter the ordered rolling pipeline at workflow dispatch, before job duration
+# can reorder main pushes. Other refs receive unique groups and remain parallel.
+concurrency:
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'rolling-main-ci-order' || format('ci-{0}', github.run_id) }}
+  queue: max
+  cancel-in-progress: false
+
 jobs:
   docs:
     name: Documentation links
@@ -30,6 +37,17 @@ jobs:
         run: npm run version:check
       - name: Test release metadata enforcement
         run: npm run release:test
+
+  updater-signature-verifier:
+    name: Updater signature verifier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test valid, wrong-key, and tampered updater signatures
+        run: >-
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
+          -p sorng-updater-signature-verifier
 
   format:
     runs-on: ubuntu-latest
@@ -337,3 +355,38 @@ jobs:
           cargo clippy -p app --no-default-features
           --features cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
           --all-targets -- -D warnings
+
+  rolling-release:
+    name: Rolling release after exact-source gates
+    if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs:
+      - docs
+      - version
+      - format
+      - lint
+      - test
+      - coverage
+      - updater-signature-verifier
+      - rust-check-linux
+      - rust-check-windows
+      - rust-opkssh-targeted
+      - rust-rdp-targeted
+      - rust-check-all-features-linux
+      - rust-lint
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      source_sha: ${{ github.sha }}
+      mode: rolling
+      release_tier: production
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}

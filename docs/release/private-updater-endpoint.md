@@ -108,7 +108,7 @@ s3://sortofremoteng-updates/
 - Installer + `.sig` file names match the `tauri build` output exactly;
   renaming breaks the embedded signature check.
 - Directory, artifact, and feed versions use machine SemVer `YY.N.0`. Public
-  GitHub tags and release labels remain `vYY.N` and `YY.N`.
+  GitHub tags and release labels both use bare `YY.N` (no `v` prefix).
 - The bucket is fronted by **CloudFront** (or your CDN of choice) with
   ACM-issued TLS. Origin access is typically **OAI / OAC** so only the
   CDN can read — clients only ever talk to the CDN hostname.
@@ -227,9 +227,10 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
    [updater setup guide]({{ '/release/updater-setup/' | relative_url }}) § 2). `tauri build` emits
    installers + `.sig` files under `src-tauri/target/release/bundle/`.
 2. **Assemble `latest.json`** with the base64 `.sig` values and the
-   CloudFront URLs for each platform (see § 5 above). The release CI
-   job (`t3-e22`) has a generator script; for ad-hoc builds, do it by
-   hand.
+   CloudFront URLs for each platform (see § 5 above). Prefer the validated
+   feed and artifacts from the automatic release for the same source SHA;
+   never fabricate a feed for an OS-installer-only release that lacked the
+   Tauri signing key.
 3. **Upload to S3** (versioned dir + root `latest.json`):
    ```sh
    aws s3 cp src-tauri/target/release/bundle/ \
@@ -249,9 +250,10 @@ Block all public access at the bucket level (`BlockPublicPolicy`,
    configured in Settings > Updater: launch the app, check for updates,
    confirm the new version is reported, then run Download and install to
    verify the Tauri updater accepts the signed artifact.
-6. **Promote** by publishing the matching GitHub release with the same
-   signed artifacts + `latest.json` so public-feed users receive the
-   same update.
+6. **Confirm public promotion** by verifying that the automatic GitHub Release
+   for the same source SHA contains byte-identical signed artifacts and
+   `latest.json`. If its CI run failed, recover that same release rather than
+   reserving a new rolling identity.
 
 ---
 
@@ -265,6 +267,8 @@ again.
 Clients that already installed the bad version must receive a forward fix
 release signed with the same updater key. P1 does not provide an in-app
 rollback installer, copy installer, or channel-history rollback command.
+Never force-move or delete the immutable public rolling tag to simulate a
+rollback.
 
 ---
 

@@ -1,181 +1,403 @@
-name: Release
+name: Rolling Release
 
 on:
-  push:
-    tags:
-      - "v[0-9][0-9].[1-9]*"
+  workflow_call:
+    inputs:
+      source_sha:
+        description: "Exact successful main commit to release"
+        required: true
+        type: string
+      mode:
+        description: "rolling allocates/reuses by source; existing recovers an explicit tag"
+        required: true
+        type: string
+      release_tier:
+        description: "production publishes; staging/dry-run only validate existing snapshots"
+        required: true
+        type: string
+      tag:
+        description: "Bare YY.N tag required only in existing mode"
+        required: false
+        default: ""
+        type: string
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      APPLE_CERT_P12_BASE64:
+        required: false
+      APPLE_CERT_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      WINDOWS_CERT_THUMBPRINT:
+        required: false
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Public tag to release (exactly vYY.N, e.g. v26.1)"
+      source_sha:
+        description: "Exact successful main commit to release or recover"
         required: true
-      release_tier:
-        description: "Release tier: production publishes latest.json; staging/dry-run never do."
+        type: string
+      mode:
+        description: "Release allocation/recovery mode"
         required: true
         type: choice
-        default: dry-run
+        default: existing
+        options:
+          - existing
+          - rolling
+      release_tier:
+        description: "Publication tier"
+        required: true
+        type: choice
+        default: production
         options:
           - production
           - staging
           - dry-run
+      tag:
+        description: "Bare YY.N tag (required in existing mode)"
+        required: false
+        type: string
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
+
+concurrency:
+  group: rolling-release
+  # GitHub supports queue:max; the repository actionlint config narrowly
+  # suppresses the older v1.7.12 schema diagnostic for this exact key.
+  queue: max
+  cancel-in-progress: false
 
 env:
-  RELEASE_TIER: ${{ github.event_name == 'push' && 'production' || github.event.inputs.release_tier || 'dry-run' }}
+  RELEASE_FEATURES: >-
+    cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
 
 jobs:
   metadata:
+    name: Gate source and resolve rolling identity
     runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      actions: read
+      contents: write
     outputs:
+      machine_version: ${{ steps.release_version.outputs.machine_version }}
       public_tag: ${{ steps.release_version.outputs.public_tag }}
       public_version: ${{ steps.release_version.outputs.public_version }}
-      machine_version: ${{ steps.release_version.outputs.machine_version }}
+      release_action: ${{ steps.release_version.outputs.release_action }}
+      source_guard: ${{ steps.release_version.outputs.source_guard }}
+      latest_released_source: ${{ steps.release_version.outputs.latest_released_source }}
+      latest_release_tag: ${{ steps.release_version.outputs.latest_release_tag }}
+      snapshot_commit: ${{ steps.verify_snapshot.outputs.snapshot_commit }}
+      snapshot_tree: ${{ steps.verify_snapshot.outputs.snapshot_tree }}
+      source_sha: ${{ steps.verify_snapshot.outputs.source_sha }}
+      updater_enabled: ${{ steps.updater.outputs.enabled }}
     steps:
-      - name: Checkout requested public release tag
-        uses: actions/checkout@v4
+      - name: Validate exact source SHA shape before checkout
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::source_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+
+      - name: Checkout the exact source commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Node toolchain
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
 
-      - name: Validate release tier
+      - name: Validate invocation contract
         shell: bash
+        env:
+          MODE: ${{ inputs.mode }}
+          RELEASE_TIER: ${{ inputs.release_tier }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
+          set -euo pipefail
+          case "$MODE" in
+            rolling|existing) ;;
+            *) echo "::error::mode must be rolling or existing."; exit 1 ;;
+          esac
           case "$RELEASE_TIER" in
             production|staging|dry-run) ;;
-            *)
-              echo "::error::Invalid release tier '$RELEASE_TIER'."
-              exit 1
-              ;;
+            *) echo "::error::release_tier must be production, staging, or dry-run."; exit 1 ;;
           esac
-          echo "Release tier: $RELEASE_TIER"
+          if [ "$MODE" = "existing" ] && [ -z "$REQUESTED_TAG" ]; then
+            echo "::error::existing mode requires the bare YY.N tag input."
+            exit 1
+          fi
+          if [ "$MODE" = "rolling" ] && [ -n "$REQUESTED_TAG" ]; then
+            echo "::error::rolling mode allocates the tag; leave tag empty."
+            exit 1
+          fi
+          if [ "$MODE" = "rolling" ] && [ "$RELEASE_TIER" != "production" ]; then
+            echo "::error::rolling mode is production-only; validation tiers must recover an existing tag."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
+            echo "::error::source_sha must be a commit on main."
+            exit 1
+          fi
 
-      - name: Resolve and validate public release identity
+      - name: Wait for exact-source release gates
+        id: readiness
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: >-
+          node scripts/ci/wait-for-release-readiness.mjs
+          --repo "$GITHUB_REPOSITORY"
+          --source-sha "$SOURCE_SHA"
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Resolve bare rolling release identity
         id: release_version
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+          MODE: ${{ inputs.mode }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ steps.readiness.outputs.source_sha }}
         run: |
-          node scripts/ci/resolve-release-version.mjs \
-            --tag "$RELEASE_TAG" \
+          set -euo pipefail
+          args=(
+            --source-sha "$SOURCE_SHA"
+            --repo .
             --github-output "$GITHUB_OUTPUT"
+          )
+          if [ "$MODE" = "existing" ]; then
+            args+=(--tag "$REQUESTED_TAG")
+          fi
+          node scripts/ci/resolve-release-version.mjs "${args[@]}"
 
-      - name: Check machine-version projections
-        run: npm run version:check
+      - name: Detect protected updater signing key
+        id: updater
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY//[[:space:]]/}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Signed updater artifacts and latest.json are enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No updater key is configured. Public installers will be released without updater signatures or latest.json."
+          fi
 
-  # --------------------------------------------------------------------------
-  # Build + (optionally) sign platform bundles in a matrix.
-  # Production is strict; staging/dry-run may build unsigned bundles.
-  # --------------------------------------------------------------------------
+      - name: Install updater-key verification toolchain
+        if: steps.updater.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Install protected signing CLI
+        if: steps.updater.outputs.enabled == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Sign updater trust challenge
+        if: steps.updater.outputs.enabled == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf 'sortOfRemoteNG updater trust challenge\n' > "$RUNNER_TEMP/updater-key-challenge"
+          npx --no-install tauri signer sign "$RUNNER_TEMP/updater-key-challenge"
+          test -s "$RUNNER_TEMP/updater-key-challenge.sig"
+
+      - name: Verify updater key matches embedded public key
+        if: steps.updater.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          public_key=$(jq -er '.plugins.updater.pubkey | select(type == "string" and length > 0)' src-tauri/tauri.conf.json)
+          cargo run --quiet --locked --manifest-path src-tauri/Cargo.toml \
+            -p sorng-updater-signature-verifier -- \
+            "$public_key" \
+            "$RUNNER_TEMP/updater-key-challenge" \
+            "$RUNNER_TEMP/updater-key-challenge.sig"
+          rm -f "$RUNNER_TEMP/updater-key-challenge" "$RUNNER_TEMP/updater-key-challenge.sig"
+
+      - name: Create or reuse immutable release snapshot
+        id: snapshot
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACHINE_VERSION: ${{ steps.release_version.outputs.machine_version }}
+          PUBLIC_TAG: ${{ steps.release_version.outputs.public_tag }}
+          PUBLIC_VERSION: ${{ steps.release_version.outputs.public_version }}
+          RELEASE_ACTION: ${{ steps.release_version.outputs.release_action }}
+          RESOLVED_SNAPSHOT: ${{ steps.release_version.outputs.snapshot_commit }}
+          SOURCE_SHA: ${{ steps.readiness.outputs.source_sha }}
+          SOURCE_GUARD: ${{ steps.release_version.outputs.source_guard }}
+        run: |
+          set -euo pipefail
+          if [ "$SOURCE_GUARD" != "passed" ]; then
+            echo "::error::Monotonic release source guard did not pass; refusing tag mutation."
+            exit 1
+          fi
+          if [ "$RELEASE_ACTION" = "reuse" ]; then
+            test -n "$RESOLVED_SNAPSHOT"
+            echo "snapshot_commit=$RESOLVED_SNAPSHOT" >> "$GITHUB_OUTPUT"
+            echo "Reusing $PUBLIC_TAG at $RESOLVED_SNAPSHOT for source $SOURCE_SHA."
+            exit 0
+          fi
+          if [ "$RELEASE_ACTION" != "create" ]; then
+            echo "::error::Unknown release action $RELEASE_ACTION."
+            exit 1
+          fi
+
+          node scripts/sync-version.mjs --write --version "$PUBLIC_VERSION"
+          node scripts/sync-version.mjs --check
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --allow-empty --no-gpg-sign \
+            -m "chore(release): snapshot $PUBLIC_TAG" \
+            -m "Release-Source-SHA: $SOURCE_SHA"
+          snapshot_commit=$(git rev-parse HEAD)
+          git update-ref \
+            "refs/tags/$PUBLIC_TAG" \
+            "$snapshot_commit" \
+            "0000000000000000000000000000000000000000"
+          node scripts/ci/verify-release-snapshot.mjs \
+            --repo . \
+            --tag "$PUBLIC_TAG" \
+            --snapshot-commit "$snapshot_commit" \
+            --source-sha "$SOURCE_SHA" \
+            --public-version "$PUBLIC_VERSION"
+          basic_auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $basic_auth" \
+            push origin "refs/tags/$PUBLIC_TAG:refs/tags/$PUBLIC_TAG"
+          unset basic_auth
+          echo "snapshot_commit=$snapshot_commit" >> "$GITHUB_OUTPUT"
+          echo "Created $PUBLIC_TAG at $snapshot_commit for source $SOURCE_SHA ($MACHINE_VERSION)."
+
+      - name: Verify immutable release snapshot integrity
+        id: verify_snapshot
+        shell: bash
+        env:
+          PUBLIC_TAG: ${{ steps.release_version.outputs.public_tag }}
+          PUBLIC_VERSION: ${{ steps.release_version.outputs.public_version }}
+          SNAPSHOT_COMMIT: ${{ steps.snapshot.outputs.snapshot_commit }}
+          SOURCE_SHA: ${{ steps.readiness.outputs.source_sha }}
+        run: >-
+          node scripts/ci/verify-release-snapshot.mjs
+          --repo .
+          --tag "$PUBLIC_TAG"
+          --snapshot-commit "$SNAPSHOT_COMMIT"
+          --source-sha "$SOURCE_SHA"
+          --public-version "$PUBLIC_VERSION"
+          --github-output "$GITHUB_OUTPUT"
+
   build:
+    name: Build ${{ matrix.artifact_id }}
     needs: metadata
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux
-            bundles: "appimage,deb"
-          - os: macos-14
-            target: macos
-            bundles: "dmg,app"
-          - os: windows-2022
-            target: windows
-            bundles: "msi,nsis"
+          - artifact_id: linux-x86_64
+            os: ubuntu-24.04
+            platform: linux
+            rust_target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - artifact_id: darwin-aarch64
+            os: macos-15
+            platform: macos
+            rust_target: aarch64-apple-darwin
+            bundles: dmg,app
+          - artifact_id: darwin-x86_64
+            os: macos-15-intel
+            platform: macos
+            rust_target: x86_64-apple-darwin
+            bundles: dmg,app
+          - artifact_id: windows-x86_64
+            os: windows-2022
+            platform: windows
+            rust_target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
     runs-on: ${{ matrix.os }}
     env:
-      # Tauri updater signing (production requires this; non-production may omit it)
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       SORNG_OPKSSH_VENDOR_CHECKOUT: ${{ github.workspace }}/.ci/opkssh-source
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout immutable release snapshot
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.metadata.outputs.public_tag }}
-
-      - name: Check updater signing key
-        shell: bash
-        run: |
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY//[[:space:]]/}" ]; then
-            if [ "$RELEASE_TIER" = "production" ]; then
-              echo "::error::TAURI_SIGNING_PRIVATE_KEY is required for production releases."
-              exit 1
-            fi
-            echo "::notice::TAURI_SIGNING_PRIVATE_KEY is not set; $RELEASE_TIER bundles may be unsigned and will not publish production latest.json."
-          fi
+          ref: ${{ needs.metadata.outputs.snapshot_commit }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Node toolchain
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
-          cache: "npm"
+          cache: npm
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust target
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
-      - name: Check out pinned OPKSSH source (193d79871f3bad3cd27cfb94734c265773a99c9b)
-        uses: actions/checkout@v4
+      - name: Check out pinned OPKSSH source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: openpubkey/opkssh
           ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
           fetch-depth: 1
+          persist-credentials: false
           path: .ci/opkssh-source
 
       - name: Install Go toolchain for embedded OPKSSH bridge
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.24.12"
           cache-dependency-path: .ci/opkssh-source/go.sum
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri -> target
+          key: release-${{ matrix.rust_target }}
 
-      - name: Install Linux system deps
-        if: matrix.target == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            pkg-config \
-            libssl-dev \
-            librdkafka-dev \
-            libayatana-appindicator3-dev
+      - name: Install Linux build prerequisites
+        if: matrix.platform == 'linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          cmake build-essential pkg-config libssl-dev libdbus-1-dev
+          libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
+          librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev
+          libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev patchelf
 
-      - name: Install macOS librdkafka deps
-        if: matrix.target == 'macos'
-        run: brew install pkg-config librdkafka
+      - name: Install macOS static Kafka prerequisites
+        if: matrix.platform == 'macos'
+        run: brew install cmake pkg-config openssl@3
 
-      - name: Install Windows librdkafka deps
-        if: matrix.target == 'windows'
-        shell: pwsh
-        run: |
-          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $vcpkgRoot) { $vcpkgRoot = "C:\vcpkg" }
-          & "$vcpkgRoot\vcpkg.exe" install librdkafka:x64-windows
-          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_DEFAULT_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "RDKAFKA_ROOT=$vcpkgRoot\installed\x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install JavaScript dependencies
+        run: npm ci --no-audit --no-fund
 
-      - name: Install JS deps
-        run: npm ci
-
-      # ----------------------------------------------------------------------
-      # macOS: Developer ID cert import (graceful degrade)
-      # ----------------------------------------------------------------------
-      - name: Check macOS signing secrets
-        id: check_macos_signing
-        if: matrix.target == 'macos'
+      - name: Check macOS Developer ID signing inputs
+        id: macos_signing
+        if: matrix.platform == 'macos'
         shell: bash
         env:
           APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
@@ -185,407 +407,973 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           missing=()
-          for secret_name in APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            secret_value="${!secret_name:-}"
-            if [ -z "${secret_value//[[:space:]]/}" ]; then
-              missing+=("$secret_name")
-            fi
+          for name in APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name:-}"
+            [ -n "${value//[[:space:]]/}" ] || missing+=("$name")
           done
-
           if [ "${#missing[@]}" -eq 0 ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "macOS signing: ENABLED"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            message="macOS signing/notarization secrets missing: ${missing[*]}"
-            if [ "$RELEASE_TIER" = "production" ]; then
-              echo "::warning::$message - producing UNSIGNED macOS bundles (open-source unsigned release policy)."
-            else
-              echo "::warning::$message - producing unsigned macOS bundles for $RELEASE_TIER."
-            fi
+            echo "::warning::macOS Developer ID signing/notarization disabled; missing: ${missing[*]}."
           fi
 
       - name: Import Apple Developer ID certificate
-        if: matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true'
+        id: apple_certificate
+        if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
         env:
           APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
           APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
-          CERT_PATH="$RUNNER_TEMP/apple_cert.p12"
-          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-          rm -f "$CERT_PATH"
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password=$(openssl rand -base64 24)
+          certificate="$RUNNER_TEMP/release.p12"
+          printf '%s' "$APPLE_CERT_P12_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -P "$APPLE_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$password" "$keychain"
+          security list-keychain -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)
+          test -n "$identity"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+          rm -f "$certificate"
 
-      # ----------------------------------------------------------------------
-      # Windows: EV code-signing via thumbprint (graceful degrade)
-      # signtool is available in windows-2022 image (Windows SDK).
-      # ----------------------------------------------------------------------
-      - name: Check Windows signing secrets
-        id: check_windows_signing
-        if: matrix.target == 'windows'
-        shell: bash
+      - name: Check Windows Authenticode signing input
+        id: windows_signing
+        if: matrix.platform == 'windows'
+        shell: pwsh
         env:
           WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
         run: |
-          if [ -n "${WINDOWS_CERT_THUMBPRINT//[[:space:]]/}" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "Windows signing: ENABLED (thumbprint provided)"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            if [ "$RELEASE_TIER" = "production" ]; then
-              echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing UNSIGNED Windows bundles (open-source unsigned release policy)."
-            else
-              echo "::warning::WINDOWS_CERT_THUMBPRINT missing - producing unsigned Windows bundles for $RELEASE_TIER."
-            fi
-          fi
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_THUMBPRINT)) {
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Warning "Windows Authenticode signing disabled; WINDOWS_CERT_THUMBPRINT is absent."
+          } else {
+            # MMC and certificate-provider copy operations commonly introduce
+            # spaces, separators, or an invisible left-to-right mark. Compare
+            # the canonical 40-hex SHA-1 thumbprint only.
+            $thumbprint = ($env:WINDOWS_CERT_THUMBPRINT -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+            if ($thumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw "WINDOWS_CERT_THUMBPRINT must normalize to exactly 40 hexadecimal characters."
+            }
+            $certificate = Get-ChildItem Cert:\CurrentUser\My | Where-Object {
+              (($_.Thumbprint -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()) -eq $thumbprint
+            } | Select-Object -First 1
+            if (-not $certificate) {
+              throw "WINDOWS_CERT_THUMBPRINT is configured, but no matching certificate is installed in Cert:\CurrentUser\My. Provision the certificate before enabling signing."
+            }
+            if (-not $certificate.HasPrivateKey) {
+              throw "The configured Windows certificate has no accessible private key."
+            }
+            "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            "thumbprint=$thumbprint" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
 
-      # ----------------------------------------------------------------------
-      # Build bundles with tauri-action only. Release creation/upload is kept
-      # in the publish job after production feed/signature validation.
-      # ----------------------------------------------------------------------
-      - name: Build Tauri bundles
-        id: tauri
-        uses: tauri-apps/tauri-action@v0
+      - name: Configure updater and OS signing
+        shell: bash
         env:
-          # macOS signing / notarization (only populated when enabled)
-          APPLE_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_SIGNING_IDENTITY: "${{ matrix.target == 'macos' && steps.check_macos_signing.outputs.enabled == 'true' && format('Developer ID Application: {0}', secrets.APPLE_TEAM_ID) || '' }}"
+          PLATFORM: ${{ matrix.platform }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+          WINDOWS_CERT_THUMBPRINT: ${{ steps.windows_signing.outputs.thumbprint || '' }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const bundle = {
+            createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
+          };
+          if (
+            process.env.PLATFORM === "windows" &&
+            process.env.WINDOWS_CERT_THUMBPRINT
+          ) {
+            bundle.windows = {
+              certificateThumbprint: process.env.WINDOWS_CERT_THUMBPRINT,
+              digestAlgorithm: "sha256",
+              timestampUrl: "http://timestamp.digicert.com",
+              tsp: true,
+            };
+          }
+          fs.writeFileSync(
+            "src-tauri/tauri.release.conf.json",
+            JSON.stringify({ bundle }),
+          );
+          NODE
+
+      - name: Build native bundles with static Kafka
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && steps.apple_certificate.outputs.identity || '' }}
         with:
           includeUpdaterJson: false
-          args: --features full --bundles ${{ matrix.bundles }} -- --no-default-features
+          args: >-
+            --target ${{ matrix.rust_target }}
+            --bundles ${{ matrix.bundles }}
+            --config src-tauri/tauri.release.conf.json
+            --features ${{ env.RELEASE_FEATURES }}
+            -- --no-default-features
 
-      # ----------------------------------------------------------------------
-      # Windows: sign .msi/.exe post-bundle via signtool + EV thumbprint.
-      # ----------------------------------------------------------------------
-      - name: Sign Windows artifacts (signtool + EV cert)
-        if: matrix.target == 'windows' && steps.check_windows_signing.outputs.enabled == 'true'
-        shell: pwsh
+      - name: Notarize and staple macOS disk image
+        if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
         env:
-          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          Write-Host "Using signtool: $signtool"
-          $bundleDir = "src-tauri/target/release/bundle"
-          $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
-          if ($files.Count -eq 0) {
-            if ($env:RELEASE_TIER -eq "production") { throw "No Windows .msi/.exe artifacts found to sign." }
-            Write-Warning "No Windows .msi/.exe artifacts found to sign."
-            exit 0
+          set -euo pipefail
+          dmg_dir="src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg"
+          dmg_count=$(find "$dmg_dir" -maxdepth 1 -type f -name '*.dmg' | wc -l | tr -d '[:space:]')
+          [ "$dmg_count" -eq 1 ] || {
+            echo "::error::Expected exactly one macOS disk image for ${{ matrix.artifact_id }}, found $dmg_count."
+            exit 1
           }
-          foreach ($file in $files) {
-            Write-Host "Signing $($file.FullName)"
-            & $signtool sign /sha1 $env:WINDOWS_CERT_THUMBPRINT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($file.FullName)" }
+          dmg=$(find "$dmg_dir" -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          xcrun notarytool submit "$dmg" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --output-format json > "$RUNNER_TEMP/notarization-result.json"
+          jq -e '.status == "Accepted"' "$RUNNER_TEMP/notarization-result.json" > /dev/null || {
+            jq . "$RUNNER_TEMP/notarization-result.json"
+            echo "::error::Apple notarization did not return Accepted."
+            exit 1
           }
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
 
       - name: Verify Windows Authenticode signatures
-        if: matrix.target == 'windows' && steps.check_windows_signing.outputs.enabled == 'true'
+        if: matrix.platform == 'windows' && steps.windows_signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          $bundleDir = "src-tauri/target/release/bundle"
+          if (-not $signtool) { throw "signtool.exe was not found." }
+          $bundleDir = "src-tauri/target/${{ matrix.rust_target }}/release/bundle"
           $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
-          if ($files.Count -eq 0) {
-            if ($env:RELEASE_TIER -eq "production") { throw "No Windows .msi/.exe artifacts found to verify." }
-            Write-Warning "No Windows .msi/.exe artifacts found to verify."
-            exit 0
-          }
+          if ($files.Count -eq 0) { throw "No Windows installers were produced." }
           foreach ($file in $files) {
-            Write-Host "Verifying $($file.FullName)"
             & $signtool verify /pa /tw $file.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signtool verify failed for $($file.FullName)" }
+            if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $($file.FullName)" }
           }
 
-      # ----------------------------------------------------------------------
-      # Collect artifacts for updater feed generation job.
-      # ----------------------------------------------------------------------
-      - name: Stage artifacts
+      - name: Verify macOS Developer ID, notarization, and stapling
+        if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
         shell: bash
         run: |
+          set -euo pipefail
+          app=$(find "src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos" -maxdepth 1 -type d -name '*.app' -print -quit)
+          dmg=$(find "src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          test -n "$app"
+          test -n "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$dmg"
+
+      - name: Stage architecture-specific release assets
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          PLATFORM: ${{ matrix.platform }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+          MACOS_SIGNED: ${{ steps.macos_signing.outputs.enabled || 'false' }}
+          WINDOWS_SIGNED: ${{ steps.windows_signing.outputs.enabled || 'false' }}
+        run: |
+          set -euo pipefail
+          bundle="src-tauri/target/$RUST_TARGET/release/bundle"
           mkdir -p artifacts
-          case "${{ matrix.target }}" in
+          one() {
+            local directory="$1" pattern="$2" destination="$3"
+            local source count
+            count=$(find "$directory" -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d '[:space:]')
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Expected exactly one $pattern bundle in $directory for $ARTIFACT_ID, found $count."
+              exit 1
+            fi
+            source=$(find "$directory" -maxdepth 1 -type f -name "$pattern" -print -quit)
+            cp "$source" "artifacts/$destination"
+            printf '%s' "$source"
+          }
+          case "$PLATFORM" in
             linux)
-              find src-tauri/target/release/bundle/appimage -type f \( -name "*.AppImage" -o -name "*.AppImage.sig" \) -exec cp {} artifacts/ \; || true
-              find src-tauri/target/release/bundle/deb -type f -name "*.deb" -exec cp {} artifacts/ \; || true
+              updater_source=$(one "$bundle/appimage" '*.AppImage' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.AppImage")
+              updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.AppImage"
+              one "$bundle/deb" '*.deb' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.deb" >/dev/null
+              os_signing=not-applicable
               ;;
             macos)
-              find src-tauri/target/release/bundle/dmg -type f \( -name "*.dmg" -o -name "*.dmg.sig" \) -exec cp {} artifacts/ \; || true
-              find src-tauri/target/release/bundle/macos -type f -name "*.app.tar.gz*" -exec cp {} artifacts/ \; || true
+              one "$bundle/dmg" '*.dmg' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.dmg" >/dev/null
+              updater_source=""
+              os_signing=$([ "$MACOS_SIGNED" = true ] && echo developer-id-verified || echo unsigned)
+              if [ "$UPDATER_ENABLED" = true ]; then
+                updater_source=$(one "$bundle/macos" '*.app.tar.gz' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.app.tar.gz")
+                updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.app.tar.gz"
+              fi
               ;;
             windows)
-              find src-tauri/target/release/bundle/msi -type f \( -name "*.msi" -o -name "*.msi.sig" \) -exec cp {} artifacts/ \; || true
-              find src-tauri/target/release/bundle/nsis -type f \( -name "*.exe" -o -name "*.exe.sig" \) -exec cp {} artifacts/ \; || true
+              one "$bundle/msi" '*.msi' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.msi" >/dev/null
+              updater_source=$(one "$bundle/nsis" '*-setup.exe' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe")
+              updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe"
+              os_signing=$([ "$WINDOWS_SIGNED" = true ] && echo authenticode-verified || echo unsigned)
               ;;
           esac
-          ls -la artifacts/ || true
+          if [ "$UPDATER_ENABLED" = true ]; then
+            test -n "$updater_source"
+            test -s "${updater_source}.sig"
+            test -n "$updater_name"
+            cp "${updater_source}.sig" "artifacts/${updater_name}.sig"
+          fi
+          OS_SIGNING="$os_signing" node <<'NODE'
+          const fs = require("node:fs");
+          const file = `artifacts/sortOfRemoteNG_${process.env.MACHINE_VERSION}_${process.env.ARTIFACT_ID}.provenance.json`;
+          fs.writeFileSync(
+            file,
+            `${JSON.stringify({
+              target: process.env.ARTIFACT_ID,
+              os_signing: process.env.OS_SIGNING,
+              updater_signing: process.env.UPDATER_ENABLED === "true",
+            }, null, 2)}\n`,
+          );
+          NODE
+          ls -la artifacts
 
-      - name: Validate staged artifact version metadata
+      - name: Validate staged version metadata
         run: >-
           node scripts/ci/validate-release-artifacts.mjs
           --dist-dir artifacts
           --expected-version "${{ needs.metadata.outputs.machine_version }}"
 
-      - name: Validate production staged artifacts
-        if: env.RELEASE_TIER == 'production'
+      - name: Upload validated target assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.artifact_id }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove ephemeral signing configuration
+        if: ${{ always() }}
         shell: bash
         run: |
-          set -euo pipefail
-          require_one() {
-            local label="$1"
-            local pattern="$2"
-            local artifact
-            artifact=$(find artifacts -maxdepth 1 -type f -name "$pattern" | sort | head -n 1 || true)
-            if [ -z "$artifact" ]; then
-              echo "::error::Missing production $label artifact ($pattern)."
-              exit 1
-            fi
-            printf '%s' "$artifact"
-          }
+          rm -f src-tauri/tauri.release.conf.json
+          if [ "${{ matrix.platform }}" = macos ]; then
+            security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
+          fi
 
-          require_non_empty_sig() {
-            local artifact="$1"
-            local signature_file="${artifact}.sig"
-            if [ ! -f "$signature_file" ]; then
-              echo "::error::Missing updater signature $signature_file."
-              exit 1
-            fi
-            if [ -z "$(tr -d '\r\n\t ' < "$signature_file")" ]; then
-              echo "::error::Updater signature $signature_file is empty."
-              exit 1
-            fi
-          }
-
-          case "${{ matrix.target }}" in
-            linux)
-              linux_appimage=$(require_one "Linux AppImage" "*.AppImage")
-              require_one "Linux deb" "*.deb" >/dev/null
-              require_non_empty_sig "$linux_appimage"
-              ;;
-            macos)
-              mac_app_tar=$(require_one "macOS updater archive" "*.app.tar.gz")
-              require_one "macOS dmg" "*.dmg" >/dev/null
-              require_non_empty_sig "$mac_app_tar"
-              ;;
-            windows)
-              windows_exe=$(require_one "Windows NSIS installer" "*.exe")
-              require_one "Windows MSI installer" "*.msi" >/dev/null
-              require_non_empty_sig "$windows_exe"
-              ;;
-          esac
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: bundle-${{ matrix.target }}
-          path: artifacts/
-          if-no-files-found: ${{ env.RELEASE_TIER == 'production' && 'error' || 'warn' }}
-          retention-days: 7
-
-  # --------------------------------------------------------------------------
-  # Aggregate artifacts, build the tiered updater feed, attach to GitHub Release.
-  # --------------------------------------------------------------------------
   publish:
+    name: Validate and publish rolling release
     needs: [metadata, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout immutable release snapshot
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.metadata.outputs.public_tag }}
+          ref: ${{ needs.metadata.outputs.snapshot_commit }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Install Node toolchain
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
 
-      - name: Download all bundle artifacts
-        uses: actions/download-artifact@v4
-        continue-on-error: ${{ env.RELEASE_TIER != 'production' }}
+      - name: Install updater signature verification toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Build updater signature verifier
+        if: inputs.release_tier == 'production' || needs.metadata.outputs.updater_enabled == 'true'
+        run: >-
+          cargo build --quiet --locked --manifest-path src-tauri/Cargo.toml
+          -p sorng-updater-signature-verifier
+
+      - name: Download all validated target assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
-          pattern: bundle-*
+          pattern: release-*
           merge-multiple: true
 
-      - name: Ensure dist directory exists
-        shell: bash
-        run: mkdir -p dist
-
-      - name: Resolve release destination and feed file
-        id: meta
-        shell: bash
-        env:
-          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
-        run: |
-          set -euo pipefail
-          case "$RELEASE_TIER" in
-            production)
-              RELEASE_TAG="${PUBLIC_TAG}"
-              FEED_FILE="latest.json"
-              ;;
-            staging)
-              RELEASE_TAG="${PUBLIC_TAG}-staging"
-              FEED_FILE="staging-latest.json"
-              ;;
-            dry-run)
-              RELEASE_TAG="${PUBLIC_TAG}-dry-run"
-              FEED_FILE="dry-run-latest.json"
-              ;;
-            *)
-              echo "::error::Invalid release tier '$RELEASE_TIER'."
-              exit 1
-              ;;
-          esac
-          REPO="${{ github.repository }}"
-          BASE="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
-          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "feed_file=${FEED_FILE}" >> "$GITHUB_OUTPUT"
-          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
-          echo "pub_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "Release tier: $RELEASE_TIER"
-          echo "Release tag: $RELEASE_TAG"
-          echo "Feed file: $FEED_FILE"
-
-      - name: Validate aggregated artifact version metadata
-        run: >-
-          node scripts/ci/validate-release-artifacts.mjs
-          --dist-dir dist
-          --expected-version "${{ needs.metadata.outputs.machine_version }}"
-
-      # ----------------------------------------------------------------------
-      # Build the updater feed in the Tauri updater shape:
-      #   { version, pub_date, notes, platforms: { "<target>": { signature, url } } }
-      # Signature is read from each bundle's companion .sig (if present).
-      # Production validation rejects missing signatures; non-production feeds are
-      # named staging-latest.json/dry-run-latest.json and may remain permissive.
-      # ----------------------------------------------------------------------
-      - name: Generate updater feed
+      - name: Validate complete public installer set
         shell: bash
         env:
           MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
-          PUBLIC_VERSION: ${{ needs.metadata.outputs.public_version }}
-          PUB_DATE: ${{ steps.meta.outputs.pub_date }}
-          BASE: ${{ steps.meta.outputs.base }}
-          FEED_FILE: ${{ steps.meta.outputs.feed_file }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
         run: |
           set -euo pipefail
-          sig_of() {
-            local f="$1"
-            if [ -f "${f}.sig" ]; then
-              tr -d '\r\n' < "${f}.sig"
-            else
-              echo ""
-            fi
+          node scripts/ci/validate-release-artifacts.mjs \
+            --dist-dir dist \
+            --expected-version "$MACHINE_VERSION"
+          required=(
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.deb"
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.dmg"
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.dmg"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.msi"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.provenance.json"
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.provenance.json"
+            "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.provenance.json"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.provenance.json"
+          )
+          if [ "$UPDATER_ENABLED" = true ]; then
+            required+=(
+              "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz"
+              "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
+              "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe.sig"
+            )
+          fi
+          for asset in "${required[@]}"; do
+            test -s "dist/$asset" || { echo "::error::Missing validated installer $asset."; exit 1; }
+          done
+          printf '%s\n' "${required[@]}" | sort > "$RUNNER_TEMP/expected-dist-assets.txt"
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort > "$RUNNER_TEMP/actual-dist-assets.txt"
+          if ! diff -u "$RUNNER_TEMP/expected-dist-assets.txt" "$RUNNER_TEMP/actual-dist-assets.txt"; then
+            echo "::error::Release staging contains missing or unexpected assets."
+            exit 1
+          fi
+          provenance_count=$(find dist -maxdepth 1 -type f -name '*.provenance.json' | wc -l)
+          [ "$provenance_count" -eq 4 ] || { echo "::error::Expected four provenance records, found $provenance_count."; exit 1; }
+          if [ "$UPDATER_ENABLED" != true ] && find dist -maxdepth 1 -type f \( -name '*.sig' -o -name '*.app.tar.gz' \) | grep -q .; then
+            echo "::error::Updater-only artifacts exist even though the updater key is absent."
+            exit 1
+          fi
+
+      - name: Generate signed updater feed
+        if: needs.metadata.outputs.updater_enabled == 'true'
+        shell: bash
+        env:
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$PUBLIC_TAG"
+          pub_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          platforms='{}'
+          add() {
+            local target="$1" artifact="$2"
+            test -s "dist/$artifact"
+            test -s "dist/$artifact.sig"
+            signature=$(tr -d '\r\n\t ' < "dist/$artifact.sig")
+            test -n "$signature"
+            platforms=$(jq \
+              --arg target "$target" \
+              --arg signature "$signature" \
+              --arg url "$base/$artifact" \
+              '. + {($target): {signature: $signature, url: $url}}' \
+              <<<"$platforms")
           }
-          find_one() {
-            ls dist/ 2>/dev/null | grep -E "$1" | head -n 1 || true
-          }
-
-          LINUX_APPIMAGE=$(find_one '\.AppImage$' || true)
-          MAC_DMG=$(find_one '\.dmg$' || true)
-          MAC_TARGZ=$(find_one '\.app\.tar\.gz$' || true)
-          WIN_MSI=$(find_one '\.msi$' || true)
-          WIN_NSIS=$(find_one '\.exe$' || true)
-
-          jq_platforms='{}'
-          add_platform() {
-            local key="$1"; local file="$2"
-            if [ -n "$file" ] && [ -f "dist/$file" ]; then
-              local sig
-              sig=$(sig_of "dist/$file")
-              jq_platforms=$(jq --arg k "$key" \
-                                --arg s "$sig" \
-                                --arg u "${BASE}/${file}" \
-                                '. + {($k): {signature: $s, url: $u}}' \
-                                <<<"$jq_platforms")
-              if [ -z "$sig" ]; then
-                echo "::warning::No .sig for $file - platform $key will have empty signature (UNSIGNED build)."
-              fi
-            fi
-          }
-
-          add_platform "linux-x86_64"   "$LINUX_APPIMAGE"
-          add_platform "darwin-x86_64"  "${MAC_TARGZ:-$MAC_DMG}"
-          add_platform "darwin-aarch64" "${MAC_TARGZ:-$MAC_DMG}"
-          add_platform "windows-x86_64" "${WIN_NSIS:-$WIN_MSI}"
-
+          add linux-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage"
+          add darwin-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz"
+          add darwin-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
+          add windows-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
           jq -n \
             --arg version "$MACHINE_VERSION" \
-            --arg pub_date "$PUB_DATE" \
-            --arg notes "Release $PUBLIC_VERSION" \
-            --argjson platforms "$jq_platforms" \
+            --arg pub_date "$pub_date" \
+            --arg notes "Rolling release $PUBLIC_TAG from source $SOURCE_SHA" \
+            --argjson platforms "$platforms" \
             '{version: $version, pub_date: $pub_date, notes: $notes, platforms: $platforms}' \
-            > "$FEED_FILE"
-
-          echo "---- $FEED_FILE ----"
-          cat "$FEED_FILE"
-
-      - name: Validate production updater feed
-        if: env.RELEASE_TIER == 'production'
-        shell: bash
-        run: |
-          node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
+            > dist/latest.json
+          node scripts/ci/validate-updater-feed.mjs dist/latest.json \
             --dist-dir dist \
-            --expected-version "${{ needs.metadata.outputs.machine_version }}" \
+            --expected-version "$MACHINE_VERSION" \
             --require-signature-files \
             --require-platform linux-x86_64 \
-            --require-platform darwin-x86_64 \
             --require-platform darwin-aarch64 \
+            --require-platform darwin-x86_64 \
             --require-platform windows-x86_64
 
-      - name: Validate non-production updater feed
-        if: env.RELEASE_TIER != 'production'
+      - name: Cryptographically verify every updater payload
+        if: needs.metadata.outputs.updater_enabled == 'true'
         shell: bash
         run: |
-          node scripts/ci/validate-updater-feed.mjs "${{ steps.meta.outputs.feed_file }}" \
-            --dist-dir dist \
+          set -euo pipefail
+          verifier=src-tauri/target/debug/sorng-updater-signature-verifier
+          node scripts/ci/verify-published-release-assets.mjs \
+            --asset-dir dist \
             --expected-version "${{ needs.metadata.outputs.machine_version }}" \
-            --allow-empty-platforms \
-            --allow-empty-signatures
+            --updater-mode signed \
+            --public-key-config src-tauri/tauri.conf.json \
+            --signature-verifier "$verifier"
 
-      - name: Upload production release assets
-        if: env.RELEASE_TIER == 'production'
-        uses: softprops/action-gh-release@v2
+      - name: Verify exact unsigned release asset set
+        if: needs.metadata.outputs.updater_enabled != 'true'
+        run: >-
+          node scripts/ci/verify-published-release-assets.mjs
+          --asset-dir dist
+          --expected-version "${{ needs.metadata.outputs.machine_version }}"
+          --updater-mode unsigned
+
+      - name: Recheck live monotonic release state before publication
+        id: promotion_guard
+        if: inputs.release_tier == 'production'
+        shell: bash
+        env:
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+          SOURCE_GUARD: ${{ needs.metadata.outputs.source_guard }}
+        run: |
+          set -euo pipefail
+          [ "$SOURCE_GUARD" = passed ] || {
+            echo "::error::Metadata source guard did not pass."
+            exit 1
+          }
+          git fetch --force --tags origin
+          guard_output="$RUNNER_TEMP/live-release-guard.txt"
+          node scripts/ci/resolve-release-version.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --repo . \
+            --tag "$PUBLIC_TAG" \
+            --github-output "$guard_output"
+          grep -qx 'source_guard=passed' "$guard_output" || {
+            echo "::error::Live monotonic source guard did not pass."
+            exit 1
+          }
+          cat "$guard_output" >> "$GITHUB_OUTPUT"
+          echo "safe=true" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release notes
+        if: inputs.release_tier == 'production'
+        shell: bash
+        env:
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+        run: |
+          {
+            echo "Rolling release $PUBLIC_TAG"
+            echo
+            echo "Source commit: \`$SOURCE_SHA\`"
+            echo "Release snapshot: \`$SNAPSHOT_COMMIT\`"
+            echo
+            if [ "$UPDATER_ENABLED" = true ]; then
+              echo "Signed automatic-update artifacts and \`latest.json\` are included."
+            else
+              echo "Public installers are included. The updater signing key was not configured, so no updater signatures or \`latest.json\` are published."
+            fi
+            echo
+            echo "macOS Developer ID and Windows Authenticode status is recorded in the per-target provenance assets."
+          } > release-notes.md
+
+      - name: Inspect existing release and protect signed assets
+        id: publication
+        if: inputs.release_tier == 'production'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+        run: |
+          set -euo pipefail
+
+          api_get() {
+            local endpoint="$1" output_file="$2" error_file response_file command_status http_status
+            error_file=$(mktemp)
+            response_file=$(mktemp)
+            if gh api --include "$endpoint" > "$response_file" 2> "$error_file"; then
+              command_status=0
+            else
+              command_status=$?
+            fi
+            http_status=$(sed -n '1s/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' "$response_file")
+            if [ "$http_status" = 404 ]; then
+              rm -f "$error_file" "$response_file"
+              return 44
+            fi
+            if [ "$command_status" -ne 0 ] || [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+              echo "::error::GitHub API request failed for $endpoint (HTTP ${http_status:-unknown})."
+              cat "$error_file" >&2
+              rm -f "$error_file" "$response_file"
+              if [ "$command_status" -ne 0 ]; then
+                return "$command_status"
+              fi
+              return 1
+            fi
+            awk 'body { print } /^\r?$/ { body=1; next }' "$response_file" > "$output_file"
+            rm -f "$error_file" "$response_file"
+            return 0
+          }
+
+          release_json="$RUNNER_TEMP/existing-release.json"
+          latest_json="$RUNNER_TEMP/latest-release.json"
+          release_exists=false
+          latest_exists=false
+          if api_get "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" "$release_json"; then
+            release_exists=true
+          else
+            status=$?
+            [ "$status" -eq 44 ] || exit "$status"
+          fi
+          if api_get "repos/$GITHUB_REPOSITORY/releases/latest" "$latest_json"; then
+            latest_exists=true
+          else
+            status=$?
+            [ "$status" -eq 44 ] || exit "$status"
+          fi
+
+          latest_tag=""
+          latest_signed=false
+          if [ "$latest_exists" = true ]; then
+            latest_tag=$(jq -er '.tag_name' "$latest_json")
+            if jq -e '[.assets[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$latest_json" > /dev/null; then
+              latest_signed=true
+            fi
+          fi
+          if [ -n "$latest_tag" ] && [ "$latest_tag" != "$PUBLIC_TAG" ]; then
+            git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
+            latest_commit=$(git rev-parse "refs/tags/$latest_tag^{commit}")
+            latest_source=$(git log -1 --format='%(trailers:key=Release-Source-SHA,valueonly)' "$latest_commit" | tr -d '[:space:]')
+            if [[ ! "$latest_source" =~ ^[0-9a-f]{40}$ ]]; then
+              latest_source="$latest_commit"
+            fi
+            git merge-base --is-ancestor "$latest_source" "$SOURCE_SHA" || {
+              echo "::error::Current source is not a descendant of the live latest release source; refusing rollback promotion."
+              exit 1
+            }
+          fi
+          latest_provenance_dir="$RUNNER_TEMP/latest-release-provenance"
+          mkdir -p "$latest_provenance_dir"
+          if [ "$latest_exists" = true ] && [ "$latest_tag" != "$PUBLIC_TAG" ]; then
+            if jq -e '[.assets[].name | select(endswith(".provenance.json"))] | length > 0' "$latest_json" > /dev/null; then
+              gh release download "$latest_tag" \
+                --dir "$latest_provenance_dir" \
+                --pattern '*.provenance.json' \
+                --clobber
+            fi
+          fi
+          protect_latest_downgrade() {
+            local candidate_updater_mode="$1" candidate_dir="$2"
+            [ "$latest_exists" = true ] || return 0
+            [ "$latest_tag" != "$PUBLIC_TAG" ] || return 0
+            if [ "$candidate_updater_mode" != signed ] && [ "$latest_signed" = true ]; then
+              echo "::error::The current latest release is updater-signed; refusing to promote an unsigned release over it."
+              exit 1
+            fi
+            protect_latest_os_downgrade() {
+              local target="$1" signed_state="$2" candidate_file candidate_os latest_has_assets latest_file_count latest_file latest_os
+              candidate_file="$candidate_dir/sortOfRemoteNG_${MACHINE_VERSION}_${target}.provenance.json"
+              candidate_os=$(jq -er '.os_signing' "$candidate_file") || {
+                echo "::error::Candidate $target provenance is missing or invalid."
+                exit 1
+              }
+              [ "$candidate_os" = unsigned ] || return 0
+              latest_has_assets=$(jq -r --arg target "$target" '[.assets[].name | select(contains($target))] | length' "$latest_json")
+              [ "$latest_has_assets" -gt 0 ] || return 0
+              latest_file_count=$(find "$latest_provenance_dir" -maxdepth 1 -type f -name "*_${target}.provenance.json" | wc -l | tr -d '[:space:]')
+              if [ "$latest_file_count" -ne 1 ]; then
+                echo "::error::The latest release has $target assets but not exactly one provenance record; refusing a possible OS-signing downgrade."
+                exit 1
+              fi
+              latest_file=$(find "$latest_provenance_dir" -maxdepth 1 -type f -name "*_${target}.provenance.json" -print -quit)
+              latest_os=$(jq -r '.os_signing // "unknown"' "$latest_file" 2> /dev/null || printf 'unknown')
+              if [ "$latest_os" != unsigned ]; then
+                echo "::error::The latest $target release has $latest_os signing state; refusing to replace it with unsigned assets (protected signed state: $signed_state)."
+                exit 1
+              fi
+            }
+            protect_latest_os_downgrade darwin-aarch64 developer-id-verified
+            protect_latest_os_downgrade darwin-x86_64 developer-id-verified
+            protect_latest_os_downgrade windows-x86_64 authenticode-verified
+          }
+
+          if [ "$release_exists" != true ]; then
+            candidate_updater_mode=$([ "$UPDATER_ENABLED" = true ] && echo signed || echo unsigned)
+            protect_latest_downgrade "$candidate_updater_mode" dist
+            echo "no_op=false" >> "$GITHUB_OUTPUT"
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+            echo "reconcile=false" >> "$GITHUB_OUTPUT"
+            echo "public_promotion=false" >> "$GITHUB_OUTPUT"
+            echo "candidate_updater_mode=$candidate_updater_mode" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          remote_dir="$RUNNER_TEMP/existing-release-assets"
+          mkdir -p "$remote_dir"
+          asset_count=$(jq '.assets | length' "$release_json")
+          if [ "$asset_count" -gt 0 ]; then
+            gh release download "$PUBLIC_TAG" --dir "$remote_dir" --clobber
+          fi
+          if ! jq -e '[.assets[] | select(.size <= 0)] | length == 0' "$release_json" > /dev/null; then
+            echo "::error::Existing release contains an empty GitHub asset."
+            exit 1
+          fi
+
+          remote_updater_mode=unsigned
+          if jq -e '[.assets[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$release_json" > /dev/null; then
+            remote_updater_mode=signed
+          fi
+          verifier=src-tauri/target/debug/sorng-updater-signature-verifier
+          verify_args=(
+            --asset-dir "$remote_dir"
+            --expected-version "$MACHINE_VERSION"
+            --updater-mode "$remote_updater_mode"
+          )
+          if [ "$remote_updater_mode" = signed ]; then
+            verify_args+=(
+              --public-key-config src-tauri/tauri.conf.json
+              --signature-verifier "$verifier"
+            )
+          fi
+          remote_valid=false
+          if node scripts/ci/verify-published-release-assets.mjs "${verify_args[@]}"; then
+            remote_valid=true
+          fi
+
+          is_draft=$(jq -r '.draft' "$release_json")
+          is_prerelease=$(jq -r '.prerelease' "$release_json")
+          if [ "$is_draft" != true ] && \
+             [ "$is_prerelease" = false ] && \
+             [ "$remote_valid" = true ]; then
+            protect_latest_downgrade "$remote_updater_mode" "$remote_dir"
+            if [ "$latest_tag" = "$PUBLIC_TAG" ]; then
+              echo "no_op=true" >> "$GITHUB_OUTPUT"
+              echo "upload=false" >> "$GITHUB_OUTPUT"
+              echo "promote=false" >> "$GITHUB_OUTPUT"
+              echo "reconcile=false" >> "$GITHUB_OUTPUT"
+              echo "public_promotion=false" >> "$GITHUB_OUTPUT"
+              echo "candidate_updater_mode=$remote_updater_mode" >> "$GITHUB_OUTPUT"
+              echo "Existing published release is complete, current, and cryptographically valid; no mutation is needed."
+            else
+              echo "no_op=false" >> "$GITHUB_OUTPUT"
+              echo "upload=false" >> "$GITHUB_OUTPUT"
+              echo "promote=true" >> "$GITHUB_OUTPUT"
+              echo "reconcile=false" >> "$GITHUB_OUTPUT"
+              echo "public_promotion=true" >> "$GITHUB_OUTPUT"
+              echo "candidate_updater_mode=$remote_updater_mode" >> "$GITHUB_OUTPUT"
+              echo "Existing published release is complete and valid; retrying latest promotion without asset mutation."
+            fi
+            exit 0
+          fi
+
+          if [ "$is_draft" != true ]; then
+            echo "::error::Existing public release is incomplete or is not the latest release. Refusing a non-atomic in-place overwrite; recover through a new rolling release."
+            exit 1
+          fi
+
+          local_state() {
+            local target="$1"
+            jq -er '.os_signing' "dist/sortOfRemoteNG_${MACHINE_VERSION}_${target}.provenance.json"
+          }
+          remote_state() {
+            local target="$1" file
+            file="$remote_dir/sortOfRemoteNG_${MACHINE_VERSION}_${target}.provenance.json"
+            if [ ! -s "$file" ]; then
+              printf 'unknown'
+              return
+            fi
+            jq -r '.os_signing // "unknown"' "$file" 2> /dev/null || printf 'unknown'
+          }
+          remote_has_target_assets() {
+            local target="$1"
+            jq -e --arg target "$target" '[.assets[].name | select(contains($target))] | length > 0' "$release_json" > /dev/null
+          }
+          protect_os_downgrade() {
+            local target="$1" signed_state="$2" local_os remote_os
+            local_os=$(local_state "$target")
+            [ "$local_os" = unsigned ] || return 0
+            remote_has_target_assets "$target" || return 0
+            remote_os=$(remote_state "$target")
+            if [ "$remote_os" != unsigned ]; then
+              echo "::error::Existing $target assets have $remote_os signing state; refusing to overwrite them with unsigned assets (expected preserved state: $signed_state)."
+              exit 1
+            fi
+          }
+
+          needs_upgrade=false
+          if [ "$UPDATER_ENABLED" = true ] && [ "$remote_updater_mode" != signed ]; then
+            needs_upgrade=true
+          fi
+          for target in darwin-aarch64 darwin-x86_64 windows-x86_64; do
+            local_os=$(local_state "$target")
+            remote_os=$(remote_state "$target")
+            if [ "$local_os" != unsigned ] && [ "$local_os" != "$remote_os" ]; then
+              needs_upgrade=true
+            fi
+          done
+
+          if [ "$remote_valid" = true ] && [ "$needs_upgrade" != true ]; then
+            protect_latest_downgrade "$remote_updater_mode" "$remote_dir"
+            echo "no_op=false" >> "$GITHUB_OUTPUT"
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+            echo "reconcile=false" >> "$GITHUB_OUTPUT"
+            echo "public_promotion=false" >> "$GITHUB_OUTPUT"
+            echo "candidate_updater_mode=$remote_updater_mode" >> "$GITHUB_OUTPUT"
+            echo "Existing draft is already complete and valid; it will be promoted without asset replacement."
+            exit 0
+          fi
+
+          if [ "$remote_updater_mode" = signed ] && [ "$UPDATER_ENABLED" != true ]; then
+            echo "::error::Existing draft contains signed updater assets; the updater private key is required for any repair."
+            exit 1
+          fi
+          protect_os_downgrade darwin-aarch64 developer-id-verified
+          protect_os_downgrade darwin-x86_64 developer-id-verified
+          protect_os_downgrade windows-x86_64 authenticode-verified
+          candidate_updater_mode=$([ "$UPDATER_ENABLED" = true ] && echo signed || echo unsigned)
+          protect_latest_downgrade "$candidate_updater_mode" dist
+
+          echo "no_op=false" >> "$GITHUB_OUTPUT"
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+          echo "promote=true" >> "$GITHUB_OUTPUT"
+          echo "reconcile=true" >> "$GITHUB_OUTPUT"
+          echo "public_promotion=false" >> "$GITHUB_OUTPUT"
+          echo "candidate_updater_mode=$candidate_updater_mode" >> "$GITHUB_OUTPUT"
+          echo "Existing draft requires a validated asset repair before promotion."
+
+      - name: Reconcile stale assets in the hidden draft
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.reconcile == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/draft-reconciliation.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" > "$release_json"
+          jq -e '.draft == true' "$release_json" > /dev/null || {
+            echo "::error::Asset reconciliation is permitted only on a hidden draft release."
+            exit 1
+          }
+          release_id=$(jq -er '.id' "$release_json")
+          asset_list="$RUNNER_TEMP/draft-assets.tsv"
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+            --jq '.[] | [.id, .name] | @tsv' > "$asset_list"
+          while IFS=$'\t' read -r asset_id asset_name; do
+            [ -n "$asset_id" ] || continue
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            echo "Removed stale hidden-draft asset $asset_name before deterministic replacement."
+          done < "$asset_list"
+
+      - name: Upload exact unsigned assets to draft release
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.upload == 'true' &&
+          needs.metadata.outputs.updater_enabled != 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ steps.meta.outputs.release_tag }}
-          name: sortOfRemoteNG ${{ needs.metadata.outputs.public_version }}
+          tag_name: ${{ needs.metadata.outputs.public_tag }}
+          target_commitish: ${{ needs.metadata.outputs.snapshot_commit }}
+          name: ${{ needs.metadata.outputs.public_version }}
+          body_path: release-notes.md
           draft: true
           prerelease: false
-          make_latest: true
-          fail_on_unmatched_files: true
-          files: |
-            dist/**/*
-            latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload staging release assets
-        if: env.RELEASE_TIER == 'staging'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.release_tag }}
-          target_commitish: ${{ needs.metadata.outputs.public_tag }}
-          name: sortOfRemoteNG ${{ needs.metadata.outputs.public_version }} (staging)
-          draft: true
-          prerelease: true
           make_latest: false
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
+          overwrite_files: true
           files: |
-            dist/**/*
-            staging-latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.dmg
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.dmg
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
 
-      - name: Dry-run release summary
-        if: env.RELEASE_TIER == 'dry-run'
+      - name: Upload exact signed assets and root updater feed to draft release
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.upload == 'true' &&
+          needs.metadata.outputs.updater_enabled == 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.metadata.outputs.public_tag }}
+          target_commitish: ${{ needs.metadata.outputs.snapshot_commit }}
+          name: ${{ needs.metadata.outputs.public_version }}
+          body_path: release-notes.md
+          draft: true
+          prerelease: false
+          make_latest: false
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.dmg
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.app.tar.gz
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.app.tar.gz.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.dmg
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.app.tar.gz
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.app.tar.gz.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
+            dist/latest.json
+
+      - name: Re-download and validate complete draft release
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.promote == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          PUBLIC_PROMOTION: ${{ steps.publication.outputs.public_promotion }}
+          UPDATER_MODE: ${{ steps.publication.outputs.candidate_updater_mode }}
         run: |
-          echo "Dry-run release completed. No GitHub Release assets were uploaded and no production latest.json was published."
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/staged-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" > "$release_json"
+          if [ "$PUBLIC_PROMOTION" = true ]; then
+            jq -e '.draft == false and .prerelease == false' "$release_json" > /dev/null || {
+              echo "::error::Promotion-only recovery requires an existing public non-prerelease release."
+              exit 1
+            }
+          else
+            jq -e '.draft == true and .prerelease == false' "$release_json" > /dev/null || {
+              echo "::error::Release must remain a non-prerelease draft until validation completes."
+              exit 1
+            }
+          fi
+          jq -e '[.assets[] | select(.size <= 0)] | length == 0' "$release_json" > /dev/null || {
+            echo "::error::Draft release contains an empty GitHub asset."
+            exit 1
+          }
+          remote_dir="$RUNNER_TEMP/staged-release-assets"
+          mkdir -p "$remote_dir"
+          gh release download "$PUBLIC_TAG" --dir "$remote_dir" --clobber
+          verify_args=(
+            --asset-dir "$remote_dir"
+            --expected-version "$MACHINE_VERSION"
+            --updater-mode "$UPDATER_MODE"
+          )
+          if [ "$UPDATER_MODE" = signed ]; then
+            verify_args+=(
+              --public-key-config src-tauri/tauri.conf.json
+              --signature-verifier src-tauri/target/debug/sorng-updater-signature-verifier
+            )
+          fi
+          node scripts/ci/verify-published-release-assets.mjs "${verify_args[@]}"
+
+      - name: Publish and promote the validated draft atomically
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.promote == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          api_get() {
+            local endpoint="$1" output_file="$2" error_file response_file command_status http_status
+            error_file=$(mktemp)
+            response_file=$(mktemp)
+            if gh api --include "$endpoint" > "$response_file" 2> "$error_file"; then
+              command_status=0
+            else
+              command_status=$?
+            fi
+            http_status=$(sed -n '1s/^HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p' "$response_file")
+            if [ "$http_status" = 404 ]; then
+              rm -f "$error_file" "$response_file"
+              return 44
+            fi
+            if [ "$command_status" -ne 0 ] || [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+              echo "::error::GitHub API request failed for $endpoint (HTTP ${http_status:-unknown})."
+              cat "$error_file" >&2
+              rm -f "$error_file" "$response_file"
+              if [ "$command_status" -ne 0 ]; then
+                return "$command_status"
+              fi
+              return 1
+            fi
+            awk 'body { print } /^\r?$/ { body=1; next }' "$response_file" > "$output_file"
+            rm -f "$error_file" "$response_file"
+            return 0
+          }
+          git fetch --force --tags origin
+          guard_output="$RUNNER_TEMP/final-release-guard.txt"
+          node scripts/ci/resolve-release-version.mjs \
+            --source-sha "$SOURCE_SHA" \
+            --repo . \
+            --tag "$PUBLIC_TAG" \
+            --github-output "$guard_output"
+          grep -qx 'source_guard=passed' "$guard_output" || {
+            echo "::error::Final monotonic source guard did not pass."
+            exit 1
+          }
+          latest_json="$RUNNER_TEMP/final-live-latest.json"
+          if api_get "repos/$GITHUB_REPOSITORY/releases/latest" "$latest_json"; then
+            latest_exists=true
+          else
+            status=$?
+            [ "$status" -eq 44 ] || exit "$status"
+            latest_exists=false
+          fi
+          if [ "$latest_exists" = true ]; then
+            latest_tag=$(jq -er '.tag_name' "$latest_json")
+            if [ "$latest_tag" != "$PUBLIC_TAG" ]; then
+              git fetch --force origin "refs/tags/$latest_tag:refs/tags/$latest_tag"
+              latest_commit=$(git rev-parse "refs/tags/$latest_tag^{commit}")
+              latest_source=$(git log -1 --format='%(trailers:key=Release-Source-SHA,valueonly)' "$latest_commit" | tr -d '[:space:]')
+              if [[ ! "$latest_source" =~ ^[0-9a-f]{40}$ ]]; then
+                latest_source="$latest_commit"
+              fi
+              git merge-base --is-ancestor "$latest_source" "$SOURCE_SHA" || {
+                echo "::error::A newer or divergent release became latest; refusing rollback promotion."
+                exit 1
+              }
+            fi
+          fi
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" --jq '.id')
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest=true > "$RUNNER_TEMP/promoted-release.json"
+          jq -e '.draft == false and .prerelease == false' "$RUNNER_TEMP/promoted-release.json" > /dev/null
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
+          [ "$latest_tag" = "$PUBLIC_TAG" ] || {
+            echo "::error::Validated release was published but was not promoted to latest."
+            exit 1
+          }
+
+      - name: Summarize idempotent production no-op
+        if: inputs.release_tier == 'production' && steps.publication.outputs.no_op == 'true'
+        run: >-
+          echo "${{ needs.metadata.outputs.public_tag }} is already a complete,
+          validated, current public release; no GitHub Release mutation occurred."
+
+      - name: Summarize non-production validation
+        if: inputs.release_tier != 'production'
+        shell: bash
+        run: >-
+          echo "${{ inputs.release_tier }} validation completed for
+          ${{ needs.metadata.outputs.public_tag }} at
+          ${{ needs.metadata.outputs.snapshot_commit }}; no GitHub Release was modified."

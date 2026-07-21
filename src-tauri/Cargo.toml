@@ -119,6 +119,7 @@ members = [
   "crates/sorng-marketplace",
   "crates/sorng-dashboard",
   "crates/sorng-updater",
+  "crates/sorng-updater-signature-verifier",
   "crates/sorng-rdpfile",
   "crates/sorng-portable",
   "crates/sorng-docker-compose",

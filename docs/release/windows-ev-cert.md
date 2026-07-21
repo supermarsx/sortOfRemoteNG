@@ -15,7 +15,17 @@ hide_page_header: true
 
 ## 1. Why we need this (context)
 
-sortOfRemoteNG 1.0 ships as a signed Windows installer via Tauri's bundler and updater plugin. Without a publicly-trusted code-signing certificate the installer is flagged as "Unknown Publisher" and blocked by Microsoft Defender SmartScreen. The updater feed must point at the same signed installer artifacts that the release workflow publishes. CA/Browser Forum baseline requirements (effective 2023) mandate that the private key for any publicly-trusted code-signing certificate live inside a FIPS 140-2 Level 2 (or higher) hardware security module — either a shipped USB token or a cloud HSM. EV is confirmed over OV per plan decision Q2.
+sortOfRemoteNG's rolling releases may publish a Windows installer without a
+publicly trusted OS code-signing certificate. Such an installer is identified
+as "Unknown Publisher" and may be warned about or blocked by Microsoft Defender
+SmartScreen, but the missing certificate does not stop the automatic bare
+`YY.N` release. Authenticode is independent from Tauri updater signing: when
+`TAURI_SIGNING_PRIVATE_KEY` is configured, the updater feed must reference the
+exact final installer bytes authenticated by that updater signature. CA/Browser
+Forum baseline requirements (effective 2023) mandate that the private key for
+any publicly trusted code-signing certificate live inside a FIPS 140-2 Level 2
+(or higher) hardware security module — either a shipped USB token or a cloud
+HSM. EV is confirmed over OV per plan decision Q2.
 
 ### 2026 regulatory context (read before ordering)
 
@@ -62,7 +72,12 @@ All four vendors fall inside the plan-specified $300–500 band **at street/rese
 | Ops cost                          | One-time token cost (~free to ~$50)                                                                                                                            | Subscription / per-op                                                                         | HSM service cost                                                     |
 | Best for                          | Small teams with a single release engineer                                                                                                                     | Fully automated CI/CD (our target)                                                            | Orgs with an existing cloud-HSM standard                             |
 
-**For sortOfRemoteNG:** CI-driven signing is a hard requirement (release.yml matrix, t3-e22). **Cloud HSM is the clear architectural fit.** That narrows the realistic field to **DigiCert KeyLocker** or **SSL.com eSigner**; Sectigo and GlobalSign are BYO-HSM only, which adds a Key Vault / HSM project on top of the cert itself.
+**For sortOfRemoteNG:** if Windows OS signing is enabled, it must remain fully
+CI-driven across automatic releases. **Cloud HSM is the clear architectural
+fit.** That narrows the realistic field to **DigiCert KeyLocker** or **SSL.com
+eSigner**; Sectigo and GlobalSign are BYO-HSM only, which adds a Key Vault / HSM
+project on top of the certificate itself. Until credentials are configured,
+the workflow publishes an explicitly OS-unsigned installer.
 
 ### 2.3 KYC / validation timeline
 
@@ -81,7 +96,10 @@ EV validation is uniform across CAs (CA/B Forum EV guidelines) and requires:
 | SSL.com    | 3–7 business days                                        | Very responsive support; good for SMB   |
 | GlobalSign | 5–10 business days + audit-letter cycle for HSM model    | Extra step: HSM compliance audit letter |
 
-Plan **10 business days** end-to-end from order submission to usable cert. Add 2–5 bd of international shipping if taking the USB-token path.
+Plan **10 business days** end-to-end from order submission to usable cert. Add
+2–5 business days of international shipping if taking the USB-token path. This
+is a schedule for removing Windows publisher warnings, not a blocker for the
+rolling release queue.
 
 ### 2.4 Timeline table (order → usable)
 
@@ -97,7 +115,12 @@ Plan **10 business days** end-to-end from order submission to usable cert. Add 2
 
 ### 2.5 Renewal process
 
-All vendors: because 2026 rules cap validity at ≤458 days, expect **annual renewal**. Re-validation is lighter than first-issue if the legal entity is unchanged (re-use prior KYC), typically 1–3 bd at DigiCert/SSL.com and 3–5 bd at Sectigo/GlobalSign. Set a **calendar reminder 60 days pre-expiry** — if renewal slips past expiry, release pipeline breaks.
+All vendors: because 2026 rules cap validity at ≤458 days, expect **annual
+renewal**. Re-validation is lighter than first issue if the legal entity is
+unchanged (reuse prior KYC), typically 1–3 business days at DigiCert/SSL.com
+and 3–5 business days at Sectigo/GlobalSign. Set a **calendar reminder 60 days
+pre-expiry**. If renewal slips, the workflow must fall back to explicitly
+OS-unsigned Windows installers rather than misreporting them as signed.
 
 ### 2.6 Reputation / SmartScreen ramp-up implications
 
@@ -115,7 +138,7 @@ EV no longer grants instant SmartScreen clearance (Microsoft policy change, Marc
 
 **Rationale:**
 
-1. **Best CI/CD fit.** KeyLocker is a first-party cloud HSM with a stable Windows `signtool.exe` / KSP integration, well-documented for GitHub-hosted Windows runners (critical for t3-e22 `release.yml` matrix). No physical token to plug into anything.
+1. **Best CI/CD fit.** KeyLocker is a first-party cloud HSM with a stable Windows `signtool.exe` / KSP integration, well-documented for GitHub-hosted Windows runners used by the release matrix. No physical token to plug into anything.
 2. **Fastest order-to-usable** (~5 business days) among vendors that include a native cloud HSM. Eliminates the 2–5 bd international shipping tail and the "token lost in Customs" tail risk.
 3. **Most mature validation pipeline.** DigiCert's CertCentral portal and Vogue Homes LLC's likely D&B presence mean validation completes in the 3–5 bd low end.
 4. **Vendor longevity.** DigiCert is the incumbent market leader; lowest risk of CA distrust / root removal over the 3+ year product lifetime.
@@ -162,8 +185,8 @@ Before placing the order, collect the following. All items marked **REQUIRED** b
 - [ ] Decide subject CN — must exactly match legal entity name, "Vogue Homes LLC"
 - [ ] Decide primary + backup applicant contacts (full name, title, work email, direct phone)
 - [ ] For DigiCert: create CertCentral account ahead of time; attach billing method
-- [ ] For KeyLocker: plan the signing-ops budget (1 CI sign per release × 12 + manual signings) — the base pack is typically ample for <1 000 ops/yr
-- [ ] Identify where the signing secrets (KeyLocker API credentials) live: GitHub Actions org-level secrets `DIGICERT_KEYLOCKER_*` (to be wired in t3-e22)
+- [ ] For KeyLocker: plan the signing-operations budget from the expected successful `main` push volume plus manual recovery reruns; every rolling release may sign multiple Windows artifacts
+- [ ] Identify where the signing secrets (KeyLocker API credentials) live: protected GitHub Actions secrets `DIGICERT_KEYLOCKER_*` consumed only by the Windows release job
 
 ### 4.5 Internal approvals
 
@@ -177,7 +200,7 @@ Before placing the order, collect the following. All items marked **REQUIRED** b
 - [ ] Confirm certificate chain terminates at a Microsoft-trusted root
 - [ ] Confirm subject CN, O, and serial are correct
 - [ ] Upload signed sample to VirusTotal + Submit-a-File to seed SmartScreen reputation
-- [ ] Wire KeyLocker credentials into GitHub Actions and confirm the production release workflow signs artifacts before feed validation/promotion
+- [ ] Wire KeyLocker credentials into GitHub Actions and confirm the release workflow signs the final Windows artifacts before any updater signature/feed validation; without credentials, confirm it reports and publishes an OS-unsigned installer
 
 ---
 

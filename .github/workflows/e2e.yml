@@ -27,8 +27,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  # Every main source SHA must retain its exact release gate. Pull-request
+  # refreshes still supersede stale work for the same PR ref.
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('e2e-main-{0}', github.sha) || format('e2e-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Shared credentials consumed by both compose files and by the Rust

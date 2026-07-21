@@ -12411,6 +12411,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-updater-signature-verifier"
+version = "26.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "minisign-verify",
+]
+
+[[package]]
 name = "sorng-ups"
 version = "26.1.0"
 dependencies = [

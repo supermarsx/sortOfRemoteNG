@@ -13,15 +13,22 @@ _Primary source: <https://developer.apple.com/programs/enroll/> (fetched 2026-04
 
 ---
 
-## 1. Why we need this (critical path summary)
+## 1. Why we need this (distribution-quality summary)
 
-The macOS `.dmg` / `.app` artifacts produced by `tauri-action` must be:
+To avoid unidentified-developer warnings, the macOS `.dmg` / `.app`
+artifacts produced for both Intel and Apple Silicon should be:
 
 1. Signed with a **Developer ID Application** certificate (Apple-issued, requires a paid Apple Developer Program membership).
 2. Notarized via `xcrun notarytool submit …` (Apple's current pipeline — `altool` is deprecated and hard-removed from recent Xcode).
 3. Stapled via `xcrun stapler staple` so the installed `.app` launches offline without Gatekeeper nagging.
 
-Without enrollment we cannot produce step (1) — which blocks (2) and (3) — which blocks macOS production shipping and updater feed promotion. The updater feed must point at notarized, stapled artifacts produced by the signed release workflow.
+Without enrollment we cannot perform steps (1)-(3). That does **not** block the
+automatic rolling release: the workflow may publish truthfully OS-unsigned
+macOS bundles, and a configured Tauri updater key can still authenticate their
+updater archives. Users should expect Gatekeeper warnings until Apple signing
+and notarization are configured. When these optional credentials are present,
+the release workflow applies them to both macOS architectures before
+publication.
 
 ---
 
@@ -140,7 +147,7 @@ Developer ID Application certs are valid for **5 years**. Calendar a renewal rem
 
 ---
 
-## 7. Required GitHub Actions secrets
+## 7. Optional GitHub Actions secrets for macOS OS signing
 
 Configure in **GitHub → repo → Settings → Secrets and variables → Actions**:
 
@@ -152,7 +159,12 @@ Configure in **GitHub → repo → Settings → Secrets and variables → Action
 | `APPLE_CERT_P12_BASE64` | `MIIK...base64...==` (multi-KB) | base64 of `.p12` from §5 step 7.             |
 | `APPLE_CERT_PASSWORD`   | `s3cret-p12-export-pw`          | The `.p12` export password set in §5 step 6. |
 
-All five are referenced by the release workflow. Rotating `APPLE_PASSWORD` or `APPLE_CERT_P12_BASE64` requires a re-run of the workflow to pick up new values. Production updater feeds must not be promoted from unsigned or unnotarized macOS artifacts.
+All five are consumed together when macOS OS signing is enabled. Rotating
+`APPLE_PASSWORD` or `APPLE_CERT_P12_BASE64` requires a rerun for the same
+release source SHA to pick up the new values. If any are absent, the workflow
+publishes OS-unsigned macOS bundles and reports that state; it does not pretend
+that signing or notarization succeeded. Tauri updater signing is independent
+and is controlled by `TAURI_SIGNING_PRIVATE_KEY`.
 
 Optional but recommended companion secret for `keychain import` (see §8):
 
@@ -238,7 +250,7 @@ Notes:
 
 ## 9. Post-enrollment verification (run these on a Mac once the cert is installed)
 
-Run each and confirm clean output before handing over to t3-e22.
+Run each and confirm clean output before enabling the release-workflow secrets.
 
 ```bash
 # (1) Team ID + cert presence
@@ -273,26 +285,31 @@ If any of (1)-(4) fail, do **not** proceed to CI wiring — fix the local path f
 
 ## 10. Timeline (from kickoff, assuming organization enrollment)
 
-| Day            | Activity                                                                                                        |
-| -------------- | --------------------------------------------------------------------------------------------------------------- |
-| D+0            | Submit enrollment form, pay $99, request/attach D-U-N-S if needed.                                              |
-| D+1 to D+5     | D-U-N-S issuance (if new).                                                                                      |
-| D+3 to D+21    | Apple verification (email + possible phone call-back). **Watch the phone.** Plan budget: **2–4 weeks**.         |
-| D+(approval)   | Create Developer ID Application cert, export `.p12`, generate App-Specific Password, populate 5 GitHub secrets. |
-| D+(approval)+1 | Run §9 verification locally.                                                                                    |
-| D+(approval)+2 | Wire into t3-e22 `release.yml`; dry-run on a throwaway tag.                                                     |
+| Day            | Activity                                                                                                             |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| D+0            | Submit enrollment form, pay $99, request/attach D-U-N-S if needed.                                                   |
+| D+1 to D+5     | D-U-N-S issuance (if new).                                                                                           |
+| D+3 to D+21    | Apple verification (email + possible phone call-back). **Watch the phone.** Plan budget: **2–4 weeks**.              |
+| D+(approval)   | Create Developer ID Application cert, export `.p12`, generate App-Specific Password, populate 5 GitHub secrets.      |
+| D+(approval)+1 | Run §9 verification locally.                                                                                         |
+| D+(approval)+2 | Configure the release secrets; manually dry-run the same source SHA without reserving a production rolling identity. |
 
-**Blocking risk**: if the org isn't registered yet, add 1–5 business days (US) or longer (EU / APAC) before D+0.
+**Procurement risk**: if the organization is not registered yet, add 1–5
+business days (US) or longer (EU / APAC) before D+0. This delays identified
+publisher/notarized bundles, not the bare `YY.N` release queue itself.
 
 ---
 
 ## 11. Runbook references (for successor executors)
 
-- t3-e22 `release.yml` consumes all five secrets from §7. Keep secret names stable.
+- `release.yml` consumes all five secrets from §7 when macOS OS signing is enabled. Keep secret names stable.
 - t3-e24 `security.md` should cross-link this file as the source of signing-identity provenance.
 - Calendar entry: Developer ID Application cert **expires 5 years** after issuance. Set a reminder at year 4, month 9.
 - Calendar entry: App-Specific Password — **rotate yearly** or on Account Holder change. Revoke at <https://account.apple.com/> → Sign-In and Security.
 
 ---
 
-_End of action package. Enrollment is the user's manual step; everything downstream (CI wiring, notarization step, stapler validation) is mechanical once §7 secrets are populated._
+_End of action package. Enrollment is the user's manual step; everything
+downstream (CI wiring, notarization, and stapler validation) is mechanical once
+§7 secrets are populated. Until then, rolling releases remain public but
+OS-unsigned on macOS._

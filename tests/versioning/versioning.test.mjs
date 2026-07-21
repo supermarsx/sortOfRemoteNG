@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { parseArgs as parseSyncVersionArgs } from "../../scripts/sync-version.mjs";
 import {
   cargoPackageName,
   formatPublicVersion,
@@ -17,6 +18,7 @@ test("projects the public YY.N version to machine-only SemVer", () => {
     year: 26,
     release: 1,
   });
+  assert.throws(() => projectVersion("26.0"), /expected YY\.N/);
   assert.throws(() => projectVersion("26.1.0"), /expected YY\.N/);
   assert.throws(() => projectVersion("2026.1"), /expected YY\.N/);
 });
@@ -101,4 +103,23 @@ test("generates separate public and explicitly machine-only frontend values", ()
   assert.match(generated, /Machine-only SemVer projection/);
   assert.match(generated, /APP_MACHINE_VERSION = "26\.1\.0"/);
   assert.match(generated, /formatAppVersion/);
+});
+
+test("accepts an explicit rolling release projection for CI snapshots", () => {
+  assert.deepEqual(parseSyncVersionArgs(["--write", "--version", "26.9"]), {
+    mode: "write",
+    version: "26.9",
+  });
+  assert.deepEqual(parseSyncVersionArgs(["--check"]), {
+    mode: "check",
+    version: null,
+  });
+  assert.throws(
+    () => parseSyncVersionArgs(["--write", "--version", "v26.9"]),
+    /expected YY\.N/,
+  );
+  assert.throws(
+    () => parseSyncVersionArgs(["--write", "--check"]),
+    /exactly one/,
+  );
 });

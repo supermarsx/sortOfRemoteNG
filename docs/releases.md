@@ -5,26 +5,33 @@ description: Understand rolling version identity, signed updater artifacts, plat
 permalink: /releases/
 ---
 
-Public releases use a rolling `YY.N` identity, while package ecosystems and updater metadata receive the SemVer projection `YY.N.0`. The repository’s `version.json` is the source of truth, and CI checks every projection before release work proceeds.
+Public releases use a rolling `YY.N` identity, while package ecosystems and updater metadata receive the SemVer projection `YY.N.0`. Every successful `main` push queues a release only after all required checks pass for that exact source commit.
 
 ## Version representations
 
-| Surface                          | Example  | Purpose                                       |
-| -------------------------------- | -------- | --------------------------------------------- |
-| Public version and release title | `26.1`   | Human-facing yearly sequence                  |
-| Git tag                          | `v26.1`  | Immutable release trigger and source identity |
-| Package / updater version        | `26.1.0` | Machine-compatible SemVer projection          |
+| Surface                          | Example  | Purpose                                            |
+| -------------------------------- | -------- | -------------------------------------------------- |
+| Public version and release title | `26.1`   | Human-facing UTC-year sequence                     |
+| Git tag                          | `26.1`   | Immutable release-snapshot identity; no `v` prefix |
+| Package / updater version        | `26.1.0` | Machine-compatible SemVer projection               |
 
-A release tag must match `version.json`; the workflow derives the machine projection rather than accepting unrelated version strings from separate jobs.
+`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes. The first current release is `26.1`. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs.
+
+The workflow records the successful `main` commit as the release `source_sha`.
+Its immutable bare tag identifies a detached, version-synchronized snapshot
+commit whose `Release-Source-SHA` trailer maps back to that source. Builds
+checkout the snapshot, while release notes and recovery retain the original
+main-commit identity. A rerun for the same `source_sha` must reuse the reserved
+tag and existing GitHub Release; it must not allocate another `N`.
 
 ## Release path
 
-1. Synchronize and verify version projections.
-2. Build platform bundles in the release workflow.
-3. Sign updater-capable artifacts with the protected Tauri signing key.
-4. Validate filenames, signatures, platform entries, URLs, and `latest.json`.
-5. Publish the immutable GitHub Release assets.
-6. Promote the feed only after its referenced artifacts are present and verifiable.
+1. Run the normal CI jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates.
+2. Queue the successful `main` source commit, allocate or recover its bare `YY.N` tag, and synchronize the release snapshot.
+3. Build Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon bundles.
+4. Publish the public OS installers. Missing optional Apple or Windows certificates leaves them truthfully OS-unsigned and may produce platform warnings; it does not suppress the release.
+5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `linux-x86_64`, `darwin-x86_64`, and `darwin-aarch64`.
+6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, omit updater signatures and `latest.json` while retaining the public installers.
 
 <div class="callout callout--danger">
   <strong>Never commit the updater private key.</strong>
@@ -38,11 +45,20 @@ A release tag must match `version.json`; the workflow derives the machine projec
 - [Apple Developer enrollment]({{ '/release/apple-developer-enrollment/' | relative_url }}) tracks macOS signing and notarization prerequisites.
 - [Windows EV certificate]({{ '/release/windows-ev-cert/' | relative_url }}) tracks Authenticode/SmartScreen signing prerequisites.
 
-OS-level code signing and updater signing solve different problems. Unsigned public bundles may prompt platform warnings even when the updater can cryptographically verify update artifacts.
+OS-level code signing and updater signing solve different problems. Unsigned public bundles may prompt platform warnings. A release has an automatic-update channel only when its updater artifacts are signed with the protected Tauri key and a validated `latest.json` is published.
 
-## Before publishing
+## Recovery and rollback
 
-Run the repository version and release tests, verify that the tagged commit is the intended source, and inspect the workflow’s artifact validation output. Do not manually edit a generated updater feed to make a failing validation step pass.
+Normal releases are automatic. If a run stops before reserving its identity,
+rerun the failed CI workflow or manually dispatch with the same `source_sha`,
+`mode: rolling`, and `release_tier`. If its tag already exists, dispatch with
+`mode: existing`, the same `source_sha` and `release_tier`, and that exact bare
+`tag`. Recovery is idempotent: it resumes or updates the same release. Never
+force-move, delete, or reuse a rolling tag for another commit.
+
+Do not promote an older tag as a downgrade. If a published release is bad, stop promoting its updater feed where possible and ship the next `YY.N` as a forward fix signed with the same updater key. Clients that already installed the bad build cannot be safely rolled back by retagging.
+
+Before manual recovery, verify that the source SHA is the intended successful `main` commit and inspect the workflow’s artifact validation output. Do not manually edit a generated updater feed to make a failing validation step pass.
 
 ```powershell
 npm run version:test

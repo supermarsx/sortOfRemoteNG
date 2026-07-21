@@ -73,7 +73,7 @@ These boundaries are intentional: this page describes usable application paths, 
 
 Published installers and application bundles appear on [GitHub Releases](https://github.com/supermarsx/sortOfRemoteNG/releases). If a bundle is available for your platform, download it, launch the application, and create or import your first connection. If no bundle has been published for the current source version, use the source workflow below.
 
-Public bundles are unsigned at the operating-system level by default. Windows SmartScreen or macOS Gatekeeper may therefore show an unknown-publisher warning on first launch. Update downloads are separately verified against the updater key embedded in the application.
+Public bundles can be published without operating-system signing certificates. Windows SmartScreen or macOS Gatekeeper may therefore show an unknown-publisher warning on first launch. Automatic in-app updates are a separate, cryptographically signed channel: updater artifacts and `latest.json` are published only when the protected Tauri updater key is configured.
 
 ### Run from source
 
@@ -111,13 +111,15 @@ Read the [security policy](security.md) for vulnerability reporting and the [enc
 
 Public releases use the rolling `YY.N` format:
 
-- `YY` is the two-digit release year.
-- `N` is that year's release sequence, starting at 1.
-- The current source version is **26.1**.
+- `YY` is the two-digit UTC release year.
+- `N` is that UTC year's monotonically increasing release sequence, starting again at 1 each January.
+- The first release in the current sequence is **26.1**; tags use that bare identity with no prefix.
 
-Package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application and release title show `26.1`. The root [version.json](version.json) file is the source of truth, and CI verifies that every projection remains synchronized.
+Every successful push to `main` queues an automatic release after the CI-internal jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates pass. The release snapshot records that source commit, and rerunning recovery for the same commit reuses its tag and GitHub Release instead of consuming another sequence number.
 
-The release workflow builds bundles for Windows, macOS, and Linux. See the [release guide](docs/releases.md) for the publication path and the [updater setup](docs/release/updater-setup.md) for signature and feed details.
+Package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application, bare tag, and release title show `26.1`. The rolling allocator selects the public identity; [version.json](version.json) is synchronized in the release snapshot and CI verifies every generated projection.
+
+The release workflow builds Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon bundles. OS signing certificates are optional; the Tauri updater private key is required only for signed updater artifacts and `latest.json`. See the [release guide](docs/releases.md) for publication and recovery details and the [updater setup](docs/release/updater-setup.md) for signature and feed requirements.
 
 ## Documentation
 

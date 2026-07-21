@@ -53,9 +53,9 @@ function walkFiles(relativeDirectory, fileName) {
   return found.sort();
 }
 
-function buildPlan() {
+function buildPlan(versionOverride = null) {
   const authority = JSON.parse(read("version.json"));
-  const projection = projectVersion(authority.version);
+  const projection = projectVersion(versionOverride ?? authority.version);
   const changes = [];
 
   const plan = (relativePath, expected) => {
@@ -63,6 +63,13 @@ function buildPlan() {
     const current = fs.existsSync(absolutePath) ? read(relativePath) : null;
     if (current !== expected) changes.push({ relativePath, current, expected });
   };
+
+  if (versionOverride !== null) {
+    plan(
+      "version.json",
+      jsonText({ ...authority, version: projection.publicVersion }),
+    );
+  }
 
   const packageJson = JSON.parse(read("package.json"));
   packageJson.version = projection.machineVersion;
@@ -171,18 +178,18 @@ function releaseLiteralViolations() {
   return violations;
 }
 
-export function run(mode) {
+export function run(mode, versionOverride = null) {
   if (mode !== "check" && mode !== "write") {
     throw new Error(
       `Unknown mode ${JSON.stringify(mode)}; use --check or --write`,
     );
   }
 
-  let plan = buildPlan();
+  let plan = buildPlan(versionOverride);
   if (mode === "write") {
     for (const change of plan.changes)
       write(change.relativePath, change.expected);
-    plan = buildPlan();
+    plan = buildPlan(versionOverride);
   }
 
   const violations = releaseLiteralViolations();
@@ -214,23 +221,44 @@ export function run(mode) {
   return 0;
 }
 
-function cliMode(argv) {
-  const flags = argv.filter(
-    (value) => value === "--check" || value === "--write",
-  );
-  if (flags.length !== 1 || argv.length !== 1) {
-    throw new Error("Usage: node scripts/sync-version.mjs (--check|--write)");
+export function parseArgs(argv) {
+  const options = { mode: null, version: null };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--check" || arg === "--write") {
+      if (options.mode)
+        throw new Error("Specify exactly one of --check or --write.");
+      options.mode = arg.slice(2);
+    } else if (arg === "--version" || arg.startsWith("--version=")) {
+      if (options.version !== null)
+        throw new Error("Specify --version only once.");
+      options.version = arg.includes("=")
+        ? arg.slice(arg.indexOf("=") + 1)
+        : argv[++index];
+      if (!options.version) throw new Error("--version requires a value.");
+      projectVersion(options.version);
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
   }
-  return flags[0].slice(2);
+
+  if (!options.mode)
+    throw new Error("Specify exactly one of --check or --write.");
+  return options;
 }
 
 const isMain =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   try {
-    process.exitCode = run(cliMode(process.argv.slice(2)));
+    const options = parseArgs(process.argv.slice(2));
+    process.exitCode = run(options.mode, options.version);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
+    console.error(
+      "Usage: node scripts/sync-version.mjs (--check|--write) [--version <YY.N>]",
+    );
     process.exitCode = 1;
   }
 }

@@ -1,0 +1,11 @@
+[package]
+publish = false
+name = "sorng-updater-signature-verifier"
+version.workspace = true
+edition = "2021"
+description = "Release-only verifier for Tauri updater Minisign signatures"
+license = "MIT"
+
+[dependencies]
+base64 = { workspace = true }
+minisign-verify = "=0.2.5"

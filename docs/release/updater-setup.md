@@ -9,8 +9,9 @@ hide_page_header: true
 
 This document covers the **Tauri updater plugin** wiring for
 `sortOfRemoteNG`: how the Ed25519 signing keypair is generated, where the
-private key must live, and the JSON schema of the `latest.json` feed that
-our GitHub Releases publisher produces.
+private key must live, and the JSON schema of the optional `latest.json`
+feed that our GitHub Releases publisher produces when updater signing is
+configured.
 
 The production updater path is intentionally narrow: the signed
 `tauri-plugin-updater` runtime verifies and installs artifacts, and the
@@ -24,6 +25,12 @@ rollback paths are not production update mechanisms. P1 installs are signed
 Tauri updater installs only. Private feed configuration is managed by
 Settings > Updater and documented in
 [private updater endpoint guide]({{ '/release/private-updater-endpoint/' | relative_url }}).
+
+Public OS installers and updater delivery are separate release outputs. Every
+successful `main` push may publish Windows, Linux, and macOS installers without
+OS-signing certificates. The workflow publishes updater archives, signatures,
+and `latest.json` only when `TAURI_SIGNING_PRIVATE_KEY` is configured; it never
+advertises an unsigned artifact to the updater.
 
 ---
 
@@ -80,30 +87,45 @@ Then:
 
 ## 2. CI signing env vars
 
-The GitHub release workflow (`.github/workflows/release.yml`, produced by
-executor t3-e22) consumes these env vars when invoking
-`tauri-apps/tauri-action`:
+The GitHub release workflow (`.github/workflows/release.yml`) consumes these
+environment variables when invoking `tauri-apps/tauri-action`:
 
-| Env var                              | Required              | Notes                                                                             |
-| ------------------------------------ | --------------------- | --------------------------------------------------------------------------------- |
-| `TAURI_SIGNING_PRIVATE_KEY`          | **yes**               | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | if password-protected | Plaintext password; mark as a secret.                                             |
+| Env var                              | Required                                    | Notes                                                                             |
+| ------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | for updater artifacts and `latest.json`     | Full contents of `sortofremoteng.key`, including the `untrusted comment:` header. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | when that private key is password-protected | Plaintext password; store it as a protected secret.                               |
 
-No other updater-specific secrets are required — the pubkey is embedded
-at build time from `tauri.conf.json`.
+No other updater-specific secrets are required — the pubkey is embedded at
+build time from `tauri.conf.json`. Apple Developer ID/notarization credentials
+and Windows Authenticode credentials are optional OS-signing inputs described
+in the linked platform runbooks. Their absence must not block publication of
+public installers.
 
 Release identity has two deliberate representations:
 
-- `version.json` is the public authority in rolling `YY.N` form (`26.1`).
-- Git tags and GitHub Release names stay public: `vYY.N` and `YY.N`.
+- Bare Git tags and GitHub Release names use rolling `YY.N` (`26.1`) with no
+  prefix.
+- `YY` is the two-digit UTC year and `N` is that year's monotonically
+  increasing counter. The counter starts at 1 after each UTC year rollover;
+  the first current release is `26.1`.
 - Package manifests, bundle filenames, and updater feeds use the machine-only
   SemVer projection `YY.N.0` (`26.1.0`).
+- `version.json` and the other projections are synchronized in an immutable,
+  detached release snapshot. Its `Release-Source-SHA` commit trailer records
+  the successful `main` source commit.
 
-Before any build starts, the release workflow requires an exact `vYY.N` tag,
-requires that its `YY.N` value matches `version.json`, derives `YY.N.0` once,
-and runs `npm run version:check`. Production requires signed artifacts;
-staging and dry-run builds may be unsigned, but every tier validates versioned
-artifact filenames and updater metadata before anything can be published.
+Every successful push to `main` queues this workflow only after the CI-internal
+jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and
+`Docker e2e (nightly)` workflows pass. The workflow receives that commit as
+`source_sha`, atomically allocates or recovers its bare tag, derives `YY.N.0`,
+and runs the version checks against the prepared snapshot. A rerun for the same
+source SHA reuses its tag and GitHub Release rather than incrementing `N`.
+
+The four updater targets are `windows-x86_64`, `linux-x86_64`,
+`darwin-x86_64`, and `darwin-aarch64`. If the Tauri private key is absent, the
+workflow omits their updater signatures and `latest.json` but may still publish
+the corresponding public OS installers. If the key is present, missing or
+invalid updater artifacts fail publication of the feed.
 
 ---
 
@@ -117,10 +139,12 @@ The committed public endpoint in `tauri.conf.json` is:
 ]
 ```
 
-GitHub serves `latest/download/<asset>` as a 302 redirect to the most
-recent release's asset with that filename, so publishing a release with a
-`latest.json` asset is sufficient to promote it — no edits to the
-committed endpoint list are required per release.
+GitHub serves `latest/download/<asset>` as a 302 redirect to the most recent
+release's asset with that filename, so publishing a signed release with a
+`latest.json` asset is sufficient to promote it — no edits to the committed
+endpoint list are required per release. An OS-installer-only release omits
+`latest.json`; that release is downloadable from GitHub but is not advertised
+as an automatic in-app update.
 
 At runtime, `sorng-updater` may prepend a Settings-managed private endpoint
 by constructing a plugin updater with `updater_builder().endpoints(..)`. The
@@ -138,8 +162,7 @@ standard Tauri v2 schema; see the
 upstream reference). The file must be a release asset named exactly
 `latest.json` and must sign the **installer artifacts**, not itself.
 The feed's `version` is always the machine projection (`YY.N.0`), while its
-release URL and human-facing notes retain the public tag/version (`vYY.N` and
-`YY.N`).
+release URL and human-facing notes retain the bare public tag/version (`YY.N`).
 
 ```jsonc
 {
@@ -149,19 +172,19 @@ release URL and human-facing notes retain the public tag/version (`vYY.N` and
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 minisign signature of the .msi/.exe artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_26.1.0_x64_en-US.msi",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_x64_en-US.msi",
     },
     "darwin-x86_64": {
       "signature": "<base64 minisign signature of the .app.tar.gz artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_x64.app.tar.gz",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_x64.app.tar.gz",
     },
     "darwin-aarch64": {
       "signature": "<base64 minisign signature>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_aarch64.app.tar.gz",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_aarch64.app.tar.gz",
     },
     "linux-x86_64": {
       "signature": "<base64 minisign signature of the .AppImage artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/v26.1/sortOfRemoteNG_26.1.0_amd64.AppImage",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_amd64.AppImage",
     },
   },
 }
@@ -227,5 +250,24 @@ npm run tauri:build               # produces signed bundle if env vars set
 ```
 
 A bundle built **without** `TAURI_SIGNING_PRIVATE_KEY` in the environment
-will still compile but will not emit `.sig` files — that is intentional
-so day-to-day local builds don't require the secret.
+will still compile but will not emit updater `.sig` files — that is
+intentional so day-to-day local builds and public OS-installer releases do not
+require the secret. Do not construct or upload `latest.json` for those bundles.
+
+---
+
+## 7. Rerun, recovery, and bad-release policy
+
+Normal releases are driven by successful `main` CI. If a run stops before
+reserving its identity, rerun the failed CI job or manually dispatch with the
+same `source_sha`, `mode: rolling`, and `release_tier`. If its tag already
+exists, dispatch with `mode: existing`, the same `source_sha` and
+`release_tier`, and that exact bare `tag`. The workflow must reuse and complete
+that release idempotently.
+
+Rolling tags are immutable evidence. Never force-move, delete, or reuse one for
+another source commit. If a release is bad, do not repoint its tag or edit its
+generated feed to impersonate another version. Remove it from updater
+promotion where practical and publish the next `YY.N` as a forward fix signed
+with the same updater key. Clients that already installed the bad build cannot
+be safely downgraded through the normal version-monotonic updater.

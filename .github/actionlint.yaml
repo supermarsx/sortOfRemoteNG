@@ -1,0 +1,11 @@
+paths:
+  .github/workflows/ci.yml:
+    # actionlint v1.7.12 predates GitHub's queue:max syntax (2026-05-07).
+    # https://docs.github.com/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#queueing-multiple-pending-runs
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  .github/workflows/release.yml:
+    # actionlint v1.7.12 predates GitHub's queue:max syntax (2026-05-07).
+    # https://docs.github.com/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#queueing-multiple-pending-runs
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

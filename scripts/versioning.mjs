@@ -1,4 +1,4 @@
-const PUBLIC_VERSION_PATTERN = /^(\d{2})\.(0|[1-9]\d*)$/;
+const PUBLIC_VERSION_PATTERN = /^(\d{2})\.([1-9]\d*)$/;
 const DISPLAY_VERSION_PATTERN =
   /^v?(\d{2})\.(0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?(?:[-+].*)?$/;
 
@@ -11,7 +11,7 @@ export function projectVersion(value) {
   const match = PUBLIC_VERSION_PATTERN.exec(publicVersion);
   if (!match) {
     throw new Error(
-      `Invalid public version ${JSON.stringify(value)}; expected YY.N (for example 26.1)`,
+      `Invalid public version ${JSON.stringify(value)}; expected YY.N with N >= 1 (for example 26.1)`,
     );
   }
 
