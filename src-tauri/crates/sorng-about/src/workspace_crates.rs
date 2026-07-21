@@ -835,7 +835,7 @@ pub fn get_crates_by_category() -> Vec<DependencyCategory> {
                 name: c.name.clone(),
                 version: String::new(),
                 license: "MIT".to_string(),
-                authors: vec!["Mariana M".to_string()],
+                authors: vec!["Mariana Mota".to_string()],
                 repository: String::new(),
                 description: c.description.clone(),
                 category: c.category.clone(),

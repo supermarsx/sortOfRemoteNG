@@ -20,11 +20,11 @@ impl AboutService {
             version: env!("CARGO_PKG_VERSION").to_string(),
             identifier: "com.sortofremote.ng".to_string(),
             description: "A comprehensive remote connection manager for IT professionals — supporting SSH, RDP, VNC, Telnet, SFTP, serial, and many more protocols with advanced management capabilities.".to_string(),
-            copyright: "Copyright 2025 Mariana M".to_string(),
+            copyright: "Copyright 2025 Mariana Mota".to_string(),
             license: "MIT".to_string(),
             homepage: "https://github.com/sortofremoteng".to_string(),
             repository: "https://github.com/sortofremoteng/sortofremoteng".to_string(),
-            authors: vec!["Mariana M".to_string()],
+            authors: vec!["Mariana Mota".to_string()],
             build_info: BuildInfo {
                 rust_version: "1.77.2+".to_string(),
                 target: std::env::consts::ARCH.to_string() + "-" + std::env::consts::OS,
@@ -103,7 +103,7 @@ impl AboutService {
 
     pub fn get_credits(&self) -> CreditsResponse {
         CreditsResponse {
-            project_authors: vec!["Mariana M".to_string()],
+            project_authors: vec!["Mariana Mota".to_string()],
             acknowledgments: get_acknowledgments(),
             special_thanks: vec![
                 "The Rust Programming Language community".to_string(),

@@ -8,9 +8,9 @@
 
 A desktop workspace for remote connections, infrastructure tools, and day-to-day administration. sortOfRemoteNG combines a Tauri and Rust backend with a Next.js and React interface, so connections and supporting tools can live in one organized application.
 
-[![sortOfRemoteNG showing a Prototype SSH session](docs/assets/readme-screenshot.png)](docs/assets/readme-screenshot.png)
+[![sortOfRemoteNG desktop app with a live SSH session open](docs/assets/readme-screenshot.png)](docs/assets/readme-screenshot.png)
 
-_The real application running the seeded Prototype SSH connection._
+_sortOfRemoteNG desktop app with a live SSH session open._
 
 ## Contents
 
