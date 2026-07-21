@@ -26,6 +26,10 @@ const cargoConfig = readFileSync(
   new URL("../../src-tauri/.cargo/config.toml", import.meta.url),
   "utf8",
 );
+const cargoManifest = readFileSync(
+  new URL("../../src-tauri/Cargo.toml", import.meta.url),
+  "utf8",
+);
 const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
@@ -208,6 +212,53 @@ test("release matrix bounds Cargo parallelism below the workstation default", ()
   assert.doesNotMatch(buildSteps, /CARGO_BUILD_JOBS/);
   assert.doesNotMatch(releaseWorkflow.slice(0, buildStart), /CARGO_BUILD_JOBS/);
   assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
+});
+
+test("Linux release disables LTO and reports resource headroom immediately before building", () => {
+  const buildStart = releaseWorkflow.indexOf("  build:");
+  const publishStart = releaseWorkflow.indexOf("  publish:");
+  const buildJob = releaseWorkflow.slice(buildStart, publishStart);
+  const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
+  const resourceStepStart = buildJob.indexOf(
+    "- name: Bound and inspect Linux release resources",
+  );
+  const nativeBuildStart = buildJob.indexOf(
+    "- name: Build native bundles with static Kafka",
+  );
+
+  assert.ok(resourceStepStart >= 0);
+  assert.ok(nativeBuildStart > resourceStepStart);
+
+  const resourceStep = buildJob.slice(resourceStepStart, nativeBuildStart);
+  assert.equal(
+    resourceStep.trimEnd(),
+    [
+      "- name: Bound and inspect Linux release resources",
+      "        if: matrix.platform == 'linux'",
+      "        shell: bash",
+      "        run: |",
+      '          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"',
+      "          free -h",
+      '          df -h "$GITHUB_WORKSPACE"',
+    ].join("\n"),
+  );
+  assert.equal(
+    (releaseWorkflow.match(/CARGO_PROFILE_RELEASE_LTO/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(buildDefinition, /CARGO_PROFILE_RELEASE_LTO/);
+  assert.match(cargoManifest, /\[profile\.release\]\s*(?:#.*\s*)*lto = "thin"/);
+  assert.doesNotMatch(buildJob, /timeout-minutes:/);
+  assert.match(
+    buildDefinition,
+    /strategy:\s*\n\s+fail-fast: false\s*\n\s+matrix:/,
+  );
+  assert.doesNotMatch(buildJob, /^\s+concurrency:/m);
+  assert.doesNotMatch(buildJob, /^\s+cancel-in-progress:/m);
+  assert.match(
+    releaseWorkflow,
+    /concurrency:\s*\n\s+group: rolling-release\s*\n(?:\s*#.*\n)*\s+queue: max\s*\n\s+cancel-in-progress: false/,
+  );
 });
 
 test("updater private key material is scoped to key checks and Tauri build", () => {

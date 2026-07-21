@@ -510,6 +510,14 @@ jobs:
           );
           NODE
 
+      - name: Bound and inspect Linux release resources
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          echo "CARGO_PROFILE_RELEASE_LTO=off" >> "$GITHUB_ENV"
+          free -h
+          df -h "$GITHUB_WORKSPACE"
+
       - name: Build native bundles with static Kafka
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
