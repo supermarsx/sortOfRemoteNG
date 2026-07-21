@@ -171,13 +171,41 @@ test("release matrix bounds Cargo parallelism below the workstation default", ()
   const publishStart = releaseWorkflow.indexOf("  publish:");
   const buildJob = releaseWorkflow.slice(buildStart, publishStart);
   const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
+  const buildSteps = buildJob.slice(buildJob.indexOf("    steps:"));
+  const matrixDefinition = buildDefinition.slice(
+    buildDefinition.indexOf("      matrix:"),
+    buildDefinition.indexOf("    runs-on:"),
+  );
+  const jobsByArtifact = Object.fromEntries(
+    matrixDefinition
+      .split(/^          - artifact_id: /m)
+      .slice(1)
+      .map((entry) => {
+        const [artifactId, ...entryLines] = entry.split("\n");
+        const jobCount = entryLines
+          .join("\n")
+          .match(/^\s+cargo_build_jobs: (\d+)$/m)?.[1];
+        return [artifactId.trim(), jobCount];
+      }),
+  );
 
   assert.match(cargoConfig, /^jobs = 28$/m);
-  assert.match(buildDefinition, /^      CARGO_BUILD_JOBS: "2"$/m);
+  assert.deepEqual(jobsByArtifact, {
+    "linux-x86_64": "1",
+    "darwin-aarch64": "2",
+    "darwin-x86_64": "2",
+    "windows-x86_64": "2",
+  });
+  assert.match(
+    buildDefinition,
+    /^      CARGO_BUILD_JOBS: \$\{\{ matrix\.cargo_build_jobs \}\}$/m,
+  );
   assert.equal(
-    (releaseWorkflow.match(/^\s+CARGO_BUILD_JOBS:\s*"2"\s*$/gm) ?? []).length,
+    (releaseWorkflow.match(/^\s+CARGO_BUILD_JOBS:/gm) ?? []).length,
     1,
   );
+  assert.doesNotMatch(buildJob, /CARGO_BUILD_JOBS:\s*["']?28/);
+  assert.doesNotMatch(buildSteps, /CARGO_BUILD_JOBS/);
   assert.doesNotMatch(releaseWorkflow.slice(0, buildStart), /CARGO_BUILD_JOBS/);
   assert.doesNotMatch(releaseWorkflow.slice(publishStart), /CARGO_BUILD_JOBS/);
 });
