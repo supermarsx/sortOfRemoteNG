@@ -215,7 +215,7 @@ members = [
 
 [workspace.package]
 # Machine-only SemVer projection of the public YY.N release in ../version.json.
-version = "26.1.0"
+version = "26.5.0"
 
 [workspace.dependencies]
 # ── Serialisation ─────────────────────────────────────────────────────
