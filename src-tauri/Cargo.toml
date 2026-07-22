@@ -13,6 +13,7 @@ members = [
   "crates/sorng-app-domains-platform",
   "crates/sorng-app-shell",
   "crates/sorng-app-startup-connectivity",
+  "crates/sorng-app-startup-state",
   "crates/sorng-core",
   "crates/sorng-auth",
   "crates/sorng-storage",
@@ -324,6 +325,7 @@ sorng-app-auth = { path = "crates/sorng-app-auth" }
 sorng-app-domains = { path = "crates/sorng-app-domains", default-features = false }
 sorng-app-shell = { path = "crates/sorng-app-shell" }
 sorng-app-startup-connectivity = { path = "crates/sorng-app-startup-connectivity", default-features = false }
+sorng-app-startup-state = { path = "crates/sorng-app-startup-state", default-features = false }
 sorng-core = { path = "crates/sorng-core" }
 sorng-kafka = { path = "crates/sorng-kafka", optional = true, default-features = false }
 sorng-opkssh = { path = "crates/sorng-opkssh", optional = true, default-features = false }
@@ -400,15 +402,15 @@ full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-
 #     step (`scripts/stage-opkssh-vendor.mjs --enable`) and the MSVC stub
 #     DLL — runtime keeps the CLI fallback path. Release/CI use `full`.
 full-dev = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka-static", "logs-json", "opkssh", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
-cert-auth = ["sorng-app-domains/cert-auth"]
-cloud = ["sorng-app-domains/cloud", "dep:sorng-commands-cloud"]
-collab = ["sorng-app-domains/collab", "dep:sorng-commands-collab"]
-db-mongo = ["sorng-app-domains/db-mongo", "sorng-commands-sessions/db-mongo"]
-db-mssql = ["sorng-app-domains/db-mssql", "sorng-commands-sessions/db-mssql"]
-db-mysql = ["sorng-app-domains/db-mysql", "sorng-commands-sessions/db-mysql"]
-db-postgres = ["sorng-app-domains/db-postgres", "sorng-commands-sessions/db-postgres"]
-db-redis = ["sorng-app-domains/db-redis", "sorng-commands-sessions/db-redis"]
-db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-commands-sessions/db-sqlite"]
+cert-auth = ["sorng-app-domains/cert-auth", "sorng-app-startup-state/cert-auth"]
+cloud = ["sorng-app-domains/cloud", "sorng-app-startup-state/cloud", "dep:sorng-commands-cloud"]
+collab = ["sorng-app-domains/collab", "sorng-app-startup-state/collab", "dep:sorng-commands-collab"]
+db-mongo = ["sorng-app-domains/db-mongo", "sorng-app-startup-state/db-mongo", "sorng-commands-sessions/db-mongo"]
+db-mssql = ["sorng-app-domains/db-mssql", "sorng-app-startup-state/db-mssql", "sorng-commands-sessions/db-mssql"]
+db-mysql = ["sorng-app-domains/db-mysql", "sorng-app-startup-state/db-mysql", "sorng-commands-sessions/db-mysql"]
+db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-postgres", "sorng-commands-sessions/db-postgres"]
+db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-sessions/db-redis"]
+db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-sessions/db-sqlite"]
 # `kafka` dynamic-links against a system-installed librdkafka (t3-e38) —
 # this is the v1.0 default. Users must install librdkafka ≥ 2.x via their
 # OS package manager (apt/dnf/pacman/brew/vcpkg/winget). At runtime the
@@ -430,10 +432,10 @@ kafka-static = ["dep:sorng-kafka", "sorng-kafka/cmake-build", "sorng-commands-op
 # pinned OPKSSH checkout and Go toolchain are available; otherwise the wrapper
 # remains metadata-only and runtime status keeps CLI fallback explicit. Tauri
 # and Docker production builds stage the wrapper artifact by default.
-opkssh = ["dep:sorng-opkssh", "sorng-commands-core/opkssh"]
+opkssh = ["dep:sorng-opkssh", "sorng-app-startup-state/opkssh", "sorng-commands-core/opkssh"]
 opkssh-vendored-wrapper = ["opkssh", "sorng-opkssh/vendored-wrapper"]
-ops = ["sorng-app-domains/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
-platform = ["sorng-app-domains/platform", "dep:sorng-commands-platform"]
+ops = ["sorng-app-domains/ops", "sorng-app-startup-state/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
+platform = ["sorng-app-domains/platform", "sorng-app-startup-state/platform", "dep:sorng-commands-platform"]
 rdp = ["sorng-app-domains/rdp", "sorng-app-startup-connectivity/rdp", "sorng-commands-core/rdp"]
 rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
 rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]

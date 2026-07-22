@@ -1,0 +1,38 @@
+[package]
+publish = false
+name = "sorng-app-startup-state"
+version.workspace = true
+edition = "2021"
+description = "Non-connectivity managed-state startup registration for SortOfRemote NG"
+
+[dependencies]
+sorng-app-api = { path = "../sorng-app-api" }
+sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
+sorng-app-shell = { path = "../sorng-app-shell" }
+sorng-app-startup-connectivity = { path = "../sorng-app-startup-connectivity", default-features = false }
+sorng-commands-core = { path = "../sorng-commands-core", default-features = false }
+sorng-core = { path = "../sorng-core" }
+sorng-encryption = { path = "../sorng-encryption" }
+sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
+sorng-vault = { path = "../sorng-vault" }
+log = { workspace = true }
+tauri = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+cert-auth = ["sorng-app-domains/cert-auth"]
+cloud = ["sorng-app-domains/cloud"]
+collab = ["sorng-app-domains/collab", "sorng-app-domains/platform"]
+db-mongo = ["sorng-app-domains/db-mongo"]
+db-mssql = ["sorng-app-domains/db-mssql"]
+db-mysql = ["sorng-app-domains/db-mysql"]
+db-postgres = ["sorng-app-domains/db-postgres"]
+db-redis = ["sorng-app-domains/db-redis"]
+db-sqlite = ["sorng-app-domains/db-sqlite"]
+opkssh = ["dep:sorng-opkssh"]
+ops = ["sorng-app-domains/ops", "sorng-app-domains/platform"]
+platform = ["sorng-app-domains/platform", "sorng-app-domains/collab"]

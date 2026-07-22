@@ -230,6 +230,7 @@ dependencies = [
  "sorng-app-domains",
  "sorng-app-shell",
  "sorng-app-startup-connectivity",
+ "sorng-app-startup-state",
  "sorng-commands-access",
  "sorng-commands-cloud",
  "sorng-commands-collab",
@@ -9641,6 +9642,25 @@ dependencies = [
  "sorng-core",
  "sorng-storage",
  "tauri",
+ "tokio",
+]
+
+[[package]]
+name = "sorng-app-startup-state"
+version = "26.1.0"
+dependencies = [
+ "log",
+ "sorng-app-api",
+ "sorng-app-domains",
+ "sorng-app-shell",
+ "sorng-app-startup-connectivity",
+ "sorng-commands-core",
+ "sorng-core",
+ "sorng-encryption",
+ "sorng-opkssh",
+ "sorng-vault",
+ "tauri",
+ "tempfile",
  "tokio",
 ]
 

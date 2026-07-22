@@ -1,19 +1,6 @@
 use super::*;
-use std::sync::Arc;
-use tauri::Manager;
-use tokio::sync::Mutex;
 
-pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) {
-    // ── AI Agent service ─────────────────────────────────────────────
-    // e01 wired sorng-ai-agent to dispatch through its own LlmProvider
-    // implementations (openai/anthropic/gemini/ollama/…) via
-    // `providers::create_provider` — no Tauri-state plumbing changes were
-    // required. e21 bootstraps an optional default provider from env
-    // (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) so `ai_chat_completion` /
-    // `ai_run_agent` / `ai_code_assist` work out-of-the-box when a key is
-    // set. If neither env var is present, the service starts empty and we
-    // log an actionable warning — the user can still register a provider
-    // at runtime via the `ai_add_provider` command from the UI/REST API.
+pub(super) fn register(app: &mut tauri::App<tauri::Wry>) {
     let mut ai_service = ai_agent::service::AiAgentService::new();
     bootstrap_default_ai_provider(&mut ai_service);
     let ai_agent_service: AiAgentServiceState = Arc::new(Mutex::new(ai_service));
@@ -37,12 +24,6 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) {
     app.manage(dashlane_service);
 }
 
-/// Seed the AI Agent service with a default provider if the user has exported
-/// an API-key env var. Picks Anthropic first (`ANTHROPIC_API_KEY`), then OpenAI
-/// (`OPENAI_API_KEY`). When a provider is registered, `default_provider_id` is
-/// also set so `ai_run_agent` / `ai_code_assist` work without further
-/// configuration. When neither is set, the service stays empty and we log a
-/// warning; the user can still add a provider at runtime via `ai_add_provider`.
 fn bootstrap_default_ai_provider(service: &mut ai_agent::service::AiAgentService) {
     use ai_agent::types::{AiProvider, ProviderConfig};
     use std::collections::HashMap;
@@ -56,9 +37,6 @@ fn bootstrap_default_ai_provider(service: &mut ai_agent::service::AiAgentService
             api_version: None,
             organization: None,
             extra_headers: HashMap::new(),
-            // Match the `default_*` helpers in
-            // `sorng-ai-agent/src/ai_agent/types.rs` so behaviour is identical
-            // to a serde-deserialised config with only `provider` + `apiKey` set.
             timeout_secs: 120,
             max_retries: 3,
             retry_delay_ms: 1000,
@@ -103,15 +81,10 @@ fn bootstrap_default_ai_provider(service: &mut ai_agent::service::AiAgentService
     };
 
     service.add_provider(&provider_id, config);
-
-    // Set as the default so callers that don't pass a provider_id get this one.
     let mut settings = service.get_settings();
     if settings.default_provider_id.is_none() {
         settings.default_provider_id = Some(provider_id.clone());
         service.update_settings(settings);
     }
-    log::info!(
-        "AI Agent: registered default provider `{}` from environment",
-        provider_id
-    );
+    log::info!("AI Agent: registered default provider `{provider_id}` from environment");
 }
