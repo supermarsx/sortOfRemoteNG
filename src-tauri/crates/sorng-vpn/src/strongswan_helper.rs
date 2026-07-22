@@ -255,10 +255,10 @@ async fn install_file(source: &Path, destination: &Path) -> Result<(), String> {
         if elevated.status.success() {
             return Ok(());
         }
-        return Err(command_failure(
+        Err(command_failure(
             "Privileged IPsec configuration install",
             &elevated,
-        ));
+        ))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -397,10 +397,10 @@ async fn remove_protected_file(path: &Path) -> Result<(), String> {
         if output.status.success() {
             return Ok(());
         }
-        return Err(command_failure(
+        Err(command_failure(
             "remove privileged IPsec configuration",
             &output,
-        ));
+        ))
     }
 
     #[cfg(not(target_os = "linux"))]
