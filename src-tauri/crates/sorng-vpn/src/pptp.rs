@@ -1,6 +1,7 @@
 use crate::persistence::{
-    deserialize_profile_definitions, load_service_data, save_service_data,
-    serialize_profile_definitions, validate_persisted_profile_id, Persistable, RestoreOutcome,
+    allocate_unique_profile_id, deserialize_profile_definitions, load_service_data,
+    save_service_data, serialize_profile_definitions, validate_persisted_profile_id,
+    validate_unique_profile_artifact_prefixes, Persistable, RestoreOutcome,
 };
 #[cfg(windows)]
 use crate::ras_helper;
@@ -9,7 +10,6 @@ use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 pub type PPTPServiceState = Arc<Mutex<PPTPService>>;
 
@@ -193,7 +193,7 @@ impl PPTPService {
     ) -> Result<String, String> {
         self.ensure_persisted_loaded().await?;
         let previous = self.connections.clone();
-        let id = Uuid::new_v4().to_string();
+        let id = allocate_unique_profile_id(self.connections.keys().map(String::as_str), "PPTP")?;
         let connection = PPTPConnection {
             id: id.clone(),
             name,
@@ -469,6 +469,7 @@ impl Persistable for PPTPService {
                 return Err("PPTP profile data contains a duplicate id".to_string());
             }
         }
+        validate_unique_profile_artifact_prefixes(restored.keys().map(String::as_str), "PPTP")?;
         self.connections = restored;
         Ok(())
     }

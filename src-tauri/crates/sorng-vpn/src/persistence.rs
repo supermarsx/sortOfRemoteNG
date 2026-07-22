@@ -6,14 +6,66 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::collections::HashSet;
+
+const PROFILE_ARTIFACT_PREFIX_LENGTH: usize = 8;
+const PROFILE_ID_ALLOCATION_ATTEMPTS: usize = 32;
 
 /// Validate IDs before persisted profiles can reach provider code that derives
 /// deterministic OS artifact names from the UUID prefix. The error is fixed
 /// text so malformed persisted content is never reflected into logs or IPC.
 pub(crate) fn validate_persisted_profile_id(id: &str, provider: &str) -> Result<(), String> {
-    uuid::Uuid::parse_str(id)
-        .map(|_| ())
-        .map_err(|_| format!("{provider} profile has an invalid id"))
+    let parsed =
+        uuid::Uuid::parse_str(id).map_err(|_| format!("{provider} profile has an invalid id"))?;
+    if parsed.to_string() != id {
+        return Err(format!("{provider} profile has an invalid id"));
+    }
+    Ok(())
+}
+
+/// Reject profiles that would map to the same deterministic OS artifact name.
+/// Provider names are compile-time labels and profile IDs are never reflected
+/// into the error returned across the persistence boundary.
+pub(crate) fn validate_unique_profile_artifact_prefixes<'a>(
+    ids: impl IntoIterator<Item = &'a str>,
+    provider: &str,
+) -> Result<(), String> {
+    let mut prefixes = HashSet::new();
+    for id in ids {
+        validate_persisted_profile_id(id, provider)?;
+        let prefix = &id[..PROFILE_ARTIFACT_PREFIX_LENGTH];
+        if !prefixes.insert(prefix) {
+            return Err(format!(
+                "{provider} profile data contains an OS artifact id collision"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Allocate a UUID whose deterministic OS artifact prefix is not already used
+/// by this provider. Retrying makes the 32-bit artifact namespace collision a
+/// recoverable create-time event while a bounded failure remains fail closed.
+pub(crate) fn allocate_unique_profile_id<'a>(
+    existing_ids: impl IntoIterator<Item = &'a str>,
+    provider: &str,
+) -> Result<String, String> {
+    let mut prefixes = HashSet::new();
+    for id in existing_ids {
+        validate_persisted_profile_id(id, provider)?;
+        prefixes.insert(&id[..PROFILE_ARTIFACT_PREFIX_LENGTH]);
+    }
+
+    for _ in 0..PROFILE_ID_ALLOCATION_ATTEMPTS {
+        let id = uuid::Uuid::new_v4().to_string();
+        if !prefixes.contains(&id[..PROFILE_ARTIFACT_PREFIX_LENGTH]) {
+            return Ok(id);
+        }
+    }
+
+    Err(format!(
+        "{provider} profile could not allocate a unique OS artifact id"
+    ))
 }
 
 /// Merge one secret-bearing field from an IPC update without treating an
@@ -68,12 +120,21 @@ mod secret_update_tests {
     }
 
     #[test]
-    fn persisted_profile_ids_must_be_uuids_without_echoing_input() {
-        let marker = "private-profile-marker";
-        let error = validate_persisted_profile_id(marker, "Test").unwrap_err();
-        assert_eq!(error, "Test profile has an invalid id");
-        assert!(!error.contains(marker));
-        validate_persisted_profile_id(&uuid::Uuid::new_v4().to_string(), "Test").unwrap();
+    fn persisted_profile_ids_must_be_canonical_uuids_without_echoing_input() {
+        let canonical = "550e8400-e29b-41d4-a716-446655440000";
+        validate_persisted_profile_id(canonical, "Test").unwrap();
+
+        for marker in [
+            "private-profile-marker",
+            "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+            "{550e8400-e29b-41d4-a716-446655440000}",
+            "550E8400-E29B-41D4-A716-446655440000",
+            "550e8400-E29B-41d4-a716-446655440000",
+        ] {
+            let error = validate_persisted_profile_id(marker, "Test").unwrap_err();
+            assert_eq!(error, "Test profile has an invalid id");
+            assert!(!error.contains(marker));
+        }
     }
 }
 
@@ -183,16 +244,27 @@ pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Resul
         serde_json::Value::Array(items) => serde_json::from_value(serde_json::Value::Array(items))
             .map_err(|_| PROFILE_RESTORE_CORRUPT.to_string()),
         serde_json::Value::Object(mut object) => {
+            let has_schema_marker =
+                object.contains_key("schema_version") || object.contains_key("version");
             if let Some(connections) = object.remove("connections") {
-                let version = object
-                    .remove("schema_version")
-                    .or_else(|| object.remove("version"))
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+                let schema_version = parse_schema_marker(object.remove("schema_version"))?;
+                let version_alias = parse_schema_marker(object.remove("version"))?;
+                let version = match (schema_version, version_alias) {
+                    (Some(schema_version), Some(version_alias))
+                        if schema_version != version_alias =>
+                    {
+                        return Err(PROFILE_RESTORE_CORRUPT.to_string());
+                    }
+                    (Some(schema_version), _) => schema_version,
+                    (_, Some(version_alias)) => version_alias,
+                    (None, None) => 0,
+                };
                 if version > u64::from(PROFILE_SCHEMA_VERSION) {
                     return Err(PROFILE_RESTORE_FUTURE_SCHEMA.to_string());
                 }
                 serde_json::from_value(connections).map_err(|_| PROFILE_RESTORE_CORRUPT.to_string())
+            } else if has_schema_marker {
+                Err(PROFILE_RESTORE_CORRUPT.to_string())
             } else {
                 // Compatibility with the short-lived id-keyed HashMap shape.
                 let values = object.into_values().collect::<Vec<_>>();
@@ -202,6 +274,16 @@ pub fn deserialize_profile_definitions<T: DeserializeOwned>(data: &str) -> Resul
         }
         _ => Err(PROFILE_RESTORE_CORRUPT.to_string()),
     }
+}
+
+fn parse_schema_marker(value: Option<serde_json::Value>) -> Result<Option<u64>, String> {
+    value
+        .map(|value| {
+            value
+                .as_u64()
+                .ok_or_else(|| PROFILE_RESTORE_CORRUPT.to_string())
+        })
+        .transpose()
 }
 
 /// Trait for services that can persist their connection definitions.
@@ -381,6 +463,85 @@ mod tests {
     }
 
     #[test]
+    fn present_schema_markers_must_be_unsigned_integers() {
+        let marker = "TOP-SECRET-SCHEMA-MARKER-41c8";
+        let profile_value = serde_json::json!({ "id": marker, "name": "Office" });
+        let wrong_markers = [
+            serde_json::json!({
+                "schema_version": "999",
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "schema_version": { "private": marker },
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "schema_version": -1,
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "schema_version": 1.5,
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "version": "999",
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "version": { "private": marker },
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "version": -1,
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "version": 1.5,
+                "connections": [profile_value.clone()]
+            }),
+            serde_json::json!({
+                "schema_version": PROFILE_SCHEMA_VERSION,
+                "version": "999",
+                "connections": [profile_value]
+            }),
+            serde_json::json!({
+                "version": { "id": marker, "name": "Profile-shaped marker" }
+            }),
+        ];
+
+        for payload in wrong_markers {
+            let error =
+                deserialize_profile_definitions::<TestProfile>(&payload.to_string()).unwrap_err();
+            assert_eq!(
+                classify_restore_failure(&error),
+                RestoreFailureClass::Corrupt
+            );
+            assert!(!error.contains(marker));
+            assert!(!error.contains("999"));
+        }
+
+        let legacy_without_marker = serde_json::json!({
+            "connections": [profile()]
+        });
+        assert_eq!(
+            deserialize_profile_definitions::<TestProfile>(&legacy_without_marker.to_string())
+                .unwrap(),
+            vec![profile()]
+        );
+
+        let future_alias = serde_json::json!({
+            "version": u64::from(PROFILE_SCHEMA_VERSION) + 1,
+            "connections": [profile()]
+        });
+        let error =
+            deserialize_profile_definitions::<TestProfile>(&future_alias.to_string()).unwrap_err();
+        assert_eq!(
+            classify_restore_failure(&error),
+            RestoreFailureClass::FutureSchema
+        );
+    }
+
+    #[test]
     fn raw_storage_failures_are_reduced_to_secret_safe_categories() {
         let secret = "TOP-SECRET-STORAGE-PATH-4d3a";
         let unreadable = format!("permission denied reading C:/private/{secret}/storage.json");
@@ -427,6 +588,61 @@ mod tests {
         );
         assert!(!error.contains(secret));
         assert!(!service.loaded);
+        drop(storage);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejected_schema_markers_do_not_rewrite_stored_data() {
+        let marker = "TOP-SECRET-REJECTED-SCHEMA-1ab4";
+        let root =
+            std::env::temp_dir().join(format!("sorng-vpn-schema-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("storage.json");
+        let storage = sorng_storage::storage::SecureStorage::new(path.to_string_lossy().into());
+        let payloads = [
+            (
+                serde_json::json!({
+                    "schema_version": "999",
+                    "connections": [{ "id": marker, "name": "Rejected" }]
+                })
+                .to_string(),
+                RestoreFailureClass::Corrupt,
+            ),
+            (
+                serde_json::json!({
+                    "version": { "private": marker },
+                    "connections": [{ "id": marker, "name": "Rejected" }]
+                })
+                .to_string(),
+                RestoreFailureClass::Corrupt,
+            ),
+            (
+                serde_json::json!({
+                    "schema_version": PROFILE_SCHEMA_VERSION + 1,
+                    "connections": [{ "id": marker, "name": "Future" }]
+                })
+                .to_string(),
+                RestoreFailureClass::FutureSchema,
+            ),
+        ];
+
+        for (payload, expected_class) in payloads {
+            storage
+                .lock()
+                .await
+                .write_app_data("vpn_test_profiles", &payload)
+                .await
+                .unwrap();
+            let before = std::fs::read(&path).unwrap();
+            let mut service = TestService { loaded: false };
+            let error = load_service_data(&mut service, &storage).await.unwrap_err();
+            assert_eq!(classify_restore_failure(&error), expected_class);
+            assert!(!error.contains(marker));
+            assert!(!service.loaded);
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+
         drop(storage);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -591,19 +807,76 @@ mod legacy_provider_tests {
         value.to_string()
     }
 
+    fn profiles_with_shared_artifact_prefix(data: &str) -> String {
+        let mut value: serde_json::Value = serde_json::from_str(data).unwrap();
+        let connections = value["connections"].as_array_mut().unwrap();
+        connections[0]["id"] =
+            serde_json::Value::String("12345678-1234-4234-8234-1234567890ab".to_string());
+        let mut second = connections[0].clone();
+        second["id"] =
+            serde_json::Value::String("12345678-5678-4678-8678-abcdefabcdef".to_string());
+        connections.push(second);
+        value.to_string()
+    }
+
+    fn with_schema_marker(data: &str, key: &str, marker: serde_json::Value) -> String {
+        let mut value: serde_json::Value = serde_json::from_str(data).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("schema_version");
+        object.remove("version");
+        object.insert(key.to_string(), marker);
+        value.to_string()
+    }
+
     macro_rules! assert_corruption_preserves_profiles {
         ($state:expr) => {{
             let mut service = $state.lock().await;
             let before = service.serialize_definitions().unwrap();
-            let marker = "PRIVATE-BAD-ID";
-            let error = service
-                .deserialize_definitions(&corrupt_profile_id(&before, marker))
-                .unwrap_err();
-            assert!(!error.contains(marker));
-            assert_eq!(service.serialize_definitions().unwrap(), before);
+            for marker in [
+                "PRIVATE-BAD-ID",
+                "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+                "{550e8400-e29b-41d4-a716-446655440000}",
+                "550E8400-E29B-41D4-A716-446655440000",
+                "550e8400-E29B-41d4-a716-446655440000",
+            ] {
+                let error = service
+                    .deserialize_definitions(&corrupt_profile_id(&before, marker))
+                    .unwrap_err();
+                assert!(!error.contains(marker));
+                assert_eq!(service.serialize_definitions().unwrap(), before);
+            }
             assert!(service
                 .deserialize_definitions(&duplicate_first_profile(&before))
                 .is_err());
+            assert_eq!(service.serialize_definitions().unwrap(), before);
+
+            let collision = profiles_with_shared_artifact_prefix(&before);
+            let collision_error = service.deserialize_definitions(&collision).unwrap_err();
+            for id in [
+                "12345678-1234-4234-8234-1234567890ab",
+                "12345678-5678-4678-8678-abcdefabcdef",
+            ] {
+                assert!(!collision_error.contains(id));
+            }
+            assert_eq!(service.serialize_definitions().unwrap(), before);
+
+            let schema_string = with_schema_marker(
+                &before,
+                "schema_version",
+                serde_json::Value::String("999".to_string()),
+            );
+            let schema_error = service.deserialize_definitions(&schema_string).unwrap_err();
+            assert!(!schema_error.contains("999"));
+            assert_eq!(service.serialize_definitions().unwrap(), before);
+
+            let alias_marker = "PRIVATE-WRONG-VERSION-ALIAS";
+            let version_object = with_schema_marker(
+                &before,
+                "version",
+                serde_json::json!({ "private": alias_marker }),
+            );
+            let version_error = service.deserialize_definitions(&version_object).unwrap_err();
+            assert!(!version_error.contains(alias_marker));
             assert_eq!(service.serialize_definitions().unwrap(), before);
         }};
     }
@@ -823,7 +1096,7 @@ mod legacy_provider_tests {
     }
 
     #[tokio::test]
-    async fn malformed_and_duplicate_ids_never_replace_any_provider_map() {
+    async fn malformed_colliding_and_duplicate_ids_never_replace_any_provider_map() {
         let pptp = PPTPService::new();
         pptp.lock()
             .await
