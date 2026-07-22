@@ -1,4 +1,9 @@
 use crate::*;
+use connection_clone_cmds as connection_clone_commands;
+#[cfg(feature = "opkssh")]
+use opkssh_commands::inner as opkssh_inner_commands;
+use sorng_encryption::commands as encryption_commands;
+use sorng_probes::commands as probe_commands;
 
 pub fn is_command(command: &str) -> bool {
     matches!(
@@ -1244,8 +1249,58 @@ pub fn is_command(command: &str) -> bool {
     }
 }
 
-pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![
+type InvokeHandler = Box<tauri::ipc::InvokeHandler<tauri::Wry>>;
+
+// `tauri::generate_handler!` expands every command into one match arm. Keep
+// each expansion bounded so rustc never has to lower and codegen the previous
+// 1,117-arm closure as a single unit. The generated predicate is built from
+// the exact same command list, which keeps routing and registration in lockstep.
+macro_rules! define_command_group {
+    (
+        $predicate:ident,
+        $builder:ident,
+        $commands:ident,
+        [
+            $(
+                $(#[$attribute:meta])*
+                $module:ident::$command:ident
+            ),* $(,)?
+        ]
+    ) => {
+        fn $predicate(command: &str) -> bool {
+            match command {
+                $(
+                    $(#[$attribute])*
+                    stringify!($command) => true,
+                )*
+                _ => false,
+            }
+        }
+
+        fn $builder() -> InvokeHandler {
+            Box::new(tauri::generate_handler![
+                $(
+                    $(#[$attribute])*
+                    $module::$command,
+                )*
+            ])
+        }
+
+        #[cfg(test)]
+        const $commands: &[&str] = &[
+            $(
+                $(#[$attribute])*
+                stringify!($command),
+            )*
+        ];
+    };
+}
+
+define_command_group!(
+    is_command_a,
+    build_a,
+    GROUP_A_COMMANDS,
+    [
         app_shell_commands::greet,
         // DevTools command is registered ONLY in debug builds. In a release
         // (`--release`) build `open_devtools` is not part of the IPC handler,
@@ -1298,20 +1353,20 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         api_server_commands::api_server_restart,
         api_server_commands::api_server_status,
         api_server_commands::api_regenerate_key,
-        sorng_encryption::commands::encryption_status,
-        sorng_encryption::commands::encryption_setup,
-        sorng_encryption::commands::encryption_unlock,
-        sorng_encryption::commands::encryption_lock,
-        sorng_encryption::commands::encryption_change_password,
-        sorng_encryption::commands::encryption_migrate_settings,
-        sorng_encryption::commands::encryption_lockout_state,
-        sorng_encryption::commands::encryption_disable_settings,
-        sorng_encryption::commands::encryption_rotate_master_key,
+        encryption_commands::encryption_status,
+        encryption_commands::encryption_setup,
+        encryption_commands::encryption_unlock,
+        encryption_commands::encryption_lock,
+        encryption_commands::encryption_change_password,
+        encryption_commands::encryption_migrate_settings,
+        encryption_commands::encryption_lockout_state,
+        encryption_commands::encryption_disable_settings,
+        encryption_commands::encryption_rotate_master_key,
         encryption_rotation_commands::encryption_rotate_master_key_full,
-        sorng_encryption::commands::encryption_export_portable_dek,
-        sorng_encryption::commands::encryption_import_portable_dek,
-        sorng_encryption::commands::encryption_audit_read,
-        sorng_encryption::commands::encryption_audit_clear,
+        encryption_commands::encryption_export_portable_dek,
+        encryption_commands::encryption_import_portable_dek,
+        encryption_commands::encryption_audit_read,
+        encryption_commands::encryption_audit_clear,
         // Trust store commands
         trust_store_commands::trust_verify_identity,
         trust_store_commands::trust_store_identity,
@@ -1339,55 +1394,55 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         updater_commands::updater_download_and_install,
         updater_commands::updater_relaunch,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_check_binary,
+        opkssh_inner_commands::opkssh_check_binary,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_download_url,
+        opkssh_inner_commands::opkssh_get_download_url,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_start_login,
+        opkssh_inner_commands::opkssh_start_login,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_login_operation,
+        opkssh_inner_commands::opkssh_get_login_operation,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_await_login,
+        opkssh_inner_commands::opkssh_await_login,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_cancel_login,
+        opkssh_inner_commands::opkssh_cancel_login,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_login,
+        opkssh_inner_commands::opkssh_login,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_list_keys,
+        opkssh_inner_commands::opkssh_list_keys,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_remove_key,
+        opkssh_inner_commands::opkssh_remove_key,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_client_config,
+        opkssh_inner_commands::opkssh_get_client_config,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_update_client_config,
+        opkssh_inner_commands::opkssh_update_client_config,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_well_known_providers,
+        opkssh_inner_commands::opkssh_well_known_providers,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_env_string,
+        opkssh_inner_commands::opkssh_build_env_string,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_server_read_config_script,
+        opkssh_inner_commands::opkssh_server_read_config_script,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_parse_server_config,
+        opkssh_inner_commands::opkssh_parse_server_config,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_server_config,
+        opkssh_inner_commands::opkssh_get_server_config,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_add_identity_cmd,
+        opkssh_inner_commands::opkssh_build_add_identity_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_remove_identity_cmd,
+        opkssh_inner_commands::opkssh_build_remove_identity_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_add_provider_cmd,
+        opkssh_inner_commands::opkssh_build_add_provider_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_remove_provider_cmd,
+        opkssh_inner_commands::opkssh_build_remove_provider_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_install_cmd,
+        opkssh_inner_commands::opkssh_build_install_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_build_audit_cmd,
+        opkssh_inner_commands::opkssh_build_audit_cmd,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_parse_audit_output,
+        opkssh_inner_commands::opkssh_parse_audit_output,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_audit_results,
+        opkssh_inner_commands::opkssh_get_audit_results,
         #[cfg(feature = "opkssh")]
-        opkssh_commands::inner::opkssh_get_status,
+        opkssh_inner_commands::opkssh_get_status,
         ssh_commands::connect_ssh,
         ssh_commands::ssh_respond_to_host_key_prompt,
         ssh_commands::start_shell,
@@ -1411,6 +1466,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         ssh_commands::jump_hosts_to_mixed_chain,
         ssh_commands::proxy_chain_to_mixed_chain,
         ssh_commands::test_mixed_chain_connection,
+    ]
+);
+
+define_command_group!(
+    is_command_j,
+    build_j,
+    GROUP_J_COMMANDS,
+    [
         rdp_commands::connect_rdp,
         rdp_commands::disconnect_rdp,
         rdp_commands::attach_rdp_session,
@@ -1449,6 +1512,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         vnc_commands::set_vnc_pixel_format,
         vnc_commands::prune_vnc_sessions,
         vnc_commands::get_vnc_session_count,
+    ]
+);
+
+define_command_group!(
+    is_command_b,
+    build_b,
+    GROUP_B_COMMANDS,
+    [
         anydesk_commands::launch_anydesk,
         anydesk_commands::disconnect_anydesk,
         anydesk_commands::get_anydesk_session,
@@ -1584,6 +1655,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         tailscale_commands::list_tailscale_connections,
         tailscale_commands::delete_tailscale_connection,
         tailscale_commands::update_tailscale_connection,
+    ]
+);
+
+define_command_group!(
+    is_command_c,
+    build_c,
+    GROUP_C_COMMANDS,
+    [
         pptp_commands::create_pptp_connection,
         pptp_commands::connect_pptp,
         pptp_commands::disconnect_pptp,
@@ -1718,6 +1797,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         vercel_commands::redeploy_vercel_project,
         vercel_commands::add_vercel_domain,
         vercel_commands::set_vercel_env_var,
+    ]
+);
+
+define_command_group!(
+    is_command_d,
+    build_d,
+    GROUP_D_COMMANDS,
+    [
         cloudflare_commands::connect_cloudflare,
         cloudflare_commands::disconnect_cloudflare,
         cloudflare_commands::list_cloudflare_sessions,
@@ -1864,6 +1951,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         biometrics_commands::biometric_needs_migration,
         biometrics_commands::biometric_cleanup_legacy,
         biometrics_commands::biometric_platform_info,
+    ]
+);
+
+define_command_group!(
+    is_command_e,
+    build_e,
+    GROUP_E_COMMANDS,
+    [
         // Vault (native OS keychain)
         vault_commands::vault_status,
         vault_commands::vault_is_available,
@@ -2015,6 +2110,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         #[cfg(any(feature = "protocol-serial", feature = "protocol-serial-dynamic"))]
         serial_commands::serial_bytes_to_hex,
         splash::close_splash,
+    ]
+);
+
+define_command_group!(
+    is_command_f,
+    build_f,
+    GROUP_F_COMMANDS,
+    [
         // ── SFTP (62) ────────────────────────────────────────────────
         sftp_commands::sftp_connect,
         sftp_commands::sftp_disconnect,
@@ -2078,6 +2181,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         sftp_commands::sftp_bookmark_import,
         sftp_commands::sftp_bookmark_export,
         sftp_commands::sftp_diagnose,
+    ]
+);
+
+define_command_group!(
+    is_command_g,
+    build_g,
+    GROUP_G_COMMANDS,
+    [
         // ── RustDesk (92) ────────────────────────────────────────────
         rustdesk_commands::rustdesk_is_available,
         rustdesk_commands::rustdesk_get_binary_info,
@@ -2222,6 +2333,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         spice_commands::spice_unredirect_usb,
         spice_commands::prune_spice_sessions,
         spice_commands::get_spice_session_count,
+    ]
+);
+
+define_command_group!(
+    is_command_h,
+    build_h,
+    GROUP_H_COMMANDS,
+    [
         // ── X2Go (15) – t3-e55 ───────────────────────────────────
         x2go_commands::connect_x2go,
         x2go_commands::suspend_x2go,
@@ -2362,6 +2481,14 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         totp_commands::totp_deduplicate,
         totp_commands::totp_vault_stats,
         totp_commands::totp_all_tags,
+    ]
+);
+
+define_command_group!(
+    is_command_i,
+    build_i,
+    GROUP_I_COMMANDS,
+    [
         // ── RLogin ──────────────────────────────────────────────────
         rlogin_commands::connect_rlogin,
         rlogin_commands::send_rlogin_input,
@@ -2384,13 +2511,13 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         raw_socket_commands::get_raw_socket_replay,
         raw_socket_commands::list_raw_socket_sessions,
         // ── t5-e7: Connection Clone ────────────────────────────────
-        crate::connection_clone_cmds::clone_connection,
+        connection_clone_commands::clone_connection,
         // ── t5-e7b: Probes ─────────────────────────────────────────
-        sorng_probes::commands::tcp_probe,
-        sorng_probes::commands::ssh_probe,
-        sorng_probes::commands::rdp_probe,
-        sorng_probes::commands::check_all_connections,
-        sorng_probes::commands::cancel_check_run,
+        probe_commands::tcp_probe,
+        probe_commands::ssh_probe,
+        probe_commands::rdp_probe,
+        probe_commands::check_all_connections,
+        probe_commands::cancel_check_run,
         // ── PowerShell Remoting (53) — t40-e3-F1 ──────────────────────
         // Gated behind `ops` (module declared `#[cfg(feature = "ops")]`
         // in lib.rs). Mirrors the `ps_*` arm in `is_command` exactly;
@@ -2607,11 +2734,124 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         #[cfg(feature = "ops")]
         backup_verify_commands::backup_verify_test_channel,
     ]
+);
+
+pub fn build() -> InvokeHandler {
+    let a = build_a();
+    let j = build_j();
+    let b = build_b();
+    let c = build_c();
+    let d = build_d();
+    let e = build_e();
+    let f = build_f();
+    let g = build_g();
+    let h = build_h();
+    let i = build_i();
+
+    Box::new(move |invoke| {
+        let command = invoke.message.command();
+        if is_command_a(command) {
+            return a(invoke);
+        }
+        if is_command_j(command) {
+            return j(invoke);
+        }
+        if is_command_b(command) {
+            return b(invoke);
+        }
+        if is_command_c(command) {
+            return c(invoke);
+        }
+        if is_command_d(command) {
+            return d(invoke);
+        }
+        if is_command_e(command) {
+            return e(invoke);
+        }
+        if is_command_f(command) {
+            return f(invoke);
+        }
+        if is_command_g(command) {
+            return g(invoke);
+        }
+        if is_command_h(command) {
+            return h(invoke);
+        }
+        if is_command_i(command) {
+            return i(invoke);
+        }
+        false
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_command;
+    use super::{
+        is_command, is_command_a, is_command_b, is_command_c, is_command_d, is_command_e,
+        is_command_f, is_command_g, is_command_h, is_command_i, is_command_j, GROUP_A_COMMANDS,
+        GROUP_B_COMMANDS, GROUP_C_COMMANDS, GROUP_D_COMMANDS, GROUP_E_COMMANDS, GROUP_F_COMMANDS,
+        GROUP_G_COMMANDS, GROUP_H_COMMANDS, GROUP_I_COMMANDS, GROUP_J_COMMANDS,
+    };
+    use std::collections::HashSet;
+
+    #[test]
+    fn generated_command_groups_are_unique_recognized_and_exactly_routed() {
+        let groups = [
+            GROUP_A_COMMANDS,
+            GROUP_J_COMMANDS,
+            GROUP_B_COMMANDS,
+            GROUP_C_COMMANDS,
+            GROUP_D_COMMANDS,
+            GROUP_E_COMMANDS,
+            GROUP_F_COMMANDS,
+            GROUP_G_COMMANDS,
+            GROUP_H_COMMANDS,
+            GROUP_I_COMMANDS,
+        ];
+        let routes: [fn(&str) -> bool; 10] = [
+            is_command_a,
+            is_command_j,
+            is_command_b,
+            is_command_c,
+            is_command_d,
+            is_command_e,
+            is_command_f,
+            is_command_g,
+            is_command_h,
+            is_command_i,
+        ];
+        let mut seen = HashSet::new();
+
+        for (expected_route, commands) in groups.iter().enumerate() {
+            assert!(
+                commands.len() <= 135,
+                "command group {expected_route} exceeded the bounded macro size"
+            );
+            for command in *commands {
+                assert!(
+                    seen.insert(*command),
+                    "{command} is registered in more than one command group"
+                );
+                assert!(is_command(command), "{command} is not publicly recognized");
+                assert!(
+                    routes[expected_route](command),
+                    "{command} was not routed to its registration group"
+                );
+                let route_count = routes.iter().filter(|route| route(command)).count();
+                assert_eq!(
+                    route_count, 1,
+                    "{command} must route to exactly one generated handler"
+                );
+            }
+        }
+
+        let registered_count: usize = groups.iter().map(|commands| commands.len()).sum();
+        assert_eq!(seen.len(), registered_count);
+
+        let unknown = "__not_a_registered_core_command__";
+        assert!(!is_command(unknown));
+        assert_eq!(routes.iter().filter(|route| route(unknown)).count(), 0);
+    }
 
     const RLOGIN_COMMANDS: &[&str] = &[
         "connect_rlogin",
