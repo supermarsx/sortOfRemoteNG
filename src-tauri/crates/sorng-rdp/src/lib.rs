@@ -2,9 +2,9 @@
 //!
 //! RDP connectivity, graphics pipeline (GFX), and H.264 video decoding.
 
-// ── Vendor dylib re-exports ─────────────────────────────────────────
-// These make the dynamically-linked vendor deps available as crate-level
-// names so all child modules can `use crate::ironrdp::...` etc.
+// ── Vendor-boundary re-exports ──────────────────────────────────────
+// These make the grouped vendor dependencies available as crate-level names so
+// all child modules can `use crate::ironrdp::...` etc.
 pub(crate) use sorng_rdp_vendor::ironrdp;
 pub(crate) use sorng_rdp_vendor::ironrdp_blocking;
 pub(crate) use sorng_rdp_vendor::ironrdp_cliprdr;

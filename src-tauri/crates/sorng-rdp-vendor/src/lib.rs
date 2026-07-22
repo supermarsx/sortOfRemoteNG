@@ -1,9 +1,10 @@
-//! Dynamically linked vendor dependencies for the RDP stack.
+//! Grouped vendor dependencies for the RDP stack.
 //!
-//! This crate is built as a `dylib` (.dll / .so) so the heavy ironrdp
-//! ecosystem is compiled once and linked dynamically.  Downstream crates
-//! (sorng-rdp) access these deps through `pub extern crate` re-exports
-//! without recompiling them on every change.
+//! This crate keeps the heavy IronRDP ecosystem behind one first-party crate
+//! boundary. Downstream crates (`sorng-rdp`) access these dependencies through
+//! `pub extern crate` re-exports. The crate intentionally emits only an `rlib`:
+//! application executables already selected that form, while the unused Rust
+//! dylib exceeded MSVC's import-library member limit in release builds.
 
 pub extern crate ironrdp;
 pub extern crate ironrdp_blocking;

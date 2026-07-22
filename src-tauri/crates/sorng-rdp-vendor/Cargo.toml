@@ -3,13 +3,15 @@ publish = false
 name = "sorng-rdp-vendor"
 version.workspace = true
 edition = "2021"
-description = "Dynamically linked vendor dependencies for the RDP stack"
+description = "Grouped vendor dependencies for the RDP stack"
 
 [lib]
-# dylib-only — forces dynamic linking so the ironrdp ecosystem is compiled
-# once into a shared library (.dll / .so) and NOT re-linked into every
-# downstream consumer.  Rebuilds of sorng-rdp skip the entire vendor tree.
-crate-type = ["dylib", "rlib"]
+# Keep this as an rlib-only Rust dependency. Cargo-built executables prefer the
+# rlib when both forms are available, so the former companion dylib was unused
+# by the app and was not bundled. On MSVC, emitting that unused Rust dylib also
+# generated an import library with more than 65,535 exported members and failed
+# with LNK1189 before the application could be linked.
+crate-type = ["rlib"]
 
 [features]
 default = ["software-decode"]

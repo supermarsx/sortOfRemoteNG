@@ -11,11 +11,12 @@ the **Last sync** column in the same PR.
 
 ## Conventions
 
-- **Vendor crates** (`sorng-*-vendor`) are first-party wrappers that
-  dynamically link a cluster of third-party dependencies into a single
-  `dylib`. They intentionally do not copy upstream source into the tree;
-  they pin upstream versions via `Cargo.toml` and exist to cut rebuild
-  times and force a single monomorphisation of heavy generic trees.
+- **Vendor crates** (`sorng-*-vendor`) are first-party wrappers that group a
+  cluster of third-party dependencies behind one crate boundary. They
+  intentionally do not copy upstream source into the tree; they pin upstream
+  versions via `Cargo.toml` and exist to isolate heavy generic trees. A wrapper
+  emits a dynamic artifact only when the application has an explicit runtime
+  loading or bundle contract for it.
 - **Patch crates** (`src-tauri/patches/<name>/`) contain upstream source
   copied verbatim from crates.io (see each crate's `Cargo.toml.orig`) with
   local modifications applied on top. They are activated through
@@ -23,12 +24,12 @@ the **Last sync** column in the same PR.
 
 ## Vendor wrapper crates
 
-| Crate                       | Upstream deps (pinned)                                                                                                           | Rationale                                                                                           | Last sync  | Owner         |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- | ------------- |
-| `sorng-rdp-vendor`          | `ironrdp` 0.14 (+ `ironrdp-blocking` 0.8, `ironrdp-svc` 0.6, `ironrdp-dvc` 0.5, `ironrdp-core` 0.1, `ironrdp-cliprdr[-native]` 0.5), `openh264` 0.6 | Collapse the IronRDP generic tree into a single `dylib` so `sorng-rdp` rebuilds do not re-link it. | 2026-04-20 | rdp-team      |
-| `sorng-aws-vendor`          | `quick-xml` 0.31 (serialize), `percent-encoding` 2.3, `hmac` 0.12, `sha2` 0.10, `hex` 0.4                                        | Dynamically link the AWS SigV4 / XML dependency cluster used by `sorng-aws` and `sorng-s3`.         | 2026-04-20 | cloud-team    |
-| `sorng-compression-vendor`  | `zstd` 0.13, `flate2` 1.0                                                                                                        | Single compiled copy of the native compression C deps shared across recording, backup and transport. | 2026-04-20 | platform-team |
-| `sorng-opkssh-vendor`       | pinned `openpubkey/opkssh` checkout at `193d79871f3bad3cd27cfb94734c265773a99c9b` plus a repo-owned embedded bridge overlay when present; otherwise metadata-only | OPKSSH wrapper contract crate. Release builds link it through the app `full` feature set and stage the native wrapper artifact by default; direct helper use still requires `--enable` / `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1`. | 2026-05-03 | ops-team      |
+| Crate                      | Upstream deps (pinned)                                                                                                                                            | Rationale                                                                                                                                                                                                                       | Last sync  | Owner         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------- |
+| `sorng-rdp-vendor`         | `ironrdp` 0.14 (+ `ironrdp-blocking` 0.8, `ironrdp-svc` 0.6, `ironrdp-dvc` 0.5, `ironrdp-core` 0.1, `ironrdp-cliprdr[-native]` 0.5), `openh264` 0.6               | Keep the IronRDP generic tree behind one first-party, rlib-only dependency boundary; avoid emitting an unused Rust dylib whose MSVC import library exceeds the 65,535-member limit.                                             | 2026-04-20 | rdp-team      |
+| `sorng-aws-vendor`         | `quick-xml` 0.31 (serialize), `percent-encoding` 2.3, `hmac` 0.12, `sha2` 0.10, `hex` 0.4                                                                         | Dynamically link the AWS SigV4 / XML dependency cluster used by `sorng-aws` and `sorng-s3`.                                                                                                                                     | 2026-04-20 | cloud-team    |
+| `sorng-compression-vendor` | `zstd` 0.13, `flate2` 1.0                                                                                                                                         | Single compiled copy of the native compression C deps shared across recording, backup and transport.                                                                                                                            | 2026-04-20 | platform-team |
+| `sorng-opkssh-vendor`      | pinned `openpubkey/opkssh` checkout at `193d79871f3bad3cd27cfb94734c265773a99c9b` plus a repo-owned embedded bridge overlay when present; otherwise metadata-only | OPKSSH wrapper contract crate. Release builds link it through the app `full` feature set and stage the native wrapper artifact by default; direct helper use still requires `--enable` / `SORNG_ENABLE_OPKSSH_VENDOR_BUNDLE=1`. | 2026-05-03 | ops-team      |
 
 ## Deferred wrapper notes
 
@@ -48,12 +49,12 @@ we need for Network Level Authentication, dynamic virtual channels, and
 session resume. See each patch's top-level module docs for the diff
 summary.
 
-| Patch entry          | Upstream URL                                                                              | Pinned version | Rationale                                                                                                | Last sync  | Owner    |
-| -------------------- | ----------------------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- | ---------- | -------- |
-| `ironrdp-connector`  | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-connector                | 0.8.0          | Expose internal connector state / credential hooks required by our NLA + smart-card credential flow.     | 2026-04-20 | rdp-team |
-| `ironrdp-blocking`   | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-blocking                 | 0.8.0          | Adjust blocking I/O wrapper to surface partial-read errors and plug our tracing span propagation.        | 2026-04-20 | rdp-team |
-| `ironrdp-session`    | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-session                  | 0.8.0          | Patch session decode to tolerate the non-standard server-initiated disconnect codes observed in prod.    | 2026-04-20 | rdp-team |
-| `ironrdp-dvc`        | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-dvc                      | 0.5.0          | Fix DVC channel close handshake + expose hooks required by `sorng-rdp` clipboard & display channel code. | 2026-04-20 | rdp-team |
+| Patch entry         | Upstream URL                                                                | Pinned version | Rationale                                                                                                | Last sync  | Owner    |
+| ------------------- | --------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- | ---------- | -------- |
+| `ironrdp-connector` | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-connector | 0.8.0          | Expose internal connector state / credential hooks required by our NLA + smart-card credential flow.     | 2026-04-20 | rdp-team |
+| `ironrdp-blocking`  | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-blocking  | 0.8.0          | Adjust blocking I/O wrapper to surface partial-read errors and plug our tracing span propagation.        | 2026-04-20 | rdp-team |
+| `ironrdp-session`   | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-session   | 0.8.0          | Patch session decode to tolerate the non-standard server-initiated disconnect codes observed in prod.    | 2026-04-20 | rdp-team |
+| `ironrdp-dvc`       | https://github.com/Devolutions/IronRDP/tree/master/crates/ironrdp-dvc       | 0.5.0          | Fix DVC channel close handshake + expose hooks required by `sorng-rdp` clipboard & display channel code. | 2026-04-20 | rdp-team |
 
 ## Sync procedure (patches)
 

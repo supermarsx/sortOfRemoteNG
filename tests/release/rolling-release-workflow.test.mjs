@@ -30,10 +30,42 @@ const cargoManifest = readFileSync(
   new URL("../../src-tauri/Cargo.toml", import.meta.url),
   "utf8",
 );
+const rdpVendorManifest = readFileSync(
+  new URL(
+    "../../src-tauri/crates/sorng-rdp-vendor/Cargo.toml",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const tauriConfig = JSON.parse(
+  readFileSync(
+    new URL("../../src-tauri/tauri.conf.json", import.meta.url),
+    "utf8",
+  ),
+);
 const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
 );
+
+test("RDP vendor builds only the rlib consumed by the application", () => {
+  const libSection = rdpVendorManifest.slice(
+    rdpVendorManifest.indexOf("[lib]"),
+    rdpVendorManifest.indexOf("[features]"),
+  );
+  const crateType = libSection.match(/^crate-type = .+$/m)?.[0] ?? "";
+
+  assert.equal(crateType, 'crate-type = ["rlib"]');
+  assert.doesNotMatch(crateType, /(?:c?dylib)/);
+
+  const bundledResources = Object.keys(tauriConfig.bundle?.resources ?? {});
+  assert.equal(
+    bundledResources.some((resource) =>
+      /sorng[-_]rdp[-_]vendor/i.test(resource),
+    ),
+    false,
+  );
+});
 
 test("rolling releases are reusable, explicit, serialized, and not tag-triggered", () => {
   assert.match(workflowCall, /source_sha:/);

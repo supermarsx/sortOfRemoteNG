@@ -13,7 +13,7 @@ description = "RDP connectivity, graphics pipeline, and H.264 decoding"
 [features]
 default = ["software-decode", "mf-decode", "snapshot"]
 # Software H.264 decode via Cisco openh264 (downloads ~1.5 MB prebuilt library).
-# Activates the openh264 dep inside the vendor dylib.
+# Activates the openh264 dependency inside the vendor wrapper.
 software-decode = ["sorng-rdp-vendor/software-decode"]
 # Windows Media Foundation hardware-accelerated H.264 decode (DXVA2).
 # Activates the heavy Win32 COM / Direct3D / MF feature flags on the
@@ -41,7 +41,7 @@ rdp-multimon = []
 sorng-core = { path = "../sorng-core" }
 sorng-dns = { path = "../sorng-dns" }
 
-# ── Vendor dylib (ironrdp ecosystem — dynamically linked) ───────────
+# ── Vendor boundary (IronRDP ecosystem — linked as an rlib) ─────────
 sorng-rdp-vendor = { path = "../sorng-rdp-vendor", default-features = false }
 
 # ── Lightweight always-needed deps ───────────────────────────────────
