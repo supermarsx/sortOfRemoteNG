@@ -323,7 +323,7 @@ jobs:
             bundles: appimage,deb
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
+            release_codegen_units: "1"
             release_opt_level: "1"
           - artifact_id: darwin-aarch64
             os: macos-15
@@ -350,13 +350,13 @@ jobs:
             bundles: msi,nsis
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
+            release_codegen_units: "1"
             release_opt_level: "1"
     runs-on: ${{ matrix.os }}
     env:
-      # The checked-in Cargo config is tuned for a 200 GB workstation. Keep
-      # macOS release settings unchanged while bounding Linux and Windows peak
-      # memory on hosted runners for both Rust and kafka-static's CMake build.
+      # The checked-in Cargo config is tuned for a 200 GB workstation. Linux and
+      # Windows use one Cargo job plus one codegen unit, capping peak concurrent
+      # LLVM codegen contexts at one. Keep the macOS release profile unchanged.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}

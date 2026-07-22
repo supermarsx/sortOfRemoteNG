@@ -205,7 +205,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "appimage,deb",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "16",
+      release_codegen_units: "1",
       release_opt_level: "1",
     },
     "darwin-aarch64": {
@@ -235,7 +235,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "16",
+      release_codegen_units: "1",
       release_opt_level: "1",
     },
   });
@@ -246,6 +246,10 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       ) ?? []
     ).length,
     16,
+  );
+  assert.match(
+    buildDefinition,
+    /# Windows use one Cargo job plus one codegen unit, capping peak concurrent\r?\n\s+# LLVM codegen contexts at one\. Keep the macOS release profile unchanged\./,
   );
   for (const [environmentName, matrixField] of Object.entries({
     CARGO_BUILD_JOBS: "cargo_build_jobs",
