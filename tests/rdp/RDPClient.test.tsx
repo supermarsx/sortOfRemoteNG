@@ -50,6 +50,29 @@ vi.mock("@tauri-apps/api/event", () => ({
   ),
 }));
 
+vi.mock("../../src/utils/network/vpnRuntimeCapabilities", () => ({
+  loadVpnRuntimeCapabilities: vi.fn(async () => [
+    { vpnType: "openvpn", executable: true },
+    { vpnType: "wireguard", executable: true },
+    { vpnType: "tailscale", executable: true },
+    { vpnType: "zerotier", executable: true },
+    { vpnType: "pptp", executable: true },
+    { vpnType: "l2tp", executable: true },
+    { vpnType: "ikev2", executable: true },
+    {
+      vpnType: "ipsec",
+      executable: false,
+      reason: "Windows RAS cannot safely implement this IPsec profile.",
+    },
+    { vpnType: "sstp", executable: true },
+    {
+      vpnType: "softether",
+      executable: false,
+      reason: "SoftEther has no persisted session runtime.",
+    },
+  ]),
+}));
+
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
 
@@ -455,6 +478,146 @@ describe("RDPClient", () => {
       expect(commands.lastIndexOf("disconnect_rdp")).toBeLessThan(
         commands.lastIndexOf("release_vpn_leases"),
       );
+    });
+
+    it("preserves IKEv2 ordering when acquiring a legacy VPN path before RDP", async () => {
+      (mockConnection as any).security = {
+        tunnelChain: [
+          {
+            id: "ike-layer",
+            type: "ikev2",
+            enabled: true,
+            vpn: { configId: "ike-office" },
+          },
+          {
+            id: "wireguard-layer",
+            type: "wireguard",
+            enabled: true,
+            vpn: { configId: "wireguard-office" },
+          },
+        ],
+      };
+      mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+        if (cmd === "list_rdp_sessions") return [];
+        if (cmd === "get_vpn_runtime_capabilities") {
+          return [
+            { vpnType: "ikev2", executable: true },
+            { vpnType: "wireguard", executable: true },
+          ];
+        }
+        if (cmd === "list_ikev2_connections") {
+          return [
+            {
+              id: "ike-office",
+              name: "IKE Office",
+              config: {
+                enabled: true,
+                server: "ike.example.test",
+                routing_mode: "full",
+                remote_subnets: [],
+              },
+              status: "disconnected",
+              created_at: "2026-07-21T00:00:00.000Z",
+            },
+          ];
+        }
+        if (cmd === "list_wireguard_connections") {
+          return [
+            {
+              id: "wireguard-office",
+              name: "WireGuard Office",
+              config: { peer: {} },
+              secret_presence: { private_key: true },
+              status: "disconnected",
+              created_at: "2026-07-21T00:00:00.000Z",
+            },
+          ];
+        }
+        if (
+          [
+            "list_openvpn_connections",
+            "list_tailscale_connections",
+            "list_zerotier_connections",
+            "list_pptp_connections",
+            "list_l2tp_connections",
+            "list_ipsec_connections",
+            "list_sstp_connections",
+          ].includes(cmd)
+        ) {
+          return [];
+        }
+        if (cmd === "acquire_vpn_leases") {
+          return {
+            owner_id: String((args as { ownerId: string }).ownerId),
+            leases: [],
+          };
+        }
+        if (cmd === "release_vpn_leases") {
+          return {
+            owner_id: String((args as { ownerId: string }).ownerId),
+            released: [],
+            errors: [],
+          };
+        }
+        if (cmd === "detect_keyboard_layout") return 0x0409;
+        if (cmd === "connect_rdp") return "rdp-session-123";
+        return undefined;
+      });
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "acquire_vpn_leases",
+          expect.objectContaining({
+            ownerId: expect.stringMatching(
+              /^test-rdp-session:rdp:[0-9a-f-]+$/i,
+            ),
+            requests: [
+              {
+                vpn_type: "ikev2",
+                connection_id: "ike-office",
+                auto_connect: true,
+              },
+              {
+                vpn_type: "wireguard",
+                connection_id: "wireguard-office",
+                auto_connect: true,
+              },
+            ],
+          }),
+        ),
+      );
+
+      const commands = mockInvoke.mock.calls.map(([command]) => command);
+      expect(commands.indexOf("acquire_vpn_leases")).toBeLessThan(
+        commands.indexOf("connect_rdp"),
+      );
+
+      emitStatus(
+        "connected",
+        "Connected (1920x1080)",
+        "rdp-session-123",
+        1920,
+        1080,
+      );
+      const disconnectButton = document.querySelector<HTMLButtonElement>(
+        'button[data-tooltip="Disconnect"]',
+      );
+      expect(disconnectButton).not.toBeNull();
+      fireEvent.click(disconnectButton!);
+
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("release_vpn_leases", {
+          ownerId: expect.stringMatching(/^test-rdp-session:rdp:[0-9a-f-]+$/i),
+        }),
+      );
+      const commandsAfterDisconnect = mockInvoke.mock.calls.map(
+        ([command]) => command,
+      );
+      expect(
+        commandsAfterDisconnect.lastIndexOf("disconnect_rdp"),
+      ).toBeLessThan(commandsAfterDisconnect.lastIndexOf("release_vpn_leases"));
     });
 
     it("clears a persisted VPN owner without releasing it again on a stale rerender", async () => {

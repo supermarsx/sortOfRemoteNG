@@ -128,7 +128,15 @@ export function VpnLayerConfig({
       (profile) => profile.vpnType === provider,
     ) ?? [];
   const providerStatus = vpnProfileCatalog?.providerStatus[provider];
+  const providerDisabledReason =
+    providerStatus === "unsupported"
+      ? (vpnProfileCatalog?.providerErrors?.[provider] ??
+        vpnProfileCatalog?.runtimeCapabilities?.[provider]?.reason ??
+        `${getVpnProviderLabel(provider)} is not executable on this platform.`)
+      : undefined;
   const currentProfile = profiles.find((profile) => profile.id === currentId);
+  const currentDisabledReason =
+    currentProfile?.connectDisabledReason ?? providerDisabledReason;
   const currentLabel =
     currentId && !currentProfile
       ? providerStatus === "loaded"
@@ -164,12 +172,26 @@ export function VpnLayerConfig({
           Select {getVpnProviderLabel(provider)} profile…
         </option>
         {currentLabel && <option value={currentId}>{currentLabel}</option>}
-        {profiles.map((profile) => (
-          <option key={profile.id} value={profile.id}>
-            {profile.name} ({profile.status})
-          </option>
-        ))}
+        {profiles.map((profile) => {
+          const disabledReason =
+            profile.connectDisabledReason ?? providerDisabledReason;
+          return (
+            <option
+              key={profile.id}
+              value={profile.id}
+              disabled={Boolean(disabledReason)}
+            >
+              {profile.name} ({profile.status})
+              {disabledReason ? " — unavailable" : ""}
+            </option>
+          );
+        })}
       </select>
+      {currentDisabledReason && (
+        <p className="text-[11px] text-amber-400" role="status">
+          {currentDisabledReason}
+        </p>
+      )}
       {providerStatus === "error" && (
         <p className="text-[11px] text-amber-400">
           The provider store could not be loaded. Existing references remain
@@ -250,6 +272,11 @@ export function LayerConfigForm({
       return <SshJumpLayerConfig layer={layer} onUpdate={onUpdate} />;
     case "openvpn":
     case "wireguard":
+    case "pptp":
+    case "l2tp":
+    case "ikev2":
+    case "ipsec":
+    case "sstp":
       return (
         <VpnLayerConfig
           layer={layer}

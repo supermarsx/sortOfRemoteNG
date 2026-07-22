@@ -2,6 +2,9 @@ use super::chaining::*;
 use super::vpn_lifecycle::*;
 use std::collections::BTreeSet;
 
+const WINDOWS_IPSEC_SESSION_UNSUPPORTED_REASON: &str =
+    "Legacy IPsec session associations are unavailable on Windows because the current RAS path does not safely implement the profile authentication contract; use IKEv2 or run IPsec on Linux.";
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VpnRuntimeCapability {
@@ -71,7 +74,7 @@ fn runtime_vpn_capabilities_for(
             "linux" => supported(vpn_type),
             "windows" => unsupported_capability(
                 vpn_type,
-                "Legacy IPsec session associations are unavailable on Windows because the current RAS path does not safely implement the profile authentication contract; use IKEv2 or run IPsec on Linux.",
+                WINDOWS_IPSEC_SESSION_UNSUPPORTED_REASON,
             ),
             _ => unsupported_capability(
                 vpn_type,
@@ -97,20 +100,59 @@ fn runtime_vpn_capabilities_for(
     ]
 }
 
-fn ensure_runtime_provider_supported(vpn_type: RuntimeVpnType) -> Result<(), String> {
+fn ensure_runtime_provider_supported_for(
+    vpn_type: RuntimeVpnType,
+    platform: &str,
+    legacy_profiles_persisted: bool,
+) -> Result<(), String> {
     let name = vpn_type.as_str();
-    let capability =
-        runtime_vpn_capabilities_for(std::env::consts::OS, LEGACY_SESSION_PIPELINE_ENABLED)
-            .into_iter()
-            .find(|candidate| candidate.vpn_type == name)
-            .ok_or_else(|| format!("Unsupported VPN type: {name}"))?;
+    let capability = runtime_vpn_capabilities_for(platform, legacy_profiles_persisted)
+        .into_iter()
+        .find(|candidate| candidate.vpn_type == name)
+        .ok_or_else(|| "Unsupported VPN type".to_string())?;
     if capability.executable {
         Ok(())
     } else {
         Err(capability
             .reason
-            .unwrap_or_else(|| format!("{name} is not executable on this platform")))
+            .unwrap_or_else(|| "VPN provider is not executable on this platform".to_string()))
     }
+}
+
+fn ensure_runtime_provider_supported(vpn_type: RuntimeVpnType) -> Result<(), String> {
+    ensure_runtime_provider_supported_for(
+        vpn_type,
+        std::env::consts::OS,
+        LEGACY_SESSION_PIPELINE_ENABLED,
+    )
+}
+
+/// Validate the complete platform capability path before the lifecycle can
+/// probe, connect, or record a lease for its first provider. Errors are fixed
+/// capability messages and never include owner IDs or connection IDs.
+fn preflight_runtime_requests_for(
+    requests: &[VpnLeaseRequest],
+    platform: &str,
+    legacy_profiles_persisted: bool,
+) -> Result<(), String> {
+    for request in requests {
+        let vpn_type = RuntimeVpnType::parse(&request.vpn_type)
+            .map_err(|_| "Unsupported VPN type".to_string())?;
+        ensure_runtime_provider_supported_for(vpn_type, platform, legacy_profiles_persisted)?;
+    }
+    Ok(())
+}
+
+async fn acquire_runtime_vpn_leases_for<R: VpnRuntime>(
+    registry: &mut VpnLeaseRegistry,
+    owner_id: &str,
+    requests: Vec<VpnLeaseRequest>,
+    runtime: &mut R,
+    platform: &str,
+    legacy_profiles_persisted: bool,
+) -> Result<AcquireVpnLeasesResult, String> {
+    preflight_runtime_requests_for(&requests, platform, legacy_profiles_persisted)?;
+    acquire_session_vpn_leases(registry, owner_id, requests, runtime).await
 }
 
 #[tauri::command]
@@ -622,7 +664,15 @@ pub async fn acquire_vpn_leases(
         &ipsec_state,
         &sstp_state,
     );
-    acquire_session_vpn_leases(&mut registry, &owner_id, requests, &mut runtime).await
+    acquire_runtime_vpn_leases_for(
+        &mut registry,
+        &owner_id,
+        requests,
+        &mut runtime,
+        std::env::consts::OS,
+        LEGACY_SESSION_PIPELINE_ENABLED,
+    )
+    .await
 }
 
 /// Release every VPN lease held by one frontend session.
@@ -669,19 +719,25 @@ mod tests {
     #[derive(Default)]
     struct GuardMockRuntime {
         active: HashSet<VpnLeaseKey>,
+        probe_attempts: Vec<VpnLeaseKey>,
+        connect_attempts: Vec<VpnLeaseKey>,
+        disconnect_attempts: Vec<VpnLeaseKey>,
     }
 
     impl VpnRuntime for GuardMockRuntime {
         async fn probe_active(&mut self, key: &VpnLeaseKey) -> Result<bool, String> {
+            self.probe_attempts.push(key.clone());
             Ok(self.active.contains(key))
         }
 
         async fn connect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+            self.connect_attempts.push(key.clone());
             self.active.insert(key.clone());
             Ok(())
         }
 
         async fn disconnect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+            self.disconnect_attempts.push(key.clone());
             self.active.remove(key);
             Ok(())
         }
@@ -737,7 +793,7 @@ mod tests {
             assert!(capability.reason.as_deref().unwrap().contains("encrypted"));
         }
 
-        let windows = runtime_vpn_capabilities_for("windows", true);
+        let windows = runtime_vpn_capabilities_for("windows", LEGACY_SESSION_PIPELINE_ENABLED);
         for vpn_type in ["pptp", "l2tp", "ikev2", "sstp"] {
             assert!(windows
                 .iter()
@@ -748,11 +804,10 @@ mod tests {
             .find(|capability| capability.vpn_type == "ipsec")
             .unwrap();
         assert!(!windows_ipsec.executable);
-        assert!(windows_ipsec
-            .reason
-            .as_deref()
-            .unwrap()
-            .contains("authentication contract"));
+        assert_eq!(
+            windows_ipsec.reason.as_deref(),
+            Some(WINDOWS_IPSEC_SESSION_UNSUPPORTED_REASON)
+        );
 
         let linux = runtime_vpn_capabilities_for("linux", true);
         for vpn_type in ["ikev2", "ipsec"] {
@@ -784,6 +839,86 @@ mod tests {
             .chain(macos.iter())
             .filter(|capability| capability.vpn_type == "softether")
             .all(|capability| !capability.executable));
+    }
+
+    #[tokio::test]
+    async fn request_preflight_rejects_late_windows_ipsec_without_any_mutation() {
+        let mut registry = VpnLeaseRegistry::default();
+        let mut runtime = GuardMockRuntime::default();
+        let openvpn = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::OpenVpn,
+            connection_id: "first-provider".to_string(),
+        };
+        let ipsec = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ipsec,
+            connection_id: "sensitive-connection-id".to_string(),
+        };
+
+        let error = acquire_runtime_vpn_leases_for(
+            &mut registry,
+            "sensitive-owner-id",
+            vec![
+                request(openvpn.vpn_type.as_str(), &openvpn.connection_id),
+                request(ipsec.vpn_type.as_str(), &ipsec.connection_id),
+            ],
+            &mut runtime,
+            "windows",
+            true,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, WINDOWS_IPSEC_SESSION_UNSUPPORTED_REASON);
+        assert!(!error.contains("sensitive-owner-id"));
+        assert!(!error.contains("sensitive-connection-id"));
+        assert!(runtime.probe_attempts.is_empty());
+        assert!(runtime.connect_attempts.is_empty());
+        assert!(runtime.disconnect_attempts.is_empty());
+        assert!(runtime.active.is_empty());
+        assert!(registry.usage(&openvpn).is_none());
+        assert!(registry.usage(&ipsec).is_none());
+    }
+
+    #[tokio::test]
+    async fn request_preflight_allows_linux_ikev2_and_ipsec_leases() {
+        let mut registry = VpnLeaseRegistry::default();
+        let mut runtime = GuardMockRuntime::default();
+        let ikev2 = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ikev2,
+            connection_id: "ike-office".to_string(),
+        };
+        let ipsec = VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ipsec,
+            connection_id: "ipsec-office".to_string(),
+        };
+
+        let result = acquire_runtime_vpn_leases_for(
+            &mut registry,
+            "linux-session",
+            vec![
+                request(ikev2.vpn_type.as_str(), &ikev2.connection_id),
+                request(ipsec.vpn_type.as_str(), &ipsec.connection_id),
+            ],
+            &mut runtime,
+            "linux",
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result
+                .leases
+                .iter()
+                .map(|lease| lease.vpn_type.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ikev2", "ipsec"]
+        );
+        assert_eq!(runtime.connect_attempts, vec![ikev2.clone(), ipsec.clone()]);
+        assert!(runtime.active.contains(&ikev2));
+        assert!(runtime.active.contains(&ipsec));
+        assert_eq!(registry.usage(&ikev2).unwrap().owner_count, 1);
+        assert_eq!(registry.usage(&ipsec).unwrap().owner_count, 1);
     }
 
     #[test]

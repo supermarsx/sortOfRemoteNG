@@ -40,46 +40,36 @@ export const VPN_PROVIDER_CATALOG = [
   {
     type: "pptp",
     label: "PPTP",
-    executable: false,
+    executable: true,
     iconKey: "cable",
-    unsupportedReason:
-      "PPTP profiles are not yet stored persistently, so session associations are disabled.",
     importExtensions: [],
   },
   {
     type: "l2tp",
     label: "L2TP/IPsec",
-    executable: false,
+    executable: true,
     iconKey: "link",
-    unsupportedReason:
-      "L2TP/IPsec profiles are not yet stored persistently, so session associations are disabled.",
     importExtensions: [],
   },
   {
     type: "ikev2",
     label: "IKEv2",
-    executable: false,
+    executable: true,
     iconKey: "key-round",
-    unsupportedReason:
-      "IKEv2 profiles are not yet stored persistently, so session associations are disabled.",
     importExtensions: [],
   },
   {
     type: "ipsec",
     label: "IPsec",
-    executable: false,
+    executable: true,
     iconKey: "shield-check",
-    unsupportedReason:
-      "IPsec profiles are not yet stored persistently, so session associations are disabled.",
     importExtensions: [],
   },
   {
     type: "sstp",
     label: "SSTP",
-    executable: false,
+    executable: true,
     iconKey: "lock",
-    unsupportedReason:
-      "SSTP profiles are not yet stored persistently, so session associations are disabled.",
     importExtensions: [],
   },
   {

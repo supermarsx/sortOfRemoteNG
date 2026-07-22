@@ -1,8 +1,6 @@
 import React from "react";
 import {
   Shield,
-  Globe,
-  Wifi,
   FolderOpen,
   X,
   Plus,
@@ -10,7 +8,6 @@ import {
   AlertCircle,
   Save,
   Tag,
-  type LucideIcon,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -19,10 +16,10 @@ import {
   type VpnEditorType,
 } from "../../hooks/network/useVpnEditor";
 import type { VpnSecretPresence } from "../../utils/network/vpnIpcAdapter";
+import { getConnectionIconDefinition } from "../../utils/icons/connectionIconCatalog";
 import {
   EXECUTABLE_VPN_PROVIDERS,
   getVpnProviderLabel,
-  type ExecutableVpnType,
 } from "../../utils/network/vpnProviderCatalog";
 
 type Mgr = ReturnType<typeof useVpnEditor>;
@@ -40,17 +37,10 @@ const checkCls = "flex items-center gap-2 text-sm text-[var(--color-text)]";
 
 // ── VPN type definitions ────────────────────────────────────────
 
-const VPN_TYPE_ICONS: Record<ExecutableVpnType, LucideIcon> = {
-  openvpn: Shield,
-  wireguard: Globe,
-  tailscale: Wifi,
-  zerotier: Globe,
-};
-
 const VPN_TYPES = EXECUTABLE_VPN_PROVIDERS.map((provider) => ({
   value: provider.type,
   label: provider.label,
-  icon: VPN_TYPE_ICONS[provider.type],
+  icon: getConnectionIconDefinition(provider.iconKey)?.icon ?? Shield,
 }));
 
 // ── Shared sub-components ───────────────────────────────────────

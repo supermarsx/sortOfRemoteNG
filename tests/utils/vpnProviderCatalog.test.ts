@@ -20,13 +20,19 @@ describe("VPN provider capability catalog", () => {
       "wireguard",
       "tailscale",
       "zerotier",
+      "pptp",
+      "l2tp",
+      "ikev2",
+      "ipsec",
+      "sstp",
     ]);
     expect(
       VPN_PROVIDER_CATALOG.filter((provider) => !provider.executable).map(
         (provider) => provider.type,
       ),
-    ).toEqual(["pptp", "l2tp", "ikev2", "ipsec", "sstp", "softether"]);
-    expect(isExecutableVpnType("pptp")).toBe(false);
+    ).toEqual(["softether"]);
+    expect(isExecutableVpnType("pptp")).toBe(true);
+    expect(isExecutableVpnType("softether")).toBe(false);
     expect(normalizeSessionVpnType(" PPTP ")).toBe("pptp");
     expect(SESSION_VPN_PROVIDERS.map((provider) => provider.type)).toEqual([
       "openvpn",
@@ -144,11 +150,11 @@ describe("VPN provider capability catalog", () => {
       wireguard: "error",
       tailscale: "loaded",
       zerotier: "loaded",
-      pptp: "unsupported",
-      l2tp: "unsupported",
-      ikev2: "unsupported",
-      ipsec: "unsupported",
-      sstp: "unsupported",
+      pptp: "loaded",
+      l2tp: "loaded",
+      ikev2: "loaded",
+      ipsec: "loaded",
+      sstp: "loaded",
     });
     expect(snapshot.providerErrors?.wireguard).toBe(
       "profile store unavailable",
@@ -202,9 +208,51 @@ describe("VPN provider capability catalog", () => {
           mode: "split",
           remoteSubnets: ["10.20.0.0/16", "2001:db8:42::/48"],
         },
-        connectDisabledReason: "Encrypted persistent profiles are unavailable.",
       }),
     );
-    expect(snapshot.providerStatus.ikev2).toBe("unsupported");
+    expect(snapshot.providerStatus.ikev2).toBe("loaded");
+  });
+
+  it("keeps platform capability authoritative over product eligibility", async () => {
+    const empty = vi.fn(async () => []);
+    const snapshot = await loadVpnProfileCatalog(
+      {
+        listOpenVPNConnections: empty,
+        listWireGuardConnections: empty,
+        listTailscaleConnections: empty,
+        listZeroTierConnections: empty,
+        listPPTPConnections: empty,
+        listL2TPConnections: empty,
+        listIKEv2Connections: empty,
+        listIPsecConnections: vi.fn(async () => [
+          {
+            id: "ipsec-office",
+            name: "IPsec Office",
+            config: { enabled: true, server: "gateway.example.test" },
+            status: "disconnected" as const,
+            createdAt: new Date("2026-07-21T00:00:00.000Z"),
+          } as any,
+        ]),
+        listSSTPConnections: empty,
+      },
+      async () =>
+        VPN_PROVIDER_CATALOG.map((provider) => ({
+          vpnType: provider.type,
+          executable: provider.type !== "ipsec" && provider.executable,
+          ...(provider.type === "ipsec"
+            ? { reason: "Windows cannot safely execute this IPsec profile." }
+            : {}),
+        })),
+    );
+
+    expect(snapshot.providerStatus.ipsec).toBe("unsupported");
+    expect(snapshot.profiles).toContainEqual(
+      expect.objectContaining({
+        id: "ipsec-office",
+        vpnType: "ipsec",
+        connectDisabledReason:
+          "Windows cannot safely execute this IPsec profile.",
+      }),
+    );
   });
 });

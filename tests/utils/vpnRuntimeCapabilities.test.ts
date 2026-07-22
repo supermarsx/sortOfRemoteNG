@@ -12,9 +12,9 @@ describe("VPN runtime capability IPC", () => {
     vi.mocked(invoke).mockResolvedValue([
       { vpnType: "openvpn", executable: true },
       {
-        vpnType: "pptp",
+        vpnType: "ipsec",
         executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        reason: "Windows RAS cannot safely implement this IPsec profile.",
       },
     ]);
 
@@ -23,9 +23,15 @@ describe("VPN runtime capability IPC", () => {
     expect(invoke).toHaveBeenCalledWith("get_vpn_runtime_capabilities");
     expect(capabilities).toHaveLength(VPN_PROVIDER_CATALOG.length);
     expect(capabilities).toContainEqual({
-      vpnType: "pptp",
+      vpnType: "ipsec",
       executable: false,
-      reason: "Encrypted persistent profiles are unavailable.",
+      reason: "Windows RAS cannot safely implement this IPsec profile.",
+    });
+    expect(capabilities).toContainEqual({
+      vpnType: "ikev2",
+      executable: false,
+      reason:
+        "The backend did not report an executable runtime capability for this provider.",
     });
     expect(capabilities).toContainEqual({
       vpnType: "softether",

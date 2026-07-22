@@ -257,6 +257,62 @@ describe("buildRuntimeNetworkPath", () => {
     ]);
   });
 
+  it.each(["ssh", "rdp"] as const)(
+    "preserves an executable IKEv2 profile in the ordered %s VPN pre-steps",
+    (protocol) => {
+      const target = connection(protocol, {
+        security: {
+          tunnelChain: [
+            layer("ike-layer", {
+              type: "ikev2",
+              vpn: { configId: "ike-office" },
+            }),
+            layer("wireguard-layer", {
+              type: "wireguard",
+              vpn: { configId: "wireguard-office" },
+            }),
+          ],
+        },
+      });
+      const catalog: NetworkPathCatalog = {
+        ...EMPTY_CATALOG,
+        vpnProfiles: {
+          profiles: [
+            {
+              id: "ike-office",
+              name: "IKE Office",
+              vpnType: "ikev2",
+              status: "disconnected",
+              createdAt: new Date("2026-07-21T00:00:00.000Z"),
+            },
+            {
+              id: "wireguard-office",
+              name: "WireGuard Office",
+              vpnType: "wireguard",
+              status: "disconnected",
+              createdAt: new Date("2026-07-21T00:00:00.000Z"),
+            },
+          ],
+          providerStatus: { ikev2: "loaded", wireguard: "loaded" },
+        },
+      };
+
+      const runtime = buildRuntimeNetworkPath(target, catalog, protocol);
+      expect(runtime.transport.vpnPreSteps).toEqual([
+        {
+          vpnType: "ikev2",
+          connectionId: "ike-office",
+          configId: "ike-office",
+        },
+        {
+          vpnType: "wireguard",
+          connectionId: "wireguard-office",
+          configId: "wireguard-office",
+        },
+      ]);
+    },
+  );
+
   it("fails with the correct cause for deleted and unreadable VPN profiles", () => {
     const target = connection("ssh", {
       security: {
@@ -305,13 +361,13 @@ describe("buildRuntimeNetworkPath", () => {
     }
   });
 
-  it("fails before emitting a runtime pre-step for a gated legacy VPN", () => {
+  it("fails before emitting a runtime pre-step for platform-unsupported IPsec", () => {
     const target = connection("ssh", {
       security: {
         tunnelChain: [
           layer("legacy-layer", {
-            type: "ikev2",
-            vpn: { configId: "ike-office" },
+            type: "ipsec",
+            vpn: { configId: "ipsec-office" },
           }),
         ],
       },
@@ -325,16 +381,16 @@ describe("buildRuntimeNetworkPath", () => {
           vpnProfiles: {
             profiles: [
               {
-                id: "ike-office",
-                name: "IKE Office",
-                vpnType: "ikev2",
+                id: "ipsec-office",
+                name: "IPsec Office",
+                vpnType: "ipsec",
                 status: "disconnected",
                 createdAt: new Date("2026-07-21T00:00:00.000Z"),
               },
             ],
-            providerStatus: { ikev2: "unsupported" },
+            providerStatus: { ipsec: "unsupported" },
             providerErrors: {
-              ikev2: "Encrypted persistence is unavailable.",
+              ipsec: "Windows RAS cannot safely implement this IPsec profile.",
             },
           },
         },
@@ -344,7 +400,7 @@ describe("buildRuntimeNetworkPath", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(RuntimeNetworkPathError);
       expect((error as RuntimeNetworkPathError).code).toBe("unsupported-layer");
-      expect((error as Error).message).toMatch(/IKEv2.*not executable/i);
+      expect((error as Error).message).toMatch(/IPsec.*not executable/i);
     }
   });
 

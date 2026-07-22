@@ -100,28 +100,24 @@ describe("useVpnManager", () => {
       { vpnType: "zerotier", executable: true },
       {
         vpnType: "pptp",
-        executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        executable: true,
       },
       {
         vpnType: "l2tp",
-        executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        executable: true,
       },
       {
         vpnType: "ikev2",
-        executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        executable: true,
       },
       {
         vpnType: "ipsec",
         executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        reason: "Windows RAS cannot safely implement this IPsec profile.",
       },
       {
         vpnType: "sstp",
-        executable: false,
-        reason: "Encrypted persistent profiles are unavailable.",
+        executable: true,
       },
       {
         vpnType: "softether",
@@ -242,17 +238,16 @@ describe("useVpnManager", () => {
     expect(result.current.error).toMatch(/private key is not stored/i);
   });
 
-  it("lists a gated legacy profile but never invokes its direct connect action", async () => {
-    mockMgr.listPPTPConnections.mockResolvedValue([
+  it("lists a platform-gated IPsec profile but never invokes its direct connect action", async () => {
+    mockMgr.listIPsecConnections.mockResolvedValue([
       {
-        id: "pptp-legacy",
-        name: "Legacy Office",
+        id: "ipsec-windows",
+        name: "IPsec Office",
         status: "disconnected",
         config: {
           enabled: true,
-          server: "legacy.example.test",
+          server: "ipsec.example.test",
           username: "operator",
-          password: "",
         },
         createdAt: new Date("2026-07-21T00:00:00.000Z"),
       },
@@ -261,20 +256,20 @@ describe("useVpnManager", () => {
     const { result } = renderHook(() => useVpnManager(true));
     await waitFor(() =>
       expect(result.current.connections).toContainEqual(
-        expect.objectContaining({ id: "pptp-legacy", vpnType: "pptp" }),
+        expect.objectContaining({ id: "ipsec-windows", vpnType: "ipsec" }),
       ),
     );
 
     expect(
-      result.current.connections.find(({ id }) => id === "pptp-legacy")
+      result.current.connections.find(({ id }) => id === "ipsec-windows")
         ?.connectDisabledReason,
-    ).toMatch(/persistent profiles are unavailable/i);
+    ).toMatch(/Windows RAS cannot safely implement/i);
     await act(async () => {
-      await result.current.connectVpn("pptp-legacy", "pptp");
+      await result.current.connectVpn("ipsec-windows", "ipsec");
     });
-    expect(mockMgr.connectPPTP).not.toHaveBeenCalled();
+    expect(mockMgr.connectIPsec).not.toHaveBeenCalled();
     expect(result.current.error).toMatch(
-      /persistent profiles are unavailable/i,
+      /Windows RAS cannot safely implement/i,
     );
   });
 
@@ -634,6 +629,75 @@ describe("useVpnManager", () => {
     });
 
     expect(mockMgr.connectZeroTier).toHaveBeenCalledWith("zt-1");
+  });
+
+  it("connects an IKEv2 profile when the runtime capability is executable", async () => {
+    mockMgr.connectIKEv2.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.connectVpn("ike-office", "ikev2");
+    });
+
+    expect(mockMgr.connectIKEv2).toHaveBeenCalledWith("ike-office");
+  });
+
+  it("connects an IPsec profile when the Linux runtime capability is executable", async () => {
+    capabilityMocks.load.mockResolvedValue([
+      { vpnType: "ipsec", executable: true },
+    ]);
+    mockMgr.listIPsecConnections.mockResolvedValue([
+      {
+        id: "ipsec-linux",
+        name: "Linux IPsec",
+        status: "disconnected",
+        config: { enabled: true, server: "ipsec.example.test" },
+        createdAt: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    ]);
+    mockMgr.connectIPsec.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() =>
+      expect(result.current.profileCatalog?.providerStatus.ipsec).toBe(
+        "loaded",
+      ),
+    );
+
+    await act(async () => {
+      await result.current.connectVpn("ipsec-linux", "ipsec");
+    });
+
+    expect(mockMgr.connectIPsec).toHaveBeenCalledWith("ipsec-linux");
+  });
+
+  it("refuses direct connect when runtime capabilities cannot be verified", async () => {
+    capabilityMocks.load.mockRejectedValue(
+      new Error("VPN runtime capability response is malformed"),
+    );
+    mockMgr.listIKEv2Connections.mockResolvedValue([
+      {
+        id: "ike-office",
+        name: "IKE Office",
+        status: "disconnected",
+        config: { enabled: true, server: "ike.example.test" },
+        createdAt: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    ]);
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() =>
+      expect(result.current.profileCatalog?.providerStatus.ikev2).toBe("error"),
+    );
+
+    await act(async () => {
+      await result.current.connectVpn("ike-office", "ikev2");
+    });
+
+    expect(mockMgr.connectIKEv2).not.toHaveBeenCalled();
+    expect(result.current.error).toMatch(/could not be verified/i);
   });
 
   it("reloads connections after connect", async () => {

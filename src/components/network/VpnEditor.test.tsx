@@ -7,6 +7,36 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 describe("VpnEditor OpenVPN configuration sources", () => {
+  it("offers every persisted session provider with a catalog-backed icon", () => {
+    render(<VpnEditor isOpen onClose={vi.fn()} onSave={vi.fn()} />);
+
+    for (const label of [
+      "OpenVPN",
+      "WireGuard",
+      "Tailscale",
+      "ZeroTier",
+      "PPTP",
+      "L2TP/IPsec",
+      "IKEv2",
+      "IPsec",
+      "SSTP",
+    ]) {
+      const choice = screen.getByRole("button", { name: label });
+      expect(choice.querySelector("svg")).not.toBeNull();
+    }
+    expect(
+      screen.queryByRole("button", { name: "SoftEther" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "IKEv2" }));
+    expect(screen.getByText("IKEv2 Configuration")).toBeInTheDocument();
+    expect(screen.getByText("Traffic Routing")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "IPsec" }));
+    expect(screen.getByText("IPsec Configuration")).toBeInTheDocument();
+    expect(screen.getByText("Traffic Routing")).toBeInTheDocument();
+  });
+
   it("shows and requires the selected manual TLS key files", () => {
     render(<VpnEditor isOpen onClose={vi.fn()} onSave={vi.fn()} />);
 

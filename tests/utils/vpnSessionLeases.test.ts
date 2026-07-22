@@ -51,12 +51,58 @@ describe("session VPN lease IPC", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it("rejects a gated legacy provider before invoking backend lifecycle state", async () => {
+  it("preserves every product-eligible legacy provider in request order", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      owner_id: "session-legacy",
+      leases: [],
+    });
+
+    await acquireSessionVpnLeases("session-legacy", [
+      { vpnType: "pptp", connectionId: "pptp-office" },
+      { vpnType: "l2tp", connectionId: "l2tp-office" },
+      { vpnType: "ikev2", connectionId: "ike-office" },
+      { vpnType: "ipsec", connectionId: "ipsec-office" },
+      { vpnType: "sstp", connectionId: "sstp-office" },
+    ]);
+
+    expect(invoke).toHaveBeenCalledWith("acquire_vpn_leases", {
+      ownerId: "session-legacy",
+      requests: [
+        {
+          vpn_type: "pptp",
+          connection_id: "pptp-office",
+          auto_connect: true,
+        },
+        {
+          vpn_type: "l2tp",
+          connection_id: "l2tp-office",
+          auto_connect: true,
+        },
+        {
+          vpn_type: "ikev2",
+          connection_id: "ike-office",
+          auto_connect: true,
+        },
+        {
+          vpn_type: "ipsec",
+          connection_id: "ipsec-office",
+          auto_connect: true,
+        },
+        {
+          vpn_type: "sstp",
+          connection_id: "sstp-office",
+          auto_connect: true,
+        },
+      ],
+    });
+  });
+
+  it("rejects SoftEther before invoking backend lifecycle state", async () => {
     await expect(
       acquireSessionVpnLeases("session-1", [
-        { vpnType: "pptp", connectionId: "legacy-office" },
+        { vpnType: "softether", connectionId: "softether-office" } as any,
       ]),
-    ).rejects.toThrow(/PPTP is not executable/i);
+    ).rejects.toThrow(/SoftEther is not executable/i);
 
     expect(invoke).not.toHaveBeenCalled();
   });

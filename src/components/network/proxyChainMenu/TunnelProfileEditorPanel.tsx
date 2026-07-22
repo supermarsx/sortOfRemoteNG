@@ -69,6 +69,16 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
         vpn: { configId: "" },
         mesh: {},
       };
+    case "pptp":
+    case "l2tp":
+    case "ikev2":
+    case "ipsec":
+    case "sstp":
+      return {
+        ...base,
+        name: getTypeLabel(type),
+        vpn: { configId: "" },
+      };
     case "shadowsocks":
       return {
         ...base,

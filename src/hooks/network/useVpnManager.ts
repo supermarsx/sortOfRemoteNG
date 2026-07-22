@@ -128,10 +128,13 @@ export function useVpnManager(isOpen: boolean) {
         if (profile?.connectDisabledReason) {
           throw new Error(profile.connectDisabledReason);
         }
-        if (profileCatalog?.providerStatus[provider] === "unsupported") {
+        const providerStatus = profileCatalog?.providerStatus[provider];
+        if (providerStatus !== "loaded") {
           throw new Error(
-            profileCatalog.providerErrors?.[provider] ??
-              `${getVpnProviderLabel(provider)} is not executable on this platform.`,
+            profileCatalog?.providerErrors?.[provider] ??
+              (providerStatus === "unsupported"
+                ? `${getVpnProviderLabel(provider)} is not executable on this platform.`
+                : `${getVpnProviderLabel(provider)} runtime capability could not be verified on this platform.`),
           );
         }
         switch (provider) {

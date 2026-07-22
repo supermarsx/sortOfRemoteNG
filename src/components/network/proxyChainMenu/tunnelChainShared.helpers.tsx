@@ -1,5 +1,5 @@
 import React from "react";
-import { Shield, Globe, Terminal, Wifi, Network, Layers } from "lucide-react";
+import { Shield, Globe, Terminal, Network, Layers } from "lucide-react";
 import type {
   TunnelType,
   TunnelChainLayer,
@@ -7,17 +7,10 @@ import type {
 import {
   EXECUTABLE_VPN_PROVIDERS,
   resolveTunnelLayerVpnProfileId,
-  type ExecutableVpnType,
 } from "../../../utils/network/vpnProviderCatalog";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 
 // ── Tunnel type metadata ────────────────────────────────────────
-
-const VPN_ICONS: Record<ExecutableVpnType, React.ReactNode> = {
-  openvpn: <Shield size={12} />,
-  wireguard: <Shield size={12} />,
-  tailscale: <Wifi size={12} />,
-  zerotier: <Globe size={12} />,
-};
 
 export const TUNNEL_TYPE_OPTIONS: {
   value: TunnelType;
@@ -25,12 +18,15 @@ export const TUNNEL_TYPE_OPTIONS: {
   icon: React.ReactNode;
   category: string;
 }[] = [
-  ...EXECUTABLE_VPN_PROVIDERS.map((provider) => ({
-    value: provider.type,
-    label: provider.label,
-    icon: VPN_ICONS[provider.type],
-    category: "VPN",
-  })),
+  ...EXECUTABLE_VPN_PROVIDERS.map((provider) => {
+    const Icon = getConnectionIconDefinition(provider.iconKey)?.icon ?? Shield;
+    return {
+      value: provider.type,
+      label: provider.label,
+      icon: <Icon size={12} />,
+      category: "VPN",
+    };
+  }),
   {
     value: "proxy",
     label: "Proxy",
@@ -128,7 +124,12 @@ export function getProfileConfigSummary(layer: TunnelChainLayer): string {
     case "openvpn":
     case "wireguard":
     case "tailscale":
-    case "zerotier": {
+    case "zerotier":
+    case "pptp":
+    case "l2tp":
+    case "ikev2":
+    case "ipsec":
+    case "sstp": {
       return resolveTunnelLayerVpnProfileId(layer) || layer.type;
     }
     default: {

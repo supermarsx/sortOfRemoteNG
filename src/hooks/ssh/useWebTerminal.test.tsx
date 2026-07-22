@@ -6,6 +6,7 @@ import {
   resetSessionLifecycleAllocatorForTests,
 } from "../../utils/session/sessionLifecycle";
 import { resolveRuntimeNetworkPath } from "../../utils/network/resolveRuntimeNetworkPath";
+import type { SessionVpnType } from "../../utils/network/vpnProviderCatalog";
 
 const mocks = vi.hoisted(() => {
   class MockTerminal {
@@ -88,7 +89,7 @@ const mocks = vi.hoisted(() => {
     protocol: "ssh" as const,
     transport: {
       vpnPreSteps: [] as Array<{
-        vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
+        vpnType: SessionVpnType;
         connectionId: string;
       }>,
       jump_hosts: [],
@@ -271,6 +272,7 @@ describe("useWebTerminal input lifecycle", () => {
 
   it("acquires the VPN path before SSH and releases it after target disconnect", async () => {
     mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "ikev2", connectionId: "ike-office" },
       { vpnType: "wireguard", connectionId: "wg-office" },
     ];
     let model: WebTerminalMgr | null = null;
@@ -293,6 +295,11 @@ describe("useWebTerminal input lifecycle", () => {
       expect.objectContaining({
         ownerId: expect.stringMatching(/^frontend-ssh-1:ssh:[0-9a-f-]+$/i),
         requests: [
+          {
+            vpn_type: "ikev2",
+            connection_id: "ike-office",
+            auto_connect: true,
+          },
           {
             vpn_type: "wireguard",
             connection_id: "wg-office",

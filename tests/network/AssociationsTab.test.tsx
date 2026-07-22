@@ -125,21 +125,43 @@ describe("AssociationsTab", () => {
   });
 
   it("shows provider icons with executable and fail-closed status", async () => {
+    capabilityMocks.load.mockResolvedValue([
+      { vpnType: "openvpn", executable: true },
+      { vpnType: "ikev2", executable: true },
+      {
+        vpnType: "ipsec",
+        executable: false,
+        reason: "Windows RAS cannot safely implement this IPsec profile.",
+      },
+    ]);
     render(
       <AssociationsTab
         mgr={manager([
           connection("openvpn", "OpenVPN target", {
             tunnelChainId: "tunnel-1",
           }),
-          connection("pptp", "PPTP target", {
+          connection("ikev2", "IKEv2 target", {
             security: {
               tunnelChain: [
                 {
-                  id: "pptp-layer",
-                  name: "Legacy PPTP",
-                  type: "pptp",
+                  id: "ike-layer",
+                  name: "IKEv2 Office",
+                  type: "ikev2",
                   enabled: true,
-                  vpn: { configId: "pptp-office" },
+                  vpn: { configId: "ike-office" },
+                },
+              ],
+            },
+          }),
+          connection("ipsec", "IPsec target", {
+            security: {
+              tunnelChain: [
+                {
+                  id: "ipsec-layer",
+                  name: "IPsec Office",
+                  type: "ipsec",
+                  enabled: true,
+                  vpn: { configId: "ipsec-office" },
                 },
               ],
             },
@@ -156,10 +178,50 @@ describe("AssociationsTab", () => {
       ).toBeInTheDocument(),
     );
     expect(
-      within(screen.getByTestId("association-row-pptp")).getByLabelText(
-        "PPTP: Unsupported",
+      within(screen.getByTestId("association-row-ikev2")).getByLabelText(
+        "IKEv2: Executable",
       ),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("association-row-ipsec")).getByLabelText(
+        "IPsec: Unsupported",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("association-row-ipsec")).getByTitle(
+        /Windows RAS cannot safely implement this IPsec profile/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("marks every associated provider unsupported when capability loading fails", async () => {
+    capabilityMocks.load.mockRejectedValue(new Error("malformed response"));
+    render(
+      <AssociationsTab
+        mgr={manager([
+          connection("ikev2", "IKEv2 target", {
+            security: {
+              tunnelChain: [
+                {
+                  id: "ike-layer",
+                  type: "ikev2",
+                  enabled: true,
+                  vpn: { configId: "ike-office" },
+                },
+              ],
+            },
+          }),
+        ])}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("association-row-ikev2")).getByLabelText(
+          "IKEv2: Unsupported",
+        ),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("searches, filters, and sorts association rows", () => {

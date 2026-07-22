@@ -4,6 +4,7 @@ import type {
   TunnelType,
 } from "../../types/connection/connection";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
+import { getVpnProviderLabel } from "../../utils/network/vpnProviderCatalog";
 
 /** Chain metadata managed alongside layers. */
 export interface ChainMetadata {
@@ -221,6 +222,16 @@ function createDefaultLayer(type: TunnelType): TunnelChainLayer {
         name: "ZeroTier",
         vpn: { configId: "" },
         mesh: {},
+      };
+    case "pptp":
+    case "l2tp":
+    case "ikev2":
+    case "ipsec":
+    case "sstp":
+      return {
+        ...base,
+        name: getVpnProviderLabel(type),
+        vpn: { configId: "" },
       };
     case "shadowsocks":
       return {

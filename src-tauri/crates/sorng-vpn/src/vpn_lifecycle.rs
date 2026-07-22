@@ -17,10 +17,13 @@ pub fn new_vpn_lease_service_state() -> VpnLeaseServiceState {
     Arc::new(Mutex::new(VpnLeaseRegistry::default()))
 }
 
-/// Single backend feature gate for legacy session associations. This may turn
-/// true only after encrypted profile persistence and restart restoration are
-/// wired for every enabled legacy provider.
-pub const LEGACY_SESSION_PIPELINE_ENABLED: bool = false;
+/// Single backend feature gate for legacy session associations. It remains
+/// explicit so legacy support cannot silently drift away from its persistence
+/// contract. Every enabled legacy provider now uses encrypted profile
+/// persistence with restart restoration; the platform-scoped command
+/// capability matrix still rejects backends that are unsafe on the current
+/// operating system.
+pub const LEGACY_SESSION_PIPELINE_ENABLED: bool = true;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RuntimeVpnType {
@@ -66,10 +69,9 @@ impl RuntimeVpnType {
     }
 
     /// Whether this provider is currently safe to acquire as part of an
-    /// SSH/RDP session path. Legacy providers remain catalogued so the IPC and
-    /// UI can describe them, but must stay fail-closed until their profiles
-    /// are persisted securely and can be restored after an application
-    /// restart.
+    /// SSH/RDP session path. The legacy gate represents the shared persistence
+    /// and lease-runtime contract; the command adapter applies the stricter
+    /// platform capability matrix before any provider operation.
     pub const fn is_session_association_enabled(self) -> bool {
         matches!(
             self,
@@ -803,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_type_catalogues_legacy_candidates_but_keeps_them_disabled() {
+    fn runtime_type_enables_persisted_session_providers_and_rejects_softether() {
         let expected = [
             ("openvpn", RuntimeVpnType::OpenVpn),
             ("wireguard", RuntimeVpnType::WireGuard),
@@ -825,17 +827,13 @@ mod tests {
             RuntimeVpnType::WireGuard,
             RuntimeVpnType::Tailscale,
             RuntimeVpnType::ZeroTier,
-        ] {
-            assert!(vpn_type.is_session_association_enabled());
-        }
-        for vpn_type in [
             RuntimeVpnType::Pptp,
             RuntimeVpnType::L2tp,
             RuntimeVpnType::Ikev2,
             RuntimeVpnType::Ipsec,
             RuntimeVpnType::Sstp,
         ] {
-            assert!(!vpn_type.is_session_association_enabled());
+            assert!(vpn_type.is_session_association_enabled());
         }
         assert_eq!(
             RuntimeVpnType::parse("softether").unwrap_err(),
@@ -1468,14 +1466,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validates_the_whole_path_before_connecting() {
+    async fn rejects_softether_in_the_whole_path_before_connecting() {
         let mut registry = VpnLeaseRegistry::default();
         let mut runtime = MockRuntime::default();
 
         let error = acquire_session_vpn_leases(
             &mut registry,
             "ssh-1",
-            vec![request("openvpn", "corp"), request("pptp", "legacy")],
+            vec![
+                request("openvpn", "corp"),
+                request("softether", "unavailable"),
+            ],
             &mut runtime,
         )
         .await
