@@ -351,13 +351,14 @@ jobs:
             cargo_build_jobs: "1"
             release_lto: "off"
             release_codegen_units: "1"
-            release_opt_level: "1"
+            release_opt_level: "0"
     runs-on: ${{ matrix.os }}
     env:
       # The checked-in Cargo config is tuned for a 200 GB workstation. Linux
-      # additionally disables LLVM optimization after hosted runners were lost
-      # during final workspace codegen. Windows keeps opt-level 1; macOS keeps
-      # the checked-in production release profile.
+      # and Windows disable LLVM optimization in the hosted release matrix:
+      # Linux lost runners during final codegen, while Windows exhausted LLVM
+      # memory at one job and one codegen unit. macOS keeps the checked-in
+      # production release profile.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}

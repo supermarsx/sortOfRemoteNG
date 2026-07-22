@@ -236,7 +236,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       cargo_build_jobs: "1",
       release_lto: "off",
       release_codegen_units: "1",
-      release_opt_level: "1",
+      release_opt_level: "0",
     },
   });
   assert.equal(
@@ -249,22 +249,18 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# additionally disables LLVM optimization after hosted runners were lost\r?\n\s+# during final workspace codegen\. Windows keeps opt-level 1; macOS keeps\r?\n\s+# the checked-in production release profile\./,
+    /# and Windows disable LLVM optimization in the hosted release matrix:\r?\n\s+# Linux lost runners during final codegen, while Windows exhausted LLVM\r?\n\s+# memory at one job and one codegen unit\. macOS keeps the checked-in\r?\n\s+# production release profile\./,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
-    1,
+    2,
   );
-  assert.match(
-    matrixDefinition,
-    /artifact_id: linux-x86_64[\s\S]*?release_opt_level: "0"/,
-  );
-  assert.doesNotMatch(
-    matrixDefinition.slice(
-      matrixDefinition.indexOf("artifact_id: darwin-aarch64"),
-    ),
-    /release_opt_level: "0"/,
-  );
+  for (const artifactId of ["linux-x86_64", "windows-x86_64"]) {
+    assert.equal(profilesByArtifact[artifactId].release_opt_level, "0");
+  }
+  for (const artifactId of ["darwin-aarch64", "darwin-x86_64"]) {
+    assert.equal(profilesByArtifact[artifactId].release_opt_level, "3");
+  }
   for (const [environmentName, matrixField] of Object.entries({
     CARGO_BUILD_JOBS: "cargo_build_jobs",
     CARGO_PROFILE_RELEASE_LTO: "release_lto",
@@ -547,7 +543,7 @@ test("platform resource inspection is exact and immediately precedes native buil
   assert.match(releaseProfile, /^lto = "thin"$/m);
   assert.match(releaseProfile, /^codegen-units = 1$/m);
   // Cargo's checked-in release profile retains the production default
-  // opt-level (3); only the hosted Linux matrix entry overrides it to 0.
+  // opt-level (3); only hosted Linux and Windows override it to 0.
   assert.doesNotMatch(releaseProfile, /^opt-level\s*=/m);
   assert.doesNotMatch(buildJob, /timeout-minutes:/);
   assert.match(
