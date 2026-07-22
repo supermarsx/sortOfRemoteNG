@@ -206,7 +206,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       cargo_build_jobs: "1",
       release_lto: "off",
       release_codegen_units: "1",
-      release_opt_level: "1",
+      release_opt_level: "0",
     },
     "darwin-aarch64": {
       os: "macos-15",
@@ -249,7 +249,21 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# Windows use one Cargo job plus one codegen unit, capping peak concurrent\r?\n\s+# LLVM codegen contexts at one\. Keep the macOS release profile unchanged\./,
+    /# additionally disables LLVM optimization after hosted runners were lost\r?\n\s+# during final workspace codegen\. Windows keeps opt-level 1; macOS keeps\r?\n\s+# the checked-in production release profile\./,
+  );
+  assert.equal(
+    (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
+    1,
+  );
+  assert.match(
+    matrixDefinition,
+    /artifact_id: linux-x86_64[\s\S]*?release_opt_level: "0"/,
+  );
+  assert.doesNotMatch(
+    matrixDefinition.slice(
+      matrixDefinition.indexOf("artifact_id: darwin-aarch64"),
+    ),
+    /release_opt_level: "0"/,
   );
   for (const [environmentName, matrixField] of Object.entries({
     CARGO_BUILD_JOBS: "cargo_build_jobs",
@@ -532,6 +546,8 @@ test("platform resource inspection is exact and immediately precedes native buil
   );
   assert.match(releaseProfile, /^lto = "thin"$/m);
   assert.match(releaseProfile, /^codegen-units = 1$/m);
+  // Cargo's checked-in release profile retains the production default
+  // opt-level (3); only the hosted Linux matrix entry overrides it to 0.
   assert.doesNotMatch(releaseProfile, /^opt-level\s*=/m);
   assert.doesNotMatch(buildJob, /timeout-minutes:/);
   assert.match(
