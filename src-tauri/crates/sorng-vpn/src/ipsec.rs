@@ -25,6 +25,41 @@ pub struct IPsecConnection {
     pub process_id: Option<u32>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct IPsecSecretPresence {
+    pub psk: bool,
+    pub private_key: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IPsecConnectionView {
+    #[serde(flatten)]
+    pub connection: IPsecConnection,
+    pub secret_presence: IPsecSecretPresence,
+}
+
+impl IPsecConnection {
+    pub fn into_redacted_view(mut self) -> IPsecConnectionView {
+        let secret_presence = IPsecSecretPresence {
+            psk: self.config.psk.is_some(),
+            private_key: self.config.private_key.is_some(),
+        };
+        self.config.psk = None;
+        self.config.private_key = None;
+        IPsecConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct IPsecSecretMutation {
+    pub clear_psk: bool,
+    pub clear_private_key: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IPsecStatus {
     Disconnected,
@@ -113,14 +148,16 @@ impl IPsecService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("IPsec connection not found".to_string());
+        }
+        if self.probe_connection_active(connection_id).await? {
+            return Ok(());
+        }
         let connection = self
             .connections
             .get_mut(connection_id)
-            .ok_or_else(|| "IPsec connection not found".to_string())?;
-
-        if let IPsecStatus::Connected = connection.status {
-            return Ok(());
-        }
+            .expect("checked above");
 
         connection.status = IPsecStatus::Connecting;
         let config = connection.config.clone();
@@ -155,57 +192,20 @@ impl IPsecService {
 
         #[cfg(not(windows))]
         {
-            // Linux: use strongSwan
             let conn_name = format!("sorng_ipsec_{}", &connection_id[..8]);
-            let auth_method = config.auth_method.as_deref().unwrap_or("psk");
-
-            let strongswan_auth = match auth_method {
-                "certificate" => "pubkey",
-                "eap" => "eap-mschapv2",
-                _ => "psk",
-            };
-
-            strongswan_helper::write_ipsec_conf(
-                &conn_name,
-                &config.server,
-                None,
-                None,
-                strongswan_auth,
-                config.phase1_proposals.as_deref(),
-                config.phase2_proposals.as_deref(),
-            )
-            .await?;
-
-            // Write secrets based on auth type
-            match auth_method {
-                "psk" => {
-                    if let Some(psk) = &config.psk {
-                        strongswan_helper::write_ipsec_secrets(
-                            &conn_name,
-                            None,
-                            &config.server,
-                            "PSK",
-                            psk,
-                        )
-                        .await?;
-                    }
-                }
-                "certificate" => {
-                    if let Some(key_path) = &config.private_key {
-                        strongswan_helper::write_ipsec_secrets(
-                            &conn_name,
-                            None,
-                            &config.server,
-                            "RSA",
-                            key_path,
-                        )
-                        .await?;
-                    }
-                }
-                _ => {}
+            if let Err(setup_error) = setup_strongswan_connection(&conn_name, &config).await {
+                let cleanup_error = strongswan_helper::cleanup_ipsec_files(&conn_name)
+                    .await
+                    .err();
+                let error = compose_setup_cleanup_error(setup_error, cleanup_error);
+                connection.status = IPsecStatus::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
             }
-
-            strongswan_helper::ipsec_up(&conn_name).await?;
             connection.remote_ip = Some(config.server.clone());
         }
 
@@ -232,25 +232,27 @@ impl IPsecService {
             .get_mut(connection_id)
             .ok_or_else(|| "IPsec connection not found".to_string())?;
 
-        if let IPsecStatus::Disconnected = connection.status {
-            return Ok(());
-        }
-
         connection.status = IPsecStatus::Disconnecting;
 
         #[cfg(windows)]
-        {
-            if let Some(entry_name) = &connection.ras_entry_name {
-                let _ = ras_helper::rasdial_disconnect(entry_name).await;
-                let _ = ras_helper::remove_ras_entry(entry_name).await;
-            }
-        }
+        let teardown_result =
+            ras_helper::teardown_ras_entry(&format!("SoRNG_IPsec_{}", &connection_id[..8])).await;
 
         #[cfg(not(windows))]
-        {
-            let conn_name = format!("sorng_ipsec_{}", &connection_id[..8]);
-            let _ = strongswan_helper::ipsec_down(&conn_name).await;
-            let _ = strongswan_helper::cleanup_ipsec_files(&conn_name).await;
+        let teardown_result = strongswan_helper::teardown_ipsec_connection(&format!(
+            "sorng_ipsec_{}",
+            &connection_id[..8]
+        ))
+        .await;
+
+        if let Err(error) = teardown_result {
+            connection.status = IPsecStatus::Error(error.clone());
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": error }),
+            );
+            return Err(error);
         }
 
         connection.status = IPsecStatus::Disconnected;
@@ -277,10 +279,8 @@ impl IPsecService {
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if let Some(connection) = self.connections.get(connection_id) {
-            if let IPsecStatus::Connected = connection.status {
-                self.disconnect(connection_id).await?;
-            }
+        if self.connections.contains_key(connection_id) {
+            self.disconnect(connection_id).await?;
         }
 
         self.connections.remove(connection_id);
@@ -293,6 +293,29 @@ impl IPsecService {
             .get(connection_id)
             .ok_or_else(|| "IPsec connection not found".to_string())?;
         Ok(connection.status.clone())
+    }
+
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("IPsec connection not found".to_string());
+        }
+        #[cfg(windows)]
+        let active =
+            ras_helper::is_ras_active(&format!("SoRNG_IPsec_{}", &connection_id[..8])).await?;
+        #[cfg(not(windows))]
+        let active =
+            strongswan_helper::is_ipsec_active(&format!("sorng_ipsec_{}", &connection_id[..8]))
+                .await?;
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .expect("checked above");
+        connection.status = if active {
+            IPsecStatus::Connected
+        } else {
+            IPsecStatus::Disconnected
+        };
+        Ok(active)
     }
 
     pub async fn update_connection(
@@ -314,4 +337,98 @@ impl IPsecService {
         }
         Ok(())
     }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<IPsecConfig>,
+        secret_mutation: IPsecSecretMutation,
+    ) -> Result<(), String> {
+        if config.is_none() && (secret_mutation.clear_psk || secret_mutation.clear_private_key) {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "IPsec connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_psk {
+                current.psk = None;
+            }
+            if secret_mutation.clear_private_key {
+                current.private_key = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "IPsec connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.psk,
+                &mut submitted.psk,
+                secret_mutation.clear_psk,
+                "IPsec PSK",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.private_key,
+                &mut submitted.private_key,
+                secret_mutation.clear_private_key,
+                "IPsec private key",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
+    }
+}
+
+#[cfg(not(windows))]
+fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String>) -> String {
+    match cleanup_error {
+        Some(cleanup_error) => {
+            format!("{setup_error}; additionally failed to roll back VPN setup: {cleanup_error}")
+        }
+        None => setup_error,
+    }
+}
+
+#[cfg(not(windows))]
+async fn setup_strongswan_connection(conn_name: &str, config: &IPsecConfig) -> Result<(), String> {
+    match config.auth_method.as_deref().unwrap_or("psk") {
+        "psk" => {}
+        "certificate" => {
+            return Err(
+                "Legacy IPsec certificate authentication is disabled because certificate and CA staging is not implemented safely"
+                    .to_string(),
+            )
+        }
+        "eap" => {
+            return Err(
+                "Legacy IPsec EAP requires an explicit identity and credential model; use an IKEv2 profile instead"
+                    .to_string(),
+            )
+        }
+        _ => return Err("Unsupported legacy IPsec authentication method".to_string()),
+    }
+    let psk = config
+        .psk
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Legacy IPsec PSK authentication requires a non-empty PSK".to_string())?;
+
+    strongswan_helper::write_ipsec_conf(strongswan_helper::IpsecConnectionSpec {
+        conn_name,
+        server: &config.server,
+        local_id: None,
+        remote_id: None,
+        local_auth: "psk",
+        remote_auth: "psk",
+        eap_identity: None,
+        phase1: config.phase1_proposals.as_deref(),
+        phase2: config.phase2_proposals.as_deref(),
+    })
+    .await?;
+    strongswan_helper::write_ipsec_secrets(conn_name, None, &config.server, "PSK", psk).await?;
+    strongswan_helper::ipsec_up_transactional(conn_name).await
 }

@@ -1,8 +1,9 @@
-use crate::ikev2::IKEv2Config;
-use crate::ipsec::IPsecConfig;
-use crate::l2tp::L2TPConfig;
-use crate::pptp::PPTPConfig;
-use crate::sstp::SSTPConfig;
+use crate::ikev2::{IKEv2Config, IKEv2Connection, IKEv2Status};
+use crate::ipsec::{IPsecConfig, IPsecConnection, IPsecStatus};
+use crate::l2tp::{L2TPConfig, L2TPConnection, L2TPStatus};
+use crate::pptp::{PPTPConfig, PPTPConnection, PPTPStatus};
+use crate::sstp::{SSTPConfig, SSTPConnection, SSTPStatus};
+use chrono::Utc;
 use serde_json::json;
 
 #[test]
@@ -137,4 +138,114 @@ fn legacy_vpn_configs_default_custom_options_but_reject_camel_case_drift() {
     }))
     .unwrap_err();
     assert!(error.to_string().contains("customOptions"));
+}
+
+#[test]
+fn legacy_vpn_views_redact_every_secret_and_report_presence() {
+    let now = Utc::now();
+    let ikev2_config: IKEv2Config = serde_json::from_value(json!({
+        "server": "ike.example.com", "password": "sentinel-password",
+        "private_key": "sentinel-private-key"
+    }))
+    .unwrap();
+    let ikev2 = IKEv2Connection {
+        id: "ike".into(),
+        name: "IKE".into(),
+        config: ikev2_config,
+        status: IKEv2Status::Disconnected,
+        created_at: now,
+        connected_at: None,
+        local_ip: None,
+        remote_ip: None,
+        ras_entry_name: None,
+        process_id: None,
+    }
+    .into_redacted_view();
+    assert!(ikev2.connection.config.password.is_none());
+    assert!(ikev2.connection.config.private_key.is_none());
+    assert!(ikev2.secret_presence.password && ikev2.secret_presence.private_key);
+
+    let ipsec_config: IPsecConfig = serde_json::from_value(json!({
+        "server": "ipsec.example.com", "psk": "sentinel-psk",
+        "private_key": "sentinel-private-key"
+    }))
+    .unwrap();
+    let ipsec = IPsecConnection {
+        id: "ipsec".into(),
+        name: "IPsec".into(),
+        config: ipsec_config,
+        status: IPsecStatus::Disconnected,
+        created_at: now,
+        connected_at: None,
+        local_ip: None,
+        remote_ip: None,
+        ras_entry_name: None,
+        process_id: None,
+    }
+    .into_redacted_view();
+    assert!(ipsec.connection.config.psk.is_none());
+    assert!(ipsec.connection.config.private_key.is_none());
+    assert!(ipsec.secret_presence.psk && ipsec.secret_presence.private_key);
+
+    let l2tp_config: L2TPConfig = serde_json::from_value(json!({
+        "server": "l2tp.example.com", "password": "sentinel-password",
+        "psk": "sentinel-psk"
+    }))
+    .unwrap();
+    let l2tp = L2TPConnection {
+        id: "l2tp".into(),
+        name: "L2TP".into(),
+        config: l2tp_config,
+        status: L2TPStatus::Disconnected,
+        created_at: now,
+        connected_at: None,
+        local_ip: None,
+        remote_ip: None,
+        ras_entry_name: None,
+        process_id: None,
+    }
+    .into_redacted_view();
+    assert!(l2tp.connection.config.password.is_none());
+    assert!(l2tp.connection.config.psk.is_none());
+    assert!(l2tp.secret_presence.password && l2tp.secret_presence.psk);
+
+    let pptp_config: PPTPConfig = serde_json::from_value(json!({
+        "server": "pptp.example.com", "password": "sentinel-password"
+    }))
+    .unwrap();
+    let pptp = PPTPConnection {
+        id: "pptp".into(),
+        name: "PPTP".into(),
+        config: pptp_config,
+        status: PPTPStatus::Disconnected,
+        created_at: now,
+        connected_at: None,
+        local_ip: None,
+        remote_ip: None,
+        ras_entry_name: None,
+        process_id: None,
+    }
+    .into_redacted_view();
+    assert!(pptp.connection.config.password.is_none());
+    assert!(pptp.secret_presence.password);
+
+    let sstp_config: SSTPConfig = serde_json::from_value(json!({
+        "server": "sstp.example.com", "password": "sentinel-password"
+    }))
+    .unwrap();
+    let sstp = SSTPConnection {
+        id: "sstp".into(),
+        name: "SSTP".into(),
+        config: sstp_config,
+        status: SSTPStatus::Disconnected,
+        created_at: now,
+        connected_at: None,
+        local_ip: None,
+        remote_ip: None,
+        ras_entry_name: None,
+        process_id: None,
+    }
+    .into_redacted_view();
+    assert!(sstp.connection.config.password.is_none());
+    assert!(sstp.secret_presence.password);
 }

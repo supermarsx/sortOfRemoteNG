@@ -7,7 +7,12 @@ import {
 } from "../../utils/network/vpnProviderCatalog";
 import {
   isMaskedSecretPlaceholder,
+  type IkeV2SecretMutation,
+  type IpsecSecretMutation,
+  type L2tpSecretMutation,
   type OpenVpnSecretMutation,
+  type PptpSecretMutation,
+  type SstpSecretMutation,
   type TailscaleSecretMutation,
   type VpnSecretPresence,
   type WireGuardSecretMutation,
@@ -29,6 +34,7 @@ export type VpnEditorSecretField =
   | "inlineConfig"
   | "clientKey"
   | "privateKey"
+  | "psk"
   | "presharedKey"
   | "authKey"
   | "identitySecret"
@@ -519,6 +525,11 @@ export function useVpnEditor(
     | WireGuardSecretMutation
     | TailscaleSecretMutation
     | ZeroTierSecretMutation
+    | IkeV2SecretMutation
+    | IpsecSecretMutation
+    | L2tpSecretMutation
+    | PptpSecretMutation
+    | SstpSecretMutation
     | undefined => {
     switch (vpnType) {
       case "openvpn": {
@@ -546,6 +557,34 @@ export function useVpnEditor(
         const mutation: ZeroTierSecretMutation = {
           clearIdentitySecret: secretClears.identitySecret === true,
           clearAuthtokenSecret: secretClears.authtokenSecret === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "ikev2": {
+        const mutation: IkeV2SecretMutation = {
+          clearPassword: secretClears.password === true,
+          clearPrivateKey: secretClears.privateKey === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "ipsec": {
+        const mutation: IpsecSecretMutation = {
+          clearPsk: secretClears.psk === true,
+          clearPrivateKey: secretClears.privateKey === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "l2tp": {
+        const mutation: L2tpSecretMutation = {
+          clearPassword: secretClears.password === true,
+          clearPsk: secretClears.psk === true,
+        };
+        return Object.values(mutation).some(Boolean) ? mutation : undefined;
+      }
+      case "pptp":
+      case "sstp": {
+        const mutation: PptpSecretMutation | SstpSecretMutation = {
+          clearPassword: secretClears.password === true,
         };
         return Object.values(mutation).some(Boolean) ? mutation : undefined;
       }
@@ -644,6 +683,7 @@ export function useVpnEditor(
               editingId,
               name.trim(),
               typedConfig as any,
+              secretMutation as PptpSecretMutation | undefined,
             );
             break;
           case "l2tp":
@@ -651,6 +691,7 @@ export function useVpnEditor(
               editingId,
               name.trim(),
               typedConfig as any,
+              secretMutation as L2tpSecretMutation | undefined,
             );
             break;
           case "ikev2":
@@ -658,6 +699,7 @@ export function useVpnEditor(
               editingId,
               name.trim(),
               typedConfig as any,
+              secretMutation as IkeV2SecretMutation | undefined,
             );
             break;
           case "ipsec":
@@ -665,6 +707,7 @@ export function useVpnEditor(
               editingId,
               name.trim(),
               typedConfig as any,
+              secretMutation as IpsecSecretMutation | undefined,
             );
             break;
           case "sstp":
@@ -672,6 +715,7 @@ export function useVpnEditor(
               editingId,
               name.trim(),
               typedConfig as any,
+              secretMutation as SstpSecretMutation | undefined,
             );
             break;
         }
@@ -772,9 +816,9 @@ export function useVpnEditor(
 }
 
 /** Convert persisted application VPN models into the deliberately flat form
- * state consumed by VpnEditor. Hidden values, including legacy unsupported
- * ones, stay on the form object so an unrelated edit cannot discard them
- * without explicit confirmation. */
+ * state consumed by VpnEditor. Unsupported non-secret values stay on the form
+ * so unrelated edits cannot discard them; secret values are always removed
+ * and represented only by the separate presence/clear state. */
 export function toVpnEditorFormConfig(
   vpnType: VpnEditorType,
   source: Record<string, any>,
@@ -830,6 +874,8 @@ export function toVpnEditorFormConfig(
     case "l2tp":
       return {
         ...source,
+        password: undefined,
+        psk: undefined,
         pppMru: source.pppSettings?.mru,
         pppMtu: source.pppSettings?.mtu,
         lcpEchoInterval: source.pppSettings?.lcpEchoInterval,
@@ -853,11 +899,24 @@ export function toVpnEditorFormConfig(
         customOptions: joinLines(source.customOptions),
       };
     case "ikev2":
-    case "sstp":
-    case "pptp":
+      return {
+        ...source,
+        password: undefined,
+        privateKey: undefined,
+        customOptions: joinLines(source.customOptions),
+      };
     case "ipsec":
       return {
         ...source,
+        psk: undefined,
+        privateKey: undefined,
+        customOptions: joinLines(source.customOptions),
+      };
+    case "sstp":
+    case "pptp":
+      return {
+        ...source,
+        password: undefined,
         customOptions: joinLines(source.customOptions),
       };
     default:
@@ -885,6 +944,7 @@ function isVpnEditorSecretField(value: string): value is VpnEditorSecretField {
     "inlineConfig",
     "clientKey",
     "privateKey",
+    "psk",
     "presharedKey",
     "authKey",
     "identitySecret",
@@ -916,6 +976,21 @@ function normalizeEditorSecretPresence(
         identitySecret: source.identitySecret === true,
         authtokenSecret: source.authtokenSecret === true,
       };
+    case "ikev2":
+      return {
+        password: source.password === true,
+        privateKey: source.privateKey === true,
+      };
+    case "ipsec":
+      return {
+        psk: source.psk === true,
+        privateKey: source.privateKey === true,
+      };
+    case "l2tp":
+      return { password: source.password === true, psk: source.psk === true };
+    case "pptp":
+    case "sstp":
+      return { password: source.password === true };
     default:
       return {};
   }
@@ -944,6 +1019,24 @@ function inferEditorSecretPresence(
         identitySecret: nonEmptyString(config.identity?.secret),
         authtokenSecret: nonEmptyString(config.authtokenSecret),
       };
+    case "ikev2":
+      return {
+        password: nonEmptyString(config.password),
+        privateKey: nonEmptyString(config.privateKey),
+      };
+    case "ipsec":
+      return {
+        psk: nonEmptyString(config.psk),
+        privateKey: nonEmptyString(config.privateKey),
+      };
+    case "l2tp":
+      return {
+        password: nonEmptyString(config.password),
+        psk: nonEmptyString(config.psk),
+      };
+    case "pptp":
+    case "sstp":
+      return { password: nonEmptyString(config.password) };
     default:
       return {};
   }
@@ -974,6 +1067,7 @@ function getSecretEditorValidationError(
     "inlineConfig",
     "clientKey",
     "privateKey",
+    "psk",
     "presharedKey",
     "authKey",
     "identitySecret",

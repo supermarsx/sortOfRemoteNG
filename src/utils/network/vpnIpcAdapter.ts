@@ -41,6 +41,34 @@ export interface ZeroTierSecretPresence {
   authtokenSecret: boolean;
 }
 
+export interface IkeV2SecretPresence {
+  [key: string]: boolean;
+  password: boolean;
+  privateKey: boolean;
+}
+
+export interface SstpSecretPresence {
+  [key: string]: boolean;
+  password: boolean;
+}
+
+export interface L2tpSecretPresence {
+  [key: string]: boolean;
+  password: boolean;
+  psk: boolean;
+}
+
+export interface PptpSecretPresence {
+  [key: string]: boolean;
+  password: boolean;
+}
+
+export interface IpsecSecretPresence {
+  [key: string]: boolean;
+  psk: boolean;
+  privateKey: boolean;
+}
+
 export interface OpenVpnSecretMutation {
   clearPassword?: boolean;
   clearInlineConfig?: boolean;
@@ -61,11 +89,39 @@ export interface ZeroTierSecretMutation {
   clearAuthtokenSecret?: boolean;
 }
 
+export interface IkeV2SecretMutation {
+  clearPassword?: boolean;
+  clearPrivateKey?: boolean;
+}
+
+export interface SstpSecretMutation {
+  clearPassword?: boolean;
+}
+
+export interface L2tpSecretMutation {
+  clearPassword?: boolean;
+  clearPsk?: boolean;
+}
+
+export interface PptpSecretMutation {
+  clearPassword?: boolean;
+}
+
+export interface IpsecSecretMutation {
+  clearPsk?: boolean;
+  clearPrivateKey?: boolean;
+}
+
 export type VpnSecretPresence =
   | OpenVpnSecretPresence
   | WireGuardSecretPresence
   | TailscaleSecretPresence
-  | ZeroTierSecretPresence;
+  | ZeroTierSecretPresence
+  | IkeV2SecretPresence
+  | SstpSecretPresence
+  | L2tpSecretPresence
+  | PptpSecretPresence
+  | IpsecSecretPresence;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -116,7 +172,10 @@ export interface ZeroTierIpcConnection {
   secretPresence: ZeroTierSecretPresence;
 }
 
-export interface LegacyVpnIpcConnection<TConfig> {
+export interface LegacyVpnIpcConnection<
+  TConfig,
+  TPresence extends VpnSecretPresence = VpnSecretPresence,
+> {
   id: string;
   name: string;
   config: TConfig;
@@ -125,6 +184,7 @@ export interface LegacyVpnIpcConnection<TConfig> {
   connectedAt?: Date;
   localIp?: string;
   remoteIp?: string;
+  secretPresence: TPresence;
 }
 
 /**
@@ -414,20 +474,93 @@ export function toZeroTierIpcSecretMutation(
   return anyTrue(result) ? result : undefined;
 }
 
+export function toIkeV2IpcSecretMutation(
+  mutation: IkeV2SecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_password: mutation.clearPassword === true,
+    clear_private_key: mutation.clearPrivateKey === true,
+  };
+  rejectReplaceAndClear(config, [
+    ["password", result.clear_password, "IKEv2 password"],
+    ["private_key", result.clear_private_key, "IKEv2 private key"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toSstpIpcSecretMutation(
+  mutation: SstpSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = { clear_password: mutation.clearPassword === true };
+  rejectReplaceAndClear(config, [
+    ["password", result.clear_password, "SSTP password"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toL2tpIpcSecretMutation(
+  mutation: L2tpSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_password: mutation.clearPassword === true,
+    clear_psk: mutation.clearPsk === true,
+  };
+  rejectReplaceAndClear(config, [
+    ["password", result.clear_password, "L2TP password"],
+    ["psk", result.clear_psk, "L2TP PSK"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toPptpIpcSecretMutation(
+  mutation: PptpSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = { clear_password: mutation.clearPassword === true };
+  rejectReplaceAndClear(config, [
+    ["password", result.clear_password, "PPTP password"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
+export function toIpsecIpcSecretMutation(
+  mutation: IpsecSecretMutation | undefined,
+  config?: UnknownRecord,
+): UnknownRecord | undefined {
+  if (!mutation) return undefined;
+  const result = {
+    clear_psk: mutation.clearPsk === true,
+    clear_private_key: mutation.clearPrivateKey === true,
+  };
+  rejectReplaceAndClear(config, [
+    ["psk", result.clear_psk, "IPsec PSK"],
+    ["private_key", result.clear_private_key, "IPsec private key"],
+  ]);
+  return anyTrue(result) ? result : undefined;
+}
+
 export function fromIkeV2IpcConnection(
   value: unknown,
-): LegacyVpnIpcConnection<IKEv2Config> {
+): LegacyVpnIpcConnection<IKEv2Config, IkeV2SecretPresence> {
   const raw = connectionRecord(value, "IKEv2");
   const config = record(raw.config, "IKEv2 config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "IKEv2"),
     config: {
       enabled: true,
       server: requiredString(config.server, "IKEv2 server"),
       username: optionalString(config.username) ?? "",
-      password: optionalString(config.password),
+      password: undefined,
       certificate: optionalString(config.certificate),
-      privateKey: optionalString(config.private_key),
+      privateKey: undefined,
       caCertificate: optionalString(config.ca_certificate),
       eapMethod: optionalEnum(config.eap_method, ["mschapv2", "tls", "peap"]),
       phase1Algorithms: optionalString(config.phase1_algorithms),
@@ -440,14 +573,24 @@ export function fromIkeV2IpcConnection(
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      password:
+        optionalBoolean(presence.password) === true ||
+        hasNonEmpty(config.password),
+      privateKey:
+        optionalBoolean(presence.private_key) === true ||
+        optionalBoolean(presence.privateKey) === true ||
+        hasNonEmpty(config.private_key),
+    },
   };
 }
 
 export function fromSstpIpcConnection(
   value: unknown,
-): LegacyVpnIpcConnection<SSTPConfig> {
+): LegacyVpnIpcConnection<SSTPConfig, SstpSecretPresence> {
   const raw = connectionRecord(value, "SSTP");
   const config = record(raw.config, "SSTP config");
+  const presence = secretPresenceRecord(value, raw);
   const proxyHost = optionalNonEmptyString(config.proxy_host);
   return {
     ...commonConnection(raw, "SSTP"),
@@ -455,7 +598,7 @@ export function fromSstpIpcConnection(
       enabled: true,
       server: requiredString(config.server, "SSTP server"),
       username: optionalString(config.username) ?? "",
-      password: optionalString(config.password),
+      password: undefined,
       domain: optionalString(config.domain),
       certificate: optionalString(config.certificate),
       caCertificate: optionalString(config.ca_certificate),
@@ -472,22 +615,28 @@ export function fromSstpIpcConnection(
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      password:
+        optionalBoolean(presence.password) === true ||
+        hasNonEmpty(config.password),
+    },
   };
 }
 
 export function fromL2tpIpcConnection(
   value: unknown,
-): LegacyVpnIpcConnection<L2TPConfig> {
+): LegacyVpnIpcConnection<L2TPConfig, L2tpSecretPresence> {
   const raw = connectionRecord(value, "L2TP");
   const config = record(raw.config, "L2TP config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "L2TP"),
     config: {
       enabled: true,
       server: requiredString(config.server, "L2TP server"),
       username: optionalString(config.username) ?? "",
-      password: optionalString(config.password) ?? "",
-      psk: optionalString(config.psk),
+      password: "",
+      psk: undefined,
       pppSettings: {
         mru: optionalNumber(config.mru),
         mtu: optionalNumber(config.mtu),
@@ -516,21 +665,28 @@ export function fromL2tpIpcConnection(
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      password:
+        optionalBoolean(presence.password) === true ||
+        hasNonEmpty(config.password),
+      psk: optionalBoolean(presence.psk) === true || hasNonEmpty(config.psk),
+    },
   };
 }
 
 export function fromPptpIpcConnection(
   value: unknown,
-): LegacyVpnIpcConnection<PPTPConfig> {
+): LegacyVpnIpcConnection<PPTPConfig, PptpSecretPresence> {
   const raw = connectionRecord(value, "PPTP");
   const config = record(raw.config, "PPTP config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "PPTP"),
     config: {
       enabled: true,
       server: requiredString(config.server, "PPTP server"),
       username: optionalString(config.username) ?? "",
-      password: optionalString(config.password) ?? "",
+      password: "",
       domain: optionalString(config.domain),
       requireMppe: optionalBoolean(config.require_mppe),
       mppeStateful: optionalBoolean(config.mppe_stateful),
@@ -546,14 +702,20 @@ export function fromPptpIpcConnection(
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      password:
+        optionalBoolean(presence.password) === true ||
+        hasNonEmpty(config.password),
+    },
   };
 }
 
 export function fromIpsecIpcConnection(
   value: unknown,
-): LegacyVpnIpcConnection<IPsecConfig> {
+): LegacyVpnIpcConnection<IPsecConfig, IpsecSecretPresence> {
   const raw = connectionRecord(value, "IPsec");
   const config = record(raw.config, "IPsec config");
+  const presence = secretPresenceRecord(value, raw);
   return {
     ...commonConnection(raw, "IPsec"),
     config: {
@@ -564,9 +726,9 @@ export function fromIpsecIpcConnection(
         "certificate",
         "eap",
       ]),
-      psk: optionalString(config.psk),
+      psk: undefined,
       certificate: optionalString(config.certificate),
-      privateKey: optionalString(config.private_key),
+      privateKey: undefined,
       caCertificate: optionalString(config.ca_certificate),
       phase1Proposals: optionalString(config.phase1_proposals),
       phase2Proposals: optionalString(config.phase2_proposals),
@@ -578,6 +740,13 @@ export function fromIpsecIpcConnection(
     },
     localIp: optionalString(raw.local_ip),
     remoteIp: optionalString(raw.remote_ip),
+    secretPresence: {
+      psk: optionalBoolean(presence.psk) === true || hasNonEmpty(config.psk),
+      privateKey:
+        optionalBoolean(presence.private_key) === true ||
+        optionalBoolean(presence.privateKey) === true ||
+        hasNonEmpty(config.private_key),
+    },
   };
 }
 

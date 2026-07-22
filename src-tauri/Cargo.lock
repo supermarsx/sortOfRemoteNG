@@ -12757,6 +12757,7 @@ dependencies = [
  "defguard_wireguard_rs",
  "futures",
  "futures-util",
+ "libc",
  "log",
  "md-5 0.10.6",
  "proptest",

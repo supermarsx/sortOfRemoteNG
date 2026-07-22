@@ -73,6 +73,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_Security",
 ] }
 
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 rcgen = { version = "0.12", features = ["pem"] }
 # t4-e12: property-based / fuzz tests for the SoftEther PACK codec.

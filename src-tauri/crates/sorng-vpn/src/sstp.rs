@@ -1,5 +1,3 @@
-#[cfg(not(windows))]
-use crate::platform;
 #[cfg(windows)]
 use crate::ras_helper;
 use chrono::{DateTime, Utc};
@@ -23,6 +21,37 @@ pub struct SSTPConnection {
     pub remote_ip: Option<String>,
     pub ras_entry_name: Option<String>,
     pub process_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct SSTPSecretPresence {
+    pub password: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SSTPConnectionView {
+    #[serde(flatten)]
+    pub connection: SSTPConnection,
+    pub secret_presence: SSTPSecretPresence,
+}
+
+impl SSTPConnection {
+    pub fn into_redacted_view(mut self) -> SSTPConnectionView {
+        let secret_presence = SSTPSecretPresence {
+            password: self.config.password.is_some(),
+        };
+        self.config.password = None;
+        SSTPConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SSTPSecretMutation {
+    pub clear_password: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -110,28 +139,34 @@ impl SSTPService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self
-            .connections
-            .get_mut(connection_id)
-            .ok_or_else(|| "SSTP connection not found".to_string())?;
-
-        if let SSTPStatus::Connected = connection.status {
-            return Ok(());
+        if !self.connections.contains_key(connection_id) {
+            return Err("SSTP connection not found".to_string());
         }
-
-        connection.status = SSTPStatus::Connecting;
-        let config = connection.config.clone();
-        #[cfg(windows)]
-        let entry_name = format!("SoRNG_SSTP_{}", &connection_id[..8]);
+        #[cfg(not(windows))]
+        {
+            Err(
+                "SSTP is not enabled on this platform because the backend cannot pass credentials to sstpc without exposing them in process arguments or verify PPP readiness"
+                    .to_string(),
+            )
+        }
 
         #[cfg(windows)]
         {
-            // Create RAS entry with SSTP tunnel type
-            ras_helper::create_ras_entry(&entry_name, &config.server, "Sstp").await?;
+            if self.probe_connection_active(connection_id).await? {
+                return Ok(());
+            }
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("checked above");
+            connection.status = SSTPStatus::Connecting;
+            let config = connection.config.clone();
+            let entry_name = format!("SoRNG_SSTP_{}", &connection_id[..8]);
 
+            // Create the Windows native SSTP entry, then connect via RAS.
+            ras_helper::create_ras_entry(&entry_name, &config.server, "Sstp").await?;
             let username = config.username.as_deref().unwrap_or("");
             let password = config.password.as_deref().unwrap_or("");
-
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = SSTPStatus::Error(e.clone());
@@ -141,69 +176,20 @@ impl SSTPService {
 
             connection.ras_entry_name = Some(entry_name);
             connection.remote_ip = Some(config.server.clone());
+            connection.status = SSTPStatus::Connected;
+            connection.connected_at = Some(Utc::now());
+            let local_ip = connection.local_ip.clone();
+            let remote_ip = connection.remote_ip.clone();
+            self.emit_status(
+                connection_id,
+                "connected",
+                serde_json::json!({
+                    "local_ip": local_ip,
+                    "remote_ip": remote_ip,
+                }),
+            );
+            Ok(())
         }
-
-        #[cfg(not(windows))]
-        {
-            // Linux: use sstpc (sstp-client)
-            let sstpc_binary =
-                platform::resolve_binary("sstpc").map_err(|e| format!("sstpc not found: {}", e))?;
-
-            let mut args = vec!["--server".to_string(), config.server.clone()];
-
-            if let Some(ca) = &config.ca_certificate {
-                args.push("--ca-cert".to_string());
-                args.push(ca.clone());
-            }
-
-            if config.ignore_certificate.unwrap_or(false) {
-                args.push("--cert-warn".to_string());
-            }
-
-            if let Some(proxy_host) = &config.proxy_host {
-                args.push("--proxy".to_string());
-                let proxy_port = config.proxy_port.unwrap_or(8080);
-                args.push(format!("{}:{}", proxy_host, proxy_port));
-            }
-
-            if let Some(username) = &config.username {
-                args.push("--user".to_string());
-                args.push(username.clone());
-            }
-
-            if let Some(password) = &config.password {
-                args.push("--password".to_string());
-                args.push(password.clone());
-            }
-
-            for opt in &config.custom_options {
-                args.push(opt.clone());
-            }
-
-            let child = tokio::process::Command::new(sstpc_binary)
-                .args(&args)
-                .spawn()
-                .map_err(|e| format!("Failed to start sstpc: {}", e))?;
-
-            connection.process_id = child.id();
-            connection.remote_ip = Some(config.server.clone());
-        }
-
-        connection.status = SSTPStatus::Connected;
-        connection.connected_at = Some(Utc::now());
-        let local_ip = connection.local_ip.clone();
-        let remote_ip = connection.remote_ip.clone();
-
-        self.emit_status(
-            connection_id,
-            "connected",
-            serde_json::json!({
-                "local_ip": local_ip,
-                "remote_ip": remote_ip,
-            }),
-        );
-
-        Ok(())
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
@@ -212,28 +198,36 @@ impl SSTPService {
             .get_mut(connection_id)
             .ok_or_else(|| "SSTP connection not found".to_string())?;
 
-        if let SSTPStatus::Disconnected = connection.status {
-            return Ok(());
-        }
-
         connection.status = SSTPStatus::Disconnecting;
 
         #[cfg(windows)]
-        {
-            if let Some(entry_name) = &connection.ras_entry_name {
-                let _ = ras_helper::rasdial_disconnect(entry_name).await;
-                let _ = ras_helper::remove_ras_entry(entry_name).await;
-            }
-        }
+        let teardown_result =
+            ras_helper::teardown_ras_entry(&format!("SoRNG_SSTP_{}", &connection_id[..8])).await;
 
         #[cfg(not(windows))]
-        {
+        let teardown_result = {
             if let Some(pid) = connection.process_id {
-                let _ = tokio::process::Command::new("kill")
+                let status = tokio::process::Command::new("kill")
                     .arg(pid.to_string())
                     .status()
                     .await;
+                match status {
+                    Ok(status) if status.success() => Ok(()),
+                    _ => Err("Failed to stop the SSTP process".to_string()),
+                }
+            } else {
+                Ok(())
             }
+        };
+
+        if let Err(error) = teardown_result {
+            connection.status = SSTPStatus::Error(error.clone());
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": error }),
+            );
+            return Err(error);
         }
 
         connection.status = SSTPStatus::Disconnected;
@@ -260,10 +254,9 @@ impl SSTPService {
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if let Some(connection) = self.connections.get(connection_id) {
-            if let SSTPStatus::Connected = connection.status {
-                self.disconnect(connection_id).await?;
-            }
+        #[cfg(windows)]
+        if self.connections.contains_key(connection_id) {
+            self.disconnect(connection_id).await?;
         }
 
         self.connections.remove(connection_id);
@@ -276,6 +269,29 @@ impl SSTPService {
             .get(connection_id)
             .ok_or_else(|| "SSTP connection not found".to_string())?;
         Ok(connection.status.clone())
+    }
+
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("SSTP connection not found".to_string());
+        }
+        #[cfg(not(windows))]
+        return Err("SSTP activity probing is unavailable on this platform".to_string());
+        #[cfg(windows)]
+        {
+            let active =
+                ras_helper::is_ras_active(&format!("SoRNG_SSTP_{}", &connection_id[..8])).await?;
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("checked above");
+            connection.status = if active {
+                SSTPStatus::Connected
+            } else {
+                SSTPStatus::Disconnected
+            };
+            Ok(active)
+        }
     }
 
     pub async fn update_connection(
@@ -296,5 +312,38 @@ impl SSTPService {
             connection.config = new_config;
         }
         Ok(())
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<SSTPConfig>,
+        secret_mutation: SSTPSecretMutation,
+    ) -> Result<(), String> {
+        if config.is_none() && secret_mutation.clear_password {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "SSTP connection not found".to_string())?
+                .config
+                .clone();
+            current.password = None;
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "SSTP connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.password,
+                &mut submitted.password,
+                secret_mutation.clear_password,
+                "SSTP password",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
     }
 }

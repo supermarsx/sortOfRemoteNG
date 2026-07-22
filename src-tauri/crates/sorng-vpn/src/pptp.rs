@@ -1,5 +1,3 @@
-#[cfg(not(windows))]
-use crate::platform;
 #[cfg(windows)]
 use crate::ras_helper;
 use chrono::{DateTime, Utc};
@@ -23,6 +21,37 @@ pub struct PPTPConnection {
     pub remote_ip: Option<String>,
     pub ras_entry_name: Option<String>,
     pub process_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct PPTPSecretPresence {
+    pub password: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PPTPConnectionView {
+    #[serde(flatten)]
+    pub connection: PPTPConnection,
+    pub secret_presence: PPTPSecretPresence,
+}
+
+impl PPTPConnection {
+    pub fn into_redacted_view(mut self) -> PPTPConnectionView {
+        let secret_presence = PPTPSecretPresence {
+            password: self.config.password.is_some(),
+        };
+        self.config.password = None;
+        PPTPConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct PPTPSecretMutation {
+    pub clear_password: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -115,28 +144,34 @@ impl PPTPService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
-        let connection = self
-            .connections
-            .get_mut(connection_id)
-            .ok_or_else(|| "PPTP connection not found".to_string())?;
-
-        if let PPTPStatus::Connected = connection.status {
-            return Ok(());
+        if !self.connections.contains_key(connection_id) {
+            return Err("PPTP connection not found".to_string());
         }
-
-        connection.status = PPTPStatus::Connecting;
-        let config = connection.config.clone();
-        #[cfg(windows)]
-        let entry_name = format!("SoRNG_PPTP_{}", &connection_id[..8]);
+        #[cfg(not(windows))]
+        {
+            Err(
+                "PPTP is not enabled on this platform because the backend does not own and verify a complete pppd data plane"
+                    .to_string(),
+            )
+        }
 
         #[cfg(windows)]
         {
-            // Create RAS entry and connect via rasdial
-            ras_helper::create_ras_entry(&entry_name, &config.server, "Pptp").await?;
+            if self.probe_connection_active(connection_id).await? {
+                return Ok(());
+            }
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("checked above");
+            connection.status = PPTPStatus::Connecting;
+            let config = connection.config.clone();
+            let entry_name = format!("SoRNG_PPTP_{}", &connection_id[..8]);
 
+            // Create RAS entry and connect through the native RAS API.
+            ras_helper::create_ras_entry(&entry_name, &config.server, "Pptp").await?;
             let username = config.username.as_deref().unwrap_or("");
             let password = config.password.as_deref().unwrap_or("");
-
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = PPTPStatus::Error(e.clone());
@@ -146,55 +181,20 @@ impl PPTPService {
 
             connection.ras_entry_name = Some(entry_name);
             connection.remote_ip = Some(config.server.clone());
+            connection.status = PPTPStatus::Connected;
+            connection.connected_at = Some(Utc::now());
+            let local_ip = connection.local_ip.clone();
+            let remote_ip = connection.remote_ip.clone();
+            self.emit_status(
+                connection_id,
+                "connected",
+                serde_json::json!({
+                    "local_ip": local_ip,
+                    "remote_ip": remote_ip,
+                }),
+            );
+            Ok(())
         }
-
-        #[cfg(not(windows))]
-        {
-            // Linux: use pppd with pptp plugin
-            let pptp_binary =
-                platform::resolve_binary("pptp").map_err(|e| format!("pptp not found: {}", e))?;
-
-            let mut args = vec![config.server.clone()];
-            args.push("--nolaunchpppd".to_string());
-
-            if config.require_mppe.unwrap_or(false) {
-                args.push("require-mppe".to_string());
-            }
-            if config.nobsdcomp.unwrap_or(false) {
-                args.push("nobsdcomp".to_string());
-            }
-            if config.nodeflate.unwrap_or(false) {
-                args.push("nodeflate".to_string());
-            }
-
-            for opt in &config.custom_options {
-                args.push(opt.clone());
-            }
-
-            let child = tokio::process::Command::new(pptp_binary)
-                .args(&args)
-                .spawn()
-                .map_err(|e| format!("Failed to start pptp: {}", e))?;
-
-            connection.process_id = child.id();
-            connection.remote_ip = Some(config.server.clone());
-        }
-
-        connection.status = PPTPStatus::Connected;
-        connection.connected_at = Some(Utc::now());
-        let local_ip = connection.local_ip.clone();
-        let remote_ip = connection.remote_ip.clone();
-
-        self.emit_status(
-            connection_id,
-            "connected",
-            serde_json::json!({
-                "local_ip": local_ip,
-                "remote_ip": remote_ip,
-            }),
-        );
-
-        Ok(())
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
@@ -203,28 +203,36 @@ impl PPTPService {
             .get_mut(connection_id)
             .ok_or_else(|| "PPTP connection not found".to_string())?;
 
-        if let PPTPStatus::Disconnected = connection.status {
-            return Ok(());
-        }
-
         connection.status = PPTPStatus::Disconnecting;
 
         #[cfg(windows)]
-        {
-            if let Some(entry_name) = &connection.ras_entry_name {
-                let _ = ras_helper::rasdial_disconnect(entry_name).await;
-                let _ = ras_helper::remove_ras_entry(entry_name).await;
-            }
-        }
+        let teardown_result =
+            ras_helper::teardown_ras_entry(&format!("SoRNG_PPTP_{}", &connection_id[..8])).await;
 
         #[cfg(not(windows))]
-        {
+        let teardown_result = {
             if let Some(pid) = connection.process_id {
-                let _ = tokio::process::Command::new("kill")
+                let status = tokio::process::Command::new("kill")
                     .arg(pid.to_string())
                     .status()
                     .await;
+                match status {
+                    Ok(status) if status.success() => Ok(()),
+                    _ => Err("Failed to stop the PPTP process".to_string()),
+                }
+            } else {
+                Ok(())
             }
+        };
+
+        if let Err(error) = teardown_result {
+            connection.status = PPTPStatus::Error(error.clone());
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": error }),
+            );
+            return Err(error);
         }
 
         connection.status = PPTPStatus::Disconnected;
@@ -251,10 +259,9 @@ impl PPTPService {
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if let Some(connection) = self.connections.get(connection_id) {
-            if let PPTPStatus::Connected = connection.status {
-                self.disconnect(connection_id).await?;
-            }
+        #[cfg(windows)]
+        if self.connections.contains_key(connection_id) {
+            self.disconnect(connection_id).await?;
         }
 
         self.connections.remove(connection_id);
@@ -267,6 +274,29 @@ impl PPTPService {
             .get(connection_id)
             .ok_or_else(|| "PPTP connection not found".to_string())?;
         Ok(connection.status.clone())
+    }
+
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("PPTP connection not found".to_string());
+        }
+        #[cfg(not(windows))]
+        return Err("PPTP activity probing is unavailable on this platform".to_string());
+        #[cfg(windows)]
+        {
+            let active =
+                ras_helper::is_ras_active(&format!("SoRNG_PPTP_{}", &connection_id[..8])).await?;
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("checked above");
+            connection.status = if active {
+                PPTPStatus::Connected
+            } else {
+                PPTPStatus::Disconnected
+            };
+            Ok(active)
+        }
     }
 
     pub async fn update_connection(
@@ -287,5 +317,38 @@ impl PPTPService {
             connection.config = new_config;
         }
         Ok(())
+    }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<PPTPConfig>,
+        secret_mutation: PPTPSecretMutation,
+    ) -> Result<(), String> {
+        if config.is_none() && secret_mutation.clear_password {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "PPTP connection not found".to_string())?
+                .config
+                .clone();
+            current.password = None;
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "PPTP connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.password,
+                &mut submitted.password,
+                secret_mutation.clear_password,
+                "PPTP password",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
     }
 }

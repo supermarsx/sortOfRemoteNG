@@ -44,9 +44,12 @@ pub async fn disconnect_ipsec(
 pub async fn get_ipsec_connection(
     connection_id: String,
     state: tauri::State<'_, IPsecServiceState>,
-) -> Result<IPsecConnection, String> {
+) -> Result<IPsecConnectionView, String> {
     let service = state.lock().await;
-    service.get_connection(&connection_id).await
+    Ok(service
+        .get_connection(&connection_id)
+        .await?
+        .into_redacted_view())
 }
 
 #[tauri::command]
@@ -61,9 +64,14 @@ pub async fn get_ipsec_status(
 #[tauri::command]
 pub async fn list_ipsec_connections(
     state: tauri::State<'_, IPsecServiceState>,
-) -> Result<Vec<IPsecConnection>, String> {
+) -> Result<Vec<IPsecConnectionView>, String> {
     let service = state.lock().await;
-    Ok(service.list_connections().await)
+    Ok(service
+        .list_connections()
+        .await
+        .into_iter()
+        .map(IPsecConnection::into_redacted_view)
+        .collect())
 }
 
 #[tauri::command]
@@ -80,10 +88,16 @@ pub async fn update_ipsec_connection(
     connection_id: String,
     name: Option<String>,
     config: Option<IPsecConfig>,
+    secret_mutation: Option<IPsecSecretMutation>,
     state: tauri::State<'_, IPsecServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
     service
-        .update_connection(&connection_id, name, config)
+        .update_connection_from_ipc(
+            &connection_id,
+            name,
+            config,
+            secret_mutation.unwrap_or_default(),
+        )
         .await
 }

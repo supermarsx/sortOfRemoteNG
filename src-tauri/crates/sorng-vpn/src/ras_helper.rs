@@ -10,17 +10,22 @@ use std::ptr::{null, null_mut};
 #[cfg(windows)]
 use windows_sys::Win32::NetworkManagement::Rras::{RasDialW, RasHangUpW, RASDIALPARAMSW};
 #[cfg(windows)]
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(windows)]
 const CREATE_ENTRY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Add-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -ServerAddress $env:SORNG_VPN_SERVER -TunnelType $env:SORNG_VPN_TUNNEL_TYPE -Force -RememberCredential";
 #[cfg(windows)]
-const REMOVE_ENTRY_SCRIPT: &str =
-    "$ErrorActionPreference = 'Stop'; Remove-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -Force";
+const REMOVE_ENTRY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $vpn = Get-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -ErrorAction SilentlyContinue; if ($null -ne $vpn) { Remove-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -Force }";
 #[cfg(windows)]
 const GET_ENTRY_ADDRESS_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; (Get-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME).ServerAddress";
 #[cfg(windows)]
-const SET_EAP_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -AuthenticationMethod $env:SORNG_VPN_AUTH_METHOD -Force";
+const GET_ENTRY_STATUS_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $vpn = Get-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -ErrorAction SilentlyContinue; if ($null -eq $vpn) { 'Absent' } else { $vpn.ConnectionStatus }";
+#[cfg(windows)]
+const SET_EAP_MSCHAPV2_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $eap = New-EapConfiguration; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -AuthenticationMethod Eap -EapConfigXmlStream $eap.EapConfigXmlStream -Force";
+#[cfg(windows)]
+const SET_EAP_TLS_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $eap = New-EapConfiguration -Tls -UserCertificate -VerifyServerIdentity; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -AuthenticationMethod Eap -EapConfigXmlStream $eap.EapConfigXmlStream -Force";
+#[cfg(windows)]
+const SET_EAP_PEAP_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $inner = New-EapConfiguration; $eap = New-EapConfiguration -Peap -VerifyServerIdentity -FastReconnect $true -TunneledEapAuthMethod $inner.EapConfigXmlStream; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -AuthenticationMethod Eap -EapConfigXmlStream $eap.EapConfigXmlStream -Force";
 #[cfg(windows)]
 const CREATE_L2TP_ENTRY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Add-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -ServerAddress $env:SORNG_VPN_SERVER -TunnelType L2tp -L2tpPsk $env:SORNG_VPN_SHARED_SECRET -Force -RememberCredential";
 #[cfg(windows)]
@@ -144,23 +149,26 @@ pub async fn create_l2tp_ras_entry(
 /// executable PowerShell source.
 #[cfg(windows)]
 pub async fn configure_ras_eap(entry_name: &str, eap_method: &str) -> Result<(), String> {
-    let authentication_method = match eap_method {
-        "mschapv2" => "MSChapv2",
-        "tls" | "peap" => "Eap",
-        _ => return Err("Unsupported IKEv2 EAP method".to_string()),
-    };
     run_powershell(
-        PowerShellInvocation {
-            script: SET_EAP_SCRIPT,
-            environment: vec![
-                ("SORNG_VPN_ENTRY_NAME", entry_name.to_string()),
-                ("SORNG_VPN_AUTH_METHOD", authentication_method.to_string()),
-            ],
-        },
+        eap_invocation(entry_name, eap_method)?,
         "VPN authentication configuration",
     )
     .await?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn eap_invocation(entry_name: &str, eap_method: &str) -> Result<PowerShellInvocation, String> {
+    let script = match eap_method {
+        "mschapv2" => SET_EAP_MSCHAPV2_SCRIPT,
+        "tls" => SET_EAP_TLS_SCRIPT,
+        "peap" => SET_EAP_PEAP_SCRIPT,
+        _ => return Err("Unsupported IKEv2 EAP method".to_string()),
+    };
+    Ok(PowerShellInvocation {
+        script,
+        environment: vec![("SORNG_VPN_ENTRY_NAME", entry_name.to_string())],
+    })
 }
 
 /// Connect a Windows VPN entry through the native RAS API. This avoids
@@ -173,7 +181,7 @@ pub async fn rasdial_connect(
 ) -> Result<(), String> {
     let entry_name = entry_name.to_string();
     let username = username.to_string();
-    let password = password.to_string();
+    let password = Zeroizing::new(password.to_string());
     tokio::task::spawn_blocking(move || rasdial_connect_blocking(&entry_name, &username, &password))
         .await
         .map_err(|error| format!("Windows RAS connection task failed: {error}"))?
@@ -236,12 +244,14 @@ fn encode_wide_field<const N: usize>(value: &str, label: &str) -> Result<[u16; N
     if value.contains('\0') {
         return Err(format!("{label} must not contain null characters"));
     }
-    let encoded: Vec<u16> = value.encode_utf16().collect();
-    if encoded.len() >= N {
-        return Err(format!("{label} is too long"));
-    }
     let mut result = [0; N];
-    result[..encoded.len()].copy_from_slice(&encoded);
+    for (index, code_unit) in value.encode_utf16().enumerate() {
+        if index >= N.saturating_sub(1) {
+            result.zeroize();
+            return Err(format!("{label} is too long"));
+        }
+        result[index] = code_unit;
+    }
     Ok(result)
 }
 
@@ -275,10 +285,31 @@ pub async fn remove_ras_entry(entry_name: &str) -> Result<(), String> {
         "VPN entry removal",
     )
     .await;
-    if let Err(error) = result {
-        log::warn!("Failed to remove VPN entry: {error}");
+    result.map(|_| ())
+}
+
+/// Reconcile and remove a deterministic RAS entry. This is safe after an app
+/// restart because it probes the OS instead of trusting cached profile state.
+#[cfg(windows)]
+pub async fn teardown_ras_entry(entry_name: &str) -> Result<(), String> {
+    let mut errors = Vec::new();
+    match is_ras_active(entry_name).await {
+        Ok(true) => {
+            if let Err(error) = rasdial_disconnect(entry_name).await {
+                errors.push(error);
+            }
+        }
+        Ok(false) => {}
+        Err(error) => errors.push(error),
     }
-    Ok(())
+    if let Err(error) = remove_ras_entry(entry_name).await {
+        errors.push(error);
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 /// Get the server address of a connected Windows VPN entry.
@@ -294,6 +325,25 @@ pub async fn get_vpn_ip(entry_name: &str) -> Result<Option<String>, String> {
     .await?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok((!stdout.is_empty()).then_some(stdout))
+}
+
+#[cfg(windows)]
+pub async fn is_ras_active(entry_name: &str) -> Result<bool, String> {
+    let output = run_powershell(
+        PowerShellInvocation {
+            script: GET_ENTRY_STATUS_SCRIPT,
+            environment: vec![("SORNG_VPN_ENTRY_NAME", entry_name.to_string())],
+        },
+        "VPN status query",
+    )
+    .await?;
+    match String::from_utf8_lossy(&output.stdout).trim() {
+        "Connected" => Ok(true),
+        "Disconnected" | "Absent" => Ok(false),
+        status => Err(format!(
+            "Windows RAS returned indeterminate status: {status}"
+        )),
+    }
 }
 
 // Linux/macOS stubs (these protocols primarily target Windows).
@@ -322,8 +372,16 @@ pub async fn remove_ras_entry(_: &str) -> Result<(), String> {
     Ok(())
 }
 #[cfg(not(windows))]
+pub async fn teardown_ras_entry(_: &str) -> Result<(), String> {
+    Err("RAS API is Windows-only".to_string())
+}
+#[cfg(not(windows))]
 pub async fn get_vpn_ip(_: &str) -> Result<Option<String>, String> {
     Ok(None)
+}
+#[cfg(not(windows))]
+pub async fn is_ras_active(_: &str) -> Result<bool, String> {
+    Err("RAS API is Windows-only".to_string())
 }
 
 #[cfg(all(test, windows))]
@@ -358,5 +416,33 @@ mod tests {
         assert!(encode_wide_field::<8>("safe", "field").is_ok());
         assert!(encode_wide_field::<8>("bad\0value", "field").is_err());
         assert!(encode_wide_field::<4>("four", "field").is_err());
+    }
+
+    #[test]
+    fn eap_scripts_select_exact_methods_and_keep_names_out_of_source() {
+        let attacker = "entry'; Write-Output injected; #";
+        let mschapv2 = eap_invocation(attacker, "mschapv2").unwrap();
+        let tls = eap_invocation(attacker, "tls").unwrap();
+        let peap = eap_invocation(attacker, "peap").unwrap();
+
+        for invocation in [&mschapv2, &tls, &peap] {
+            assert!(!invocation.script.contains(attacker));
+            assert!(invocation.script.contains("-AuthenticationMethod Eap"));
+            assert!(invocation.script.contains("-EapConfigXmlStream"));
+            assert!(invocation
+                .environment
+                .iter()
+                .any(|(_, value)| value == attacker));
+        }
+        assert!(mschapv2.script.contains("New-EapConfiguration;"));
+        assert!(tls
+            .script
+            .contains("New-EapConfiguration -Tls -UserCertificate -VerifyServerIdentity"));
+        assert!(peap.script.contains("$inner = New-EapConfiguration"));
+        assert!(peap.script.contains("-Peap -VerifyServerIdentity"));
+        assert!(peap
+            .script
+            .contains("-TunneledEapAuthMethod $inner.EapConfigXmlStream"));
+        assert!(eap_invocation("entry", "unknown").is_err());
     }
 }

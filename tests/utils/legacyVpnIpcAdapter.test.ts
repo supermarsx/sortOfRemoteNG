@@ -13,7 +13,10 @@ import {
   fromSstpIpcConnection,
   toIkeV2IpcConfig,
   toIpsecIpcConfig,
+  toIpsecIpcSecretMutation,
+  toIkeV2IpcSecretMutation,
   toL2tpIpcConfig,
+  toL2tpIpcSecretMutation,
   toPptpIpcConfig,
   toSstpIpcConfig,
 } from "../../src/utils/network/vpnIpcAdapter";
@@ -271,8 +274,8 @@ describe("legacy VPN IPC adapter", () => {
     }
   });
 
-  it("normalizes legacy responses and restores editable nested L2TP fields", () => {
-    const connection = (config: object) => ({
+  it("strips malicious plaintext legacy secrets and exposes presence only", () => {
+    const connection = (config: object, secret_presence: object) => ({
       id: "connection-id",
       name: "Office",
       config,
@@ -281,29 +284,52 @@ describe("legacy VPN IPC adapter", () => {
       connected_at: createdAt,
       local_ip: "10.0.0.2",
       remote_ip: "203.0.113.10",
+      secret_presence,
     });
 
-    expect(fromIkeV2IpcConnection(connection(ipcConfigs.ikev2))).toMatchObject({
+    expect(
+      fromIkeV2IpcConnection(
+        connection(ipcConfigs.ikev2, { password: true, private_key: true }),
+      ),
+    ).toMatchObject({
       status: "connected",
-      config: configs.ikev2,
+      config: { ...configs.ikev2, password: undefined, privateKey: undefined },
+      secretPresence: { password: true, privateKey: true },
     });
-    expect(fromSstpIpcConnection(connection(ipcConfigs.sstp))).toMatchObject({
+    expect(
+      fromSstpIpcConnection(connection(ipcConfigs.sstp, { password: true })),
+    ).toMatchObject({
       status: "connected",
-      config: configs.sstp,
+      config: { ...configs.sstp, password: undefined },
+      secretPresence: { password: true },
     });
-    const l2tp = fromL2tpIpcConnection(connection(ipcConfigs.l2tp));
-    expect(l2tp).toMatchObject({ status: "connected", config: configs.l2tp });
-    expect(fromPptpIpcConnection(connection(ipcConfigs.pptp))).toMatchObject({
+    const l2tp = fromL2tpIpcConnection(
+      connection(ipcConfigs.l2tp, { password: true, psk: true }),
+    );
+    expect(l2tp).toMatchObject({
       status: "connected",
-      config: configs.pptp,
+      config: { ...configs.l2tp, password: "", psk: undefined },
+      secretPresence: { password: true, psk: true },
     });
-    expect(fromIpsecIpcConnection(connection(ipcConfigs.ipsec))).toMatchObject({
+    expect(
+      fromPptpIpcConnection(connection(ipcConfigs.pptp, { password: true })),
+    ).toMatchObject({
       status: "connected",
-      config: configs.ipsec,
+      config: { ...configs.pptp, password: "" },
+      secretPresence: { password: true },
+    });
+    expect(
+      fromIpsecIpcConnection(
+        connection(ipcConfigs.ipsec, { psk: true, private_key: true }),
+      ),
+    ).toMatchObject({
+      status: "connected",
+      config: { ...configs.ipsec, psk: undefined, privateKey: undefined },
+      secretPresence: { psk: true, privateKey: true },
     });
 
     expect(toVpnEditorFormConfig("l2tp", l2tp.config)).toMatchObject({
-      psk: "gateway secret",
+      psk: undefined,
       pppMru: 1400,
       pppMtu: 1390,
       ipsecIke: "aes256-sha256-modp2048",
@@ -311,6 +337,68 @@ describe("legacy VPN IPC adapter", () => {
       ipsecPfs: "modp2048",
       customOptions: "debug",
     });
+  });
+
+  it("maps preserve, replacement, and explicit clear semantics", async () => {
+    expect(toIkeV2IpcSecretMutation(undefined)).toBeUndefined();
+    expect(toL2tpIpcSecretMutation({ clearPassword: false })).toBeUndefined();
+    expect(toL2tpIpcSecretMutation({ clearPsk: true })).toEqual({
+      clear_password: false,
+      clear_psk: true,
+    });
+    expect(() =>
+      toIpsecIpcSecretMutation({ clearPsk: true }, { psk: "replacement" }),
+    ).toThrow("same update");
+
+    invokeMock.mockResolvedValue(undefined);
+    const manager = ProxyOpenVPNManager.getInstance();
+    await manager.updateL2TPConnection(
+      "id",
+      "L2TP",
+      { ...configs.l2tp, password: "", psk: "" },
+      { clearPsk: true },
+    );
+    expect(invokeMock).toHaveBeenLastCalledWith("update_l2tp_connection", {
+      connectionId: "id",
+      name: "L2TP",
+      config: expect.not.objectContaining({
+        password: expect.anything(),
+        psk: expect.anything(),
+      }),
+      secretMutation: { clear_password: false, clear_psk: true },
+    });
+  });
+
+  it("never copies legacy plaintext secrets into editor form state", () => {
+    expect(
+      toVpnEditorFormConfig("ikev2", {
+        ...configs.ikev2,
+        password: "malicious-password",
+        privateKey: "malicious-key",
+      }),
+    ).toMatchObject({ password: undefined, privateKey: undefined });
+    expect(
+      toVpnEditorFormConfig("ipsec", {
+        ...configs.ipsec,
+        psk: "malicious-psk",
+        privateKey: "malicious-key",
+      }),
+    ).toMatchObject({ psk: undefined, privateKey: undefined });
+    expect(
+      toVpnEditorFormConfig("l2tp", {
+        ...configs.l2tp,
+        password: "malicious-password",
+        psk: "malicious-psk",
+      }),
+    ).toMatchObject({ password: undefined, psk: undefined });
+    for (const vpnType of ["pptp", "sstp"] as const) {
+      expect(
+        toVpnEditorFormConfig(vpnType, {
+          ...configs[vpnType],
+          password: "malicious-password",
+        }),
+      ).toMatchObject({ password: undefined });
+    }
   });
 
   it("rejects masked legacy secrets before invoking native commands", () => {

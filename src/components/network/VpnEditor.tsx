@@ -985,9 +985,14 @@ const PPTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("password").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter password"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="password" />
           </FormField>
         </div>
         <FormField label="Domain">
@@ -1151,9 +1156,14 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("password").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter password"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="password" />
           </FormField>
         </div>
         <FormField label="IPsec Pre-shared Key (PSK)">
@@ -1161,9 +1171,14 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             type="password"
             value={config.psk ?? ""}
             onChange={(e) => up("psk", e.target.value)}
-            placeholder="Optional gateway pre-shared key"
+            placeholder={
+              mgr.getSecretState("psk").stored
+                ? "Stored secret — leave blank to keep"
+                : "Optional gateway pre-shared key"
+            }
             className={inputCls}
           />
+          <SecretStatus mgr={mgr} field="psk" />
         </FormField>
       </div>
 
@@ -1357,9 +1372,14 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("password").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter password"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="password" />
           </FormField>
         </div>
         <FormField label="EAP Method">
@@ -1404,6 +1424,7 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             label="Private Key"
             extensions={["key", "pem"]}
           />
+          <SecretStatus mgr={mgr} field="privateKey" />
         </FormField>
       </div>
 
@@ -1549,9 +1570,14 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.psk ?? ""}
               onChange={(e) => up("psk", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("psk").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter pre-shared key"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="psk" />
           </FormField>
         )}
       </div>
@@ -1585,6 +1611,7 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               label="Private Key"
               extensions={["key", "pem"]}
             />
+            <SecretStatus mgr={mgr} field="privateKey" />
           </FormField>
         </div>
       )}
@@ -1743,9 +1770,14 @@ const SSTPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               type="password"
               value={config.password ?? ""}
               onChange={(e) => up("password", e.target.value)}
-              placeholder="••••••••"
+              placeholder={
+                mgr.getSecretState("password").stored
+                  ? "Stored secret — leave blank to keep"
+                  : "Enter password"
+              }
               className={inputCls}
             />
+            <SecretStatus mgr={mgr} field="password" />
           </FormField>
         </div>
         <FormField label="Domain">

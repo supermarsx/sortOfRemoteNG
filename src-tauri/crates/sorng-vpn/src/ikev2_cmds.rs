@@ -46,9 +46,12 @@ pub async fn disconnect_ikev2(
 pub async fn get_ikev2_connection(
     connection_id: String,
     state: tauri::State<'_, IKEv2ServiceState>,
-) -> Result<IKEv2Connection, String> {
+) -> Result<IKEv2ConnectionView, String> {
     let service = state.lock().await;
-    service.get_connection(&connection_id).await
+    Ok(service
+        .get_connection(&connection_id)
+        .await?
+        .into_redacted_view())
 }
 
 #[tauri::command]
@@ -63,9 +66,14 @@ pub async fn get_ikev2_status(
 #[tauri::command]
 pub async fn list_ikev2_connections(
     state: tauri::State<'_, IKEv2ServiceState>,
-) -> Result<Vec<IKEv2Connection>, String> {
+) -> Result<Vec<IKEv2ConnectionView>, String> {
     let service = state.lock().await;
-    Ok(service.list_connections().await)
+    Ok(service
+        .list_connections()
+        .await
+        .into_iter()
+        .map(IKEv2Connection::into_redacted_view)
+        .collect())
 }
 
 #[tauri::command]
@@ -82,10 +90,16 @@ pub async fn update_ikev2_connection(
     connection_id: String,
     name: Option<String>,
     config: Option<IKEv2Config>,
+    secret_mutation: Option<IKEv2SecretMutation>,
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
     service
-        .update_connection(&connection_id, name, config)
+        .update_connection_from_ipc(
+            &connection_id,
+            name,
+            config,
+            secret_mutation.unwrap_or_default(),
+        )
         .await
 }

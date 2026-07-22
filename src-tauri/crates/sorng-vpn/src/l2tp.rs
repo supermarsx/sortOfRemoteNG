@@ -1,5 +1,3 @@
-#[cfg(not(windows))]
-use crate::platform;
 #[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
@@ -25,6 +23,41 @@ pub struct L2TPConnection {
     pub remote_ip: Option<String>,
     pub ras_entry_name: Option<String>,
     pub process_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct L2TPSecretPresence {
+    pub password: bool,
+    pub psk: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct L2TPConnectionView {
+    #[serde(flatten)]
+    pub connection: L2TPConnection,
+    pub secret_presence: L2TPSecretPresence,
+}
+
+impl L2TPConnection {
+    pub fn into_redacted_view(mut self) -> L2TPConnectionView {
+        let secret_presence = L2TPSecretPresence {
+            password: self.config.password.is_some(),
+            psk: self.config.psk.is_some(),
+        };
+        self.config.password = None;
+        self.config.psk = None;
+        L2TPConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct L2TPSecretMutation {
+    pub clear_password: bool,
+    pub clear_psk: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -127,14 +160,16 @@ impl L2TPService {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("L2TP connection not found".to_string());
+        }
+        if self.probe_connection_active(connection_id).await? {
+            return Ok(());
+        }
         let connection = self
             .connections
             .get_mut(connection_id)
-            .ok_or_else(|| "L2TP connection not found".to_string())?;
-
-        if let L2TPStatus::Connected = connection.status {
-            return Ok(());
-        }
+            .expect("checked above");
 
         connection.status = L2TPStatus::Connecting;
         let config = connection.config.clone();
@@ -164,46 +199,23 @@ impl L2TPService {
 
         #[cfg(not(windows))]
         {
-            // Linux: use strongSwan for IPsec + xl2tpd for L2TP
             let conn_name = format!("sorng_l2tp_{}", &connection_id[..8]);
-
-            // Write IPsec config for L2TP
-            strongswan_helper::write_ipsec_conf(
-                &conn_name,
-                &config.server,
-                None,
-                None,
-                "psk",
-                config.ipsec_ike.as_deref(),
-                config.ipsec_esp.as_deref(),
-            )
-            .await?;
-
-            // Write PSK secret
-            if let Some(psk) = &config.psk {
-                strongswan_helper::write_ipsec_secrets(
-                    &conn_name,
-                    None,
-                    &config.server,
-                    "PSK",
-                    psk,
-                )
-                .await?;
+            match setup_strongswan_connection(&conn_name, &config).await {
+                Ok(process_id) => connection.process_id = process_id,
+                Err(setup_error) => {
+                    let cleanup_error = strongswan_helper::cleanup_ipsec_files(&conn_name)
+                        .await
+                        .err();
+                    let error = compose_setup_cleanup_error(setup_error, cleanup_error);
+                    connection.status = L2TPStatus::Error(error.clone());
+                    self.emit_status(
+                        connection_id,
+                        "error",
+                        serde_json::json!({ "error": error }),
+                    );
+                    return Err(error);
+                }
             }
-
-            // Bring up IPsec
-            strongswan_helper::ipsec_up(&conn_name).await?;
-
-            // Start xl2tpd
-            let xl2tpd_binary = platform::resolve_binary("xl2tpd")
-                .map_err(|e| format!("xl2tpd not found: {}", e))?;
-
-            let child = tokio::process::Command::new(xl2tpd_binary)
-                .args(["-D"])
-                .spawn()
-                .map_err(|e| format!("Failed to start xl2tpd: {}", e))?;
-
-            connection.process_id = child.id();
             connection.remote_ip = Some(config.server.clone());
         }
 
@@ -230,32 +242,47 @@ impl L2TPService {
             .get_mut(connection_id)
             .ok_or_else(|| "L2TP connection not found".to_string())?;
 
-        if let L2TPStatus::Disconnected = connection.status {
-            return Ok(());
-        }
-
         connection.status = L2TPStatus::Disconnecting;
 
         #[cfg(windows)]
-        {
-            if let Some(entry_name) = &connection.ras_entry_name {
-                let _ = ras_helper::rasdial_disconnect(entry_name).await;
-                let _ = ras_helper::remove_ras_entry(entry_name).await;
-            }
-        }
+        let teardown_result =
+            ras_helper::teardown_ras_entry(&format!("SoRNG_L2TP_{}", &connection_id[..8])).await;
 
         #[cfg(not(windows))]
-        {
+        let teardown_result = {
+            let mut errors = Vec::new();
             if let Some(pid) = connection.process_id {
-                let _ = tokio::process::Command::new("kill")
+                let status = tokio::process::Command::new("kill")
                     .arg(pid.to_string())
                     .status()
                     .await;
+                if !matches!(status, Ok(status) if status.success()) {
+                    errors.push("Failed to stop the L2TP process".to_string());
+                }
             }
+            if let Err(error) = strongswan_helper::teardown_ipsec_connection(&format!(
+                "sorng_l2tp_{}",
+                &connection_id[..8]
+            ))
+            .await
+            {
+                errors.push(error);
+            }
+            if errors.is_empty() {
+                Ok(())
+            } else {
+                Err(errors.join("; "))
+            }
+        };
 
-            let conn_name = format!("sorng_l2tp_{}", &connection_id[..8]);
-            let _ = strongswan_helper::ipsec_down(&conn_name).await;
-            let _ = strongswan_helper::cleanup_ipsec_files(&conn_name).await;
+        if let Err(error) = teardown_result {
+            connection.status = L2TPStatus::Error(error.clone());
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": error }),
+            );
+            return Err(error);
         }
 
         connection.status = L2TPStatus::Disconnected;
@@ -282,10 +309,9 @@ impl L2TPService {
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if let Some(connection) = self.connections.get(connection_id) {
-            if let L2TPStatus::Connected = connection.status {
-                self.disconnect(connection_id).await?;
-            }
+        #[cfg(windows)]
+        if self.connections.contains_key(connection_id) {
+            self.disconnect(connection_id).await?;
         }
 
         self.connections.remove(connection_id);
@@ -298,6 +324,32 @@ impl L2TPService {
             .get(connection_id)
             .ok_or_else(|| "L2TP connection not found".to_string())?;
         Ok(connection.status.clone())
+    }
+
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("L2TP connection not found".to_string());
+        }
+        #[cfg(not(windows))]
+        return Err(
+            "L2TP activity probing is unsupported without an isolated xl2tpd/pppd control plane"
+                .to_string(),
+        );
+        #[cfg(windows)]
+        {
+            let active =
+                ras_helper::is_ras_active(&format!("SoRNG_L2TP_{}", &connection_id[..8])).await?;
+            let connection = self
+                .connections
+                .get_mut(connection_id)
+                .expect("checked above");
+            connection.status = if active {
+                L2TPStatus::Connected
+            } else {
+                L2TPStatus::Disconnected
+            };
+            Ok(active)
+        }
     }
 
     pub async fn update_connection(
@@ -319,4 +371,69 @@ impl L2TPService {
         }
         Ok(())
     }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<L2TPConfig>,
+        secret_mutation: L2TPSecretMutation,
+    ) -> Result<(), String> {
+        if config.is_none() && (secret_mutation.clear_password || secret_mutation.clear_psk) {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "L2TP connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_password {
+                current.password = None;
+            }
+            if secret_mutation.clear_psk {
+                current.psk = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "L2TP connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.password,
+                &mut submitted.password,
+                secret_mutation.clear_password,
+                "L2TP password",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.psk,
+                &mut submitted.psk,
+                secret_mutation.clear_psk,
+                "L2TP PSK",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
+    }
+}
+
+#[cfg(not(windows))]
+fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String>) -> String {
+    match cleanup_error {
+        Some(cleanup_error) => {
+            format!("{setup_error}; additionally failed to roll back VPN setup: {cleanup_error}")
+        }
+        None => setup_error,
+    }
+}
+
+#[cfg(not(windows))]
+async fn setup_strongswan_connection(
+    _conn_name: &str,
+    _config: &L2TPConfig,
+) -> Result<Option<u32>, String> {
+    Err(
+        "L2TP/IPsec is not enabled on this platform because the backend does not yet create an isolated xl2tpd/pppd control profile and verify the PPP data plane; use the Windows native profile"
+            .to_string(),
+    )
 }

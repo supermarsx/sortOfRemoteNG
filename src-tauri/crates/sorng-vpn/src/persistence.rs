@@ -30,6 +30,35 @@ pub(crate) fn merge_secret_update(
     Ok(())
 }
 
+#[cfg(test)]
+mod secret_update_tests {
+    use super::merge_secret_update;
+
+    #[test]
+    fn secret_updates_are_tri_state_and_reject_conflicts() {
+        let stored = Some("stored-secret".to_string());
+
+        let mut omitted = None;
+        merge_secret_update(&stored, &mut omitted, false, "secret").unwrap();
+        assert_eq!(omitted.as_deref(), Some("stored-secret"));
+
+        let mut blank = Some("   ".to_string());
+        merge_secret_update(&stored, &mut blank, false, "secret").unwrap();
+        assert_eq!(blank.as_deref(), Some("stored-secret"));
+
+        let mut replacement = Some("replacement".to_string());
+        merge_secret_update(&stored, &mut replacement, false, "secret").unwrap();
+        assert_eq!(replacement.as_deref(), Some("replacement"));
+
+        let mut cleared = None;
+        merge_secret_update(&stored, &mut cleared, true, "secret").unwrap();
+        assert!(cleared.is_none());
+
+        let mut conflict = Some("replacement".to_string());
+        assert!(merge_secret_update(&stored, &mut conflict, true, "secret").is_err());
+    }
+}
+
 /// Current on-disk schema for per-provider profile definitions.
 pub const PROFILE_SCHEMA_VERSION: u32 = 1;
 

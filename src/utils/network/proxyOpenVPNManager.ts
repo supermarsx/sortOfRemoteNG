@@ -27,10 +27,15 @@ import {
   toOpenVpnIpcSecretMutation,
   toOpenVpnIpcConfig,
   toIkeV2IpcConfig,
+  toIkeV2IpcSecretMutation,
   toIpsecIpcConfig,
+  toIpsecIpcSecretMutation,
   toL2tpIpcConfig,
+  toL2tpIpcSecretMutation,
   toPptpIpcConfig,
+  toPptpIpcSecretMutation,
   toSstpIpcConfig,
+  toSstpIpcSecretMutation,
   toTailscaleIpcSecretMutation,
   toTailscaleIpcConfig,
   toWireGuardIpcSecretMutation,
@@ -39,6 +44,16 @@ import {
   toZeroTierIpcConfig,
   type OpenVpnSecretMutation,
   type OpenVpnSecretPresence,
+  type IkeV2SecretMutation,
+  type IkeV2SecretPresence,
+  type IpsecSecretMutation,
+  type IpsecSecretPresence,
+  type L2tpSecretMutation,
+  type L2tpSecretPresence,
+  type PptpSecretMutation,
+  type PptpSecretPresence,
+  type SstpSecretMutation,
+  type SstpSecretPresence,
   type TailscaleSecretMutation,
   type TailscaleSecretPresence,
   type VpnConnectionStatus,
@@ -153,6 +168,7 @@ export interface IKEv2Connection {
   localIp?: string;
   remoteIp?: string;
   chainPosition?: number;
+  secretPresence?: IkeV2SecretPresence;
 }
 
 export interface SSTPConnection {
@@ -170,6 +186,7 @@ export interface SSTPConnection {
   localIp?: string;
   remoteIp?: string;
   chainPosition?: number;
+  secretPresence?: SstpSecretPresence;
 }
 
 export interface L2TPConnection {
@@ -187,6 +204,7 @@ export interface L2TPConnection {
   localIp?: string;
   remoteIp?: string;
   chainPosition?: number;
+  secretPresence?: L2tpSecretPresence;
 }
 
 export interface PPTPConnection {
@@ -204,6 +222,7 @@ export interface PPTPConnection {
   localIp?: string;
   remoteIp?: string;
   chainPosition?: number;
+  secretPresence?: PptpSecretPresence;
 }
 
 export interface IPsecConnection {
@@ -220,6 +239,7 @@ export interface IPsecConnection {
   connectedAt?: Date;
   localIp?: string;
   remoteIp?: string;
+  secretPresence?: IpsecSecretPresence;
   chainPosition?: number;
 }
 
@@ -554,11 +574,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: IKEv2Config | Record<string, unknown>,
+    secretMutation?: IkeV2SecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toIkeV2IpcConfig(config) : undefined;
+    const ipcSecretMutation = toIkeV2IpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_ikev2_connection", {
       connectionId,
       name,
-      config: config ? toIkeV2IpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -610,11 +637,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: SSTPConfig | Record<string, unknown>,
+    secretMutation?: SstpSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toSstpIpcConfig(config) : undefined;
+    const ipcSecretMutation = toSstpIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_sstp_connection", {
       connectionId,
       name,
-      config: config ? toSstpIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -666,11 +700,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: L2TPConfig | Record<string, unknown>,
+    secretMutation?: L2tpSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toL2tpIpcConfig(config) : undefined;
+    const ipcSecretMutation = toL2tpIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_l2tp_connection", {
       connectionId,
       name,
-      config: config ? toL2tpIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -722,11 +763,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: PPTPConfig | Record<string, unknown>,
+    secretMutation?: PptpSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toPptpIpcConfig(config) : undefined;
+    const ipcSecretMutation = toPptpIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_pptp_connection", {
       connectionId,
       name,
-      config: config ? toPptpIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 
@@ -778,11 +826,18 @@ export class ProxyOpenVPNManager {
     connectionId: string,
     name?: string,
     config?: IPsecConfig | Record<string, unknown>,
+    secretMutation?: IpsecSecretMutation,
   ): Promise<void> {
+    const ipcConfig = config ? toIpsecIpcConfig(config) : undefined;
+    const ipcSecretMutation = toIpsecIpcSecretMutation(
+      secretMutation,
+      ipcConfig,
+    );
     return await invoke("update_ipsec_connection", {
       connectionId,
       name,
-      config: config ? toIpsecIpcConfig(config) : undefined,
+      config: ipcConfig,
+      ...(ipcSecretMutation ? { secretMutation: ipcSecretMutation } : {}),
     });
   }
 

@@ -25,6 +25,41 @@ pub struct IKEv2Connection {
     pub process_id: Option<u32>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct IKEv2SecretPresence {
+    pub password: bool,
+    pub private_key: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IKEv2ConnectionView {
+    #[serde(flatten)]
+    pub connection: IKEv2Connection,
+    pub secret_presence: IKEv2SecretPresence,
+}
+
+impl IKEv2Connection {
+    pub fn into_redacted_view(mut self) -> IKEv2ConnectionView {
+        let secret_presence = IKEv2SecretPresence {
+            password: self.config.password.is_some(),
+            private_key: self.config.private_key.is_some(),
+        };
+        self.config.password = None;
+        self.config.private_key = None;
+        IKEv2ConnectionView {
+            connection: self,
+            secret_presence,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct IKEv2SecretMutation {
+    pub clear_password: bool,
+    pub clear_private_key: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IKEv2Status {
     Disconnected,
@@ -114,14 +149,16 @@ impl IKEv2Service {
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("IKEv2 connection not found".to_string());
+        }
+        if self.probe_connection_active(connection_id).await? {
+            return Ok(());
+        }
         let connection = self
             .connections
             .get_mut(connection_id)
-            .ok_or_else(|| "IKEv2 connection not found".to_string())?;
-
-        if let IKEv2Status::Connected = connection.status {
-            return Ok(());
-        }
+            .expect("checked above");
 
         connection.status = IKEv2Status::Connecting;
         let config = connection.config.clone();
@@ -130,22 +167,54 @@ impl IKEv2Service {
 
         #[cfg(windows)]
         {
+            if matches!(config.eap_method.as_deref(), Some("tls"))
+                && (config.certificate.is_some()
+                    || config.private_key.is_some()
+                    || config.ca_certificate.is_some())
+            {
+                let error = "Windows EAP-TLS uses certificates from the current user's certificate store; certificate, private-key, and CA file fields are not imported by this backend"
+                    .to_string();
+                connection.status = IKEv2Status::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
+            }
             // Create RAS entry with IKEv2 tunnel type
             ras_helper::create_ras_entry(&entry_name, &config.server, "Ikev2").await?;
 
             // Set EAP method if specified
             if let Some(eap) = &config.eap_method {
-                ras_helper::configure_ras_eap(&entry_name, eap).await?;
+                if let Err(error) = ras_helper::configure_ras_eap(&entry_name, eap).await {
+                    let cleanup_error = ras_helper::remove_ras_entry(&entry_name).await.err();
+                    let error = compose_setup_cleanup_error(error, cleanup_error);
+                    connection.status = IKEv2Status::Error(error.clone());
+                    self.emit_status(
+                        connection_id,
+                        "error",
+                        serde_json::json!({ "error": error }),
+                    );
+                    return Err(error);
+                }
             }
 
             let username = config.username.as_deref().unwrap_or("");
             let password = config.password.as_deref().unwrap_or("");
 
-            if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
-                let _ = ras_helper::remove_ras_entry(&entry_name).await;
-                connection.status = IKEv2Status::Error(e.clone());
-                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
-                return Err(e);
+            if let Err(setup_error) =
+                ras_helper::rasdial_connect(&entry_name, username, password).await
+            {
+                let cleanup_error = ras_helper::remove_ras_entry(&entry_name).await.err();
+                let error = compose_setup_cleanup_error(setup_error, cleanup_error);
+                connection.status = IKEv2Status::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
             }
 
             connection.ras_entry_name = Some(entry_name);
@@ -154,60 +223,20 @@ impl IKEv2Service {
 
         #[cfg(not(windows))]
         {
-            // Linux: use strongSwan for IKEv2
             let conn_name = format!("sorng_ikev2_{}", &connection_id[..8]);
-
-            let auth_method = if config.certificate.is_some() {
-                "pubkey"
-            } else if let Some(eap_method) = config.eap_method.as_deref() {
-                match eap_method {
-                    "mschapv2" => "eap-mschapv2",
-                    "tls" => "eap-tls",
-                    "peap" => "eap-peap",
-                    _ => return Err("Unsupported IKEv2 EAP method".to_string()),
-                }
-            } else {
-                "psk"
-            };
-
-            strongswan_helper::write_ipsec_conf(
-                &conn_name,
-                &config.server,
-                config.local_id.as_deref(),
-                config.remote_id.as_deref(),
-                auth_method,
-                config.phase1_algorithms.as_deref(),
-                config.phase2_algorithms.as_deref(),
-            )
-            .await?;
-
-            // Write secrets based on auth type
-            if let Some(password) = &config.password {
-                let secret_type = if auth_method.starts_with("eap") {
-                    "EAP"
-                } else {
-                    "PSK"
-                };
-                strongswan_helper::write_ipsec_secrets(
-                    &conn_name,
-                    config.local_id.as_deref(),
-                    &config.server,
-                    secret_type,
-                    password,
-                )
-                .await?;
-            } else if let Some(key_path) = &config.private_key {
-                strongswan_helper::write_ipsec_secrets(
-                    &conn_name,
-                    config.local_id.as_deref(),
-                    &config.server,
-                    "RSA",
-                    key_path,
-                )
-                .await?;
+            if let Err(setup_error) = setup_strongswan_connection(&conn_name, &config).await {
+                let cleanup_error = strongswan_helper::cleanup_ipsec_files(&conn_name)
+                    .await
+                    .err();
+                let error = compose_setup_cleanup_error(setup_error, cleanup_error);
+                connection.status = IKEv2Status::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
             }
-
-            strongswan_helper::ipsec_up(&conn_name).await?;
             connection.remote_ip = Some(config.server.clone());
         }
 
@@ -234,25 +263,27 @@ impl IKEv2Service {
             .get_mut(connection_id)
             .ok_or_else(|| "IKEv2 connection not found".to_string())?;
 
-        if let IKEv2Status::Disconnected = connection.status {
-            return Ok(());
-        }
-
         connection.status = IKEv2Status::Disconnecting;
 
         #[cfg(windows)]
-        {
-            if let Some(entry_name) = &connection.ras_entry_name {
-                let _ = ras_helper::rasdial_disconnect(entry_name).await;
-                let _ = ras_helper::remove_ras_entry(entry_name).await;
-            }
-        }
+        let teardown_result =
+            ras_helper::teardown_ras_entry(&format!("SoRNG_IKEv2_{}", &connection_id[..8])).await;
 
         #[cfg(not(windows))]
-        {
-            let conn_name = format!("sorng_ikev2_{}", &connection_id[..8]);
-            let _ = strongswan_helper::ipsec_down(&conn_name).await;
-            let _ = strongswan_helper::cleanup_ipsec_files(&conn_name).await;
+        let teardown_result = strongswan_helper::teardown_ipsec_connection(&format!(
+            "sorng_ikev2_{}",
+            &connection_id[..8]
+        ))
+        .await;
+
+        if let Err(error) = teardown_result {
+            connection.status = IKEv2Status::Error(error.clone());
+            self.emit_status(
+                connection_id,
+                "error",
+                serde_json::json!({ "error": error }),
+            );
+            return Err(error);
         }
 
         connection.status = IKEv2Status::Disconnected;
@@ -279,10 +310,8 @@ impl IKEv2Service {
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if let Some(connection) = self.connections.get(connection_id) {
-            if let IKEv2Status::Connected = connection.status {
-                self.disconnect(connection_id).await?;
-            }
+        if self.connections.contains_key(connection_id) {
+            self.disconnect(connection_id).await?;
         }
 
         self.connections.remove(connection_id);
@@ -295,6 +324,29 @@ impl IKEv2Service {
             .get(connection_id)
             .ok_or_else(|| "IKEv2 connection not found".to_string())?;
         Ok(connection.status.clone())
+    }
+
+    pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        if !self.connections.contains_key(connection_id) {
+            return Err("IKEv2 connection not found".to_string());
+        }
+        #[cfg(windows)]
+        let active =
+            ras_helper::is_ras_active(&format!("SoRNG_IKEv2_{}", &connection_id[..8])).await?;
+        #[cfg(not(windows))]
+        let active =
+            strongswan_helper::is_ipsec_active(&format!("sorng_ikev2_{}", &connection_id[..8]))
+                .await?;
+        let connection = self
+            .connections
+            .get_mut(connection_id)
+            .expect("checked above");
+        connection.status = if active {
+            IKEv2Status::Connected
+        } else {
+            IKEv2Status::Disconnected
+        };
+        Ok(active)
     }
 
     pub async fn update_connection(
@@ -316,4 +368,134 @@ impl IKEv2Service {
         }
         Ok(())
     }
+
+    pub async fn update_connection_from_ipc(
+        &mut self,
+        connection_id: &str,
+        name: Option<String>,
+        mut config: Option<IKEv2Config>,
+        secret_mutation: IKEv2SecretMutation,
+    ) -> Result<(), String> {
+        if config.is_none() && (secret_mutation.clear_password || secret_mutation.clear_private_key)
+        {
+            let mut current = self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "IKEv2 connection not found".to_string())?
+                .config
+                .clone();
+            if secret_mutation.clear_password {
+                current.password = None;
+            }
+            if secret_mutation.clear_private_key {
+                current.private_key = None;
+            }
+            config = Some(current);
+        }
+        if let Some(submitted) = config.as_mut() {
+            let stored = &self
+                .connections
+                .get(connection_id)
+                .ok_or_else(|| "IKEv2 connection not found".to_string())?
+                .config;
+            crate::persistence::merge_secret_update(
+                &stored.password,
+                &mut submitted.password,
+                secret_mutation.clear_password,
+                "IKEv2 password",
+            )?;
+            crate::persistence::merge_secret_update(
+                &stored.private_key,
+                &mut submitted.private_key,
+                secret_mutation.clear_private_key,
+                "IKEv2 private key",
+            )?;
+        }
+        self.update_connection(connection_id, name, config).await
+    }
+}
+
+fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String>) -> String {
+    match cleanup_error {
+        Some(cleanup_error) => {
+            format!("{setup_error}; additionally failed to roll back VPN setup: {cleanup_error}")
+        }
+        None => setup_error,
+    }
+}
+
+#[cfg(not(windows))]
+async fn setup_strongswan_connection(conn_name: &str, config: &IKEv2Config) -> Result<(), String> {
+    let (local_auth, remote_auth, eap_identity) = match config.eap_method.as_deref() {
+        Some("mschapv2") => {
+            let identity = config
+                .username
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "IKEv2 EAP-MSCHAPv2 requires a non-empty username".to_string())?;
+            if config.password.as_deref().unwrap_or_default().is_empty() {
+                return Err("IKEv2 EAP-MSCHAPv2 requires a non-empty password".to_string());
+            }
+            ("eap-mschapv2", "pubkey", Some(identity))
+        }
+        Some("tls") => {
+            return Err(
+                "IKEv2 EAP-TLS is not enabled on this strongSwan backend because client certificate, private-key, CA, and AAA identity wiring must be configured together; use certificate authentication or a Windows native profile"
+                    .to_string(),
+            )
+        }
+        Some("peap") => {
+            return Err(
+                "IKEv2 PEAP is not enabled on this strongSwan backend because its inner authentication and AAA identity are not represented by this profile"
+                    .to_string(),
+            )
+        }
+        Some(_) => return Err("Unsupported IKEv2 EAP method".to_string()),
+        None if config.certificate.is_some()
+            || config.private_key.is_some()
+            || config.ca_certificate.is_some() =>
+        {
+            return Err(
+                "IKEv2 certificate authentication is not enabled on this strongSwan backend because certificate and CA staging is not implemented safely"
+                    .to_string(),
+            )
+        }
+        None => {
+            if config.password.as_deref().unwrap_or_default().is_empty() {
+                return Err("IKEv2 PSK authentication requires a non-empty secret".to_string());
+            }
+            ("psk", "psk", None)
+        }
+    };
+
+    strongswan_helper::write_ipsec_conf(strongswan_helper::IpsecConnectionSpec {
+        conn_name,
+        server: &config.server,
+        local_id: config.local_id.as_deref(),
+        remote_id: config.remote_id.as_deref(),
+        local_auth,
+        remote_auth,
+        eap_identity,
+        phase1: config.phase1_algorithms.as_deref(),
+        phase2: config.phase2_algorithms.as_deref(),
+    })
+    .await?;
+
+    if let Some(password) = &config.password {
+        let secret_type = if local_auth.starts_with("eap") {
+            "EAP"
+        } else {
+            "PSK"
+        };
+        strongswan_helper::write_ipsec_secrets(
+            conn_name,
+            eap_identity.or(config.local_id.as_deref()),
+            config.remote_id.as_deref().unwrap_or(&config.server),
+            secret_type,
+            password,
+        )
+        .await?;
+    }
+
+    strongswan_helper::ipsec_up_transactional(conn_name).await
 }
