@@ -1380,11 +1380,8 @@ impl ProxyService {
                         }
                         Some(message) = read.next() => {
                             match message {
-                                Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
-                                    if client_stream.write_all(&data).await.is_err() {
-                                        break;
-                                    }
-                                }
+                                Ok(tokio_tungstenite::tungstenite::Message::Binary(data))
+                                    if client_stream.write_all(&data).await.is_err() => break,
                                 Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
                                 _ => {}
                             }

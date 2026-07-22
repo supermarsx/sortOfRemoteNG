@@ -688,13 +688,11 @@ fn verify_identity_in_data(
 
             // Policy-aware checks on a matching fingerprint
             match policy {
-                TrustPolicy::TofuWithExpiry => {
-                    if TrustStoreService::is_trust_expired(record) {
-                        return TrustVerifyResult::Expired {
-                            stored: record.identity.clone(),
-                            presented: identity,
-                        };
-                    }
+                TrustPolicy::TofuWithExpiry if TrustStoreService::is_trust_expired(record) => {
+                    return TrustVerifyResult::Expired {
+                        stored: record.identity.clone(),
+                        presented: identity,
+                    };
                 }
                 TrustPolicy::ThresholdTrust => {
                     let required = record
@@ -940,4 +938,3 @@ impl SyncTrustStore {
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
-
