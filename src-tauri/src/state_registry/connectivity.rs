@@ -122,7 +122,8 @@ pub(crate) fn register(
         ZeroTierService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(zerotier_service.clone());
 
-    let tailscale_service = TailscaleService::new_persistent(emitter.clone(), vpn_profile_storage);
+    let tailscale_service =
+        TailscaleService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(tailscale_service.clone());
 
     // Best-effort eager restore for vault-unlocked installs. Password/hybrid
@@ -149,20 +150,38 @@ pub(crate) fn register(
     // another session and remember whether the app started the VPN.
     app.manage(vpn_lifecycle::new_vpn_lease_service_state());
 
-    let pptp_service = PPTPService::new_with_emitter(emitter.clone());
+    let pptp_service = PPTPService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(pptp_service.clone());
 
-    let l2tp_service = L2TPService::new_with_emitter(emitter.clone());
+    let l2tp_service = L2TPService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(l2tp_service.clone());
 
-    let ikev2_service = IKEv2Service::new_with_emitter(emitter.clone());
+    let ikev2_service = IKEv2Service::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(ikev2_service.clone());
 
-    let ipsec_service = IPsecService::new_with_emitter(emitter.clone());
+    let ipsec_service = IPsecService::new_persistent(emitter.clone(), vpn_profile_storage.clone());
     app.manage(ipsec_service.clone());
 
-    let sstp_service = SSTPService::new_with_emitter(emitter.clone());
+    let sstp_service = SSTPService::new_persistent(emitter.clone(), vpn_profile_storage);
     app.manage(sstp_service.clone());
+
+    tauri::async_runtime::block_on(async {
+        if let Err(error) = pptp_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("PPTP", &error);
+        }
+        if let Err(error) = l2tp_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("L2TP", &error);
+        }
+        if let Err(error) = ikev2_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("IKEv2", &error);
+        }
+        if let Err(error) = ipsec_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("IPsec", &error);
+        }
+        if let Err(error) = sstp_service.lock().await.restore_persisted().await {
+            log_vpn_profile_restore_failure("SSTP", &error);
+        }
+    });
 
     // SoftEther — per plan §1.4 + e04 handoff. Scaffolded native Rust client
     // (TCP+TLS watermark handshake + tokio::task::spawn session loop).
@@ -262,9 +281,7 @@ mod tests {
         let secret = "TOP-SECRET-RESTORE-LOG-0c52";
         for (error, expected) in [
             (
-                format!(
-                    "VPN profile restore failed: stored data uses a newer schema; {secret}"
-                ),
+                format!("VPN profile restore failed: stored data uses a newer schema; {secret}"),
                 "future-schema",
             ),
             (

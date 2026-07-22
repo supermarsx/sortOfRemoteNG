@@ -13,6 +13,7 @@
 // inside a module body.
 
 use super::ikev2::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_ikev2_connection(
@@ -37,9 +38,21 @@ pub async fn connect_ikev2(
 pub async fn disconnect_ikev2(
     connection_id: String,
     state: tauri::State<'_, IKEv2ServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ikev2,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = state.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -47,7 +60,7 @@ pub async fn get_ikev2_connection(
     connection_id: String,
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<IKEv2ConnectionView, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .get_connection(&connection_id)
         .await?
@@ -59,7 +72,7 @@ pub async fn get_ikev2_status(
     connection_id: String,
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<IKEv2Status, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_status(&connection_id).await
 }
 
@@ -67,10 +80,10 @@ pub async fn get_ikev2_status(
 pub async fn list_ikev2_connections(
     state: tauri::State<'_, IKEv2ServiceState>,
 ) -> Result<Vec<IKEv2ConnectionView>, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .list_connections()
-        .await
+        .await?
         .into_iter()
         .map(IKEv2Connection::into_redacted_view)
         .collect())
@@ -80,9 +93,21 @@ pub async fn list_ikev2_connections(
 pub async fn delete_ikev2_connection(
     connection_id: String,
     state: tauri::State<'_, IKEv2ServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ikev2,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = state.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]

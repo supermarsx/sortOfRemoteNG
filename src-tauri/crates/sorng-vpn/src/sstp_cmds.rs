@@ -10,6 +10,7 @@
 // `src-tauri/src/sstp_commands.rs`; inner doc (`//!`) not allowed.
 
 use super::sstp::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_sstp_connection(
@@ -34,9 +35,21 @@ pub async fn connect_sstp(
 pub async fn disconnect_sstp(
     connection_id: String,
     state: tauri::State<'_, SSTPServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Sstp,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = state.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -44,7 +57,7 @@ pub async fn get_sstp_connection(
     connection_id: String,
     state: tauri::State<'_, SSTPServiceState>,
 ) -> Result<SSTPConnectionView, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .get_connection(&connection_id)
         .await?
@@ -56,7 +69,7 @@ pub async fn get_sstp_status(
     connection_id: String,
     state: tauri::State<'_, SSTPServiceState>,
 ) -> Result<SSTPStatus, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_status(&connection_id).await
 }
 
@@ -64,10 +77,10 @@ pub async fn get_sstp_status(
 pub async fn list_sstp_connections(
     state: tauri::State<'_, SSTPServiceState>,
 ) -> Result<Vec<SSTPConnectionView>, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .list_connections()
-        .await
+        .await?
         .into_iter()
         .map(SSTPConnection::into_redacted_view)
         .collect())
@@ -77,9 +90,21 @@ pub async fn list_sstp_connections(
 pub async fn delete_sstp_connection(
     connection_id: String,
     state: tauri::State<'_, SSTPServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Sstp,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = state.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]

@@ -78,6 +78,7 @@ libc = "0.2"
 
 [dev-dependencies]
 rcgen = { version = "0.12", features = ["pem"] }
+sorng-encryption = { path = "../sorng-encryption" }
 # t4-e12: property-based / fuzz tests for the SoftEther PACK codec.
 proptest = "1"
 

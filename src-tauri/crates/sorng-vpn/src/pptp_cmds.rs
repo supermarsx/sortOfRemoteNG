@@ -10,6 +10,7 @@
 // `src-tauri/src/pptp_commands.rs`; inner doc (`//!`) not allowed.
 
 use super::pptp::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_pptp_connection(
@@ -34,9 +35,21 @@ pub async fn connect_pptp(
 pub async fn disconnect_pptp(
     connection_id: String,
     state: tauri::State<'_, PPTPServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Pptp,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = state.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -44,7 +57,7 @@ pub async fn get_pptp_connection(
     connection_id: String,
     state: tauri::State<'_, PPTPServiceState>,
 ) -> Result<PPTPConnectionView, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .get_connection(&connection_id)
         .await?
@@ -56,7 +69,7 @@ pub async fn get_pptp_status(
     connection_id: String,
     state: tauri::State<'_, PPTPServiceState>,
 ) -> Result<PPTPStatus, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_status(&connection_id).await
 }
 
@@ -64,10 +77,10 @@ pub async fn get_pptp_status(
 pub async fn list_pptp_connections(
     state: tauri::State<'_, PPTPServiceState>,
 ) -> Result<Vec<PPTPConnectionView>, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .list_connections()
-        .await
+        .await?
         .into_iter()
         .map(PPTPConnection::into_redacted_view)
         .collect())
@@ -77,9 +90,21 @@ pub async fn list_pptp_connections(
 pub async fn delete_pptp_connection(
     connection_id: String,
     state: tauri::State<'_, PPTPServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Pptp,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = state.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]

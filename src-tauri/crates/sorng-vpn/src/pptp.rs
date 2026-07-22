@@ -1,3 +1,7 @@
+use crate::persistence::{
+    deserialize_profile_definitions, load_service_data, save_service_data,
+    serialize_profile_definitions, validate_persisted_profile_id, Persistable, RestoreOutcome,
+};
 #[cfg(windows)]
 use crate::ras_helper;
 use chrono::{DateTime, Utc};
@@ -87,6 +91,8 @@ pub struct PPTPConfig {
 pub struct PPTPService {
     connections: HashMap<String, PPTPConnection>,
     emitter: Option<DynEventEmitter>,
+    storage: Option<sorng_storage::storage::SecureStorageState>,
+    definitions_loaded: bool,
 }
 
 impl PPTPService {
@@ -94,6 +100,8 @@ impl PPTPService {
         Arc::new(Mutex::new(PPTPService {
             connections: HashMap::new(),
             emitter: None,
+            storage: None,
+            definitions_loaded: true,
         }))
     }
 
@@ -101,7 +109,65 @@ impl PPTPService {
         Arc::new(Mutex::new(PPTPService {
             connections: HashMap::new(),
             emitter: Some(emitter),
+            storage: None,
+            definitions_loaded: true,
         }))
+    }
+
+    pub fn new_persistent(
+        emitter: DynEventEmitter,
+        storage: sorng_storage::storage::SecureStorageState,
+    ) -> PPTPServiceState {
+        Arc::new(Mutex::new(PPTPService {
+            connections: HashMap::new(),
+            emitter: Some(emitter),
+            storage: Some(storage),
+            definitions_loaded: false,
+        }))
+    }
+
+    pub async fn restore_persisted(&mut self) -> Result<RestoreOutcome, String> {
+        if self.definitions_loaded {
+            return Ok(RestoreOutcome::Loaded);
+        }
+        let Some(storage) = self.storage.clone() else {
+            self.definitions_loaded = true;
+            return Ok(RestoreOutcome::Missing);
+        };
+        let outcome = load_service_data(self, &storage).await?;
+        if outcome != RestoreOutcome::Locked {
+            self.definitions_loaded = true;
+        }
+        Ok(outcome)
+    }
+
+    pub async fn ensure_persisted_loaded(&mut self) -> Result<(), String> {
+        match self.restore_persisted().await {
+            Ok(RestoreOutcome::Loaded | RestoreOutcome::Missing) => Ok(()),
+            Ok(RestoreOutcome::Locked) => Err(
+                "VPN profile storage is locked; unlock it in Settings -> Security and retry"
+                    .to_string(),
+            ),
+            Err(error) => Err(format!(
+                "PPTP profile storage is unreadable; stored profiles were left untouched: {error}"
+            )),
+        }
+    }
+
+    async fn persist_or_rollback(
+        &mut self,
+        previous: HashMap<String, PPTPConnection>,
+    ) -> Result<(), String> {
+        let Some(storage) = self.storage.clone() else {
+            return Ok(());
+        };
+        if let Err(error) = save_service_data(self, &storage).await {
+            self.connections = previous;
+            return Err(format!(
+                "PPTP profile change was not saved and has been rolled back: {error}"
+            ));
+        }
+        Ok(())
     }
 
     fn emit_status(&self, connection_id: &str, status: &str, extra: serde_json::Value) {
@@ -125,6 +191,8 @@ impl PPTPService {
         name: String,
         config: PPTPConfig,
     ) -> Result<String, String> {
+        self.ensure_persisted_loaded().await?;
+        let previous = self.connections.clone();
         let id = Uuid::new_v4().to_string();
         let connection = PPTPConnection {
             id: id.clone(),
@@ -140,10 +208,12 @@ impl PPTPService {
         };
 
         self.connections.insert(id.clone(), connection);
+        self.persist_or_rollback(previous).await?;
         Ok(id)
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         if !self.connections.contains_key(connection_id) {
             return Err("PPTP connection not found".to_string());
         }
@@ -198,6 +268,7 @@ impl PPTPService {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         let connection = self
             .connections
             .get_mut(connection_id)
@@ -247,28 +318,34 @@ impl PPTPService {
         Ok(())
     }
 
-    pub async fn get_connection(&self, connection_id: &str) -> Result<PPTPConnection, String> {
+    pub async fn get_connection(&mut self, connection_id: &str) -> Result<PPTPConnection, String> {
+        self.ensure_persisted_loaded().await?;
         self.connections
             .get(connection_id)
             .cloned()
             .ok_or_else(|| "PPTP connection not found".to_string())
     }
 
-    pub async fn list_connections(&self) -> Vec<PPTPConnection> {
-        self.connections.values().cloned().collect()
+    pub async fn list_connections(&mut self) -> Result<Vec<PPTPConnection>, String> {
+        self.ensure_persisted_loaded().await?;
+        Ok(self.connections.values().cloned().collect())
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        #[cfg(windows)]
-        if self.connections.contains_key(connection_id) {
-            self.disconnect(connection_id).await?;
+        self.ensure_persisted_loaded().await?;
+        if !self.connections.contains_key(connection_id) {
+            return Ok(());
         }
-
+        // Reconcile the deterministic OS entry even after restart, when the
+        // restored in-memory status is intentionally Disconnected.
+        self.disconnect(connection_id).await?;
+        let previous = self.connections.clone();
         self.connections.remove(connection_id);
-        Ok(())
+        self.persist_or_rollback(previous).await
     }
 
-    pub async fn get_status(&self, connection_id: &str) -> Result<PPTPStatus, String> {
+    pub async fn get_status(&mut self, connection_id: &str) -> Result<PPTPStatus, String> {
+        self.ensure_persisted_loaded().await?;
         let connection = self
             .connections
             .get(connection_id)
@@ -277,6 +354,7 @@ impl PPTPService {
     }
 
     pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
         if !self.connections.contains_key(connection_id) {
             return Err("PPTP connection not found".to_string());
         }
@@ -305,6 +383,8 @@ impl PPTPService {
         name: Option<String>,
         config: Option<PPTPConfig>,
     ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        let previous = self.connections.clone();
         let connection = self
             .connections
             .get_mut(connection_id)
@@ -316,7 +396,7 @@ impl PPTPService {
         if let Some(new_config) = config {
             connection.config = new_config;
         }
-        Ok(())
+        self.persist_or_rollback(previous).await
     }
 
     pub async fn update_connection_from_ipc(
@@ -326,6 +406,7 @@ impl PPTPService {
         mut config: Option<PPTPConfig>,
         secret_mutation: PPTPSecretMutation,
     ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         if config.is_none() && secret_mutation.clear_password {
             let mut current = self
                 .connections
@@ -350,5 +431,45 @@ impl PPTPService {
             )?;
         }
         self.update_connection(connection_id, name, config).await
+    }
+}
+
+#[async_trait::async_trait]
+impl Persistable for PPTPService {
+    fn storage_key(&self) -> &'static str {
+        crate::persistence::keys::PPTP
+    }
+
+    fn serialize_definitions(&self) -> Result<String, String> {
+        let mut connections = self.connections.values().cloned().collect::<Vec<_>>();
+        connections.sort_by(|left, right| left.id.cmp(&right.id));
+        for connection in &mut connections {
+            connection.status = PPTPStatus::Disconnected;
+            connection.connected_at = None;
+            connection.local_ip = None;
+            connection.remote_ip = None;
+            connection.ras_entry_name = None;
+            connection.process_id = None;
+        }
+        serialize_profile_definitions(&connections)
+    }
+
+    fn deserialize_definitions(&mut self, data: &str) -> Result<(), String> {
+        let mut restored = HashMap::new();
+        for mut connection in deserialize_profile_definitions::<PPTPConnection>(data)? {
+            validate_persisted_profile_id(&connection.id, "PPTP")?;
+            connection.status = PPTPStatus::Disconnected;
+            connection.connected_at = None;
+            connection.local_ip = None;
+            connection.remote_ip = None;
+            connection.ras_entry_name = None;
+            connection.process_id = None;
+            let id = connection.id.clone();
+            if restored.insert(id, connection).is_some() {
+                return Err("PPTP profile data contains a duplicate id".to_string());
+            }
+        }
+        self.connections = restored;
+        Ok(())
     }
 }

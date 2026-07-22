@@ -11,6 +11,7 @@
 // inside a module body.
 
 use super::ipsec::*;
+use crate::vpn_lifecycle::{RuntimeVpnType, VpnLeaseKey, VpnLeaseServiceState};
 
 #[tauri::command]
 pub async fn create_ipsec_connection(
@@ -35,9 +36,21 @@ pub async fn connect_ipsec(
 pub async fn disconnect_ipsec(
     connection_id: String,
     state: tauri::State<'_, IPsecServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ipsec,
+            connection_id: connection_id.clone(),
+        },
+        "disconnect",
+    )?;
     let mut service = state.lock().await;
-    service.disconnect(&connection_id).await
+    let result = service.disconnect(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]
@@ -45,7 +58,7 @@ pub async fn get_ipsec_connection(
     connection_id: String,
     state: tauri::State<'_, IPsecServiceState>,
 ) -> Result<IPsecConnectionView, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .get_connection(&connection_id)
         .await?
@@ -57,7 +70,7 @@ pub async fn get_ipsec_status(
     connection_id: String,
     state: tauri::State<'_, IPsecServiceState>,
 ) -> Result<IPsecStatus, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     service.get_status(&connection_id).await
 }
 
@@ -65,10 +78,10 @@ pub async fn get_ipsec_status(
 pub async fn list_ipsec_connections(
     state: tauri::State<'_, IPsecServiceState>,
 ) -> Result<Vec<IPsecConnectionView>, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
     Ok(service
         .list_connections()
-        .await
+        .await?
         .into_iter()
         .map(IPsecConnection::into_redacted_view)
         .collect())
@@ -78,9 +91,21 @@ pub async fn list_ipsec_connections(
 pub async fn delete_ipsec_connection(
     connection_id: String,
     state: tauri::State<'_, IPsecServiceState>,
+    vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
 ) -> Result<(), String> {
+    let lease_registry = vpn_lease_state.lock().await;
+    lease_registry.ensure_direct_teardown_allowed(
+        &VpnLeaseKey {
+            vpn_type: RuntimeVpnType::Ipsec,
+            connection_id: connection_id.clone(),
+        },
+        "delete",
+    )?;
     let mut service = state.lock().await;
-    service.delete_connection(&connection_id).await
+    let result = service.delete_connection(&connection_id).await;
+    drop(service);
+    drop(lease_registry);
+    result
 }
 
 #[tauri::command]

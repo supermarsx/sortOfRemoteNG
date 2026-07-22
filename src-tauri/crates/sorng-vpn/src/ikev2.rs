@@ -1,3 +1,7 @@
+use crate::persistence::{
+    deserialize_profile_definitions, load_service_data, save_service_data,
+    serialize_profile_definitions, validate_persisted_profile_id, Persistable, RestoreOutcome,
+};
 #[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
@@ -92,6 +96,8 @@ pub struct IKEv2Config {
 pub struct IKEv2Service {
     connections: HashMap<String, IKEv2Connection>,
     emitter: Option<DynEventEmitter>,
+    storage: Option<sorng_storage::storage::SecureStorageState>,
+    definitions_loaded: bool,
 }
 
 impl IKEv2Service {
@@ -99,6 +105,8 @@ impl IKEv2Service {
         Arc::new(Mutex::new(IKEv2Service {
             connections: HashMap::new(),
             emitter: None,
+            storage: None,
+            definitions_loaded: true,
         }))
     }
 
@@ -106,7 +114,65 @@ impl IKEv2Service {
         Arc::new(Mutex::new(IKEv2Service {
             connections: HashMap::new(),
             emitter: Some(emitter),
+            storage: None,
+            definitions_loaded: true,
         }))
+    }
+
+    pub fn new_persistent(
+        emitter: DynEventEmitter,
+        storage: sorng_storage::storage::SecureStorageState,
+    ) -> IKEv2ServiceState {
+        Arc::new(Mutex::new(IKEv2Service {
+            connections: HashMap::new(),
+            emitter: Some(emitter),
+            storage: Some(storage),
+            definitions_loaded: false,
+        }))
+    }
+
+    pub async fn restore_persisted(&mut self) -> Result<RestoreOutcome, String> {
+        if self.definitions_loaded {
+            return Ok(RestoreOutcome::Loaded);
+        }
+        let Some(storage) = self.storage.clone() else {
+            self.definitions_loaded = true;
+            return Ok(RestoreOutcome::Missing);
+        };
+        let outcome = load_service_data(self, &storage).await?;
+        if outcome != RestoreOutcome::Locked {
+            self.definitions_loaded = true;
+        }
+        Ok(outcome)
+    }
+
+    pub async fn ensure_persisted_loaded(&mut self) -> Result<(), String> {
+        match self.restore_persisted().await {
+            Ok(RestoreOutcome::Loaded | RestoreOutcome::Missing) => Ok(()),
+            Ok(RestoreOutcome::Locked) => Err(
+                "VPN profile storage is locked; unlock it in Settings -> Security and retry"
+                    .to_string(),
+            ),
+            Err(error) => Err(format!(
+                "IKEv2 profile storage is unreadable; stored profiles were left untouched: {error}"
+            )),
+        }
+    }
+
+    async fn persist_or_rollback(
+        &mut self,
+        previous: HashMap<String, IKEv2Connection>,
+    ) -> Result<(), String> {
+        let Some(storage) = self.storage.clone() else {
+            return Ok(());
+        };
+        if let Err(error) = save_service_data(self, &storage).await {
+            self.connections = previous;
+            return Err(format!(
+                "IKEv2 profile change was not saved and has been rolled back: {error}"
+            ));
+        }
+        Ok(())
     }
 
     fn emit_status(&self, connection_id: &str, status: &str, extra: serde_json::Value) {
@@ -130,6 +196,8 @@ impl IKEv2Service {
         name: String,
         config: IKEv2Config,
     ) -> Result<String, String> {
+        self.ensure_persisted_loaded().await?;
+        let previous = self.connections.clone();
         let id = Uuid::new_v4().to_string();
         let connection = IKEv2Connection {
             id: id.clone(),
@@ -145,10 +213,12 @@ impl IKEv2Service {
         };
 
         self.connections.insert(id.clone(), connection);
+        self.persist_or_rollback(previous).await?;
         Ok(id)
     }
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         if !self.connections.contains_key(connection_id) {
             return Err("IKEv2 connection not found".to_string());
         }
@@ -258,6 +328,7 @@ impl IKEv2Service {
     }
 
     pub async fn disconnect(&mut self, connection_id: &str) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         let connection = self
             .connections
             .get_mut(connection_id)
@@ -298,27 +369,32 @@ impl IKEv2Service {
         Ok(())
     }
 
-    pub async fn get_connection(&self, connection_id: &str) -> Result<IKEv2Connection, String> {
+    pub async fn get_connection(&mut self, connection_id: &str) -> Result<IKEv2Connection, String> {
+        self.ensure_persisted_loaded().await?;
         self.connections
             .get(connection_id)
             .cloned()
             .ok_or_else(|| "IKEv2 connection not found".to_string())
     }
 
-    pub async fn list_connections(&self) -> Vec<IKEv2Connection> {
-        self.connections.values().cloned().collect()
+    pub async fn list_connections(&mut self) -> Result<Vec<IKEv2Connection>, String> {
+        self.ensure_persisted_loaded().await?;
+        Ok(self.connections.values().cloned().collect())
     }
 
     pub async fn delete_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        if self.connections.contains_key(connection_id) {
-            self.disconnect(connection_id).await?;
+        self.ensure_persisted_loaded().await?;
+        if !self.connections.contains_key(connection_id) {
+            return Ok(());
         }
-
+        self.disconnect(connection_id).await?;
+        let previous = self.connections.clone();
         self.connections.remove(connection_id);
-        Ok(())
+        self.persist_or_rollback(previous).await
     }
 
-    pub async fn get_status(&self, connection_id: &str) -> Result<IKEv2Status, String> {
+    pub async fn get_status(&mut self, connection_id: &str) -> Result<IKEv2Status, String> {
+        self.ensure_persisted_loaded().await?;
         let connection = self
             .connections
             .get(connection_id)
@@ -327,6 +403,7 @@ impl IKEv2Service {
     }
 
     pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
+        self.ensure_persisted_loaded().await?;
         if !self.connections.contains_key(connection_id) {
             return Err("IKEv2 connection not found".to_string());
         }
@@ -355,6 +432,8 @@ impl IKEv2Service {
         name: Option<String>,
         config: Option<IKEv2Config>,
     ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
+        let previous = self.connections.clone();
         let connection = self
             .connections
             .get_mut(connection_id)
@@ -366,7 +445,7 @@ impl IKEv2Service {
         if let Some(new_config) = config {
             connection.config = new_config;
         }
-        Ok(())
+        self.persist_or_rollback(previous).await
     }
 
     pub async fn update_connection_from_ipc(
@@ -376,6 +455,7 @@ impl IKEv2Service {
         mut config: Option<IKEv2Config>,
         secret_mutation: IKEv2SecretMutation,
     ) -> Result<(), String> {
+        self.ensure_persisted_loaded().await?;
         if config.is_none() && (secret_mutation.clear_password || secret_mutation.clear_private_key)
         {
             let mut current = self
@@ -412,6 +492,46 @@ impl IKEv2Service {
             )?;
         }
         self.update_connection(connection_id, name, config).await
+    }
+}
+
+#[async_trait::async_trait]
+impl Persistable for IKEv2Service {
+    fn storage_key(&self) -> &'static str {
+        crate::persistence::keys::IKEV2
+    }
+
+    fn serialize_definitions(&self) -> Result<String, String> {
+        let mut connections = self.connections.values().cloned().collect::<Vec<_>>();
+        connections.sort_by(|left, right| left.id.cmp(&right.id));
+        for connection in &mut connections {
+            connection.status = IKEv2Status::Disconnected;
+            connection.connected_at = None;
+            connection.local_ip = None;
+            connection.remote_ip = None;
+            connection.ras_entry_name = None;
+            connection.process_id = None;
+        }
+        serialize_profile_definitions(&connections)
+    }
+
+    fn deserialize_definitions(&mut self, data: &str) -> Result<(), String> {
+        let mut restored = HashMap::new();
+        for mut connection in deserialize_profile_definitions::<IKEv2Connection>(data)? {
+            validate_persisted_profile_id(&connection.id, "IKEv2")?;
+            connection.status = IKEv2Status::Disconnected;
+            connection.connected_at = None;
+            connection.local_ip = None;
+            connection.remote_ip = None;
+            connection.ras_entry_name = None;
+            connection.process_id = None;
+            let id = connection.id.clone();
+            if restored.insert(id, connection).is_some() {
+                return Err("IKEv2 profile data contains a duplicate id".to_string());
+            }
+        }
+        self.connections = restored;
+        Ok(())
     }
 }
 
