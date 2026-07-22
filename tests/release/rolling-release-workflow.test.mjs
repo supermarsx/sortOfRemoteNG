@@ -279,7 +279,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "1",
+      release_codegen_units: "16",
       release_opt_level: "0",
     },
   });
@@ -293,15 +293,15 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows keeps one codegen unit after exhausting LLVM memory\. Both macOS\r?\n\s+# runners use basic optimization with split codegen after multi-hour\r?\n\s+# opt-level 3, thin-LTO builds made no progress past sorng-app-auth\./,
+    /# release builds use bounded LLVM profiles instead:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows also uses split codegen after a direct LLVM allocation failure\r?\n\s+# in the final app crate\. Both macOS runners use basic optimization with\r?\n\s+# split codegen after multi-hour opt-level 3, thin-LTO builds made no\r?\n\s+# progress past sorng-app-auth\./,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "16"$/gm) ?? []).length,
-    3,
+    4,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "1"$/gm) ?? []).length,
-    1,
+    0,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
@@ -389,7 +389,7 @@ test("resource controls preserve release features and signing inputs", () => {
   );
 });
 
-test("Windows release artifacts keep the portable x86-64 ISA baseline", () => {
+test("Windows release artifacts keep portable ISA and supported linker flags", () => {
   for (const target of [
     "target.x86_64-pc-windows-gnu",
     "target.x86_64-pc-windows-msvc",
@@ -403,13 +403,9 @@ test("Windows release artifacts keep the portable x86-64 ISA baseline", () => {
 
   assert.equal(
     activeTomlSection(cargoConfig, "target.x86_64-pc-windows-msvc"),
-    [
-      "[target.x86_64-pc-windows-msvc]",
-      "rustflags = [",
-      '  "-C", "link-arg=/threads:8",',
-      "]",
-    ].join("\n"),
+    "",
   );
+  assert.doesNotMatch(cargoConfig, /link-arg=\/threads:/i);
 });
 
 test("platform resource inspection is exact and immediately precedes native building", () => {

@@ -86,25 +86,14 @@ low-speed-limit = 5
 # Linker + target feature flags
 # ═══════════════════════════════════════════════════════════════════════
 #
-# We use the platform-native fast linker for each OS:
-#   Windows → rust-lld  (ships with Rust, ~2-5× faster than link.exe)
-#   Linux   → mold      (install via `apt install mold` or from GitHub)
-#   macOS   → default   (Apple ld is already fast; lld has issues on macOS)
+# We use the platform-default linker for Windows and macOS. Linux may use a
+# verified workflow-local LLD wrapper; local mold configuration stays private.
 #
 # Combined with the x86-64-v3 target features for crypto / SIMD on the
 # explicitly opted-in Linux and macOS targets below.
-
-[target.x86_64-pc-windows-msvc]
-# We intentionally do NOT set linker = "rust-lld.exe" here.
-# While rust-lld ships with the toolchain, it hangs when linking this
-# project's 178-crate binary (~7 GB of rlibs). The default MSVC link.exe
-# handles it reliably when MSVC is selected on purpose.
-#
-# /threads:8 parallelises the MSVC linker (supported since VS 2019 16.6+).
-# This alone can halve link time on multi-core machines.
-rustflags = [
-  "-C", "link-arg=/threads:8",
-]
+# Windows intentionally has no shared target flags. The hosted MSVC linker
+# reports /threads:8 as LNK4044 (unrecognized and ignored), while rust-lld
+# hangs on this project's large binary, so release builds use plain link.exe.
 
 [target.x86_64-unknown-linux-gnu]
 # NOTE: do NOT commit `linker = "clang"` + `-fuse-ld=mold` here. mold (and a
