@@ -249,7 +249,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       bundles: "appimage,deb",
       cargo_build_jobs: "1",
       release_lto: "off",
-      release_codegen_units: "1",
+      release_codegen_units: "16",
       release_opt_level: "0",
     },
     "darwin-aarch64": {
@@ -293,7 +293,15 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.match(
     buildDefinition,
-    /# and Windows disable LLVM optimization in the hosted release matrix:\r?\n\s+# Linux lost runners during final codegen, while Windows exhausted LLVM\r?\n\s+# memory at one job and one codegen unit\. macOS keeps the checked-in\r?\n\s+# production release profile\./,
+    /# and Windows disable LLVM optimization in the hosted release matrix:\r?\n\s+# Linux splits final codegen into 16 smaller units after repeated\r?\n\s+# 90-minute single-CGU builds ended in runner loss; it retains one job\.\r?\n\s+# Windows keeps one codegen unit after exhausting LLVM memory; macOS\r?\n\s+# keeps the checked-in production release profile\./,
+  );
+  assert.equal(
+    (matrixDefinition.match(/^\s+release_codegen_units: "16"$/gm) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (matrixDefinition.match(/^\s+release_codegen_units: "1"$/gm) ?? []).length,
+    3,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,

@@ -323,7 +323,7 @@ jobs:
             bundles: appimage,deb
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "1"
+            release_codegen_units: "16"
             release_opt_level: "0"
           - artifact_id: darwin-aarch64
             os: macos-15
@@ -356,9 +356,10 @@ jobs:
     env:
       # The checked-in Cargo config is tuned for a 200 GB workstation. Linux
       # and Windows disable LLVM optimization in the hosted release matrix:
-      # Linux lost runners during final codegen, while Windows exhausted LLVM
-      # memory at one job and one codegen unit. macOS keeps the checked-in
-      # production release profile.
+      # Linux splits final codegen into 16 smaller units after repeated
+      # 90-minute single-CGU builds ended in runner loss; it retains one job.
+      # Windows keeps one codegen unit after exhausting LLVM memory; macOS
+      # keeps the checked-in production release profile.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}
