@@ -20,7 +20,10 @@ import {
   toPptpIpcConfig,
   toSstpIpcConfig,
 } from "../../src/utils/network/vpnIpcAdapter";
-import { toVpnEditorFormConfig } from "../../src/hooks/network/useVpnEditor";
+import {
+  getVpnEditorValidationError,
+  toVpnEditorFormConfig,
+} from "../../src/hooks/network/useVpnEditor";
 
 const createdAt = "2026-07-22T12:00:00Z";
 
@@ -28,6 +31,8 @@ const configs = {
   ikev2: {
     enabled: true,
     server: "ike.example.com",
+    routingMode: "split" as const,
+    remoteSubnets: ["10.20.0.0/16", "2001:db8:42::/48"],
     username: "alice",
     password: "password",
     certificate: "/certs/client.pem",
@@ -105,6 +110,8 @@ const configs = {
   ipsec: {
     enabled: true,
     server: "ipsec.example.com",
+    routingMode: "split" as const,
+    remoteSubnets: ["192.168.50.0/24"],
     authMethod: "psk" as const,
     psk: "gateway secret",
     certificate: "/certs/client.pem",
@@ -123,6 +130,8 @@ const configs = {
 const ipcConfigs = {
   ikev2: {
     server: "ike.example.com",
+    routing_mode: "split",
+    remote_subnets: ["10.20.0.0/16", "2001:db8:42::/48"],
     username: "alice",
     password: "password",
     certificate: "/certs/client.pem",
@@ -188,6 +197,8 @@ const ipcConfigs = {
   },
   ipsec: {
     server: "ipsec.example.com",
+    routing_mode: "split",
+    remote_subnets: ["192.168.50.0/24"],
     auth_method: "psk",
     psk: "gateway secret",
     certificate: "/certs/client.pem",
@@ -212,6 +223,66 @@ describe("legacy VPN IPC adapter", () => {
     expect(toL2tpIpcConfig(configs.l2tp)).toEqual(ipcConfigs.l2tp);
     expect(toPptpIpcConfig(configs.pptp)).toEqual(ipcConfigs.pptp);
     expect(toIpsecIpcConfig(configs.ipsec)).toEqual(ipcConfigs.ipsec);
+  });
+
+  it("defaults missing IKEv2 and IPsec routing fields to a full tunnel", () => {
+    expect(
+      toIkeV2IpcConfig({
+        enabled: true,
+        server: "ike.example.com",
+        username: "alice",
+      }),
+    ).toMatchObject({ routing_mode: "full", remote_subnets: [] });
+    expect(
+      toIpsecIpcConfig({ enabled: true, server: "ipsec.example.com" }),
+    ).toMatchObject({ routing_mode: "full", remote_subnets: [] });
+
+    const connection = (config: object) => ({
+      id: "connection-id",
+      name: "Office",
+      config,
+      status: "Disconnected",
+      created_at: createdAt,
+      secret_presence: {},
+    });
+    expect(
+      fromIkeV2IpcConnection(
+        connection({ server: "ike.example.com", username: "alice" }),
+      ).config,
+    ).toMatchObject({ routingMode: "full", remoteSubnets: [] });
+    expect(
+      fromIpsecIpcConnection(connection({ server: "ipsec.example.com" }))
+        .config,
+    ).toMatchObject({ routingMode: "full", remoteSubnets: [] });
+
+    for (const vpnType of ["ikev2", "ipsec"] as const) {
+      expect(
+        toVpnEditorFormConfig(vpnType, { server: `${vpnType}.example.com` }),
+      ).toMatchObject({ routingMode: "full", remoteSubnets: [] });
+    }
+  });
+
+  it("validates profile-owned IKEv2 and IPsec routing before save", () => {
+    expect(
+      getVpnEditorValidationError("ikev2", {
+        routingMode: "split",
+        remoteSubnets: [],
+      }),
+    ).toBe("Split-tunnel VPN profiles require at least one remote subnet.");
+    expect(
+      getVpnEditorValidationError("ipsec", {
+        routingMode: "split",
+        remoteSubnets: ["10.20.0.0/16", "2001:db8:42::/48"],
+      }),
+    ).toBeNull();
+    expect(
+      getVpnEditorValidationError("ikev2", {
+        routingMode: "full",
+        remoteSubnets: ["10.20.0.0/16"],
+      }),
+    ).toBe(
+      "Full-tunnel VPN profiles cannot define custom remote subnets; choose split routing instead.",
+    );
   });
 
   it("uses the adapter for create and update commands", async () => {

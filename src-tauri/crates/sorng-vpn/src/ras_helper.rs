@@ -30,8 +30,13 @@ const SET_EAP_PEAP_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $inner = New
 const CREATE_L2TP_ENTRY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Add-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -ServerAddress $env:SORNG_VPN_SERVER -TunnelType L2tp -L2tpPsk $env:SORNG_VPN_SHARED_SECRET -Force -RememberCredential";
 #[cfg(windows)]
 const SET_IPSEC_POLICY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Set-VpnConnectionIPsecConfiguration -ConnectionName $env:SORNG_VPN_ENTRY_NAME -AuthenticationTransformConstants SHA256128 -CipherTransformConstants AES256 -DHGroup Group14 -EncryptionMethod AES256 -IntegrityCheckMethod SHA256 -PfsGroup None -Force";
+#[cfg(windows)]
+const SET_ROUTING_MODE_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $split = $env:SORNG_VPN_SPLIT_TUNNELING -eq 'true'; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -SplitTunneling $split -Force";
+#[cfg(windows)]
+const ADD_ROUTE_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Add-VpnConnectionRoute -ConnectionName $env:SORNG_VPN_ENTRY_NAME -DestinationPrefix $env:SORNG_VPN_DESTINATION_PREFIX -PassThru:$false";
 
 #[cfg(windows)]
+#[derive(Debug)]
 struct PowerShellInvocation {
     script: &'static str,
     environment: Vec<(&'static str, String)>,
@@ -169,6 +174,70 @@ fn eap_invocation(entry_name: &str, eap_method: &str) -> Result<PowerShellInvoca
         script,
         environment: vec![("SORNG_VPN_ENTRY_NAME", entry_name.to_string())],
     })
+}
+
+#[cfg(windows)]
+fn routing_mode_invocation(entry_name: &str, split: bool) -> PowerShellInvocation {
+    PowerShellInvocation {
+        script: SET_ROUTING_MODE_SCRIPT,
+        environment: vec![
+            ("SORNG_VPN_ENTRY_NAME", entry_name.to_string()),
+            (
+                "SORNG_VPN_SPLIT_TUNNELING",
+                if split { "true" } else { "false" }.to_string(),
+            ),
+        ],
+    }
+}
+
+#[cfg(windows)]
+fn route_invocation(
+    entry_name: &str,
+    destination_prefix: &str,
+    item_number: usize,
+) -> Result<PowerShellInvocation, String> {
+    crate::routing::validate_cidr(destination_prefix)
+        .map_err(|reason| format!("remote subnet item {item_number} is invalid: {reason}"))?;
+    Ok(PowerShellInvocation {
+        script: ADD_ROUTE_SCRIPT,
+        environment: vec![
+            ("SORNG_VPN_ENTRY_NAME", entry_name.to_string()),
+            (
+                "SORNG_VPN_DESTINATION_PREFIX",
+                destination_prefix.to_string(),
+            ),
+        ],
+    })
+}
+
+/// Apply full- or split-tunnel routing to a Windows RAS entry. All dynamic
+/// values remain environment-bound to static PowerShell source.
+#[cfg(windows)]
+pub async fn configure_ras_routing(
+    entry_name: &str,
+    split: bool,
+    remote_subnets: &[String],
+) -> Result<(), String> {
+    if remote_subnets.is_empty() {
+        return Err("At least one remote subnet is required".to_string());
+    }
+    let route_invocations = remote_subnets
+        .iter()
+        .enumerate()
+        .map(|(index, subnet)| route_invocation(entry_name, subnet, index + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    run_powershell(
+        routing_mode_invocation(entry_name, split),
+        "VPN routing mode configuration",
+    )
+    .await?;
+    if split {
+        for invocation in route_invocations {
+            run_powershell(invocation, "VPN route configuration").await?;
+        }
+    }
+    Ok(())
 }
 
 /// Connect a Windows VPN entry through the native RAS API. This avoids
@@ -360,6 +429,10 @@ pub async fn configure_ras_eap(_: &str, _: &str) -> Result<(), String> {
     Err("RAS API is Windows-only".to_string())
 }
 #[cfg(not(windows))]
+pub async fn configure_ras_routing(_: &str, _: bool, _: &[String]) -> Result<(), String> {
+    Err("RAS API is Windows-only".to_string())
+}
+#[cfg(not(windows))]
 pub async fn rasdial_connect(_: &str, _: &str, _: &str) -> Result<(), String> {
     Err("RAS API is Windows-only".to_string())
 }
@@ -444,5 +517,39 @@ mod tests {
             .script
             .contains("-TunneledEapAuthMethod $inner.EapConfigXmlStream"));
         assert!(eap_invocation("entry", "unknown").is_err());
+    }
+
+    #[test]
+    fn routing_scripts_are_static_and_routes_are_environment_bound() {
+        let attacker = "entry'; Write-Output injected; #";
+        let mode = routing_mode_invocation(attacker, true);
+        assert_eq!(mode.script, SET_ROUTING_MODE_SCRIPT);
+        assert!(mode.script.contains("-SplitTunneling $split"));
+        assert!(!mode.script.contains(attacker));
+        assert!(mode.environment.iter().any(|(_, value)| value == attacker));
+        assert!(mode
+            .environment
+            .iter()
+            .any(|(key, value)| *key == "SORNG_VPN_SPLIT_TUNNELING" && value == "true"));
+
+        for destination in ["10.20.0.0/16", "2001:db8:42::/48"] {
+            let route = route_invocation(attacker, destination, 1).unwrap();
+            assert_eq!(route.script, ADD_ROUTE_SCRIPT);
+            assert!(route.script.contains("Add-VpnConnectionRoute"));
+            assert!(!route.script.contains(attacker));
+            assert!(!route.script.contains(destination));
+            assert!(route
+                .environment
+                .iter()
+                .any(|(_, value)| value == destination));
+        }
+    }
+
+    #[test]
+    fn routing_invocation_revalidates_cidrs_without_echoing_input() {
+        let marker = "secret-host.example/24'; injected";
+        let error = route_invocation("entry", marker, 3).unwrap_err();
+        assert!(!error.contains(marker));
+        assert!(error.contains("item 3"));
     }
 }

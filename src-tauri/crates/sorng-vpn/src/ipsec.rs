@@ -4,6 +4,7 @@ use crate::persistence::{
 };
 #[cfg(windows)]
 use crate::ras_helper;
+use crate::routing::{VpnRoutingMode, VpnRoutingPolicy};
 #[cfg(not(windows))]
 use crate::strongswan_helper;
 use chrono::{DateTime, Utc};
@@ -73,7 +74,7 @@ pub enum IPsecStatus {
     Error(String),
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IPsecConfig {
     pub server: String,
@@ -89,7 +90,21 @@ pub struct IPsecConfig {
     pub dpd_timeout: Option<u32>,
     pub tunnel_mode: Option<bool>,
     #[serde(default)]
+    pub routing_mode: VpnRoutingMode,
+    #[serde(default)]
+    pub remote_subnets: Vec<String>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
+}
+
+impl IPsecConfig {
+    fn validated_remote_subnets(&self) -> Result<Vec<String>, String> {
+        VpnRoutingPolicy {
+            routing_mode: self.routing_mode,
+            remote_subnets: self.remote_subnets.clone(),
+        }
+        .validated_remote_subnets()
+    }
 }
 
 pub struct IPsecService {
@@ -196,6 +211,7 @@ impl IPsecService {
         config: IPsecConfig,
     ) -> Result<String, String> {
         self.ensure_persisted_loaded().await?;
+        config.validated_remote_subnets()?;
         let previous = self.connections.clone();
         let id = Uuid::new_v4().to_string();
         let connection = IPsecConnection {
@@ -218,9 +234,13 @@ impl IPsecService {
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
         self.ensure_persisted_loaded().await?;
-        if !self.connections.contains_key(connection_id) {
-            return Err("IPsec connection not found".to_string());
-        }
+        let config = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "IPsec connection not found".to_string())?
+            .config
+            .clone();
+        let remote_subnets = config.validated_remote_subnets()?;
         if self.probe_connection_active(connection_id).await? {
             return Ok(());
         }
@@ -230,7 +250,6 @@ impl IPsecService {
             .expect("checked above");
 
         connection.status = IPsecStatus::Connecting;
-        let config = connection.config.clone();
         #[cfg(windows)]
         let entry_name = format!("SoRNG_IPsec_{}", &connection_id[..8]);
 
@@ -244,6 +263,24 @@ impl IPsecService {
             }
             // Windows: use IKEv2 tunnel type as the closest RAS equivalent for raw IPsec
             ras_helper::create_ras_entry(&entry_name, &config.server, "Ikev2").await?;
+
+            if let Err(error) = ras_helper::configure_ras_routing(
+                &entry_name,
+                matches!(config.routing_mode, VpnRoutingMode::Split),
+                &remote_subnets,
+            )
+            .await
+            {
+                let cleanup_error = ras_helper::remove_ras_entry(&entry_name).await.err();
+                let error = compose_setup_cleanup_error(error, cleanup_error);
+                connection.status = IPsecStatus::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
+            }
 
             // rasdial doesn't use username/password for pure IPsec, but we try anyway
             let username = "";
@@ -263,7 +300,9 @@ impl IPsecService {
         #[cfg(not(windows))]
         {
             let conn_name = format!("sorng_ipsec_{}", &connection_id[..8]);
-            if let Err(setup_error) = setup_strongswan_connection(&conn_name, &config).await {
+            if let Err(setup_error) =
+                setup_strongswan_connection(&conn_name, &config, &remote_subnets).await
+            {
                 let cleanup_error = strongswan_helper::cleanup_ipsec_files(&conn_name)
                     .await
                     .err();
@@ -373,9 +412,11 @@ impl IPsecService {
 
     pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
         self.ensure_persisted_loaded().await?;
-        if !self.connections.contains_key(connection_id) {
-            return Err("IPsec connection not found".to_string());
-        }
+        self.connections
+            .get(connection_id)
+            .ok_or_else(|| "IPsec connection not found".to_string())?
+            .config
+            .validated_remote_subnets()?;
         #[cfg(windows)]
         let active =
             ras_helper::is_ras_active(&format!("SoRNG_IPsec_{}", &connection_id[..8])).await?;
@@ -402,6 +443,20 @@ impl IPsecService {
         config: Option<IPsecConfig>,
     ) -> Result<(), String> {
         self.ensure_persisted_loaded().await?;
+        let current_config = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "IPsec connection not found".to_string())?
+            .config
+            .clone();
+        if let Some(config) = config.as_ref() {
+            config.validated_remote_subnets()?;
+            let changed = config != &current_config;
+            if changed {
+                let active = self.probe_connection_active(connection_id).await?;
+                crate::routing::ensure_inactive_native_update("IPsec", changed, active)?;
+            }
+        }
         let previous = self.connections.clone();
         let connection = self
             .connections
@@ -487,6 +542,7 @@ impl Persistable for IPsecService {
         let mut restored = HashMap::new();
         for mut connection in deserialize_profile_definitions::<IPsecConnection>(data)? {
             validate_persisted_profile_id(&connection.id, "IPsec")?;
+            connection.config.validated_remote_subnets()?;
             connection.status = IPsecStatus::Disconnected;
             connection.connected_at = None;
             connection.local_ip = None;
@@ -503,7 +559,6 @@ impl Persistable for IPsecService {
     }
 }
 
-#[cfg(not(windows))]
 fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String>) -> String {
     match cleanup_error {
         Some(cleanup_error) => {
@@ -514,7 +569,11 @@ fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String
 }
 
 #[cfg(not(windows))]
-async fn setup_strongswan_connection(conn_name: &str, config: &IPsecConfig) -> Result<(), String> {
+async fn setup_strongswan_connection(
+    conn_name: &str,
+    config: &IPsecConfig,
+    remote_subnets: &[String],
+) -> Result<(), String> {
     match config.auth_method.as_deref().unwrap_or("psk") {
         "psk" => {}
         "certificate" => {
@@ -547,8 +606,36 @@ async fn setup_strongswan_connection(conn_name: &str, config: &IPsecConfig) -> R
         eap_identity: None,
         phase1: config.phase1_proposals.as_deref(),
         phase2: config.phase2_proposals.as_deref(),
+        remote_subnets,
     })
     .await?;
     strongswan_helper::write_ipsec_secrets(conn_name, None, &config.server, "PSK", psk).await?;
     strongswan_helper::ipsec_up_transactional(conn_name).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn backend_probe_rejects_invalid_stored_routing_before_os_activity_check() {
+        let state = IPsecService::new();
+        let mut service = state.lock().await;
+        let config = serde_json::from_value(serde_json::json!({
+            "server": "ipsec.example.com"
+        }))
+        .unwrap();
+        let id = service
+            .create_connection("IPsec".to_string(), config)
+            .await
+            .unwrap();
+        let marker = "private-route-marker.example/24";
+        let config = &mut service.connections.get_mut(&id).unwrap().config;
+        config.routing_mode = VpnRoutingMode::Split;
+        config.remote_subnets = vec![marker.to_string()];
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(!error.contains(marker));
+        assert!(error.contains("remote_subnets"));
+    }
 }

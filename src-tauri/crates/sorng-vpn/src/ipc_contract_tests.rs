@@ -2,6 +2,7 @@ use crate::ikev2::{IKEv2Config, IKEv2Connection, IKEv2Status};
 use crate::ipsec::{IPsecConfig, IPsecConnection, IPsecStatus};
 use crate::l2tp::{L2TPConfig, L2TPConnection, L2TPStatus};
 use crate::pptp::{PPTPConfig, PPTPConnection, PPTPStatus};
+use crate::routing::VpnRoutingMode;
 use crate::sstp::{SSTPConfig, SSTPConnection, SSTPStatus};
 use chrono::Utc;
 use serde_json::json;
@@ -22,10 +23,14 @@ fn legacy_vpn_configs_accept_the_exact_snake_case_ipc_contract() {
         "remote_id": "ike.example.com",
         "fragmentation": true,
         "mobike": true,
+        "routing_mode": "split",
+        "remote_subnets": ["10.20.0.0/16", "2001:db8:42::/48"],
         "custom_options": ["fragmentation=yes"]
     }))
     .unwrap();
     assert_eq!(ikev2.private_key.as_deref(), Some("/etc/certs/client.key"));
+    assert_eq!(ikev2.routing_mode, VpnRoutingMode::Split);
+    assert_eq!(ikev2.remote_subnets, ["10.20.0.0/16", "2001:db8:42::/48"]);
     assert_eq!(ikev2.custom_options, ["fragmentation=yes"]);
 
     let sstp: SSTPConfig = serde_json::from_value(json!({
@@ -113,10 +118,14 @@ fn legacy_vpn_configs_accept_the_exact_snake_case_ipc_contract() {
         "dpd_delay": 30,
         "dpd_timeout": 120,
         "tunnel_mode": true,
+        "routing_mode": "split",
+        "remote_subnets": ["192.0.2.0/24"],
         "custom_options": ["closeaction=restart"]
     }))
     .unwrap();
     assert_eq!(ipsec.auth_method.as_deref(), Some("psk"));
+    assert_eq!(ipsec.routing_mode, VpnRoutingMode::Split);
+    assert_eq!(ipsec.remote_subnets, ["192.0.2.0/24"]);
     assert_eq!(ipsec.custom_options, ["closeaction=restart"]);
 }
 
@@ -129,6 +138,20 @@ fn legacy_vpn_configs_default_custom_options_but_reject_camel_case_drift() {
     }))
     .unwrap();
     assert!(config.custom_options.is_empty());
+
+    let ikev2: IKEv2Config = serde_json::from_value(json!({
+        "server": "ike.example.com"
+    }))
+    .unwrap();
+    assert_eq!(ikev2.routing_mode, VpnRoutingMode::Full);
+    assert!(ikev2.remote_subnets.is_empty());
+
+    let ipsec: IPsecConfig = serde_json::from_value(json!({
+        "server": "ipsec.example.com"
+    }))
+    .unwrap();
+    assert_eq!(ipsec.routing_mode, VpnRoutingMode::Full);
+    assert!(ipsec.remote_subnets.is_empty());
 
     let error = serde_json::from_value::<L2TPConfig>(json!({
         "server": "l2tp.example.com",

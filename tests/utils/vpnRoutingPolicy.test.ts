@@ -53,6 +53,14 @@ describe("VPN routing policy", () => {
         remoteSubnets: ["0.0.0.0/0"],
       }).connectDisabledReason,
     ).toContain("default route");
+    for (const semanticDefault of ["10.20.30.40/0", "2001:db8::1/0"]) {
+      expect(
+        resolveVpnRoutingPolicy({
+          routingMode: "split",
+          remoteSubnets: [semanticDefault],
+        }).connectDisabledReason,
+      ).toContain("default route");
+    }
   });
 
   it("never includes invalid profile content in validation errors", () => {

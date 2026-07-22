@@ -223,6 +223,8 @@ export interface WireGuardConfig {
 export interface IKEv2Config {
   enabled: boolean;
   server: string;
+  routingMode?: "full" | "split";
+  remoteSubnets?: string[];
   username: string;
   password?: string;
   certificate?: string;
@@ -307,6 +309,8 @@ export interface PPTPConfig {
 export interface IPsecConfig {
   enabled: boolean;
   server: string;
+  routingMode?: "full" | "split";
+  remoteSubnets?: string[];
   authMethod?: "psk" | "certificate" | "eap";
   psk?: string;
   certificate?: string;

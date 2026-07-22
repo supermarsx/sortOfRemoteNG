@@ -76,7 +76,7 @@ export function resolveVpnRoutingPolicy(
         "Split-tunnel VPN profiles require at least one remote subnet.",
     };
   }
-  if (remoteSubnets.some((subnet) => FULL_TUNNEL_SUBNET_SET.has(subnet))) {
+  if (remoteSubnets.some(hasDefaultPrefix)) {
     return {
       connectDisabledReason:
         "Split-tunnel VPN profiles cannot include a default route; choose full routing instead.",
@@ -104,4 +104,8 @@ function isValidCidr(value: string): boolean {
     ipaddr.IPv4.isValidCIDRFourPartDecimal(value) ||
     (!value.includes("%") && ipaddr.IPv6.isValidCIDR(value))
   );
+}
+
+function hasDefaultPrefix(value: string): boolean {
+  return ipaddr.parseCIDR(value)[1] === 0;
 }

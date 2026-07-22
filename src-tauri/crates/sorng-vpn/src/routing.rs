@@ -55,7 +55,7 @@ impl VpnRoutingPolicy {
                     validate_cidr(subnet).map_err(|reason| {
                         format!("remote_subnets item {} is invalid: {reason}", index + 1)
                     })?;
-                    if is_default_route(subnet) {
+                    if has_default_prefix(subnet) {
                         return Err(format!(
                             "remote_subnets item {} is a default route; select full routing instead",
                             index + 1
@@ -77,7 +77,7 @@ impl VpnRoutingPolicy {
     }
 }
 
-fn validate_cidr(value: &str) -> Result<(), &'static str> {
+pub(crate) fn validate_cidr(value: &str) -> Result<(), &'static str> {
     let (address, prefix) = value.split_once('/').ok_or("CIDR prefix is required")?;
     if address.is_empty() || prefix.is_empty() || prefix.contains('/') {
         return Err("CIDR syntax is malformed");
@@ -93,13 +93,33 @@ fn validate_cidr(value: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn is_default_route(value: &str) -> bool {
-    matches!(value, "0.0.0.0/0" | "::/0")
+pub(crate) fn ensure_inactive_native_update(
+    provider: &str,
+    config_changed: bool,
+    active: bool,
+) -> Result<(), String> {
+    if config_changed && active {
+        Err(format!(
+            "Disconnect the active {provider} connection before changing its native configuration"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn has_default_prefix(value: &str) -> bool {
+    value
+        .rsplit_once('/')
+        .and_then(|(_, prefix)| prefix.parse::<u8>().ok())
+        == Some(0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ikev2::IKEv2Config;
+    use crate::ipsec::IPsecConfig;
+    use serde_json::json;
 
     #[test]
     fn full_tunnel_uses_canonical_dual_stack_defaults() {
@@ -130,6 +150,8 @@ mod tests {
             vec!["10.0.0.0".to_string()],
             vec!["10.0.0.0/33".to_string()],
             vec!["0.0.0.0/0".to_string()],
+            vec!["10.20.30.40/0".to_string()],
+            vec!["2001:db8::1/0".to_string()],
         ] {
             assert!(VpnRoutingPolicy {
                 routing_mode: VpnRoutingMode::Split,
@@ -150,5 +172,36 @@ mod tests {
         .validated_remote_subnets()
         .unwrap_err();
         assert!(!error.contains(secret_marker));
+    }
+
+    #[test]
+    fn active_native_updates_reject_full_split_drift_but_allow_metadata_only_changes() {
+        let ikev2_full: IKEv2Config =
+            serde_json::from_value(json!({ "server": "ike.example.com" })).unwrap();
+        let ikev2_split: IKEv2Config = serde_json::from_value(json!({
+            "server": "ike.example.com",
+            "routing_mode": "split",
+            "remote_subnets": ["10.20.0.0/16"]
+        }))
+        .unwrap();
+        for changed in [ikev2_full != ikev2_split.clone(), ikev2_split != ikev2_full] {
+            let error = ensure_inactive_native_update("IKEv2", changed, true).unwrap_err();
+            assert!(error.contains("Disconnect"));
+        }
+
+        let ipsec_full: IPsecConfig =
+            serde_json::from_value(json!({ "server": "ipsec.example.com" })).unwrap();
+        let ipsec_split: IPsecConfig = serde_json::from_value(json!({
+            "server": "ipsec.example.com",
+            "routing_mode": "split",
+            "remote_subnets": ["192.0.2.0/24"]
+        }))
+        .unwrap();
+        for changed in [ipsec_full != ipsec_split.clone(), ipsec_split != ipsec_full] {
+            assert!(ensure_inactive_native_update("IPsec", changed, true).is_err());
+        }
+
+        assert!(ensure_inactive_native_update("IKEv2", false, true).is_ok());
+        assert!(ensure_inactive_native_update("IPsec", false, true).is_ok());
     }
 }

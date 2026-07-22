@@ -32,6 +32,7 @@ pub struct IpsecConnectionSpec<'a> {
     pub eap_identity: Option<&'a str>,
     pub phase1: Option<&'a str>,
     pub phase2: Option<&'a str>,
+    pub remote_subnets: &'a [String],
 }
 
 #[cfg(not(windows))]
@@ -556,6 +557,18 @@ pub async fn write_ipsec_secrets(
 }
 
 #[cfg(not(windows))]
+fn render_remote_subnets(remote_subnets: &[String]) -> Result<String, String> {
+    if remote_subnets.is_empty() {
+        return Err("At least one remote subnet is required".to_string());
+    }
+    for (index, subnet) in remote_subnets.iter().enumerate() {
+        crate::routing::validate_cidr(subnet)
+            .map_err(|reason| format!("remote subnet item {} is invalid: {reason}", index + 1))?;
+    }
+    Ok(remote_subnets.join(","))
+}
+
+#[cfg(not(windows))]
 fn render_ipsec_conf(spec: &IpsecConnectionSpec<'_>) -> Result<String, String> {
     validate_connection_name(spec.conn_name)?;
     validation::validate_hostname(spec.server)?;
@@ -569,13 +582,14 @@ fn render_ipsec_conf(spec: &IpsecConnectionSpec<'_>) -> Result<String, String> {
         .transpose()?;
     let phase1 = validate_proposal(spec.phase1.unwrap_or("aes256-sha256-modp2048"), "IKE")?;
     let phase2 = validate_proposal(spec.phase2.unwrap_or("aes256-sha256"), "ESP")?;
+    let remote_subnets = render_remote_subnets(spec.remote_subnets)?;
 
     let eap_identity_line = eap_identity
         .map(|value| format!("    eap_identity={value}\n"))
         .unwrap_or_default();
 
     Ok(format!(
-        "conn {}\n    type=tunnel\n    left=%defaultroute\n    leftsourceip=%config\n    leftid={local_id}\n    leftauth={local_auth}\n{eap_identity_line}    right={}\n    rightid={remote_id}\n    rightauth={remote_auth}\n    rightsubnet=0.0.0.0/0,::/0\n    ike={phase1}\n    esp={phase2}\n    keyexchange=ikev2\n    auto=add\n",
+        "conn {}\n    type=tunnel\n    left=%defaultroute\n    leftsourceip=%config\n    leftid={local_id}\n    leftauth={local_auth}\n{eap_identity_line}    right={}\n    rightid={remote_id}\n    rightauth={remote_auth}\n    rightsubnet={remote_subnets}\n    ike={phase1}\n    esp={phase2}\n    keyexchange=ikev2\n    auto=add\n",
         spec.conn_name, spec.server
     ))
 }
@@ -1082,8 +1096,13 @@ pub async fn is_ipsec_active(_: &str) -> Result<bool, String> {
 mod tests {
     use super::*;
 
+    fn full_tunnel_subnets() -> Vec<String> {
+        vec!["0.0.0.0/0".to_string(), "::/0".to_string()]
+    }
+
     #[test]
     fn config_renderer_rejects_directive_and_proposal_injection() {
+        let remote_subnets = full_tunnel_subnets();
         assert!(render_ipsec_conf(&IpsecConnectionSpec {
             conn_name: "safe_name",
             server: "vpn.example.com\ninclude /tmp/evil.conf",
@@ -1094,6 +1113,7 @@ mod tests {
             eap_identity: None,
             phase1: None,
             phase2: None,
+            remote_subnets: &remote_subnets,
         })
         .is_err());
         assert!(render_ipsec_conf(&IpsecConnectionSpec {
@@ -1106,6 +1126,7 @@ mod tests {
             eap_identity: None,
             phase1: None,
             phase2: None,
+            remote_subnets: &remote_subnets,
         })
         .is_err());
         assert!(render_ipsec_conf(&IpsecConnectionSpec {
@@ -1118,12 +1139,14 @@ mod tests {
             eap_identity: None,
             phase1: Some("aes256; include /tmp/evil.conf"),
             phase2: None,
+            remote_subnets: &remote_subnets,
         })
         .is_err());
     }
 
     #[test]
     fn eap_renderer_separates_client_and_server_auth_and_requests_routes() {
+        let remote_subnets = full_tunnel_subnets();
         let rendered = render_ipsec_conf(&IpsecConnectionSpec {
             conn_name: "safe_name",
             server: "vpn.example.com",
@@ -1134,6 +1157,7 @@ mod tests {
             eap_identity: Some("alice@example.com"),
             phase1: None,
             phase2: None,
+            remote_subnets: &remote_subnets,
         })
         .unwrap();
         assert!(rendered.contains("leftauth=eap-mschapv2"));
@@ -1141,6 +1165,47 @@ mod tests {
         assert!(rendered.contains("eap_identity=\"alice@example.com\""));
         assert!(rendered.contains("leftsourceip=%config"));
         assert!(rendered.contains("rightsubnet=0.0.0.0/0,::/0"));
+    }
+
+    #[test]
+    fn config_renderer_uses_exact_split_tunnel_selectors() {
+        let remote_subnets = vec!["10.20.0.0/16".to_string(), "2001:db8:42::/48".to_string()];
+        let rendered = render_ipsec_conf(&IpsecConnectionSpec {
+            conn_name: "safe_name",
+            server: "vpn.example.com",
+            local_id: None,
+            remote_id: None,
+            local_auth: "psk",
+            remote_auth: "psk",
+            eap_identity: None,
+            phase1: None,
+            phase2: None,
+            remote_subnets: &remote_subnets,
+        })
+        .unwrap();
+        assert!(rendered.contains("rightsubnet=10.20.0.0/16,2001:db8:42::/48"));
+        assert!(!rendered.contains("rightsubnet=0.0.0.0/0,::/0"));
+    }
+
+    #[test]
+    fn config_renderer_revalidates_routes_without_echoing_input() {
+        let marker = "secret-host.example/24\ninclude /tmp/evil.conf";
+        let remote_subnets = vec![marker.to_string()];
+        let error = render_ipsec_conf(&IpsecConnectionSpec {
+            conn_name: "safe_name",
+            server: "vpn.example.com",
+            local_id: None,
+            remote_id: None,
+            local_auth: "psk",
+            remote_auth: "psk",
+            eap_identity: None,
+            phase1: None,
+            phase2: None,
+            remote_subnets: &remote_subnets,
+        })
+        .unwrap_err();
+        assert!(!error.contains(marker));
+        assert!(render_remote_subnets(&[]).is_err());
     }
 
     #[test]

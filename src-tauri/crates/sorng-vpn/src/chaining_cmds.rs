@@ -44,7 +44,7 @@ fn runtime_vpn_capabilities_for(
             )
         }
     };
-    let strongswan = |vpn_type: &str| {
+    let ikev2_backends = |vpn_type: &str| {
         if !legacy_profiles_persisted {
             return unsupported_capability(
                 vpn_type,
@@ -60,6 +60,25 @@ fn runtime_vpn_capabilities_for(
             )
         }
     };
+    let linux_only_strongswan = |vpn_type: &str| {
+        if !legacy_profiles_persisted {
+            return unsupported_capability(
+                vpn_type,
+                "Saved profiles are not yet available through encrypted persistent storage, so session associations are disabled.",
+            );
+        }
+        match platform {
+            "linux" => supported(vpn_type),
+            "windows" => unsupported_capability(
+                vpn_type,
+                "Legacy IPsec session associations are unavailable on Windows because the current RAS path does not safely implement the profile authentication contract; use IKEv2 or run IPsec on Linux.",
+            ),
+            _ => unsupported_capability(
+                vpn_type,
+                "This provider is unavailable for macOS session associations until native strongSwan elevation and readiness probing are supported.",
+            ),
+        }
+    };
 
     vec![
         supported("openvpn"),
@@ -68,8 +87,8 @@ fn runtime_vpn_capabilities_for(
         supported("zerotier"),
         windows_only("pptp"),
         windows_only("l2tp"),
-        strongswan("ikev2"),
-        strongswan("ipsec"),
+        ikev2_backends("ikev2"),
+        linux_only_strongswan("ipsec"),
         windows_only("sstp"),
         unsupported_capability(
             "softether",
@@ -250,6 +269,7 @@ impl VpnRuntime for TauriVpnRuntime {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn tauri_vpn_runtime(
     openvpn_state: &tauri::State<'_, super::openvpn::OpenVPNServiceState>,
     wireguard_state: &tauri::State<'_, super::wireguard::WireGuardServiceState>,
@@ -575,6 +595,7 @@ pub async fn ensure_vpn_connected(
 /// both start the same machine-wide VPN.  The pure orchestration layer rolls
 /// back leases added by this call if a later pre-step fails.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn acquire_vpn_leases(
     owner_id: String,
     requests: Vec<VpnLeaseRequest>,
@@ -609,6 +630,7 @@ pub async fn acquire_vpn_leases(
 /// Shared VPNs remain active until their final session releases them.  A VPN
 /// that pre-dated the first lease is removed from the registry but left active.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn release_vpn_leases(
     owner_id: String,
     vpn_lease_state: tauri::State<'_, VpnLeaseServiceState>,
@@ -716,11 +738,21 @@ mod tests {
         }
 
         let windows = runtime_vpn_capabilities_for("windows", true);
-        for vpn_type in ["pptp", "l2tp", "ikev2", "ipsec", "sstp"] {
+        for vpn_type in ["pptp", "l2tp", "ikev2", "sstp"] {
             assert!(windows
                 .iter()
                 .any(|capability| capability.vpn_type == vpn_type && capability.executable));
         }
+        let windows_ipsec = windows
+            .iter()
+            .find(|capability| capability.vpn_type == "ipsec")
+            .unwrap();
+        assert!(!windows_ipsec.executable);
+        assert!(windows_ipsec
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("authentication contract"));
 
         let linux = runtime_vpn_capabilities_for("linux", true);
         for vpn_type in ["ikev2", "ipsec"] {
@@ -767,8 +799,8 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: EnsureVpnResult = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.was_already_connected, true);
-        assert_eq!(deserialized.is_now_connected, true);
+        assert!(deserialized.was_already_connected);
+        assert!(deserialized.is_now_connected);
         assert_eq!(deserialized.vpn_type, "openvpn");
         assert_eq!(deserialized.connection_id, "test-id");
         assert!(deserialized.error.is_none());

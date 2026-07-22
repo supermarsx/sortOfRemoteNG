@@ -4,6 +4,7 @@ use crate::persistence::{
 };
 #[cfg(windows)]
 use crate::ras_helper;
+use crate::routing::{VpnRoutingMode, VpnRoutingPolicy};
 #[cfg(not(windows))]
 use crate::strongswan_helper;
 use chrono::{DateTime, Utc};
@@ -73,7 +74,7 @@ pub enum IKEv2Status {
     Error(String),
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IKEv2Config {
     pub server: String,
@@ -90,7 +91,21 @@ pub struct IKEv2Config {
     pub fragmentation: Option<bool>,
     pub mobike: Option<bool>,
     #[serde(default)]
+    pub routing_mode: VpnRoutingMode,
+    #[serde(default)]
+    pub remote_subnets: Vec<String>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
+}
+
+impl IKEv2Config {
+    fn validated_remote_subnets(&self) -> Result<Vec<String>, String> {
+        VpnRoutingPolicy {
+            routing_mode: self.routing_mode,
+            remote_subnets: self.remote_subnets.clone(),
+        }
+        .validated_remote_subnets()
+    }
 }
 
 pub struct IKEv2Service {
@@ -197,6 +212,7 @@ impl IKEv2Service {
         config: IKEv2Config,
     ) -> Result<String, String> {
         self.ensure_persisted_loaded().await?;
+        config.validated_remote_subnets()?;
         let previous = self.connections.clone();
         let id = Uuid::new_v4().to_string();
         let connection = IKEv2Connection {
@@ -219,9 +235,13 @@ impl IKEv2Service {
 
     pub async fn connect(&mut self, connection_id: &str) -> Result<(), String> {
         self.ensure_persisted_loaded().await?;
-        if !self.connections.contains_key(connection_id) {
-            return Err("IKEv2 connection not found".to_string());
-        }
+        let config = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "IKEv2 connection not found".to_string())?
+            .config
+            .clone();
+        let remote_subnets = config.validated_remote_subnets()?;
         if self.probe_connection_active(connection_id).await? {
             return Ok(());
         }
@@ -231,7 +251,6 @@ impl IKEv2Service {
             .expect("checked above");
 
         connection.status = IKEv2Status::Connecting;
-        let config = connection.config.clone();
         #[cfg(windows)]
         let entry_name = format!("SoRNG_IKEv2_{}", &connection_id[..8]);
 
@@ -254,6 +273,24 @@ impl IKEv2Service {
             }
             // Create RAS entry with IKEv2 tunnel type
             ras_helper::create_ras_entry(&entry_name, &config.server, "Ikev2").await?;
+
+            if let Err(error) = ras_helper::configure_ras_routing(
+                &entry_name,
+                matches!(config.routing_mode, VpnRoutingMode::Split),
+                &remote_subnets,
+            )
+            .await
+            {
+                let cleanup_error = ras_helper::remove_ras_entry(&entry_name).await.err();
+                let error = compose_setup_cleanup_error(error, cleanup_error);
+                connection.status = IKEv2Status::Error(error.clone());
+                self.emit_status(
+                    connection_id,
+                    "error",
+                    serde_json::json!({ "error": error }),
+                );
+                return Err(error);
+            }
 
             // Set EAP method if specified
             if let Some(eap) = &config.eap_method {
@@ -294,7 +331,9 @@ impl IKEv2Service {
         #[cfg(not(windows))]
         {
             let conn_name = format!("sorng_ikev2_{}", &connection_id[..8]);
-            if let Err(setup_error) = setup_strongswan_connection(&conn_name, &config).await {
+            if let Err(setup_error) =
+                setup_strongswan_connection(&conn_name, &config, &remote_subnets).await
+            {
                 let cleanup_error = strongswan_helper::cleanup_ipsec_files(&conn_name)
                     .await
                     .err();
@@ -404,9 +443,11 @@ impl IKEv2Service {
 
     pub async fn probe_connection_active(&mut self, connection_id: &str) -> Result<bool, String> {
         self.ensure_persisted_loaded().await?;
-        if !self.connections.contains_key(connection_id) {
-            return Err("IKEv2 connection not found".to_string());
-        }
+        self.connections
+            .get(connection_id)
+            .ok_or_else(|| "IKEv2 connection not found".to_string())?
+            .config
+            .validated_remote_subnets()?;
         #[cfg(windows)]
         let active =
             ras_helper::is_ras_active(&format!("SoRNG_IKEv2_{}", &connection_id[..8])).await?;
@@ -433,6 +474,20 @@ impl IKEv2Service {
         config: Option<IKEv2Config>,
     ) -> Result<(), String> {
         self.ensure_persisted_loaded().await?;
+        let current_config = self
+            .connections
+            .get(connection_id)
+            .ok_or_else(|| "IKEv2 connection not found".to_string())?
+            .config
+            .clone();
+        if let Some(config) = config.as_ref() {
+            config.validated_remote_subnets()?;
+            let changed = config != &current_config;
+            if changed {
+                let active = self.probe_connection_active(connection_id).await?;
+                crate::routing::ensure_inactive_native_update("IKEv2", changed, active)?;
+            }
+        }
         let previous = self.connections.clone();
         let connection = self
             .connections
@@ -519,6 +574,7 @@ impl Persistable for IKEv2Service {
         let mut restored = HashMap::new();
         for mut connection in deserialize_profile_definitions::<IKEv2Connection>(data)? {
             validate_persisted_profile_id(&connection.id, "IKEv2")?;
+            connection.config.validated_remote_subnets()?;
             connection.status = IKEv2Status::Disconnected;
             connection.connected_at = None;
             connection.local_ip = None;
@@ -545,7 +601,11 @@ fn compose_setup_cleanup_error(setup_error: String, cleanup_error: Option<String
 }
 
 #[cfg(not(windows))]
-async fn setup_strongswan_connection(conn_name: &str, config: &IKEv2Config) -> Result<(), String> {
+async fn setup_strongswan_connection(
+    conn_name: &str,
+    config: &IKEv2Config,
+    remote_subnets: &[String],
+) -> Result<(), String> {
     let (local_auth, remote_auth, eap_identity) = match config.eap_method.as_deref() {
         Some("mschapv2") => {
             let identity = config
@@ -598,6 +658,7 @@ async fn setup_strongswan_connection(conn_name: &str, config: &IKEv2Config) -> R
         eap_identity,
         phase1: config.phase1_algorithms.as_deref(),
         phase2: config.phase2_algorithms.as_deref(),
+        remote_subnets,
     })
     .await?;
 
@@ -618,4 +679,31 @@ async fn setup_strongswan_connection(conn_name: &str, config: &IKEv2Config) -> R
     }
 
     strongswan_helper::ipsec_up_transactional(conn_name).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn backend_probe_rejects_invalid_stored_routing_before_os_activity_check() {
+        let state = IKEv2Service::new();
+        let mut service = state.lock().await;
+        let config = serde_json::from_value(serde_json::json!({
+            "server": "ike.example.com"
+        }))
+        .unwrap();
+        let id = service
+            .create_connection("IKEv2".to_string(), config)
+            .await
+            .unwrap();
+        let marker = "private-route-marker.example/24";
+        let config = &mut service.connections.get_mut(&id).unwrap().config;
+        config.routing_mode = VpnRoutingMode::Split;
+        config.remote_subnets = vec![marker.to_string()];
+
+        let error = service.probe_connection_active(&id).await.unwrap_err();
+        assert!(!error.contains(marker));
+        assert!(error.contains("remote_subnets"));
+    }
 }

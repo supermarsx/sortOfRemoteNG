@@ -301,6 +301,8 @@ export function toIkeV2IpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "IKEv2 config");
   return compact({
     server: requiredString(source.server, "IKEv2 server"),
+    routing_mode: optionalEnum(source.routingMode, ["full", "split"]) ?? "full",
+    remote_subnets: stringArray(source.remoteSubnets),
     username: optionalNonEmptyString(source.username),
     password: optionalSecret(source.password, "IKEv2 password"),
     certificate: optionalString(source.certificate),
@@ -393,6 +395,8 @@ export function toIpsecIpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "IPsec config");
   return compact({
     server: requiredString(source.server, "IPsec server"),
+    routing_mode: optionalEnum(source.routingMode, ["full", "split"]) ?? "full",
+    remote_subnets: stringArray(source.remoteSubnets),
     auth_method: optionalEnum(source.authMethod, ["psk", "certificate", "eap"]),
     psk: optionalSecret(source.psk, "IPsec pre-shared key"),
     certificate: optionalString(source.certificate),
@@ -557,6 +561,9 @@ export function fromIkeV2IpcConnection(
     config: {
       enabled: true,
       server: requiredString(config.server, "IKEv2 server"),
+      routingMode:
+        optionalEnum(config.routing_mode, ["full", "split"]) ?? "full",
+      remoteSubnets: stringArray(config.remote_subnets),
       username: optionalString(config.username) ?? "",
       password: undefined,
       certificate: optionalString(config.certificate),
@@ -721,6 +728,9 @@ export function fromIpsecIpcConnection(
     config: {
       enabled: true,
       server: requiredString(config.server, "IPsec server"),
+      routingMode:
+        optionalEnum(config.routing_mode, ["full", "split"]) ?? "full",
+      remoteSubnets: stringArray(config.remote_subnets),
       authMethod: optionalEnum(config.auth_method, [
         "psk",
         "certificate",

@@ -439,6 +439,7 @@ mod legacy_provider_tests {
     use crate::ipsec::{IPsecConfig, IPsecService, IPsecStatus};
     use crate::l2tp::{L2TPConfig, L2TPService, L2TPStatus};
     use crate::pptp::{PPTPConfig, PPTPService, PPTPStatus};
+    use crate::routing::VpnRoutingMode;
     use crate::sstp::{SSTPConfig, SSTPService, SSTPStatus};
     use sorng_core::events::{DynEventEmitter, NoopEventEmitter};
     use sorng_encryption::{EncryptionState, MasterDek};
@@ -536,6 +537,8 @@ mod legacy_provider_tests {
             remote_id: None,
             fragmentation: None,
             mobike: None,
+            routing_mode: VpnRoutingMode::Split,
+            remote_subnets: vec!["10.20.0.0/16".to_string(), "2001:db8:42::/48".to_string()],
             custom_options: vec![],
         }
     }
@@ -554,6 +557,8 @@ mod legacy_provider_tests {
             dpd_delay: None,
             dpd_timeout: None,
             tunnel_mode: Some(true),
+            routing_mode: VpnRoutingMode::Split,
+            remote_subnets: vec!["192.0.2.0/24".to_string()],
             custom_options: vec![],
         }
     }
@@ -717,6 +722,14 @@ mod legacy_provider_tests {
         assert!(ikev2_view.secret_presence.password && ikev2_view.secret_presence.private_key);
         assert!(ikev2_view.connection.config.password.is_none());
         assert!(ikev2_view.connection.config.private_key.is_none());
+        assert_eq!(
+            ikev2_view.connection.config.routing_mode,
+            VpnRoutingMode::Split
+        );
+        assert_eq!(
+            ikev2_view.connection.config.remote_subnets,
+            ["10.20.0.0/16", "2001:db8:42::/48"]
+        );
         assert!(matches!(
             ikev2_view.connection.status,
             IKEv2Status::Disconnected
@@ -732,6 +745,14 @@ mod legacy_provider_tests {
         assert!(ipsec_view.secret_presence.psk && ipsec_view.secret_presence.private_key);
         assert!(ipsec_view.connection.config.psk.is_none());
         assert!(ipsec_view.connection.config.private_key.is_none());
+        assert_eq!(
+            ipsec_view.connection.config.routing_mode,
+            VpnRoutingMode::Split
+        );
+        assert_eq!(
+            ipsec_view.connection.config.remote_subnets,
+            ["192.0.2.0/24"]
+        );
         assert!(matches!(
             ipsec_view.connection.status,
             IPsecStatus::Disconnected

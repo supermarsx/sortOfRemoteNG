@@ -156,6 +156,66 @@ function SecretStatus({
   );
 }
 
+function VpnRoutingSection({ mgr }: { mgr: Mgr }) {
+  const routingMode = mgr.config.routingMode === "split" ? "split" : "full";
+  const remoteSubnets = Array.isArray(mgr.config.remoteSubnets)
+    ? mgr.config.remoteSubnets.filter(
+        (subnet: unknown): subnet is string => typeof subnet === "string",
+      )
+    : [];
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+        Routing
+      </div>
+      <FormField label="Traffic Routing">
+        <select
+          value={routingMode}
+          onChange={(event) => {
+            const nextMode = event.target.value as "full" | "split";
+            mgr.updateConfig({
+              routingMode: nextMode,
+              remoteSubnets: nextMode === "full" ? [] : remoteSubnets,
+            });
+          }}
+          className={inputCls}
+        >
+          <option value="full">Full tunnel — route all traffic</option>
+          <option value="split">Split tunnel — route selected networks</option>
+        </select>
+      </FormField>
+      {routingMode === "split" && (
+        <FormField label="Remote Subnets *">
+          <textarea
+            value={remoteSubnets.join("\n")}
+            onChange={(event) =>
+              mgr.updateConfig({
+                remoteSubnets:
+                  event.target.value === ""
+                    ? []
+                    : event.target.value.split(/\r?\n/),
+              })
+            }
+            placeholder={"10.20.0.0/16\n2001:db8:42::/48"}
+            rows={3}
+            className={inputCls + " resize-y font-mono"}
+          />
+          <p className="mt-1.5 text-[11px] text-[var(--color-textSecondary)]">
+            Enter one IPv4 or IPv6 CIDR per line. Only these networks will use
+            this VPN.
+          </p>
+        </FormField>
+      )}
+      {routingMode === "full" && (
+        <p className="text-[11px] text-[var(--color-textSecondary)]">
+          The VPN owns the IPv4 and IPv6 default routes while connected.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Section: Basic Info ─────────────────────────────────────────
 
 const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
@@ -1352,6 +1412,8 @@ const IKEv2ConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </FormField>
       </div>
 
+      <VpnRoutingSection mgr={mgr} />
+
       {/* Authentication */}
       <div className="space-y-3">
         <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
@@ -1547,6 +1609,8 @@ const IPsecConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           />
         </FormField>
       </div>
+
+      <VpnRoutingSection mgr={mgr} />
 
       {/* Authentication */}
       <div className="space-y-3">

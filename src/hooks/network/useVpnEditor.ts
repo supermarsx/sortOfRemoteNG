@@ -18,6 +18,7 @@ import {
   type WireGuardSecretMutation,
   type ZeroTierSecretMutation,
 } from "../../utils/network/vpnIpcAdapter";
+import { resolveVpnRoutingPolicy } from "../../utils/network/vpnRoutingPolicy";
 
 export type VpnEditorType = LegacyVpnEditorType;
 
@@ -74,6 +75,10 @@ export function getVpnEditorValidationError(
   vpnType: VpnEditorType,
   config: Record<string, any>,
 ): string | null {
+  if (vpnType === "ikev2" || vpnType === "ipsec") {
+    const { connectDisabledReason } = resolveVpnRoutingPolicy(config);
+    if (connectDisabledReason) return connectDisabledReason;
+  }
   if (
     vpnType === "openvpn" &&
     !nonEmptyString(config.configFile) &&
@@ -458,6 +463,11 @@ export function useVpnEditor(
         const cfg: Record<string, unknown> = {
           enabled: true,
           server: config.server ?? "",
+          routingMode: config.routingMode ?? "full",
+          remoteSubnets:
+            config.routingMode === "split"
+              ? normalizeRemoteSubnets(config.remoteSubnets)
+              : [],
           username: config.username ?? "",
         };
         if (config.password) cfg.password = config.password;
@@ -482,6 +492,11 @@ export function useVpnEditor(
         const cfg: Record<string, unknown> = {
           enabled: true,
           server: config.server ?? "",
+          routingMode: config.routingMode ?? "full",
+          remoteSubnets:
+            config.routingMode === "split"
+              ? normalizeRemoteSubnets(config.remoteSubnets)
+              : [],
         };
         if (config.authMethod) cfg.authMethod = config.authMethod;
         if (config.psk) cfg.psk = config.psk;
@@ -901,6 +916,10 @@ export function toVpnEditorFormConfig(
     case "ikev2":
       return {
         ...source,
+        routingMode: source.routingMode ?? "full",
+        remoteSubnets: Array.isArray(source.remoteSubnets)
+          ? source.remoteSubnets
+          : [],
         password: undefined,
         privateKey: undefined,
         customOptions: joinLines(source.customOptions),
@@ -908,6 +927,10 @@ export function toVpnEditorFormConfig(
     case "ipsec":
       return {
         ...source,
+        routingMode: source.routingMode ?? "full",
+        remoteSubnets: Array.isArray(source.remoteSubnets)
+          ? source.remoteSubnets
+          : [],
         psk: undefined,
         privateKey: undefined,
         customOptions: joinLines(source.customOptions),
@@ -932,6 +955,15 @@ function joinCsv(value: unknown): string {
     : typeof value === "string"
       ? value
       : "";
+}
+
+function normalizeRemoteSubnets(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function nonEmptyString(value: unknown): boolean {
