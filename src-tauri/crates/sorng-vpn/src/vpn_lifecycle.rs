@@ -17,12 +17,22 @@ pub fn new_vpn_lease_service_state() -> VpnLeaseServiceState {
     Arc::new(Mutex::new(VpnLeaseRegistry::default()))
 }
 
+/// Single backend feature gate for legacy session associations. This may turn
+/// true only after encrypted profile persistence and restart restoration are
+/// wired for every enabled legacy provider.
+pub const LEGACY_SESSION_PIPELINE_ENABLED: bool = false;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RuntimeVpnType {
     OpenVpn,
     WireGuard,
     Tailscale,
     ZeroTier,
+    Pptp,
+    L2tp,
+    Ikev2,
+    Ipsec,
+    Sstp,
 }
 
 impl RuntimeVpnType {
@@ -32,6 +42,11 @@ impl RuntimeVpnType {
             "wireguard" => Ok(Self::WireGuard),
             "tailscale" => Ok(Self::Tailscale),
             "zerotier" => Ok(Self::ZeroTier),
+            "pptp" => Ok(Self::Pptp),
+            "l2tp" => Ok(Self::L2tp),
+            "ikev2" => Ok(Self::Ikev2),
+            "ipsec" => Ok(Self::Ipsec),
+            "sstp" => Ok(Self::Sstp),
             other => Err(format!("Unsupported VPN type: {other}")),
         }
     }
@@ -42,7 +57,28 @@ impl RuntimeVpnType {
             Self::WireGuard => "wireguard",
             Self::Tailscale => "tailscale",
             Self::ZeroTier => "zerotier",
+            Self::Pptp => "pptp",
+            Self::L2tp => "l2tp",
+            Self::Ikev2 => "ikev2",
+            Self::Ipsec => "ipsec",
+            Self::Sstp => "sstp",
         }
+    }
+
+    /// Whether this provider is currently safe to acquire as part of an
+    /// SSH/RDP session path. Legacy providers remain catalogued so the IPC and
+    /// UI can describe them, but must stay fail-closed until their profiles
+    /// are persisted securely and can be restored after an application
+    /// restart.
+    pub const fn is_session_association_enabled(self) -> bool {
+        matches!(
+            self,
+            Self::OpenVpn | Self::WireGuard | Self::Tailscale | Self::ZeroTier
+        ) || (LEGACY_SESSION_PIPELINE_ENABLED
+            && matches!(
+                self,
+                Self::Pptp | Self::L2tp | Self::Ikev2 | Self::Ipsec | Self::Sstp
+            ))
     }
 }
 
@@ -198,6 +234,9 @@ fn validate_requests(requests: Vec<VpnLeaseRequest>) -> Result<Vec<(VpnLeaseKey,
 
     for request in requests {
         let vpn_type = RuntimeVpnType::parse(&request.vpn_type)?;
+        if !vpn_type.is_session_association_enabled() {
+            return Err(format!("Unsupported VPN type: {}", vpn_type.as_str()));
+        }
         let connection_id = request.connection_id.trim();
         if connection_id.is_empty() {
             return Err(format!(
@@ -763,6 +802,47 @@ mod tests {
         }
     }
 
+    #[test]
+    fn runtime_type_catalogues_legacy_candidates_but_keeps_them_disabled() {
+        let expected = [
+            ("openvpn", RuntimeVpnType::OpenVpn),
+            ("wireguard", RuntimeVpnType::WireGuard),
+            ("tailscale", RuntimeVpnType::Tailscale),
+            ("zerotier", RuntimeVpnType::ZeroTier),
+            ("pptp", RuntimeVpnType::Pptp),
+            ("l2tp", RuntimeVpnType::L2tp),
+            ("ikev2", RuntimeVpnType::Ikev2),
+            ("ipsec", RuntimeVpnType::Ipsec),
+            ("sstp", RuntimeVpnType::Sstp),
+        ];
+
+        for (name, vpn_type) in expected {
+            assert_eq!(RuntimeVpnType::parse(name).unwrap(), vpn_type);
+            assert_eq!(vpn_type.as_str(), name);
+        }
+        for vpn_type in [
+            RuntimeVpnType::OpenVpn,
+            RuntimeVpnType::WireGuard,
+            RuntimeVpnType::Tailscale,
+            RuntimeVpnType::ZeroTier,
+        ] {
+            assert!(vpn_type.is_session_association_enabled());
+        }
+        for vpn_type in [
+            RuntimeVpnType::Pptp,
+            RuntimeVpnType::L2tp,
+            RuntimeVpnType::Ikev2,
+            RuntimeVpnType::Ipsec,
+            RuntimeVpnType::Sstp,
+        ] {
+            assert!(!vpn_type.is_session_association_enabled());
+        }
+        assert_eq!(
+            RuntimeVpnType::parse("softether").unwrap_err(),
+            "Unsupported VPN type: softether"
+        );
+    }
+
     #[tokio::test]
     async fn shared_sessions_connect_once_and_disconnect_after_final_release() {
         let mut registry = VpnLeaseRegistry::default();
@@ -802,6 +882,36 @@ mod tests {
             .unwrap();
         assert!(final_release.released[0].disconnected);
         assert_eq!(runtime.disconnect_calls, vec![wg]);
+    }
+
+    #[tokio::test]
+    async fn a_dropped_shared_tunnel_is_reconnected_before_adding_an_owner() {
+        let mut registry = VpnLeaseRegistry::default();
+        let mut runtime = MockRuntime::default();
+        let wg = key(RuntimeVpnType::WireGuard, "wg-dropped");
+
+        acquire_session_vpn_leases(
+            &mut registry,
+            "ssh-existing",
+            vec![request("wireguard", "wg-dropped")],
+            &mut runtime,
+        )
+        .await
+        .unwrap();
+        runtime.active.remove(&wg);
+
+        let acquired = acquire_session_vpn_leases(
+            &mut registry,
+            "rdp-new",
+            vec![request("wireguard", "wg-dropped")],
+            &mut runtime,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(runtime.connect_calls, vec![wg.clone(), wg]);
+        assert!(!acquired.leases[0].was_already_connected);
+        assert_eq!(acquired.leases[0].lease_count, 2);
     }
 
     #[tokio::test]

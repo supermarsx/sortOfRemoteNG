@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,15 +31,23 @@ const collection = vi.hoisted(() => ({
   ],
 }));
 
+const capabilityMocks = vi.hoisted(() => ({
+  load: vi.fn(),
+}));
+
+const translate = vi.hoisted(
+  () => (_key: string, fallback?: string, values?: Record<string, unknown>) => {
+    let text = fallback ?? _key;
+    for (const [name, value] of Object.entries(values ?? {})) {
+      text = text.split(`{{${name}}}`).join(String(value));
+    }
+    return text;
+  },
+);
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (_key: string, fallback?: string, values?: Record<string, unknown>) => {
-      let text = fallback ?? _key;
-      for (const [name, value] of Object.entries(values ?? {})) {
-        text = text.split(`{{${name}}}`).join(String(value));
-      }
-      return text;
-    },
+    t: translate,
   }),
 }));
 
@@ -50,6 +59,10 @@ vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
     ),
     subscribe: vi.fn(() => () => {}),
   },
+}));
+
+vi.mock("../../src/utils/network/vpnRuntimeCapabilities", () => ({
+  loadVpnRuntimeCapabilities: capabilityMocks.load,
 }));
 
 const connection = (
@@ -69,8 +82,10 @@ const connection = (
 function manager(connections: Connection[]) {
   return {
     connectionOptions: connections,
-    connectionChains: [{ id: "connection-chain-1", name: "Jump Hosts" }],
-    proxyChains: [{ id: "proxy-chain-1", name: "Office Proxy" }],
+    connectionChains: [
+      { id: "connection-chain-1", name: "Jump Hosts", layers: [] },
+    ],
+    proxyChains: [{ id: "proxy-chain-1", name: "Office Proxy", layers: [] }],
     updateConnectionChain: vi.fn(),
     updateProxyChain: vi.fn(),
     updateTunnelChainRef: vi.fn(),
@@ -79,7 +94,12 @@ function manager(connections: Connection[]) {
 }
 
 describe("AssociationsTab", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capabilityMocks.load.mockResolvedValue([
+      { vpnType: "openvpn", executable: true },
+    ]);
+  });
   afterEach(() => cleanup());
 
   it("adds a consistent title and semantic association table", () => {
@@ -96,11 +116,50 @@ describe("AssociationsTab", () => {
       "Proxy Chain",
       "Tunnel Chain",
       "Tunnel Path",
+      "VPN execution",
     ]) {
       expect(
         within(table).getByRole("columnheader", { name: header }),
       ).toBeInTheDocument();
     }
+  });
+
+  it("shows provider icons with executable and fail-closed status", async () => {
+    render(
+      <AssociationsTab
+        mgr={manager([
+          connection("openvpn", "OpenVPN target", {
+            tunnelChainId: "tunnel-1",
+          }),
+          connection("pptp", "PPTP target", {
+            security: {
+              tunnelChain: [
+                {
+                  id: "pptp-layer",
+                  name: "Legacy PPTP",
+                  type: "pptp",
+                  enabled: true,
+                  vpn: { configId: "pptp-office" },
+                },
+              ],
+            },
+          }),
+        ])}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("association-row-openvpn")).getByLabelText(
+          "OpenVPN: Executable",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByTestId("association-row-pptp")).getByLabelText(
+        "PPTP: Unsupported",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("searches, filters, and sorts association rows", () => {

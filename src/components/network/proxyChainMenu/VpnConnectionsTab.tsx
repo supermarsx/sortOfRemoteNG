@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from "react";
 import {
-  Wifi,
   WifiOff,
   Shield,
   Globe,
@@ -30,18 +29,21 @@ import { setPendingVpnEdit } from "../../../utils/network/vpnEditorStore";
 import type { VpnSecretPresence } from "../../../utils/network/vpnIpcAdapter";
 import {
   EXECUTABLE_VPN_PROVIDERS,
+  getVpnProviderDefinition,
   getVpnProviderLabel,
-  type ExecutableVpnType,
+  type SessionVpnType,
 } from "../../../utils/network/vpnProviderCatalog";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
 
 // ── Constants ───────────────────────────────────────────────────
 
-const VPN_TYPE_ICONS: Record<ExecutableVpnType, React.ReactNode> = {
-  openvpn: <Shield size={14} />,
-  wireguard: <Globe size={14} />,
-  tailscale: <Wifi size={14} />,
-  zerotier: <Globe size={14} />,
-};
+function VpnTypeIcon({ vpnType }: { vpnType: SessionVpnType }) {
+  const provider = getVpnProviderDefinition(vpnType);
+  const Icon = provider
+    ? getConnectionIconDefinition(provider.iconKey)?.icon
+    : undefined;
+  return Icon ? <Icon size={14} aria-hidden="true" /> : <Globe size={14} />;
+}
 
 // ── Status badge ────────────────────────────────────────────────
 
@@ -190,6 +192,36 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
           }
           case "zerotier": {
             const full = await proxyMgr.getZeroTierConnection(conn.id);
+            fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
+            break;
+          }
+          case "pptp": {
+            const full = await proxyMgr.getPPTPConnection(conn.id);
+            fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
+            break;
+          }
+          case "l2tp": {
+            const full = await proxyMgr.getL2TPConnection(conn.id);
+            fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
+            break;
+          }
+          case "ikev2": {
+            const full = await proxyMgr.getIKEv2Connection(conn.id);
+            fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
+            break;
+          }
+          case "ipsec": {
+            const full = await proxyMgr.getIPsecConnection(conn.id);
+            fullConfig = full.config ?? {};
+            secretPresence = full.secretPresence;
+            break;
+          }
+          case "sstp": {
+            const full = await proxyMgr.getSSTPConnection(conn.id);
             fullConfig = full.config ?? {};
             secretPresence = full.secretPresence;
             break;
@@ -363,7 +395,7 @@ const VpnConnectionsTab: React.FC<VpnConnectionsTabProps> = ({
             >
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="text-[var(--color-textSecondary)]">
-                  {VPN_TYPE_ICONS[conn.vpnType] ?? <Globe size={14} />}
+                  <VpnTypeIcon vpnType={conn.vpnType} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-[var(--color-text)] truncate">

@@ -15,6 +15,7 @@ pub mod platform;
 pub mod pptp;
 pub mod proxy;
 pub mod ras_helper;
+pub mod routing;
 #[cfg(feature = "vpn-softether")]
 pub mod softether;
 // NOTE: softether_cmds.rs is NOT listed here. Like the other `_cmds.rs`

@@ -2,13 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import type { TunnelChainLayer } from "../../src/types/connection/connection";
 import {
   EXECUTABLE_VPN_PROVIDERS,
+  SESSION_VPN_PROVIDERS,
   VPN_PROVIDER_CATALOG,
   isExecutableVpnType,
   normalizeExecutableVpnType,
+  normalizeSessionVpnType,
   resolveTunnelLayerVpnProfileId,
   withTunnelLayerVpnProfileId,
 } from "../../src/utils/network/vpnProviderCatalog";
 import { loadVpnProfileCatalog } from "../../src/utils/network/vpnProfiles";
+import { getConnectionIconDefinition } from "../../src/utils/icons/connectionIconCatalog";
 
 describe("VPN provider capability catalog", () => {
   it("advertises exactly the providers with persisted session runtime support", () => {
@@ -24,7 +27,24 @@ describe("VPN provider capability catalog", () => {
       ),
     ).toEqual(["pptp", "l2tp", "ikev2", "ipsec", "sstp", "softether"]);
     expect(isExecutableVpnType("pptp")).toBe(false);
+    expect(normalizeSessionVpnType(" PPTP ")).toBe("pptp");
+    expect(SESSION_VPN_PROVIDERS.map((provider) => provider.type)).toEqual([
+      "openvpn",
+      "wireguard",
+      "tailscale",
+      "zerotier",
+      "pptp",
+      "l2tp",
+      "ikev2",
+      "ipsec",
+      "sstp",
+    ]);
     expect(normalizeExecutableVpnType(" ZeroTier ")).toBe("zerotier");
+    expect(
+      VPN_PROVIDER_CATALOG.every((provider) =>
+        Boolean(getConnectionIconDefinition(provider.iconKey)),
+      ),
+    ).toBe(true);
   });
 
   it("keeps a layer identity distinct from its canonical VPN profile ID", () => {
@@ -80,22 +100,37 @@ describe("VPN provider capability catalog", () => {
   });
 
   it("records provider load failures separately from an empty loaded provider", async () => {
-    const snapshot = await loadVpnProfileCatalog({
-      listOpenVPNConnections: vi.fn(async () => [
-        {
-          id: "ovpn-1",
-          name: "Office",
-          config: { enabled: true, remoteHost: "vpn.example.test" },
-          status: "disconnected" as const,
-          createdAt: new Date("2026-07-19T00:00:00.000Z"),
-        },
-      ]),
-      listWireGuardConnections: vi.fn(async () => {
-        throw new Error("profile store unavailable");
-      }),
-      listTailscaleConnections: vi.fn(async () => []),
-      listZeroTierConnections: vi.fn(async () => []),
-    });
+    const snapshot = await loadVpnProfileCatalog(
+      {
+        listOpenVPNConnections: vi.fn(async () => [
+          {
+            id: "ovpn-1",
+            name: "Office",
+            config: { enabled: true, remoteHost: "vpn.example.test" },
+            status: "disconnected" as const,
+            createdAt: new Date("2026-07-19T00:00:00.000Z"),
+          },
+        ]),
+        listWireGuardConnections: vi.fn(async () => {
+          throw new Error("profile store unavailable");
+        }),
+        listTailscaleConnections: vi.fn(async () => []),
+        listZeroTierConnections: vi.fn(async () => []),
+        listPPTPConnections: vi.fn(async () => []),
+        listL2TPConnections: vi.fn(async () => []),
+        listIKEv2Connections: vi.fn(async () => []),
+        listIPsecConnections: vi.fn(async () => []),
+        listSSTPConnections: vi.fn(async () => []),
+      },
+      async () =>
+        VPN_PROVIDER_CATALOG.map((provider) => ({
+          vpnType: provider.type,
+          executable: provider.executable,
+          ...(!provider.executable
+            ? { reason: "Provider is not association-ready." }
+            : {}),
+        })),
+    );
 
     expect(snapshot.profiles).toEqual([
       expect.objectContaining({
@@ -109,9 +144,67 @@ describe("VPN provider capability catalog", () => {
       wireguard: "error",
       tailscale: "loaded",
       zerotier: "loaded",
+      pptp: "unsupported",
+      l2tp: "unsupported",
+      ikev2: "unsupported",
+      ipsec: "unsupported",
+      sstp: "unsupported",
     });
     expect(snapshot.providerErrors?.wireguard).toBe(
       "profile store unavailable",
     );
+  });
+
+  it("normalizes profile-owned IKEv2 split routing without target-specific routes", async () => {
+    const empty = vi.fn(async () => []);
+    const snapshot = await loadVpnProfileCatalog(
+      {
+        listOpenVPNConnections: empty,
+        listWireGuardConnections: empty,
+        listTailscaleConnections: empty,
+        listZeroTierConnections: empty,
+        listPPTPConnections: empty,
+        listL2TPConnections: empty,
+        listIKEv2Connections: vi.fn(async () => [
+          {
+            id: "ike-office",
+            name: "IKE Office",
+            config: {
+              enabled: true,
+              server: "gateway.example.test",
+              username: "operator",
+              routingMode: "split",
+              remoteSubnets: ["10.20.0.0/16", "2001:db8:42::/48"],
+            },
+            status: "disconnected" as const,
+            createdAt: new Date("2026-07-21T00:00:00.000Z"),
+          } as any,
+        ]),
+        listIPsecConnections: empty,
+        listSSTPConnections: empty,
+      },
+      async () =>
+        VPN_PROVIDER_CATALOG.map((provider) => ({
+          vpnType: provider.type,
+          executable: provider.executable,
+          ...(!provider.executable
+            ? { reason: "Encrypted persistent profiles are unavailable." }
+            : {}),
+        })),
+    );
+
+    expect(snapshot.profiles).toContainEqual(
+      expect.objectContaining({
+        id: "ike-office",
+        vpnType: "ikev2",
+        host: "gateway.example.test",
+        routing: {
+          mode: "split",
+          remoteSubnets: ["10.20.0.0/16", "2001:db8:42::/48"],
+        },
+        connectDisabledReason: "Encrypted persistent profiles are unavailable.",
+      }),
+    );
+    expect(snapshot.providerStatus.ikev2).toBe("unsupported");
   });
 });

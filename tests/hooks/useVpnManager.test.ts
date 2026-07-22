@@ -6,6 +6,11 @@ const mockMgr = {
   listWireGuardConnections: vi.fn(),
   listTailscaleConnections: vi.fn(),
   listZeroTierConnections: vi.fn(),
+  listPPTPConnections: vi.fn(),
+  listL2TPConnections: vi.fn(),
+  listIKEv2Connections: vi.fn(),
+  listIPsecConnections: vi.fn(),
+  listSSTPConnections: vi.fn(),
   connectOpenVPN: vi.fn(),
   disconnectOpenVPN: vi.fn(),
   deleteOpenVPNConnection: vi.fn(),
@@ -18,17 +23,44 @@ const mockMgr = {
   connectZeroTier: vi.fn(),
   disconnectZeroTier: vi.fn(),
   deleteZeroTierConnection: vi.fn(),
+  connectPPTP: vi.fn(),
+  disconnectPPTP: vi.fn(),
+  deletePPTPConnection: vi.fn(),
+  connectL2TP: vi.fn(),
+  disconnectL2TP: vi.fn(),
+  deleteL2TPConnection: vi.fn(),
+  connectIKEv2: vi.fn(),
+  disconnectIKEv2: vi.fn(),
+  deleteIKEv2Connection: vi.fn(),
+  connectIPsec: vi.fn(),
+  disconnectIPsec: vi.fn(),
+  deleteIPsecConnection: vi.fn(),
+  connectSSTP: vi.fn(),
+  disconnectSSTP: vi.fn(),
+  deleteSSTPConnection: vi.fn(),
   createOpenVPNConnection: vi.fn(),
   createOpenVPNConnectionFromOvpn: vi.fn(),
   createWireGuardConnection: vi.fn(),
   createWireGuardConnectionFromConf: vi.fn(),
   createTailscaleConnection: vi.fn(),
   createZeroTierConnection: vi.fn(),
+  createPPTPConnection: vi.fn(),
+  createL2TPConnection: vi.fn(),
+  createIKEv2Connection: vi.fn(),
+  createIPsecConnection: vi.fn(),
+  createSSTPConnection: vi.fn(),
   updateOpenVPNConnection: vi.fn(),
   updateWireGuardConnection: vi.fn(),
   updateTailscaleConnection: vi.fn(),
   updateZeroTierConnection: vi.fn(),
+  updatePPTPConnection: vi.fn(),
+  updateL2TPConnection: vi.fn(),
+  updateIKEv2Connection: vi.fn(),
+  updateIPsecConnection: vi.fn(),
+  updateSSTPConnection: vi.fn(),
 };
+
+const capabilityMocks = vi.hoisted(() => ({ load: vi.fn() }));
 
 vi.mock("../../src/utils/network/proxyOpenVPNManager", () => ({
   ProxyOpenVPNManager: {
@@ -42,6 +74,10 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(),
 }));
 
+vi.mock("../../src/utils/network/vpnRuntimeCapabilities", () => ({
+  loadVpnRuntimeCapabilities: capabilityMocks.load,
+}));
+
 import { useVpnManager } from "../../src/hooks/network/useVpnManager";
 
 describe("useVpnManager", () => {
@@ -52,6 +88,47 @@ describe("useVpnManager", () => {
     mockMgr.listWireGuardConnections.mockResolvedValue([]);
     mockMgr.listTailscaleConnections.mockResolvedValue([]);
     mockMgr.listZeroTierConnections.mockResolvedValue([]);
+    mockMgr.listPPTPConnections.mockResolvedValue([]);
+    mockMgr.listL2TPConnections.mockResolvedValue([]);
+    mockMgr.listIKEv2Connections.mockResolvedValue([]);
+    mockMgr.listIPsecConnections.mockResolvedValue([]);
+    mockMgr.listSSTPConnections.mockResolvedValue([]);
+    capabilityMocks.load.mockResolvedValue([
+      { vpnType: "openvpn", executable: true },
+      { vpnType: "wireguard", executable: true },
+      { vpnType: "tailscale", executable: true },
+      { vpnType: "zerotier", executable: true },
+      {
+        vpnType: "pptp",
+        executable: false,
+        reason: "Encrypted persistent profiles are unavailable.",
+      },
+      {
+        vpnType: "l2tp",
+        executable: false,
+        reason: "Encrypted persistent profiles are unavailable.",
+      },
+      {
+        vpnType: "ikev2",
+        executable: false,
+        reason: "Encrypted persistent profiles are unavailable.",
+      },
+      {
+        vpnType: "ipsec",
+        executable: false,
+        reason: "Encrypted persistent profiles are unavailable.",
+      },
+      {
+        vpnType: "sstp",
+        executable: false,
+        reason: "Encrypted persistent profiles are unavailable.",
+      },
+      {
+        vpnType: "softether",
+        executable: false,
+        reason: "No persisted lease runtime is available.",
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -66,6 +143,11 @@ describe("useVpnManager", () => {
       expect(mockMgr.listWireGuardConnections).toHaveBeenCalled();
       expect(mockMgr.listTailscaleConnections).toHaveBeenCalled();
       expect(mockMgr.listZeroTierConnections).toHaveBeenCalled();
+      expect(mockMgr.listPPTPConnections).toHaveBeenCalled();
+      expect(mockMgr.listL2TPConnections).toHaveBeenCalled();
+      expect(mockMgr.listIKEv2Connections).toHaveBeenCalled();
+      expect(mockMgr.listIPsecConnections).toHaveBeenCalled();
+      expect(mockMgr.listSSTPConnections).toHaveBeenCalled();
     });
   });
 
@@ -158,6 +240,42 @@ describe("useVpnManager", () => {
     });
     expect(mockMgr.connectWireGuard).not.toHaveBeenCalled();
     expect(result.current.error).toMatch(/private key is not stored/i);
+  });
+
+  it("lists a gated legacy profile but never invokes its direct connect action", async () => {
+    mockMgr.listPPTPConnections.mockResolvedValue([
+      {
+        id: "pptp-legacy",
+        name: "Legacy Office",
+        status: "disconnected",
+        config: {
+          enabled: true,
+          server: "legacy.example.test",
+          username: "operator",
+          password: "",
+        },
+        createdAt: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    ]);
+
+    const { result } = renderHook(() => useVpnManager(true));
+    await waitFor(() =>
+      expect(result.current.connections).toContainEqual(
+        expect.objectContaining({ id: "pptp-legacy", vpnType: "pptp" }),
+      ),
+    );
+
+    expect(
+      result.current.connections.find(({ id }) => id === "pptp-legacy")
+        ?.connectDisabledReason,
+    ).toMatch(/persistent profiles are unavailable/i);
+    await act(async () => {
+      await result.current.connectVpn("pptp-legacy", "pptp");
+    });
+    expect(mockMgr.connectPPTP).not.toHaveBeenCalled();
+    expect(result.current.error).toMatch(
+      /persistent profiles are unavailable/i,
+    );
   });
 
   it("normalizes Tailscale connections with loginServer", async () => {
@@ -875,6 +993,11 @@ describe("useVpnManager", () => {
     mockMgr.listWireGuardConnections.mockRejectedValue(new Error("fail"));
     mockMgr.listTailscaleConnections.mockRejectedValue(new Error("fail"));
     mockMgr.listZeroTierConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listPPTPConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listL2TPConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listIKEv2Connections.mockRejectedValue(new Error("fail"));
+    mockMgr.listIPsecConnections.mockRejectedValue(new Error("fail"));
+    mockMgr.listSSTPConnections.mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useVpnManager(true));
 
@@ -888,6 +1011,11 @@ describe("useVpnManager", () => {
       wireguard: "error",
       tailscale: "error",
       zerotier: "error",
+      pptp: "error",
+      l2tp: "error",
+      ikev2: "error",
+      ipsec: "error",
+      sstp: "error",
     });
   });
 

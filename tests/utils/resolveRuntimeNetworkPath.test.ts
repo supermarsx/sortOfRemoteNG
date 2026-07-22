@@ -305,6 +305,49 @@ describe("buildRuntimeNetworkPath", () => {
     }
   });
 
+  it("fails before emitting a runtime pre-step for a gated legacy VPN", () => {
+    const target = connection("ssh", {
+      security: {
+        tunnelChain: [
+          layer("legacy-layer", {
+            type: "ikev2",
+            vpn: { configId: "ike-office" },
+          }),
+        ],
+      },
+    });
+
+    try {
+      buildRuntimeNetworkPath(
+        target,
+        {
+          ...EMPTY_CATALOG,
+          vpnProfiles: {
+            profiles: [
+              {
+                id: "ike-office",
+                name: "IKE Office",
+                vpnType: "ikev2",
+                status: "disconnected",
+                createdAt: new Date("2026-07-21T00:00:00.000Z"),
+              },
+            ],
+            providerStatus: { ikev2: "unsupported" },
+            providerErrors: {
+              ikev2: "Encrypted persistence is unavailable.",
+            },
+          },
+        },
+        "ssh",
+      );
+      throw new Error("expected unsupported provider failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeNetworkPathError);
+      expect((error as RuntimeNetworkPathError).code).toBe("unsupported-layer");
+      expect((error as Error).message).toMatch(/IKEv2.*not executable/i);
+    }
+  });
+
   it("fails closed for unsupported nested ProxyCommand layers", () => {
     const target = connection("ssh", {
       security: {

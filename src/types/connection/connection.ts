@@ -1092,6 +1092,12 @@ export type TunnelType =
   | "ssh-stdio" // SSH ProxyUseFdpass/stdio forwarding
   | "openvpn" // OpenVPN tunnel
   | "wireguard" // WireGuard tunnel
+  | "pptp" // Windows RAS PPTP tunnel (platform capability gated)
+  | "l2tp" // L2TP/IPsec tunnel (platform capability gated)
+  | "ikev2" // IKEv2 tunnel
+  | "ipsec" // Native IPsec tunnel
+  | "sstp" // Secure Socket Tunneling Protocol
+  | "softether" // Declared for import compatibility; runtime is unsupported
   | "shadowsocks" // Shadowsocks proxy
   | "tor" // Tor network
   | "i2p" // I2P network
@@ -1253,7 +1259,7 @@ export interface TunnelChainLayer {
     strictHostKeyChecking?: "yes" | "no" | "ask" | "accept-new";
   };
 
-  // VPN settings (type: 'openvpn' | 'wireguard')
+  // Saved VPN profile reference and optional provider-specific display data.
   vpn?: {
     configId?: string; // Reference to saved VPN config
     configFile?: string; // Path to config file

@@ -51,6 +51,16 @@ describe("session VPN lease IPC", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it("rejects a gated legacy provider before invoking backend lifecycle state", async () => {
+    await expect(
+      acquireSessionVpnLeases("session-1", [
+        { vpnType: "pptp", connectionId: "legacy-office" },
+      ]),
+    ).rejects.toThrow(/PPTP is not executable/i);
+
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("releases all owner leases through the idempotent cleanup command", async () => {
     vi.mocked(invoke).mockResolvedValue({
       owner_id: "session-1",

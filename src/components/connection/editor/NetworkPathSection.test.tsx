@@ -253,6 +253,37 @@ describe("NetworkPathSectionView", () => {
     expect(screen.getAllByText(/no longer exists/i)).toHaveLength(2);
   });
 
+  it("shows unsupported VPN profiles without allowing a new association", () => {
+    const unsupported: NormalizedVpnConnection = {
+      id: "legacy-pptp",
+      name: "Legacy PPTP",
+      vpnType: "pptp",
+      status: "disconnected",
+      createdAt: new Date("2026-07-21T00:00:00.000Z"),
+      connectDisabledReason: "Encrypted persistent profiles are unavailable.",
+    };
+    render(
+      <Harness
+        initial={{ id: "ssh", protocol: "ssh" }}
+        vpnConnections={[unsupported]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("network-path-inline-vpn"));
+    const option = screen.getByRole("option", {
+      name: /Legacy PPTP.*unsupported/i,
+    });
+    expect(option).toHaveAttribute("aria-disabled", "true");
+    expect(option).toHaveAttribute(
+      "title",
+      "Encrypted persistent profiles are unavailable.",
+    );
+    fireEvent.mouseDown(option);
+    expect(screen.getByTestId("safe-form-state")).not.toHaveTextContent(
+      "legacy-pptp",
+    );
+  });
+
   it("shows RDP fail-closed support without exposing proxy secrets", () => {
     const { container } = render(
       <Harness

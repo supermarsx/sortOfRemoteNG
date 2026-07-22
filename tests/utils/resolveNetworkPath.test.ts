@@ -370,6 +370,114 @@ describe("resolveNetworkPath", () => {
     );
   });
 
+  it("recognizes legacy VPN references but blocks unsupported providers", () => {
+    const result = resolveNetworkPath(
+      connection("target", {
+        security: {
+          tunnelChain: [
+            tunnelLayer("legacy-layer", {
+              type: "pptp",
+              proxy: undefined,
+              vpn: { configId: "legacy-office" },
+            }),
+          ],
+        },
+      }),
+      catalog(
+        {},
+        {
+          vpnProfiles: {
+            profiles: [
+              {
+                id: "legacy-office",
+                name: "Legacy Office",
+                vpnType: "pptp",
+                status: "disconnected",
+                createdAt: new Date(NOW),
+              },
+            ],
+            providerStatus: { pptp: "unsupported" },
+            providerErrors: {
+              pptp: "Encrypted persistent profiles are unavailable.",
+            },
+          },
+        },
+      ),
+    );
+
+    expect(result.layers).toEqual([]);
+    expect(result.validation.valid).toBe(false);
+    expect(result.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "unsupported-layer",
+        message: expect.stringMatching(/PPTP.*not executable.*persistent/i),
+      }),
+    );
+  });
+
+  it("validates split routing against the target literal IP", () => {
+    const resolveIke = (hostname: string, mode: "full" | "split") =>
+      resolveNetworkPath(
+        connection("target", {
+          hostname,
+          security: {
+            tunnelChain: [
+              tunnelLayer("ike-layer", {
+                type: "ikev2",
+                proxy: undefined,
+                vpn: { configId: "ike-office" },
+              }),
+            ],
+          },
+        }),
+        catalog(
+          {},
+          {
+            vpnProfiles: {
+              profiles: [
+                {
+                  id: "ike-office",
+                  name: "IKE Office",
+                  vpnType: "ikev2",
+                  status: "disconnected",
+                  createdAt: new Date(NOW),
+                  routing: {
+                    mode,
+                    remoteSubnets:
+                      mode === "full"
+                        ? ["0.0.0.0/0", "::/0"]
+                        : ["10.20.0.0/16", "2001:db8:42::/48"],
+                  },
+                },
+              ],
+              providerStatus: { ikev2: "loaded" },
+            },
+          },
+        ),
+      );
+
+    expect(resolveIke("vpn-target.example.test", "full").validation.valid).toBe(
+      true,
+    );
+    expect(resolveIke("10.20.30.40", "split").validation.valid).toBe(true);
+
+    const dnsTarget = resolveIke("vpn-target.example.test", "split");
+    expect(dnsTarget.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "unsupported-layer",
+        message: expect.stringMatching(/literal.*full-tunnel.*DNS/i),
+      }),
+    );
+
+    const outsideTarget = resolveIke("10.21.30.40", "split");
+    expect(outsideTarget.validation.issues).toContainEqual(
+      expect.objectContaining({
+        code: "unsupported-layer",
+        message: expect.stringMatching(/does not cover.*target IP/i),
+      }),
+    );
+  });
+
   it("keeps legacy profile IDs routable while exposing their migration source", () => {
     const legacySecurity = resolveNetworkPath(
       connection("target", {

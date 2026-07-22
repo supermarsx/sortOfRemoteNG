@@ -10,7 +10,7 @@ import type {
   VpnPreStep,
 } from "../ssh/resolveChainConfig";
 import { ProxyOpenVPNManager } from "./proxyOpenVPNManager";
-import { normalizeExecutableVpnType } from "./vpnProviderCatalog";
+import { normalizeSessionVpnType } from "./vpnProviderCatalog";
 import { loadVpnProfileCatalog } from "./vpnProfiles";
 import {
   resolveNetworkPath,
@@ -167,7 +167,7 @@ export async function captureNetworkPathCatalog(
     unresolved.layers.some(
       (layer) =>
         (layer.kind === "vpn" || layer.kind === "connection") &&
-        normalizeExecutableVpnType(layer.transport),
+        normalizeSessionVpnType(layer.transport),
     )
   ) {
     catalog.vpnProfiles = await loadVpnProfileCatalog(
@@ -246,7 +246,7 @@ function toVpnStep(
   protocol: RuntimeNetworkPathProtocol,
   layer: Extract<CanonicalNetworkPathLayer, { kind: "vpn" | "connection" }>,
 ): VpnPreStep {
-  const vpnType = normalizeExecutableVpnType(layer.transport);
+  const vpnType = normalizeSessionVpnType(layer.transport);
   if (!vpnType) {
     unsupported(
       protocol,
@@ -399,7 +399,9 @@ export function buildRuntimeNetworkPath(
     throw new RuntimeNetworkPathError(
       issue?.code === "snapshot-unavailable"
         ? "snapshot-unavailable"
-        : "invalid-path",
+        : issue?.code === "unsupported-layer"
+          ? "unsupported-layer"
+          : "invalid-path",
       `Network path blocked: ${detail}`,
     );
   }

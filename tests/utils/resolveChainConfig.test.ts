@@ -867,6 +867,44 @@ describe("resolveChainConfig", () => {
       expect(result.vpnPreSteps[2].vpnType).toBe("zerotier");
     });
 
+    it("preserves ordered legacy VPN candidates for the fail-closed lease gate", async () => {
+      mocks.getConnectionChain.mockResolvedValue({
+        layers: [
+          { position: 2, connection_type: "SSTP", connection_id: "sstp-1" },
+          { position: 0, connection_type: "IKEv2", connection_id: "ike-1" },
+          { position: 1, connection_type: "IPsec", connection_id: "ipsec-1" },
+        ],
+      });
+
+      const result = await resolveChainConfig(
+        makeConnection({ connectionChainId: "cc-legacy" }),
+      );
+
+      expect(result.vpnPreSteps).toEqual([
+        { vpnType: "ikev2", connectionId: "ike-1" },
+        { vpnType: "ipsec", connectionId: "ipsec-1" },
+        { vpnType: "sstp", connectionId: "sstp-1" },
+      ]);
+    });
+
+    it("never silently bypasses an unsupported SoftEther chain layer", async () => {
+      mocks.getConnectionChain.mockResolvedValue({
+        layers: [
+          {
+            position: 0,
+            connection_type: "SoftEther",
+            connection_id: "softether-1",
+          },
+        ],
+      });
+
+      await expect(
+        resolveChainConfig(
+          makeConnection({ connectionChainId: "cc-softether" }),
+        ),
+      ).rejects.toThrow(/SoftEther.*no persisted lease runtime/i);
+    });
+
     it("resolves Proxy from connection chain with default socks5 type", async () => {
       mocks.getConnectionChain.mockResolvedValue({
         layers: [

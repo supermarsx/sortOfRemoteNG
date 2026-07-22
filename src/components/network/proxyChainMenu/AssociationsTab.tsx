@@ -5,13 +5,22 @@ import {
   ChevronLeft,
   ChevronRight,
   Link2,
+  Loader2,
   Search,
+  Shield,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Connection } from "../../../types/connection/connection";
 import type { SavedTunnelChain } from "../../../types/settings/vpnSettings";
 import { proxyCollectionManager } from "../../../utils/connection/proxyCollectionManager";
+import { getConnectionIconDefinition } from "../../../utils/icons/connectionIconCatalog";
+import {
+  getVpnProviderDefinition,
+  type KnownVpnProviderType,
+  type VpnRuntimeCapability,
+} from "../../../utils/network/vpnProviderCatalog";
+import { loadVpnRuntimeCapabilities } from "../../../utils/network/vpnRuntimeCapabilities";
 import { Select } from "../../ui/forms";
 import type { Mgr } from "./types";
 
@@ -25,7 +34,137 @@ function hasAssociation(connection: Connection): boolean {
     connection.connectionChainId ||
     connection.proxyChainId ||
     connection.tunnelChainId ||
-    connection.security?.tunnelChain?.length,
+    connection.security?.tunnelChain?.length ||
+    connection.security?.openvpn?.enabled,
+  );
+}
+
+type ProviderDefinition = NonNullable<
+  ReturnType<typeof getVpnProviderDefinition>
+>;
+
+function readLayerProviderType(
+  layer: unknown,
+  property: "connection_type" | "type",
+): string | undefined {
+  if (!layer || typeof layer !== "object") return undefined;
+  const value = (layer as Record<string, unknown>)[property];
+  return typeof value === "string" ? value : undefined;
+}
+
+function collectAssociationVpnProviders(
+  connection: Connection,
+  connectionChains: Mgr["connectionChains"],
+  proxyChains: Mgr["proxyChains"],
+  tunnelChains: readonly SavedTunnelChain[],
+): ProviderDefinition[] {
+  const types = new Set<KnownVpnProviderType>();
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const provider = getVpnProviderDefinition(value);
+    if (provider) types.add(provider.type);
+  };
+
+  connectionChains
+    .find((chain) => chain.id === connection.connectionChainId)
+    ?.layers?.forEach((layer) =>
+      add(readLayerProviderType(layer, "connection_type")),
+    );
+  proxyChains
+    .find((chain) => chain.id === connection.proxyChainId)
+    ?.layers?.forEach((layer) => add(readLayerProviderType(layer, "type")));
+
+  const referencedTunnel = tunnelChains.find(
+    (chain) => chain.id === connection.tunnelChainId,
+  );
+  const inlineTunnel = referencedTunnel
+    ? []
+    : (connection.security?.tunnelChain ?? []);
+  (referencedTunnel?.layers ?? inlineTunnel)
+    .filter((layer) => layer.enabled)
+    .forEach((layer) => add(layer.type));
+
+  if (
+    connection.security?.openvpn?.enabled &&
+    !connection.tunnelChainId &&
+    inlineTunnel.length === 0
+  ) {
+    add("openvpn");
+  }
+
+  return [...types]
+    .map((type) => getVpnProviderDefinition(type))
+    .filter((provider): provider is ProviderDefinition => Boolean(provider));
+}
+
+function VpnExecutionStatus({
+  providers,
+  capabilities,
+  capabilityError,
+}: {
+  providers: readonly ProviderDefinition[];
+  capabilities: ReadonlyMap<KnownVpnProviderType, VpnRuntimeCapability>;
+  capabilityError: string | null;
+}) {
+  const { t } = useTranslation();
+  if (providers.length === 0) {
+    return (
+      <span className="text-[10px] text-[var(--color-textMuted)]">
+        {t("proxyChainMenu.associations.noVpnRequired", "No VPN")}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex max-w-64 flex-wrap gap-1">
+      {providers.map((provider) => {
+        const capability = capabilities.get(provider.type);
+        const executable = provider.executable && capability?.executable;
+        const pending = provider.executable && !capability && !capabilityError;
+        const reason = !provider.executable
+          ? provider.unsupportedReason
+          : capabilityError || capability?.reason;
+        const Icon =
+          getConnectionIconDefinition(provider.iconKey)?.icon ?? Shield;
+        const statusLabel = pending
+          ? t("proxyChainMenu.associations.capabilityChecking", "Checking")
+          : executable
+            ? t("proxyChainMenu.associations.executable", "Executable")
+            : t("proxyChainMenu.associations.unsupported", "Unsupported");
+
+        return (
+          <span
+            key={provider.type}
+            className={`inline-flex min-w-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] ${
+              pending
+                ? "border-[var(--color-border)] text-[var(--color-textMuted)]"
+                : executable
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-error/30 bg-error/10 text-error"
+            }`}
+            title={
+              reason
+                ? `${provider.label}: ${statusLabel}. ${reason}`
+                : `${provider.label}: ${statusLabel}`
+            }
+            aria-label={`${provider.label}: ${statusLabel}`}
+          >
+            {pending ? (
+              <Loader2
+                size={11}
+                className="shrink-0 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Icon size={11} className="shrink-0" aria-hidden="true" />
+            )}
+            <span className="truncate">{provider.label}</span>
+            <span aria-hidden="true">·</span>
+            <span>{statusLabel}</span>
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -171,6 +310,12 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [runtimeCapabilities, setRuntimeCapabilities] = useState<
+    Map<KnownVpnProviderType, VpnRuntimeCapability>
+  >(new Map());
+  const [runtimeCapabilityError, setRuntimeCapabilityError] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
@@ -178,6 +323,33 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
       setSavedTunnelChains(proxyCollectionManager.getTunnelChains());
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    loadVpnRuntimeCapabilities()
+      .then((capabilities) => {
+        if (!active) return;
+        setRuntimeCapabilities(
+          new Map(
+            capabilities.map((capability) => [capability.vpnType, capability]),
+          ),
+        );
+        setRuntimeCapabilityError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRuntimeCapabilities(new Map());
+        setRuntimeCapabilityError(
+          t(
+            "proxyChainMenu.associations.capabilityUnavailable",
+            "Runtime capability could not be verified.",
+          ),
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [t]);
 
   const connectionChainOptions = useMemo(
     () => [
@@ -242,6 +414,27 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
         ]),
       ),
     [associationSearchCatalog, mgr.connectionOptions],
+  );
+
+  const associationVpnProviders = useMemo(
+    () =>
+      new Map(
+        mgr.connectionOptions.map((connection) => [
+          connection.id,
+          collectAssociationVpnProviders(
+            connection,
+            mgr.connectionChains,
+            mgr.proxyChains,
+            savedTunnelChains,
+          ),
+        ]),
+      ),
+    [
+      mgr.connectionChains,
+      mgr.connectionOptions,
+      mgr.proxyChains,
+      savedTunnelChains,
+    ],
   );
 
   const configuredCount = useMemo(
@@ -416,7 +609,7 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
 
       <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
         <table
-          className="w-full min-w-[980px] border-collapse text-left text-xs"
+          className="w-full min-w-[1160px] border-collapse text-left text-xs"
           data-testid="associations-table"
         >
           <caption className="sr-only">
@@ -444,6 +637,9 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
               </th>
               <th scope="col" className="min-w-56 px-3 py-2 font-medium">
                 {t("proxyChainMenu.associations.path", "Tunnel Path")}
+              </th>
+              <th scope="col" className="min-w-64 px-3 py-2 font-medium">
+                {t("proxyChainMenu.associations.execution", "VPN execution")}
               </th>
             </tr>
           </thead>
@@ -534,6 +730,13 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
                   <TunnelPathSummary
                     connection={connection}
                     onClear={() => clearTunnelPath(connection.id)}
+                  />
+                </td>
+                <td className="px-3 py-2.5">
+                  <VpnExecutionStatus
+                    providers={associationVpnProviders.get(connection.id) ?? []}
+                    capabilities={runtimeCapabilities}
+                    capabilityError={runtimeCapabilityError}
                   />
                 </td>
               </tr>

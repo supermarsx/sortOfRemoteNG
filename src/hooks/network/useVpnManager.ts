@@ -3,8 +3,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
 import {
   getVpnProviderLabel,
-  normalizeExecutableVpnType,
-  type ExecutableVpnType,
+  normalizeSessionVpnType,
+  type SessionVpnType,
   type VpnProfileCatalogSnapshot,
   type VpnProfileSummary,
 } from "../../utils/network/vpnProviderCatalog";
@@ -12,7 +12,7 @@ import { loadVpnProfileCatalog } from "../../utils/network/vpnProfiles";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
-export type VpnTypeFilter = "all" | ExecutableVpnType;
+export type VpnTypeFilter = "all" | SessionVpnType;
 export type NormalizedVpnConnection = VpnProfileSummary;
 
 const EMPTY_VPN_CONNECTIONS: readonly NormalizedVpnConnection[] = [];
@@ -121,12 +121,18 @@ export function useVpnManager(isOpen: boolean) {
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        const provider = requireExecutableProvider(vpnType);
+        const provider = requireSessionProvider(vpnType);
         const profile = allConnections.find(
           (candidate) => candidate.id === id && candidate.vpnType === provider,
         );
         if (profile?.connectDisabledReason) {
           throw new Error(profile.connectDisabledReason);
+        }
+        if (profileCatalog?.providerStatus[provider] === "unsupported") {
+          throw new Error(
+            profileCatalog.providerErrors?.[provider] ??
+              `${getVpnProviderLabel(provider)} is not executable on this platform.`,
+          );
         }
         switch (provider) {
           case "openvpn":
@@ -141,6 +147,21 @@ export function useVpnManager(isOpen: boolean) {
           case "zerotier":
             await mgr.connectZeroTier(id);
             break;
+          case "pptp":
+            await mgr.connectPPTP(id);
+            break;
+          case "l2tp":
+            await mgr.connectL2TP(id);
+            break;
+          case "ikev2":
+            await mgr.connectIKEv2(id);
+            break;
+          case "ipsec":
+            await mgr.connectIPsec(id);
+            break;
+          case "sstp":
+            await mgr.connectSSTP(id);
+            break;
         }
         await loadConnections();
       } catch (err) {
@@ -149,14 +170,14 @@ export function useVpnManager(isOpen: boolean) {
         );
       }
     },
-    [mgr, loadConnections, allConnections],
+    [mgr, loadConnections, allConnections, profileCatalog],
   );
 
   const disconnectVpn = useCallback(
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        const provider = requireExecutableProvider(vpnType);
+        const provider = requireSessionProvider(vpnType);
         switch (provider) {
           case "openvpn":
             await mgr.disconnectOpenVPN(id);
@@ -169,6 +190,21 @@ export function useVpnManager(isOpen: boolean) {
             break;
           case "zerotier":
             await mgr.disconnectZeroTier(id);
+            break;
+          case "pptp":
+            await mgr.disconnectPPTP(id);
+            break;
+          case "l2tp":
+            await mgr.disconnectL2TP(id);
+            break;
+          case "ikev2":
+            await mgr.disconnectIKEv2(id);
+            break;
+          case "ipsec":
+            await mgr.disconnectIPsec(id);
+            break;
+          case "sstp":
+            await mgr.disconnectSSTP(id);
             break;
         }
         await loadConnections();
@@ -187,7 +223,7 @@ export function useVpnManager(isOpen: boolean) {
     async (id: string, vpnType: string) => {
       try {
         setError(null);
-        const provider = requireExecutableProvider(vpnType);
+        const provider = requireSessionProvider(vpnType);
         switch (provider) {
           case "openvpn":
             await mgr.deleteOpenVPNConnection(id);
@@ -200,6 +236,21 @@ export function useVpnManager(isOpen: boolean) {
             break;
           case "zerotier":
             await mgr.deleteZeroTierConnection(id);
+            break;
+          case "pptp":
+            await mgr.deletePPTPConnection(id);
+            break;
+          case "l2tp":
+            await mgr.deleteL2TPConnection(id);
+            break;
+          case "ikev2":
+            await mgr.deleteIKEv2Connection(id);
+            break;
+          case "ipsec":
+            await mgr.deleteIPsecConnection(id);
+            break;
+          case "sstp":
+            await mgr.deleteSSTPConnection(id);
             break;
         }
         await loadConnections();
@@ -253,7 +304,7 @@ export function useVpnManager(isOpen: boolean) {
     async (name: string, vpnType: string, config: Record<string, unknown>) => {
       try {
         setError(null);
-        const provider = requireExecutableProvider(vpnType);
+        const provider = requireSessionProvider(vpnType);
         switch (provider) {
           case "openvpn":
             await mgr.createOpenVPNConnection(name, config);
@@ -266,6 +317,21 @@ export function useVpnManager(isOpen: boolean) {
             break;
           case "zerotier":
             await mgr.createZeroTierConnection(name, config);
+            break;
+          case "pptp":
+            await mgr.createPPTPConnection(name, config);
+            break;
+          case "l2tp":
+            await mgr.createL2TPConnection(name, config);
+            break;
+          case "ikev2":
+            await mgr.createIKEv2Connection(name, config);
+            break;
+          case "ipsec":
+            await mgr.createIPsecConnection(name, config);
+            break;
+          case "sstp":
+            await mgr.createSSTPConnection(name, config);
             break;
         }
         await loadConnections();
@@ -290,7 +356,7 @@ export function useVpnManager(isOpen: boolean) {
     ) => {
       try {
         setError(null);
-        const provider = requireExecutableProvider(vpnType);
+        const provider = requireSessionProvider(vpnType);
         switch (provider) {
           case "openvpn":
             await mgr.updateOpenVPNConnection(id, name, config);
@@ -303,6 +369,21 @@ export function useVpnManager(isOpen: boolean) {
             break;
           case "zerotier":
             await mgr.updateZeroTierConnection(id, name, config);
+            break;
+          case "pptp":
+            await mgr.updatePPTPConnection(id, name, config);
+            break;
+          case "l2tp":
+            await mgr.updateL2TPConnection(id, name, config);
+            break;
+          case "ikev2":
+            await mgr.updateIKEv2Connection(id, name, config);
+            break;
+          case "ipsec":
+            await mgr.updateIPsecConnection(id, name, config);
+            break;
+          case "sstp":
+            await mgr.updateSSTPConnection(id, name, config);
             break;
         }
         await loadConnections();
@@ -338,8 +419,8 @@ export function useVpnManager(isOpen: boolean) {
   };
 }
 
-function requireExecutableProvider(vpnType: string): ExecutableVpnType {
-  const provider = normalizeExecutableVpnType(vpnType);
+function requireSessionProvider(vpnType: string): SessionVpnType {
+  const provider = normalizeSessionVpnType(vpnType);
   if (!provider) throw new Error(`Unsupported VPN type: ${vpnType}`);
   return provider;
 }

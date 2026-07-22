@@ -2,15 +2,118 @@ use super::chaining::*;
 use super::vpn_lifecycle::*;
 use std::collections::BTreeSet;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VpnRuntimeCapability {
+    pub vpn_type: String,
+    pub executable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+fn unsupported_capability(vpn_type: &str, reason: &str) -> VpnRuntimeCapability {
+    VpnRuntimeCapability {
+        vpn_type: vpn_type.to_string(),
+        executable: false,
+        reason: Some(reason.to_string()),
+    }
+}
+
+fn runtime_vpn_capabilities_for(
+    platform: &str,
+    legacy_profiles_persisted: bool,
+) -> Vec<VpnRuntimeCapability> {
+    let supported = |vpn_type: &str| VpnRuntimeCapability {
+        vpn_type: vpn_type.to_string(),
+        executable: true,
+        reason: None,
+    };
+    let windows_only = |vpn_type: &str| {
+        if !legacy_profiles_persisted {
+            return unsupported_capability(
+                vpn_type,
+                "Saved profiles are not yet available through encrypted persistent storage, so session associations are disabled.",
+            );
+        }
+        if platform == "windows" {
+            supported(vpn_type)
+        } else {
+            unsupported_capability(
+                vpn_type,
+                "This provider is available for session associations only on Windows RAS; the non-Windows backend does not yet establish and verify a complete tunnel.",
+            )
+        }
+    };
+    let strongswan = |vpn_type: &str| {
+        if !legacy_profiles_persisted {
+            return unsupported_capability(
+                vpn_type,
+                "Saved profiles are not yet available through encrypted persistent storage, so session associations are disabled.",
+            );
+        }
+        if platform == "windows" || platform == "linux" {
+            supported(vpn_type)
+        } else {
+            unsupported_capability(
+                vpn_type,
+                "This provider is unavailable for macOS session associations until native strongSwan elevation and readiness probing are supported.",
+            )
+        }
+    };
+
+    vec![
+        supported("openvpn"),
+        supported("wireguard"),
+        supported("tailscale"),
+        supported("zerotier"),
+        windows_only("pptp"),
+        windows_only("l2tp"),
+        strongswan("ikev2"),
+        strongswan("ipsec"),
+        windows_only("sstp"),
+        unsupported_capability(
+            "softether",
+            "SoftEther session associations are unavailable because the backend is feature-gated and does not expose the persisted profile and lease-runtime contract.",
+        ),
+    ]
+}
+
+fn ensure_runtime_provider_supported(vpn_type: RuntimeVpnType) -> Result<(), String> {
+    let name = vpn_type.as_str();
+    let capability =
+        runtime_vpn_capabilities_for(std::env::consts::OS, LEGACY_SESSION_PIPELINE_ENABLED)
+            .into_iter()
+            .find(|candidate| candidate.vpn_type == name)
+            .ok_or_else(|| format!("Unsupported VPN type: {name}"))?;
+    if capability.executable {
+        Ok(())
+    } else {
+        Err(capability
+            .reason
+            .unwrap_or_else(|| format!("{name} is not executable on this platform")))
+    }
+}
+
+#[tauri::command]
+pub async fn get_vpn_runtime_capabilities() -> Vec<VpnRuntimeCapability> {
+    runtime_vpn_capabilities_for(std::env::consts::OS, LEGACY_SESSION_PIPELINE_ENABLED)
+}
+
 struct TauriVpnRuntime {
     openvpn: super::openvpn::OpenVPNServiceState,
     wireguard: super::wireguard::WireGuardServiceState,
     tailscale: super::tailscale::TailscaleServiceState,
     zerotier: super::zerotier::ZeroTierServiceState,
+    pptp: super::pptp::PPTPServiceState,
+    l2tp: super::l2tp::L2TPServiceState,
+    ikev2: super::ikev2::IKEv2ServiceState,
+    ipsec: super::ipsec::IPsecServiceState,
+    sstp: super::sstp::SSTPServiceState,
 }
 
 impl VpnRuntime for TauriVpnRuntime {
     async fn probe_active(&mut self, key: &VpnLeaseKey) -> Result<bool, String> {
+        ensure_runtime_provider_supported(key.vpn_type)?;
         match key.vpn_type {
             RuntimeVpnType::OpenVpn => {
                 self.openvpn
@@ -40,10 +143,46 @@ impl VpnRuntime for TauriVpnRuntime {
                     .probe_connection_active(&key.connection_id)
                     .await
             }
+            RuntimeVpnType::Pptp => {
+                self.pptp
+                    .lock()
+                    .await
+                    .probe_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::L2tp => {
+                self.l2tp
+                    .lock()
+                    .await
+                    .probe_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Ikev2 => {
+                self.ikev2
+                    .lock()
+                    .await
+                    .probe_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Ipsec => {
+                self.ipsec
+                    .lock()
+                    .await
+                    .probe_connection_active(&key.connection_id)
+                    .await
+            }
+            RuntimeVpnType::Sstp => {
+                self.sstp
+                    .lock()
+                    .await
+                    .probe_connection_active(&key.connection_id)
+                    .await
+            }
         }
     }
 
     async fn connect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+        ensure_runtime_provider_supported(key.vpn_type)?;
         match key.vpn_type {
             RuntimeVpnType::OpenVpn => self.openvpn.lock().await.connect(&key.connection_id).await,
             RuntimeVpnType::WireGuard => {
@@ -63,10 +202,16 @@ impl VpnRuntime for TauriVpnRuntime {
             RuntimeVpnType::ZeroTier => {
                 self.zerotier.lock().await.connect(&key.connection_id).await
             }
+            RuntimeVpnType::Pptp => self.pptp.lock().await.connect(&key.connection_id).await,
+            RuntimeVpnType::L2tp => self.l2tp.lock().await.connect(&key.connection_id).await,
+            RuntimeVpnType::Ikev2 => self.ikev2.lock().await.connect(&key.connection_id).await,
+            RuntimeVpnType::Ipsec => self.ipsec.lock().await.connect(&key.connection_id).await,
+            RuntimeVpnType::Sstp => self.sstp.lock().await.connect(&key.connection_id).await,
         }
     }
 
     async fn disconnect(&mut self, key: &VpnLeaseKey) -> Result<(), String> {
+        ensure_runtime_provider_supported(key.vpn_type)?;
         match key.vpn_type {
             RuntimeVpnType::OpenVpn => {
                 self.openvpn
@@ -96,6 +241,11 @@ impl VpnRuntime for TauriVpnRuntime {
                     .disconnect(&key.connection_id)
                     .await
             }
+            RuntimeVpnType::Pptp => self.pptp.lock().await.disconnect(&key.connection_id).await,
+            RuntimeVpnType::L2tp => self.l2tp.lock().await.disconnect(&key.connection_id).await,
+            RuntimeVpnType::Ikev2 => self.ikev2.lock().await.disconnect(&key.connection_id).await,
+            RuntimeVpnType::Ipsec => self.ipsec.lock().await.disconnect(&key.connection_id).await,
+            RuntimeVpnType::Sstp => self.sstp.lock().await.disconnect(&key.connection_id).await,
         }
     }
 }
@@ -105,12 +255,22 @@ fn tauri_vpn_runtime(
     wireguard_state: &tauri::State<'_, super::wireguard::WireGuardServiceState>,
     tailscale_state: &tauri::State<'_, super::tailscale::TailscaleServiceState>,
     zerotier_state: &tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+    pptp_state: &tauri::State<'_, super::pptp::PPTPServiceState>,
+    l2tp_state: &tauri::State<'_, super::l2tp::L2TPServiceState>,
+    ikev2_state: &tauri::State<'_, super::ikev2::IKEv2ServiceState>,
+    ipsec_state: &tauri::State<'_, super::ipsec::IPsecServiceState>,
+    sstp_state: &tauri::State<'_, super::sstp::SSTPServiceState>,
 ) -> TauriVpnRuntime {
     TauriVpnRuntime {
         openvpn: openvpn_state.inner().clone(),
         wireguard: wireguard_state.inner().clone(),
         tailscale: tailscale_state.inner().clone(),
         zerotier: zerotier_state.inner().clone(),
+        pptp: pptp_state.inner().clone(),
+        l2tp: l2tp_state.inner().clone(),
+        ikev2: ikev2_state.inner().clone(),
+        ipsec: ipsec_state.inner().clone(),
+        sstp: sstp_state.inner().clone(),
     }
 }
 
@@ -124,6 +284,11 @@ fn connection_chain_vpn_lease_keys(chain: &ConnectionChain) -> Vec<VpnLeaseKey> 
                 ConnectionType::WireGuard => RuntimeVpnType::WireGuard,
                 ConnectionType::ZeroTier => RuntimeVpnType::ZeroTier,
                 ConnectionType::Tailscale => RuntimeVpnType::Tailscale,
+                ConnectionType::PPTP => RuntimeVpnType::Pptp,
+                ConnectionType::L2TP => RuntimeVpnType::L2tp,
+                ConnectionType::IKEv2 => RuntimeVpnType::Ikev2,
+                ConnectionType::IPsec => RuntimeVpnType::Ipsec,
+                ConnectionType::SSTP => RuntimeVpnType::Sstp,
                 _ => return None,
             };
             Some(VpnLeaseKey {
@@ -418,6 +583,11 @@ pub async fn acquire_vpn_leases(
     wireguard_state: tauri::State<'_, super::wireguard::WireGuardServiceState>,
     tailscale_state: tauri::State<'_, super::tailscale::TailscaleServiceState>,
     zerotier_state: tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+    pptp_state: tauri::State<'_, super::pptp::PPTPServiceState>,
+    l2tp_state: tauri::State<'_, super::l2tp::L2TPServiceState>,
+    ikev2_state: tauri::State<'_, super::ikev2::IKEv2ServiceState>,
+    ipsec_state: tauri::State<'_, super::ipsec::IPsecServiceState>,
+    sstp_state: tauri::State<'_, super::sstp::SSTPServiceState>,
 ) -> Result<AcquireVpnLeasesResult, String> {
     let mut registry = vpn_lease_state.lock().await;
     let mut runtime = tauri_vpn_runtime(
@@ -425,6 +595,11 @@ pub async fn acquire_vpn_leases(
         &wireguard_state,
         &tailscale_state,
         &zerotier_state,
+        &pptp_state,
+        &l2tp_state,
+        &ikev2_state,
+        &ipsec_state,
+        &sstp_state,
     );
     acquire_session_vpn_leases(&mut registry, &owner_id, requests, &mut runtime).await
 }
@@ -441,6 +616,11 @@ pub async fn release_vpn_leases(
     wireguard_state: tauri::State<'_, super::wireguard::WireGuardServiceState>,
     tailscale_state: tauri::State<'_, super::tailscale::TailscaleServiceState>,
     zerotier_state: tauri::State<'_, super::zerotier::ZeroTierServiceState>,
+    pptp_state: tauri::State<'_, super::pptp::PPTPServiceState>,
+    l2tp_state: tauri::State<'_, super::l2tp::L2TPServiceState>,
+    ikev2_state: tauri::State<'_, super::ikev2::IKEv2ServiceState>,
+    ipsec_state: tauri::State<'_, super::ipsec::IPsecServiceState>,
+    sstp_state: tauri::State<'_, super::sstp::SSTPServiceState>,
 ) -> Result<ReleaseVpnLeasesResult, String> {
     let mut registry = vpn_lease_state.lock().await;
     let mut runtime = tauri_vpn_runtime(
@@ -448,6 +628,11 @@ pub async fn release_vpn_leases(
         &wireguard_state,
         &tailscale_state,
         &zerotier_state,
+        &pptp_state,
+        &l2tp_state,
+        &ikev2_state,
+        &ipsec_state,
+        &sstp_state,
     );
     release_session_vpn_leases(&mut registry, &owner_id, &mut runtime).await
 }
@@ -516,6 +701,57 @@ mod tests {
             connection_id: connection_id.to_string(),
             auto_connect: true,
         }
+    }
+
+    #[test]
+    fn runtime_capabilities_are_platform_scoped_and_softether_stays_unsupported() {
+        let gated = runtime_vpn_capabilities_for("windows", false);
+        for vpn_type in ["pptp", "l2tp", "ikev2", "ipsec", "sstp"] {
+            let capability = gated
+                .iter()
+                .find(|capability| capability.vpn_type == vpn_type)
+                .unwrap();
+            assert!(!capability.executable);
+            assert!(capability.reason.as_deref().unwrap().contains("encrypted"));
+        }
+
+        let windows = runtime_vpn_capabilities_for("windows", true);
+        for vpn_type in ["pptp", "l2tp", "ikev2", "ipsec", "sstp"] {
+            assert!(windows
+                .iter()
+                .any(|capability| capability.vpn_type == vpn_type && capability.executable));
+        }
+
+        let linux = runtime_vpn_capabilities_for("linux", true);
+        for vpn_type in ["ikev2", "ipsec"] {
+            assert!(linux
+                .iter()
+                .any(|capability| capability.vpn_type == vpn_type && capability.executable));
+        }
+        for vpn_type in ["pptp", "l2tp", "sstp"] {
+            let capability = linux
+                .iter()
+                .find(|capability| capability.vpn_type == vpn_type)
+                .unwrap();
+            assert!(!capability.executable);
+            assert!(capability
+                .reason
+                .as_deref()
+                .unwrap()
+                .contains("Windows RAS"));
+        }
+
+        let macos = runtime_vpn_capabilities_for("macos", true);
+        assert!(macos
+            .iter()
+            .filter(|capability| matches!(capability.vpn_type.as_str(), "ikev2" | "ipsec"))
+            .all(|capability| !capability.executable));
+        assert!(windows
+            .iter()
+            .chain(linux.iter())
+            .chain(macos.iter())
+            .filter(|capability| capability.vpn_type == "softether")
+            .all(|capability| !capability.executable));
     }
 
     #[test]
@@ -598,7 +834,7 @@ mod tests {
             test_layer(ConnectionType::ZeroTier, "zt-lab", 3),
         ]);
 
-        assert_eq!(connection_chain_vpn_lease_keys(&chain).len(), 2);
+        assert_eq!(connection_chain_vpn_lease_keys(&chain).len(), 3);
         assert!(ensure_connection_chain_teardown_allowed(&registry, &chain, "disconnect").is_err());
         assert!(ensure_connection_chain_teardown_allowed(&registry, &chain, "delete").is_err());
 

@@ -30,6 +30,7 @@ import type {
 import {
   normalizeExecutableVpnType,
   type ExecutableVpnType,
+  type VpnProviderSnapshotStatus,
 } from "../../../utils/network/vpnProviderCatalog";
 import { Checkbox, NumberInput, Select, TextInput } from "../../ui/forms";
 import RawSocketOptions from "../../connectionEditor/rawSocket/RawSocketOptions";
@@ -188,7 +189,9 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
     { value: "", label: "None" },
     ...vpnConnections.map((vpn) => ({
       value: vpn.id,
-      label: `${vpn.name} (${vpn.vpnType}; ${vpn.status})`,
+      label: `${vpn.name} (${vpn.vpnType}; ${vpn.connectDisabledReason ? "unsupported" : vpn.status})`,
+      disabled: Boolean(vpn.connectDisabledReason),
+      title: vpn.connectDisabledReason,
     })),
   ];
   const vpnOptions =
@@ -208,7 +211,7 @@ export const NetworkPathSectionView: React.FC<NetworkPathSectionViewProps> = ({
 
   const handleVpnChange = (vpnId: string) => {
     const vpn = vpnConnections.find((candidate) => candidate.id === vpnId);
-    if (vpnId && !vpn) return;
+    if (vpnId && (!vpn || vpn.connectDisabledReason)) return;
     setFormData((previous) => setInlineVpn(previous, vpn));
   };
 
@@ -745,20 +748,23 @@ function selectedVpnType(
 function withPendingVpnOption(
   options: Array<{ value: string; label: string }>,
   currentId: string,
-  status: "error" | undefined,
+  status: VpnProviderSnapshotStatus | undefined,
 ): Array<{ value: string; label: string; title?: string }> {
   if (!currentId || options.some((option) => option.value === currentId)) {
     return options;
   }
   const unavailable = status === "error";
+  const unsupported = status === "unsupported";
   return [
     ...options,
     {
       value: currentId,
-      label: `${unavailable ? "Unverified" : "Checking"} VPN connection (${currentId})`,
-      title: unavailable
-        ? "The provider profile store could not be loaded. This association has not been classified as deleted."
-        : "The provider profile store is still loading.",
+      label: `${unsupported ? "Unsupported" : unavailable ? "Unverified" : "Checking"} VPN connection (${currentId})`,
+      title: unsupported
+        ? "This VPN provider cannot currently be executed as part of a session network path."
+        : unavailable
+          ? "The provider profile store could not be loaded. This association has not been classified as deleted."
+          : "The provider profile store is still loading.",
     },
   ];
 }

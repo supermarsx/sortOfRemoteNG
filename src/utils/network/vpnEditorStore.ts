@@ -4,9 +4,12 @@
  * editor tab, read on mount, and cleared after reading.
  */
 
+import type { SessionVpnType } from "./vpnProviderCatalog";
+import type { VpnSecretPresence } from "./vpnIpcAdapter";
+
 export interface VpnEditingData {
   id: string;
-  vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
+  vpnType: SessionVpnType;
   name: string;
   config: Record<string, any>;
   secretPresence?: VpnSecretPresence;
@@ -23,4 +26,3 @@ export function consumePendingVpnEdit(): VpnEditingData | null {
   pendingEdit = null;
   return data;
 }
-import type { VpnSecretPresence } from "./vpnIpcAdapter";

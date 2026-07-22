@@ -15,11 +15,12 @@ import type {
 import type { ChainLayer, ConnectionChain } from "./proxyOpenVPNManager";
 import {
   getVpnProviderLabel,
-  normalizeExecutableVpnType,
+  normalizeSessionVpnType,
   resolveTunnelLayerVpnProfileId,
-  type ExecutableVpnType,
+  type SessionVpnType,
   type VpnProfileCatalogSnapshot,
 } from "./vpnProviderCatalog";
+import { isIpAddressInCidr, isLiteralIpAddress } from "./vpnRoutingPolicy";
 
 /** Marker used by {@link redactNetworkPathSecrets}. */
 export const NETWORK_PATH_REDACTED = "[REDACTED]" as const;
@@ -146,6 +147,7 @@ export type NetworkPathIssueCode =
   | "empty-chain"
   | "cycle"
   | "invalid-layer"
+  | "unsupported-layer"
   | "snapshot-unavailable"
   | "shadowed-source"
   | "duplicate-position";
@@ -442,7 +444,7 @@ function appendConnectionChain(
       return;
     }
 
-    const vpnType = normalizeExecutableVpnType(layer.connection_type);
+    const vpnType = normalizeSessionVpnType(layer.connection_type);
     if (
       vpnType &&
       !validateVpnProfileReference(
@@ -655,7 +657,7 @@ function appendSavedChainLayer(
     );
     return;
   }
-  const vpnType = normalizeExecutableVpnType(layer.type);
+  const vpnType = normalizeSessionVpnType(layer.type);
   if (
     vpnType &&
     !validateVpnProfileReference(vpnType, connectionId, source, state)
@@ -910,7 +912,7 @@ function appendTunnelLayer(
     return;
   }
 
-  const vpnType = normalizeExecutableVpnType(layer.type);
+  const vpnType = normalizeSessionVpnType(layer.type);
   if (vpnType) {
     const connectionId = resolveTunnelLayerVpnProfileId(layer);
     if (!validateVpnProfileReference(vpnType, connectionId, source, state)) {
@@ -943,7 +945,7 @@ function appendTunnelLayer(
 }
 
 function validateVpnProfileReference(
-  vpnType: ExecutableVpnType,
+  vpnType: SessionVpnType,
   profileId: string | undefined,
   source: NetworkPathLayerSource,
   state: ResolutionState,
@@ -976,6 +978,17 @@ function validateVpnProfileReference(
     );
     return false;
   }
+  if (providerStatus === "unsupported") {
+    const reason = snapshot.providerErrors?.[vpnType];
+    addIssue(
+      state,
+      "unsupported-layer",
+      "error",
+      `${getVpnProviderLabel(vpnType)} is not executable on this platform.${reason ? ` ${reason}` : ""}`,
+      { ...source, profileId },
+    );
+    return false;
+  }
 
   const profile = snapshot.profiles.find(
     (candidate) => candidate.vpnType === vpnType && candidate.id === profileId,
@@ -989,6 +1002,45 @@ function validateVpnProfileReference(
       { ...source, profileId },
     );
     return false;
+  }
+  if (profile.connectDisabledReason) {
+    addIssue(
+      state,
+      "unsupported-layer",
+      "error",
+      `${getVpnProviderLabel(vpnType)} profile "${profileId}" cannot be connected. ${profile.connectDisabledReason}`,
+      { ...source, profileId },
+    );
+    return false;
+  }
+  if (profile.routing?.mode === "split") {
+    const targetHostname = state.connections
+      .get(source.ownerConnectionId)
+      ?.hostname?.trim();
+    if (!targetHostname || !isLiteralIpAddress(targetHostname)) {
+      addIssue(
+        state,
+        "unsupported-layer",
+        "error",
+        `${getVpnProviderLabel(vpnType)} split routing requires the target hostname to be a literal IPv4 or IPv6 address. Use a full-tunnel profile or configure the connection with a literal IP; DNS names are not pre-resolved for split-route validation.`,
+        { ...source, profileId },
+      );
+      return false;
+    }
+    if (
+      !profile.routing.remoteSubnets.some((cidr) =>
+        isIpAddressInCidr(targetHostname, cidr),
+      )
+    ) {
+      addIssue(
+        state,
+        "unsupported-layer",
+        "error",
+        `${getVpnProviderLabel(vpnType)} split routing does not cover the target IP. Add its CIDR to the saved VPN profile or use full-tunnel routing.`,
+        { ...source, profileId },
+      );
+      return false;
+    }
   }
   return true;
 }

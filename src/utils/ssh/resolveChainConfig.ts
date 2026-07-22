@@ -16,7 +16,12 @@ import type {
 } from "../../types/connection/connection";
 import { proxyCollectionManager } from "../connection/proxyCollectionManager";
 import { ProxyOpenVPNManager } from "../network/proxyOpenVPNManager";
-import { resolveTunnelLayerVpnProfileId } from "../network/vpnProviderCatalog";
+import {
+  getVpnProviderDefinition,
+  normalizeSessionVpnType,
+  resolveTunnelLayerVpnProfileId,
+  type SessionVpnType,
+} from "../network/vpnProviderCatalog";
 import type {
   SavedChainLayer,
   SSHJumpConfig,
@@ -25,9 +30,22 @@ import type {
 // ── Result types ──────────────────────────────────────────────────
 
 export interface VpnPreStep {
-  vpnType: "openvpn" | "wireguard" | "tailscale" | "zerotier";
+  vpnType: SessionVpnType;
   connectionId: string;
   configId?: string;
+}
+
+class UnsupportedSessionVpnError extends Error {}
+
+function rejectUnsupportedSessionVpn(value: unknown): void {
+  if (
+    typeof value === "string" &&
+    getVpnProviderDefinition(value)?.type === "softether"
+  ) {
+    throw new UnsupportedSessionVpnError(
+      "SoftEther cannot be used in an SSH/RDP session path because no persisted lease runtime is available.",
+    );
+  }
 }
 
 export interface ResolvedJumpHost {
@@ -272,7 +290,12 @@ function resolveTunnelChain(
       case "openvpn":
       case "wireguard":
       case "tailscale":
-      case "zerotier": {
+      case "zerotier":
+      case "pptp":
+      case "l2tp":
+      case "ikev2":
+      case "ipsec":
+      case "sstp": {
         const configId = resolveTunnelLayerVpnProfileId(layer);
         result.vpnPreSteps.push({
           vpnType: layer.type,
@@ -281,6 +304,9 @@ function resolveTunnelChain(
         });
         break;
       }
+      case "softether":
+        rejectUnsupportedSessionVpn(layer.type);
+        break;
 
       // ── Proxy hops ──────────────────────────────────────
       case "proxy":
@@ -418,9 +444,15 @@ async function resolveProxyChainId(
   const sshJumpLayers: SavedChainLayer[] = [];
 
   for (const layer of sortedLayers) {
+    rejectUnsupportedSessionVpn((layer as { type: unknown }).type);
     switch (layer.type) {
       case "openvpn":
-      case "wireguard": {
+      case "wireguard":
+      case "pptp":
+      case "l2tp":
+      case "ikev2":
+      case "ipsec":
+      case "sstp": {
         result.vpnPreSteps.push({
           vpnType: layer.type,
           connectionId: layer.vpnProfileId ?? layer.proxyProfileId ?? "",
@@ -550,42 +582,24 @@ async function resolveConnectionChainId(
     );
 
     for (const layer of sortedLayers) {
+      const vpnType = normalizeSessionVpnType(layer.connection_type);
+      if (vpnType) {
+        result.vpnPreSteps.push({
+          vpnType,
+          connectionId: layer.connection_id,
+        });
+        if (vpnType === "openvpn" && !result.openvpn_config) {
+          result.openvpn_config = {
+            connection_id: layer.connection_id,
+            chain_position: layer.position,
+          };
+        }
+        continue;
+      }
+      rejectUnsupportedSessionVpn(layer.connection_type);
+
       // Connection chains use ConnectionType enum values
       switch (layer.connection_type) {
-        case "OpenVPN": {
-          result.vpnPreSteps.push({
-            vpnType: "openvpn",
-            connectionId: layer.connection_id,
-          });
-          if (!result.openvpn_config) {
-            result.openvpn_config = {
-              connection_id: layer.connection_id,
-              chain_position: layer.position,
-            };
-          }
-          break;
-        }
-        case "WireGuard": {
-          result.vpnPreSteps.push({
-            vpnType: "wireguard",
-            connectionId: layer.connection_id,
-          });
-          break;
-        }
-        case "Tailscale": {
-          result.vpnPreSteps.push({
-            vpnType: "tailscale",
-            connectionId: layer.connection_id,
-          });
-          break;
-        }
-        case "ZeroTier": {
-          result.vpnPreSteps.push({
-            vpnType: "zerotier",
-            connectionId: layer.connection_id,
-          });
-          break;
-        }
         case "Proxy": {
           // Connection chains store proxy references by connection_id;
           // the actual proxy details would need to be looked up from
@@ -599,13 +613,13 @@ async function resolveConnectionChainId(
           }
           break;
         }
-        // SSH, IKEv2, SSTP, SoftEther etc. are connection-level types
-        // and don't map directly to jump_hosts without full connection data.
+        // Non-VPN connection-level types do not map to socket hops here.
         default:
           break;
       }
     }
   } catch (error) {
+    if (error instanceof UnsupportedSessionVpnError) throw error;
     console.warn(
       `[resolveChainConfig] Failed to resolve connection chain "${chainId}":`,
       error,

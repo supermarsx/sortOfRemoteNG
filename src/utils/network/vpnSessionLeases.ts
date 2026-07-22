@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { VpnPreStep } from "../ssh/resolveChainConfig";
+import { getVpnProviderLabel, isExecutableVpnType } from "./vpnProviderCatalog";
 
 function secureLeaseAttemptId(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -63,6 +64,13 @@ export async function acquireSessionVpnLeases(
 ): Promise<AcquireVpnLeasesResult> {
   if (steps.length === 0) {
     return { owner_id: ownerId, leases: [] };
+  }
+
+  const unsupported = steps.find((step) => !isExecutableVpnType(step.vpnType));
+  if (unsupported) {
+    throw new Error(
+      `${getVpnProviderLabel(unsupported.vpnType)} is not executable as a session VPN.`,
+    );
   }
 
   return invoke<AcquireVpnLeasesResult>("acquire_vpn_leases", {

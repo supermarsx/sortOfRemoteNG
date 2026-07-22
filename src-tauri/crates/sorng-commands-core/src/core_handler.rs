@@ -328,6 +328,7 @@ pub fn is_command(command: &str) -> bool {
             | "delete_connection_chain"
             | "update_connection_chain_layers"
             | "ensure_vpn_connected"
+            | "get_vpn_runtime_capabilities"
             | "acquire_vpn_leases"
             | "release_vpn_leases"
             | "generate_qr_code"
@@ -1711,6 +1712,7 @@ define_command_group!(
         chaining_commands::delete_connection_chain,
         chaining_commands::update_connection_chain_layers,
         chaining_commands::ensure_vpn_connected,
+        chaining_commands::get_vpn_runtime_capabilities,
         chaining_commands::acquire_vpn_leases,
         chaining_commands::release_vpn_leases,
         qr_commands::generate_qr_code,
