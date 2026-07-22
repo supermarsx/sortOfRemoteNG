@@ -196,6 +196,12 @@ describe("ScpClient", () => {
 
   it("downloads, verifies, and confirms deletion using backend operations", async () => {
     const model = createModel();
+    let resolveChecksum: ((digest: string) => void) | undefined;
+    model.checksum.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolveChecksum = resolve;
+      }),
+    );
     mocks.hook.mockReturnValue(model);
     mocks.save.mockResolvedValue("C:\\Downloads\\report.txt");
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -214,7 +220,9 @@ describe("ScpClient", () => {
     await waitFor(() =>
       expect(model.checksum).toHaveBeenCalledWith("/srv/files/report.txt"),
     );
-    expect(screen.getByText("SHA-256: real-sha256")).toBeInTheDocument();
+    expect(screen.queryByText("SHA-256: real-sha256")).not.toBeInTheDocument();
+    resolveChecksum?.("real-sha256");
+    expect(await screen.findByText("SHA-256: real-sha256")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() =>
