@@ -48,6 +48,18 @@ const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_dispatch:"),
 );
 
+function activeTomlSection(source, sectionName) {
+  const marker = `[${sectionName}]`;
+  const start = source.indexOf(marker);
+  if (start < 0) return "";
+  const nextSection = source.indexOf("\n[", start + marker.length);
+  return source
+    .slice(start, nextSection < 0 ? source.length : nextSection)
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+
 test("RDP vendor builds only the rlib consumed by the application", () => {
   const libSection = rdpVendorManifest.slice(
     rdpVendorManifest.indexOf("[lib]"),
@@ -369,6 +381,29 @@ test("resource controls preserve release features and signing inputs", () => {
   );
 });
 
+test("Windows release artifacts keep the portable x86-64 ISA baseline", () => {
+  for (const target of [
+    "target.x86_64-pc-windows-gnu",
+    "target.x86_64-pc-windows-msvc",
+  ]) {
+    assert.doesNotMatch(
+      activeTomlSection(cargoConfig, target),
+      /\btarget-(?:cpu|feature)\s*=/,
+      `${target} must not assume the hosted runner's optional CPU features`,
+    );
+  }
+
+  assert.equal(
+    activeTomlSection(cargoConfig, "target.x86_64-pc-windows-msvc"),
+    [
+      "[target.x86_64-pc-windows-msvc]",
+      "rustflags = [",
+      '  "-C", "link-arg=/threads:8",',
+      "]",
+    ].join("\n"),
+  );
+});
+
 test("platform resource inspection is exact and immediately precedes native building", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
@@ -547,24 +582,6 @@ test("platform resource inspection is exact and immediately precedes native buil
       "[target.x86_64-unknown-linux-gnu]",
       "rustflags = [",
       '  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",',
-      "]",
-    ].join("\n"),
-  );
-  const windowsMsvcTargetConfig = cargoConfig.slice(
-    cargoConfig.indexOf("[target.x86_64-pc-windows-msvc]"),
-    cargoConfig.indexOf("[target.x86_64-unknown-linux-gnu]"),
-  );
-  const activeWindowsMsvcTargetConfig = windowsMsvcTargetConfig
-    .split(/\r?\n/)
-    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
-    .join("\n");
-  assert.equal(
-    activeWindowsMsvcTargetConfig,
-    [
-      "[target.x86_64-pc-windows-msvc]",
-      "rustflags = [",
-      '  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",',
-      '  "-C", "link-arg=/threads:8",',
       "]",
     ].join("\n"),
   );

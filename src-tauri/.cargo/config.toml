@@ -43,7 +43,7 @@ low-speed-limit = 5
 # No source replacement needed - crates.io works directly
 
 # ═══════════════════════════════════════════════════════════════════════
-# x86-64 performance target features
+# x86-64 performance target features for non-Windows artifacts
 # ═══════════════════════════════════════════════════════════════════════
 #
 # These flags tell rustc to emit instructions for the listed extensions
@@ -51,9 +51,11 @@ low-speed-limit = 5
 # the RustCrypto crates (aes, sha2, aes-gcm, pbkdf2, argon2, etc.) and
 # other SIMD-aware code to inline hardware-accelerated paths.
 #
-# Baseline: x86-64-v3 (Haswell / Zen 1, ~2013–2017+).  This is safe for
-# virtually all desktop/server CPUs manufactured in the last decade.
-# We add crypto extensions (AES-NI, PCLMULQDQ, SHA-NI) on top.
+# Baseline: x86-64-v3 (Haswell / Zen 1, ~2013–2017+). We add crypto
+# extensions (AES-NI, PCLMULQDQ, SHA-NI) on top where explicitly configured.
+# Windows artifacts intentionally retain Rust's portable x86-64 baseline:
+# hosted-runner CPU features are not a compatibility contract for either
+# build-time proc macros or the binaries distributed to end users.
 #
 # If you need to support older CPUs, remove flags or lower to x86-64-v2:
 #   rustflags = ["-C", "target-cpu=x86-64-v2"]
@@ -89,12 +91,8 @@ low-speed-limit = 5
 #   Linux   → mold      (install via `apt install mold` or from GitHub)
 #   macOS   → default   (Apple ld is already fast; lld has issues on macOS)
 #
-# Combined with the x86-64-v3 target features for crypto / SIMD.
-
-[target.x86_64-pc-windows-gnu]
-rustflags = [
-  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
-]
+# Combined with the x86-64-v3 target features for crypto / SIMD on the
+# explicitly opted-in Linux and macOS targets below.
 
 [target.x86_64-pc-windows-msvc]
 # We intentionally do NOT set linker = "rust-lld.exe" here.
@@ -105,7 +103,6 @@ rustflags = [
 # /threads:8 parallelises the MSVC linker (supported since VS 2019 16.6+).
 # This alone can halve link time on multi-core machines.
 rustflags = [
-  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
   "-C", "link-arg=/threads:8",
 ]
 
