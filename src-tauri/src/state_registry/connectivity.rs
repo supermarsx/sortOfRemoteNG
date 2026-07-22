@@ -1,5 +1,38 @@
 use super::*;
 use sorng_core::events::DynEventEmitter;
+use std::sync::Arc;
+use tauri::Manager;
+use tokio::sync::Mutex;
+
+use anydesk::AnyDeskService;
+use chaining::ChainingService;
+use db::DbService;
+use ftp::FtpService;
+use ikev2::IKEv2Service;
+use ipsec::IPsecService;
+use l2tp::L2TPService;
+use network::NetworkService;
+use openvpn::OpenVPNService;
+use openvpn_dedicated::openvpn::service::{
+    OpenVpnService as OpenVpnDedicatedService, OpenVpnServiceState as OpenVpnDedicatedState,
+};
+use pptp::PPTPService;
+use proxy::ProxyService;
+use qr::QrService;
+#[cfg(feature = "rdp")]
+use rdp::RdpService;
+use rustdesk::RustDeskService;
+use script::ScriptService;
+use security::SecurityService;
+#[cfg(feature = "vpn-softether")]
+use softether::SoftEtherService;
+use ssh::SshService;
+use sstp::SSTPService;
+use tailscale::TailscaleService;
+use vnc::VncService;
+use wireguard::WireGuardService;
+use wol::WolService;
+use zerotier::ZeroTierService;
 
 fn vpn_profile_restore_log_label(error: &str) -> &'static str {
     if error.contains("stored data uses a newer schema") {
@@ -20,25 +53,27 @@ fn log_vpn_profile_restore_failure(provider: &str, error: &str) {
     );
 }
 
-pub(crate) struct ApiHandles {
-    pub(crate) agent_service: Arc<Mutex<agent::AgentService>>,
-    pub(crate) aws_service: Arc<Mutex<aws::AwsService>>,
-    pub(crate) cloudflare_service: Arc<Mutex<cloudflare::CloudflareService>>,
-    pub(crate) commander_service: Arc<Mutex<commander::CommanderService>>,
-    pub(crate) db_service: Arc<Mutex<DbService>>,
-    pub(crate) ftp_service: Arc<Mutex<FtpService>>,
-    pub(crate) meshcentral_service: Arc<Mutex<meshcentral::MeshCentralService>>,
-    pub(crate) network_service: Arc<Mutex<NetworkService>>,
-    pub(crate) qr_service: Arc<Mutex<QrService>>,
-    pub(crate) rpc_service: Arc<Mutex<rpc::RpcService>>,
-    pub(crate) rustdesk_service: Arc<Mutex<RustDeskService>>,
-    pub(crate) security_service: Arc<Mutex<SecurityService>>,
-    pub(crate) vercel_service: Arc<Mutex<vercel::VercelService>>,
-    pub(crate) wmi_service: Arc<Mutex<wmi::WmiService>>,
-    pub(crate) wol_service: Arc<Mutex<WolService>>,
+pub struct ApiHandles {
+    pub agent_service: Arc<Mutex<agent::AgentService>>,
+    pub aws_service: Arc<Mutex<aws::AwsService>>,
+    pub cloudflare_service: Arc<Mutex<cloudflare::CloudflareService>>,
+    pub commander_service: Arc<Mutex<commander::CommanderService>>,
+    pub db_service: Arc<Mutex<DbService>>,
+    pub ftp_service: Arc<Mutex<FtpService>>,
+    pub meshcentral_service: Arc<Mutex<meshcentral::MeshCentralService>>,
+    pub network_service: Arc<Mutex<NetworkService>>,
+    pub qr_service: Arc<Mutex<QrService>>,
+    pub rpc_service: Arc<Mutex<rpc::RpcService>>,
+    pub rustdesk_service: Arc<Mutex<RustDeskService>>,
+    pub security_service: Arc<Mutex<SecurityService>>,
+    pub vercel_service: Arc<Mutex<vercel::VercelService>>,
+    pub wmi_service: Arc<Mutex<wmi::WmiService>>,
+    pub wol_service: Arc<Mutex<WolService>>,
 }
 
-pub(crate) fn register(
+pub const MANAGED_STATE_REGISTRATIONS: usize = 40;
+
+pub fn register(
     app: &mut tauri::App<tauri::Wry>,
     ssh_service: Arc<Mutex<SshService>>,
     emitter: DynEventEmitter,
@@ -274,7 +309,18 @@ pub(crate) fn register(
 
 #[cfg(test)]
 mod tests {
-    use super::vpn_profile_restore_log_label;
+    use super::{vpn_profile_restore_log_label, MANAGED_STATE_REGISTRATIONS};
+
+    #[test]
+    fn managed_state_count_matches_the_startup_registration_source() {
+        let source = include_str!("connectivity.rs");
+        let manage_call = ["app.", "manage("].concat();
+        assert_eq!(
+            source.matches(&manage_call).count(),
+            MANAGED_STATE_REGISTRATIONS,
+            "update the parity contract when connectivity state wiring changes"
+        );
+    }
 
     #[test]
     fn restore_log_classification_never_contains_raw_error_content() {

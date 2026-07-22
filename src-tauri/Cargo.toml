@@ -3,6 +3,7 @@ resolver = "2"
 default-members = ["."]
 exclude = ["vendor/psrp-rs-core"]
 members = [
+  "crates/sorng-app-api",
   "crates/sorng-app-auth",
   "crates/sorng-app-domains",
   "crates/sorng-app-domains-cloud",
@@ -11,6 +12,7 @@ members = [
   "crates/sorng-app-domains-ops",
   "crates/sorng-app-domains-platform",
   "crates/sorng-app-shell",
+  "crates/sorng-app-startup-connectivity",
   "crates/sorng-core",
   "crates/sorng-auth",
   "crates/sorng-storage",
@@ -317,9 +319,11 @@ crate-type = ["rlib"]
 tauri-build = { version = "=2.6.0", features = [] }
 
 [dependencies]
+sorng-app-api = { path = "crates/sorng-app-api" }
 sorng-app-auth = { path = "crates/sorng-app-auth" }
 sorng-app-domains = { path = "crates/sorng-app-domains", default-features = false }
 sorng-app-shell = { path = "crates/sorng-app-shell" }
+sorng-app-startup-connectivity = { path = "crates/sorng-app-startup-connectivity", default-features = false }
 sorng-core = { path = "crates/sorng-core" }
 sorng-kafka = { path = "crates/sorng-kafka", optional = true, default-features = false }
 sorng-opkssh = { path = "crates/sorng-opkssh", optional = true, default-features = false }
@@ -360,35 +364,7 @@ tauri-plugin-fs = "=2.5.1"
 tauri-plugin-updater = "2"
 tokio = { workspace = true }
 dirs = { workspace = true }
-# Direct deps for api_config.rs (t41): OsRng/RngCore for api-key/secret
-# generation, hex for encoding. Both are workspace deps already in the
-# build graph — declaring them direct adds zero new artifacts.
-hex = { workspace = true }
-rand = { workspace = true }
-# anyhow: return type of api.rs::start_server per the t41 shared-interface
-# contract (start_server -> anyhow::Result<()>). Already present in Cargo.lock
-# transitively, so declaring it direct adds zero new artifacts. Owned by the
-# deps executor (t41-e3); added by t41-e4 to unblock the api.rs signature.
-anyhow = "1"
 tauri-plugin-window-state = "=2.4.1"
-axum = "0.7"
-secrecy = "0.8"
-
-# ── External REST API hardening (t41) ──────────────────────────
-# tower-http: CORS + request/response trace (audit) layers for the API
-# router. Already present transitively at 0.6.8; declared direct so
-# api.rs can enable the `cors` + `trace` feature layers.
-tower-http = { version = "0.6", features = ["cors", "trace"] }
-# tower: ServiceBuilder + Layer/Service for the hand-rolled rate-limit /
-# api-key middleware stack (D3 — no rate-limit crate).
-tower = "0.5"
-# subtle: constant-time X-API-Key comparison in api_key_gate.
-subtle = "2"
-# axum-server: TLS serving (sslMode manual/self-signed/letsencrypt).
-# `tls-rustls-no-provider` reuses the workspace rustls 0.23 WITHOUT
-# forcing a crypto provider, so the app's runtime ring provider
-# (installed in run()) stays authoritative — no aws-lc-rs provider clash.
-axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 
 # ── TLS provider (used in run() for rustls CryptoProvider) ──────
 rustls = { workspace = true, features = ["ring"] }
@@ -458,7 +434,7 @@ opkssh = ["dep:sorng-opkssh", "sorng-commands-core/opkssh"]
 opkssh-vendored-wrapper = ["opkssh", "sorng-opkssh/vendored-wrapper"]
 ops = ["sorng-app-domains/ops", "sorng-commands-core/ops", "dep:sorng-commands-ops", "dep:sorng-commands-infra", "dep:sorng-commands-mail", "dep:sorng-commands-services", "dep:sorng-commands-tools", "dep:sorng-commands-webservers"]
 platform = ["sorng-app-domains/platform", "dep:sorng-commands-platform"]
-rdp = ["sorng-app-domains/rdp", "sorng-commands-core/rdp"]
+rdp = ["sorng-app-domains/rdp", "sorng-app-startup-connectivity/rdp", "sorng-commands-core/rdp"]
 rdp-software-decode = ["sorng-app-domains/rdp-software-decode"]
 rdp-mf-decode = ["sorng-app-domains/rdp-mf-decode"]
 rdp-snapshot = ["sorng-app-domains/rdp-snapshot"]
@@ -467,7 +443,7 @@ tls-cert-details = ["sorng-app-domains/tls-cert-details"]
 # SoftEther VPN. Gates the softether module in sorng-vpn and the 7 Tauri
 # commands (create/connect/disconnect/get/list/delete/update
 # _softether_connection). Included in the `full` production feature set.
-vpn-softether = ["sorng-app-domains/vpn-softether", "sorng-commands-core/vpn-softether"]
+vpn-softether = ["sorng-app-domains/vpn-softether", "sorng-app-startup-connectivity/vpn-softether", "sorng-commands-core/vpn-softether"]
 # Serial / RS-232 feature split (t3-e4). `protocol-serial` is the
 # static/vendored dev/test variant — driver presence is assumed at
 # build time, runtime probe is a no-op. `protocol-serial-dynamic`

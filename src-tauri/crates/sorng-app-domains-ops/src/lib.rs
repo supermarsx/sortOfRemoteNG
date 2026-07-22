@@ -87,3 +87,11 @@ pub use sorng_wireguard as wireguard_dedicated;
 pub use sorng_yubikey as yubikey;
 pub use sorng_zabbix as zabbix;
 pub use sorng_zerotier as zerotier_dedicated;
+
+/// Tauri startup registration for the operations domain.
+///
+/// This deliberately lives in the ops facade crate: its large set of
+/// `App::manage<T>` instantiations is code-generated independently from the
+/// root application crate while preserving the exact managed-state types.
+#[path = "../../../src/state_registry/ops.rs"]
+pub mod ops_startup_state;

@@ -3,7 +3,80 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
-pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
+use about::service::AboutServiceState;
+use amavis::service::AmavisServiceState;
+use ansible::service::AnsibleServiceState;
+use apache::service::ApacheServiceState;
+use backup_verify::service::{BackupVerifyService, BackupVerifyServiceState};
+use bootloader::service::BootloaderServiceState;
+use budibase::service::BudibaseServiceState;
+use caddy::service::CaddyServiceState;
+use cicd::service::CicdServiceState;
+use clamav::service::ClamavServiceState;
+use consul::service::{ConsulServiceHolder, ConsulServiceState};
+use cpanel::service::CpanelServiceState;
+use cron::service::CronServiceState;
+use cups::service::CupsServiceState;
+use cyrus_sasl::service::CyrusSaslServiceState;
+use docker::service::DockerServiceState;
+use docker_compose::service::ComposeServiceState;
+use dovecot::service::DovecotServiceState;
+use etcd::service::{EtcdService, EtcdServiceState};
+use fail2ban::service::Fail2banServiceState;
+use freeipa::service::FreeIpaServiceState;
+use grafana::service::GrafanaServiceState;
+use haproxy::service::HaproxyServiceState;
+use hashicorp_vault::service::VaultServiceState;
+use i18n::I18nServiceState;
+use jira::service::JiraServiceState;
+use k8s::service::K8sServiceState;
+use kernel_mgmt::service::KernelServiceState;
+use lxd::service::LxdService;
+use mailcow::service::MailcowServiceState;
+use mcp_server::McpServiceState as McpServerServiceState;
+use mysql_admin::service::MysqlServiceState as MysqlAdminServiceState;
+use netbox::service::NetboxServiceState;
+use nginx::service::NginxServiceState;
+use nginx_proxy_mgr::service::NpmServiceState;
+use opendkim::service::OpendkimServiceState;
+use opkssh::service::OpksshServiceState;
+use os_detect::service::OsDetectServiceState;
+use osticket::service::OsticketServiceState;
+use pam::service::PamServiceState;
+use pfsense::service::PfsenseServiceState;
+use pg_admin::service::PgServiceState;
+use php_mgmt::service::PhpServiceState;
+use port_knock::service::PortKnockServiceState;
+use postfix::service::PostfixServiceState;
+use powershell::runspace_session::{PowerShellSessionService, PowerShellSessionServiceState};
+use powershell::service::{PsRemotingService, PsRemotingServiceState};
+use proc_mgmt::service::ProcServiceState;
+use procmail::service::ProcmailServiceState;
+use prometheus::service::PrometheusServiceState;
+use remote_backup::service::{RemoteBackupService, RemoteBackupServiceState};
+use roundcube::service::RoundcubeServiceState;
+use rspamd::service::RspamdServiceState;
+use snmp::service::SnmpServiceState;
+use spamassassin::service::SpamAssassinServiceState;
+use ssh_agent::types::SshAgentServiceState;
+use ssh_scripts::engine::SshScriptEngineState;
+use terraform::service::TerraformServiceState;
+use time_ntp::service::TimeNtpServiceState;
+use traefik::service::TraefikServiceState;
+use ups_mgmt::service::UpsServiceState;
+use warpgate::service::WarpgateServiceState;
+use winmgmt::service::WinMgmtServiceState;
+use zabbix::service::ZabbixServiceState;
+
+#[cfg(feature = "kafka")]
+use kafka::service::KafkaServiceState;
+
+/// Number of concrete Tauri state registrations owned by this codegen unit.
+/// Kept as an explicit parity contract so state additions cannot accidentally
+/// migrate back into the root `app_lib` composition unit unnoticed.
+pub const MANAGED_STATE_REGISTRATIONS: usize = 71;
+
+pub fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
     let k8s_state: K8sServiceState = Arc::new(Mutex::new(k8s::service::K8sService::new()));
     app.manage(k8s_state);
 
@@ -268,7 +341,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     // HashMap constructor and does not touch librdkafka, so registration
     // is safe even when the native library is absent; the runtime probe
     // fires on `kafka_connect` via `RealProbe::probe()`.
-    #[cfg(any(feature = "kafka", feature = "kafka-dynamic", feature = "kafka-static"))]
+    #[cfg(feature = "kafka")]
     {
         let kafka_state: KafkaServiceState = kafka::service::new_state();
         app.manage(kafka_state);
@@ -283,7 +356,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
         locales_dir
     } else {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
+            .join("../../..")
             .join("src")
             .join("i18n")
             .join("locales")
@@ -308,4 +381,20 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
         engine: i18n_engine,
         _watcher: i18n_watcher,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MANAGED_STATE_REGISTRATIONS;
+
+    #[test]
+    fn managed_state_count_matches_the_startup_registration_source() {
+        let source = include_str!("ops.rs");
+        let manage_call = ["app.", "manage("].concat();
+        assert_eq!(
+            source.matches(&manage_call).count(),
+            MANAGED_STATE_REGISTRATIONS,
+            "update the parity contract when operations state wiring changes"
+        );
+    }
 }

@@ -93,6 +93,9 @@ sorng-wireguard = { path = "../sorng-wireguard" }
 sorng-yubikey = { path = "../sorng-yubikey" }
 sorng-zabbix = { path = "../sorng-zabbix" }
 sorng-zerotier = { path = "../sorng-zerotier" }
+log = { workspace = true }
+tauri = { workspace = true }
+tokio = { workspace = true }
 
 [features]
 # Forwarded from app → sorng-app-domains → here via

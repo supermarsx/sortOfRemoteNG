@@ -216,24 +216,20 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 name = "app"
 version = "26.1.0"
 dependencies = [
- "anyhow",
- "axum",
- "axum-server",
  "chrono",
  "dirs 6.0.0",
- "hex",
  "log",
  "mockall",
- "rand 0.8.6",
  "reqwest 0.12.28",
  "rustls",
- "secrecy 0.8.0",
  "serde",
  "serde_json",
  "serial_test",
+ "sorng-app-api",
  "sorng-app-auth",
  "sorng-app-domains",
  "sorng-app-shell",
+ "sorng-app-startup-connectivity",
  "sorng-commands-access",
  "sorng-commands-cloud",
  "sorng-commands-collab",
@@ -254,7 +250,6 @@ dependencies = [
  "sorng-recording",
  "sorng-storage",
  "sorng-vault",
- "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -266,8 +261,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-test",
- "tower",
- "tower-http",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -9390,6 +9383,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-app-api"
+version = "26.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "hex",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "secrecy 0.8.0",
+ "serde",
+ "serde_json",
+ "sorng-app-domains",
+ "subtle",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
 name = "sorng-app-auth"
 version = "26.1.0"
 
@@ -9493,6 +9507,7 @@ dependencies = [
 name = "sorng-app-domains-ops"
 version = "26.1.0"
 dependencies = [
+ "log",
  "sorng-about",
  "sorng-amavis",
  "sorng-ansible",
@@ -9581,6 +9596,8 @@ dependencies = [
  "sorng-yubikey",
  "sorng-zabbix",
  "sorng-zerotier",
+ "tauri",
+ "tokio",
 ]
 
 [[package]]
@@ -9613,6 +9630,18 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-plugin-autostart",
+]
+
+[[package]]
+name = "sorng-app-startup-connectivity"
+version = "26.1.0"
+dependencies = [
+ "log",
+ "sorng-app-domains",
+ "sorng-core",
+ "sorng-storage",
+ "tauri",
+ "tokio",
 ]
 
 [[package]]

@@ -5,7 +5,6 @@ pub(crate) use tokio::sync::Mutex;
 
 // ── Always-available types (core, sessions, access) ─────────────────
 pub(crate) use ai_agent::types::AiAgentServiceState;
-pub(crate) use anydesk::AnyDeskService;
 pub(crate) use api::ApiService;
 pub(crate) use auth::AuthService;
 pub(crate) use auto_lock::AutoLockService;
@@ -13,19 +12,13 @@ pub(crate) use bearer_auth::BearerAuthService;
 pub(crate) use bitwarden::BitwardenService;
 pub(crate) use cert_auth::CertAuthService;
 pub(crate) use cert_gen::CertGenService;
-pub(crate) use chaining::ChainingService;
 pub(crate) use dashlane::service::DashlaneServiceState;
-pub(crate) use db::DbService;
 pub(crate) use digital_ocean::DigitalOceanService;
-pub(crate) use ftp::FtpService;
 pub(crate) use google_passwords::service::GooglePasswordsServiceState;
 pub(crate) use gpo::GpoService;
 pub(crate) use http::HttpService;
 pub(crate) use http::ProxySessionManager;
-pub(crate) use ikev2::IKEv2Service;
-pub(crate) use ipsec::IPsecService;
 pub(crate) use keepass::KeePassService;
-pub(crate) use l2tp::L2TPService;
 pub(crate) use lastpass::service::LastPassServiceState;
 pub(crate) use login_detection::LoginDetectionService;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
@@ -38,50 +31,29 @@ pub(crate) use mremoteng_dedicated::MremotengService;
 pub(crate) use mssql::service::MssqlServiceState;
 #[cfg(feature = "db-mysql")]
 pub(crate) use mysql::service::MysqlServiceState;
-pub(crate) use network::NetworkService;
 pub(crate) use onepassword::service::OnePasswordServiceState;
-pub(crate) use openvpn::OpenVPNService;
-pub(crate) use openvpn_dedicated::openvpn::service::{
-    OpenVpnService as OpenVpnDedicatedService, OpenVpnServiceState as OpenVpnDedicatedState,
-};
 pub(crate) use passbolt::PassboltService;
 pub(crate) use passkey::PasskeyService;
 #[cfg(feature = "db-postgres")]
 pub(crate) use postgres::service::PostgresServiceState;
-pub(crate) use pptp::PPTPService;
-pub(crate) use proxy::ProxyService;
-pub(crate) use qr::QrService;
 pub(crate) use raw_socket::RawSocketService;
-#[cfg(feature = "rdp")]
-pub(crate) use rdp::RdpService;
 #[cfg(feature = "db-redis")]
 pub(crate) use redis::service::RedisServiceState;
 pub(crate) use rlogin::RloginService;
-pub(crate) use rustdesk::RustDeskService;
 pub(crate) use scp::ScpService;
-pub(crate) use script::ScriptService;
-pub(crate) use security::SecurityService;
 pub(crate) use serial::SerialService;
 pub(crate) use sftp::SftpService;
 pub(crate) use smb::service::SmbService;
-#[cfg(feature = "vpn-softether")]
-pub(crate) use softether::SoftEtherService;
 #[cfg(feature = "db-sqlite")]
 pub(crate) use sqlite::service::SqliteServiceState;
 pub(crate) use ssh::SshService;
 pub(crate) use ssh3::Ssh3Service;
-pub(crate) use sstp::SSTPService;
 pub(crate) use storage::SecureStorage;
-pub(crate) use tailscale::TailscaleService;
 pub(crate) use telnet::TelnetService;
 pub(crate) use totp::service::{TotpService, TotpServiceState};
 pub(crate) use trust_store::TrustStoreService;
 pub(crate) use two_factor::TwoFactorService;
 pub(crate) use updater::service::UpdaterService;
-pub(crate) use vnc::VncService;
-pub(crate) use wireguard::WireGuardService;
-pub(crate) use wol::WolService;
-pub(crate) use zerotier::ZeroTierService;
 
 // ── Cloud types ─────────────────────────────────────────────────────
 pub(crate) use azure::service::AzureService;
@@ -95,17 +67,11 @@ pub(crate) use smtp::service::SmtpService;
 #[cfg(feature = "platform")]
 pub(crate) use ai_assist::service::AiAssistServiceState;
 #[cfg(feature = "platform")]
-pub(crate) use ansible::service::AnsibleServiceState;
-#[cfg(feature = "platform")]
 pub(crate) use command_palette::CommandPaletteServiceState;
-#[cfg(feature = "platform")]
-pub(crate) use docker::service::DockerServiceState;
 #[cfg(feature = "platform")]
 pub(crate) use extensions::service::ExtensionsServiceState;
 #[cfg(feature = "platform")]
 pub(crate) use fonts::FontServiceState;
-#[cfg(feature = "platform")]
-pub(crate) use k8s::service::K8sServiceState;
 #[cfg(feature = "platform")]
 pub(crate) use llm::service::LlmServiceState;
 #[cfg(feature = "platform")]
@@ -114,8 +80,6 @@ pub(crate) use recording::RecordingServiceState;
 pub(crate) use secure_clip::SecureClipServiceState;
 #[cfg(feature = "platform")]
 pub(crate) use terminal_themes::ThemeEngineState;
-#[cfg(feature = "platform")]
-pub(crate) use terraform::service::TerraformServiceState;
 
 // ── Collab types ────────────────────────────────────────────────────
 #[cfg(any(feature = "collab", feature = "platform"))]
@@ -123,162 +87,28 @@ pub(crate) use onedrive::service::OneDriveServiceState;
 #[cfg(any(feature = "collab", feature = "platform"))]
 pub(crate) use whatsapp::WhatsAppServiceState;
 
-// ── Ops types ───────────────────────────────────────────────────────
-#[cfg(feature = "ops")]
-pub(crate) use about::service::AboutServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use amavis::service::AmavisServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use apache::service::ApacheServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use backup_verify::service::{BackupVerifyService, BackupVerifyServiceState};
-#[cfg(feature = "ops")]
-pub(crate) use bootloader::service::BootloaderServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use budibase::service::BudibaseServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use caddy::service::CaddyServiceState;
-#[cfg(feature = "ops")]
-#[allow(unused_imports)]
-pub(crate) use ceph::service::CephServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use cicd::service::CicdServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use clamav::service::ClamavServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use consul::service::{ConsulServiceHolder, ConsulServiceState};
-#[cfg(feature = "ops")]
-pub(crate) use cpanel::service::CpanelServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use cron::service::CronServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use cups::service::CupsServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use cyrus_sasl::service::CyrusSaslServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use docker_compose::service::ComposeServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use dovecot::service::DovecotServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use etcd::service::{EtcdService, EtcdServiceState};
-#[cfg(feature = "ops")]
-pub(crate) use fail2ban::service::Fail2banServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use freeipa::service::FreeIpaServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use grafana::service::GrafanaServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use haproxy::service::HaproxyServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use hashicorp_vault::service::VaultServiceState;
-#[cfg(feature = "ops")]
+// ── Infrastructure states registered by `platform` ──────────────────
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use hyperv::service::HyperVServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use i18n::I18nServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use idrac::service::IdracServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use ilo::service::IloServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use jira::service::JiraServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use kernel_mgmt::service::KernelServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use lenovo::service::LenovoServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use lxd::service::LxdService;
-#[cfg(feature = "ops")]
-pub(crate) use mailcow::service::MailcowServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use mcp_server::McpServiceState as McpServerServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use mysql_admin::service::MysqlServiceState as MysqlAdminServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use netbox::service::NetboxServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use nginx::service::NginxServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use nginx_proxy_mgr::service::NpmServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use opendkim::service::OpendkimServiceState;
-#[cfg(any(feature = "ops", feature = "opkssh"))]
-pub(crate) use opkssh::service::OpksshServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use os_detect::service::OsDetectServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use osticket::service::OsticketServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use pam::service::PamServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use pfsense::service::PfsenseServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use pg_admin::service::PgServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use php_mgmt::service::PhpServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use port_knock::service::PortKnockServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use postfix::service::PostfixServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use powershell::service::{PsRemotingService, PsRemotingServiceState};
-#[cfg(feature = "ops")]
-pub(crate) use powershell::runspace_session::{
-    PowerShellSessionService, PowerShellSessionServiceState,
-};
-#[cfg(feature = "ops")]
-pub(crate) use proc_mgmt::service::ProcServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use procmail::service::ProcmailServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use prometheus::service::PrometheusServiceState;
-#[cfg(feature = "ops")]
-#[allow(unused_imports)]
-pub(crate) use rabbitmq::service::RabbitServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use remote_backup::service::{RemoteBackupService, RemoteBackupServiceState};
-// t5-e5: Kafka managed state alias — gated behind the top-level `kafka`
-// feature (which forwards through sorng-app-domains → sorng-app-domains-ops
-// to expose the `kafka` module). Only compiled when Kafka is enabled.
-#[cfg(all(
-    feature = "ops",
-    any(feature = "kafka", feature = "kafka-dynamic", feature = "kafka-static")
-))]
-pub(crate) use kafka::service::KafkaServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use proxmox::service::ProxmoxServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use roundcube::service::RoundcubeServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use rspamd::service::RspamdServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use snmp::service::SnmpServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use spamassassin::service::SpamAssassinServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use ssh_agent::types::SshAgentServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use ssh_scripts::engine::SshScriptEngineState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use supermicro::service::SmcServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use synology::service::SynologyServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use time_ntp::service::TimeNtpServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use traefik::service::TraefikServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use ups_mgmt::service::UpsServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use vmware::service::VmwareServiceState;
-#[cfg(feature = "ops")]
+#[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 pub(crate) use vmware_desktop::service::VmwDesktopServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use warpgate::service::WarpgateServiceState;
 
-#[cfg(feature = "ops")]
-pub(crate) use winmgmt::service::WinMgmtServiceState;
-#[cfg(feature = "ops")]
-pub(crate) use zabbix::service::ZabbixServiceState;
+#[cfg(all(feature = "opkssh", not(feature = "ops")))]
+pub(crate) use opkssh::service::OpksshServiceState;
 
 // State registered but no command handler wired yet — keep available
 // so state_registry::security_data still compiles.
@@ -291,9 +121,6 @@ pub(crate) use scaleway::ScalewayService;
 mod access;
 #[cfg(any(feature = "collab", feature = "platform"))]
 mod collab;
-mod connectivity;
-#[cfg(feature = "ops")]
-mod ops;
 #[cfg(any(feature = "ops", feature = "collab", feature = "platform"))]
 mod platform;
 mod security_data;
@@ -478,7 +305,8 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
         app.manage(opkssh_state);
     }
 
-    let api_handles = connectivity::register(app, ssh_service.clone(), emitter.clone());
+    let api_handles =
+        sorng_app_startup_connectivity::register(app, ssh_service.clone(), emitter.clone());
     security_data::register(app, &app_dir, emitter);
 
     access::register(app);
@@ -488,7 +316,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     #[cfg(any(feature = "collab", feature = "platform"))]
     collab::register(app, &app_dir);
     #[cfg(feature = "ops")]
-    ops::register(app, &app_dir);
+    sorng_app_domains::ops_startup_state::register(app, &app_dir);
 
     // t40-f2: recover crash-orphaned in-flight terminal recordings. f2's
     // incremental-flush writer persists a crash snapshot under

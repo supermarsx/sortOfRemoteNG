@@ -63,12 +63,11 @@ pub mod updater_config;
 
 pub use domains::*;
 
-// App-level module: REST API gateway (stays in the main crate)
-pub mod api;
-pub mod api_capability;
-pub mod api_capability_commands;
-pub mod api_config;
-pub mod api_server_commands;
+// The REST API gateway is compiled in its own crate so its Axum route and
+// handler monomorphizations do not share app_lib's Tauri startup codegen unit.
+// Module re-exports preserve the public app_lib::{api,api_config,...} surface.
+pub use sorng_app_api::{api, api_capability, api_config};
+pub use sorng_commands_core::{api_capability_commands, api_server_commands};
 pub mod app_settings_commands;
 // Master-key rotation orchestrator. Path-included from
 // `sorng-commands-core` for the Tauri command registration; also

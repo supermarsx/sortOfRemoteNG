@@ -1,0 +1,19 @@
+[package]
+publish = false
+name = "sorng-app-startup-connectivity"
+version.workspace = true
+edition = "2021"
+description = "Connectivity managed-state startup registration for SortOfRemote NG"
+
+[dependencies]
+sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
+sorng-core = { path = "../sorng-core" }
+sorng-storage = { path = "../sorng-storage" }
+log = { workspace = true }
+tauri = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+default = []
+rdp = ["sorng-app-domains/rdp"]
+vpn-softether = ["sorng-app-domains/vpn-softether"]
