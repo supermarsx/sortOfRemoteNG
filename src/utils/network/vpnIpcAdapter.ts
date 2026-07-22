@@ -1,5 +1,10 @@
 import type {
+  IKEv2Config,
+  IPsecConfig,
+  L2TPConfig,
   OpenVPNConfig,
+  PPTPConfig,
+  SSTPConfig,
   TailscaleConfig,
   WireGuardConfig,
   ZeroTierConfig,
@@ -109,6 +114,17 @@ export interface ZeroTierIpcConnection {
   connectedAt?: Date;
   networkId?: string;
   secretPresence: ZeroTierSecretPresence;
+}
+
+export interface LegacyVpnIpcConnection<TConfig> {
+  id: string;
+  name: string;
+  config: TConfig;
+  status: VpnConnectionStatus;
+  createdAt: Date;
+  connectedAt?: Date;
+  localIp?: string;
+  remoteIp?: string;
 }
 
 /**
@@ -221,6 +237,117 @@ export function toZeroTierIpcConfig(config: unknown): UnknownRecord {
   });
 }
 
+export function toIkeV2IpcConfig(config: unknown): UnknownRecord {
+  const source = record(config, "IKEv2 config");
+  return compact({
+    server: requiredString(source.server, "IKEv2 server"),
+    username: optionalNonEmptyString(source.username),
+    password: optionalSecret(source.password, "IKEv2 password"),
+    certificate: optionalString(source.certificate),
+    private_key: optionalSecret(source.privateKey, "IKEv2 private key"),
+    ca_certificate: optionalString(source.caCertificate),
+    eap_method: optionalEnum(source.eapMethod, ["mschapv2", "tls", "peap"]),
+    phase1_algorithms: optionalString(source.phase1Algorithms),
+    phase2_algorithms: optionalString(source.phase2Algorithms),
+    local_id: optionalString(source.localId),
+    remote_id: optionalString(source.remoteId),
+    fragmentation: optionalBoolean(source.fragmentation),
+    mobike: optionalBoolean(source.mobike),
+    custom_options: stringArray(source.customOptions),
+  });
+}
+
+export function toSstpIpcConfig(config: unknown): UnknownRecord {
+  const source = record(config, "SSTP config");
+  const proxy = optionalRecord(source.proxy);
+  const proxyEnabled = optionalBoolean(proxy.enabled) !== false;
+  return compact({
+    server: requiredString(source.server, "SSTP server"),
+    username: optionalNonEmptyString(source.username),
+    password: optionalSecret(source.password, "SSTP password"),
+    domain: optionalString(source.domain),
+    certificate: optionalString(source.certificate),
+    ca_certificate: optionalString(source.caCertificate),
+    ignore_certificate: optionalBoolean(source.ignoreCertificate),
+    proxy_host: proxyEnabled ? optionalNonEmptyString(proxy.host) : undefined,
+    proxy_port: proxyEnabled ? optionalNumber(proxy.port) : undefined,
+    custom_options: stringArray(source.customOptions),
+  });
+}
+
+export function toL2tpIpcConfig(config: unknown): UnknownRecord {
+  const source = record(config, "L2TP config");
+  const ppp = optionalRecord(source.pppSettings);
+  const ipsec = optionalRecord(source.ipsecSettings);
+  return compact({
+    server: requiredString(source.server, "L2TP server"),
+    username: optionalNonEmptyString(source.username),
+    password: optionalSecret(source.password, "L2TP password"),
+    psk: optionalSecret(source.psk, "L2TP pre-shared key"),
+    ipsec_ike: optionalString(ipsec.ike),
+    ipsec_esp: optionalString(ipsec.esp),
+    ipsec_pfs: optionalString(ipsec.pfs),
+    mru: optionalNumber(ppp.mru),
+    mtu: optionalNumber(ppp.mtu),
+    lcp_echo_interval: optionalNumber(ppp.lcpEchoInterval),
+    lcp_echo_failure: optionalNumber(ppp.lcpEchoFailure),
+    require_chap: optionalBoolean(ppp.requireChap),
+    refuse_chap: optionalBoolean(ppp.refuseChap),
+    require_mschap: optionalBoolean(ppp.requireMsChap),
+    refuse_mschap: optionalBoolean(ppp.refuseMsChap),
+    require_mschapv2: optionalBoolean(ppp.requireMsChapV2),
+    refuse_mschapv2: optionalBoolean(ppp.refuseMsChapV2),
+    require_eap: optionalBoolean(ppp.requireEap),
+    refuse_eap: optionalBoolean(ppp.refuseEap),
+    require_pap: optionalBoolean(ppp.requirePap),
+    refuse_pap: optionalBoolean(ppp.refusePap),
+    ipsec_ikelifetime: optionalNumber(ipsec.ikelifetime),
+    ipsec_lifetime: optionalNumber(ipsec.lifetime),
+    ipsec_phase2alg: optionalString(ipsec.phase2alg),
+    custom_options: stringArray(source.customOptions),
+  });
+}
+
+export function toPptpIpcConfig(config: unknown): UnknownRecord {
+  const source = record(config, "PPTP config");
+  return compact({
+    server: requiredString(source.server, "PPTP server"),
+    username: optionalNonEmptyString(source.username),
+    password: optionalSecret(source.password, "PPTP password"),
+    domain: optionalString(source.domain),
+    require_mppe: optionalBoolean(source.requireMppe),
+    mppe_stateful: optionalBoolean(source.mppeStateful),
+    refuse_eap: optionalBoolean(source.refuseEap),
+    refuse_pap: optionalBoolean(source.refusePap),
+    refuse_chap: optionalBoolean(source.refuseChap),
+    refuse_mschap: optionalBoolean(source.refuseMsChap),
+    refuse_mschapv2: optionalBoolean(source.refuseMsChapV2),
+    nobsdcomp: optionalBoolean(source.nobsdcomp),
+    nodeflate: optionalBoolean(source.nodeflate),
+    no_vj_comp: optionalBoolean(source.noVjComp),
+    custom_options: stringArray(source.customOptions),
+  });
+}
+
+export function toIpsecIpcConfig(config: unknown): UnknownRecord {
+  const source = record(config, "IPsec config");
+  return compact({
+    server: requiredString(source.server, "IPsec server"),
+    auth_method: optionalEnum(source.authMethod, ["psk", "certificate", "eap"]),
+    psk: optionalSecret(source.psk, "IPsec pre-shared key"),
+    certificate: optionalString(source.certificate),
+    private_key: optionalSecret(source.privateKey, "IPsec private key"),
+    ca_certificate: optionalString(source.caCertificate),
+    phase1_proposals: optionalString(source.phase1Proposals),
+    phase2_proposals: optionalString(source.phase2Proposals),
+    sa_lifetime: optionalNumber(source.saLifetime),
+    dpd_delay: optionalNumber(source.dpdDelay),
+    dpd_timeout: optionalNumber(source.dpdTimeout),
+    tunnel_mode: optionalBoolean(source.tunnelMode),
+    custom_options: stringArray(source.customOptions),
+  });
+}
+
 export function toOpenVpnIpcSecretMutation(
   mutation: OpenVpnSecretMutation | undefined,
   config?: UnknownRecord,
@@ -285,6 +412,173 @@ export function toZeroTierIpcSecretMutation(
     ["authtoken_secret", result.clear_authtoken_secret, "ZeroTier auth token"],
   ]);
   return anyTrue(result) ? result : undefined;
+}
+
+export function fromIkeV2IpcConnection(
+  value: unknown,
+): LegacyVpnIpcConnection<IKEv2Config> {
+  const raw = connectionRecord(value, "IKEv2");
+  const config = record(raw.config, "IKEv2 config");
+  return {
+    ...commonConnection(raw, "IKEv2"),
+    config: {
+      enabled: true,
+      server: requiredString(config.server, "IKEv2 server"),
+      username: optionalString(config.username) ?? "",
+      password: optionalString(config.password),
+      certificate: optionalString(config.certificate),
+      privateKey: optionalString(config.private_key),
+      caCertificate: optionalString(config.ca_certificate),
+      eapMethod: optionalEnum(config.eap_method, ["mschapv2", "tls", "peap"]),
+      phase1Algorithms: optionalString(config.phase1_algorithms),
+      phase2Algorithms: optionalString(config.phase2_algorithms),
+      localId: optionalString(config.local_id),
+      remoteId: optionalString(config.remote_id),
+      fragmentation: optionalBoolean(config.fragmentation),
+      mobike: optionalBoolean(config.mobike),
+      customOptions: stringArray(config.custom_options),
+    },
+    localIp: optionalString(raw.local_ip),
+    remoteIp: optionalString(raw.remote_ip),
+  };
+}
+
+export function fromSstpIpcConnection(
+  value: unknown,
+): LegacyVpnIpcConnection<SSTPConfig> {
+  const raw = connectionRecord(value, "SSTP");
+  const config = record(raw.config, "SSTP config");
+  const proxyHost = optionalNonEmptyString(config.proxy_host);
+  return {
+    ...commonConnection(raw, "SSTP"),
+    config: {
+      enabled: true,
+      server: requiredString(config.server, "SSTP server"),
+      username: optionalString(config.username) ?? "",
+      password: optionalString(config.password),
+      domain: optionalString(config.domain),
+      certificate: optionalString(config.certificate),
+      caCertificate: optionalString(config.ca_certificate),
+      ignoreCertificate: optionalBoolean(config.ignore_certificate),
+      proxy: proxyHost
+        ? {
+            type: "http",
+            host: proxyHost,
+            port: optionalNumber(config.proxy_port) ?? 8080,
+            enabled: true,
+          }
+        : undefined,
+      customOptions: stringArray(config.custom_options),
+    },
+    localIp: optionalString(raw.local_ip),
+    remoteIp: optionalString(raw.remote_ip),
+  };
+}
+
+export function fromL2tpIpcConnection(
+  value: unknown,
+): LegacyVpnIpcConnection<L2TPConfig> {
+  const raw = connectionRecord(value, "L2TP");
+  const config = record(raw.config, "L2TP config");
+  return {
+    ...commonConnection(raw, "L2TP"),
+    config: {
+      enabled: true,
+      server: requiredString(config.server, "L2TP server"),
+      username: optionalString(config.username) ?? "",
+      password: optionalString(config.password) ?? "",
+      psk: optionalString(config.psk),
+      pppSettings: {
+        mru: optionalNumber(config.mru),
+        mtu: optionalNumber(config.mtu),
+        lcpEchoInterval: optionalNumber(config.lcp_echo_interval),
+        lcpEchoFailure: optionalNumber(config.lcp_echo_failure),
+        requireChap: optionalBoolean(config.require_chap),
+        refuseChap: optionalBoolean(config.refuse_chap),
+        requireMsChap: optionalBoolean(config.require_mschap),
+        refuseMsChap: optionalBoolean(config.refuse_mschap),
+        requireMsChapV2: optionalBoolean(config.require_mschapv2),
+        refuseMsChapV2: optionalBoolean(config.refuse_mschapv2),
+        requireEap: optionalBoolean(config.require_eap),
+        refuseEap: optionalBoolean(config.refuse_eap),
+        requirePap: optionalBoolean(config.require_pap),
+        refusePap: optionalBoolean(config.refuse_pap),
+      },
+      ipsecSettings: {
+        ike: optionalString(config.ipsec_ike),
+        esp: optionalString(config.ipsec_esp),
+        pfs: optionalString(config.ipsec_pfs),
+        ikelifetime: optionalNumber(config.ipsec_ikelifetime),
+        lifetime: optionalNumber(config.ipsec_lifetime),
+        phase2alg: optionalString(config.ipsec_phase2alg),
+      },
+      customOptions: stringArray(config.custom_options),
+    },
+    localIp: optionalString(raw.local_ip),
+    remoteIp: optionalString(raw.remote_ip),
+  };
+}
+
+export function fromPptpIpcConnection(
+  value: unknown,
+): LegacyVpnIpcConnection<PPTPConfig> {
+  const raw = connectionRecord(value, "PPTP");
+  const config = record(raw.config, "PPTP config");
+  return {
+    ...commonConnection(raw, "PPTP"),
+    config: {
+      enabled: true,
+      server: requiredString(config.server, "PPTP server"),
+      username: optionalString(config.username) ?? "",
+      password: optionalString(config.password) ?? "",
+      domain: optionalString(config.domain),
+      requireMppe: optionalBoolean(config.require_mppe),
+      mppeStateful: optionalBoolean(config.mppe_stateful),
+      refuseEap: optionalBoolean(config.refuse_eap),
+      refusePap: optionalBoolean(config.refuse_pap),
+      refuseChap: optionalBoolean(config.refuse_chap),
+      refuseMsChap: optionalBoolean(config.refuse_mschap),
+      refuseMsChapV2: optionalBoolean(config.refuse_mschapv2),
+      nobsdcomp: optionalBoolean(config.nobsdcomp),
+      nodeflate: optionalBoolean(config.nodeflate),
+      noVjComp: optionalBoolean(config.no_vj_comp),
+      customOptions: stringArray(config.custom_options),
+    },
+    localIp: optionalString(raw.local_ip),
+    remoteIp: optionalString(raw.remote_ip),
+  };
+}
+
+export function fromIpsecIpcConnection(
+  value: unknown,
+): LegacyVpnIpcConnection<IPsecConfig> {
+  const raw = connectionRecord(value, "IPsec");
+  const config = record(raw.config, "IPsec config");
+  return {
+    ...commonConnection(raw, "IPsec"),
+    config: {
+      enabled: true,
+      server: requiredString(config.server, "IPsec server"),
+      authMethod: optionalEnum(config.auth_method, [
+        "psk",
+        "certificate",
+        "eap",
+      ]),
+      psk: optionalString(config.psk),
+      certificate: optionalString(config.certificate),
+      privateKey: optionalString(config.private_key),
+      caCertificate: optionalString(config.ca_certificate),
+      phase1Proposals: optionalString(config.phase1_proposals),
+      phase2Proposals: optionalString(config.phase2_proposals),
+      saLifetime: optionalNumber(config.sa_lifetime),
+      dpdDelay: optionalNumber(config.dpd_delay),
+      dpdTimeout: optionalNumber(config.dpd_timeout),
+      tunnelMode: optionalBoolean(config.tunnel_mode),
+      customOptions: stringArray(config.custom_options),
+    },
+    localIp: optionalString(raw.local_ip),
+    remoteIp: optionalString(raw.remote_ip),
+  };
 }
 
 export function fromOpenVpnIpcConnection(value: unknown): OpenVpnIpcConnection {

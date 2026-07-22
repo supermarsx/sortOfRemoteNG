@@ -257,6 +257,7 @@ export interface L2TPConfig {
   server: string;
   username: string;
   password: string;
+  psk?: string;
   pppSettings?: {
     mru?: number;
     mtu?: number;

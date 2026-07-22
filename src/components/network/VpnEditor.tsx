@@ -1156,6 +1156,15 @@ const L2TPConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             />
           </FormField>
         </div>
+        <FormField label="IPsec Pre-shared Key (PSK)">
+          <input
+            type="password"
+            value={config.psk ?? ""}
+            onChange={(e) => up("psk", e.target.value)}
+            placeholder="Optional gateway pre-shared key"
+            className={inputCls}
+          />
+        </FormField>
       </div>
 
       {/* PPP Settings */}

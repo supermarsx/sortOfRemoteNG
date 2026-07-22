@@ -1,7 +1,7 @@
-#[cfg(windows)]
-use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::platform;
+#[cfg(windows)]
+use crate::ras_helper;
 use chrono::{DateTime, Utc};
 use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
@@ -35,6 +35,7 @@ pub enum SSTPStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SSTPConfig {
     pub server: String,
     pub username: Option<String>,
@@ -45,6 +46,7 @@ pub struct SSTPConfig {
     pub ignore_certificate: Option<bool>,
     pub proxy_host: Option<String>,
     pub proxy_port: Option<u16>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
 }
 
@@ -133,11 +135,7 @@ impl SSTPService {
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = SSTPStatus::Error(e.clone());
-                self.emit_status(
-                    connection_id,
-                    "error",
-                    serde_json::json!({ "error": e }),
-                );
+                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
                 return Err(e);
             }
 
@@ -148,13 +146,10 @@ impl SSTPService {
         #[cfg(not(windows))]
         {
             // Linux: use sstpc (sstp-client)
-            let sstpc_binary = platform::resolve_binary("sstpc")
-                .map_err(|e| format!("sstpc not found: {}", e))?;
+            let sstpc_binary =
+                platform::resolve_binary("sstpc").map_err(|e| format!("sstpc not found: {}", e))?;
 
-            let mut args = vec![
-                "--server".to_string(),
-                config.server.clone(),
-            ];
+            let mut args = vec!["--server".to_string(), config.server.clone()];
 
             if let Some(ca) = &config.ca_certificate {
                 args.push("--ca-cert".to_string());

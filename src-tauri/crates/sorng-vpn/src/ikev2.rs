@@ -1,6 +1,4 @@
 #[cfg(windows)]
-use crate::platform;
-#[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::strongswan_helper;
@@ -37,6 +35,7 @@ pub enum IKEv2Status {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IKEv2Config {
     pub server: String,
     pub username: Option<String>,
@@ -51,6 +50,7 @@ pub struct IKEv2Config {
     pub remote_id: Option<String>,
     pub fragmentation: Option<bool>,
     pub mobike: Option<bool>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
 }
 
@@ -135,15 +135,7 @@ impl IKEv2Service {
 
             // Set EAP method if specified
             if let Some(eap) = &config.eap_method {
-                let binary = platform::resolve_binary("powershell")?;
-                let script = format!(
-                    "Set-VpnConnection -Name '{}' -AuthenticationMethod {} -Force",
-                    entry_name, eap
-                );
-                let _ = tokio::process::Command::new(binary)
-                    .args(["-NoProfile", "-Command", &script])
-                    .output()
-                    .await;
+                ras_helper::configure_ras_eap(&entry_name, eap).await?;
             }
 
             let username = config.username.as_deref().unwrap_or("");
@@ -152,11 +144,7 @@ impl IKEv2Service {
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = IKEv2Status::Error(e.clone());
-                self.emit_status(
-                    connection_id,
-                    "error",
-                    serde_json::json!({ "error": e }),
-                );
+                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
                 return Err(e);
             }
 
@@ -171,8 +159,13 @@ impl IKEv2Service {
 
             let auth_method = if config.certificate.is_some() {
                 "pubkey"
-            } else if config.eap_method.is_some() {
-                config.eap_method.as_deref().unwrap_or("eap-mschapv2")
+            } else if let Some(eap_method) = config.eap_method.as_deref() {
+                match eap_method {
+                    "mschapv2" => "eap-mschapv2",
+                    "tls" => "eap-tls",
+                    "peap" => "eap-peap",
+                    _ => return Err("Unsupported IKEv2 EAP method".to_string()),
+                }
             } else {
                 "psk"
             };

@@ -1,7 +1,7 @@
-#[cfg(windows)]
-use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::platform;
+#[cfg(windows)]
+use crate::ras_helper;
 use chrono::{DateTime, Utc};
 use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
@@ -35,6 +35,7 @@ pub enum PPTPStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PPTPConfig {
     pub server: String,
     pub username: Option<String>,
@@ -50,6 +51,7 @@ pub struct PPTPConfig {
     pub nobsdcomp: Option<bool>,
     pub nodeflate: Option<bool>,
     pub no_vj_comp: Option<bool>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
 }
 
@@ -138,11 +140,7 @@ impl PPTPService {
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = PPTPStatus::Error(e.clone());
-                self.emit_status(
-                    connection_id,
-                    "error",
-                    serde_json::json!({ "error": e }),
-                );
+                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
                 return Err(e);
             }
 
@@ -153,8 +151,8 @@ impl PPTPService {
         #[cfg(not(windows))]
         {
             // Linux: use pppd with pptp plugin
-            let pptp_binary = platform::resolve_binary("pptp")
-                .map_err(|e| format!("pptp not found: {}", e))?;
+            let pptp_binary =
+                platform::resolve_binary("pptp").map_err(|e| format!("pptp not found: {}", e))?;
 
             let mut args = vec![config.server.clone()];
             args.push("--nolaunchpppd".to_string());

@@ -1,3 +1,4 @@
+#[cfg(not(windows))]
 use crate::platform;
 #[cfg(windows)]
 use crate::ras_helper;
@@ -36,6 +37,7 @@ pub enum L2TPStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct L2TPConfig {
     pub server: String,
     pub username: Option<String>,
@@ -43,9 +45,25 @@ pub struct L2TPConfig {
     pub psk: Option<String>,
     pub ipsec_ike: Option<String>,
     pub ipsec_esp: Option<String>,
-    pub ipsec_pfs: Option<bool>,
+    pub ipsec_pfs: Option<String>,
     pub mru: Option<u16>,
     pub mtu: Option<u16>,
+    pub lcp_echo_interval: Option<u32>,
+    pub lcp_echo_failure: Option<u32>,
+    pub require_chap: Option<bool>,
+    pub refuse_chap: Option<bool>,
+    pub require_mschap: Option<bool>,
+    pub refuse_mschap: Option<bool>,
+    pub require_mschapv2: Option<bool>,
+    pub refuse_mschapv2: Option<bool>,
+    pub require_eap: Option<bool>,
+    pub refuse_eap: Option<bool>,
+    pub require_pap: Option<bool>,
+    pub refuse_pap: Option<bool>,
+    pub ipsec_ikelifetime: Option<u32>,
+    pub ipsec_lifetime: Option<u32>,
+    pub ipsec_phase2alg: Option<String>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
 }
 
@@ -125,21 +143,10 @@ impl L2TPService {
 
         #[cfg(windows)]
         {
-            // Create RAS entry with L2TP tunnel type
-            ras_helper::create_ras_entry(&entry_name, &config.server, "L2tp").await?;
-
-            // Set PSK if provided
-            if let Some(psk) = &config.psk {
-                let binary = platform::resolve_binary("powershell")?;
-                let script = format!(
-                    "Set-VpnConnectionIPsecConfiguration -ConnectionName '{}' -AuthenticationTransformConstants SHA256128 -CipherTransformConstants AES256 -DHGroup Group14 -EncryptionMethod AES256 -IntegrityCheckMethod SHA256 -PfsGroup None -AuthenticationMethod PSK -SharedSecret '{}' -Force",
-                    entry_name, psk
-                );
-                let _ = tokio::process::Command::new(binary)
-                    .args(["-NoProfile", "-Command", &script])
-                    .output()
-                    .await;
-            }
+            // Create the entry with the PSK through Add-VpnConnection's
+            // supported L2tpPsk parameter, then apply the IPsec policy.
+            ras_helper::create_l2tp_ras_entry(&entry_name, &config.server, config.psk.as_deref())
+                .await?;
 
             let username = config.username.as_deref().unwrap_or("");
             let password = config.password.as_deref().unwrap_or("");
@@ -147,11 +154,7 @@ impl L2TPService {
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = L2TPStatus::Error(e.clone());
-                self.emit_status(
-                    connection_id,
-                    "error",
-                    serde_json::json!({ "error": e }),
-                );
+                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
                 return Err(e);
             }
 

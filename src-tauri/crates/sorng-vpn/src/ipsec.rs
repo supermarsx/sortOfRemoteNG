@@ -1,6 +1,4 @@
 #[cfg(windows)]
-use crate::platform;
-#[cfg(windows)]
 use crate::ras_helper;
 #[cfg(not(windows))]
 use crate::strongswan_helper;
@@ -37,6 +35,7 @@ pub enum IPsecStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IPsecConfig {
     pub server: String,
     pub auth_method: Option<String>, // "psk", "certificate", "eap"
@@ -50,6 +49,7 @@ pub struct IPsecConfig {
     pub dpd_delay: Option<u32>,
     pub dpd_timeout: Option<u32>,
     pub tunnel_mode: Option<bool>,
+    #[serde(default)]
     pub custom_options: Vec<String>,
 }
 
@@ -129,21 +129,14 @@ impl IPsecService {
 
         #[cfg(windows)]
         {
+            if config.psk.is_some() {
+                return Err(
+                    "Windows built-in IKEv2 profiles do not support client PSK authentication; use an L2TP/IPsec profile for a pre-shared key"
+                        .to_string(),
+                );
+            }
             // Windows: use IKEv2 tunnel type as the closest RAS equivalent for raw IPsec
             ras_helper::create_ras_entry(&entry_name, &config.server, "Ikev2").await?;
-
-            // Configure IPsec parameters via PowerShell
-            if let Some(psk) = &config.psk {
-                let binary = platform::resolve_binary("powershell")?;
-                let script = format!(
-                    "Set-VpnConnectionIPsecConfiguration -ConnectionName '{}' -AuthenticationMethod PSK -SharedSecret '{}' -Force",
-                    entry_name, psk
-                );
-                let _ = tokio::process::Command::new(binary)
-                    .args(["-NoProfile", "-Command", &script])
-                    .output()
-                    .await;
-            }
 
             // rasdial doesn't use username/password for pure IPsec, but we try anyway
             let username = "";
@@ -152,11 +145,7 @@ impl IPsecService {
             if let Err(e) = ras_helper::rasdial_connect(&entry_name, username, password).await {
                 let _ = ras_helper::remove_ras_entry(&entry_name).await;
                 connection.status = IPsecStatus::Error(e.clone());
-                self.emit_status(
-                    connection_id,
-                    "error",
-                    serde_json::json!({ "error": e }),
-                );
+                self.emit_status(connection_id, "error", serde_json::json!({ "error": e }));
                 return Err(e);
             }
 

@@ -31,6 +31,9 @@ pub mod vpn_lifecycle;
 pub mod wireguard;
 pub mod zerotier;
 
+#[cfg(test)]
+mod ipc_contract_tests;
+
 /// Build a structured tracing span for a VPN connection (t3-e23).
 ///
 /// Attach at VPN tunnel entry points so every log event emitted within

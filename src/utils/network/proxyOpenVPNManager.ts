@@ -13,7 +13,12 @@ import {
   TailscaleConfig,
 } from "../../types/settings/settings";
 import {
+  fromIkeV2IpcConnection,
+  fromIpsecIpcConnection,
+  fromL2tpIpcConnection,
   fromOpenVpnIpcConnection,
+  fromPptpIpcConnection,
+  fromSstpIpcConnection,
   fromTailscaleIpcConnection,
   fromWireGuardIpcConnection,
   fromZeroTierIpcConnection,
@@ -21,6 +26,11 @@ import {
   requireVpnConnectionId,
   toOpenVpnIpcSecretMutation,
   toOpenVpnIpcConfig,
+  toIkeV2IpcConfig,
+  toIpsecIpcConfig,
+  toL2tpIpcConfig,
+  toPptpIpcConfig,
+  toSstpIpcConfig,
   toTailscaleIpcSecretMutation,
   toTailscaleIpcConfig,
   toWireGuardIpcSecretMutation,
@@ -499,9 +509,13 @@ export class ProxyOpenVPNManager {
   // IKEv2 Management Methods
   async createIKEv2Connection(
     name: string,
-    config: IKEv2Config,
+    config: IKEv2Config | Record<string, unknown>,
   ): Promise<string> {
-    return await invoke("create_ikev2_connection", { name, config });
+    const id = await invoke("create_ikev2_connection", {
+      name,
+      config: toIkeV2IpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "IKEv2");
   }
 
   async connectIKEv2(connectionId: string): Promise<void> {
@@ -513,25 +527,17 @@ export class ProxyOpenVPNManager {
   }
 
   async getIKEv2Connection(connectionId: string): Promise<IKEv2Connection> {
-    const result: any = await invoke("get_ikev2_connection", { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    };
+    return fromIkeV2IpcConnection(
+      await invoke("get_ikev2_connection", { connectionId }),
+    );
   }
 
   async listIKEv2Connections(): Promise<IKEv2Connection[]> {
-    const results: any[] = await invoke("list_ikev2_connections");
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    }));
+    const results = await invoke<unknown>("list_ikev2_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("IKEv2 connection list response is malformed");
+    }
+    return results.map(fromIkeV2IpcConnection);
   }
 
   async deleteIKEv2Connection(connectionId: string): Promise<void> {
@@ -539,27 +545,33 @@ export class ProxyOpenVPNManager {
   }
 
   async getIKEv2Status(connectionId: string): Promise<string> {
-    return await invoke("get_ikev2_status", { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_ikev2_status", { connectionId }),
+    );
   }
 
   async updateIKEv2Connection(
     connectionId: string,
     name?: string,
-    config?: any,
+    config?: IKEv2Config | Record<string, unknown>,
   ): Promise<void> {
     return await invoke("update_ikev2_connection", {
       connectionId,
       name,
-      config,
+      config: config ? toIkeV2IpcConfig(config) : undefined,
     });
   }
 
   // SSTP Management Methods
   async createSSTPConnection(
     name: string,
-    config: SSTPConfig,
+    config: SSTPConfig | Record<string, unknown>,
   ): Promise<string> {
-    return await invoke("create_sstp_connection", { name, config });
+    const id = await invoke("create_sstp_connection", {
+      name,
+      config: toSstpIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "SSTP");
   }
 
   async connectSSTP(connectionId: string): Promise<void> {
@@ -571,25 +583,17 @@ export class ProxyOpenVPNManager {
   }
 
   async getSSTPConnection(connectionId: string): Promise<SSTPConnection> {
-    const result: any = await invoke("get_sstp_connection", { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    };
+    return fromSstpIpcConnection(
+      await invoke("get_sstp_connection", { connectionId }),
+    );
   }
 
   async listSSTPConnections(): Promise<SSTPConnection[]> {
-    const results: any[] = await invoke("list_sstp_connections");
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    }));
+    const results = await invoke<unknown>("list_sstp_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("SSTP connection list response is malformed");
+    }
+    return results.map(fromSstpIpcConnection);
   }
 
   async deleteSSTPConnection(connectionId: string): Promise<void> {
@@ -597,27 +601,33 @@ export class ProxyOpenVPNManager {
   }
 
   async getSSTPStatus(connectionId: string): Promise<string> {
-    return await invoke("get_sstp_status", { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_sstp_status", { connectionId }),
+    );
   }
 
   async updateSSTPConnection(
     connectionId: string,
     name?: string,
-    config?: any,
+    config?: SSTPConfig | Record<string, unknown>,
   ): Promise<void> {
     return await invoke("update_sstp_connection", {
       connectionId,
       name,
-      config,
+      config: config ? toSstpIpcConfig(config) : undefined,
     });
   }
 
   // L2TP Management Methods
   async createL2TPConnection(
     name: string,
-    config: L2TPConfig,
+    config: L2TPConfig | Record<string, unknown>,
   ): Promise<string> {
-    return await invoke("create_l2tp_connection", { name, config });
+    const id = await invoke("create_l2tp_connection", {
+      name,
+      config: toL2tpIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "L2TP");
   }
 
   async connectL2TP(connectionId: string): Promise<void> {
@@ -629,25 +639,17 @@ export class ProxyOpenVPNManager {
   }
 
   async getL2TPConnection(connectionId: string): Promise<L2TPConnection> {
-    const result: any = await invoke("get_l2tp_connection", { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    };
+    return fromL2tpIpcConnection(
+      await invoke("get_l2tp_connection", { connectionId }),
+    );
   }
 
   async listL2TPConnections(): Promise<L2TPConnection[]> {
-    const results: any[] = await invoke("list_l2tp_connections");
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    }));
+    const results = await invoke<unknown>("list_l2tp_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("L2TP connection list response is malformed");
+    }
+    return results.map(fromL2tpIpcConnection);
   }
 
   async deleteL2TPConnection(connectionId: string): Promise<void> {
@@ -655,27 +657,33 @@ export class ProxyOpenVPNManager {
   }
 
   async getL2TPStatus(connectionId: string): Promise<string> {
-    return await invoke("get_l2tp_status", { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_l2tp_status", { connectionId }),
+    );
   }
 
   async updateL2TPConnection(
     connectionId: string,
     name?: string,
-    config?: any,
+    config?: L2TPConfig | Record<string, unknown>,
   ): Promise<void> {
     return await invoke("update_l2tp_connection", {
       connectionId,
       name,
-      config,
+      config: config ? toL2tpIpcConfig(config) : undefined,
     });
   }
 
   // PPTP Management Methods
   async createPPTPConnection(
     name: string,
-    config: PPTPConfig,
+    config: PPTPConfig | Record<string, unknown>,
   ): Promise<string> {
-    return await invoke("create_pptp_connection", { name, config });
+    const id = await invoke("create_pptp_connection", {
+      name,
+      config: toPptpIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "PPTP");
   }
 
   async connectPPTP(connectionId: string): Promise<void> {
@@ -687,25 +695,17 @@ export class ProxyOpenVPNManager {
   }
 
   async getPPTPConnection(connectionId: string): Promise<PPTPConnection> {
-    const result: any = await invoke("get_pptp_connection", { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    };
+    return fromPptpIpcConnection(
+      await invoke("get_pptp_connection", { connectionId }),
+    );
   }
 
   async listPPTPConnections(): Promise<PPTPConnection[]> {
-    const results: any[] = await invoke("list_pptp_connections");
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    }));
+    const results = await invoke<unknown>("list_pptp_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("PPTP connection list response is malformed");
+    }
+    return results.map(fromPptpIpcConnection);
   }
 
   async deletePPTPConnection(connectionId: string): Promise<void> {
@@ -713,27 +713,33 @@ export class ProxyOpenVPNManager {
   }
 
   async getPPTPStatus(connectionId: string): Promise<string> {
-    return await invoke("get_pptp_status", { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_pptp_status", { connectionId }),
+    );
   }
 
   async updatePPTPConnection(
     connectionId: string,
     name?: string,
-    config?: any,
+    config?: PPTPConfig | Record<string, unknown>,
   ): Promise<void> {
     return await invoke("update_pptp_connection", {
       connectionId,
       name,
-      config,
+      config: config ? toPptpIpcConfig(config) : undefined,
     });
   }
 
   // IPsec Management Methods
   async createIPsecConnection(
     name: string,
-    config: IPsecConfig,
+    config: IPsecConfig | Record<string, unknown>,
   ): Promise<string> {
-    return await invoke("create_ipsec_connection", { name, config });
+    const id = await invoke("create_ipsec_connection", {
+      name,
+      config: toIpsecIpcConfig(config),
+    });
+    return requireVpnConnectionId(id, "IPsec");
   }
 
   async connectIPsec(connectionId: string): Promise<void> {
@@ -745,25 +751,17 @@ export class ProxyOpenVPNManager {
   }
 
   async getIPsecConnection(connectionId: string): Promise<IPsecConnection> {
-    const result: any = await invoke("get_ipsec_connection", { connectionId });
-    return {
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    };
+    return fromIpsecIpcConnection(
+      await invoke("get_ipsec_connection", { connectionId }),
+    );
   }
 
   async listIPsecConnections(): Promise<IPsecConnection[]> {
-    const results: any[] = await invoke("list_ipsec_connections");
-    return results.map((result: any) => ({
-      ...result,
-      createdAt: new Date(result.created_at),
-      connectedAt: result.connected_at
-        ? new Date(result.connected_at)
-        : undefined,
-    }));
+    const results = await invoke<unknown>("list_ipsec_connections");
+    if (!Array.isArray(results)) {
+      throw new Error("IPsec connection list response is malformed");
+    }
+    return results.map(fromIpsecIpcConnection);
   }
 
   async deleteIPsecConnection(connectionId: string): Promise<void> {
@@ -771,18 +769,20 @@ export class ProxyOpenVPNManager {
   }
 
   async getIPsecStatus(connectionId: string): Promise<string> {
-    return await invoke("get_ipsec_status", { connectionId });
+    return normalizeVpnStatus(
+      await invoke("get_ipsec_status", { connectionId }),
+    );
   }
 
   async updateIPsecConnection(
     connectionId: string,
     name?: string,
-    config?: any,
+    config?: IPsecConfig | Record<string, unknown>,
   ): Promise<void> {
     return await invoke("update_ipsec_connection", {
       connectionId,
       name,
-      config,
+      config: config ? toIpsecIpcConfig(config) : undefined,
     });
   }
 

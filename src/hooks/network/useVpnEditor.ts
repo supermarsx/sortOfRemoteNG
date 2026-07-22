@@ -408,24 +408,41 @@ export function useVpnEditor(
           username: config.username ?? "",
           password: config.password ?? "",
         };
+        if (config.psk) cfg.psk = config.psk;
         // PPP settings
         const ppp: Record<string, unknown> = {};
-        if (config.pppMru) ppp.mru = config.pppMru;
-        if (config.pppMtu) ppp.mtu = config.pppMtu;
-        if (config.lcpEchoInterval)
+        if (config.pppMru !== undefined) ppp.mru = config.pppMru;
+        if (config.pppMtu !== undefined) ppp.mtu = config.pppMtu;
+        if (config.lcpEchoInterval !== undefined)
           ppp.lcpEchoInterval = config.lcpEchoInterval;
-        if (config.lcpEchoFailure) ppp.lcpEchoFailure = config.lcpEchoFailure;
+        if (config.lcpEchoFailure !== undefined)
+          ppp.lcpEchoFailure = config.lcpEchoFailure;
         if (config.requireChap !== undefined)
           ppp.requireChap = config.requireChap;
+        if (config.refuseChap !== undefined) ppp.refuseChap = config.refuseChap;
+        if (config.requireMsChap !== undefined)
+          ppp.requireMsChap = config.requireMsChap;
+        if (config.refuseMsChap !== undefined)
+          ppp.refuseMsChap = config.refuseMsChap;
         if (config.requireMsChapV2 !== undefined)
           ppp.requireMsChapV2 = config.requireMsChapV2;
+        if (config.refuseMsChapV2 !== undefined)
+          ppp.refuseMsChapV2 = config.refuseMsChapV2;
         if (config.requireEap !== undefined) ppp.requireEap = config.requireEap;
+        if (config.refuseEap !== undefined) ppp.refuseEap = config.refuseEap;
+        if (config.requirePap !== undefined) ppp.requirePap = config.requirePap;
+        if (config.refusePap !== undefined) ppp.refusePap = config.refusePap;
         if (Object.keys(ppp).length) cfg.pppSettings = ppp;
         // IPsec settings
         const ipsec: Record<string, unknown> = {};
         if (config.ipsecIke) ipsec.ike = config.ipsecIke;
         if (config.ipsecEsp) ipsec.esp = config.ipsecEsp;
         if (config.ipsecPfs) ipsec.pfs = config.ipsecPfs;
+        if (config.ipsecIkeLifetime !== undefined)
+          ipsec.ikelifetime = config.ipsecIkeLifetime;
+        if (config.ipsecLifetime !== undefined)
+          ipsec.lifetime = config.ipsecLifetime;
+        if (config.ipsecPhase2Alg) ipsec.phase2alg = config.ipsecPhase2Alg;
         if (Object.keys(ipsec).length) cfg.ipsecSettings = ipsec;
         const l2tpOpts = splitLines(config.customOptions);
         if (l2tpOpts.length) cfg.customOptions = l2tpOpts;
@@ -489,6 +506,7 @@ export function useVpnEditor(
         if (config.caCertificate) cfg.caCertificate = config.caCertificate;
         if (config.ignoreCertificate !== undefined)
           cfg.ignoreCertificate = config.ignoreCertificate;
+        if (config.proxy) cfg.proxy = config.proxy;
         const sstpOpts = splitLines(config.customOptions);
         if (sstpOpts.length) cfg.customOptions = sstpOpts;
         return cfg;
@@ -808,6 +826,39 @@ export function toVpnEditorFormConfig(
         identityPublic: source.identity?.public,
         identitySecret: undefined,
         authtokenSecret: undefined,
+      };
+    case "l2tp":
+      return {
+        ...source,
+        pppMru: source.pppSettings?.mru,
+        pppMtu: source.pppSettings?.mtu,
+        lcpEchoInterval: source.pppSettings?.lcpEchoInterval,
+        lcpEchoFailure: source.pppSettings?.lcpEchoFailure,
+        requireChap: source.pppSettings?.requireChap,
+        refuseChap: source.pppSettings?.refuseChap,
+        requireMsChap: source.pppSettings?.requireMsChap,
+        refuseMsChap: source.pppSettings?.refuseMsChap,
+        requireMsChapV2: source.pppSettings?.requireMsChapV2,
+        refuseMsChapV2: source.pppSettings?.refuseMsChapV2,
+        requireEap: source.pppSettings?.requireEap,
+        refuseEap: source.pppSettings?.refuseEap,
+        requirePap: source.pppSettings?.requirePap,
+        refusePap: source.pppSettings?.refusePap,
+        ipsecIke: source.ipsecSettings?.ike,
+        ipsecEsp: source.ipsecSettings?.esp,
+        ipsecPfs: source.ipsecSettings?.pfs,
+        ipsecIkeLifetime: source.ipsecSettings?.ikelifetime,
+        ipsecLifetime: source.ipsecSettings?.lifetime,
+        ipsecPhase2Alg: source.ipsecSettings?.phase2alg,
+        customOptions: joinLines(source.customOptions),
+      };
+    case "ikev2":
+    case "sstp":
+    case "pptp":
+    case "ipsec":
+      return {
+        ...source,
+        customOptions: joinLines(source.customOptions),
       };
     default:
       return source;
