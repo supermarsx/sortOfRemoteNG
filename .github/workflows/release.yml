@@ -330,19 +330,19 @@ jobs:
             platform: macos
             rust_target: aarch64-apple-darwin
             bundles: dmg,app
-            cargo_build_jobs: "2"
-            release_lto: "thin"
-            release_codegen_units: "1"
-            release_opt_level: "3"
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "1"
           - artifact_id: darwin-x86_64
             os: macos-15-intel
             platform: macos
             rust_target: x86_64-apple-darwin
             bundles: dmg,app
-            cargo_build_jobs: "2"
-            release_lto: "thin"
-            release_codegen_units: "1"
-            release_opt_level: "3"
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "1"
           - artifact_id: windows-x86_64
             os: windows-2022
             platform: windows
@@ -354,12 +354,13 @@ jobs:
             release_opt_level: "0"
     runs-on: ${{ matrix.os }}
     env:
-      # The checked-in Cargo config is tuned for a 200 GB workstation. Linux
-      # and Windows disable LLVM optimization in the hosted release matrix:
+      # The checked-in Cargo config is tuned for a 200 GB workstation. Hosted
+      # release builds use bounded LLVM profiles instead:
       # Linux splits final codegen into 16 smaller units after repeated
       # 90-minute single-CGU builds ended in runner loss; it retains one job.
-      # Windows keeps one codegen unit after exhausting LLVM memory; macOS
-      # keeps the checked-in production release profile.
+      # Windows keeps one codegen unit after exhausting LLVM memory. Both macOS
+      # runners use basic optimization with split codegen after multi-hour
+      # opt-level 3, thin-LTO builds made no progress past sorng-app-auth.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}
