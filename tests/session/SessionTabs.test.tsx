@@ -1,8 +1,18 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionTabs } from "../../src/components/session/SessionTabs";
-import type { Connection, ConnectionSession, TabGroup } from "../../src/types/connection/connection";
+import type {
+  Connection,
+  ConnectionSession,
+  TabGroup,
+} from "../../src/types/connection/connection";
 
 const mockDispatch = vi.fn();
 
@@ -37,33 +47,51 @@ const onSessionSelect = vi.fn();
 const onSessionClose = vi.fn();
 const onSessionDetach = vi.fn();
 
-const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
-const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+const originalScrollWidth = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "scrollWidth",
+);
+const originalClientWidth = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "clientWidth",
+);
 
 const forceTabOverflow = () => {
   Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
     configurable: true,
     get() {
-      return (this as HTMLElement).dataset.testid === "session-tabs-scroll" ? 500 : 0;
+      return (this as HTMLElement).dataset.testid === "session-tabs-scroll"
+        ? 500
+        : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get() {
-      return (this as HTMLElement).dataset.testid === "session-tabs-scroll" ? 100 : 0;
+      return (this as HTMLElement).dataset.testid === "session-tabs-scroll"
+        ? 100
+        : 0;
     },
   });
 };
 
 const restoreTabSizing = () => {
   if (originalScrollWidth) {
-    Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "scrollWidth",
+      originalScrollWidth,
+    );
   } else {
     delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
   }
 
   if (originalClientWidth) {
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "clientWidth",
+      originalClientWidth,
+    );
   } else {
     delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
   }
@@ -142,6 +170,15 @@ describe("SessionTabs accessibility", () => {
     restoreTabSizing();
   });
 
+  it("shows that no session is selected when the tab list is empty", () => {
+    mockSessions = [];
+
+    renderTabs({ activeSessionId: undefined });
+
+    expect(screen.getByText("No session selected")).toBeInTheDocument();
+    expect(screen.queryByText("No active sessions")).not.toBeInTheDocument();
+  });
+
   it("exposes tablist and tab semantics", () => {
     renderTabs();
 
@@ -163,7 +200,9 @@ describe("SessionTabs accessibility", () => {
     const firstTab = screen.getByRole("tab", { name: /session one/i });
     fireEvent.contextMenu(firstTab);
 
-    const submenuTrigger = await screen.findByRole("menuitem", { name: /add to group/i });
+    const submenuTrigger = await screen.findByRole("menuitem", {
+      name: /add to group/i,
+    });
     expect(submenuTrigger).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.keyDown(submenuTrigger, { key: "ArrowRight" });
@@ -190,9 +229,13 @@ describe("SessionTabs accessibility", () => {
     const firstTab = screen.getByRole("tab", { name: /session one/i });
     fireEvent.contextMenu(firstTab);
 
-    fireEvent.click(await screen.findByRole("menuitem", { name: /rename tab/i }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /rename tab/i }),
+    );
 
-    expect(await screen.findByLabelText(/rename tab session one/i)).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText(/rename tab session one/i),
+    ).toBeInTheDocument();
   });
 
   it("closes the tab context menu when its tab is removed", async () => {
@@ -201,7 +244,9 @@ describe("SessionTabs accessibility", () => {
     const firstTab = screen.getByRole("tab", { name: /session one/i });
     fireEvent.contextMenu(firstTab);
 
-    expect(await screen.findByTestId("session-tab-context-menu")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("session-tab-context-menu"),
+    ).toBeInTheDocument();
 
     mockSessions = mockSessions.filter((session) => session.id !== "s1");
     rerender(
@@ -214,7 +259,9 @@ describe("SessionTabs accessibility", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByTestId("session-tab-context-menu")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("session-tab-context-menu"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -222,17 +269,24 @@ describe("SessionTabs accessibility", () => {
     forceTabOverflow();
     renderTabs();
 
-    fireEvent.click(await screen.findByRole("button", { name: /show all tabs/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /show all tabs/i }),
+    );
 
     const menu = await screen.findByTestId("session-tabs-overflow-menu");
-    fireEvent.mouseDown(within(menu).getByRole("menuitem", { name: /session two/i }), {
-      button: 1,
-    });
+    fireEvent.mouseDown(
+      within(menu).getByRole("menuitem", { name: /session two/i }),
+      {
+        button: 1,
+      },
+    );
 
     expect(onSessionClose).toHaveBeenCalledWith("s2");
     expect(onSessionSelect).not.toHaveBeenCalledWith("s2");
     await waitFor(() => {
-      expect(screen.queryByTestId("session-tabs-overflow-menu")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("session-tabs-overflow-menu"),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -240,12 +294,17 @@ describe("SessionTabs accessibility", () => {
     forceTabOverflow();
     renderTabs({ middleClickCloseTab: false });
 
-    fireEvent.click(await screen.findByRole("button", { name: /show all tabs/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /show all tabs/i }),
+    );
 
     const menu = await screen.findByTestId("session-tabs-overflow-menu");
-    fireEvent.mouseDown(within(menu).getByRole("menuitem", { name: /session two/i }), {
-      button: 1,
-    });
+    fireEvent.mouseDown(
+      within(menu).getByRole("menuitem", { name: /session two/i }),
+      {
+        button: 1,
+      },
+    );
 
     expect(onSessionClose).not.toHaveBeenCalled();
   });

@@ -8,7 +8,10 @@ import {
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { TabLayoutManager } from "../../src/components/session/TabLayoutManager";
-import type { ConnectionSession, TabLayout } from "../../src/types/connection/connection";
+import type {
+  ConnectionSession,
+  TabLayout,
+} from "../../src/types/connection/connection";
 
 vi.mock("react-resizable", () => ({
   Resizable: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -60,6 +63,13 @@ const renderManager = (
   );
 
 describe("TabLayoutManager", () => {
+  it("shows that no session is selected when the layout is empty", () => {
+    renderManager(vi.fn(), []);
+
+    expect(screen.getByText("No session selected")).toBeInTheDocument();
+    expect(screen.queryByText("No active sessions")).not.toBeInTheDocument();
+  });
+
   it("opens and closes the custom-grid popover", async () => {
     renderManager();
 
@@ -131,24 +141,48 @@ describe("TabLayoutManager", () => {
   it("session counter excludes tool tabs and winmgmt panels", () => {
     renderManager(vi.fn(), [sessions[0], toolSession, winmgmtSession]);
     // Only one real connection → "1 session"
-    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent("1 session");
+    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent(
+      "1 session",
+    );
     // Tool and panel chips surface the non-session counts
-    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent("1 tool");
-    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent("1 panel");
+    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent(
+      "1 tool",
+    );
+    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent(
+      "1 panel",
+    );
   });
 
   it("session counter pluralizes per chip", () => {
-    renderManager(vi.fn(), [sessions[0], sessions[1], toolSession, toolSession, winmgmtSession]);
-    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent("2 sessions");
-    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent("2 tools");
-    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent("1 panel");
+    renderManager(vi.fn(), [
+      sessions[0],
+      sessions[1],
+      toolSession,
+      toolSession,
+      winmgmtSession,
+    ]);
+    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent(
+      "2 sessions",
+    );
+    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent(
+      "2 tools",
+    );
+    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent(
+      "1 panel",
+    );
   });
 
   it("session counter shows just the session chip when no tools/panels are open", () => {
     renderManager(vi.fn(), [sessions[0], sessions[1]]);
-    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent("2 sessions");
-    expect(screen.queryByTestId("session-counter-tools")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("session-counter-winmgmt")).not.toBeInTheDocument();
+    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent(
+      "2 sessions",
+    );
+    expect(
+      screen.queryByTestId("session-counter-tools"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("session-counter-winmgmt"),
+    ).not.toBeInTheDocument();
   });
 
   it("session counter still renders 0 sessions when only tools/panels are open", () => {
@@ -156,9 +190,15 @@ describe("TabLayoutManager", () => {
     // every tab was a tool. We always show the session chip so the
     // empty state is visible.
     renderManager(vi.fn(), [toolSession, winmgmtSession]);
-    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent("0 sessions");
-    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent("1 tool");
-    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent("1 panel");
+    expect(screen.getByTestId("session-counter-sessions")).toHaveTextContent(
+      "0 sessions",
+    );
+    expect(screen.getByTestId("session-counter-tools")).toHaveTextContent(
+      "1 tool",
+    );
+    expect(screen.getByTestId("session-counter-winmgmt")).toHaveTextContent(
+      "1 panel",
+    );
   });
 
   it("session counter exposes a screenreader-friendly aria-label", () => {

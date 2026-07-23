@@ -1151,7 +1151,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         aria-label="Session tabs"
       >
         <span className="text-[var(--color-textMuted)] text-sm">
-          No active sessions
+          No session selected
         </span>
       </div>
     );

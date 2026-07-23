@@ -851,7 +851,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         {/* When tabs mode but multiple sessions, the single visible session fills the container. */}
         {isTabsMode && sessions.length === 0 && (
           <div className="h-full flex items-center justify-center text-[var(--color-textMuted)] text-sm">
-            No active sessions
+            No session selected
           </div>
         )}
       </div>
