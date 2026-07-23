@@ -1220,7 +1220,10 @@ test("platform resource inspection is exact and immediately precedes native buil
     resourceStep,
     /if \(\( remaining_bytes < disk_floor_bytes \)\); then/,
   );
-  assert.match(resourceStep, /sudo fallocate -l "\$swap_size_bytes" "\$swap_file"/);
+  assert.match(
+    resourceStep,
+    /sudo fallocate -l "\$swap_size_bytes" "\$swap_file"/,
+  );
   assert.match(resourceStep, /sudo mkswap "\$swap_file"/);
   assert.match(resourceStep, /sudo swapon "\$swap_file"/);
   assert.match(
