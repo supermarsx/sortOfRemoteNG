@@ -246,6 +246,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "ubuntu-24.04",
       platform: "linux",
       rust_target: "x86_64-unknown-linux-gnu",
+      rust_toolchain: "stable",
       bundles: "appimage,deb",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -256,6 +257,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "macos-15",
       platform: "macos",
       rust_target: "aarch64-apple-darwin",
+      rust_toolchain: "stable",
       bundles: "dmg,app",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -266,6 +268,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "macos-15-intel",
       platform: "macos",
       rust_target: "x86_64-apple-darwin",
+      rust_toolchain: "stable",
       bundles: "dmg,app",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -276,6 +279,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       os: "windows-2022",
       platform: "windows",
       rust_target: "x86_64-pc-windows-msvc",
+      rust_toolchain: "1.95.0",
       bundles: "msi,nsis",
       cargo_build_jobs: "1",
       release_lto: "off",
@@ -286,10 +290,10 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   assert.equal(
     (
       matrixDefinition.match(
-        /^\s+(?:cargo_build_jobs|release_lto|release_codegen_units|release_opt_level): "[^"]+"$/gm,
+        /^\s+(?:rust_toolchain|cargo_build_jobs|release_lto|release_codegen_units|release_opt_level): "[^"]+"$/gm,
       ) ?? []
     ).length,
-    16,
+    20,
   );
   assert.match(
     buildDefinition,
@@ -349,6 +353,62 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
     );
   }
   assert.doesNotMatch(buildJob, /CARGO_BUILD_JOBS:\s*["']?28/);
+});
+
+test("Windows release compiler is pinned and verified without changing other platforms", () => {
+  const buildStart = releaseWorkflow.indexOf("  build:");
+  const publishStart = releaseWorkflow.indexOf("  publish:");
+  const buildJob = releaseWorkflow.slice(buildStart, publishStart);
+  const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
+  const buildSteps = buildJob.slice(buildJob.indexOf("    steps:"));
+  const toolchainStart = buildJob.indexOf("- name: Install Rust target");
+  const checkoutStart = buildJob.indexOf(
+    "- name: Check out pinned OPKSSH source",
+  );
+  const toolchainSteps = buildJob.slice(toolchainStart, checkoutStart);
+
+  assert.ok(toolchainStart >= 0);
+  assert.ok(checkoutStart > toolchainStart);
+  assert.equal(
+    (buildJob.match(/^\s+rust_toolchain: "stable"$/gm) ?? []).length,
+    3,
+  );
+  assert.equal(
+    (buildJob.match(/^\s+rust_toolchain: "1\.95\.0"$/gm) ?? []).length,
+    1,
+  );
+  assert.match(
+    buildJob,
+    /# Hosted stable advanced to 1\.97\.1 and produced an app archive that\r?\n\s+# MSVC rejected with LNK4003\.[\s\S]*?rust_toolchain: "1\.95\.0"/,
+  );
+  assert.match(
+    toolchainSteps,
+    /with:\s+toolchain: \$\{\{ matrix\.rust_toolchain \}\}\s+targets: \$\{\{ matrix\.rust_target \}\}/,
+  );
+  assert.match(
+    toolchainSteps,
+    /- name: Verify pinned Windows release compiler\s+if: matrix\.platform == 'windows'\s+shell: pwsh/,
+  );
+  assert.match(
+    toolchainSteps,
+    /EXPECTED_RUST_RELEASE: \$\{\{ matrix\.rust_toolchain \}\}/,
+  );
+  assert.match(
+    buildDefinition,
+    /^      RUSTUP_TOOLCHAIN: \$\{\{ matrix\.rust_toolchain \}\}$/m,
+  );
+  assert.equal(
+    (releaseWorkflow.match(/^\s+RUSTUP_TOOLCHAIN:/gm) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(buildSteps, /^\s+RUSTUP_TOOLCHAIN:/m);
+  assert.match(toolchainSteps, /& rustc --version --verbose/);
+  assert.match(
+    toolchainSteps,
+    /\$actualRelease -ne \$env:EXPECTED_RUST_RELEASE/,
+  );
+  assert.match(toolchainSteps, /\$actualHost -ne 'x86_64-pc-windows-msvc'/);
+  assert.doesNotMatch(toolchainSteps, /rust-lld|lld-link|rustup update/i);
 });
 
 test("resource controls preserve release features and signing inputs", () => {
