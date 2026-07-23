@@ -1071,6 +1071,183 @@ jobs:
             echo "macOS Developer ID and Windows Authenticode status is recorded in the per-target provenance assets."
           } > release-notes.md
 
+      - name: Install immutable release-ID helpers
+        if: inputs.release_tier == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/release-id-helpers.sh"
+          cat > "$helper" <<'RELEASE_ID_HELPERS'
+          require_release_id() {
+            local release_id="$1"
+            if [[ ! "$release_id" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Invalid immutable GitHub release ID: ${release_id:-<empty>}."
+              return 1
+            fi
+          }
+
+          load_release_by_id() {
+            local release_id="$1" expected_tag="$2" expected_target="$3" expected_visibility="$4" output_file="$5"
+            require_release_id "$release_id"
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > "$output_file"
+            jq -e \
+              --argjson release_id "$release_id" \
+              --arg tag "$expected_tag" \
+              --arg target "$expected_target" \
+              '.id == $release_id and
+               .tag_name == $tag and
+               .target_commitish == $target and
+               .prerelease == false' \
+              "$output_file" > /dev/null || {
+                echo "::error::Release $release_id does not match the exact tag, snapshot target, and non-prerelease contract."
+                return 1
+              }
+            case "$expected_visibility" in
+              draft)
+                jq -e '.draft == true' "$output_file" > /dev/null || {
+                  echo "::error::Release $release_id must remain a hidden draft."
+                  return 1
+                }
+                ;;
+              public)
+                jq -e '.draft == false' "$output_file" > /dev/null || {
+                  echo "::error::Release $release_id must already be public."
+                  return 1
+                }
+                ;;
+              stable)
+                ;;
+              *)
+                echo "::error::Unknown release visibility contract: $expected_visibility."
+                return 1
+                ;;
+            esac
+          }
+
+          resolve_release_by_tag() {
+            local expected_tag="$1" expected_target="$2" expected_visibility="$3" output_file="$4"
+            local matches_file match_count release_id
+            matches_file=$(mktemp)
+            if ! gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[]' |
+              jq -s --arg tag "$expected_tag" \
+                '[.[] | select(.tag_name == $tag)]' > "$matches_file"; then
+              rm -f "$matches_file"
+              return 1
+            fi
+            match_count=$(jq 'length' "$matches_file")
+            if [ "$match_count" -eq 0 ]; then
+              rm -f "$matches_file"
+              return 44
+            fi
+            if [ "$match_count" -ne 1 ]; then
+              echo "::error::Expected exactly one authenticated GitHub release for tag $expected_tag, found $match_count."
+              rm -f "$matches_file"
+              return 1
+            fi
+            release_id=$(jq -er '.[0].id' "$matches_file")
+            rm -f "$matches_file"
+            load_release_by_id \
+              "$release_id" \
+              "$expected_tag" \
+              "$expected_target" \
+              "$expected_visibility" \
+              "$output_file"
+          }
+
+          list_release_assets() {
+            local release_id="$1" output_file="$2"
+            require_release_id "$release_id"
+            if ! gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
+              --jq '.[]' |
+              jq -s 'sort_by(.name)' > "$output_file"; then
+              return 1
+            fi
+            jq -e \
+              'all(.[];
+                 (.id | type == "number") and
+                 (.id > 0) and
+                 (.name | type == "string") and
+                 (.name | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and
+                 (.size | type == "number") and
+                 (.size > 0) and
+                 (.state == "uploaded") and
+                 (.digest | type == "string") and
+                 (.digest | test("^sha256:[0-9a-f]{64}$"))) and
+               ([.[].id] | length) == ([.[].id] | unique | length) and
+               ([.[].name] | length) == ([.[].name] | unique | length)' \
+              "$output_file" > /dev/null || {
+                echo "::error::Release $release_id has duplicate, empty, or non-checksummed assets."
+                return 1
+              }
+          }
+
+          download_release_assets() {
+            local release_id="$1" asset_manifest="$2" destination="$3"
+            local asset_id asset_name expected_size digest expected_sha actual_size actual_sha
+            require_release_id "$release_id"
+            mkdir -p "$destination"
+            while IFS=$'\t' read -r asset_id asset_name expected_size digest; do
+              [ -n "$asset_id" ] || continue
+              if [[ ! "$asset_id" =~ ^[1-9][0-9]*$ ]] ||
+                 [[ ! "$asset_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+                 [[ ! "$expected_size" =~ ^[1-9][0-9]*$ ]] ||
+                 [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error::Release $release_id contains unsafe or incomplete asset metadata."
+                return 1
+              fi
+              expected_sha=${digest#sha256:}
+              gh api \
+                -H "Accept: application/octet-stream" \
+                "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                > "$destination/$asset_name"
+              actual_size=$(wc -c < "$destination/$asset_name" | tr -d '[:space:]')
+              [ "$actual_size" = "$expected_size" ] || {
+                echo "::error::Downloaded $asset_name has $actual_size bytes; GitHub recorded $expected_size."
+                return 1
+              }
+              actual_sha=$(sha256sum "$destination/$asset_name" | awk '{print $1}')
+              [ "$actual_sha" = "$expected_sha" ] || {
+                echo "::error::Downloaded $asset_name does not match GitHub's SHA-256 digest."
+                return 1
+              }
+            done < <(jq -r '.[] | [.id, .name, .size, .digest] | @tsv' "$asset_manifest")
+          }
+
+          promote_release_by_id() {
+            local release_id="$1" expected_tag="$2" expected_target="$3" expected_visibility="$4" output_file="$5"
+            local current_release
+            current_release=$(mktemp)
+            load_release_by_id \
+              "$release_id" \
+              "$expected_tag" \
+              "$expected_target" \
+              "$expected_visibility" \
+              "$current_release"
+            rm -f "$current_release"
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -F draft=false \
+              -F prerelease=false \
+              -f make_latest=true > "$output_file"
+            jq -e \
+              --argjson release_id "$release_id" \
+              --arg tag "$expected_tag" \
+              --arg target "$expected_target" \
+              '.id == $release_id and
+               .tag_name == $tag and
+               .target_commitish == $target and
+               .draft == false and
+               .prerelease == false' \
+              "$output_file" > /dev/null || {
+                echo "::error::GitHub did not promote the exact validated release ID."
+                return 1
+              }
+          }
+          RELEASE_ID_HELPERS
+          chmod 700 "$helper"
+
       - name: Inspect existing release and protect signed assets
         id: publication
         if: inputs.release_tier == 'production'
@@ -1079,10 +1256,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
           PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
           SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
           UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/release-id-helpers.sh"
 
           api_get() {
             local endpoint="$1" output_file="$2" error_file response_file command_status http_status
@@ -1113,15 +1292,23 @@ jobs:
           }
 
           release_json="$RUNNER_TEMP/existing-release.json"
+          asset_manifest="$RUNNER_TEMP/existing-release-assets.json"
           latest_json="$RUNNER_TEMP/latest-release.json"
           release_exists=false
           latest_exists=false
-          if api_get "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" "$release_json"; then
+          release_id=""
+          if resolve_release_by_tag \
+            "$PUBLIC_TAG" \
+            "$SNAPSHOT_COMMIT" \
+            stable \
+            "$release_json"; then
             release_exists=true
+            release_id=$(jq -er '.id' "$release_json")
           else
             status=$?
             [ "$status" -eq 44 ] || exit "$status"
           fi
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
           if api_get "repos/$GITHUB_REPOSITORY/releases/latest" "$latest_json"; then
             latest_exists=true
           else
@@ -1208,17 +1395,14 @@ jobs:
 
           remote_dir="$RUNNER_TEMP/existing-release-assets"
           mkdir -p "$remote_dir"
-          asset_count=$(jq '.assets | length' "$release_json")
+          list_release_assets "$release_id" "$asset_manifest"
+          asset_count=$(jq 'length' "$asset_manifest")
           if [ "$asset_count" -gt 0 ]; then
-            gh release download "$PUBLIC_TAG" --dir "$remote_dir" --clobber
-          fi
-          if ! jq -e '[.assets[] | select(.size <= 0)] | length == 0' "$release_json" > /dev/null; then
-            echo "::error::Existing release contains an empty GitHub asset."
-            exit 1
+            download_release_assets "$release_id" "$asset_manifest" "$remote_dir"
           fi
 
           remote_updater_mode=unsigned
-          if jq -e '[.assets[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$release_json" > /dev/null; then
+          if jq -e '[.[].name | select(. == "latest.json" or endswith(".sig") or endswith(".app.tar.gz"))] | length > 0' "$asset_manifest" > /dev/null; then
             remote_updater_mode=signed
           fi
           verifier=src-tauri/target/debug/sorng-updater-signature-verifier
@@ -1284,7 +1468,7 @@ jobs:
           }
           remote_has_target_assets() {
             local target="$1"
-            jq -e --arg target "$target" '[.assets[].name | select(contains($target))] | length > 0' "$release_json" > /dev/null
+            jq -e --arg target "$target" '[.[].name | select(contains($target))] | length > 0' "$asset_manifest" > /dev/null
           }
           protect_os_downgrade() {
             local target="$1" signed_state="$2" local_os remote_os
@@ -1349,19 +1533,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          RELEASE_ID: ${{ steps.publication.outputs.release_id }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/release-id-helpers.sh"
           release_json="$RUNNER_TEMP/draft-reconciliation.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" > "$release_json"
-          jq -e '.draft == true' "$release_json" > /dev/null || {
-            echo "::error::Asset reconciliation is permitted only on a hidden draft release."
-            exit 1
-          }
-          release_id=$(jq -er '.id' "$release_json")
+          load_release_by_id \
+            "$RELEASE_ID" \
+            "$PUBLIC_TAG" \
+            "$SNAPSHOT_COMMIT" \
+            draft \
+            "$release_json"
           asset_list="$RUNNER_TEMP/draft-assets.tsv"
-          gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" \
-            --jq '.[] | [.id, .name] | @tsv' > "$asset_list"
+          asset_manifest="$RUNNER_TEMP/draft-assets.json"
+          list_release_assets "$RELEASE_ID" "$asset_manifest"
+          jq -r '.[] | [.id, .name] | @tsv' "$asset_manifest" > "$asset_list"
           while IFS=$'\t' read -r asset_id asset_name; do
             [ -n "$asset_id" ] || continue
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
@@ -1369,6 +1556,7 @@ jobs:
           done < "$asset_list"
 
       - name: Upload exact unsigned assets to draft release
+        id: upload_unsigned
         if: >-
           inputs.release_tier == 'production' &&
           steps.promotion_guard.outputs.safe == 'true' &&
@@ -1398,6 +1586,7 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
 
       - name: Upload exact signed assets and root updater feed to draft release
+        id: upload_signed
         if: >-
           inputs.release_tier == 'production' &&
           steps.promotion_guard.outputs.safe == 'true' &&
@@ -1433,6 +1622,86 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
             dist/latest.json
 
+      - name: Resolve immutable staged release identity
+        id: staged_release
+        if: >-
+          inputs.release_tier == 'production' &&
+          steps.promotion_guard.outputs.safe == 'true' &&
+          steps.publication.outputs.promote == 'true'
+        shell: bash
+        env:
+          EXISTING_RELEASE_ID: ${{ steps.publication.outputs.release_id }}
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_PROMOTION: ${{ steps.publication.outputs.public_promotion }}
+          PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          SIGNED_UPLOAD_RELEASE_ID: ${{ steps.upload_signed.outputs.id }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
+          UNSIGNED_UPLOAD_RELEASE_ID: ${{ steps.upload_unsigned.outputs.id }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/release-id-helpers.sh"
+
+          upload_release_id=""
+          upload_id_count=0
+          for candidate in "$UNSIGNED_UPLOAD_RELEASE_ID" "$SIGNED_UPLOAD_RELEASE_ID"; do
+            if [ -n "$candidate" ]; then
+              upload_release_id="$candidate"
+              upload_id_count=$((upload_id_count + 1))
+            fi
+          done
+          [ "$upload_id_count" -le 1 ] || {
+            echo "::error::Both mutually exclusive draft upload steps returned release IDs."
+            exit 1
+          }
+
+          release_id="$EXISTING_RELEASE_ID"
+          if [ -n "$upload_release_id" ]; then
+            if [ -n "$release_id" ] && [ "$release_id" != "$upload_release_id" ]; then
+              echo "::error::The upload action selected release $upload_release_id instead of the authenticated existing release $release_id."
+              exit 1
+            fi
+            release_id="$upload_release_id"
+          fi
+          require_release_id "$release_id"
+
+          expected_visibility=draft
+          if [ "$PUBLIC_PROMOTION" = true ]; then
+            expected_visibility=public
+          fi
+          release_json="$RUNNER_TEMP/staged-release-identity.json"
+          load_release_by_id \
+            "$release_id" \
+            "$PUBLIC_TAG" \
+            "$SNAPSHOT_COMMIT" \
+            "$expected_visibility" \
+            "$release_json"
+
+          resolved_json="$RUNNER_TEMP/staged-release-list-match.json"
+          list_release_id=""
+          for attempt in 1 2 3 4 5; do
+            if resolve_release_by_tag \
+              "$PUBLIC_TAG" \
+              "$SNAPSHOT_COMMIT" \
+              "$expected_visibility" \
+              "$resolved_json"; then
+              list_release_id=$(jq -er '.id' "$resolved_json")
+              break
+            else
+              status=$?
+              [ "$status" -eq 44 ] || exit "$status"
+              [ "$attempt" -lt 5 ] && sleep 2
+            fi
+          done
+          [ -n "$list_release_id" ] || {
+            echo "::error::Release $release_id was not discoverable through the authenticated release list."
+            exit 1
+          }
+          [ "$list_release_id" = "$release_id" ] || {
+            echo "::error::The authenticated release list resolved $list_release_id, but the immutable staged release is $release_id."
+            exit 1
+          }
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+
       - name: Re-download and validate complete draft release
         if: >-
           inputs.release_tier == 'production' &&
@@ -1443,30 +1712,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
           PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          RELEASE_ID: ${{ steps.staged_release.outputs.release_id }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
           PUBLIC_PROMOTION: ${{ steps.publication.outputs.public_promotion }}
           UPDATER_MODE: ${{ steps.publication.outputs.candidate_updater_mode }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/release-id-helpers.sh"
           release_json="$RUNNER_TEMP/staged-release.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" > "$release_json"
+          expected_visibility=draft
           if [ "$PUBLIC_PROMOTION" = true ]; then
-            jq -e '.draft == false and .prerelease == false' "$release_json" > /dev/null || {
-              echo "::error::Promotion-only recovery requires an existing public non-prerelease release."
-              exit 1
-            }
-          else
-            jq -e '.draft == true and .prerelease == false' "$release_json" > /dev/null || {
-              echo "::error::Release must remain a non-prerelease draft until validation completes."
-              exit 1
-            }
+            expected_visibility=public
           fi
-          jq -e '[.assets[] | select(.size <= 0)] | length == 0' "$release_json" > /dev/null || {
-            echo "::error::Draft release contains an empty GitHub asset."
+          load_release_by_id \
+            "$RELEASE_ID" \
+            "$PUBLIC_TAG" \
+            "$SNAPSHOT_COMMIT" \
+            "$expected_visibility" \
+            "$release_json"
+          asset_manifest="$RUNNER_TEMP/staged-release-assets.json"
+          list_release_assets "$RELEASE_ID" "$asset_manifest"
+          expected_asset_count=10
+          if [ "$UPDATER_MODE" = signed ]; then
+            expected_asset_count=17
+          fi
+          actual_asset_count=$(jq 'length' "$asset_manifest")
+          [ "$actual_asset_count" -eq "$expected_asset_count" ] || {
+            echo "::error::Release $RELEASE_ID has $actual_asset_count assets; $UPDATER_MODE mode requires exactly $expected_asset_count."
             exit 1
           }
           remote_dir="$RUNNER_TEMP/staged-release-assets"
           mkdir -p "$remote_dir"
-          gh release download "$PUBLIC_TAG" --dir "$remote_dir" --clobber
+          download_release_assets "$RELEASE_ID" "$asset_manifest" "$remote_dir"
           verify_args=(
             --asset-dir "$remote_dir"
             --expected-version "$MACHINE_VERSION"
@@ -1489,9 +1766,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLIC_TAG: ${{ needs.metadata.outputs.public_tag }}
+          PUBLIC_PROMOTION: ${{ steps.publication.outputs.public_promotion }}
+          RELEASE_ID: ${{ steps.staged_release.outputs.release_id }}
+          SNAPSHOT_COMMIT: ${{ needs.metadata.outputs.snapshot_commit }}
           SOURCE_SHA: ${{ needs.metadata.outputs.source_sha }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/release-id-helpers.sh"
           api_get() {
             local endpoint="$1" output_file="$2" error_file response_file command_status http_status
             error_file=$(mktemp)
@@ -1553,12 +1834,16 @@ jobs:
               }
             fi
           fi
-          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PUBLIC_TAG" --jq '.id')
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -F draft=false \
-            -F prerelease=false \
-            -f make_latest=true > "$RUNNER_TEMP/promoted-release.json"
-          jq -e '.draft == false and .prerelease == false' "$RUNNER_TEMP/promoted-release.json" > /dev/null
+          expected_visibility=draft
+          if [ "$PUBLIC_PROMOTION" = true ]; then
+            expected_visibility=public
+          fi
+          promote_release_by_id \
+            "$RELEASE_ID" \
+            "$PUBLIC_TAG" \
+            "$SNAPSHOT_COMMIT" \
+            "$expected_visibility" \
+            "$RUNNER_TEMP/promoted-release.json"
           latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
           [ "$latest_tag" = "$PUBLIC_TAG" ] || {
             echo "::error::Validated release was published but was not promoted to latest."

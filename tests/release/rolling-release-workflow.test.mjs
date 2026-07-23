@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
@@ -86,6 +87,107 @@ function extractNodeHeredoc(script) {
   const match = script.match(/(?:^|\n)node <<'NODE'\n([\s\S]*?)\nNODE(?:\n|$)/);
   assert.ok(match, "workflow script must contain a quoted Node heredoc");
   return match[1];
+}
+
+function extractQuotedHeredoc(script, delimiter) {
+  const escapedDelimiter = delimiter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = script.match(
+    new RegExp(
+      `(?:^|\\n)[^\\n]*<<'${escapedDelimiter}'\\n([\\s\\S]*?)\\n${escapedDelimiter}(?:\\n|$)`,
+    ),
+  );
+  assert.ok(
+    match,
+    `workflow script must contain the quoted ${delimiter} heredoc`,
+  );
+  return match[1];
+}
+
+function releaseIdHelperProgram() {
+  const helperStart = releaseWorkflow.indexOf(
+    "- name: Install immutable release-ID helpers",
+  );
+  const helperEnd = releaseWorkflow.indexOf(
+    "- name: Inspect existing release and protect signed assets",
+    helperStart,
+  );
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  return extractQuotedHeredoc(
+    extractLiteralRunScript(releaseWorkflow.slice(helperStart, helperEnd)),
+    "RELEASE_ID_HELPERS",
+  );
+}
+
+const releaseApiMock = String.raw`
+gh() {
+  local endpoint="" argument method=GET
+  for argument in "$@"; do
+    case "$argument" in
+      repos/*) endpoint="$argument" ;;
+    esac
+  done
+  if [[ " $* " == *" --method PATCH "* ]]; then
+    method=PATCH
+  fi
+  printf '%s\t%s\n' "$method" "$endpoint" >> "$GH_CALL_LOG"
+
+  if [ "$endpoint" = "repos/example/project/releases?per_page=100" ]; then
+    printf '%s\n' "$MOCK_RELEASES_JSON" | jq -c '.[]'
+    return
+  fi
+  if [[ "$endpoint" =~ ^repos/example/project/releases/([0-9]+)/assets\?per_page=100$ ]]; then
+    printf '%s\n' "$MOCK_ASSETS_JSON" | jq -c '.[]'
+    return
+  fi
+  if [[ "$endpoint" =~ ^repos/example/project/releases/assets/([0-9]+)$ ]]; then
+    printf '%s' "$MOCK_ASSET_BODY"
+    return
+  fi
+  if [[ "$endpoint" =~ ^repos/example/project/releases/([0-9]+)$ ]]; then
+    local release_id
+    release_id=$(printf '%s' "$endpoint" | sed 's#.*/##')
+    if [ "$method" = PATCH ]; then
+      printf '%s\n' "$MOCK_RELEASES_JSON" |
+        jq -c --argjson release_id "$release_id" \
+          '.[] | select(.id == $release_id) | .draft = false'
+    else
+      printf '%s\n' "$MOCK_RELEASES_JSON" |
+        jq -c --argjson release_id "$release_id" \
+          '.[] | select(.id == $release_id)'
+    fi
+    return
+  fi
+  echo "Unexpected mocked gh endpoint: $endpoint" >&2
+  return 98
+}
+`;
+
+function runReleaseIdHelper(script, environment = {}) {
+  const bashEnvironment = {
+    GITHUB_REPOSITORY: "example/project",
+    ...environment,
+  };
+  const exports = Object.entries(bashEnvironment)
+    .map(
+      ([name, value]) =>
+        `export ${name}='${String(value).replaceAll("'", String.raw`'"'"'`)}'`,
+    )
+    .join("\n");
+  const program = `${exports}\n${releaseIdHelperProgram()}\n${releaseApiMock}\n${script}`;
+  const command = process.platform === "win32" ? "wsl.exe" : "bash";
+  const args = process.platform === "win32" ? ["--exec", "bash", "-s"] : ["-s"];
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    input: program,
+  });
+  assert.ifError(result.error);
+  return result;
+}
+
+let releaseCallLogSequence = 0;
+function releaseCallLog(label) {
+  releaseCallLogSequence += 1;
+  return `/tmp/sorng-${label}-${process.pid}-${releaseCallLogSequence}.log`;
 }
 
 test("RDP vendor builds only the rlib consumed by the application", () => {
@@ -998,6 +1100,190 @@ test("recovery distinguishes 404, no-ops valid releases, and blocks signing down
   assert.doesNotMatch(releaseWorkflow, /2>\s*\/dev\/null\); then/);
 });
 
+test("hidden drafts resolve through the authenticated list to one immutable ID", () => {
+  const snapshot = "e836ea423f6715c16d0676b5c280ce064e845881";
+  const draft = {
+    id: 358564463,
+    tag_name: "26.12",
+    target_commitish: snapshot,
+    draft: true,
+    prerelease: false,
+  };
+  const result = runReleaseIdHelper(
+    String.raw`
+      set -euo pipefail
+      : > "$GH_CALL_LOG"
+      output=$(mktemp)
+      resolve_release_by_tag 26.12 "$EXPECTED_SNAPSHOT" draft "$output"
+      [ "$(jq -r '.id' "$output")" = 358564463 ]
+      ! grep -q '/releases/tags/' "$GH_CALL_LOG"
+      grep -q $'^GET\trepos/example/project/releases?per_page=100$' "$GH_CALL_LOG"
+      grep -q $'^GET\trepos/example/project/releases/358564463$' "$GH_CALL_LOG"
+      echo HIDDEN_DRAFT_RESOLUTION_OK
+    `,
+    {
+      EXPECTED_SNAPSHOT: snapshot,
+      GH_CALL_LOG: releaseCallLog("hidden-draft"),
+      MOCK_ASSETS_JSON: "[]",
+      MOCK_RELEASES_JSON: JSON.stringify([draft]),
+    },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /HIDDEN_DRAFT_RESOLUTION_OK/);
+});
+
+test("release-list resolution fails closed on zero, duplicate, and wrong-target matches", () => {
+  const snapshot = "e836ea423f6715c16d0676b5c280ce064e845881";
+  const draft = {
+    id: 358564463,
+    tag_name: "26.12",
+    target_commitish: snapshot,
+    draft: true,
+    prerelease: false,
+  };
+  const duplicate = { ...draft, id: 358564464 };
+  const wrongTarget = { ...draft, target_commitish: "wrong-snapshot" };
+  const publicRelease = { ...draft, draft: false };
+  const result = runReleaseIdHelper(
+    String.raw`
+      set -euo pipefail
+      : > "$GH_CALL_LOG"
+      output=$(mktemp)
+
+      MOCK_RELEASES_JSON='[]'
+      if resolve_release_by_tag 26.12 "$EXPECTED_SNAPSHOT" draft "$output"; then
+        echo "zero matches unexpectedly resolved" >&2
+        exit 1
+      else
+        [ "$?" -eq 44 ]
+      fi
+
+      MOCK_RELEASES_JSON="$DUPLICATE_RELEASES_JSON"
+      if resolve_release_by_tag 26.12 "$EXPECTED_SNAPSHOT" draft "$output"; then
+        echo "duplicate matches unexpectedly resolved" >&2
+        exit 1
+      else
+        [ "$?" -eq 1 ]
+      fi
+
+      MOCK_RELEASES_JSON="$WRONG_TARGET_RELEASES_JSON"
+      if resolve_release_by_tag 26.12 "$EXPECTED_SNAPSHOT" draft "$output"; then
+        echo "wrong target unexpectedly resolved" >&2
+        exit 1
+      else
+        [ "$?" -eq 1 ]
+      fi
+
+      MOCK_RELEASES_JSON="$PUBLIC_RELEASES_JSON"
+      if resolve_release_by_tag 26.12 "$EXPECTED_SNAPSHOT" draft "$output"; then
+        echo "wrong visibility unexpectedly resolved" >&2
+        exit 1
+      else
+        [ "$?" -eq 1 ]
+      fi
+      echo AMBIGUOUS_DRAFTS_REJECTED_OK
+    `,
+    {
+      DUPLICATE_RELEASES_JSON: JSON.stringify([draft, duplicate]),
+      EXPECTED_SNAPSHOT: snapshot,
+      GH_CALL_LOG: releaseCallLog("ambiguity"),
+      MOCK_ASSETS_JSON: "[]",
+      MOCK_RELEASES_JSON: "[]",
+      PUBLIC_RELEASES_JSON: JSON.stringify([publicRelease]),
+      WRONG_TARGET_RELEASES_JSON: JSON.stringify([wrongTarget]),
+    },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /AMBIGUOUS_DRAFTS_REJECTED_OK/);
+  const diagnosticOutput = `${result.stdout}\n${result.stderr}`;
+  assert.match(
+    diagnosticOutput,
+    /Expected exactly one authenticated GitHub release/,
+  );
+  assert.match(
+    diagnosticOutput,
+    /does not match the exact tag, snapshot target/,
+  );
+  assert.match(diagnosticOutput, /must remain a hidden draft/);
+});
+
+test("release assets download by ID with size and digest checks before same-ID promotion", () => {
+  const snapshot = "e836ea423f6715c16d0676b5c280ce064e845881";
+  const body = "draft-asset-payload";
+  const digest = createHash("sha256").update(body).digest("hex");
+  const draft = {
+    id: 358564463,
+    tag_name: "26.12",
+    target_commitish: snapshot,
+    draft: true,
+    prerelease: false,
+  };
+  const asset = {
+    id: 486989584,
+    name: "sortOfRemoteNG_26.12.0_linux-x86_64.provenance.json",
+    size: Buffer.byteLength(body),
+    state: "uploaded",
+    digest: `sha256:${digest}`,
+  };
+  const result = runReleaseIdHelper(
+    String.raw`
+      set -euo pipefail
+      : > "$GH_CALL_LOG"
+      manifest=$(mktemp)
+      destination=$(mktemp -d)
+      promoted=$(mktemp)
+
+      list_release_assets 358564463 "$manifest"
+      download_release_assets 358564463 "$manifest" "$destination"
+      [ "$(cat "$destination/sortOfRemoteNG_26.12.0_linux-x86_64.provenance.json")" = "$MOCK_ASSET_BODY" ]
+      promote_release_by_id 358564463 26.12 "$EXPECTED_SNAPSHOT" draft "$promoted"
+      jq -e '.id == 358564463 and .draft == false' "$promoted" > /dev/null
+
+      ! grep -q '/releases/tags/' "$GH_CALL_LOG"
+      grep -q $'^GET\trepos/example/project/releases/358564463/assets?per_page=100$' "$GH_CALL_LOG"
+      grep -q $'^GET\trepos/example/project/releases/assets/486989584$' "$GH_CALL_LOG"
+      grep -q $'^PATCH\trepos/example/project/releases/358564463$' "$GH_CALL_LOG"
+      echo RELEASE_ID_DOWNLOAD_AND_PROMOTION_OK
+    `,
+    {
+      EXPECTED_SNAPSHOT: snapshot,
+      GH_CALL_LOG: releaseCallLog("assets"),
+      MOCK_ASSET_BODY: body,
+      MOCK_ASSETS_JSON: JSON.stringify([asset]),
+      MOCK_RELEASES_JSON: JSON.stringify([draft]),
+    },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /RELEASE_ID_DOWNLOAD_AND_PROMOTION_OK/);
+
+  const invalidMetadata = runReleaseIdHelper(
+    String.raw`
+      set -euo pipefail
+      : > "$GH_CALL_LOG"
+      manifest=$(mktemp)
+      if list_release_assets 358564463 "$manifest"; then
+        echo "invalid asset metadata unexpectedly passed" >&2
+        exit 1
+      fi
+      echo INVALID_ASSET_METADATA_REJECTED_OK
+    `,
+    {
+      GH_CALL_LOG: releaseCallLog("invalid-assets"),
+      MOCK_ASSET_BODY: body,
+      MOCK_ASSETS_JSON: JSON.stringify([
+        { ...asset, size: 0, digest: "sha256:not-a-digest" },
+      ]),
+      MOCK_RELEASES_JSON: JSON.stringify([draft]),
+    },
+  );
+  assert.equal(
+    invalidMetadata.status,
+    0,
+    `${invalidMetadata.stdout}\n${invalidMetadata.stderr}`,
+  );
+  assert.match(invalidMetadata.stdout, /INVALID_ASSET_METADATA_REJECTED_OK/);
+});
+
 test("publication stays draft until remote validation and a final live guard", () => {
   const cleanupIndex = releaseWorkflow.indexOf(
     "Reconcile stale assets in the hidden draft",
@@ -1020,7 +1306,7 @@ test("publication stays draft until remote validation and a final live guard", (
   assert.ok(validateIndex < promoteIndex);
   assert.match(
     releaseWorkflow.slice(cleanupIndex, unsignedUploadIndex),
-    /\.draft == true[\s\S]*?--paginate[\s\S]*?--method DELETE/,
+    /load_release_by_id[\s\S]*?\bdraft\b[\s\S]*?list_release_assets[\s\S]*?--method DELETE/,
   );
   assert.match(
     releaseWorkflow.slice(unsignedUploadIndex, validateIndex),
@@ -1036,13 +1322,46 @@ test("publication stays draft until remote validation and a final live guard", (
     );
     assert.doesNotMatch(uploadBlock, /name: sortOfRemoteNG/);
   }
+  assert.match(
+    releaseWorkflow.slice(unsignedUploadIndex, signedUploadIndex),
+    /id: upload_unsigned/,
+  );
+  assert.match(
+    releaseWorkflow.slice(signedUploadIndex, validateIndex),
+    /id: upload_signed/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /UNSIGNED_UPLOAD_RELEASE_ID: \$\{\{ steps\.upload_unsigned\.outputs\.id \}\}/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /SIGNED_UPLOAD_RELEASE_ID: \$\{\{ steps\.upload_signed\.outputs\.id \}\}/,
+  );
+  const stagedIdentity = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("Resolve immutable staged release identity"),
+    validateIndex,
+  );
+  assert.match(stagedIdentity, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(
+    stagedIdentity,
+    /if resolve_release_by_tag[\s\S]*?then[\s\S]*?list_release_id=.*?[\s\S]*?else\s+status=\$\?[\s\S]*?\[ "\$status" -eq 44 \]/,
+  );
+  assert.doesNotMatch(releaseWorkflow, /releases\/tags\/\$PUBLIC_TAG/);
+  assert.doesNotMatch(releaseWorkflow, /gh release download "\$PUBLIC_TAG"/);
+  assert.match(
+    releaseWorkflow.slice(validateIndex, promoteIndex),
+    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=10[\s\S]*?expected_asset_count=17[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
+  );
   const promotion = releaseWorkflow.slice(promoteIndex);
   assert.ok(
     promotion.indexOf("source_guard=passed") <
-      promotion.indexOf("--method PATCH"),
+      promotion.indexOf("promote_release_by_id"),
   );
-  assert.match(promotion, /-F draft=false/);
-  assert.match(promotion, /-f make_latest=true/);
+  assert.match(
+    releaseIdHelperProgram(),
+    /promote_release_by_id\(\)[\s\S]*?releases\/\$release_id[\s\S]*?-F draft=false[\s\S]*?-f make_latest=true/,
+  );
   assert.match(
     releaseWorkflow,
     /Summarize idempotent production no-op[\s\S]*?no_op == 'true'/,
@@ -1059,20 +1378,21 @@ test("every release mutation is downstream of exact snapshot and source guards",
   const finalGuardIndex = releaseWorkflow.indexOf(
     "Publish and promote the validated draft atomically",
   );
-  const finalPatchIndex = releaseWorkflow.indexOf(
-    "--method PATCH",
+  const finalPromotionIndex = releaseWorkflow.indexOf(
+    "promote_release_by_id",
     finalGuardIndex,
   );
   assert.ok(liveGuardIndex > 0 && liveGuardIndex < firstReleaseMutation);
   assert.ok(
-    finalGuardIndex > firstReleaseMutation && finalGuardIndex < finalPatchIndex,
+    finalGuardIndex > firstReleaseMutation &&
+      finalGuardIndex < finalPromotionIndex,
   );
   assert.match(
     releaseWorkflow.slice(liveGuardIndex, firstReleaseMutation),
     /source_guard=passed/,
   );
   assert.match(
-    releaseWorkflow.slice(finalGuardIndex, finalPatchIndex),
+    releaseWorkflow.slice(finalGuardIndex, finalPromotionIndex),
     /source_guard=passed/,
   );
   assert.match(
