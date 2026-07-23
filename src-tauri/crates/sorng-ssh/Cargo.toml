@@ -82,7 +82,8 @@ http = "1"
 rcgen = "0.12"
 
 # rquickjs-sys 0.6 does not ship pre-generated Windows ARM64 bindings.
-# Its supported fallback is build-time bindgen; keep that requirement scoped
-# to the one unsupported target so bundled-binding targets do not need libclang.
+# Enable rquickjs's forwarding feature so bindgen reaches both rquickjs-core
+# and the host-side rquickjs-macro dependency. Keep the requirement scoped to
+# the unsupported target so bundled-binding targets do not need libclang.
 [target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
-rquickjs-sys = { version = "=0.6.2", features = ["bindgen"] }
+rquickjs = { version = "0.6", features = ["bindgen", "full-async"], optional = true }

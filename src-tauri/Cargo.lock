@@ -12371,7 +12371,6 @@ dependencies = [
  "rcgen",
  "regex",
  "rquickjs",
- "rquickjs-sys",
  "rsa 0.9.10",
  "rustls",
  "rustls-native-certs 0.8.3",
