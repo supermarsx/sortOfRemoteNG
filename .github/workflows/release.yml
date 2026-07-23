@@ -79,6 +79,17 @@ concurrency:
 env:
   RELEASE_FEATURES: >-
     cert-auth,cloud,collab,db-mongo,db-mssql,db-mysql,db-postgres,db-redis,db-sqlite,kafka-static,logs-json,opkssh-vendored-wrapper,ops,platform,protocol-serial-dynamic,rdp,rdp-mf-decode,rdp-software-decode,rdp-snapshot,script-engine,tls-cert-details,vpn-softether
+  FLATPAK_APP_ID: com.sortofremote.ng
+  FLATPAK_BUILDER_PACKAGE: 1.4.2-1build2
+  FLATPAK_BUILDER_VERSION: 1.4.2
+  FLATPAK_MANIFEST: packaging/flatpak/com.sortofremote.ng.yml
+  FLATPAK_RUNTIME_ID: org.gnome.Platform
+  FLATPAK_RUNTIME_VERSION: "50"
+  FLATPAK_SDK_ID: org.gnome.Sdk
+  FLATHUB_REPOSITORY: https://dl.flathub.org/repo/flathub.flatpakrepo
+  LINUX_PACKAGE_MAIN_BINARY: app
+  LINUX_PACKAGE_PRODUCT_NAME: sortOfRemoteNG
+  LINUX_STANDARD_RUNNER_DISK_GIB: "14"
 
 jobs:
   metadata:
@@ -321,7 +332,17 @@ jobs:
             platform: linux
             rust_target: x86_64-unknown-linux-gnu
             rust_toolchain: "stable"
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "0"
+          - artifact_id: linux-aarch64
+            os: ubuntu-24.04-arm
+            platform: linux
+            rust_target: aarch64-unknown-linux-gnu
+            rust_toolchain: "stable"
+            bundles: appimage,deb,rpm
             cargo_build_jobs: "1"
             release_lto: "off"
             release_codegen_units: "16"
@@ -360,6 +381,18 @@ jobs:
             release_lto: "off"
             release_codegen_units: "16"
             release_opt_level: "0"
+            windows_sdk_arch: x64
+          - artifact_id: windows-aarch64
+            os: windows-11-arm
+            platform: windows
+            rust_target: aarch64-pc-windows-msvc
+            rust_toolchain: "1.95.0"
+            bundles: msi,nsis
+            cargo_build_jobs: "1"
+            release_lto: "off"
+            release_codegen_units: "16"
+            release_opt_level: "0"
+            windows_sdk_arch: arm64
     runs-on: ${{ matrix.os }}
     env:
       # This wins over the repository's `stable` rust-toolchain.toml directory
@@ -401,6 +434,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         env:
+          EXPECTED_RUST_HOST: ${{ matrix.rust_target }}
           EXPECTED_RUST_RELEASE: ${{ matrix.rust_toolchain }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -420,8 +454,8 @@ jobs:
           if ($actualRelease -ne $env:EXPECTED_RUST_RELEASE) {
             throw "Expected rustc $env:EXPECTED_RUST_RELEASE, found $actualRelease."
           }
-          if ($actualHost -ne 'x86_64-pc-windows-msvc') {
-            throw "Expected the MSVC release host, found $actualHost."
+          if ($actualHost -ne $env:EXPECTED_RUST_HOST) {
+            throw "Expected the MSVC release host $env:EXPECTED_RUST_HOST, found $actualHost."
           }
 
       - name: Check out pinned OPKSSH source
@@ -440,12 +474,13 @@ jobs:
           cache-dependency-path: .ci/opkssh-source/go.sum
 
       - name: Cache Cargo build
+        if: matrix.platform != 'linux'
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri -> target
           key: release-${{ matrix.rust_target }}
 
-      - name: Install Linux build prerequisites
+      - name: Install native Linux build prerequisites
         if: matrix.platform == 'linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -453,6 +488,7 @@ jobs:
           libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
           librsvg2-dev libsoup-3.0-dev libasound2-dev libudev-dev
           libcurl4-openssl-dev libsasl2-dev libzstd-dev zlib1g-dev patchelf
+          cpio rpm
 
       - name: Install macOS static Kafka prerequisites
         if: matrix.platform == 'macos'
@@ -605,51 +641,29 @@ jobs:
       - name: Bound and inspect Linux release resources
         if: matrix.platform == 'linux'
         shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
         run: |
           set -euo pipefail
           linker_wrapper="$RUNNER_TEMP/sorng-linux-linker"
           linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"
           linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"
-          swap_file="$RUNNER_TEMP/sorng-release.swap"
-          swap_size_bytes=$((16 * 1024 * 1024 * 1024))
-          disk_floor_bytes=$((32 * 1024 * 1024 * 1024))
-
-          # Linux hosted runners were lost twice under final release codegen.
-          # Keep 32 GiB of disk free for build outputs after adding bounded swap.
+          documented_capacity_bytes=$((LINUX_STANDARD_RUNNER_DISK_GIB * 1024 * 1024 * 1024))
+          total_bytes=$(df -B1 --output=size "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
           available_bytes=$(df -B1 --output=avail "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
+          [[ "$total_bytes" =~ ^[0-9]+$ ]]
           [[ "$available_bytes" =~ ^[0-9]+$ ]]
-          required_bytes=$((swap_size_bytes + disk_floor_bytes))
-          if (( available_bytes < required_bytes )); then
-            echo "::error::Linux release requires $required_bytes free bytes before provisioning swap; found $available_bytes."
-            exit 1
-          fi
-          if [ -e "$swap_file" ] || [ -L "$swap_file" ]; then
-            echo "::error::Refusing to replace unexpected pre-existing swap path $swap_file."
-            exit 1
-          fi
-          sudo fallocate -l "$swap_size_bytes" "$swap_file"
-          remaining_bytes=$(df -B1 --output=avail "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
-          [[ "$remaining_bytes" =~ ^[0-9]+$ ]]
-          if (( remaining_bytes < disk_floor_bytes )); then
-            echo "::error::Linux release requires $disk_floor_bytes free bytes after provisioning swap; found $remaining_bytes."
-            exit 1
-          fi
-          sudo chmod 0600 "$swap_file"
-          test "$(stat -c '%a' "$swap_file")" = 600
-          test "$(stat -c '%s' "$swap_file")" -eq "$swap_size_bytes"
-          page_size_bytes=$(getconf PAGESIZE)
-          [[ "$page_size_bytes" =~ ^[0-9]+$ ]]
-          expected_active_swap_size=$((swap_size_bytes - page_size_bytes))
-          sudo mkswap "$swap_file"
-          sudo swapon "$swap_file"
-          active_swap_size=$(
-            sudo swapon --show=NAME,SIZE --bytes --noheadings --raw |
-              awk -v path="$swap_file" '$1 == path { print $2 }'
-          )
-          test "$active_swap_size" -eq "$expected_active_swap_size"
+          test "$documented_capacity_bytes" -eq $((14 * 1024 * 1024 * 1024))
+          test "$total_bytes" -gt 0
+          test "$available_bytes" -gt 0
+          printf 'documented_runner_disk_capacity_bytes=%s\n' "$documented_capacity_bytes"
+          printf 'runner_temp_disk_total_bytes=%s\n' "$total_bytes"
+          printf 'runner_temp_disk_available_bytes=%s\n' "$available_bytes"
 
-          # Hosted runners are ephemeral; keep the verified swap active through
-          # bundle staging so both LLVM and LLD retain the added headroom.
+          # Standard public runners guarantee only 14 GiB of SSD. Do not consume
+          # it with disk-backed swap or impose a free-space floor above that
+          # contract. One Cargo job, split codegen, LLD, no Linux target-cache
+          # restore, and post-build intermediate pruning bound the build instead.
 
           command -v clang-18
           command -v ld.lld-18
@@ -672,7 +686,10 @@ jobs:
           readelf -h "$linker_probe_binary" | grep -Eq 'Class:[[:space:]]+ELF64'
           "$linker_probe_binary"
 
-          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"
+          cargo_target_key=${RUST_TARGET^^}
+          cargo_target_key=${cargo_target_key//-/_}
+          [[ "$cargo_target_key" =~ ^[A-Z0-9_]+$ ]]
+          echo "CARGO_TARGET_${cargo_target_key}_LINKER=$linker_wrapper" >> "$GITHUB_ENV"
           free -h
           df -h "$GITHUB_WORKSPACE"
 
@@ -721,6 +738,288 @@ jobs:
             --features ${{ env.RELEASE_FEATURES }}
             -- --no-default-features
 
+      - name: Preserve native Linux outputs and prune build intermediates
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+          UPDATER_ENABLED: ${{ needs.metadata.outputs.updater_enabled }}
+        run: |
+          set -euo pipefail
+          case "$ARTIFACT_ID" in
+            linux-x86_64)
+              expected_elf_machine="Advanced Micro Devices X86-64"
+              rpm_arch=x86_64
+              ;;
+            linux-aarch64)
+              expected_elf_machine=AArch64
+              rpm_arch=aarch64
+              ;;
+            *)
+              echo "::error::Unsupported Linux artifact ID $ARTIFACT_ID."
+              exit 1
+              ;;
+          esac
+
+          target_root=$(realpath -m "$GITHUB_WORKSPACE/src-tauri/target")
+          release_root="$target_root/$RUST_TARGET/release"
+          executable="$release_root/app"
+          bundle="$release_root/bundle"
+          payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
+          preserved_bundles="$GITHUB_WORKSPACE/.ci/linux-native-bundles"
+
+          test -x "$executable"
+          readelf -h "$executable" | grep -F "Machine:" | grep -F "$expected_elf_machine"
+          for staged_path in "$payload" "$preserved_bundles"; do
+            if [ -e "$staged_path" ] || [ -L "$staged_path" ]; then
+              echo "::error::Refusing to replace unexpected Linux staging path $staged_path."
+              exit 1
+            fi
+          done
+
+          opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
+          test -d "$opkssh_source"
+          opkssh_file_count=$(find "$opkssh_source" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
+          [[ "$opkssh_file_count" =~ ^[0-9]+$ ]]
+          test "$opkssh_file_count" -gt 0
+          mkdir -p "$payload/resources" "$preserved_bundles"
+          install -m 0755 "$executable" "$payload/sortOfRemoteNG"
+          cp -a "$opkssh_source" "$payload/resources/opkssh"
+
+          preserve_one() {
+            local directory="$1" pattern="$2"
+            local destination="$preserved_bundles/$directory" source count
+            count=$(find "$bundle/$directory" -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d '[:space:]')
+            if [ "$count" -ne 1 ]; then
+              echo "::error::Expected exactly one $pattern bundle in $bundle/$directory for $ARTIFACT_ID, found $count."
+              exit 1
+            fi
+            source=$(find "$bundle/$directory" -maxdepth 1 -type f -name "$pattern" -print -quit)
+            mkdir -p "$destination"
+            cp --preserve=mode,timestamps "$source" "$destination/"
+            cmp "$source" "$destination/$(basename "$source")"
+            if [ "$directory" = appimage ] && [ "$UPDATER_ENABLED" = true ]; then
+              test -s "${source}.sig"
+              cp --preserve=mode,timestamps "${source}.sig" "$destination/"
+              cmp "${source}.sig" "$destination/$(basename "$source").sig"
+            fi
+          }
+          preserve_one appimage '*.AppImage'
+          preserve_one deb '*.deb'
+          preserve_one rpm '*.rpm'
+
+          for intermediate in \
+            "$target_root/$RUST_TARGET/release/build" \
+            "$target_root/$RUST_TARGET/release/deps" \
+            "$target_root/$RUST_TARGET/release/examples" \
+            "$target_root/$RUST_TARGET/release/incremental" \
+            "$target_root/$RUST_TARGET/release/.fingerprint" \
+            "$target_root/release/build" \
+            "$target_root/release/deps" \
+            "$target_root/release/examples" \
+            "$target_root/release/incremental" \
+            "$target_root/release/.fingerprint"
+          do
+            resolved_intermediate=$(realpath -m "$intermediate")
+            case "$resolved_intermediate" in
+              "$target_root"/*/release/build | \
+                "$target_root"/*/release/deps | \
+                "$target_root"/*/release/examples | \
+                "$target_root"/*/release/incremental | \
+                "$target_root"/*/release/.fingerprint | \
+                "$target_root"/release/build | \
+                "$target_root"/release/deps | \
+                "$target_root"/release/examples | \
+                "$target_root"/release/incremental | \
+                "$target_root"/release/.fingerprint) ;;
+              *)
+                echo "::error::Refusing to prune unexpected path $resolved_intermediate."
+                exit 1
+                ;;
+            esac
+            if [ -L "$intermediate" ]; then
+              echo "::error::Refusing to prune symlinked intermediate path $intermediate."
+              exit 1
+            fi
+            if [ -d "$intermediate" ]; then
+              rm -rf -- "$intermediate"
+            fi
+          done
+
+          test -x "$payload/sortOfRemoteNG"
+          test -d "$payload/resources/opkssh"
+          test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -eq "$opkssh_file_count"
+          find "$preserved_bundles" -maxdepth 2 -type f -print
+          df -h "$GITHUB_WORKSPACE"
+          echo "LINUX_RPM_ARCH=$rpm_arch" >> "$GITHUB_ENV"
+
+      - name: Install pinned Flatpak toolchain and GNOME runtime
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends \
+            appstream \
+            flatpak \
+            "flatpak-builder=${FLATPAK_BUILDER_PACKAGE}"
+          test "$(flatpak-builder --version)" = "flatpak-builder $FLATPAK_BUILDER_VERSION"
+          case "$ARTIFACT_ID" in
+            linux-x86_64) flatpak_arch=x86_64 ;;
+            linux-aarch64) flatpak_arch=aarch64 ;;
+            *)
+              echo "::error::Unsupported Linux artifact ID $ARTIFACT_ID."
+              exit 1
+              ;;
+          esac
+          test "$(flatpak --default-arch)" = "$flatpak_arch"
+          flatpak remote-add \
+            --user \
+            --if-not-exists \
+            flathub \
+            "$FLATHUB_REPOSITORY"
+          flatpak install \
+            --user \
+            --noninteractive \
+            --arch="$flatpak_arch" \
+            flathub \
+            "$FLATPAK_RUNTIME_ID//$FLATPAK_RUNTIME_VERSION" \
+            "$FLATPAK_SDK_ID//$FLATPAK_RUNTIME_VERSION"
+
+          runtime_ref=$(flatpak info \
+            --user \
+            --show-ref \
+            "$FLATPAK_RUNTIME_ID//$FLATPAK_RUNTIME_VERSION")
+          sdk_ref=$(flatpak info \
+            --user \
+            --show-ref \
+            "$FLATPAK_SDK_ID//$FLATPAK_RUNTIME_VERSION")
+          expected_runtime_ref="runtime/$FLATPAK_RUNTIME_ID/$flatpak_arch/$FLATPAK_RUNTIME_VERSION"
+          expected_sdk_ref="runtime/$FLATPAK_SDK_ID/$flatpak_arch/$FLATPAK_RUNTIME_VERSION"
+          test "$runtime_ref" = "$expected_runtime_ref"
+          test "$sdk_ref" = "$expected_sdk_ref"
+
+          runtime_commit=$(flatpak info \
+            --user \
+            --show-commit \
+            "$FLATPAK_RUNTIME_ID//$FLATPAK_RUNTIME_VERSION")
+          sdk_commit=$(flatpak info \
+            --user \
+            --show-commit \
+            "$FLATPAK_SDK_ID//$FLATPAK_RUNTIME_VERSION")
+          [[ "$runtime_commit" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$sdk_commit" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "FLATPAK_ARCH=$flatpak_arch"
+            echo "FLATPAK_RUNTIME_REF=$runtime_ref"
+            echo "FLATPAK_RUNTIME_COMMIT=$runtime_commit"
+            echo "FLATPAK_SDK_REF=$sdk_ref"
+            echo "FLATPAK_SDK_COMMIT=$sdk_commit"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and verify native Flatpak bundle
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+        run: |
+          set -euo pipefail
+          payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
+          test -x "$payload/sortOfRemoteNG"
+          test -d "$payload/resources/opkssh"
+          test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -gt 0
+
+          appstreamcli validate \
+            --no-net \
+            packaging/flatpak/com.sortofremote.ng.metainfo.xml
+          canonical_manifest="$RUNNER_TEMP/sortofremoteng-flatpak-manifest.json"
+          flatpak-builder --show-manifest "$FLATPAK_MANIFEST" > "$canonical_manifest"
+          jq -e \
+            --arg app_id "$FLATPAK_APP_ID" \
+            --arg runtime "$FLATPAK_RUNTIME_ID" \
+            --arg runtime_version "$FLATPAK_RUNTIME_VERSION" \
+            --arg sdk "$FLATPAK_SDK_ID" \
+            '
+              .id == $app_id and
+              .runtime == $runtime and
+              ."runtime-version" == $runtime_version and
+              .sdk == $sdk and
+              .command == "sortOfRemoteNG"
+            ' "$canonical_manifest" > /dev/null
+
+          flatpak_build="$RUNNER_TEMP/sortofremoteng-flatpak-build"
+          flatpak_repo="$RUNNER_TEMP/sortofremoteng-flatpak-repo"
+          for target_path in "$flatpak_build" "$flatpak_repo"; do
+            if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+              echo "::error::Refusing to replace unexpected Flatpak path $target_path."
+              exit 1
+            fi
+          done
+          flatpak-builder \
+            --arch="$FLATPAK_ARCH" \
+            --default-branch=stable \
+            --disable-download \
+            --disable-updates \
+            --force-clean \
+            --repo="$flatpak_repo" \
+            --user \
+            "$flatpak_build" \
+            "$FLATPAK_MANIFEST"
+
+          flatpak_bundle_dir="$GITHUB_WORKSPACE/.ci/linux-native-bundles/flatpak"
+          mkdir -p "$flatpak_bundle_dir"
+          flatpak_bundle="$flatpak_bundle_dir/sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.flatpak"
+          flatpak build-bundle \
+            --arch="$FLATPAK_ARCH" \
+            --runtime-repo="$FLATHUB_REPOSITORY" \
+            "$flatpak_repo" \
+            "$flatpak_bundle" \
+            "$FLATPAK_APP_ID" \
+            stable
+          test -s "$flatpak_bundle"
+
+          flatpak install \
+            --user \
+            --noninteractive \
+            --reinstall \
+            "$flatpak_bundle"
+          app_ref=$(flatpak info --user --show-ref "$FLATPAK_APP_ID")
+          expected_app_ref="app/$FLATPAK_APP_ID/$FLATPAK_ARCH/stable"
+          test "$app_ref" = "$expected_app_ref"
+          installed_runtime=$(flatpak info \
+            --user \
+            --show-runtime \
+            "$FLATPAK_APP_ID")
+          test "$installed_runtime" = \
+            "$FLATPAK_RUNTIME_ID/$FLATPAK_ARCH/$FLATPAK_RUNTIME_VERSION"
+
+          dbus-run-session -- flatpak run \
+            --command=sh \
+            "$FLATPAK_APP_ID" \
+            -c '
+              set -eu
+              test "${FLATPAK_ID:-}" = com.sortofremote.ng
+              test -x /app/bin/sortOfRemoteNG
+              test -s /app/share/applications/com.sortofremote.ng.desktop
+              test -s /app/share/metainfo/com.sortofremote.ng.metainfo.xml
+              test -d /app/bin/resources/opkssh
+              resource_count=$(find /app/bin/resources/opkssh -type f ! -name .gitkeep | wc -l)
+              test "$resource_count" -gt 0
+              ldd_output=$(ldd /app/bin/sortOfRemoteNG)
+              printf "%s\n" "$ldd_output"
+              ! printf "%s\n" "$ldd_output" | grep -F "not found"
+            '
+
+          manifest_sha256=$(sha256sum "$FLATPAK_MANIFEST" | awk '{ print $1 }')
+          [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "FLATPAK_APP_REF=$app_ref"
+            echo "FLATPAK_MANIFEST_SHA256=$manifest_sha256"
+          } >> "$GITHUB_ENV"
+
       - name: Notarize and staple macOS disk image
         if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
         shell: bash
@@ -754,15 +1053,184 @@ jobs:
       - name: Verify Windows Authenticode signatures
         if: matrix.platform == 'windows' && steps.windows_signing.outputs.enabled == 'true'
         shell: pwsh
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          WINDOWS_SDK_ARCH: ${{ matrix.windows_sdk_arch }}
         run: |
-          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          $ErrorActionPreference = "Stop"
+          $windowsKits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signtool = (Get-ChildItem "$windowsKits\*\$env:WINDOWS_SDK_ARCH\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
           if (-not $signtool) { throw "signtool.exe was not found." }
-          $bundleDir = "src-tauri/target/${{ matrix.rust_target }}/release/bundle"
+          $bundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle"
           $files = @(Get-ChildItem -Path $bundleDir -Recurse -Include *.msi,*.exe)
           if ($files.Count -eq 0) { throw "No Windows installers were produced." }
+          $portableExecutable = Get-Item -LiteralPath "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          $files += $portableExecutable
           foreach ($file in $files) {
             & $signtool verify /pa /tw $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "signtool verification failed for $($file.FullName)" }
+          }
+
+      - name: Package portable Windows archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          ARTIFACT_ID: ${{ matrix.artifact_id }}
+          MACHINE_VERSION: ${{ needs.metadata.outputs.machine_version }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Get-PeMachine {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            $stream = [System.IO.File]::Open(
+              $Path,
+              [System.IO.FileMode]::Open,
+              [System.IO.FileAccess]::Read,
+              [System.IO.FileShare]::Read
+            )
+            $reader = [System.IO.BinaryReader]::new($stream)
+            try {
+              if ($reader.ReadUInt16() -ne 0x5A4D) {
+                throw "$Path does not start with an MZ header."
+              }
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadUInt32()
+              if ($peOffset -gt ($stream.Length - 6)) {
+                throw "$Path has an invalid PE header offset."
+              }
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "$Path does not contain a PE signature."
+              }
+              return $reader.ReadUInt16()
+            } finally {
+              $reader.Dispose()
+              $stream.Dispose()
+            }
+          }
+
+          function Get-RelativeFileHashes {
+            param([Parameter(Mandatory = $true)][string]$Root)
+
+            $resolvedRoot = (Resolve-Path -LiteralPath $Root).Path
+            return @(
+              Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File |
+                ForEach-Object {
+                  $relativePath = [System.IO.Path]::GetRelativePath(
+                    $resolvedRoot,
+                    $_.FullName
+                  ).Replace('\', '/')
+                  $sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  "$relativePath`t$sha256"
+                } |
+                Sort-Object
+            )
+          }
+
+          $expectedMachine = switch ($env:ARTIFACT_ID) {
+            "windows-x86_64" { 0x8664 }
+            "windows-aarch64" { 0xAA64 }
+            default { throw "Unsupported portable Windows artifact $env:ARTIFACT_ID." }
+          }
+          $sourceExecutable = "src-tauri/target/$env:RUST_TARGET/release/app.exe"
+          if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
+            throw "Portable source executable was not found at $sourceExecutable."
+          }
+          $sourceMachine = Get-PeMachine -Path $sourceExecutable
+          if ($sourceMachine -ne $expectedMachine) {
+            throw (
+              "Portable source executable for {0} has PE Machine 0x{1:X4}; expected 0x{2:X4}." -f
+                $env:ARTIFACT_ID,
+                $sourceMachine,
+                $expectedMachine
+            )
+          }
+
+          $opksshSource = "src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
+          $opksshFiles = @(Get-ChildItem -LiteralPath $opksshSource -Recurse -File)
+          if ($opksshFiles.Count -eq 0) {
+            throw "Portable OPKSSH resources were not staged at $opksshSource."
+          }
+          $expectedResourceHashes = @(Get-RelativeFileHashes -Root $opksshSource)
+          if ($expectedResourceHashes.Count -eq 0) {
+            throw "Portable OPKSSH resource manifest is empty."
+          }
+
+          $portableRoot = Join-Path $env:RUNNER_TEMP "sortOfRemoteNG-$($env:ARTIFACT_ID)-portable"
+          if (Test-Path -LiteralPath $portableRoot) {
+            throw "Refusing to replace unexpected portable staging path $portableRoot."
+          }
+          New-Item -ItemType Directory -Path $portableRoot | Out-Null
+          Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $portableRoot "sortOfRemoteNG.exe")
+          New-Item -ItemType File -Path (Join-Path $portableRoot ".portable") | Out-Null
+
+          $resourceRoot = Join-Path $portableRoot "resources"
+          New-Item -ItemType Directory -Path $resourceRoot | Out-Null
+          Copy-Item -LiteralPath $opksshSource -Destination (Join-Path $resourceRoot "opkssh") -Recurse
+
+          $portableBundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle/portable"
+          New-Item -ItemType Directory -Path $portableBundleDir -Force | Out-Null
+          $archive = Join-Path $portableBundleDir "sortOfRemoteNG_$($env:MACHINE_VERSION)_$($env:ARTIFACT_ID)-portable.zip"
+          $portableContents = @(
+            (Join-Path $portableRoot "sortOfRemoteNG.exe"),
+            (Join-Path $portableRoot ".portable"),
+            (Join-Path $portableRoot "resources")
+          )
+          Compress-Archive -LiteralPath $portableContents -DestinationPath $archive -CompressionLevel Optimal
+
+          $verificationRoot = Join-Path $env:RUNNER_TEMP "sortOfRemoteNG-$($env:ARTIFACT_ID)-portable-verification"
+          if (Test-Path -LiteralPath $verificationRoot) {
+            throw "Refusing to replace unexpected portable verification path $verificationRoot."
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $verificationRoot
+          foreach ($requiredFile in @(
+            "sortOfRemoteNG.exe",
+            ".portable"
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot $requiredFile) -PathType Leaf)) {
+              throw "Portable archive is missing required file $requiredFile."
+            }
+          }
+          $verifiedResourceRoot = Join-Path $verificationRoot "resources/opkssh"
+          if (-not (Test-Path -LiteralPath $verifiedResourceRoot -PathType Container)) {
+            throw "Portable archive is missing the resources/opkssh directory."
+          }
+
+          $verifiedExecutable = Join-Path $verificationRoot "sortOfRemoteNG.exe"
+          $verifiedMachine = Get-PeMachine -Path $verifiedExecutable
+          if ($verifiedMachine -ne $expectedMachine) {
+            throw (
+              "Extracted portable executable for {0} has PE Machine 0x{1:X4}; expected 0x{2:X4}." -f
+                $env:ARTIFACT_ID,
+                $verifiedMachine,
+                $expectedMachine
+            )
+          }
+          $sourceExecutableHash = (Get-FileHash -LiteralPath $sourceExecutable -Algorithm SHA256).Hash
+          $verifiedExecutableHash = (Get-FileHash -LiteralPath $verifiedExecutable -Algorithm SHA256).Hash
+          if ($verifiedExecutableHash -ne $sourceExecutableHash) {
+            throw "Extracted portable executable does not match the $env:ARTIFACT_ID source executable."
+          }
+
+          $sourceMarker = Join-Path $portableRoot ".portable"
+          $verifiedMarker = Join-Path $verificationRoot ".portable"
+          $sourceMarkerHash = (Get-FileHash -LiteralPath $sourceMarker -Algorithm SHA256).Hash
+          $verifiedMarkerHash = (Get-FileHash -LiteralPath $verifiedMarker -Algorithm SHA256).Hash
+          if ($verifiedMarkerHash -ne $sourceMarkerHash) {
+            throw "Extracted .portable marker does not match the staged marker."
+          }
+
+          $verifiedResourceHashes = @(Get-RelativeFileHashes -Root $verifiedResourceRoot)
+          $resourceDifference = @(
+            Compare-Object `
+              -ReferenceObject $expectedResourceHashes `
+              -DifferenceObject $verifiedResourceHashes
+          )
+          if ($resourceDifference.Count -ne 0) {
+            $resourceDifference | Format-Table | Out-String | Write-Host
+            throw "Extracted OPKSSH resources do not match the staged source manifest."
           }
 
       - name: Verify macOS Developer ID, notarization, and stapling
@@ -791,6 +1259,9 @@ jobs:
         run: |
           set -euo pipefail
           bundle="src-tauri/target/$RUST_TARGET/release/bundle"
+          if [ "$PLATFORM" = linux ]; then
+            bundle="$GITHUB_WORKSPACE/.ci/linux-native-bundles"
+          fi
           mkdir -p artifacts
           one() {
             local directory="$1" pattern="$2" destination="$3"
@@ -808,7 +1279,70 @@ jobs:
             linux)
               updater_source=$(one "$bundle/appimage" '*.AppImage' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.AppImage")
               updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.AppImage"
-              one "$bundle/deb" '*.deb' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.deb" >/dev/null
+              deb_source=$(one "$bundle/deb" '*.deb' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.deb")
+              rpm_source=$(one "$bundle/rpm" '*.rpm' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.rpm")
+              one "$bundle/flatpak" '*.flatpak' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.flatpak" >/dev/null
+
+              expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
+              expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
+              opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
+              expected_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-opkssh-files.txt"
+              (
+                cd "$opkssh_source"
+                find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
+              ) > "$expected_resource_files"
+              test -s "$expected_resource_files"
+
+              actual_rpm_arch=$(rpm -qp --qf '%{ARCH}' "$rpm_source")
+              actual_rpm_version=$(rpm -qp --qf '%{VERSION}' "$rpm_source")
+              test "$actual_rpm_arch" = "$LINUX_RPM_ARCH"
+              test "$actual_rpm_version" = "$MACHINE_VERSION"
+              rpm_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-files.txt"
+              rpm -qpl "$rpm_source" | tee "$rpm_file_list"
+              grep -Fx "$expected_binary_path" "$rpm_file_list"
+              grep -Eq "^${expected_resource_root}/.+[^/]$" "$rpm_file_list"
+              rpm_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-opkssh-files.txt"
+              rpm -qpvl "$rpm_source" |
+                awk -v prefix="${expected_resource_root}/" \
+                  '$1 ~ /^-/ && index($NF, prefix) == 1 { print substr($NF, length(prefix) + 1) }' |
+                grep -Ev '(^|/)\.gitkeep$' |
+                LC_ALL=C sort > "$rpm_resource_files"
+              diff -u "$expected_resource_files" "$rpm_resource_files"
+
+              deb_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-deb-files.txt"
+              dpkg-deb -c "$deb_source" | tee "$deb_file_list"
+              grep -Eq "[[:space:]]\\.${expected_binary_path}$" "$deb_file_list"
+              grep -Eq "[[:space:]]\\.${expected_resource_root}/.+[^/]$" "$deb_file_list"
+              deb_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-opkssh-files.txt"
+              awk -v prefix=".${expected_resource_root}/" \
+                '$1 ~ /^-/ && index($NF, prefix) == 1 { print substr($NF, length(prefix) + 1) }' \
+                "$deb_file_list" |
+                grep -Ev '(^|/)\.gitkeep$' |
+                LC_ALL=C sort > "$deb_resource_files"
+              diff -u "$expected_resource_files" "$deb_resource_files"
+
+              appimage_extract_root="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-extract"
+              if [ -e "$appimage_extract_root" ] || [ -L "$appimage_extract_root" ]; then
+                echo "::error::Refusing to replace unexpected AppImage extraction path $appimage_extract_root."
+                exit 1
+              fi
+              mkdir -p "$appimage_extract_root"
+              (
+                cd "$appimage_extract_root"
+                "$updater_source" --appimage-extract > /dev/null
+              )
+              appimage_root="$appimage_extract_root/squashfs-root"
+              test -x "$appimage_root$expected_binary_path"
+              test -d "$appimage_root$expected_resource_root"
+              appimage_resource_count=$(find "$appimage_root$expected_resource_root" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
+              [[ "$appimage_resource_count" =~ ^[0-9]+$ ]]
+              test "$appimage_resource_count" -gt 0
+              appimage_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-opkssh-files.txt"
+              (
+                cd "$appimage_root$expected_resource_root"
+                find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
+              ) > "$appimage_resource_files"
+              diff -u "$expected_resource_files" "$appimage_resource_files"
               os_signing=not-applicable
               ;;
             macos)
@@ -824,6 +1358,7 @@ jobs:
               one "$bundle/msi" '*.msi' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}.msi" >/dev/null
               updater_source=$(one "$bundle/nsis" '*-setup.exe' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe")
               updater_name="sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-setup.exe"
+              one "$bundle/portable" '*-portable.zip' "sortOfRemoteNG_${MACHINE_VERSION}_${ARTIFACT_ID}-portable.zip" >/dev/null
               os_signing=$([ "$WINDOWS_SIGNED" = true ] && echo authenticode-verified || echo unsigned)
               ;;
           esac
@@ -836,13 +1371,53 @@ jobs:
           OS_SIGNING="$os_signing" node <<'NODE'
           const fs = require("node:fs");
           const file = `artifacts/sortOfRemoteNG_${process.env.MACHINE_VERSION}_${process.env.ARTIFACT_ID}.provenance.json`;
+          const provenance = {
+            target: process.env.ARTIFACT_ID,
+            os_signing: process.env.OS_SIGNING,
+            updater_signing: process.env.UPDATER_ENABLED === "true",
+          };
+          if (process.env.ARTIFACT_ID.startsWith("linux-")) {
+            const required = [
+              "LINUX_RPM_ARCH",
+              "FLATPAK_ARCH",
+              "FLATPAK_APP_REF",
+              "FLATPAK_RUNTIME_REF",
+              "FLATPAK_RUNTIME_COMMIT",
+              "FLATPAK_SDK_REF",
+              "FLATPAK_SDK_COMMIT",
+              "FLATPAK_BUILDER_VERSION",
+              "FLATPAK_MANIFEST",
+              "FLATPAK_MANIFEST_SHA256",
+            ];
+            for (const name of required) {
+              if (!process.env[name]?.trim()) {
+                throw new Error(`${name} is required for Linux provenance.`);
+              }
+            }
+            provenance.linux_packages = {
+              rpm: {
+                filename: `sortOfRemoteNG_${process.env.MACHINE_VERSION}_${process.env.ARTIFACT_ID}.rpm`,
+                version: process.env.MACHINE_VERSION,
+                arch: process.env.LINUX_RPM_ARCH,
+              },
+              flatpak: {
+                filename: `sortOfRemoteNG_${process.env.MACHINE_VERSION}_${process.env.ARTIFACT_ID}.flatpak`,
+                arch: process.env.FLATPAK_ARCH,
+                app_ref: process.env.FLATPAK_APP_REF,
+                runtime_ref: process.env.FLATPAK_RUNTIME_REF,
+                runtime_commit: process.env.FLATPAK_RUNTIME_COMMIT,
+                sdk_ref: process.env.FLATPAK_SDK_REF,
+                sdk_commit: process.env.FLATPAK_SDK_COMMIT,
+                builder_version: process.env.FLATPAK_BUILDER_VERSION,
+                manifest_path: process.env.FLATPAK_MANIFEST,
+                manifest_sha256: process.env.FLATPAK_MANIFEST_SHA256,
+                resource_path: "/app/bin/resources/opkssh",
+              },
+            };
+          }
           fs.writeFileSync(
             file,
-            `${JSON.stringify({
-              target: process.env.ARTIFACT_ID,
-              os_signing: process.env.OS_SIGNING,
-              updater_signing: process.env.UPDATER_ENABLED === "true",
-            }, null, 2)}\n`,
+            `${JSON.stringify(provenance, null, 2)}\n`,
           );
           NODE
           ls -la artifacts
@@ -918,23 +1493,37 @@ jobs:
           required=(
             "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage"
             "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.deb"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.rpm"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.flatpak"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.AppImage"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.deb"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.rpm"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.flatpak"
             "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.dmg"
             "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.dmg"
             "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.msi"
             "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-portable.zip"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64.msi"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-portable.zip"
             "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.provenance.json"
+            "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.provenance.json"
             "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.provenance.json"
             "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.provenance.json"
             "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64.provenance.json"
+            "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64.provenance.json"
           )
           if [ "$UPDATER_ENABLED" = true ]; then
             required+=(
               "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.AppImage.sig"
               "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz"
               "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz.sig"
               "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
               "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz.sig"
               "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe.sig"
+              "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe.sig"
             )
           fi
           for asset in "${required[@]}"; do
@@ -947,7 +1536,7 @@ jobs:
             exit 1
           fi
           provenance_count=$(find dist -maxdepth 1 -type f -name '*.provenance.json' | wc -l)
-          [ "$provenance_count" -eq 4 ] || { echo "::error::Expected four provenance records, found $provenance_count."; exit 1; }
+          [ "$provenance_count" -eq 6 ] || { echo "::error::Expected six provenance records, found $provenance_count."; exit 1; }
           if [ "$UPDATER_ENABLED" != true ] && find dist -maxdepth 1 -type f \( -name '*.sig' -o -name '*.app.tar.gz' \) | grep -q .; then
             echo "::error::Updater-only artifacts exist even though the updater key is absent."
             exit 1
@@ -979,9 +1568,11 @@ jobs:
               <<<"$platforms")
           }
           add linux-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_linux-x86_64.AppImage"
+          add linux-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_linux-aarch64.AppImage"
           add darwin-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-aarch64.app.tar.gz"
           add darwin-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_darwin-x86_64.app.tar.gz"
           add windows-x86_64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-x86_64-setup.exe"
+          add windows-aarch64 "sortOfRemoteNG_${MACHINE_VERSION}_windows-aarch64-setup.exe"
           jq -n \
             --arg version "$MACHINE_VERSION" \
             --arg pub_date "$pub_date" \
@@ -994,9 +1585,11 @@ jobs:
             --expected-version "$MACHINE_VERSION" \
             --require-signature-files \
             --require-platform linux-x86_64 \
+            --require-platform linux-aarch64 \
             --require-platform darwin-aarch64 \
             --require-platform darwin-x86_64 \
-            --require-platform windows-x86_64
+            --require-platform windows-x86_64 \
+            --require-platform windows-aarch64
 
       - name: Cryptographically verify every updater payload
         if: needs.metadata.outputs.updater_enabled == 'true'
@@ -1061,6 +1654,8 @@ jobs:
             echo
             echo "Source commit: \`$SOURCE_SHA\`"
             echo "Release snapshot: \`$SNAPSHOT_COMMIT\`"
+            echo
+            echo "Native Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles are included, together with Windows x64 and ARM64 installers and portable archives."
             echo
             if [ "$UPDATER_ENABLED" = true ]; then
               echo "Signed automatic-update artifacts and \`latest.json\` are included."
@@ -1379,6 +1974,7 @@ jobs:
             protect_latest_os_downgrade darwin-aarch64 developer-id-verified
             protect_latest_os_downgrade darwin-x86_64 developer-id-verified
             protect_latest_os_downgrade windows-x86_64 authenticode-verified
+            protect_latest_os_downgrade windows-aarch64 authenticode-verified
           }
 
           if [ "$release_exists" != true ]; then
@@ -1486,7 +2082,7 @@ jobs:
           if [ "$UPDATER_ENABLED" = true ] && [ "$remote_updater_mode" != signed ]; then
             needs_upgrade=true
           fi
-          for target in darwin-aarch64 darwin-x86_64 windows-x86_64; do
+          for target in darwin-aarch64 darwin-x86_64 windows-x86_64 windows-aarch64; do
             local_os=$(local_state "$target")
             remote_os=$(remote_state "$target")
             if [ "$local_os" != unsigned ] && [ "$local_os" != "$remote_os" ]; then
@@ -1513,6 +2109,7 @@ jobs:
           protect_os_downgrade darwin-aarch64 developer-id-verified
           protect_os_downgrade darwin-x86_64 developer-id-verified
           protect_os_downgrade windows-x86_64 authenticode-verified
+          protect_os_downgrade windows-aarch64 authenticode-verified
           candidate_updater_mode=$([ "$UPDATER_ENABLED" = true ] && echo signed || echo unsigned)
           protect_latest_downgrade "$candidate_updater_mode" dist
 
@@ -1576,14 +2173,26 @@ jobs:
           files: |
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.rpm
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.flatpak
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.AppImage
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.rpm
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.flatpak
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.dmg
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.dmg
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-portable.zip
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-setup.exe
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-portable.zip
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.provenance.json
 
       - name: Upload exact signed assets and root updater feed to draft release
         id: upload_signed
@@ -1607,6 +2216,13 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.AppImage.sig
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.rpm
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.flatpak
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.AppImage
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.AppImage.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.deb
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.rpm
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.flatpak
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.dmg
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.app.tar.gz
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.app.tar.gz.sig
@@ -1616,10 +2232,17 @@ jobs:
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.msi
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-setup.exe.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64-portable.zip
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.msi
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-setup.exe
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-setup.exe.sig
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64-portable.zip
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_linux-aarch64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-aarch64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_darwin-x86_64.provenance.json
             dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-x86_64.provenance.json
+            dist/sortOfRemoteNG_${{ needs.metadata.outputs.machine_version }}_windows-aarch64.provenance.json
             dist/latest.json
 
       - name: Resolve immutable staged release identity
@@ -1732,9 +2355,9 @@ jobs:
             "$release_json"
           asset_manifest="$RUNNER_TEMP/staged-release-assets.json"
           list_release_assets "$RELEASE_ID" "$asset_manifest"
-          expected_asset_count=10
+          expected_asset_count=22
           if [ "$UPDATER_MODE" = signed ]; then
-            expected_asset_count=17
+            expected_asset_count=31
           fi
           actual_asset_count=$(jq 'length' "$asset_manifest")
           [ "$actual_asset_count" -eq "$expected_asset_count" ] || {

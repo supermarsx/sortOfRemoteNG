@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.sortofremote.ng</id>
+  <name>sortOfRemoteNG</name>
+  <summary>Manage remote connections from one desktop workspace</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <launchable type="desktop-id">com.sortofremote.ng.desktop</launchable>
+  <description>
+    <p>
+      sortOfRemoteNG is a cross-platform remote connection manager for saved
+      sessions, file transfers, diagnostics, automation, and administration.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/supermarsx/sortOfRemoteNG</url>
+  <url type="bugtracker">https://github.com/supermarsx/sortOfRemoteNG/issues</url>
+  <provides>
+    <binary>sortOfRemoteNG</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+</component>

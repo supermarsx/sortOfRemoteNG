@@ -71,7 +71,7 @@ These boundaries are intentional: this page describes usable application paths, 
 
 ### Install a published release
 
-Published installers and application bundles appear on [GitHub Releases](https://github.com/supermarsx/sortOfRemoteNG/releases). If a bundle is available for your platform, download it, launch the application, and create or import your first connection. If no bundle has been published for the current source version, use the source workflow below.
+Published installers and application bundles appear on [GitHub Releases](https://github.com/supermarsx/sortOfRemoteNG/releases). Choose the package matching your operating system and CPU architecture, then launch the application and create or import your first connection. Linux x64 and ARM64 releases include AppImage, Debian, RPM, and single-file Flatpak packages. Windows x64 and ARM64 releases each also have an architecture-matched, installer-free portable ZIP; portable describes the delivery format and does not mean all application data or operating-system dependencies stay inside the extracted directory. If no bundle has been published for the current source version, use the source workflow below.
 
 Public bundles can be published without operating-system signing certificates. Windows SmartScreen or macOS Gatekeeper may therefore show an unknown-publisher warning on first launch. Automatic in-app updates are a separate, cryptographically signed channel: updater artifacts and `latest.json` are published only when the protected Tauri updater key is configured.
 
@@ -119,7 +119,7 @@ Every successful push to `main` queues an automatic release after the CI-interna
 
 Package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application, bare tag, and release title show `26.1`. The rolling allocator selects the public identity; [version.json](version.json) is synchronized in the release snapshot and CI verifies every generated projection.
 
-The release workflow builds Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon bundles. OS signing certificates are optional; the Tauri updater private key is required only for signed updater artifacts and `latest.json`. See the [release guide](docs/releases.md) for publication and recovery details and the [updater setup](docs/release/updater-setup.md) for signature and feed requirements.
+The release workflow builds Windows x64 and ARM64 installers plus an architecture-matched portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles. OS signing certificates are optional; the Tauri updater private key is required only for signed updater artifacts and `latest.json`. In-app self-update is limited to the feed-compatible AppImage, NSIS, and macOS app-bundle formats. Debian, RPM, Flatpak, MSI, and portable users download and reinstall or replace the newer matching GitHub release asset. See the [release guide](docs/releases.md) for publication and recovery details and the [updater setup](docs/release/updater-setup.md) for signature and feed requirements.
 
 ## Documentation
 

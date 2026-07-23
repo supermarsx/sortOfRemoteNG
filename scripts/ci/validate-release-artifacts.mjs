@@ -11,7 +11,10 @@ const BUNDLE_SUFFIXES = [
   ".deb",
   ".dmg",
   ".exe",
+  ".flatpak",
   ".msi",
+  ".rpm",
+  ".zip",
 ];
 const VERSION_TOKEN_PATTERN =
   /(?<!\d)(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?!\.\d)/g;

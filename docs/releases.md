@@ -28,10 +28,39 @@ tag and existing GitHub Release; it must not allocate another `N`.
 
 1. Run the normal CI jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates.
 2. Queue the successful `main` source commit, allocate or recover its bare `YY.N` tag, and synchronize the release snapshot.
-3. Build Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon bundles.
-4. Publish the public OS installers. Missing optional Apple or Windows certificates leaves them truthfully OS-unsigned and may produce platform warnings; it does not suppress the release.
-5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `linux-x86_64`, `darwin-x86_64`, and `darwin-aarch64`.
-6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, omit updater signatures and `latest.json` while retaining the public installers.
+3. Build Windows x64 and ARM64 installers plus an architecture-matched, installer-free portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles.
+4. Publish the public OS installers and application bundles. Missing optional Apple or Windows certificates leaves them truthfully OS-unsigned and may produce platform warnings; it does not suppress the release.
+5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`.
+6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, omit updater signatures and `latest.json` while retaining the public installers and application bundles.
+
+The Windows x64 and ARM64 portable ZIPs are installer-free extract-and-run packages. Each archive contains the executable for its named architecture, the adjacent `.portable` runtime marker, and the bundled OPKSSH resources; release CI extracts the ZIP and verifies those files against the matching build inputs. Here, portable describes delivery without an installer; it does not promise that every setting, credential, cache, operating-system dependency, or updater state remains inside the extracted directory.
+
+Portable ZIPs are part of the exact public asset contract and, like every release asset, are downloaded again by immutable release ID and checked against GitHub's SHA-256 digest before promotion. Per-target provenance records the build target and signing state; it does not duplicate the release-asset digest ledger.
+
+Linux AppImage, Debian, and RPM bundles use Tauri's native resource layout:
+`/usr/lib/sortOfRemoteNG/opkssh` under their package or mounted prefix. Release
+CI inspects all three formats and compares their packaged OPKSSH file lists with
+the staged source bundle. The single-file Flatpak bundles are built from the
+same native executable on the corresponding x64 or ARM64 runner using the
+checked-in `packaging/flatpak/com.sortofremote.ng.yml` manifest,
+`org.gnome.Platform//50`, `org.gnome.Sdk//50`, and the pinned
+`flatpak-builder` 1.4.2 tool. The Flatpak keeps OPKSSH resources beside the
+executable at `/app/bin/resources/opkssh`, matching the runtime lookup rooted
+at `current_exe()`. Installing the `.flatpak` may download the pinned GNOME
+runtime from Flathub. RPM and Flatpak are public install artifacts; automatic
+updates are available only to signed AppImage installations on Linux. Flatpak
+builds intentionally do not check or install `latest.json` updates because
+`/app` is read-only. Flatpak users update by downloading the newer
+architecture-matched `.flatpak` asset from GitHub Releases and installing it
+manually, for example with
+`flatpak install --user --reinstall ./sortOfRemoteNG_<version>_linux-<arch>.flatpak`.
+
+In-app self-update is package-type specific. It is supported only by Linux
+AppImage, Windows NSIS, and macOS app-bundle installations because those are the
+payloads named in `latest.json`. Debian, RPM, Flatpak, MSI, and portable ZIP
+installations must download and reinstall or replace the newer matching public
+asset from GitHub Releases; they do not install an AppImage or NSIS payload over
+their current package layout.
 
 <div class="callout callout--danger">
   <strong>Never commit the updater private key.</strong>

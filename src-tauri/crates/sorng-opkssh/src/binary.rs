@@ -19,6 +19,7 @@ const RELEASE_BASE: &str = "https://github.com/openpubkey/opkssh/releases/latest
 const CLI_UNAVAILABLE_MESSAGE: &str =
     "opkssh CLI fallback was not found in PATH or common install locations.";
 const BUNDLE_RESOURCE_ROOT: &str = "opkssh";
+const TAURI_PRODUCT_NAME: &str = "sortOfRemoteNG";
 const VENDOR_LIBRARY_OVERRIDE_ENV: &str = "SORNG_OPKSSH_VENDOR_LIBRARY";
 
 #[derive(Debug, Clone)]
@@ -190,12 +191,18 @@ fn vendor_override_library_path() -> Option<PathBuf> {
     Some(candidate)
 }
 
-fn packaged_resource_bundle_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let Ok(exe_path) = std::env::current_exe() else {
-        return roots;
-    };
+fn linux_packaged_resource_bundle_root(exe_path: &Path) -> Option<PathBuf> {
+    let prefix = exe_path.parent()?.parent()?;
+    Some(
+        prefix
+            .join("lib")
+            .join(TAURI_PRODUCT_NAME)
+            .join(BUNDLE_RESOURCE_ROOT),
+    )
+}
 
+fn packaged_resource_bundle_roots_for_executable(exe_path: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
     let Some(exe_dir) = exe_path.parent() else {
         return roots;
     };
@@ -205,9 +212,20 @@ fn packaged_resource_bundle_roots() -> Vec<PathBuf> {
             roots.push(contents_dir.join("Resources").join(BUNDLE_RESOURCE_ROOT));
         }
     }
+    if cfg!(target_os = "linux") {
+        if let Some(root) = linux_packaged_resource_bundle_root(exe_path) {
+            roots.push(root);
+        }
+    }
 
     roots.push(exe_dir.join("resources").join(BUNDLE_RESOURCE_ROOT));
     roots
+}
+
+fn packaged_resource_bundle_roots() -> Vec<PathBuf> {
+    std::env::current_exe()
+        .map(|exe_path| packaged_resource_bundle_roots_for_executable(&exe_path))
+        .unwrap_or_default()
 }
 
 fn vendor_artifact_path_for_root(root: &Path, platform_dir: &str, artifact_name: &str) -> PathBuf {
@@ -829,25 +847,31 @@ pub fn binary_name() -> &'static str {
     }
 }
 
+fn download_asset_for_target(target_os: &str, target_arch: &str) -> Option<&'static str> {
+    match (target_os, target_arch) {
+        ("windows", "x86_64") => Some("opkssh-windows-amd64.exe"),
+        ("windows", "aarch64") => Some("opkssh-windows-arm64.exe"),
+        ("macos", "x86_64") => Some("opkssh-osx-amd64"),
+        ("macos", "aarch64") => Some("opkssh-osx-arm64"),
+        ("linux", "x86_64") => Some("opkssh-linux-amd64"),
+        ("linux", "aarch64") => Some("opkssh-linux-arm64"),
+        _ => None,
+    }
+}
+
+fn download_url_for_target(target_os: &str, target_arch: &str) -> Option<String> {
+    download_asset_for_target(target_os, target_arch).map(|file| format!("{RELEASE_BASE}/{file}"))
+}
+
 /// Get the download URL for the current platform.
 pub fn download_url() -> String {
-    let file = if cfg!(target_os = "windows") {
-        "opkssh-windows-amd64.exe"
-    } else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            "opkssh-osx-arm64"
-        } else {
-            "opkssh-osx-amd64"
-        }
-    } else {
-        // Linux
-        if cfg!(target_arch = "aarch64") {
-            "opkssh-linux-arm64"
-        } else {
-            "opkssh-linux-amd64"
-        }
-    };
-    format!("{}/{}", RELEASE_BASE, file)
+    download_url_for_target(std::env::consts::OS, std::env::consts::ARCH).unwrap_or_else(|| {
+        panic!(
+            "OPKSSH does not publish a CLI fallback for {}-{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })
 }
 
 /// Platform string for status reporting.
@@ -1471,6 +1495,52 @@ pub async fn run_command(binary_path: &PathBuf, args: &[&str]) -> Result<Command
 mod tests {
     use super::*;
     use std::ffi::OsString;
+
+    #[test]
+    fn download_urls_select_the_published_asset_for_each_supported_target() {
+        let cases = [
+            ("windows", "x86_64", "opkssh-windows-amd64.exe"),
+            ("windows", "aarch64", "opkssh-windows-arm64.exe"),
+            ("macos", "x86_64", "opkssh-osx-amd64"),
+            ("macos", "aarch64", "opkssh-osx-arm64"),
+            ("linux", "x86_64", "opkssh-linux-amd64"),
+            ("linux", "aarch64", "opkssh-linux-arm64"),
+        ];
+
+        for (target_os, target_arch, expected_asset) in cases {
+            assert_eq!(
+                download_url_for_target(target_os, target_arch),
+                Some(format!("{RELEASE_BASE}/{expected_asset}")),
+                "unexpected OPKSSH fallback URL for {target_os}-{target_arch}"
+            );
+        }
+    }
+
+    #[test]
+    fn download_url_selector_rejects_unsupported_targets() {
+        assert_eq!(download_url_for_target("windows", "arm"), None);
+        assert_eq!(download_url_for_target("freebsd", "x86_64"), None);
+    }
+
+    #[test]
+    fn linux_package_resource_root_uses_the_tauri_product_name() {
+        assert_eq!(
+            linux_packaged_resource_bundle_root(Path::new("/usr/bin/app")),
+            Some(PathBuf::from("/usr/lib/sortOfRemoteNG/opkssh"))
+        );
+    }
+
+    #[test]
+    fn linux_appimage_resource_root_uses_the_mounted_prefix() {
+        assert_eq!(
+            linux_packaged_resource_bundle_root(Path::new(
+                "/tmp/.mount_sortOfRemoteNG/usr/bin/app"
+            )),
+            Some(PathBuf::from(
+                "/tmp/.mount_sortOfRemoteNG/usr/lib/sortOfRemoteNG/opkssh"
+            ))
+        );
+    }
 
     #[test]
     fn test_redact_command_args_hides_provider_secret() {

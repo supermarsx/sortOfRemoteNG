@@ -46,6 +46,32 @@ const tauriConfig = JSON.parse(
     "utf8",
   ),
 );
+const flatpakManifest = readFileSync(
+  new URL("../../packaging/flatpak/com.sortofremote.ng.yml", import.meta.url),
+  "utf8",
+);
+const flatpakDesktop = readFileSync(
+  new URL(
+    "../../packaging/flatpak/com.sortofremote.ng.desktop",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const flatpakMetainfo = readFileSync(
+  new URL(
+    "../../packaging/flatpak/com.sortofremote.ng.metainfo.xml",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const opksshBinarySource = readFileSync(
+  new URL("../../src-tauri/crates/sorng-opkssh/src/binary.rs", import.meta.url),
+  "utf8",
+);
+const updaterSetupDocumentation = readFileSync(
+  new URL("../../docs/release/updater-setup.md", import.meta.url),
+  "utf8",
+);
 const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
@@ -377,7 +403,18 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       platform: "linux",
       rust_target: "x86_64-unknown-linux-gnu",
       rust_toolchain: "stable",
-      bundles: "appimage,deb",
+      bundles: "appimage,deb,rpm",
+      cargo_build_jobs: "1",
+      release_lto: "off",
+      release_codegen_units: "16",
+      release_opt_level: "0",
+    },
+    "linux-aarch64": {
+      os: "ubuntu-24.04-arm",
+      platform: "linux",
+      rust_target: "aarch64-unknown-linux-gnu",
+      rust_toolchain: "stable",
+      bundles: "appimage,deb,rpm",
       cargo_build_jobs: "1",
       release_lto: "off",
       release_codegen_units: "16",
@@ -415,6 +452,19 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
       release_lto: "off",
       release_codegen_units: "16",
       release_opt_level: "0",
+      windows_sdk_arch: "x64",
+    },
+    "windows-aarch64": {
+      os: "windows-11-arm",
+      platform: "windows",
+      rust_target: "aarch64-pc-windows-msvc",
+      rust_toolchain: "1.95.0",
+      bundles: "msi,nsis",
+      cargo_build_jobs: "1",
+      release_lto: "off",
+      release_codegen_units: "16",
+      release_opt_level: "0",
+      windows_sdk_arch: "arm64",
     },
   });
   assert.equal(
@@ -423,7 +473,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
         /^\s+(?:rust_toolchain|cargo_build_jobs|release_lto|release_codegen_units|release_opt_level): "[^"]+"$/gm,
       ) ?? []
     ).length,
-    20,
+    30,
   );
   assert.match(
     buildDefinition,
@@ -431,7 +481,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "16"$/gm) ?? []).length,
-    2,
+    4,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_codegen_units: "32"$/gm) ?? []).length,
@@ -443,7 +493,7 @@ test("release matrix maps exact hosted-runner resource profiles", () => {
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "0"$/gm) ?? []).length,
-    4,
+    6,
   );
   assert.equal(
     (matrixDefinition.match(/^\s+release_opt_level: "1"$/gm) ?? []).length,
@@ -506,11 +556,11 @@ test("Windows release compiler is pinned and verified without changing other pla
   assert.ok(checkoutStart > toolchainStart);
   assert.equal(
     (buildJob.match(/^\s+rust_toolchain: "stable"$/gm) ?? []).length,
-    3,
+    4,
   );
   assert.equal(
     (buildJob.match(/^\s+rust_toolchain: "1\.95\.0"$/gm) ?? []).length,
-    1,
+    2,
   );
   assert.match(
     buildJob,
@@ -529,6 +579,10 @@ test("Windows release compiler is pinned and verified without changing other pla
     /EXPECTED_RUST_RELEASE: \$\{\{ matrix\.rust_toolchain \}\}/,
   );
   assert.match(
+    toolchainSteps,
+    /EXPECTED_RUST_HOST: \$\{\{ matrix\.rust_target \}\}/,
+  );
+  assert.match(
     buildDefinition,
     /^      RUSTUP_TOOLCHAIN: \$\{\{ matrix\.rust_toolchain \}\}$/m,
   );
@@ -544,7 +598,7 @@ test("Windows release compiler is pinned and verified without changing other pla
     toolchainSteps,
     /\$actualRelease -ne \$env:EXPECTED_RUST_RELEASE/,
   );
-  assert.match(toolchainSteps, /\$actualHost -ne 'x86_64-pc-windows-msvc'/);
+  assert.match(toolchainSteps, /\$actualHost -ne \$env:EXPECTED_RUST_HOST/);
   assert.doesNotMatch(toolchainSteps, /rust-lld|lld-link|rustup update/i);
 
   const harness = String.raw`
@@ -564,6 +618,7 @@ test("Windows release compiler is pinned and verified without changing other pla
       )
       $global:LASTEXITCODE = 0
     }
+    $env:EXPECTED_RUST_HOST = "x86_64-pc-windows-msvc"
     $env:EXPECTED_RUST_RELEASE = "1.95.0"
     $verifier = [Console]::In.ReadToEnd()
     & ([ScriptBlock]::Create($verifier))
@@ -722,6 +777,385 @@ test("Windows release artifacts keep portable ISA and supported linker flags", (
   assert.doesNotMatch(cargoConfig, /link-arg=\/threads:/i);
 });
 
+test("Windows signing is architecture-aware and both portable archives are complete", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const verifyStart = buildJob.indexOf(
+    "- name: Verify Windows Authenticode signatures",
+  );
+  const portableStart = buildJob.indexOf(
+    "- name: Package portable Windows archive",
+  );
+  const macVerifyStart = buildJob.indexOf(
+    "- name: Verify macOS Developer ID, notarization, and stapling",
+  );
+  const stageStart = buildJob.indexOf(
+    "- name: Stage architecture-specific release assets",
+  );
+  assert.ok(verifyStart >= 0);
+  assert.ok(portableStart > verifyStart);
+  assert.ok(macVerifyStart > portableStart);
+  assert.ok(stageStart > macVerifyStart);
+
+  const signingStep = buildJob.slice(verifyStart, portableStart);
+  assert.match(
+    signingStep,
+    /WINDOWS_SDK_ARCH: \$\{\{ matrix\.windows_sdk_arch \}\}/,
+  );
+  assert.match(
+    signingStep,
+    /\$windowsKits = Join-Path \$\{env:ProgramFiles\(x86\)\} "Windows Kits\\10\\bin"/,
+  );
+  assert.match(
+    signingStep,
+    /Get-ChildItem "\$windowsKits\\\*\\\$env:WINDOWS_SDK_ARCH\\signtool\.exe"/,
+  );
+  assert.match(
+    signingStep,
+    /\$portableExecutable = Get-Item -LiteralPath "src-tauri\/target\/\$env:RUST_TARGET\/release\/app\.exe"[\s\S]*?\$files \+= \$portableExecutable/,
+  );
+  assert.doesNotMatch(signingStep, /ARTIFACT_ID -eq "windows-x86_64"/);
+  assert.doesNotMatch(signingStep, /\\x64\\signtool\.exe/);
+
+  const portableStep = buildJob.slice(portableStart, macVerifyStart);
+  assert.match(portableStep, /if: matrix\.platform == 'windows'/);
+  assert.match(portableStep, /ARTIFACT_ID: \$\{\{ matrix\.artifact_id \}\}/);
+  assert.match(
+    portableStep,
+    /sourceExecutable = "src-tauri\/target\/\$env:RUST_TARGET\/release\/app\.exe"/,
+  );
+  assert.match(
+    portableStep,
+    /Copy-Item -LiteralPath \$sourceExecutable -Destination \(Join-Path \$portableRoot "sortOfRemoteNG\.exe"\)/,
+  );
+  assert.match(
+    portableStep,
+    /New-Item -ItemType File -Path \(Join-Path \$portableRoot "\.portable"\)/,
+  );
+  assert.match(
+    portableStep,
+    /sorng-opkssh-vendor\/bundle\/opkssh[\s\S]*?resources[\s\S]*?Copy-Item -LiteralPath \$opksshSource/,
+  );
+  assert.match(
+    portableStep,
+    /sortOfRemoteNG_\$\(\$env:MACHINE_VERSION\)_\$\(\$env:ARTIFACT_ID\)-portable\.zip/,
+  );
+  assert.match(
+    portableStep,
+    /Compress-Archive -LiteralPath \$portableContents[\s\S]*?Expand-Archive -LiteralPath \$archive/,
+  );
+  assert.match(
+    portableStep,
+    /"windows-x86_64" \{ 0x8664 \}[\s\S]*?"windows-aarch64" \{ 0xAA64 \}/,
+  );
+  assert.match(
+    portableStep,
+    /sourceMachine = Get-PeMachine[\s\S]*?sourceMachine -ne \$expectedMachine[\s\S]*?verifiedMachine = Get-PeMachine[\s\S]*?verifiedMachine -ne \$expectedMachine/,
+  );
+  assert.match(
+    portableStep,
+    /sourceExecutableHash[\s\S]*?verifiedExecutableHash[\s\S]*?verifiedExecutableHash -ne \$sourceExecutableHash/,
+  );
+  assert.match(
+    portableStep,
+    /sourceMarkerHash[\s\S]*?verifiedMarkerHash[\s\S]*?verifiedMarkerHash -ne \$sourceMarkerHash/,
+  );
+  assert.match(
+    portableStep,
+    /expectedResourceHashes[\s\S]*?verifiedResourceHashes[\s\S]*?Compare-Object[\s\S]*?Extracted OPKSSH resources do not match/,
+  );
+  for (const archivePath of [
+    "sortOfRemoteNG.exe",
+    ".portable",
+    "resources/opkssh",
+  ]) {
+    assert.match(portableStep, new RegExp(archivePath.replaceAll(".", "\\.")));
+  }
+
+  const stageStep = buildJob.slice(stageStart);
+  assert.match(
+    stageStep,
+    /windows\)[\s\S]*?one "\$bundle\/portable" '\*-portable\.zip' "sortOfRemoteNG_\$\{MACHINE_VERSION\}_\$\{ARTIFACT_ID\}-portable\.zip"/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-aarch64-portable\.zip/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /dist\/sortOfRemoteNG_\$\{\{ needs\.metadata\.outputs\.machine_version \}\}_windows-aarch64-portable\.zip/,
+  );
+
+  const updaterFeed = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf(
+      "- name: Cryptographically verify every updater payload",
+    ),
+  );
+  assert.doesNotMatch(updaterFeed, /portable\.zip/);
+  assert.match(
+    releaseWorkflow,
+    /Native Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles are included, together with Windows x64 and ARM64 installers and portable archives\./,
+  );
+});
+
+test("Linux release builds and validates native RPM and Flatpak assets on both architectures", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const nativePrerequisites = buildJob.slice(
+    buildJob.indexOf("- name: Install native Linux build prerequisites"),
+    buildJob.indexOf("- name: Install macOS static Kafka prerequisites"),
+  );
+  const preserveLinux = buildJob.slice(
+    buildJob.indexOf(
+      "- name: Preserve native Linux outputs and prune build intermediates",
+    ),
+    buildJob.indexOf(
+      "- name: Install pinned Flatpak toolchain and GNOME runtime",
+    ),
+  );
+  const flatpakSetup = buildJob.slice(
+    buildJob.indexOf(
+      "- name: Install pinned Flatpak toolchain and GNOME runtime",
+    ),
+    buildJob.indexOf("- name: Build and verify native Flatpak bundle"),
+  );
+  const flatpakBuild = buildJob.slice(
+    buildJob.indexOf("- name: Build and verify native Flatpak bundle"),
+    buildJob.indexOf("- name: Notarize and staple macOS disk image"),
+  );
+  const stageStep = buildJob.slice(
+    buildJob.indexOf("- name: Stage architecture-specific release assets"),
+  );
+  const publicSet = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Validate complete public installer set"),
+    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+  );
+  const updaterFeed = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+    releaseWorkflow.indexOf(
+      "- name: Cryptographically verify every updater payload",
+    ),
+  );
+  const unsignedUpload = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Upload exact unsigned assets"),
+    releaseWorkflow.indexOf(
+      "- name: Upload exact signed assets and root updater feed",
+    ),
+  );
+  const signedUpload = releaseWorkflow.slice(
+    releaseWorkflow.indexOf(
+      "- name: Upload exact signed assets and root updater feed",
+    ),
+    releaseWorkflow.indexOf(
+      "- name: Resolve immutable staged release identity",
+    ),
+  );
+
+  for (const contract of [
+    ["FLATPAK_APP_ID", "com.sortofremote.ng"],
+    ["FLATPAK_BUILDER_PACKAGE", "1.4.2-1build2"],
+    ["FLATPAK_BUILDER_VERSION", "1.4.2"],
+    ["FLATPAK_MANIFEST", "packaging/flatpak/com.sortofremote.ng.yml"],
+    ["FLATPAK_RUNTIME_ID", "org.gnome.Platform"],
+    ["FLATPAK_RUNTIME_VERSION", '"50"'],
+    ["FLATPAK_SDK_ID", "org.gnome.Sdk"],
+    ["LINUX_PACKAGE_MAIN_BINARY", "app"],
+    ["LINUX_PACKAGE_PRODUCT_NAME", "sortOfRemoteNG"],
+  ]) {
+    assert.match(
+      releaseWorkflow,
+      new RegExp(`^  ${contract[0]}: ${contract[1]}$`, "m"),
+    );
+  }
+  assert.match(
+    releaseWorkflow,
+    /^  FLATHUB_REPOSITORY: https:\/\/dl\.flathub\.org\/repo\/flathub\.flatpakrepo$/m,
+  );
+
+  assert.match(flatpakManifest, /^id: com\.sortofremote\.ng$/m);
+  assert.match(flatpakManifest, /^runtime: org\.gnome\.Platform$/m);
+  assert.match(flatpakManifest, /^runtime-version: "50"$/m);
+  assert.match(flatpakManifest, /^sdk: org\.gnome\.Sdk$/m);
+  assert.match(flatpakManifest, /^command: sortOfRemoteNG$/m);
+  assert.match(
+    flatpakManifest,
+    /install -Dm755 sortOfRemoteNG \/app\/bin\/sortOfRemoteNG/,
+  );
+  assert.match(flatpakManifest, /cp -a resources \/app\/bin\/resources/);
+  assert.match(flatpakManifest, /path: \.\.\/\.\.\/\.ci\/flatpak-payload/);
+  assert.match(flatpakDesktop, /^Exec=sortOfRemoteNG$/m);
+  assert.match(flatpakDesktop, /^Icon=com\.sortofremote\.ng$/m);
+  assert.match(flatpakMetainfo, /<id>com\.sortofremote\.ng<\/id>/);
+  assert.match(
+    flatpakMetainfo,
+    /<launchable type="desktop-id">com\.sortofremote\.ng\.desktop<\/launchable>/,
+  );
+
+  assert.match(
+    buildJob,
+    /artifact_id: linux-x86_64[\s\S]*?os: ubuntu-24\.04[\s\S]*?bundles: appimage,deb,rpm/,
+  );
+  assert.match(
+    buildJob,
+    /artifact_id: linux-aarch64[\s\S]*?os: ubuntu-24\.04-arm[\s\S]*?bundles: appimage,deb,rpm/,
+  );
+  assert.doesNotMatch(nativePrerequisites, /\b(?:flatpak|appstream)\b/);
+  assert.match(flatpakSetup, /"flatpak-builder=\$\{FLATPAK_BUILDER_PACKAGE\}"/);
+  assert.match(
+    flatpakSetup,
+    /test "\$\(flatpak-builder --version\)" = "flatpak-builder \$FLATPAK_BUILDER_VERSION"/,
+  );
+  assert.match(flatpakSetup, /linux-x86_64\) flatpak_arch=x86_64/);
+  assert.match(flatpakSetup, /linux-aarch64\) flatpak_arch=aarch64/);
+  assert.match(
+    flatpakSetup,
+    /expected_runtime_ref="runtime\/\$FLATPAK_RUNTIME_ID\/\$flatpak_arch\/\$FLATPAK_RUNTIME_VERSION"/,
+  );
+  assert.match(
+    flatpakSetup,
+    /expected_sdk_ref="runtime\/\$FLATPAK_SDK_ID\/\$flatpak_arch\/\$FLATPAK_RUNTIME_VERSION"/,
+  );
+  assert.match(flatpakSetup, /FLATPAK_RUNTIME_COMMIT=\$runtime_commit/);
+  assert.match(flatpakSetup, /FLATPAK_SDK_COMMIT=\$sdk_commit/);
+  assert.ok(
+    buildJob.indexOf("- name: Build native bundles with static Kafka") <
+      buildJob.indexOf(
+        "- name: Install pinned Flatpak toolchain and GNOME runtime",
+      ),
+    "the GNOME runtime must not consume disk until after native bundles are built",
+  );
+
+  assert.match(
+    preserveLinux,
+    /executable="\$release_root\/app"[\s\S]*?install -m 0755 "\$executable" "\$payload\/sortOfRemoteNG"/,
+  );
+  assert.match(
+    preserveLinux,
+    /payload="\$GITHUB_WORKSPACE\/\.ci\/flatpak-payload"/,
+  );
+  assert.match(
+    preserveLinux,
+    /cp -a "\$opkssh_source" "\$payload\/resources\/opkssh"/,
+  );
+  assert.match(
+    preserveLinux,
+    /preserve_one appimage '\*\.AppImage'[\s\S]*?preserve_one deb '\*\.deb'[\s\S]*?preserve_one rpm '\*\.rpm'/,
+  );
+  assert.match(
+    preserveLinux,
+    /"\$target_root\/\$RUST_TARGET\/release\/deps"[\s\S]*?resolved_intermediate=\$\(realpath -m "\$intermediate"\)[\s\S]*?rm -rf -- "\$intermediate"/,
+  );
+  assert.doesNotMatch(preserveLinux, /rm -rf -- "\$target_root"/);
+  assert.match(
+    flatpakBuild,
+    /payload="\$GITHUB_WORKSPACE\/\.ci\/flatpak-payload"[\s\S]*?test -x "\$payload\/sortOfRemoteNG"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /flatpak_bundle_dir="\$GITHUB_WORKSPACE\/\.ci\/linux-native-bundles\/flatpak"/,
+  );
+  assert.match(flatpakBuild, /--arch="\$FLATPAK_ARCH"/);
+  assert.match(flatpakBuild, /--default-branch=stable/);
+  assert.match(flatpakBuild, /--disable-download/);
+  assert.match(flatpakBuild, /flatpak build-bundle/);
+  assert.match(flatpakBuild, /flatpak install[\s\S]*?--reinstall/);
+  assert.match(
+    flatpakBuild,
+    /expected_app_ref="app\/\$FLATPAK_APP_ID\/\$FLATPAK_ARCH\/stable"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /dbus-run-session -- flatpak run[\s\\]+--command=sh/,
+  );
+  assert.match(
+    flatpakBuild,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"/,
+  );
+  assert.doesNotMatch(flatpakBuild, /flatpak run[^\n]*sortOfRemoteNG/);
+
+  for (const arch of ["x86_64", "aarch64"]) {
+    for (const extension of ["rpm", "flatpak"]) {
+      const name = `sortOfRemoteNG_\\$\\{MACHINE_VERSION\\}_linux-${arch}\\.${extension}`;
+      assert.match(publicSet, new RegExp(name));
+      assert.match(
+        unsignedUpload,
+        new RegExp(
+          `sortOfRemoteNG_\\$\\{\\{ needs\\.metadata\\.outputs\\.machine_version \\}\\}_linux-${arch}\\.${extension}`,
+        ),
+      );
+      assert.match(
+        signedUpload,
+        new RegExp(
+          `sortOfRemoteNG_\\$\\{\\{ needs\\.metadata\\.outputs\\.machine_version \\}\\}_linux-${arch}\\.${extension}`,
+        ),
+      );
+    }
+  }
+  assert.match(stageStep, /rpm -qp --qf '%\{ARCH\}'/);
+  assert.match(stageStep, /rpm -qp --qf '%\{VERSION\}'/);
+  assert.match(
+    stageStep,
+    /expected_binary_path="\/usr\/bin\/\$LINUX_PACKAGE_MAIN_BINARY"/,
+  );
+  assert.match(
+    stageStep,
+    /expected_resource_root="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/opkssh"/,
+  );
+  assert.match(
+    stageStep,
+    /rpm -qpl "\$rpm_source"[\s\S]*?dpkg-deb -c "\$deb_source"[\s\S]*?"\$updater_source" --appimage-extract/,
+  );
+  assert.equal(
+    (
+      stageStep.match(
+        /diff -u "\$expected_resource_files" "\$(?:rpm|deb|appimage)_resource_files"/g,
+      ) ?? []
+    ).length,
+    3,
+  );
+  assert.equal(tauriConfig.productName, "sortOfRemoteNG");
+  assert.deepEqual(tauriConfig.bundle.resources, {
+    "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+  });
+  assert.match(
+    opksshBinarySource,
+    /const TAURI_PRODUCT_NAME: &str = "sortOfRemoteNG";/,
+  );
+  assert.match(
+    opksshBinarySource,
+    /prefix[\s\S]*?join\("lib"\)[\s\S]*?join\(TAURI_PRODUCT_NAME\)[\s\S]*?join\(BUNDLE_RESOURCE_ROOT\)/,
+  );
+  assert.match(
+    opksshBinarySource,
+    /linux_package_resource_root_uses_the_tauri_product_name[\s\S]*?\/usr\/bin\/app[\s\S]*?\/usr\/lib\/sortOfRemoteNG\/opkssh/,
+  );
+  assert.match(
+    opksshBinarySource,
+    /linux_appimage_resource_root_uses_the_mounted_prefix[\s\S]*?\/tmp\/\.mount_sortOfRemoteNG\/usr\/bin\/app[\s\S]*?\/tmp\/\.mount_sortOfRemoteNG\/usr\/lib\/sortOfRemoteNG\/opkssh/,
+  );
+  assert.match(stageStep, /linux_packages =/);
+  for (const field of [
+    "runtime_ref",
+    "runtime_commit",
+    "sdk_ref",
+    "sdk_commit",
+    "builder_version",
+    "manifest_path",
+    "manifest_sha256",
+    "resource_path",
+  ]) {
+    assert.match(stageStep, new RegExp(`${field}:`));
+  }
+  assert.match(releaseWorkflow, /expected_asset_count=22/);
+  assert.match(releaseWorkflow, /expected_asset_count=31/);
+  assert.doesNotMatch(updaterFeed, /\.(?:rpm|flatpak)/);
+});
+
 test("platform resource inspection is exact and immediately precedes native building", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
@@ -745,78 +1179,44 @@ test("platform resource inspection is exact and immediately precedes native buil
     resourceStepStart,
     windowsResourceStepStart,
   );
-  assert.equal(
-    resourceStep.trimEnd(),
-    [
-      "- name: Bound and inspect Linux release resources",
-      "        if: matrix.platform == 'linux'",
-      "        shell: bash",
-      "        run: |",
-      "          set -euo pipefail",
-      '          linker_wrapper="$RUNNER_TEMP/sorng-linux-linker"',
-      '          linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"',
-      '          linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"',
-      '          swap_file="$RUNNER_TEMP/sorng-release.swap"',
-      "          swap_size_bytes=$((16 * 1024 * 1024 * 1024))",
-      "          disk_floor_bytes=$((32 * 1024 * 1024 * 1024))",
-      "",
-      "          # Linux hosted runners were lost twice under final release codegen.",
-      "          # Keep 32 GiB of disk free for build outputs after adding bounded swap.",
-      "          available_bytes=$(df -B1 --output=avail \"$RUNNER_TEMP\" | tail -n 1 | tr -d '[:space:]')",
-      '          [[ "$available_bytes" =~ ^[0-9]+$ ]]',
-      "          required_bytes=$((swap_size_bytes + disk_floor_bytes))",
-      "          if (( available_bytes < required_bytes )); then",
-      '            echo "::error::Linux release requires $required_bytes free bytes before provisioning swap; found $available_bytes."',
-      "            exit 1",
-      "          fi",
-      '          if [ -e "$swap_file" ] || [ -L "$swap_file" ]; then',
-      '            echo "::error::Refusing to replace unexpected pre-existing swap path $swap_file."',
-      "            exit 1",
-      "          fi",
-      '          sudo fallocate -l "$swap_size_bytes" "$swap_file"',
-      "          remaining_bytes=$(df -B1 --output=avail \"$RUNNER_TEMP\" | tail -n 1 | tr -d '[:space:]')",
-      '          [[ "$remaining_bytes" =~ ^[0-9]+$ ]]',
-      "          if (( remaining_bytes < disk_floor_bytes )); then",
-      '            echo "::error::Linux release requires $disk_floor_bytes free bytes after provisioning swap; found $remaining_bytes."',
-      "            exit 1",
-      "          fi",
-      '          sudo chmod 0600 "$swap_file"',
-      '          test "$(stat -c \'%a\' "$swap_file")" = 600',
-      '          test "$(stat -c \'%s\' "$swap_file")" -eq "$swap_size_bytes"',
-      "          page_size_bytes=$(getconf PAGESIZE)",
-      '          [[ "$page_size_bytes" =~ ^[0-9]+$ ]]',
-      "          expected_active_swap_size=$((swap_size_bytes - page_size_bytes))",
-      '          sudo mkswap "$swap_file"',
-      '          sudo swapon "$swap_file"',
-      "          active_swap_size=$(\n            sudo swapon --show=NAME,SIZE --bytes --noheadings --raw |\n              awk -v path=\"$swap_file\" '$1 == path { print $2 }'\n          )",
-      '          test "$active_swap_size" -eq "$expected_active_swap_size"',
-      "",
-      "          # Hosted runners are ephemeral; keep the verified swap active through",
-      "          # bundle staging so both LLVM and LLD retain the added headroom.",
-      "",
-      "          command -v clang-18",
-      "          command -v ld.lld-18",
-      "          /usr/bin/clang-18 --version",
-      "          /usr/bin/ld.lld-18 --version",
-      "",
-      "          cat > \"$linker_wrapper\" <<'LINKER'",
-      "          #!/usr/bin/env bash",
-      "          set -euo pipefail",
-      '          exec /usr/bin/clang-18 -fuse-ld=lld-18 -Wl,--threads=1 "$@"',
-      "          LINKER",
-      '          chmod 0755 "$linker_wrapper"',
-      "",
-      "          printf '%s\\n' 'int main(void) { return 0; }' > \"$linker_probe_source\"",
-      '          linker_probe_output=$(\n            "$linker_wrapper" -Wl,-v "$linker_probe_source" -o "$linker_probe_binary" 2>&1\n          )',
-      "          printf '%s\\n' \"$linker_probe_output\"",
-      "          grep -Eq 'LLD 18(\\.|[[:space:]])' <<< \"$linker_probe_output\"",
-      "          readelf -h \"$linker_probe_binary\" | grep -Eq 'Class:[[:space:]]+ELF64'",
-      '          "$linker_probe_binary"',
-      "",
-      '          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$linker_wrapper" >> "$GITHUB_ENV"',
-      "          free -h",
-      '          df -h "$GITHUB_WORKSPACE"',
-    ].join("\n"),
+  const documentedDiskGiB = Number(
+    releaseWorkflow.match(
+      /^  LINUX_STANDARD_RUNNER_DISK_GIB: "([0-9]+)"$/m,
+    )?.[1],
+  );
+  assert.equal(documentedDiskGiB, 14);
+  assert.ok(
+    documentedDiskGiB <= 14,
+    "the Linux resource contract cannot exceed the standard runner's documented 14 GiB SSD",
+  );
+  assert.match(
+    resourceStep,
+    /documented_capacity_bytes=\$\(\(LINUX_STANDARD_RUNNER_DISK_GIB \* 1024 \* 1024 \* 1024\)\)/,
+  );
+  assert.match(
+    resourceStep,
+    /test "\$documented_capacity_bytes" -eq \$\(\(14 \* 1024 \* 1024 \* 1024\)\)/,
+  );
+  assert.match(resourceStep, /df -B1 --output=size "\$RUNNER_TEMP"/);
+  assert.match(resourceStep, /df -B1 --output=avail "\$RUNNER_TEMP"/);
+  assert.doesNotMatch(
+    resourceStep,
+    /sorng-release\.swap|\bswap_(?:file|size)\b|\bdisk_floor\b|\brequired_bytes\b|\b(?:fallocate|mkswap|swapon)\b/,
+  );
+  assert.doesNotMatch(resourceStep, /if \(\( (?:available|total)_bytes < /);
+  assert.match(
+    buildJob,
+    /- name: Cache Cargo build\s+if: matrix\.platform != 'linux'\s+uses: Swatinem\/rust-cache@/,
+  );
+  assert.match(resourceStep, /command -v clang-18/);
+  assert.match(resourceStep, /command -v ld\.lld-18/);
+  assert.match(
+    resourceStep,
+    /exec \/usr\/bin\/clang-18 -fuse-ld=lld-18 -Wl,--threads=1 "\$@"/,
+  );
+  assert.match(
+    resourceStep,
+    /echo "CARGO_TARGET_\$\{cargo_target_key\}_LINKER=\$linker_wrapper" >> "\$GITHUB_ENV"/,
   );
   const windowsResourceStep = buildJob.slice(
     windowsResourceStepStart,
@@ -861,15 +1261,14 @@ test("platform resource inspection is exact and immediately precedes native buil
     /\b(?:Set|New|Remove)-CimInstance\b|\b(?:Set|New|Remove)-Item\b|\bFormat-Volume\b|\bResize-Partition\b/,
   );
   assert.equal(
-    (
-      releaseWorkflow.match(/CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/g) ??
-      []
-    ).length,
+    (releaseWorkflow.match(/CARGO_TARGET_\$\{cargo_target_key\}_LINKER/g) ?? [])
+      .length,
     1,
   );
+  assert.doesNotMatch(releaseWorkflow, /CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU/);
   assert.doesNotMatch(
-    buildDefinition,
-    /CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER/,
+    releaseWorkflow,
+    /CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU/,
   );
   const outsideResourceStep =
     releaseWorkflow.slice(0, buildStart + resourceStepStart) +
@@ -1031,7 +1430,13 @@ test("signed and unsigned release sets are validated before any release mutation
   );
   assert.match(
     releaseWorkflow,
-    /add darwin-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-aarch64\.app\.tar\.gz"[\s\S]*?add darwin-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-x86_64\.app\.tar\.gz"/,
+    /add linux-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-x86_64\.AppImage"[\s\S]*?add linux-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_linux-aarch64\.AppImage"[\s\S]*?add darwin-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-aarch64\.app\.tar\.gz"[\s\S]*?add darwin-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_darwin-x86_64\.app\.tar\.gz"[\s\S]*?add windows-x86_64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-x86_64-setup\.exe"[\s\S]*?add windows-aarch64 "sortOfRemoteNG_\$\{MACHINE_VERSION\}_windows-aarch64-setup\.exe"/,
+  );
+  const unsignedUpload = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("Upload exact unsigned assets to draft release"),
+    releaseWorkflow.indexOf(
+      "Upload exact signed assets and root updater feed to draft release",
+    ),
   );
   const signedUpload = releaseWorkflow.slice(
     releaseWorkflow.indexOf(
@@ -1041,17 +1446,71 @@ test("signed and unsigned release sets are validated before any release mutation
   );
   for (const target of [
     "linux-x86_64.AppImage",
+    "linux-aarch64.AppImage",
     "darwin-aarch64.app.tar.gz",
     "darwin-x86_64.app.tar.gz",
     "windows-x86_64-setup.exe",
+    "windows-aarch64-setup.exe",
   ]) {
     assert.match(
       signedUpload,
       new RegExp(`${target.replaceAll(".", "\\.")}\\.sig`),
     );
   }
+  for (const target of ["windows-x86_64", "windows-aarch64"]) {
+    const portablePattern = new RegExp(`${target}-portable\\.zip`);
+    assert.match(unsignedUpload, portablePattern);
+    assert.match(signedUpload, portablePattern);
+  }
   assert.match(signedUpload, /^\s+dist\/latest\.json$/m);
+  assert.doesNotMatch(
+    releaseWorkflow.slice(
+      releaseWorkflow.indexOf("- name: Generate signed updater feed"),
+      releaseWorkflow.indexOf(
+        "- name: Cryptographically verify every updater payload",
+      ),
+    ),
+    /portable\.zip/,
+  );
   assert.doesNotMatch(releaseWorkflow, /gh release delete-asset/);
+});
+
+test("updater setup documents the six canonical updater payload names", () => {
+  for (const filename of [
+    "sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe",
+    "sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe",
+    "sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz",
+    "sortOfRemoteNG_26.1.0_darwin-aarch64.app.tar.gz",
+    "sortOfRemoteNG_26.1.0_linux-x86_64.AppImage",
+    "sortOfRemoteNG_26.1.0_linux-aarch64.AppImage",
+  ]) {
+    assert.ok(
+      updaterSetupDocumentation.includes(
+        `"signature": "<base64 minisign signature of ${filename}>"`,
+      ),
+      `${filename} must have an exact signature description`,
+    );
+    assert.ok(
+      updaterSetupDocumentation.includes(`releases/download/26.1/${filename}`),
+      `${filename} must have an exact updater URL`,
+    );
+  }
+  assert.doesNotMatch(
+    updaterSetupDocumentation,
+    /sortOfRemoteNG_(?:26\.1\.0_x64_en-US\.msi|x64\.app\.tar\.gz|aarch64\.app\.tar\.gz|26\.1\.0_amd64\.AppImage)/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /only package types compatible with the\s+feed payload may use them: Linux AppImage, Windows NSIS, and the macOS app\s+bundle/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /Debian, RPM, Flatpak, MSI, and the\s+architecture-matched Windows x64 and ARM64 portable ZIP builds therefore use\s+externally managed updates/,
+  );
+  assert.match(
+    updaterSetupDocumentation,
+    /flatpak install --user --reinstall \.\/sortOfRemoteNG_<version>_linux-<arch>\.flatpak/,
+  );
 });
 
 test("recovery distinguishes 404, no-ops valid releases, and blocks signing downgrade", () => {
@@ -1073,6 +1532,7 @@ test("recovery distinguishes 404, no-ops valid releases, and blocks signing down
   );
   assert.match(releaseWorkflow, /protect_os_downgrade darwin-aarch64/);
   assert.match(releaseWorkflow, /protect_os_downgrade windows-x86_64/);
+  assert.match(releaseWorkflow, /protect_os_downgrade windows-aarch64/);
   assert.match(
     releaseWorkflow,
     /protect_latest_os_downgrade darwin-aarch64 developer-id-verified/,
@@ -1084,6 +1544,10 @@ test("recovery distinguishes 404, no-ops valid releases, and blocks signing down
   assert.match(
     releaseWorkflow,
     /protect_latest_os_downgrade windows-x86_64 authenticode-verified/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /protect_latest_os_downgrade windows-aarch64 authenticode-verified/,
   );
   assert.match(
     releaseWorkflow,
@@ -1351,7 +1815,7 @@ test("publication stays draft until remote validation and a final live guard", (
   assert.doesNotMatch(releaseWorkflow, /gh release download "\$PUBLIC_TAG"/);
   assert.match(
     releaseWorkflow.slice(validateIndex, promoteIndex),
-    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=10[\s\S]*?expected_asset_count=17[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
+    /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=22[\s\S]*?expected_asset_count=31[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
   );
   const promotion = releaseWorkflow.slice(promoteIndex);
   assert.ok(

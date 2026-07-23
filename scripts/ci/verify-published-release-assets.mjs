@@ -12,8 +12,12 @@ export const UPDATER_ARTIFACTS = {
     `sortOfRemoteNG_${version}_darwin-aarch64.app.tar.gz`,
   "darwin-x86_64": (version) =>
     `sortOfRemoteNG_${version}_darwin-x86_64.app.tar.gz`,
+  "linux-aarch64": (version) =>
+    `sortOfRemoteNG_${version}_linux-aarch64.AppImage`,
   "linux-x86_64": (version) =>
     `sortOfRemoteNG_${version}_linux-x86_64.AppImage`,
+  "windows-aarch64": (version) =>
+    `sortOfRemoteNG_${version}_windows-aarch64-setup.exe`,
   "windows-x86_64": (version) =>
     `sortOfRemoteNG_${version}_windows-x86_64-setup.exe`,
 };
@@ -22,12 +26,22 @@ const TARGETS = Object.keys(UPDATER_ARTIFACTS).sort();
 
 export function expectedAssetNames(version, updaterMode) {
   const names = [
+    `sortOfRemoteNG_${version}_linux-aarch64.AppImage`,
+    `sortOfRemoteNG_${version}_linux-aarch64.deb`,
+    `sortOfRemoteNG_${version}_linux-aarch64.flatpak`,
+    `sortOfRemoteNG_${version}_linux-aarch64.rpm`,
     `sortOfRemoteNG_${version}_linux-x86_64.AppImage`,
     `sortOfRemoteNG_${version}_linux-x86_64.deb`,
+    `sortOfRemoteNG_${version}_linux-x86_64.flatpak`,
+    `sortOfRemoteNG_${version}_linux-x86_64.rpm`,
     `sortOfRemoteNG_${version}_darwin-aarch64.dmg`,
     `sortOfRemoteNG_${version}_darwin-x86_64.dmg`,
+    `sortOfRemoteNG_${version}_windows-aarch64.msi`,
+    `sortOfRemoteNG_${version}_windows-aarch64-setup.exe`,
+    `sortOfRemoteNG_${version}_windows-aarch64-portable.zip`,
     `sortOfRemoteNG_${version}_windows-x86_64.msi`,
     `sortOfRemoteNG_${version}_windows-x86_64-setup.exe`,
+    `sortOfRemoteNG_${version}_windows-x86_64-portable.zip`,
     ...TARGETS.map(
       (target) => `sortOfRemoteNG_${version}_${target}.provenance.json`,
     ),
@@ -71,16 +85,61 @@ function validateProvenance(assetDir, version, updaterMode, errors) {
         `${fileName} updater_signing must be ${updaterMode === "signed"}.`,
       );
     }
-    const allowedOsSigning =
-      target === "linux-x86_64"
-        ? ["not-applicable"]
-        : target.startsWith("darwin-")
-          ? ["developer-id-verified", "unsigned"]
-          : ["authenticode-verified", "unsigned"];
+    const allowedOsSigning = target.startsWith("linux-")
+      ? ["not-applicable"]
+      : target.startsWith("darwin-")
+        ? ["developer-id-verified", "unsigned"]
+        : ["authenticode-verified", "unsigned"];
     if (!allowedOsSigning.includes(provenance.os_signing)) {
       errors.push(
         `${fileName} os_signing must be one of ${allowedOsSigning.join(", ")}.`,
       );
+    }
+    if (target.startsWith("linux-")) {
+      const expectedArch = target.endsWith("aarch64") ? "aarch64" : "x86_64";
+      const expectedRpm = {
+        filename: `sortOfRemoteNG_${version}_${target}.rpm`,
+        version,
+        arch: expectedArch,
+      };
+      const expectedFlatpak = {
+        filename: `sortOfRemoteNG_${version}_${target}.flatpak`,
+        arch: expectedArch,
+        app_ref: `app/com.sortofremote.ng/${expectedArch}/stable`,
+        runtime_ref: `runtime/org.gnome.Platform/${expectedArch}/50`,
+        sdk_ref: `runtime/org.gnome.Sdk/${expectedArch}/50`,
+        builder_version: "1.4.2",
+        manifest_path: "packaging/flatpak/com.sortofremote.ng.yml",
+        resource_path: "/app/bin/resources/opkssh",
+      };
+      const linuxPackages = provenance.linux_packages;
+      if (!linuxPackages || typeof linuxPackages !== "object") {
+        errors.push(`${fileName} must contain linux_packages metadata.`);
+        continue;
+      }
+      for (const [key, expected] of Object.entries(expectedRpm)) {
+        if (linuxPackages.rpm?.[key] !== expected) {
+          errors.push(
+            `${fileName} linux_packages.rpm.${key} must equal ${expected}.`,
+          );
+        }
+      }
+      for (const [key, expected] of Object.entries(expectedFlatpak)) {
+        if (linuxPackages.flatpak?.[key] !== expected) {
+          errors.push(
+            `${fileName} linux_packages.flatpak.${key} must equal ${expected}.`,
+          );
+        }
+      }
+      for (const key of ["runtime_commit", "sdk_commit", "manifest_sha256"]) {
+        if (!/^[0-9a-f]{64}$/u.test(linuxPackages.flatpak?.[key] ?? "")) {
+          errors.push(
+            `${fileName} linux_packages.flatpak.${key} must be a lowercase SHA-256 value.`,
+          );
+        }
+      }
+    } else if (provenance.linux_packages !== undefined) {
+      errors.push(`${fileName} must not contain linux_packages metadata.`);
     }
   }
 }
@@ -133,9 +192,7 @@ export function validatePublishedReleaseAssets({
       );
       const feedTargets = Object.keys(feed.platforms ?? {}).sort();
       if (feedTargets.join("\n") !== TARGETS.join("\n")) {
-        errors.push(
-          "latest.json must contain exactly the four supported targets.",
-        );
+        errors.push("latest.json must contain exactly the supported targets.");
       }
       for (const target of TARGETS) {
         const expectedArtifact = UPDATER_ARTIFACTS[target](expectedVersion);

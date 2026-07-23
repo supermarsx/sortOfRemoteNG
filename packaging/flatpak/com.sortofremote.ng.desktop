@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=sortOfRemoteNG
+Comment=Manage remote connections from one desktop workspace
+Exec=sortOfRemoteNG
+Icon=com.sortofremote.ng
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=true

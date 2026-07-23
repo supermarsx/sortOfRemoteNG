@@ -21,9 +21,11 @@ application exposes it through the backend-owned `updater_*` commands in
 `@tauri-apps/plugin-updater` directly.
 
 The old custom downloader, copy installer, scheduler, channel, history, and
-rollback paths are not production update mechanisms. P1 installs are signed
-Tauri updater installs only. Private feed configuration is managed by
-Settings > Updater and documented in
+rollback paths are not production update mechanisms. Automatic P1 installs are
+signed Tauri updater installs only, and only package types compatible with the
+feed payload may use them: Linux AppImage, Windows NSIS, and the macOS app
+bundle. Private feed configuration is managed by Settings > Updater and
+documented in
 [private updater endpoint guide]({{ '/release/private-updater-endpoint/' | relative_url }}).
 
 Public OS installers and updater delivery are separate release outputs. Every
@@ -31,6 +33,18 @@ successful `main` push may publish Windows, Linux, and macOS installers without
 OS-signing certificates. The workflow publishes updater archives, signatures,
 and `latest.json` only when `TAURI_SIGNING_PRIVATE_KEY` is configured; it never
 advertises an unsigned artifact to the updater.
+
+The feed's Linux payload is the architecture-matched AppImage, and its Windows
+payload is the architecture-matched NSIS `setup.exe`. A different package type
+must never install those bytes over itself. Debian, RPM, Flatpak, MSI, and the
+architecture-matched Windows x64 and ARM64 portable ZIP builds therefore use
+externally managed updates: download and reinstall or replace the newer
+matching public asset from GitHub Releases.
+Flatpak builds additionally live under read-only `/app`; update them manually,
+for example with
+`flatpak install --user --reinstall ./sortOfRemoteNG_<version>_linux-<arch>.flatpak`.
+Those package types are intentionally absent from `latest.json` and do not
+expose in-app update check/install controls.
 
 ---
 
@@ -121,11 +135,13 @@ jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and
 and runs the version checks against the prepared snapshot. A rerun for the same
 source SHA reuses its tag and GitHub Release rather than incrementing `N`.
 
-The four updater targets are `windows-x86_64`, `linux-x86_64`,
-`darwin-x86_64`, and `darwin-aarch64`. If the Tauri private key is absent, the
-workflow omits their updater signatures and `latest.json` but may still publish
-the corresponding public OS installers. If the key is present, missing or
-invalid updater artifacts fail publication of the feed.
+The six updater targets are `windows-x86_64`, `windows-aarch64`,
+`linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`. If the
+Tauri private key is absent, the workflow omits their updater signatures and
+`latest.json` but may still publish the corresponding public OS installers. If
+the key is present, missing or invalid updater artifacts fail publication of
+the feed. Public `.rpm` and `.flatpak` files do not add updater platform keys
+or signature entries.
 
 ---
 
@@ -171,20 +187,28 @@ release URL and human-facing notes retain the bare public tag/version (`YY.N`).
   "pub_date": "2026-04-20T00:00:00Z", // RFC 3339 / ISO 8601
   "platforms": {
     "windows-x86_64": {
-      "signature": "<base64 minisign signature of the .msi/.exe artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_x64_en-US.msi",
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_windows-x86_64-setup.exe",
+    },
+    "windows-aarch64": {
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_windows-aarch64-setup.exe",
     },
     "darwin-x86_64": {
-      "signature": "<base64 minisign signature of the .app.tar.gz artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_x64.app.tar.gz",
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_darwin-x86_64.app.tar.gz",
     },
     "darwin-aarch64": {
-      "signature": "<base64 minisign signature>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_aarch64.app.tar.gz",
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_darwin-aarch64.app.tar.gz>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_darwin-aarch64.app.tar.gz",
     },
     "linux-x86_64": {
-      "signature": "<base64 minisign signature of the .AppImage artifact>",
-      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_amd64.AppImage",
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_linux-x86_64.AppImage>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_linux-x86_64.AppImage",
+    },
+    "linux-aarch64": {
+      "signature": "<base64 minisign signature of sortOfRemoteNG_26.1.0_linux-aarch64.AppImage>",
+      "url": "https://github.com/supermarsx/sortOfRemoteNG/releases/download/26.1/sortOfRemoteNG_26.1.0_linux-aarch64.AppImage",
     },
   },
 }
