@@ -214,7 +214,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "app"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -9272,7 +9272,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-1password"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9293,7 +9293,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-about"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9304,7 +9304,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ai-agent"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -9329,7 +9329,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ai-assist"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "fuzzy-matcher",
@@ -9344,7 +9344,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-amavis"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9357,7 +9357,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ansible"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -9372,7 +9372,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-apache"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9385,7 +9385,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-api"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -9406,11 +9406,11 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-auth"
-version = "26.1.0"
+version = "26.13.0"
 
 [[package]]
 name = "sorng-app-domains"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "sorng-app-domains-cloud",
  "sorng-app-domains-collab",
@@ -9421,7 +9421,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-domains-cloud"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "sorng-aws",
  "sorng-azure",
@@ -9435,7 +9435,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-domains-collab"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "sorng-ai-assist",
  "sorng-collaboration",
@@ -9457,7 +9457,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-domains-core"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "sorng-1password",
  "sorng-ai-agent",
@@ -9506,7 +9506,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-domains-ops"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "sorng-about",
@@ -9603,7 +9603,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-domains-platform"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "sorng-hyperv",
  "sorng-idrac",
@@ -9625,7 +9625,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-shell"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "dirs 6.0.0",
  "serde",
@@ -9635,7 +9635,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-startup-connectivity"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "sorng-app-domains",
@@ -9647,7 +9647,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-app-startup-state"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "sorng-app-api",
@@ -9666,7 +9666,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ard"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "base64 0.22.1",
@@ -9693,7 +9693,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-auth"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
@@ -9745,7 +9745,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-aws"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -9763,7 +9763,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-aws-vendor"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "hex",
  "hmac 0.12.1",
@@ -9774,7 +9774,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-azure"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9789,7 +9789,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-backup-verify"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "crc32fast",
@@ -9807,7 +9807,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-biometrics"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9831,7 +9831,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-bitwarden"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "base64 0.21.7",
@@ -9856,7 +9856,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-bmc-common"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -9871,7 +9871,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-bootloader"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9884,7 +9884,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-budibase"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9898,7 +9898,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-caddy"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9911,7 +9911,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ceph"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9928,7 +9928,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cicd"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9943,7 +9943,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-clamav"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -9956,7 +9956,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cloud"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9973,7 +9973,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-collaboration"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -9988,7 +9988,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-command-palette"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "fuzzy-matcher",
@@ -10004,7 +10004,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-access"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "serde",
@@ -10018,7 +10018,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-cloud"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "serde",
@@ -10031,7 +10031,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-collab"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10044,7 +10044,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-core"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "axum",
  "base64 0.21.7",
@@ -10081,7 +10081,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-infra"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10104,7 +10104,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-mail"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10128,7 +10128,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-ops"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10174,7 +10174,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-platform"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10188,7 +10188,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-services"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10211,7 +10211,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-sessions"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "serde",
@@ -10222,7 +10222,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-tools"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10251,7 +10251,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-commands-webservers"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10273,7 +10273,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-compression-vendor"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "flate2",
  "zstd",
@@ -10281,7 +10281,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-consul"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10294,7 +10294,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-core"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "serde",
@@ -10304,7 +10304,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cpanel"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10318,7 +10318,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-credentials"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10331,7 +10331,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cron"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10344,7 +10344,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cups"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10361,7 +10361,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-cyrus-sasl"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10374,7 +10374,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dashboard"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10386,7 +10386,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dashlane"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10407,7 +10407,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ddns"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10422,7 +10422,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dhcp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10435,7 +10435,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-diskmgmt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10448,7 +10448,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dns"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10464,7 +10464,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-docker"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -10482,7 +10482,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-docker-compose"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -10509,7 +10509,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dovecot"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10522,7 +10522,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-dropbox"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10542,7 +10542,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-encryption"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -10564,7 +10564,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-etcd"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10578,7 +10578,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-exchange"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10593,7 +10593,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-extensions"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10607,7 +10607,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-fail2ban"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10620,7 +10620,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-filesharing"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10633,7 +10633,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-filters"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10646,7 +10646,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-fonts"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10657,7 +10657,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-freeipa"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10670,7 +10670,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ftp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "glob",
@@ -10690,7 +10690,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-gateway"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10707,7 +10707,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-gcp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10726,7 +10726,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-gdrive"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10742,7 +10742,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-google-passwords"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10761,7 +10761,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-gpg-agent"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10776,7 +10776,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-gpo"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "log",
  "serde",
@@ -10787,7 +10787,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-grafana"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10800,7 +10800,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-haproxy"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10813,7 +10813,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-hashicorp-vault"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10827,7 +10827,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-hetzner"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -10843,7 +10843,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-hooks"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -10855,7 +10855,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-hyperv"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -10870,7 +10870,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-i18n"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "arc-swap",
  "chrono",
@@ -10889,7 +10889,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-idrac"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -10907,7 +10907,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ilo"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -10926,7 +10926,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ipmi"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -10948,7 +10948,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-jira"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -10962,7 +10962,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-k8s"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -10983,7 +10983,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-kafka"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11002,7 +11002,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-keepass"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11023,7 +11023,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-kernel"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11036,7 +11036,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-lastpass"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "base64 0.21.7",
@@ -11061,7 +11061,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ldap"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11074,7 +11074,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-lenovo"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -11092,7 +11092,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-letsencrypt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11111,7 +11111,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-llm"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -11134,7 +11134,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-lxd"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11149,7 +11149,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mac"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11162,7 +11162,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mailcow"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11175,7 +11175,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-marketplace"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11189,7 +11189,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mcp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11201,7 +11201,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-meshcentral"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11216,7 +11216,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mongodb"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11228,7 +11228,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mremoteng"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.21.7",
@@ -11250,7 +11250,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mssql"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11267,7 +11267,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mysql"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11283,7 +11283,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-mysql-admin"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11296,7 +11296,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-netbird"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11311,7 +11311,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-netbox"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11324,7 +11324,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-netmgr"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11337,7 +11337,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-netutils"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11350,7 +11350,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-network"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11370,7 +11370,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-nextcloud"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11391,7 +11391,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-nginx"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11404,7 +11404,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-nginx-proxy-mgr"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11417,7 +11417,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-notifications"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "lettre",
@@ -11432,7 +11432,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-nx"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -11452,7 +11452,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-onedrive"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11473,7 +11473,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-opendkim"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11486,7 +11486,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-openvpn"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -11506,7 +11506,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-opkssh"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -11521,14 +11521,14 @@ dependencies = [
 
 [[package]]
 name = "sorng-opkssh-vendor"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "sorng-oracle-cloud"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -11544,7 +11544,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-os-detect"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11557,7 +11557,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-osticket"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11570,7 +11570,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-p2p"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chacha20poly1305",
@@ -11593,7 +11593,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-packages"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11606,7 +11606,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-pam"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11619,7 +11619,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-passbolt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11641,7 +11641,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-pfsense"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11655,7 +11655,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-php"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11668,7 +11668,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-port-knock"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chacha20poly1305",
  "chrono",
@@ -11685,7 +11685,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-portable"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11697,7 +11697,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-postfix"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11710,7 +11710,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-postgres"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "bigdecimal",
@@ -11729,7 +11729,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-postgres-admin"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11741,7 +11741,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-powershell"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -11779,7 +11779,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-probes"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -11793,7 +11793,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-proc"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11806,7 +11806,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-procmail"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11819,7 +11819,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-prometheus"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11832,7 +11832,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-protocols"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "axum",
  "base64 0.21.7",
@@ -11867,7 +11867,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-proxmox"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -11884,7 +11884,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rabbitmq"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11901,7 +11901,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rdp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -11934,7 +11934,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rdp-vendor"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "ironrdp",
  "ironrdp-blocking",
@@ -11949,7 +11949,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rdpfile"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11961,7 +11961,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-recording"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -11980,7 +11980,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-redis"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -11996,7 +11996,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-remote-backup"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "blake2 0.10.6",
  "chrono",
@@ -12018,7 +12018,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-remote-mgmt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "futures-util",
@@ -12034,7 +12034,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-replay"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12048,7 +12048,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-roundcube"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12061,7 +12061,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rspamd"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12074,7 +12074,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-rustdesk"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12092,7 +12092,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-scheduler"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12104,7 +12104,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-scp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12130,7 +12130,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-secure-clip"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12142,7 +12142,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-serial"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12162,7 +12162,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-sftp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12189,7 +12189,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-smb"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -12207,7 +12207,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-smtp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12235,7 +12235,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-snmp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12251,7 +12251,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-socket-transport"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "serde",
  "socket2 0.5.10",
@@ -12262,7 +12262,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-spamassassin"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12275,7 +12275,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-spice"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "byteorder",
@@ -12296,7 +12296,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-sqlite"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12311,7 +12311,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ssh"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12355,7 +12355,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ssh-agent"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12374,7 +12374,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ssh-scripts"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "cron",
@@ -12388,7 +12388,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-storage"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.21.7",
@@ -12411,7 +12411,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-supermicro"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12433,7 +12433,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-synology"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12450,7 +12450,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-syslog"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12463,7 +12463,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-systemd"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12476,7 +12476,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-tailscale"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12489,7 +12489,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-telegram"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12511,7 +12511,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-teleport"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12525,7 +12525,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-telnet"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -12539,7 +12539,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-terminal-themes"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12551,7 +12551,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-termserv"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12565,7 +12565,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-terraform"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -12579,7 +12579,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-time-ntp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12592,7 +12592,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-tls-trust"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12609,7 +12609,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-topology"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12621,7 +12621,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-totp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "base32",
@@ -12646,7 +12646,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-traefik"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12659,7 +12659,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-updater"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12672,7 +12672,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-updater-signature-verifier"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "minisign-verify",
@@ -12680,7 +12680,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-ups"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12692,7 +12692,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-usermgmt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12705,7 +12705,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-vault"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -12728,14 +12728,14 @@ dependencies = [
 
 [[package]]
 name = "sorng-vault-windows"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "sorng-vmware"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12755,7 +12755,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-vmware-desktop"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12771,7 +12771,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-vnc"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "byteorder",
@@ -12795,7 +12795,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-vpn"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -12836,7 +12836,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-warpgate"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "dirs 6.0.0",
@@ -12853,7 +12853,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-whatsapp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.21.7",
@@ -12880,7 +12880,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-winmgmt"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -12908,7 +12908,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-wireguard"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12924,7 +12924,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-x2go"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12941,7 +12941,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-xdmcp"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -12959,7 +12959,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-yubikey"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "base64 0.21.7",
  "chrono",
@@ -12974,7 +12974,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-zabbix"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
@@ -12987,7 +12987,7 @@ dependencies = [
 
 [[package]]
 name = "sorng-zerotier"
-version = "26.1.0"
+version = "26.13.0"
 dependencies = [
  "chrono",
  "log",
