@@ -6,6 +6,52 @@ use serde::{Deserialize, Serialize};
 pub const PUBLIC_ENDPOINT_URL: &str =
     "https://github.com/supermarsx/sortOfRemoteNG/releases/latest/download/latest.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdaterInstallMode {
+    #[serde(rename = "appimage")]
+    AppImage,
+    Nsis,
+    #[serde(rename = "macos_app")]
+    MacOsApp,
+    Deb,
+    Rpm,
+    Msi,
+    Flatpak,
+    Portable,
+    Unknown,
+}
+
+impl UpdaterInstallMode {
+    pub fn self_update_supported(self) -> bool {
+        matches!(self, Self::AppImage | Self::Nsis | Self::MacOsApp)
+    }
+
+    pub fn self_update_message(self) -> Option<&'static str> {
+        match self {
+            Self::AppImage | Self::Nsis | Self::MacOsApp => None,
+            Self::Deb => Some(
+                "This Debian package is updated externally. Install a newer .deb package from GitHub Releases.",
+            ),
+            Self::Rpm => Some(
+                "This RPM package is updated externally. Install a newer .rpm package from GitHub Releases.",
+            ),
+            Self::Msi => Some(
+                "This MSI installation is updated externally. Install a newer .msi package from GitHub Releases.",
+            ),
+            Self::Flatpak => Some(
+                "This Flatpak installation is updated externally. Install a newer Flatpak from GitHub Releases.",
+            ),
+            Self::Portable => Some(
+                "This portable installation is updated manually. Download and extract a newer portable ZIP from GitHub Releases.",
+            ),
+            Self::Unknown => Some(
+                "This installation type cannot be safely updated in the app. Install the appropriate newer package from GitHub Releases.",
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdaterStatusValue {
@@ -47,6 +93,9 @@ pub struct ResolvedUpdaterEndpoint {
 pub struct UpdaterSettings {
     pub auto_check_enabled: bool,
     pub check_interval_hours: u64,
+    pub install_mode: UpdaterInstallMode,
+    pub self_update_supported: bool,
+    pub self_update_message: Option<String>,
     pub private_endpoint_enabled: bool,
     pub private_endpoint_url: Option<String>,
     pub public_endpoint_url: String,
@@ -84,6 +133,9 @@ pub struct AvailableUpdate {
 pub struct UpdaterStatusSnapshot {
     pub status: UpdaterStatusValue,
     pub current_version: String,
+    pub install_mode: UpdaterInstallMode,
+    pub self_update_supported: bool,
+    pub self_update_message: Option<String>,
     pub available_update: Option<AvailableUpdate>,
     pub last_checked_at: Option<DateTime<Utc>>,
     pub last_error: Option<String>,

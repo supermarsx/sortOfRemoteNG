@@ -24,11 +24,16 @@ import UpdaterSettingsSection from "../../src/components/SettingsDialog/sections
 const settings: UpdaterSettings = {
   autoCheckEnabled: true,
   checkIntervalHours: 24,
+  installMode: "nsis",
+  selfUpdateSupported: true,
+  selfUpdateMessage: null,
   privateEndpointEnabled: false,
   privateEndpointUrl: null,
   publicEndpointUrl: "https://github.example/latest.json",
   endpointMode: "public_only",
-  resolvedEndpoints: [{ source: "public", url: "https://github.example/latest.json" }],
+  resolvedEndpoints: [
+    { source: "public", url: "https://github.example/latest.json" },
+  ],
   dynamicPluginEndpointsSupported: true,
   dynamicPluginEndpointsMessage: null,
   privateEndpointValidationError: null,
@@ -37,6 +42,9 @@ const settings: UpdaterSettings = {
 const idleStatus: UpdaterStatusSnapshot = {
   status: "idle",
   currentVersion: "25.5.0",
+  installMode: "nsis",
+  selfUpdateSupported: true,
+  selfUpdateMessage: null,
   availableUpdate: null,
   lastCheckedAt: null,
   lastError: null,
@@ -54,41 +62,56 @@ const idleStatus: UpdaterStatusSnapshot = {
 describe("UpdaterSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockImplementation((cmd: string, args?: { patch?: UpdaterSettingsPatch }) => {
-      switch (cmd) {
-        case "updater_get_settings":
-          return Promise.resolve(settings);
-        case "updater_get_status":
-          return Promise.resolve(idleStatus);
-        case "updater_save_settings":
-          return Promise.resolve({ ...settings, ...args?.patch });
-        default:
-          return Promise.resolve({ updateAvailable: false, availableUpdate: null, status: idleStatus });
-      }
-    });
+    mockInvoke.mockImplementation(
+      (cmd: string, args?: { patch?: UpdaterSettingsPatch }) => {
+        switch (cmd) {
+          case "updater_get_settings":
+            return Promise.resolve(settings);
+          case "updater_get_status":
+            return Promise.resolve(idleStatus);
+          case "updater_save_settings":
+            return Promise.resolve({ ...settings, ...args?.patch });
+          default:
+            return Promise.resolve({
+              updateAvailable: false,
+              availableUpdate: null,
+              status: idleStatus,
+            });
+        }
+      },
+    );
   });
 
   it("saves auto-check and interval settings", async () => {
     render(<UpdaterSettingsSection />);
 
     const toggle = await screen.findByTestId("updater-auto-check-toggle");
-    await waitFor(() => expect(toggle).not.toBeDisabled());
-    fireEvent.click(toggle);
-
+    const interval = screen.getByTestId("updater-check-interval");
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
-        patch: { autoCheckEnabled: false },
-      });
+      expect(toggle).not.toBeDisabled();
+      expect(interval).not.toBeDisabled();
     });
 
-    const interval = screen.getByTestId("updater-check-interval");
     fireEvent.change(interval, { target: { value: "6" } });
+    await waitFor(() => expect(interval).toHaveValue(6));
     fireEvent.blur(interval);
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
         patch: { checkIntervalHours: 6 },
       });
+    });
+    await waitFor(() => {
+      expect(interval).toHaveValue(6);
+      expect(toggle).not.toBeDisabled();
+    });
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("updater_save_settings", {
+        patch: { autoCheckEnabled: false },
+      });
+      expect(toggle).not.toBeChecked();
     });
   });
 
@@ -111,10 +134,18 @@ describe("UpdaterSettings", () => {
       expect(icon.getAttribute("class")).toContain("text-primary");
     }
 
-    expect(screen.queryByTestId("updater-save-interval-btn")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("updater-private-endpoint-save-btn")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("updater-private-endpoint-clear-btn")).not.toBeInTheDocument();
-    expect(screen.getByTestId("updater-reset-defaults-btn")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("updater-save-interval-btn"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("updater-private-endpoint-save-btn"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("updater-private-endpoint-clear-btn"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("updater-reset-defaults-btn"),
+    ).toBeInTheDocument();
   });
 
   it("uses standard updater field label/input groups without extra left margin", async () => {
@@ -123,10 +154,16 @@ describe("UpdaterSettings", () => {
     const intervalInput = await screen.findByTestId("updater-check-interval");
     const intervalField = intervalInput.parentElement;
     expect(intervalField?.className).not.toContain("ml-7");
-    expect(intervalField?.querySelector(".sor-settings-row-label")).not.toBeNull();
-    expect(intervalField?.querySelector(".sor-settings-row-label svg")).not.toBeNull();
+    expect(
+      intervalField?.querySelector(".sor-settings-row-label"),
+    ).not.toBeNull();
+    expect(
+      intervalField?.querySelector(".sor-settings-row-label svg"),
+    ).not.toBeNull();
 
-    const endpointToggle = screen.getByTestId("updater-private-endpoint-toggle");
+    const endpointToggle = screen.getByTestId(
+      "updater-private-endpoint-toggle",
+    );
     await waitFor(() => expect(endpointToggle).not.toBeDisabled());
     fireEvent.click(endpointToggle);
 
@@ -134,9 +171,15 @@ describe("UpdaterSettings", () => {
     await waitFor(() => expect(endpointInput).not.toBeDisabled());
     const endpointField = endpointInput.parentElement;
     expect(endpointField?.className).not.toContain("ml-7");
-    expect(endpointField?.querySelector(".sor-settings-row-label")).not.toBeNull();
-    expect(endpointField?.querySelector(".sor-settings-row-label svg")).not.toBeNull();
-    expect(document.querySelectorAll(".sor-settings-toggle-row")).toHaveLength(2);
+    expect(
+      endpointField?.querySelector(".sor-settings-row-label"),
+    ).not.toBeNull();
+    expect(
+      endpointField?.querySelector(".sor-settings-row-label svg"),
+    ).not.toBeNull();
+    expect(document.querySelectorAll(".sor-settings-toggle-row")).toHaveLength(
+      2,
+    );
   });
 
   it("saves the private endpoint on blur and resets updater defaults from the footer", async () => {

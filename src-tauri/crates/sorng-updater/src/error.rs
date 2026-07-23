@@ -6,6 +6,7 @@ use std::fmt;
 pub enum UpdateError {
     InvalidEndpoint(String),
     Settings(String),
+    SelfUpdateUnsupported(String),
     Plugin(String),
     Io(String),
     Serialization(String),
@@ -22,6 +23,7 @@ impl fmt::Display for UpdateError {
         match self {
             Self::InvalidEndpoint(msg) => write!(f, "invalid updater endpoint: {msg}"),
             Self::Settings(msg) => write!(f, "updater settings error: {msg}"),
+            Self::SelfUpdateUnsupported(msg) => write!(f, "{msg}"),
             Self::Plugin(msg) => write!(f, "tauri updater plugin error: {msg}"),
             Self::Io(msg) => write!(f, "I/O error: {msg}"),
             Self::Serialization(msg) => write!(f, "serialization error: {msg}"),

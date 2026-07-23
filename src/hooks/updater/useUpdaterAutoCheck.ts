@@ -37,12 +37,18 @@ function toErrorMessage(error: unknown): string {
   return "Updater auto-check failed";
 }
 
-function intervalMsFor(settings: UpdaterSettings, minIntervalMs: number): number {
+function intervalMsFor(
+  settings: UpdaterSettings,
+  minIntervalMs: number,
+): number {
   const configured = Math.max(1, settings.checkIntervalHours) * HOUR_MS;
   return Math.max(minIntervalMs, configured);
 }
 
-function isDue(status: UpdaterStatusSnapshot | null, intervalMs: number): boolean {
+function isDue(
+  status: UpdaterStatusSnapshot | null,
+  intervalMs: number,
+): boolean {
   if (!status?.lastCheckedAt) return true;
   const lastCheckedAt = Date.parse(status.lastCheckedAt);
   if (!Number.isFinite(lastCheckedAt)) return true;
@@ -123,7 +129,14 @@ export function useUpdaterAutoCheck(
         setSettings(nextSettings);
         setStatus(nextStatus);
       }
-      if (!nextSettings.autoCheckEnabled || isUpdaterBusy(nextStatus)) return null;
+      if (
+        !nextSettings.selfUpdateSupported ||
+        !nextStatus.selfUpdateSupported ||
+        !nextSettings.autoCheckEnabled ||
+        isUpdaterBusy(nextStatus)
+      ) {
+        return null;
+      }
       const intervalMs = intervalMsFor(nextSettings, minIntervalMs);
       if (!isDue(nextStatus, intervalMs)) return null;
       const result = await runSharedAutoCheck();
@@ -157,18 +170,31 @@ export function useUpdaterAutoCheck(
       await tick();
       if (cancelled) return;
       const latestSettings = await updaterApi.getSettings().catch(() => null);
-      if (cancelled || !latestSettings?.autoCheckEnabled) return;
-      intervalTimer = window.setInterval(tick, intervalMsFor(latestSettings, minIntervalMs));
+      if (
+        cancelled ||
+        !latestSettings?.selfUpdateSupported ||
+        !latestSettings.autoCheckEnabled
+      ) {
+        return;
+      }
+      intervalTimer = window.setInterval(
+        tick,
+        intervalMsFor(latestSettings, minIntervalMs),
+      );
     };
 
-    const startTimer = window.setTimeout(() => {
-      void start();
-    }, Math.max(0, startDelayMs));
+    const startTimer = window.setTimeout(
+      () => {
+        void start();
+      },
+      Math.max(0, startDelayMs),
+    );
 
     return () => {
       cancelled = true;
       if (typeof startTimer === "number") window.clearTimeout(startTimer);
-      if (typeof intervalTimer === "number") window.clearInterval(intervalTimer);
+      if (typeof intervalTimer === "number")
+        window.clearInterval(intervalTimer);
     };
   }, [enabled, minIntervalMs, runNow, startDelayMs]);
 

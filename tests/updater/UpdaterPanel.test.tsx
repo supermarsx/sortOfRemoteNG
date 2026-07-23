@@ -25,11 +25,16 @@ import { UpdaterPanel } from "../../src/components/updater/UpdaterPanel";
 const settings: UpdaterSettings = {
   autoCheckEnabled: true,
   checkIntervalHours: 24,
+  installMode: "nsis",
+  selfUpdateSupported: true,
+  selfUpdateMessage: null,
   privateEndpointEnabled: false,
   privateEndpointUrl: null,
   publicEndpointUrl: "https://github.example/latest.json",
   endpointMode: "public_only",
-  resolvedEndpoints: [{ source: "public", url: "https://github.example/latest.json" }],
+  resolvedEndpoints: [
+    { source: "public", url: "https://github.example/latest.json" },
+  ],
   dynamicPluginEndpointsSupported: true,
   dynamicPluginEndpointsMessage: null,
   privateEndpointValidationError: null,
@@ -49,6 +54,9 @@ const update: AvailableUpdate = {
 const idleStatus: UpdaterStatusSnapshot = {
   status: "idle",
   currentVersion: "25.5.0",
+  installMode: "nsis",
+  selfUpdateSupported: true,
+  selfUpdateMessage: null,
   availableUpdate: null,
   lastCheckedAt: null,
   lastError: null,
@@ -113,6 +121,9 @@ describe("UpdaterPanel", () => {
     render(<UpdaterPanel />);
 
     const checkButton = await screen.findByTestId("updater-check-btn");
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("updater_get_status", undefined),
+    );
     await waitFor(() => expect(checkButton).not.toBeDisabled());
     fireEvent.click(checkButton);
 
@@ -125,12 +136,12 @@ describe("UpdaterPanel", () => {
       expect(screen.getByTestId("updater-available-version")).toHaveTextContent(
         "New version available: 25.6",
       );
-      expect(screen.getByTestId("updater-current-version")).not.toHaveTextContent(
-        "25.5.0",
-      );
-      expect(screen.getByTestId("updater-available-version")).not.toHaveTextContent(
-        "25.6.0",
-      );
+      expect(
+        screen.getByTestId("updater-current-version"),
+      ).not.toHaveTextContent("25.5.0");
+      expect(
+        screen.getByTestId("updater-available-version"),
+      ).not.toHaveTextContent("25.6.0");
     });
 
     fireEvent.click(screen.getByTestId("updater-install-btn"));
@@ -147,5 +158,53 @@ describe("UpdaterPanel", () => {
     expect(screen.queryByText(/Update channel/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Update history/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Rollback/i)).not.toBeInTheDocument();
+  });
+
+  it("explains externally managed Flatpak updates and disables updater actions", async () => {
+    const message =
+      "This Flatpak installation is updated externally. Install a newer Flatpak from GitHub Releases.";
+    const flatpakSettings: UpdaterSettings = {
+      ...settings,
+      installMode: "flatpak",
+      selfUpdateSupported: false,
+      selfUpdateMessage: message,
+    };
+    const flatpakStatus: UpdaterStatusSnapshot = {
+      ...idleStatus,
+      installMode: "flatpak",
+      selfUpdateSupported: false,
+      selfUpdateMessage: message,
+    };
+    mockInvoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "updater_get_settings":
+          return Promise.resolve(flatpakSettings);
+        case "updater_get_status":
+          return Promise.resolve(flatpakStatus);
+        case "updater_save_settings":
+          return Promise.resolve(flatpakSettings);
+        default:
+          return Promise.resolve(undefined);
+      }
+    });
+
+    render(<UpdaterPanel />);
+
+    const notice = await screen.findByTestId("updater-self-update-notice");
+    expect(notice).toHaveTextContent(message);
+    expect(
+      screen.getByRole("link", { name: /Open GitHub Releases/i }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/supermarsx/sortOfRemoteNG/releases/latest",
+    );
+    expect(screen.getByTestId("updater-check-btn")).toBeDisabled();
+    expect(screen.getByTestId("updater-auto-check-toggle")).toBeDisabled();
+    expect(screen.getByTestId("updater-check-interval")).toBeDisabled();
+    expect(screen.queryByTestId("updater-install-btn")).not.toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith(
+      "updater_check",
+      expect.anything(),
+    );
   });
 });

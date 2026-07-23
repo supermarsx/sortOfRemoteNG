@@ -9,6 +9,7 @@ import type {
   UpdateProgress,
   UpdaterCheckResult,
   UpdaterConfig,
+  UpdaterInstallMode,
   UpdaterSettings,
   UpdaterSettingsPatch,
   UpdaterStatusSnapshot,
@@ -18,10 +19,27 @@ import type {
 type InvokeArgs = Record<string, unknown>;
 
 let sharedCheckPromise: Promise<UpdaterCheckResult> | null = null;
+const SELF_UPDATE_CAPABILITY_LOADING_MESSAGE =
+  "Updater capability is still loading. Wait for package compatibility checks to finish and try again.";
+const SELF_UPDATE_UNSUPPORTED_FALLBACK =
+  "This installation cannot be safely updated in the app.";
 
-async function invokeUpdater<T>(command: string, args?: InvokeArgs): Promise<T> {
+async function invokeUpdater<T>(
+  command: string,
+  args?: InvokeArgs,
+): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(command, args);
+}
+
+async function startUpdaterCapabilityRequests(): Promise<{
+  settings: Promise<UpdaterSettings>;
+  status: Promise<UpdaterStatusSnapshot>;
+}> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const settings = invoke<UpdaterSettings>("updater_get_settings", undefined);
+  const status = invoke<UpdaterStatusSnapshot>("updater_get_status", undefined);
+  return { settings, status };
 }
 
 function runSharedCheck(force = false): Promise<UpdaterCheckResult> {
@@ -54,6 +72,9 @@ export interface UseUpdaterOptions {
 export interface UseUpdaterResult {
   settings: UpdaterSettings | null;
   status: UpdaterStatusSnapshot | null;
+  installMode: UpdaterInstallMode | null;
+  selfUpdateSupported: boolean;
+  selfUpdateMessage: string | null;
   checkResult: UpdaterCheckResult | null;
   availableUpdate: AvailableUpdate | null;
   loadingSettings: boolean;
@@ -82,7 +103,9 @@ export interface UseUpdaterResult {
   refreshSettings: () => Promise<UpdaterSettings | null>;
   refreshStatus: () => Promise<UpdaterStatusSnapshot | null>;
   refresh: () => Promise<void>;
-  saveSettings: (patch: UpdaterSettingsPatch) => Promise<UpdaterSettings | null>;
+  saveSettings: (
+    patch: UpdaterSettingsPatch,
+  ) => Promise<UpdaterSettings | null>;
   check: (force?: boolean) => Promise<UpdaterCheckResult | null>;
   install: (version?: string) => Promise<UpdaterStatusSnapshot | null>;
   relaunch: () => Promise<boolean>;
@@ -106,7 +129,9 @@ export interface UseUpdaterResult {
   fetchRollbacks: () => Promise<RollbackInfo[]>;
   fetchReleaseNotes: (version?: string) => Promise<ReleaseNotes | null>;
   loadConfig: () => Promise<UpdaterConfig | null>;
-  updateConfig: (config: Partial<UpdaterConfig>) => Promise<UpdaterConfig | null>;
+  updateConfig: (
+    config: Partial<UpdaterConfig>,
+  ) => Promise<UpdaterConfig | null>;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -126,9 +151,9 @@ function settingsToLegacyConfig(
   if (!settings) return null;
   return {
     ...settings,
-    enabled: true,
+    enabled: settings.selfUpdateSupported,
     channel: "stable",
-    autoCheck: settings.autoCheckEnabled,
+    autoCheck: settings.selfUpdateSupported && settings.autoCheckEnabled,
     autoDownload: false,
     autoInstall: false,
     checkIntervalMs: settings.checkIntervalHours * 60 * 60 * 1000,
@@ -172,7 +197,9 @@ function legacyConfigPatchToSettingsPatch(
   return patch;
 }
 
-function availableUpdateToLegacy(update: AvailableUpdate | null): UpdateInfo | null {
+function availableUpdateToLegacy(
+  update: AvailableUpdate | null,
+): UpdateInfo | null {
   if (!update) return null;
   return {
     version: update.version,
@@ -206,7 +233,9 @@ function statusToLegacyProgress(
   };
 }
 
-function statusToVersionInfo(status: UpdaterStatusSnapshot | null): VersionInfo | null {
+function statusToVersionInfo(
+  status: UpdaterStatusSnapshot | null,
+): VersionInfo | null {
   if (!status) return null;
   return {
     currentVersion: status.currentVersion,
@@ -241,15 +270,39 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   const mountedRef = useRef(false);
   const [settings, setSettings] = useState<UpdaterSettings | null>(null);
   const [status, setStatus] = useState<UpdaterStatusSnapshot | null>(null);
-  const [checkResult, setCheckResult] = useState<UpdaterCheckResult | null>(null);
+  const [checkResult, setCheckResult] = useState<UpdaterCheckResult | null>(
+    null,
+  );
   const [releaseNotes, setReleaseNotes] = useState<ReleaseNotes | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [settingsCapabilityLoaded, setSettingsCapabilityLoaded] =
+    useState(false);
+  const [statusCapabilityLoaded, setStatusCapabilityLoaded] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [checkingAction, setCheckingAction] = useState(false);
   const [installingAction, setInstallingAction] = useState(false);
   const [relaunching, setRelaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settingsRefreshError, setSettingsRefreshError] = useState<
+    string | null
+  >(null);
+  const [statusRefreshError, setStatusRefreshError] = useState<string | null>(
+    null,
+  );
+  const installMode = status?.installMode ?? settings?.installMode ?? null;
+  const selfUpdateSupported = !(
+    status?.selfUpdateSupported === false ||
+    settings?.selfUpdateSupported === false
+  );
+  const selfUpdateCapabilityLoaded =
+    settingsCapabilityLoaded && statusCapabilityLoaded;
+  const selfUpdateAllowed =
+    selfUpdateCapabilityLoaded &&
+    settings?.selfUpdateSupported === true &&
+    status?.selfUpdateSupported === true;
+  const selfUpdateMessage =
+    status?.selfUpdateMessage ?? settings?.selfUpdateMessage ?? null;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -258,43 +311,113 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     };
   }, []);
 
-  const clearError = useCallback(() => setError(null), []);
-
-  const refreshSettings = useCallback(async (): Promise<UpdaterSettings | null> => {
-    setLoadingSettings(true);
+  const clearError = useCallback(() => {
     setError(null);
-    try {
-      const nextSettings = await updaterApi.getSettings();
-      if (mountedRef.current) setSettings(nextSettings);
-      return nextSettings;
-    } catch (caught) {
-      const message = toErrorMessage(caught);
-      if (mountedRef.current) setError(message);
-      return null;
-    } finally {
-      if (mountedRef.current) setLoadingSettings(false);
-    }
+    setSettingsRefreshError(null);
+    setStatusRefreshError(null);
   }, []);
 
-  const refreshStatus = useCallback(async (): Promise<UpdaterStatusSnapshot | null> => {
-    setLoadingStatus(true);
-    setError(null);
-    try {
-      const nextStatus = await updaterApi.getStatus();
-      if (mountedRef.current) setStatus(nextStatus);
-      return nextStatus;
-    } catch (caught) {
-      const message = toErrorMessage(caught);
-      if (mountedRef.current) setError(message);
-      return null;
-    } finally {
-      if (mountedRef.current) setLoadingStatus(false);
-    }
-  }, []);
+  const refreshSettings =
+    useCallback(async (): Promise<UpdaterSettings | null> => {
+      setLoadingSettings(true);
+      try {
+        const nextSettings = await updaterApi.getSettings();
+        if (mountedRef.current) {
+          setSettings(nextSettings);
+          setSettingsCapabilityLoaded(true);
+          setSettingsRefreshError(null);
+        }
+        return nextSettings;
+      } catch (caught) {
+        const message = toErrorMessage(caught);
+        if (mountedRef.current) {
+          setSettingsRefreshError(`Updater settings: ${message}`);
+        }
+        return null;
+      } finally {
+        if (mountedRef.current) setLoadingSettings(false);
+      }
+    }, []);
+
+  const refreshStatus =
+    useCallback(async (): Promise<UpdaterStatusSnapshot | null> => {
+      setLoadingStatus(true);
+      try {
+        const nextStatus = await updaterApi.getStatus();
+        if (mountedRef.current) {
+          setStatus(nextStatus);
+          setStatusCapabilityLoaded(true);
+          setStatusRefreshError(null);
+        }
+        return nextStatus;
+      } catch (caught) {
+        const message = toErrorMessage(caught);
+        if (mountedRef.current) {
+          setStatusRefreshError(`Updater status: ${message}`);
+        }
+        return null;
+      } finally {
+        if (mountedRef.current) setLoadingStatus(false);
+      }
+    }, []);
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshSettings(), refreshStatus()]);
-  }, [refreshSettings, refreshStatus]);
+    setLoadingSettings(true);
+    setLoadingStatus(true);
+    setError(null);
+
+    let requests: Awaited<ReturnType<typeof startUpdaterCapabilityRequests>>;
+    try {
+      requests = await startUpdaterCapabilityRequests();
+    } catch (caught) {
+      const message = toErrorMessage(caught);
+      if (mountedRef.current) {
+        setSettingsRefreshError(`Updater settings: ${message}`);
+        setStatusRefreshError(`Updater status: ${message}`);
+        setLoadingSettings(false);
+        setLoadingStatus(false);
+      }
+      return;
+    }
+
+    const settingsTask = requests.settings
+      .then((nextSettings) => {
+        if (mountedRef.current) {
+          setSettings(nextSettings);
+          setSettingsCapabilityLoaded(true);
+          setSettingsRefreshError(null);
+        }
+      })
+      .catch((caught) => {
+        if (mountedRef.current) {
+          setSettingsRefreshError(
+            `Updater settings: ${toErrorMessage(caught)}`,
+          );
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoadingSettings(false);
+      });
+
+    const statusTask = requests.status
+      .then((nextStatus) => {
+        if (mountedRef.current) {
+          setStatus(nextStatus);
+          setStatusCapabilityLoaded(true);
+          setStatusRefreshError(null);
+        }
+      })
+      .catch((caught) => {
+        if (mountedRef.current) {
+          setStatusRefreshError(`Updater status: ${toErrorMessage(caught)}`);
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoadingStatus(false);
+      });
+
+    await Promise.all([settingsTask, statusTask]);
+  }, []);
 
   const saveSettings = useCallback(
     async (patch: UpdaterSettingsPatch): Promise<UpdaterSettings | null> => {
@@ -302,9 +425,17 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
       setError(null);
       try {
         const nextSettings = await updaterApi.saveSettings(patch);
-        if (mountedRef.current) setSettings(nextSettings);
+        if (mountedRef.current) {
+          setSettings(nextSettings);
+          setSettingsCapabilityLoaded(true);
+          setSettingsRefreshError(null);
+        }
         const nextStatus = await updaterApi.getStatus();
-        if (mountedRef.current) setStatus(nextStatus);
+        if (mountedRef.current) {
+          setStatus(nextStatus);
+          setStatusCapabilityLoaded(true);
+          setStatusRefreshError(null);
+        }
         return nextSettings;
       } catch (caught) {
         const message = toErrorMessage(caught);
@@ -319,6 +450,14 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
 
   const check = useCallback(
     async (force = false): Promise<UpdaterCheckResult | null> => {
+      if (!selfUpdateCapabilityLoaded) {
+        setError(SELF_UPDATE_CAPABILITY_LOADING_MESSAGE);
+        return null;
+      }
+      if (!selfUpdateAllowed) {
+        setError(selfUpdateMessage ?? SELF_UPDATE_UNSUPPORTED_FALLBACK);
+        return null;
+      }
       setCheckingAction(true);
       setError(null);
       try {
@@ -326,6 +465,7 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
         if (mountedRef.current) {
           setCheckResult(result);
           setStatus(result.status);
+          setStatusCapabilityLoaded(true);
           setReleaseNotes(updateToReleaseNotes(result.availableUpdate));
         }
         return result;
@@ -340,7 +480,12 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
         if (mountedRef.current) setCheckingAction(false);
       }
     },
-    [refreshStatus],
+    [
+      refreshStatus,
+      selfUpdateAllowed,
+      selfUpdateCapabilityLoaded,
+      selfUpdateMessage,
+    ],
   );
 
   const relaunch = useCallback(async (): Promise<boolean> => {
@@ -360,6 +505,14 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
 
   const install = useCallback(
     async (version?: string): Promise<UpdaterStatusSnapshot | null> => {
+      if (!selfUpdateCapabilityLoaded) {
+        setError(SELF_UPDATE_CAPABILITY_LOADING_MESSAGE);
+        return null;
+      }
+      if (!selfUpdateAllowed) {
+        setError(selfUpdateMessage ?? SELF_UPDATE_UNSUPPORTED_FALLBACK);
+        return null;
+      }
       if (status?.status === "restart_required") {
         await relaunch();
         return status;
@@ -368,7 +521,10 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
       setError(null);
       try {
         const nextStatus = await updaterApi.downloadAndInstall(version);
-        if (mountedRef.current) setStatus(nextStatus);
+        if (mountedRef.current) {
+          setStatus(nextStatus);
+          setStatusCapabilityLoaded(true);
+        }
         return nextStatus;
       } catch (caught) {
         const message = toErrorMessage(caught);
@@ -381,7 +537,14 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
         if (mountedRef.current) setInstallingAction(false);
       }
     },
-    [refreshStatus, relaunch, status],
+    [
+      refreshStatus,
+      relaunch,
+      selfUpdateAllowed,
+      selfUpdateCapabilityLoaded,
+      selfUpdateMessage,
+      status,
+    ],
   );
 
   useEffect(() => {
@@ -389,7 +552,8 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     void refresh();
   }, [autoLoad, refresh]);
 
-  const availableUpdate = status?.availableUpdate ?? checkResult?.availableUpdate ?? null;
+  const availableUpdate =
+    status?.availableUpdate ?? checkResult?.availableUpdate ?? null;
   const updateInfo = useMemo(
     () => availableUpdateToLegacy(availableUpdate),
     [availableUpdate],
@@ -398,8 +562,12 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   const versionInfo = useMemo(() => statusToVersionInfo(status), [status]);
   const config = useMemo(() => settingsToLegacyConfig(settings), [settings]);
   const progressPercent = status?.progressPercent ?? null;
+  const capabilityRefreshError =
+    [settingsRefreshError, statusRefreshError].filter(Boolean).join(" ") ||
+    null;
   const lastError =
     error ??
+    capabilityRefreshError ??
     status?.lastError ??
     status?.privateEndpointValidationError ??
     settings?.privateEndpointValidationError ??
@@ -409,7 +577,8 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   const isInstalling = installingAction || status?.status === "installing";
   const isRestartRequired = status?.status === "restart_required";
   const isUpToDate = status?.status === "up_to_date";
-  const updateAvailable = Boolean(availableUpdate) || status?.status === "available";
+  const updateAvailable =
+    Boolean(availableUpdate) || status?.status === "available";
   const isLoading = loadingSettings || loadingStatus;
   const isBusy =
     isChecking ||
@@ -417,8 +586,9 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     isInstalling ||
     savingSettings ||
     relaunching;
-  const canCheck = !isBusy;
-  const canInstall = updateAvailable && Boolean(availableUpdate) && !isBusy;
+  const canCheck = selfUpdateAllowed && !isBusy;
+  const canInstall =
+    selfUpdateAllowed && updateAvailable && Boolean(availableUpdate) && !isBusy;
   const canRelaunch = isRestartRequired && !relaunching;
 
   const checkForUpdates = useCallback(async (): Promise<UpdateInfo | null> => {
@@ -451,24 +621,34 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
     [availableUpdate?.version, install],
   );
 
-  const setChannel = useCallback(async (_channel: UpdateChannel): Promise<boolean> => {
-    setError("Update channels are not part of the signed updater P1 flow.");
-    return false;
-  }, []);
+  const setChannel = useCallback(
+    async (_channel: UpdateChannel): Promise<boolean> => {
+      setError("Update channels are not part of the signed updater P1 flow.");
+      return false;
+    },
+    [],
+  );
 
-  const fetchVersionInfo = useCallback(async (): Promise<VersionInfo | null> => {
-    const nextStatus = await refreshStatus();
-    return statusToVersionInfo(nextStatus ?? status);
-  }, [refreshStatus, status]);
+  const fetchVersionInfo =
+    useCallback(async (): Promise<VersionInfo | null> => {
+      const nextStatus = await refreshStatus();
+      return statusToVersionInfo(nextStatus ?? status);
+    }, [refreshStatus, status]);
 
-  const fetchHistory = useCallback(async (): Promise<UpdateHistoryEntry[]> => [], []);
+  const fetchHistory = useCallback(
+    async (): Promise<UpdateHistoryEntry[]> => [],
+    [],
+  );
 
   const rollback = useCallback(async (_version: string): Promise<boolean> => {
     setError("Rollback is not available in the signed updater P1 flow.");
     return false;
   }, []);
 
-  const fetchRollbacks = useCallback(async (): Promise<RollbackInfo[]> => [], []);
+  const fetchRollbacks = useCallback(
+    async (): Promise<RollbackInfo[]> => [],
+    [],
+  );
 
   const fetchReleaseNotes = useCallback(
     async (version?: string): Promise<ReleaseNotes | null> => {
@@ -485,9 +665,12 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   }, [refreshSettings, settings]);
 
   const updateConfig = useCallback(
-    async (nextConfig: Partial<UpdaterConfig>): Promise<UpdaterConfig | null> => {
+    async (
+      nextConfig: Partial<UpdaterConfig>,
+    ): Promise<UpdaterConfig | null> => {
       const patch = legacyConfigPatchToSettingsPatch(nextConfig);
-      if (Object.keys(patch).length === 0) return settingsToLegacyConfig(settings);
+      if (Object.keys(patch).length === 0)
+        return settingsToLegacyConfig(settings);
       const nextSettings = await saveSettings(patch);
       return settingsToLegacyConfig(nextSettings ?? settings);
     },
@@ -497,6 +680,9 @@ export function useUpdater(options: UseUpdaterOptions = {}): UseUpdaterResult {
   return {
     settings,
     status,
+    installMode,
+    selfUpdateSupported,
+    selfUpdateMessage,
     checkResult,
     availableUpdate,
     loadingSettings,

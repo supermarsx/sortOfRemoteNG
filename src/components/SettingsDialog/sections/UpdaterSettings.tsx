@@ -117,7 +117,9 @@ export const UpdaterSettings: React.FC = () => {
   const [intervalDraft, setIntervalDraft] = useState(24);
   const [endpointEnabledDraft, setEndpointEnabledDraft] = useState(false);
   const [endpointDraft, setEndpointDraft] = useState("");
-  const [endpointLocalError, setEndpointLocalError] = useState<string | null>(null);
+  const [endpointLocalError, setEndpointLocalError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!updater.settings) return;
@@ -132,14 +134,24 @@ export const UpdaterSettings: React.FC = () => {
   );
   const endpointModeLabel = t(
     `updater.endpointMode.${endpointModeKey(updater.status?.endpointMode ?? updater.settings?.endpointMode)}`,
-    endpointModeKey(updater.status?.endpointMode ?? updater.settings?.endpointMode),
+    endpointModeKey(
+      updater.status?.endpointMode ?? updater.settings?.endpointMode,
+    ),
   );
   const available = updater.availableUpdate;
   const progressPercent = updater.progressPercent ?? 0;
   const totalBytes = updater.status?.totalBytes ?? null;
   const downloadedBytes = updater.status?.downloadedBytes ?? 0;
   const endpoints =
-    updater.status?.resolvedEndpoints ?? updater.settings?.resolvedEndpoints ?? [];
+    updater.status?.resolvedEndpoints ??
+    updater.settings?.resolvedEndpoints ??
+    [];
+  const selfUpdateMessage =
+    updater.selfUpdateMessage ??
+    t(
+      "updater.selfUpdateUnsupportedFallback",
+      "This installation cannot be safely updated in the app. Install the appropriate newer package from GitHub Releases.",
+    );
 
   const statusTone = useMemo(() => {
     switch (updater.status?.status) {
@@ -163,7 +175,9 @@ export const UpdaterSettings: React.FC = () => {
   );
 
   const saveIntervalDraft = useCallback(() => {
-    void updater.saveSettings({ checkIntervalHours: Math.max(1, intervalDraft) });
+    void updater.saveSettings({
+      checkIntervalHours: Math.max(1, intervalDraft),
+    });
   }, [intervalDraft, updater]);
 
   const handleIntervalBlur = useCallback(
@@ -248,12 +262,31 @@ export const UpdaterSettings: React.FC = () => {
           title={t("updater.updateStatus", "Update status")}
         />
         <Card>
+          {!updater.selfUpdateSupported && (
+            <div
+              role="status"
+              className="rounded-md border border-warning/40 bg-warning/10 px-3 py-3 text-sm text-[var(--color-textSecondary)]"
+              data-testid="updater-self-update-notice"
+            >
+              <p>{selfUpdateMessage}</p>
+              <a
+                href="https://github.com/supermarsx/sortOfRemoteNG/releases/latest"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                {t("updater.openGitHubReleases", "Open GitHub Releases")}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p
               className="text-xs text-[var(--color-textMuted)]"
               data-testid="updater-current-version"
             >
-              {t("updater.currentVersion", "Current version")}: {" "}
+              {t("updater.currentVersion", "Current version")}:{" "}
               {formatAppVersion(updater.currentVersion)}
             </p>
             <div
@@ -276,7 +309,10 @@ export const UpdaterSettings: React.FC = () => {
               <dt className="text-xs text-[var(--color-textMuted)]">
                 {t("updater.lastChecked", "Last checked")}
               </dt>
-              <dd className="text-[var(--color-textSecondary)]" data-testid="updater-last-checked">
+              <dd
+                className="text-[var(--color-textSecondary)]"
+                data-testid="updater-last-checked"
+              >
                 {formatDate(updater.lastCheckedAt)}
               </dd>
             </div>
@@ -284,7 +320,10 @@ export const UpdaterSettings: React.FC = () => {
               <dt className="text-xs text-[var(--color-textMuted)]">
                 {t("updater.endpointModeLabel", "Endpoint mode")}
               </dt>
-              <dd className="text-[var(--color-textSecondary)]" data-testid="updater-endpoint-mode">
+              <dd
+                className="text-[var(--color-textSecondary)]"
+                data-testid="updater-endpoint-mode"
+              >
                 {endpointModeLabel}
               </dd>
             </div>
@@ -303,7 +342,9 @@ export const UpdaterSettings: React.FC = () => {
               <div className="h-2 overflow-hidden rounded-full bg-[var(--color-border)]/40">
                 <div
                   className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${Math.max(0, Math.min(progressPercent, 100))}%` }}
+                  style={{
+                    width: `${Math.max(0, Math.min(progressPercent, 100))}%`,
+                  }}
                 />
               </div>
               <p className="text-xs text-[var(--color-textMuted)]">
@@ -333,8 +374,8 @@ export const UpdaterSettings: React.FC = () => {
                     className="text-sm font-medium text-[var(--color-text)]"
                     data-testid="updater-available-version"
                   >
-                    {t("updater.newVersionAvailable", "New version available")}
-                    : {formatAppVersion(available.version)}
+                    {t("updater.newVersionAvailable", "New version available")}:{" "}
+                    {formatAppVersion(available.version)}
                   </p>
                   {available.date && (
                     <p className="text-xs text-[var(--color-textMuted)]">
@@ -368,7 +409,9 @@ export const UpdaterSettings: React.FC = () => {
               className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               data-testid="updater-check-btn"
             >
-              <RefreshCw className={`w-4 h-4 ${updater.isChecking ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${updater.isChecking ? "animate-spin" : ""}`}
+              />
               {updater.isChecking
                 ? t("updater.checking", "Checking for updates...")
                 : t("updater.checkForUpdates", "Check for updates")}
@@ -408,17 +451,31 @@ export const UpdaterSettings: React.FC = () => {
         />
         <Card>
           <Toggle
-            checked={updater.settings?.autoCheckEnabled ?? true}
+            checked={
+              updater.selfUpdateSupported &&
+              (updater.settings?.autoCheckEnabled ?? true)
+            }
             onChange={handleAutoCheckChange}
             icon={<RefreshCw size={16} />}
             label={t("updater.autoCheck", "Auto-check for updates")}
-            description={t(
-              "updater.autoCheckDescription",
-              "Check in the background without installing updates automatically.",
-            )}
+            description={
+              updater.selfUpdateSupported
+                ? t(
+                    "updater.autoCheckDescription",
+                    "Check in the background without installing updates automatically.",
+                  )
+                : t(
+                    "updater.autoCheckExternallyManaged",
+                    "Automatic checks are unavailable for externally managed installations.",
+                  )
+            }
             settingKey="updater.autoCheckEnabled"
             testId="updater-auto-check-toggle"
-            disabled={updater.savingSettings || !updater.settings}
+            disabled={
+              updater.savingSettings ||
+              !updater.settings ||
+              !updater.selfUpdateSupported
+            }
             infoTooltip={t(
               "updater.autoCheckTooltip",
               "Checks never install updates without confirmation.",
@@ -426,6 +483,7 @@ export const UpdaterSettings: React.FC = () => {
           />
           <div
             className={
+              updater.selfUpdateSupported &&
               (updater.settings?.autoCheckEnabled ?? true)
                 ? undefined
                 : "opacity-50 pointer-events-none"
@@ -462,7 +520,11 @@ export const UpdaterSettings: React.FC = () => {
                 max={720}
                 onChange={setIntervalDraft}
                 onBlur={handleIntervalBlur}
-                disabled={updater.savingSettings || !updater.settings}
+                disabled={
+                  updater.savingSettings ||
+                  !updater.settings ||
+                  !updater.selfUpdateSupported
+                }
                 variant="settings-compact"
                 className="text-right"
                 style={{ width: "5rem" }}

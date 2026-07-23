@@ -8,7 +8,10 @@ use std::{
 use chrono::Utc;
 use log::{debug, warn};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Runtime};
+use tauri::{
+    utils::{config::BundleType, platform::bundle_type},
+    AppHandle, Runtime,
+};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
@@ -16,8 +19,8 @@ use crate::{
     error::UpdateError,
     types::{
         AvailableUpdate, ResolvedUpdaterEndpoint, UpdaterCheckResult, UpdaterEndpointMode,
-        UpdaterEndpointSource, UpdaterSettings, UpdaterSettingsPatch, UpdaterStatusSnapshot,
-        UpdaterStatusValue, PUBLIC_ENDPOINT_URL,
+        UpdaterEndpointSource, UpdaterInstallMode, UpdaterSettings, UpdaterSettingsPatch,
+        UpdaterStatusSnapshot, UpdaterStatusValue, PUBLIC_ENDPOINT_URL,
     },
 };
 
@@ -25,6 +28,7 @@ const SETTINGS_FILENAME: &str = "settings.json";
 const SETTINGS_KEY_UPDATER: &str = "updater";
 const LEGACY_PRIVATE_ENDPOINT_KEY: &str = "private_endpoint";
 const MAX_CHECK_INTERVAL_HOURS: u64 = 24 * 30;
+const PORTABLE_MARKER_FILENAME: &str = ".portable";
 
 pub type UpdaterServiceState = Arc<UpdaterService>;
 
@@ -87,6 +91,7 @@ struct EndpointResolution {
 
 pub struct UpdaterService {
     current_version: String,
+    install_mode: UpdaterInstallMode,
     settings_path: PathBuf,
     inner: Arc<Mutex<UpdaterState>>,
 }
@@ -95,6 +100,14 @@ impl UpdaterService {
     pub fn new(
         current_version: impl Into<String>,
         app_data_dir: impl AsRef<Path>,
+    ) -> UpdaterServiceState {
+        Self::new_with_install_mode(current_version, app_data_dir, detect_runtime_install_mode())
+    }
+
+    fn new_with_install_mode(
+        current_version: impl Into<String>,
+        app_data_dir: impl AsRef<Path>,
+        install_mode: UpdaterInstallMode,
     ) -> UpdaterServiceState {
         let settings_path = app_data_dir.as_ref().join(SETTINGS_FILENAME);
         let (settings, load_error) = match load_settings(&settings_path) {
@@ -110,6 +123,7 @@ impl UpdaterService {
 
         Arc::new(Self {
             current_version: current_version.into(),
+            install_mode,
             settings_path,
             inner: Arc::new(Mutex::new(state)),
         })
@@ -193,6 +207,7 @@ impl UpdaterService {
         force: bool,
     ) -> Result<UpdaterCheckResult, UpdateError> {
         let _ = force;
+        self.ensure_self_update_supported()?;
         self.set_status(UpdaterStatusValue::Checking, None)?;
 
         let settings = self.settings_clone()?;
@@ -230,6 +245,7 @@ impl UpdaterService {
         app: &AppHandle<R>,
         version: Option<String>,
     ) -> Result<UpdaterStatusSnapshot, UpdateError> {
+        self.ensure_self_update_supported()?;
         self.set_status(UpdaterStatusValue::Checking, None)?;
 
         let settings = self.settings_clone()?;
@@ -326,6 +342,27 @@ impl UpdaterService {
         Ok(self.lock_state()?.settings.clone())
     }
 
+    pub fn ensure_self_update_supported(&self) -> Result<(), UpdateError> {
+        if self.install_mode.self_update_supported() {
+            return Ok(());
+        }
+
+        let message = self
+            .install_mode
+            .self_update_message()
+            .unwrap_or("This installation cannot be safely updated in the app.")
+            .to_string();
+        let error = UpdateError::SelfUpdateUnsupported(message);
+        let mut state = self.lock_state()?;
+        state.status = UpdaterStatusValue::Error;
+        state.available_update = None;
+        state.last_error = Some(error.to_string());
+        state.downloaded_bytes = 0;
+        state.total_bytes = None;
+        state.progress_percent = None;
+        Err(error)
+    }
+
     fn set_status(
         &self,
         status: UpdaterStatusValue,
@@ -410,6 +447,12 @@ impl UpdaterService {
         Ok(UpdaterSettings {
             auto_check_enabled: settings.auto_check_enabled,
             check_interval_hours: settings.check_interval_hours,
+            install_mode: self.install_mode,
+            self_update_supported: self.install_mode.self_update_supported(),
+            self_update_message: self
+                .install_mode
+                .self_update_message()
+                .map(ToOwned::to_owned),
             private_endpoint_enabled: settings.private_endpoint_enabled,
             private_endpoint_url: settings.private_endpoint_url.clone(),
             public_endpoint_url: PUBLIC_ENDPOINT_URL.to_string(),
@@ -434,6 +477,12 @@ impl UpdaterService {
         Ok(UpdaterStatusSnapshot {
             status: state.status,
             current_version: self.current_version.clone(),
+            install_mode: self.install_mode,
+            self_update_supported: self.install_mode.self_update_supported(),
+            self_update_message: self
+                .install_mode
+                .self_update_message()
+                .map(ToOwned::to_owned),
             available_update: state.available_update.clone(),
             last_checked_at: state.last_checked_at,
             last_error: state.last_error.clone(),
@@ -497,6 +546,55 @@ impl UpdaterService {
             mode,
             validation_error,
         })
+    }
+}
+
+fn detect_runtime_install_mode() -> UpdaterInstallMode {
+    let flatpak_id = std::env::var_os("FLATPAK_ID");
+    let executable = std::env::current_exe().ok();
+    detect_runtime_install_mode_from_signals(
+        bundle_type(),
+        flatpak_id.as_deref(),
+        executable.as_deref(),
+    )
+}
+
+fn detect_runtime_install_mode_from_signals(
+    bundle: Option<BundleType>,
+    flatpak_id: Option<&std::ffi::OsStr>,
+    executable: Option<&Path>,
+) -> UpdaterInstallMode {
+    let flatpak = flatpak_id.is_some();
+    let portable = executable.is_some_and(has_adjacent_portable_marker);
+    classify_install_mode(flatpak, portable, bundle)
+}
+
+fn has_adjacent_portable_marker(executable: &Path) -> bool {
+    executable
+        .parent()
+        .is_some_and(|directory| directory.join(PORTABLE_MARKER_FILENAME).is_file())
+}
+
+fn classify_install_mode(
+    flatpak: bool,
+    portable: bool,
+    bundle: Option<BundleType>,
+) -> UpdaterInstallMode {
+    if flatpak {
+        return UpdaterInstallMode::Flatpak;
+    }
+    if portable {
+        return UpdaterInstallMode::Portable;
+    }
+
+    match bundle {
+        Some(BundleType::AppImage) => UpdaterInstallMode::AppImage,
+        Some(BundleType::Nsis) => UpdaterInstallMode::Nsis,
+        Some(BundleType::App | BundleType::Dmg) => UpdaterInstallMode::MacOsApp,
+        Some(BundleType::Deb) => UpdaterInstallMode::Deb,
+        Some(BundleType::Rpm) => UpdaterInstallMode::Rpm,
+        Some(BundleType::Msi) => UpdaterInstallMode::Msi,
+        None => UpdaterInstallMode::Unknown,
     }
 }
 
@@ -658,4 +756,227 @@ fn bool_field(value: Option<&Value>) -> Option<bool> {
 
 fn u64_field(value: Option<&Value>) -> Option<u64> {
     value.and_then(Value::as_u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sorng-updater-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn classifies_every_tauri_bundle_type_against_the_feed_payload() {
+        let cases = [
+            (BundleType::AppImage, UpdaterInstallMode::AppImage),
+            (BundleType::Nsis, UpdaterInstallMode::Nsis),
+            (BundleType::App, UpdaterInstallMode::MacOsApp),
+            (BundleType::Dmg, UpdaterInstallMode::MacOsApp),
+            (BundleType::Deb, UpdaterInstallMode::Deb),
+            (BundleType::Rpm, UpdaterInstallMode::Rpm),
+            (BundleType::Msi, UpdaterInstallMode::Msi),
+        ];
+
+        for (bundle, expected) in cases {
+            assert_eq!(classify_install_mode(false, false, Some(bundle)), expected);
+        }
+        assert_eq!(
+            classify_install_mode(false, false, None),
+            UpdaterInstallMode::Unknown
+        );
+    }
+
+    #[test]
+    fn flatpak_and_portable_signals_override_the_restored_bundle_token() {
+        assert_eq!(
+            classify_install_mode(true, false, Some(BundleType::AppImage)),
+            UpdaterInstallMode::Flatpak
+        );
+        assert_eq!(
+            classify_install_mode(false, true, Some(BundleType::Nsis)),
+            UpdaterInstallMode::Portable
+        );
+        assert_eq!(
+            classify_install_mode(true, true, None),
+            UpdaterInstallMode::Flatpak
+        );
+    }
+
+    #[test]
+    fn runtime_detector_reads_the_adjacent_portable_marker_without_global_state() {
+        let root = unique_temp_dir("portable-detection");
+        std::fs::create_dir_all(&root).expect("create portable test directory");
+        let executable = root.join("sortOfRemoteNG.exe");
+        std::fs::write(&executable, b"test executable").expect("write test executable");
+
+        assert_eq!(
+            detect_runtime_install_mode_from_signals(
+                Some(BundleType::Nsis),
+                None,
+                Some(&executable)
+            ),
+            UpdaterInstallMode::Nsis,
+            "an executable without the adjacent marker retains its bundle token"
+        );
+
+        std::fs::write(root.join(PORTABLE_MARKER_FILENAME), b"").expect("write portable marker");
+        assert_eq!(
+            detect_runtime_install_mode_from_signals(
+                Some(BundleType::Nsis),
+                None,
+                Some(&executable)
+            ),
+            UpdaterInstallMode::Portable,
+            "the adjacent marker overrides a restored NSIS token"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove portable test directory");
+    }
+
+    #[test]
+    fn runtime_detector_gives_flatpak_id_priority_over_marker_and_bundle() {
+        let root = unique_temp_dir("flatpak-detection");
+        std::fs::create_dir_all(&root).expect("create Flatpak test directory");
+        let executable = root.join("sortOfRemoteNG");
+        std::fs::write(&executable, b"test executable").expect("write test executable");
+        std::fs::write(root.join(PORTABLE_MARKER_FILENAME), b"").expect("write portable marker");
+
+        assert_eq!(
+            detect_runtime_install_mode_from_signals(
+                Some(BundleType::AppImage),
+                Some(OsStr::new("com.sortofremote.ng")),
+                Some(&executable),
+            ),
+            UpdaterInstallMode::Flatpak
+        );
+
+        std::fs::remove_dir_all(root).expect("remove Flatpak test directory");
+    }
+
+    #[test]
+    fn enables_self_update_only_for_feed_compatible_install_modes() {
+        for mode in [
+            UpdaterInstallMode::AppImage,
+            UpdaterInstallMode::Nsis,
+            UpdaterInstallMode::MacOsApp,
+        ] {
+            assert!(mode.self_update_supported(), "{mode:?} should self-update");
+            assert_eq!(mode.self_update_message(), None);
+        }
+
+        for mode in [
+            UpdaterInstallMode::Deb,
+            UpdaterInstallMode::Rpm,
+            UpdaterInstallMode::Msi,
+            UpdaterInstallMode::Flatpak,
+            UpdaterInstallMode::Portable,
+            UpdaterInstallMode::Unknown,
+        ] {
+            assert!(
+                !mode.self_update_supported(),
+                "{mode:?} must be externally managed"
+            );
+            assert!(
+                mode.self_update_message()
+                    .is_some_and(|message| message.contains("GitHub Releases")),
+                "{mode:?} needs manual update guidance"
+            );
+        }
+    }
+
+    #[test]
+    fn serializes_install_modes_as_stable_contract_values() {
+        let cases = [
+            (UpdaterInstallMode::AppImage, "appimage"),
+            (UpdaterInstallMode::Nsis, "nsis"),
+            (UpdaterInstallMode::MacOsApp, "macos_app"),
+            (UpdaterInstallMode::Deb, "deb"),
+            (UpdaterInstallMode::Rpm, "rpm"),
+            (UpdaterInstallMode::Msi, "msi"),
+            (UpdaterInstallMode::Flatpak, "flatpak"),
+            (UpdaterInstallMode::Portable, "portable"),
+            (UpdaterInstallMode::Unknown, "unknown"),
+        ];
+
+        for (mode, expected) in cases {
+            assert_eq!(
+                serde_json::to_value(mode).expect("serialize updater install mode"),
+                json!(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn settings_and_status_snapshots_keep_the_camel_case_capability_contract() {
+        let service = UpdaterService::new_with_install_mode(
+            "26.1.0",
+            unique_temp_dir("snapshot-contract"),
+            UpdaterInstallMode::Portable,
+        );
+
+        let settings = serde_json::to_value(service.get_settings().expect("settings snapshot"))
+            .expect("serialize settings snapshot");
+        assert_eq!(settings["installMode"], json!("portable"));
+        assert_eq!(settings["selfUpdateSupported"], json!(false));
+        assert!(settings["selfUpdateMessage"]
+            .as_str()
+            .is_some_and(|message| message.contains("portable ZIP")));
+        assert!(settings.get("install_mode").is_none());
+
+        let status = serde_json::to_value(service.get_status().expect("status snapshot"))
+            .expect("serialize status snapshot");
+        assert_eq!(status["installMode"], json!("portable"));
+        assert_eq!(status["selfUpdateSupported"], json!(false));
+        assert!(status["selfUpdateMessage"]
+            .as_str()
+            .is_some_and(|message| message.contains("GitHub Releases")));
+        assert!(status.get("self_update_supported").is_none());
+    }
+
+    #[test]
+    fn unsupported_modes_fail_closed_and_clear_any_available_artifact() {
+        let test_dir =
+            std::env::temp_dir().join(format!("sorng-updater-guard-test-{}", std::process::id()));
+        let service =
+            UpdaterService::new_with_install_mode("26.1.0", test_dir, UpdaterInstallMode::Flatpak);
+
+        {
+            let mut state = service.lock_state().expect("updater state");
+            state.available_update = Some(AvailableUpdate {
+                current_version: "26.1.0".to_string(),
+                version: "26.2.0".to_string(),
+                date: None,
+                body: None,
+                target: "linux-x86_64".to_string(),
+                download_url: "https://example.invalid/app.AppImage".to_string(),
+                signature_present: true,
+                raw_json: json!({}),
+            });
+        }
+
+        let error = service
+            .ensure_self_update_supported()
+            .expect_err("Flatpak must reject in-app update commands");
+        assert!(matches!(error, UpdateError::SelfUpdateUnsupported(_)));
+
+        let status = service.get_status().expect("status snapshot");
+        assert_eq!(status.install_mode, UpdaterInstallMode::Flatpak);
+        assert!(!status.self_update_supported);
+        assert_eq!(status.status, UpdaterStatusValue::Error);
+        assert!(status.available_update.is_none());
+        assert!(status
+            .last_error
+            .as_deref()
+            .is_some_and(|message| message.contains("newer Flatpak")));
+    }
 }

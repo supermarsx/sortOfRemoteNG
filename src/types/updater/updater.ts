@@ -10,6 +10,16 @@ export type UpdaterStatusValue =
 
 export type UpdaterEndpointMode = "public_only" | "private_then_public";
 export type UpdaterEndpointSource = "public" | "private";
+export type UpdaterInstallMode =
+  | "appimage"
+  | "nsis"
+  | "macos_app"
+  | "deb"
+  | "rpm"
+  | "msi"
+  | "flatpak"
+  | "portable"
+  | "unknown";
 
 export type JsonValue =
   | string
@@ -27,6 +37,9 @@ export interface ResolvedUpdaterEndpoint {
 export interface UpdaterSettings {
   autoCheckEnabled: boolean;
   checkIntervalHours: number;
+  installMode: UpdaterInstallMode;
+  selfUpdateSupported: boolean;
+  selfUpdateMessage: string | null;
   privateEndpointEnabled: boolean;
   privateEndpointUrl: string | null;
   publicEndpointUrl: string;
@@ -58,6 +71,9 @@ export interface AvailableUpdate {
 export interface UpdaterStatusSnapshot {
   status: UpdaterStatusValue;
   currentVersion: string;
+  installMode: UpdaterInstallMode;
+  selfUpdateSupported: boolean;
+  selfUpdateMessage: string | null;
   availableUpdate: AvailableUpdate | null;
   lastCheckedAt: string | null;
   lastError: string | null;
@@ -85,6 +101,8 @@ export interface UpdaterProgressView {
 }
 
 export interface UpdaterDerivedState {
+  selfUpdateSupported: boolean;
+  selfUpdateMessage: string | null;
   updateAvailable: boolean;
   isChecking: boolean;
   isDownloading: boolean;
