@@ -568,6 +568,40 @@ jobs:
           );
           NODE
 
+      - name: Export enabled macOS signing environment
+        if: matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.apple_certificate.outputs.identity }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const names = [
+            "APPLE_ID",
+            "APPLE_PASSWORD",
+            "APPLE_TEAM_ID",
+            "APPLE_SIGNING_IDENTITY",
+          ];
+          const lines = names.map((name) => {
+            const value = process.env[name] ?? "";
+            if (!value.trim()) {
+              throw new Error(`${name} must be nonempty when macOS signing is enabled.`);
+            }
+            if (/[\r\n]/u.test(value)) {
+              throw new Error(`${name} must be a single-line value.`);
+            }
+            return `${name}=${value}`;
+          });
+          fs.appendFileSync(
+            process.env.GITHUB_ENV,
+            `${lines.join("\n")}\n`,
+            "utf8",
+          );
+          NODE
+
       - name: Bound and inspect Linux release resources
         if: matrix.platform == 'linux'
         shell: bash
@@ -677,10 +711,6 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && steps.apple_certificate.outputs.identity || '' }}
         with:
           includeUpdaterJson: false
           tauriScript: npm run tauri

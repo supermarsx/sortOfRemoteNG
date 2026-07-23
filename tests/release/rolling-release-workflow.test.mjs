@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const releaseWorkflow = readFileSync(
   new URL("../../.github/workflows/release.yml", import.meta.url),
@@ -79,6 +80,12 @@ function extractLiteralRunScript(step) {
       return line.slice(10);
     })
     .join("\n");
+}
+
+function extractNodeHeredoc(script) {
+  const match = script.match(/(?:^|\n)node <<'NODE'\n([\s\S]*?)\nNODE(?:\n|$)/);
+  assert.ok(match, "workflow script must contain a quoted Node heredoc");
+  return match[1];
 }
 
 test("RDP vendor builds only the rlib consumed by the application", () => {
@@ -496,9 +503,17 @@ test("resource controls preserve release features and signing inputs", () => {
     releaseWorkflow.indexOf("  build:"),
     releaseWorkflow.indexOf("  publish:"),
   );
+  const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
   const tauriBuild = buildJob.slice(
     buildJob.indexOf("- name: Build native bundles with static Kafka"),
     buildJob.indexOf("- name: Notarize and staple macOS disk image"),
+  );
+  const macosEnvironmentStep = buildJob.slice(
+    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+    buildJob.indexOf("- name: Bound and inspect Linux release resources"),
+  );
+  const macosEnvironmentProgram = extractNodeHeredoc(
+    extractLiteralRunScript(macosEnvironmentStep),
   );
   const signingEnvironment = tauriBuild.slice(
     tauriBuild.indexOf("        env:"),
@@ -510,11 +525,75 @@ test("resource controls preserve release features and signing inputs", () => {
       "        env:",
       "          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}",
       "          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}",
-      "          APPLE_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}",
-      "          APPLE_PASSWORD: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_PASSWORD || '' }}",
-      "          APPLE_TEAM_ID: ${{ matrix.platform == 'macos' && steps.macos_signing.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}",
-      "          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos' && steps.apple_certificate.outputs.identity || '' }}",
     ].join("\n"),
+  );
+  assert.doesNotMatch(signingEnvironment, /APPLE_/);
+  assert.doesNotMatch(buildDefinition, /APPLE_/);
+  assert.match(
+    macosEnvironmentStep,
+    /- name: Export enabled macOS signing environment\s+if: matrix\.platform == 'macos' && steps\.macos_signing\.outputs\.enabled == 'true'\s+shell: bash/,
+  );
+  for (const [name, source] of [
+    ["APPLE_ID", "secrets.APPLE_ID"],
+    ["APPLE_PASSWORD", "secrets.APPLE_PASSWORD"],
+    ["APPLE_TEAM_ID", "secrets.APPLE_TEAM_ID"],
+    ["APPLE_SIGNING_IDENTITY", "steps.apple_certificate.outputs.identity"],
+  ]) {
+    assert.ok(
+      macosEnvironmentStep.includes(
+        "          " + name + ": ${{ " + source + " }}",
+      ),
+    );
+  }
+
+  const executeMacosEnvironmentExport = (enabled, values) => {
+    const writes = [];
+    if (enabled) {
+      runInNewContext(macosEnvironmentProgram, {
+        process: {
+          env: {
+            GITHUB_ENV: "test-github-env",
+            ...values,
+          },
+        },
+        require(specifier) {
+          assert.equal(specifier, "node:fs");
+          return {
+            appendFileSync(path, data, encoding) {
+              writes.push({ path, data, encoding });
+            },
+          };
+        },
+      });
+    }
+    return writes;
+  };
+  assert.deepEqual(executeMacosEnvironmentExport(false, {}), []);
+  assert.throws(
+    () => executeMacosEnvironmentExport(true, {}),
+    /APPLE_ID must be nonempty when macOS signing is enabled/,
+  );
+  assert.deepEqual(
+    executeMacosEnvironmentExport(true, {
+      APPLE_ID: "builder@example.test",
+      APPLE_PASSWORD: "xxxx-xxxx-xxxx-xxxx",
+      APPLE_TEAM_ID: "ABCDE12345",
+      APPLE_SIGNING_IDENTITY:
+        "Developer ID Application: Example Builder (ABCDE12345)",
+    }),
+    [
+      {
+        path: "test-github-env",
+        data: [
+          "APPLE_ID=builder@example.test",
+          "APPLE_PASSWORD=xxxx-xxxx-xxxx-xxxx",
+          "APPLE_TEAM_ID=ABCDE12345",
+          "APPLE_SIGNING_IDENTITY=Developer ID Application: Example Builder (ABCDE12345)",
+          "",
+        ].join("\n"),
+        encoding: "utf8",
+      },
+    ],
   );
   assert.match(
     tauriBuild,
