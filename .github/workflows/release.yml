@@ -332,8 +332,8 @@ jobs:
             bundles: dmg,app
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
-            release_opt_level: "1"
+            release_codegen_units: "32"
+            release_opt_level: "0"
           - artifact_id: darwin-x86_64
             os: macos-15-intel
             platform: macos
@@ -341,8 +341,8 @@ jobs:
             bundles: dmg,app
             cargo_build_jobs: "1"
             release_lto: "off"
-            release_codegen_units: "16"
-            release_opt_level: "1"
+            release_codegen_units: "32"
+            release_opt_level: "0"
           - artifact_id: windows-x86_64
             os: windows-2022
             platform: windows
@@ -359,9 +359,8 @@ jobs:
       # Linux splits final codegen into 16 smaller units after repeated
       # 90-minute single-CGU builds ended in runner loss; it retains one job.
       # Windows also uses split codegen after a direct LLVM allocation failure
-      # in the final app crate. Both macOS runners use basic optimization with
-      # split codegen after multi-hour opt-level 3, thin-LTO builds made no
-      # progress past sorng-app-auth.
+      # in the final app crate. Both macOS runners use 32 unoptimized units after
+      # the arm64 final app crate was SIGKILLed with opt-level 1 and 16 units.
       CARGO_BUILD_JOBS: ${{ matrix.cargo_build_jobs }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.release_lto }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ matrix.release_codegen_units }}
