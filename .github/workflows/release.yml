@@ -398,6 +398,10 @@ jobs:
       # This wins over the repository's `stable` rust-toolchain.toml directory
       # override, so the Windows matrix pin also governs plain cargo/rustc calls.
       RUSTUP_TOOLCHAIN: ${{ matrix.rust_toolchain }}
+      # QuickJS calls the POSIX spelling `alloca`, while MSVC ARM64 exposes the
+      # stack-allocation intrinsic as `_alloca`. cc-rs reads this normalized,
+      # target-specific CFLAGS key for both native and target QuickJS builds.
+      CFLAGS_aarch64_pc_windows_msvc: /Dalloca=_alloca
       # The checked-in Cargo config is tuned for a 200 GB workstation. Hosted
       # release builds use bounded LLVM profiles instead:
       # Linux splits final codegen into 16 smaller units after repeated

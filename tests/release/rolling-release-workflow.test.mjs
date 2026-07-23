@@ -370,6 +370,31 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
   assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
 });
 
+test("Windows ARM64 QuickJS builds map alloca to the MSVC intrinsic", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const buildDefinition = buildJob.slice(0, buildJob.indexOf("    steps:"));
+
+  assert.match(
+    buildDefinition,
+    /# QuickJS calls the POSIX spelling `alloca`, while MSVC ARM64 exposes the\r?\n\s+# stack-allocation intrinsic as `_alloca`\. cc-rs reads this normalized,\r?\n\s+# target-specific CFLAGS key for both native and target QuickJS builds\.\r?\n\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca/,
+  );
+  assert.equal(
+    (
+      releaseWorkflow.match(
+        /^\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca$/gm,
+      ) ?? []
+    ).length,
+    1,
+  );
+  assert.ok(
+    buildJob.indexOf("CFLAGS_aarch64_pc_windows_msvc: /Dalloca=_alloca") <
+      buildJob.indexOf("- name: Build native bundles with static Kafka"),
+  );
+});
+
 test("release matrix maps exact hosted-runner resource profiles", () => {
   const buildStart = releaseWorkflow.indexOf("  build:");
   const publishStart = releaseWorkflow.indexOf("  publish:");
