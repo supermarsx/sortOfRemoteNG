@@ -768,6 +768,23 @@ mod unix_impl {
             trimmed.replace('/', "\\")
         }
 
+        /// Quote one argument for smbclient's `-c` command language.
+        ///
+        /// `smbclient -c` accepts a semicolon-separated command string, so
+        /// remote paths must not be interpolated directly into that string.
+        /// Reject command-language metacharacters that can terminate the
+        /// current command or trigger smbclient's local shell escape.
+        fn quote_smbclient_arg(arg: &str) -> SmbResult<String> {
+            if arg.chars().any(|ch| {
+                matches!(ch, '\"' | ';' | '!' | '\r' | '\n') || ch.is_control()
+            }) {
+                return Err(SmbError::InvalidPath(
+                    "SMB path contains unsupported smbclient command characters".into(),
+                ));
+            }
+            Ok(format!("\"{}\"", arg))
+        }
+
         fn user_full(session: &SmbSession) -> Option<String> {
             let user = session.config.username.as_deref()?;
             match session.config.domain.as_deref() {
@@ -894,7 +911,7 @@ mod unix_impl {
             let ls_target = if smb_path.is_empty() {
                 "ls".to_string()
             } else {
-                format!("cd \"{}\"; ls", smb_path)
+                format!("cd {}; ls", Self::quote_smbclient_arg(&smb_path)?)
             };
             let out = Self::run_smbclient_cmd(session, share, &ls_target).await?;
             Ok(parse_smbclient_ls(&out, path))
@@ -903,7 +920,7 @@ mod unix_impl {
         async fn stat(&self, session: &SmbSession, share: &str, path: &str) -> SmbResult<SmbStat> {
             // smbclient doesn't expose a direct `stat`; use `allinfo`.
             let smb_path = Self::smb_path(path);
-            let cmd = format!("allinfo \"{}\"", smb_path);
+            let cmd = format!("allinfo {}", Self::quote_smbclient_arg(&smb_path)?);
             let out = Self::run_smbclient_cmd(session, share, &cmd).await?;
             parse_smbclient_allinfo(&out, path)
                 .ok_or_else(|| SmbError::Backend("allinfo parse failed".into()))
@@ -920,7 +937,11 @@ mod unix_impl {
             // stream to stdout in a format we can rely on across builds.
             let temp = tempfile_path();
             let smb_path = Self::smb_path(path);
-            let cmd = format!("get \"{}\" \"{}\"", smb_path, temp);
+            let cmd = format!(
+                "get {} {}",
+                Self::quote_smbclient_arg(&smb_path)?,
+                Self::quote_smbclient_arg(&temp)?
+            );
             let _ = Self::run_smbclient_cmd(session, share, &cmd).await?;
             let bytes = tokio::fs::read(&temp)
                 .await
@@ -958,13 +979,17 @@ mod unix_impl {
             let smb_path = Self::smb_path(path);
             // If overwrite=false, check existence first.
             if !overwrite {
-                let check = format!("allinfo \"{}\"", smb_path);
+                let check = format!("allinfo {}", Self::quote_smbclient_arg(&smb_path)?);
                 if Self::run_smbclient_cmd(session, share, &check).await.is_ok() {
                     let _ = tokio::fs::remove_file(&temp).await;
                     return Err(SmbError::Other(format!("{} already exists", path)));
                 }
             }
-            let cmd = format!("put \"{}\" \"{}\"", temp, smb_path);
+            let cmd = format!(
+                "put {} {}",
+                Self::quote_smbclient_arg(&temp)?,
+                Self::quote_smbclient_arg(&smb_path)?
+            );
             let _ = Self::run_smbclient_cmd(session, share, &cmd).await?;
             let _ = tokio::fs::remove_file(&temp).await;
             Ok(SmbWriteResult {
@@ -982,7 +1007,11 @@ mod unix_impl {
         ) -> SmbResult<SmbTransferResult> {
             let started = Instant::now();
             let smb_path = Self::smb_path(remote_path);
-            let cmd = format!("get \"{}\" \"{}\"", smb_path, local_path);
+            let cmd = format!(
+                "get {} {}",
+                Self::quote_smbclient_arg(&smb_path)?,
+                Self::quote_smbclient_arg(local_path)?
+            );
             let _ = Self::run_smbclient_cmd(session, share, &cmd).await?;
             let md = tokio::fs::metadata(local_path).await.ok();
             Ok(SmbTransferResult {
@@ -1005,7 +1034,11 @@ mod unix_impl {
                 .await
                 .map_err(|e| SmbError::Backend(format!("local stat: {e}")))?;
             let smb_path = Self::smb_path(remote_path);
-            let cmd = format!("put \"{}\" \"{}\"", local_path, smb_path);
+            let cmd = format!(
+                "put {} {}",
+                Self::quote_smbclient_arg(local_path)?,
+                Self::quote_smbclient_arg(&smb_path)?
+            );
             let _ = Self::run_smbclient_cmd(session, share, &cmd).await?;
             Ok(SmbTransferResult {
                 remote_path: remote_path.to_string(),
@@ -1017,7 +1050,7 @@ mod unix_impl {
 
         async fn mkdir(&self, session: &SmbSession, share: &str, path: &str) -> SmbResult<()> {
             let smb_path = Self::smb_path(path);
-            let cmd = format!("mkdir \"{}\"", smb_path);
+            let cmd = format!("mkdir {}", Self::quote_smbclient_arg(&smb_path)?);
             Self::run_smbclient_cmd(session, share, &cmd).await.map(|_| ())
         }
 
@@ -1031,7 +1064,7 @@ mod unix_impl {
             let smb_path = Self::smb_path(path);
             if recursive {
                 // smbclient has `deltree` in newer builds; fall back to manual.
-                let cmd = format!("deltree \"{}\"", smb_path);
+                let cmd = format!("deltree {}", Self::quote_smbclient_arg(&smb_path)?);
                 match Self::run_smbclient_cmd(session, share, &cmd).await {
                     Ok(_) => Ok(()),
                     Err(_) => {
@@ -1040,7 +1073,7 @@ mod unix_impl {
                     }
                 }
             } else {
-                let cmd = format!("rmdir \"{}\"", smb_path);
+                let cmd = format!("rmdir {}", Self::quote_smbclient_arg(&smb_path)?);
                 Self::run_smbclient_cmd(session, share, &cmd).await.map(|_| ())
             }
         }
@@ -1052,7 +1085,7 @@ mod unix_impl {
             path: &str,
         ) -> SmbResult<()> {
             let smb_path = Self::smb_path(path);
-            let cmd = format!("del \"{}\"", smb_path);
+            let cmd = format!("del {}", Self::quote_smbclient_arg(&smb_path)?);
             Self::run_smbclient_cmd(session, share, &cmd).await.map(|_| ())
         }
 
@@ -1065,7 +1098,11 @@ mod unix_impl {
         ) -> SmbResult<()> {
             let from_p = Self::smb_path(from);
             let to_p = Self::smb_path(to);
-            let cmd = format!("rename \"{}\" \"{}\"", from_p, to_p);
+            let cmd = format!(
+                "rename {} {}",
+                Self::quote_smbclient_arg(&from_p)?,
+                Self::quote_smbclient_arg(&to_p)?
+            );
             Self::run_smbclient_cmd(session, share, &cmd).await.map(|_| ())
         }
     }
@@ -1093,7 +1130,7 @@ mod unix_impl {
                 }
             }
             let smb_path = Self::smb_path(path);
-            let cmd = format!("rmdir \"{}\"", smb_path);
+            let cmd = format!("rmdir {}", Self::quote_smbclient_arg(&smb_path)?);
             Self::run_smbclient_cmd(session, share, &cmd).await.map(|_| ())
         }
     }
@@ -1363,6 +1400,26 @@ mod unix_impl {
             assert_eq!(out[1].size, 128);
         }
 
+        #[test]
+        fn quote_smbclient_arg_rejects_command_metacharacters() {
+            assert_eq!(
+                UnixBackend::quote_smbclient_arg(r"safe\path.txt").unwrap(),
+                r#""safe\path.txt""#
+            );
+
+            for malicious in [
+                r#"evil"; ! touch pwned; ""#,
+                "semi;colon",
+                "local!escape",
+                "line\nbreak",
+                "carriage\rreturn",
+            ] {
+                assert!(matches!(
+                    UnixBackend::quote_smbclient_arg(malicious),
+                    Err(SmbError::InvalidPath(_))
+                ));
+            }
+        }
         #[test]
         fn b64_roundtrip() {
             let cases: &[(&[u8], &str)] = &[
