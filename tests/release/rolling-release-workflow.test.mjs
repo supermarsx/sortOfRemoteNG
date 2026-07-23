@@ -1199,11 +1199,38 @@ test("platform resource inspection is exact and immediately precedes native buil
   );
   assert.match(resourceStep, /df -B1 --output=size "\$RUNNER_TEMP"/);
   assert.match(resourceStep, /df -B1 --output=avail "\$RUNNER_TEMP"/);
+  assert.match(
+    resourceStep,
+    /desired_swap_size_bytes=\$\(\(16 \* 1024 \* 1024 \* 1024\)\)/,
+  );
+  assert.match(resourceStep, /disk_floor_bytes=\$documented_capacity_bytes/);
+  assert.match(
+    resourceStep,
+    /swappable_bytes=\$\(\(available_bytes - disk_floor_bytes\)\)/,
+  );
+  assert.match(
+    resourceStep,
+    /swap_size_bytes=\$\(\(swappable_bytes \/ swap_alignment_bytes \* swap_alignment_bytes\)\)/,
+  );
+  assert.match(
+    resourceStep,
+    /if \(\( swap_size_bytes >= minimum_swap_size_bytes \)\); then/,
+  );
+  assert.match(
+    resourceStep,
+    /if \(\( remaining_bytes < disk_floor_bytes \)\); then/,
+  );
+  assert.match(resourceStep, /sudo fallocate -l "\$swap_size_bytes" "\$swap_file"/);
+  assert.match(resourceStep, /sudo mkswap "\$swap_file"/);
+  assert.match(resourceStep, /sudo swapon "\$swap_file"/);
+  assert.match(
+    resourceStep,
+    /echo "LINUX_RELEASE_SWAP_FILE=\$swap_file" >> "\$GITHUB_ENV"/,
+  );
   assert.doesNotMatch(
     resourceStep,
-    /sorng-release\.swap|\bswap_(?:file|size)\b|\bdisk_floor\b|\brequired_bytes\b|\b(?:fallocate|mkswap|swapon)\b/,
+    /(?:disk_floor_bytes|required_bytes)=\$\(\([1-9][0-9]* \* 1024 \* 1024 \* 1024\)\)/,
   );
-  assert.doesNotMatch(resourceStep, /if \(\( (?:available|total)_bytes < /);
   assert.match(
     buildJob,
     /- name: Cache Cargo build\s+if: matrix\.platform != 'linux'\s+uses: Swatinem\/rust-cache@/,
@@ -1270,12 +1297,31 @@ test("platform resource inspection is exact and immediately precedes native buil
     releaseWorkflow,
     /CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU/,
   );
-  const outsideResourceStep =
+  const preserveStepStart = buildJob.indexOf(
+    "- name: Preserve native Linux outputs and prune build intermediates",
+  );
+  const flatpakSetupStart = buildJob.indexOf(
+    "- name: Install pinned Flatpak toolchain and GNOME runtime",
+  );
+  const preserveStep = buildJob.slice(preserveStepStart, flatpakSetupStart);
+  assert.ok(preserveStepStart > nativeBuildStart);
+  assert.ok(flatpakSetupStart > preserveStepStart);
+  assert.match(
+    preserveStep,
+    /expected_swap_file="\$RUNNER_TEMP\/sorng-release\.swap"[\s\S]*?test "\$LINUX_RELEASE_SWAP_FILE" = "\$expected_swap_file"/,
+  );
+  assert.match(preserveStep, /sudo swapoff "\$LINUX_RELEASE_SWAP_FILE"/);
+  assert.match(preserveStep, /sudo rm -f -- "\$LINUX_RELEASE_SWAP_FILE"/);
+  const outsideSwapSteps =
     releaseWorkflow.slice(0, buildStart + resourceStepStart) +
-    releaseWorkflow.slice(buildStart + nativeBuildStart);
+    releaseWorkflow.slice(
+      buildStart + windowsResourceStepStart,
+      buildStart + preserveStepStart,
+    ) +
+    releaseWorkflow.slice(buildStart + flatpakSetupStart);
   assert.doesNotMatch(
-    outsideResourceStep,
-    /sorng-release\.swap|\b(?:fallocate|mkswap|swapon)\b/,
+    outsideSwapSteps,
+    /sorng-release\.swap|\b(?:fallocate|mkswap|swapon|swapoff)\b/,
   );
   assert.doesNotMatch(
     buildJob,

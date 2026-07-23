@@ -649,6 +649,10 @@ jobs:
           linker_probe_source="$RUNNER_TEMP/sorng-linux-linker-probe.c"
           linker_probe_binary="$RUNNER_TEMP/sorng-linux-linker-probe"
           documented_capacity_bytes=$((LINUX_STANDARD_RUNNER_DISK_GIB * 1024 * 1024 * 1024))
+          desired_swap_size_bytes=$((16 * 1024 * 1024 * 1024))
+          minimum_swap_size_bytes=$((1 * 1024 * 1024 * 1024))
+          swap_alignment_bytes=$((1024 * 1024))
+          swap_file="$RUNNER_TEMP/sorng-release.swap"
           total_bytes=$(df -B1 --output=size "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
           available_bytes=$(df -B1 --output=avail "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
           [[ "$total_bytes" =~ ^[0-9]+$ ]]
@@ -660,10 +664,51 @@ jobs:
           printf 'runner_temp_disk_total_bytes=%s\n' "$total_bytes"
           printf 'runner_temp_disk_available_bytes=%s\n' "$available_bytes"
 
-          # Standard public runners guarantee only 14 GiB of SSD. Do not consume
-          # it with disk-backed swap or impose a free-space floor above that
-          # contract. One Cargo job, split codegen, LLD, no Linux target-cache
-          # restore, and post-build intermediate pruning bound the build instead.
+          # Preserve the standard runner's documented disk capacity for build
+          # outputs and later Flatpak work. Use only measured surplus capacity
+          # for swap, capped at the 16 GiB that kept the final app crate alive
+          # in the last successful x86_64 release build.
+          disk_floor_bytes=$documented_capacity_bytes
+          swappable_bytes=0
+          if (( available_bytes > disk_floor_bytes )); then
+            swappable_bytes=$((available_bytes - disk_floor_bytes))
+          fi
+          if (( swappable_bytes > desired_swap_size_bytes )); then
+            swappable_bytes=$desired_swap_size_bytes
+          fi
+          swap_size_bytes=$((swappable_bytes / swap_alignment_bytes * swap_alignment_bytes))
+          printf 'linux_release_disk_floor_bytes=%s\n' "$disk_floor_bytes"
+          printf 'linux_release_adaptive_swap_bytes=%s\n' "$swap_size_bytes"
+
+          if (( swap_size_bytes >= minimum_swap_size_bytes )); then
+            if [ -e "$swap_file" ] || [ -L "$swap_file" ]; then
+              echo "::error::Refusing to replace unexpected swap path $swap_file."
+              exit 1
+            fi
+            sudo fallocate -l "$swap_size_bytes" "$swap_file"
+            remaining_bytes=$(df -B1 --output=avail "$RUNNER_TEMP" | tail -n 1 | tr -d '[:space:]')
+            [[ "$remaining_bytes" =~ ^[0-9]+$ ]]
+            if (( remaining_bytes < disk_floor_bytes )); then
+              echo "::error::Adaptive swap left $remaining_bytes free bytes, below the measured $disk_floor_bytes-byte floor."
+              exit 1
+            fi
+            sudo chmod 0600 "$swap_file"
+            test "$(stat -c '%a' "$swap_file")" = 600
+            test "$(stat -c '%s' "$swap_file")" -eq "$swap_size_bytes"
+            page_size_bytes=$(getconf PAGESIZE)
+            [[ "$page_size_bytes" =~ ^[0-9]+$ ]]
+            expected_active_swap_size=$((swap_size_bytes - page_size_bytes))
+            sudo mkswap "$swap_file"
+            sudo swapon "$swap_file"
+            active_swap_size=$(
+              sudo swapon --show=NAME,SIZE --bytes --noheadings --raw |
+                awk -v path="$swap_file" '$1 == path { print $2 }'
+            )
+            test "$active_swap_size" -eq "$expected_active_swap_size"
+            echo "LINUX_RELEASE_SWAP_FILE=$swap_file" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Skipping adaptive release swap to preserve the measured $disk_floor_bytes-byte disk floor."
+          fi
 
           command -v clang-18
           command -v ld.lld-18
@@ -851,6 +896,15 @@ jobs:
           test -d "$payload/resources/opkssh"
           test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -eq "$opkssh_file_count"
           find "$preserved_bundles" -maxdepth 2 -type f -print
+          if [ -n "${LINUX_RELEASE_SWAP_FILE:-}" ]; then
+            expected_swap_file="$RUNNER_TEMP/sorng-release.swap"
+            test "$LINUX_RELEASE_SWAP_FILE" = "$expected_swap_file"
+            test -f "$LINUX_RELEASE_SWAP_FILE"
+            test ! -L "$LINUX_RELEASE_SWAP_FILE"
+            sudo swapoff "$LINUX_RELEASE_SWAP_FILE"
+            sudo rm -f -- "$LINUX_RELEASE_SWAP_FILE"
+            test ! -e "$LINUX_RELEASE_SWAP_FILE"
+          fi
           df -h "$GITHUB_WORKSPACE"
           echo "LINUX_RPM_ARCH=$rpm_arch" >> "$GITHUB_ENV"
 
