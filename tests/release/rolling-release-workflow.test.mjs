@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -57,6 +58,26 @@ function activeTomlSection(source, sectionName) {
     .slice(start, nextSection < 0 ? source.length : nextSection)
     .split(/\r?\n/)
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+
+function extractLiteralRunScript(step) {
+  const marker = "        run: |";
+  const markerIndex = step.indexOf(marker);
+  assert.ok(markerIndex >= 0, "workflow step must contain a literal run block");
+
+  return step
+    .slice(markerIndex + marker.length)
+    .replace(/^\r?\n/, "")
+    .trimEnd()
+    .split(/\r?\n/)
+    .map((line) => {
+      assert.ok(
+        line === "" || line.startsWith("          "),
+        `unexpected workflow script indentation: ${JSON.stringify(line)}`,
+      );
+      return line.slice(10);
+    })
     .join("\n");
 }
 
@@ -366,6 +387,11 @@ test("Windows release compiler is pinned and verified without changing other pla
     "- name: Check out pinned OPKSSH source",
   );
   const toolchainSteps = buildJob.slice(toolchainStart, checkoutStart);
+  const verifierStart = toolchainSteps.indexOf(
+    "- name: Verify pinned Windows release compiler",
+  );
+  const verifierStep = toolchainSteps.slice(verifierStart);
+  const verifierScript = extractLiteralRunScript(verifierStep);
 
   assert.ok(toolchainStart >= 0);
   assert.ok(checkoutStart > toolchainStart);
@@ -403,12 +429,54 @@ test("Windows release compiler is pinned and verified without changing other pla
   );
   assert.doesNotMatch(buildSteps, /^\s+RUSTUP_TOOLCHAIN:/m);
   assert.match(toolchainSteps, /& rustc --version --verbose/);
+  assert.match(verifierScript, /\$hostLines = @\(/);
+  assert.doesNotMatch(verifierScript, /^\s*\$host\s*=/im);
   assert.match(
     toolchainSteps,
     /\$actualRelease -ne \$env:EXPECTED_RUST_RELEASE/,
   );
   assert.match(toolchainSteps, /\$actualHost -ne 'x86_64-pc-windows-msvc'/);
   assert.doesNotMatch(toolchainSteps, /rust-lld|lld-link|rustup update/i);
+
+  const harness = String.raw`
+    $ErrorActionPreference = "Stop"
+    function rustc {
+      if (($args -join " ") -ne "--version --verbose") {
+        throw "Unexpected rustc arguments: $args"
+      }
+      @(
+        "rustc 1.95.0 (59807616e 2026-04-14)"
+        "binary: rustc"
+        "commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860"
+        "commit-date: 2026-04-14"
+        "host: x86_64-pc-windows-msvc"
+        "release: 1.95.0"
+        "LLVM version: 22.1.2"
+      )
+      $global:LASTEXITCODE = 0
+    }
+    $env:EXPECTED_RUST_RELEASE = "1.95.0"
+    $verifier = [Console]::In.ReadToEnd()
+    & ([ScriptBlock]::Create($verifier))
+    Write-Output "WINDOWS_RELEASE_COMPILER_VERIFIER_OK"
+  `;
+  const result = spawnSync(
+    "pwsh",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      Buffer.from(harness, "utf16le").toString("base64"),
+    ],
+    {
+      encoding: "utf8",
+      input: verifierScript,
+    },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /WINDOWS_RELEASE_COMPILER_VERIFIER_OK/);
 });
 
 test("resource controls preserve release features and signing inputs", () => {

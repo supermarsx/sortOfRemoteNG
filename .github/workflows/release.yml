@@ -411,12 +411,12 @@ jobs:
           $version | ForEach-Object { Write-Host $_ }
 
           $release = @($version | Where-Object { $_ -match '^release:\s+' })
-          $host = @($version | Where-Object { $_ -match '^host:\s+' })
-          if ($release.Count -ne 1 -or $host.Count -ne 1) {
+          $hostLines = @($version | Where-Object { $_ -match '^host:\s+' })
+          if ($release.Count -ne 1 -or $hostLines.Count -ne 1) {
             throw "rustc did not report exactly one release and host."
           }
           $actualRelease = $release[0] -replace '^release:\s+', ''
-          $actualHost = $host[0] -replace '^host:\s+', ''
+          $actualHost = $hostLines[0] -replace '^host:\s+', ''
           if ($actualRelease -ne $env:EXPECTED_RUST_RELEASE) {
             throw "Expected rustc $env:EXPECTED_RUST_RELEASE, found $actualRelease."
           }
