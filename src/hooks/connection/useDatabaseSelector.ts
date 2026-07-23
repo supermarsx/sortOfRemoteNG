@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { ConnectionDatabase } from "../../types/connection/connection";
-import { defaultExportSecuritySettings, SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
+import {
+  defaultExportSecuritySettings,
+  SavedProxyProfile,
+  SavedProxyChain,
+} from "../../types/settings/settings";
 import { DatabaseManager } from "../../utils/connection/databaseManager";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
@@ -77,7 +81,23 @@ function getCollectionActionError(
     return invalidPasswordMessage;
   }
 
-  return error instanceof Error ? error.message : fallbackMessage;
+  return getActionError(error, fallbackMessage);
+}
+
+/**
+ * Tauri serialises command failures across IPC and may reject `invoke()` with
+ * a string rather than a JavaScript `Error`. Preserve either representation so
+ * the UI can show the actionable backend detail instead of replacing it with a
+ * generic message.
+ */
+function getActionError(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return fallbackMessage;
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────
@@ -158,9 +178,9 @@ export function useDatabaseSelector(
 
   // Shared UI state
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<
-    "collections" | "proxies"
-  >("collections");
+  const [activeTab, setActiveTab] = useState<"collections" | "proxies">(
+    "collections",
+  );
 
   // Proxy/VPN profiles
   const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
@@ -255,7 +275,10 @@ export function useDatabaseSelector(
         newCollection.isEncrypted,
         newCollection.password || undefined,
       );
-      setCollections((currentCollections) => [...currentCollections, collection]);
+      setCollections((currentCollections) => [
+        ...currentCollections,
+        collection,
+      ]);
       setShowCreateForm(false);
       setNewCollection(EMPTY_NEW_COLLECTION);
       setError("");
@@ -264,9 +287,10 @@ export function useDatabaseSelector(
       );
     } catch (error) {
       setError(
-        error instanceof Error
-          ? error.message
-          : t("databaseCenter.collections.errors.createFailed"),
+        getActionError(
+          error,
+          t("databaseCenter.collections.errors.createFailed"),
+        ),
       );
     }
   };
@@ -400,9 +424,12 @@ export function useDatabaseSelector(
           await saveData();
         }
 
-        const duplicate = await databaseManager.duplicateDatabase(collection.id, {
-          password: sourcePassword,
-        });
+        const duplicate = await databaseManager.duplicateDatabase(
+          collection.id,
+          {
+            password: sourcePassword,
+          },
+        );
         await loadDatabases();
         setHighlightedCollectionId(duplicate.id);
         setError("");
@@ -529,7 +556,13 @@ export function useDatabaseSelector(
       // re-render against the new state.
       await loadDatabases();
     },
-    [closeCollectionMenu, databaseManager, loadDatabases, onDatabaseClose, saveData],
+    [
+      closeCollectionMenu,
+      databaseManager,
+      loadDatabases,
+      onDatabaseClose,
+      saveData,
+    ],
   );
 
   const handlePasswordSubmit = async () => {
@@ -591,15 +624,15 @@ export function useDatabaseSelector(
     if (encryptImport) {
       if (!importEncryptPassword) {
         setError(
-          t("databaseCenter.collections.errors.passwordRequiredToEncryptImport"),
+          t(
+            "databaseCenter.collections.errors.passwordRequiredToEncryptImport",
+          ),
         );
         return;
       }
       if (importEncryptPassword !== importEncryptConfirmPassword) {
         setError(
-          t(
-            "databaseCenter.collections.errors.encryptionPasswordsDoNotMatch",
-          ),
+          t("databaseCenter.collections.errors.encryptionPasswordsDoNotMatch"),
         );
         return;
       }
@@ -828,9 +861,10 @@ export function useDatabaseSelector(
         } catch (error) {
           alert(
             t("databaseCenter.proxies.importFailed", {
-              message: error instanceof Error
-                ? error.message
-                : t("databaseCenter.proxies.unknownError"),
+              message:
+                error instanceof Error
+                  ? error.message
+                  : t("databaseCenter.proxies.unknownError"),
             }),
           );
         }

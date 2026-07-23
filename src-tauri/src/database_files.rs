@@ -308,7 +308,10 @@ pub fn safe_read_raw(canonical: &Path) -> Result<Option<(Vec<u8>, LoadSource)>, 
     let candidates = [
         (canonical.to_path_buf(), LoadSource::Current),
         (sibling(canonical, "bak"), LoadSource::Backup),
-        (canonical.with_extension("json.v0.bak"), LoadSource::V0Migration),
+        (
+            canonical.with_extension("json.v0.bak"),
+            LoadSource::V0Migration,
+        ),
     ];
     for (path, source) in &candidates {
         if !path.exists() {
@@ -340,7 +343,10 @@ pub fn safe_read(canonical: &Path) -> Result<Option<LoadResult>, FileStoreError>
     let candidates = [
         (canonical.to_path_buf(), LoadSource::Current),
         (sibling(canonical, "bak"), LoadSource::Backup),
-        (canonical.with_extension("json.v0.bak"), LoadSource::V0Migration),
+        (
+            canonical.with_extension("json.v0.bak"),
+            LoadSource::V0Migration,
+        ),
     ];
     for (path, source) in &candidates {
         if !path.exists() {
@@ -387,9 +393,10 @@ fn sibling(canonical: &Path, suffix: &str) -> PathBuf {
 // The inner envelope's sub-key is derived from the master DEK via
 // HKDF-SHA256 with a per-artifact label, so the index file and a
 // per-DB payload are not interchangeable even though both use the
-// same outer codec. A locked state (no master DEK loaded) refuses
-// every write loudly — the user signed off on this "eager-encrypt
-// with explicit downgrade refusal" policy in P4 design.
+// same outer codec. When no master DEK has ever been configured, new
+// and already-plaintext stores remain writable in the legacy plaintext
+// shape. A configured-but-locked process and existing encrypted
+// generations still fail closed: neither may write plaintext.
 //
 // On read, a payload that starts with the SORNG envelope magic is
 // decrypted; a payload that doesn't is treated as legacy plaintext-P1
@@ -398,8 +405,7 @@ fn sibling(canonical: &Path, suffix: &str) -> PathBuf {
 // ══════════════════════════════════════════════════════════════════
 
 use sorng_encryption::envelope::{
-    self as enc_envelope, EnvelopeError, EnvelopeHeader,
-    MAGIC as SORNG_ENVELOPE_MAGIC, NONCE_LEN,
+    self as enc_envelope, EnvelopeError, EnvelopeHeader, MAGIC as SORNG_ENVELOPE_MAGIC, NONCE_LEN,
 };
 use sorng_encryption::{ArtifactKind, EncryptionState};
 
@@ -462,22 +468,305 @@ async fn decrypt_payload(
     Ok(plaintext)
 }
 
-/// High-level encrypted save: serialize → encrypt → safe_write.
-/// Used by every P4-aware Tauri command. The two suppressed
-/// parameters (`_mode`, `_argon2`) keep the signature aligned with
-/// the artifact-specific writers in `sorng-encryption` for the day
-/// we move to those — we use the lower-level envelope here only
-/// because the index payload is an array, which the artifact
-/// writers refuse.
-async fn encrypted_save(
+/// Before a locked-state plaintext write, inspect every generation
+/// that the recovery ladder can use. An encrypted or unreadable
+/// generation must fail closed: otherwise `safe_write` could rotate
+/// it away and silently downgrade or destroy protected data.
+fn ensure_locked_plaintext_write_is_safe(canonical: &Path) -> Result<(), String> {
+    let candidates = [
+        canonical.to_path_buf(),
+        sibling(canonical, "bak"),
+        canonical.with_extension("json.v0.bak"),
+    ];
+
+    for path in candidates {
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "database storage is locked; cannot verify {} before writing: {error}",
+                    path.display()
+                ))
+            }
+        };
+        let payload = parse_and_verify(&bytes).map_err(|error| {
+            format!(
+                "database storage is locked; refusing to overwrite unverifiable generation {}: {error}",
+                path.display()
+            )
+        })?;
+        if is_envelope_blob(payload) {
+            return Err(
+                "database storage is encrypted; unlock first via Settings → Security".to_string(),
+            );
+        }
+        serde_json::from_slice::<serde_json::Value>(payload).map_err(|error| {
+            format!(
+                "database storage is locked; refusing to overwrite invalid plaintext generation {}: {error}",
+                path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Inspect only the fixed SDBF header plus the envelope-magic prefix.
+/// Configuration detection runs on every locked plaintext save, so it
+/// must never read whole database payloads just to decide whether a
+/// master-encrypted generation exists.
+fn database_generation_is_encrypted(path: &Path) -> Result<bool, String> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path).map_err(|error| {
+        format!(
+            "cannot inspect database generation {}: {error}",
+            path.display()
+        )
+    })?;
+    let file_len = file
+        .metadata()
+        .map_err(|error| {
+            format!(
+                "cannot stat database generation {}: {error}",
+                path.display()
+            )
+        })?
+        .len();
+    let prefix_len = PREAMBLE_LEN + SORNG_ENVELOPE_MAGIC.len();
+    let mut prefix = Vec::with_capacity(prefix_len);
+    file.take(prefix_len as u64)
+        .read_to_end(&mut prefix)
+        .map_err(|error| {
+            format!(
+                "cannot read database generation header {}: {error}",
+                path.display()
+            )
+        })?;
+
+    if prefix.len() < PREAMBLE_LEN {
+        return Err(format!(
+            "database generation {} has a truncated SDBF header",
+            path.display()
+        ));
+    }
+    if &prefix[..4] != MAGIC || prefix[4] != CURRENT_VERSION {
+        return Err(format!(
+            "database generation {} has an unrecognized SDBF header",
+            path.display()
+        ));
+    }
+    let payload_len = u64::from_le_bytes(
+        prefix[PAYLOAD_LEN_OFFSET..PAYLOAD_LEN_OFFSET + 8]
+            .try_into()
+            .unwrap(),
+    );
+    let expected_len = (PREAMBLE_LEN as u64)
+        .checked_add(payload_len)
+        .ok_or_else(|| format!("database generation {} length overflows", path.display()))?;
+    if file_len != expected_len {
+        return Err(format!(
+            "database generation {} has an unverifiable length",
+            path.display()
+        ));
+    }
+
+    let payload_prefix = &prefix[PREAMBLE_LEN..];
+    if is_envelope_blob(payload_prefix) {
+        return Ok(true);
+    }
+    if payload_prefix.is_empty() || SORNG_ENVELOPE_MAGIC.starts_with(payload_prefix) {
+        return Err(format!(
+            "database generation {} has an ambiguous payload header",
+            path.display()
+        ));
+    }
+
+    // serde_json emits one of these bytes first for every valid JSON
+    // root. Anything else is neither a known envelope nor credible
+    // plaintext, so locked writes fail closed.
+    let first = payload_prefix[0];
+    let looks_like_json = matches!(
+        first,
+        b'{' | b'[' | b'"' | b't' | b'f' | b'n' | b'-' | b'0'..=b'9'
+    );
+    if !looks_like_json {
+        return Err(format!(
+            "database generation {} has an ambiguous payload header",
+            path.display()
+        ));
+    }
+
+    Ok(false)
+}
+
+fn is_database_recovery_generation_name(file_name: &str) -> bool {
+    file_name.ends_with(".json")
+        || file_name.ends_with(".json.bak")
+        || file_name.ends_with(".json.v0.bak")
+}
+
+/// Does persistent state prove that master encryption has been
+/// configured, even though the in-memory state is currently locked?
+///
+/// `vault_has_master_dek` is injected so the filesystem decision is
+/// hermetic in tests. The command-level probe obtains it from the OS
+/// vault. Password wrappers, encrypted settings, setup audit entries,
+/// and any encrypted database generation are durable fallback signals
+/// when the vault is temporarily unavailable.
+fn master_encryption_configured_from_evidence(
+    app_data_dir: &Path,
+    vault_has_master_dek: bool,
+) -> Result<bool, String> {
+    if vault_has_master_dek {
+        return Ok(true);
+    }
+
+    for marker in ["dek.enc", "settings.enc"] {
+        let path = app_data_dir.join(marker);
+        match path.try_exists() {
+            Ok(true) => return Ok(true),
+            Ok(false) => {}
+            Err(error) => {
+                return Err(format!(
+                    "cannot verify master-encryption marker {}: {error}",
+                    path.display()
+                ))
+            }
+        }
+    }
+
+    let audit_paths = [
+        app_data_dir.join("logs").join("encryption-audit.log"),
+        app_data_dir.join("logs").join("encryption-audit.log.0.bak"),
+    ];
+    let configuration_events = [
+        "\"event\":\"setup-completed\"",
+        "\"event\":\"key-rotated\"",
+        "\"event\":\"password-changed\"",
+        "\"event\":\"settings-migrated\"",
+        "\"event\":\"portable-imported\"",
+    ];
+    for path in audit_paths {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "cannot verify master-encryption audit marker {}: {error}",
+                    path.display()
+                ))
+            }
+        };
+        if configuration_events
+            .iter()
+            .any(|event| text.contains(event))
+        {
+            return Ok(true);
+        }
+    }
+
+    let databases = app_data_dir.join("databases");
+    let entries = match std::fs::read_dir(&databases) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "cannot inspect database encryption markers in {}: {error}",
+                databases.display()
+            ))
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "cannot inspect database encryption marker in {}: {error}",
+                databases.display()
+            )
+        })?;
+        let file_type = entry.file_type().map_err(|error| {
+            format!(
+                "cannot inspect database entry {}: {error}",
+                entry.path().display()
+            )
+        })?;
+        if !file_type.is_file() {
+            continue;
+        }
+        let file_name = entry.file_name();
+        if !is_database_recovery_generation_name(&file_name.to_string_lossy()) {
+            continue;
+        }
+        let path = entry.path();
+        if database_generation_is_encrypted(&path)? {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn classify_vault_master_dek_probe(
+    probe: sorng_vault::types::VaultResult<Vec<u8>>,
+) -> Result<bool, String> {
+    match probe {
+        Ok(_) => Ok(true),
+        Err(error) if matches!(&error.kind, sorng_vault::types::VaultErrorKind::NotFound) => {
+            Ok(false)
+        }
+        Err(error) => Err(format!(
+            "cannot verify whether master encryption is configured in the OS vault: {error}"
+        )),
+    }
+}
+
+async fn master_encryption_configured(
+    app: &AppHandle,
+    state: &EncryptionState,
+) -> Result<bool, String> {
+    if state.is_unlocked().await {
+        return Ok(true);
+    }
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("app_data_dir: {error}"))?;
+    let vault_has_master_dek = if sorng_vault::keychain::is_available() {
+        classify_vault_master_dek_probe(sorng_vault::keychain::read_dek().await)?
+    } else {
+        false
+    };
+    master_encryption_configured_from_evidence(&app_data_dir, vault_has_master_dek)
+}
+
+/// High-level storage save.
+///
+/// With a live master DEK, serialize → encrypt → safe_write. Without
+/// one (the normal first-run state when Linux Secret Service is not
+/// available), a never-configured store preserves the legacy plaintext
+/// format so an explicitly unencrypted database can still be created.
+/// Configured-but-locked storage and encrypted generations fail closed.
+async fn save_payload(
     state: &EncryptionState,
     artifact: ArtifactKind,
     canonical: &Path,
     value: &serde_json::Value,
+    master_encryption_configured: bool,
 ) -> Result<(), String> {
     let plain = serde_json::to_vec(value).map_err(|e| format!("serialise payload: {e}"))?;
-    let envelope = encrypt_payload(state, artifact, &plain).await?;
-    safe_write(canonical, &envelope).map_err(|e| e.to_string())
+    if state.is_unlocked().await {
+        let envelope = encrypt_payload(state, artifact, &plain).await?;
+        return safe_write(canonical, &envelope).map_err(|e| e.to_string());
+    }
+
+    if master_encryption_configured {
+        return Err(
+            "database storage is encrypted; unlock first via Settings → Security".to_string(),
+        );
+    }
+    ensure_locked_plaintext_write_is_safe(canonical)?;
+    safe_write(canonical, &plain).map_err(|e| e.to_string())
 }
 
 /// High-level encrypted load: safe_read → distinguish envelope from
@@ -533,9 +822,10 @@ pub async fn databases_list(
     encrypted_load(&enc_state, ArtifactKind::DatabasesIndex, &path).await
 }
 
-/// Write the list. Encrypts under `ArtifactKind::DatabasesIndex` before
-/// handing the bytes to the safe writer. Refuses loudly when the
-/// encryption state is locked — there is no plaintext fallback.
+/// Write the list. Encrypts under `ArtifactKind::DatabasesIndex` when
+/// the master DEK is available. A fresh or already-plaintext store
+/// remains writable while locked, but an encrypted generation cannot
+/// be downgraded.
 #[tauri::command]
 pub async fn databases_save_index(
     app: AppHandle,
@@ -543,7 +833,15 @@ pub async fn databases_save_index(
     list: serde_json::Value,
 ) -> Result<(), String> {
     let path = index_path(&app)?;
-    encrypted_save(&enc_state, ArtifactKind::DatabasesIndex, &path, &list).await
+    let configured = master_encryption_configured(&app, &enc_state).await?;
+    save_payload(
+        &enc_state,
+        ArtifactKind::DatabasesIndex,
+        &path,
+        &list,
+        configured,
+    )
+    .await
 }
 
 /// Load `<app_data>/databases/<id>.json`. Returns `None` when no
@@ -565,8 +863,9 @@ pub async fn load_database_data(
 /// Save `<app_data>/databases/<id>.json`. The frontend supplies the
 /// payload as a JSON value — could be a plain object or an encrypted
 /// string envelope from the per-database-password layer — and this
-/// command wraps it in the master-DEK envelope before writing.
-/// Refuses loudly when the encryption state is locked.
+/// command wraps it in the master-DEK envelope when available.
+/// Fresh/already-plaintext storage remains writable without a master
+/// DEK; encrypted generations still require an unlock.
 ///
 /// **Two-layer note:** when the user has set a per-database password
 /// (frontend WebCrypto AES-GCM, the existing checkbox), the value
@@ -583,17 +882,22 @@ pub async fn save_database_data(
     data: serde_json::Value,
 ) -> Result<(), String> {
     let path = per_db_path(&app, &database_id)?;
-    encrypted_save(&enc_state, ArtifactKind::Connections, &path, &data).await
+    let configured = master_encryption_configured(&app, &enc_state).await?;
+    save_payload(
+        &enc_state,
+        ArtifactKind::Connections,
+        &path,
+        &data,
+        configured,
+    )
+    .await
 }
 
 /// Best-effort removal of every variant (canonical + .bak + .tmp +
 /// .v0.bak). Used when the user deletes a database from the picker.
 /// Always returns `Ok(())` — missing files aren't an error.
 #[tauri::command]
-pub async fn delete_database_data(
-    app: AppHandle,
-    database_id: String,
-) -> Result<(), String> {
+pub async fn delete_database_data(app: AppHandle, database_id: String) -> Result<(), String> {
     let canonical = per_db_path(&app, &database_id)?;
     for suffix in &["", ".bak", ".tmp", ".v0.bak"] {
         let path = if suffix.is_empty() {
@@ -683,8 +987,7 @@ mod tests {
         let payload = b"hello world".to_vec();
         let mut buf = encode_preamble(&payload).to_vec();
         // Claim 1000 payload bytes but only supply 11.
-        buf[PAYLOAD_LEN_OFFSET..PAYLOAD_LEN_OFFSET + 8]
-            .copy_from_slice(&1000_u64.to_le_bytes());
+        buf[PAYLOAD_LEN_OFFSET..PAYLOAD_LEN_OFFSET + 8].copy_from_slice(&1000_u64.to_le_bytes());
         buf.extend_from_slice(&payload);
         assert!(matches!(
             parse_and_verify(&buf),
@@ -899,7 +1202,7 @@ mod tests {
             "settings": {},
             "timestamp": 42,
         });
-        encrypted_save(&state, ArtifactKind::Connections, &path, &value)
+        save_payload(&state, ArtifactKind::Connections, &path, &value, true)
             .await
             .unwrap();
         // Confirm what's on disk is NOT plaintext JSON — i.e. the
@@ -933,7 +1236,7 @@ mod tests {
             { "id": "a", "name": "Alpha" },
             { "id": "b", "name": "Beta" },
         ]);
-        encrypted_save(&state, ArtifactKind::DatabasesIndex, &path, &value)
+        save_payload(&state, ArtifactKind::DatabasesIndex, &path, &value, true)
             .await
             .unwrap();
         let loaded = encrypted_load(&state, ArtifactKind::DatabasesIndex, &path)
@@ -944,24 +1247,322 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_refuses_when_locked() {
+    async fn fresh_locked_store_creates_index_and_unencrypted_database() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("locked.json");
+        let databases = dir.path().join("databases");
+        let index_path = databases.join("index.json");
+        let database_path = databases.join("fedora-new-db.json");
         let state = EncryptionState::new(); // locked
-        let err = encrypted_save(
+        let index = serde_json::json!([{
+            "id": "fedora-new-db",
+            "name": "MyDataBase",
+            "isEncrypted": false,
+        }]);
+        let data = serde_json::json!({
+            "connections": [],
+            "settings": {},
+            "timestamp": 42,
+        });
+        let configured = master_encryption_configured_from_evidence(dir.path(), false).unwrap();
+        assert!(!configured, "fresh Fedora-style state is not configured");
+
+        save_payload(
+            &state,
+            ArtifactKind::DatabasesIndex,
+            &index_path,
+            &index,
+            configured,
+        )
+        .await
+        .unwrap();
+        save_payload(
             &state,
             ArtifactKind::Connections,
-            &path,
-            &serde_json::json!({}),
+            &database_path,
+            &data,
+            configured,
+        )
+        .await
+        .unwrap();
+
+        for path in [&index_path, &database_path] {
+            let on_disk = std::fs::read(path).unwrap();
+            let inner = parse_and_verify(&on_disk).unwrap();
+            assert!(
+                !is_envelope_blob(inner),
+                "a store with no configured master key must remain plaintext"
+            );
+        }
+
+        let loaded_index = encrypted_load(&state, ArtifactKind::DatabasesIndex, &index_path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_index.value, index);
+        let loaded_data = encrypted_load(&state, ArtifactKind::Connections, &database_path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded_data.value, data);
+    }
+
+    #[test]
+    fn master_encryption_evidence_detects_vault_and_persistent_markers() {
+        let empty = tempdir().unwrap();
+        assert!(
+            !master_encryption_configured_from_evidence(empty.path(), false).unwrap(),
+            "an empty app-data directory is a never-configured first run"
+        );
+        assert!(
+            master_encryption_configured_from_evidence(empty.path(), true).unwrap(),
+            "a master DEK in the OS vault is configured encryption"
+        );
+
+        let password = tempdir().unwrap();
+        std::fs::write(password.path().join("dek.enc"), b"wrapped-dek").unwrap();
+        assert!(
+            master_encryption_configured_from_evidence(password.path(), false).unwrap(),
+            "the password wrapper must block locked plaintext writes"
+        );
+
+        let settings = tempdir().unwrap();
+        std::fs::write(settings.path().join("settings.enc"), b"encrypted-settings").unwrap();
+        assert!(
+            master_encryption_configured_from_evidence(settings.path(), false).unwrap(),
+            "encrypted settings must block locked plaintext writes"
+        );
+
+        let audit = tempdir().unwrap();
+        let logs = audit.path().join("logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(
+            logs.join("encryption-audit.log"),
+            br#"{"event":"setup-completed","method":"vault"}"#,
+        )
+        .unwrap();
+        assert!(
+            master_encryption_configured_from_evidence(audit.path(), false).unwrap(),
+            "a durable setup audit entry must survive temporary vault unavailability"
+        );
+    }
+
+    #[test]
+    fn vault_probe_only_treats_explicit_not_found_as_unconfigured() {
+        use sorng_vault::types::VaultError;
+
+        assert!(
+            classify_vault_master_dek_probe(Ok(vec![0x42; 32])).unwrap(),
+            "a readable vault DEK is configured encryption"
+        );
+        assert!(
+            !classify_vault_master_dek_probe(Err(VaultError::not_found("missing"))).unwrap(),
+            "an explicit NotFound is the only unconfigured vault result"
+        );
+        for error in [
+            VaultError::access_denied("vault locked"),
+            VaultError::platform("secret service unavailable"),
+            VaultError::internal("probe task failed"),
+        ] {
+            let result = classify_vault_master_dek_probe(Err(error));
+            assert!(
+                result.is_err(),
+                "ambiguous vault failures must block plaintext fallback"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_locked_store_refuses_brand_new_database_path() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        let encrypted_index = databases.join("index.json");
+        let new_database = databases.join("brand-new.json");
+        let writer = unlocked_state(0x28).await;
+        save_payload(
+            &writer,
+            ArtifactKind::DatabasesIndex,
+            &encrypted_index,
+            &serde_json::json!([{ "id": "existing" }]),
+            true,
+        )
+        .await
+        .unwrap();
+
+        let configured = master_encryption_configured_from_evidence(dir.path(), false).unwrap();
+        assert!(
+            configured,
+            "an encrypted database generation is global configuration evidence"
+        );
+
+        let locked = EncryptionState::new();
+        let err = save_payload(
+            &locked,
+            ArtifactKind::Connections,
+            &new_database,
+            &serde_json::json!({ "connections": [] }),
+            configured,
         )
         .await
         .unwrap_err();
+        assert!(err.contains("encrypted"), "got: {err}");
         assert!(
-            err.contains("locked"),
-            "locked-state error must surface, got: {err}"
+            !new_database.exists(),
+            "configured-but-locked IPC path must not create plaintext"
         );
-        // And the file must not have been created.
-        assert!(!path.exists(), "locked save must not touch disk");
+    }
+
+    #[tokio::test]
+    async fn stale_truncated_tmp_does_not_block_plaintext_save() {
+        let dir = tempdir().unwrap();
+        let databases = dir.path().join("databases");
+        std::fs::create_dir_all(&databases).unwrap();
+        let database_path = databases.join("fedora-new-db.json");
+        let tmp_path = sibling(&database_path, "tmp");
+        std::fs::write(&tmp_path, b"truncated interrupted write").unwrap();
+
+        let configured = master_encryption_configured_from_evidence(dir.path(), false).unwrap();
+        assert!(
+            !configured,
+            "temporary files are not trusted recovery generations"
+        );
+
+        let state = EncryptionState::new();
+        let value = serde_json::json!({ "connections": [], "settings": {} });
+        save_payload(
+            &state,
+            ArtifactKind::Connections,
+            &database_path,
+            &value,
+            configured,
+        )
+        .await
+        .unwrap();
+
+        assert!(database_path.exists());
+        assert!(
+            !tmp_path.exists(),
+            "successful promotion consumes the temp file"
+        );
+        let loaded = encrypted_load(&state, ArtifactKind::Connections, &database_path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.value, value);
+    }
+
+    #[tokio::test]
+    async fn locked_store_can_rewrite_existing_plaintext_database() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("plaintext.json");
+        let state = EncryptionState::new();
+        let first = serde_json::json!({ "generation": 1 });
+        let second = serde_json::json!({ "generation": 2 });
+
+        save_payload(&state, ArtifactKind::Connections, &path, &first, false)
+            .await
+            .unwrap();
+        let configured = master_encryption_configured_from_evidence(dir.path(), false).unwrap();
+        assert!(
+            !configured,
+            "plaintext generations are not encryption markers"
+        );
+        save_payload(
+            &state,
+            ArtifactKind::Connections,
+            &path,
+            &second,
+            configured,
+        )
+        .await
+        .unwrap();
+
+        let current = encrypted_load(&state, ArtifactKind::Connections, &path)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.value, second);
+
+        let backup = sibling(&path, "bak");
+        let backup_bytes = std::fs::read(backup).unwrap();
+        let backup_payload = parse_and_verify(&backup_bytes).unwrap();
+        let backup_value: serde_json::Value = serde_json::from_slice(backup_payload).unwrap();
+        assert_eq!(backup_value, first);
+    }
+
+    #[tokio::test]
+    async fn locked_store_refuses_to_downgrade_encrypted_database() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("encrypted.json");
+        let writer = unlocked_state(0x29).await;
+        save_payload(
+            &writer,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "generation": 1 }),
+            true,
+        )
+        .await
+        .unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let locked = EncryptionState::new();
+        let err = save_payload(
+            &locked,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "generation": 2 }),
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("encrypted"), "got: {err}");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "refused downgrade must not modify the encrypted generation"
+        );
+    }
+
+    #[tokio::test]
+    async fn locked_store_refuses_when_only_encrypted_backup_survives() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("encrypted-backup.json");
+        let writer = unlocked_state(0x2A).await;
+        save_payload(
+            &writer,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "generation": 1 }),
+            true,
+        )
+        .await
+        .unwrap();
+        save_payload(
+            &writer,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "generation": 2 }),
+            true,
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let backup = sibling(&path, "bak");
+        let before = std::fs::read(&backup).unwrap();
+
+        let locked = EncryptionState::new();
+        let err = save_payload(
+            &locked,
+            ArtifactKind::Connections,
+            &path,
+            &serde_json::json!({ "generation": 3 }),
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("encrypted"), "got: {err}");
+        assert!(!path.exists(), "refused write must not create a canonical");
+        assert_eq!(std::fs::read(&backup).unwrap(), before);
     }
 
     #[tokio::test]
@@ -971,11 +1572,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("dbE.json");
         let writer = unlocked_state(0x33).await;
-        encrypted_save(
+        save_payload(
             &writer,
             ArtifactKind::Connections,
             &path,
             &serde_json::json!({ "a": 1 }),
+            true,
         )
         .await
         .unwrap();
@@ -1027,9 +1629,8 @@ mod tests {
         // ciphertext.
         let dir = tempdir().unwrap();
         let path = dir.path().join("legacy-string.json");
-        let password_envelope = serde_json::json!(
-            "QkFTRTY0LXNhbHQ=.QkFTRTY0LWl2.QkFTRTY0LWNpcGhlcnRleHQ="
-        );
+        let password_envelope =
+            serde_json::json!("QkFTRTY0LXNhbHQ=.QkFTRTY0LWl2.QkFTRTY0LWNpcGhlcnRleHQ=");
         let legacy_bytes = serde_json::to_vec(&password_envelope).unwrap();
         safe_write(&path, &legacy_bytes).unwrap();
 
@@ -1055,7 +1656,7 @@ mod tests {
 
         let state = unlocked_state(0x44).await;
         let updated = serde_json::json!({ "v": 2 });
-        encrypted_save(&state, ArtifactKind::Connections, &path, &updated)
+        save_payload(&state, ArtifactKind::Connections, &path, &updated, true)
             .await
             .unwrap();
 
@@ -1077,11 +1678,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let perdb_path = dir.path().join("perdb.json");
         let state = unlocked_state(0x55).await;
-        encrypted_save(
+        save_payload(
             &state,
             ArtifactKind::Connections,
             &perdb_path,
             &serde_json::json!({ "k": "v" }),
+            true,
         )
         .await
         .unwrap();
@@ -1101,11 +1703,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("rotated.json");
         let writer = unlocked_state(0x66).await;
-        encrypted_save(
+        save_payload(
             &writer,
             ArtifactKind::Connections,
             &path,
             &serde_json::json!({ "k": "v" }),
+            true,
         )
         .await
         .unwrap();
@@ -1127,19 +1730,21 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("ladder.json");
         let state = unlocked_state(0x88).await;
-        encrypted_save(
+        save_payload(
             &state,
             ArtifactKind::Connections,
             &path,
             &serde_json::json!({ "gen": 1 }),
+            true,
         )
         .await
         .unwrap();
-        encrypted_save(
+        save_payload(
             &state,
             ArtifactKind::Connections,
             &path,
             &serde_json::json!({ "gen": 2 }),
+            true,
         )
         .await
         .unwrap();
