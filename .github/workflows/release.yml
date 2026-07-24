@@ -925,13 +925,13 @@ jobs:
             "flatpak-builder=${FLATPAK_BUILDER_PACKAGE}"
           flatpak_builder_version_output=$(flatpak-builder --version)
           printf 'flatpak_builder_version_output=%s\n' "$flatpak_builder_version_output"
-          flatpak_builder_version_pattern='^flatpak-builder[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)([[:space:]].*)?$'
+          flatpak_builder_version_pattern='^flatpak-builder([[:space:]]+|-)([0-9]+\.[0-9]+\.[0-9]+)([[:space:]].*)?$'
           if [[ "$flatpak_builder_version_output" == *$'\n'* ]] ||
              [[ ! "$flatpak_builder_version_output" =~ $flatpak_builder_version_pattern ]]; then
             echo "::error::flatpak-builder returned an invalid version string: $flatpak_builder_version_output"
             exit 1
           fi
-          actual_flatpak_builder_version=${BASH_REMATCH[1]}
+          actual_flatpak_builder_version=${BASH_REMATCH[2]}
           if [ "$actual_flatpak_builder_version" != "$FLATPAK_BUILDER_VERSION" ]; then
             echo "::error::Expected flatpak-builder $FLATPAK_BUILDER_VERSION, found $actual_flatpak_builder_version."
             exit 1
