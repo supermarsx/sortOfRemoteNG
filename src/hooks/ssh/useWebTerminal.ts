@@ -73,6 +73,10 @@ import {
   withSessionLifecycleAttempt,
   type SessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
+import {
+  getSshReconnectDelayMs,
+  resolveSshReconnectPolicy,
+} from "../../utils/ssh/sshReconnectPolicy";
 
 /* ── Internal types ────────────────────────────────────────────── */
 
@@ -83,10 +87,46 @@ import {
 const PROXY_COMMAND_CONFIRMATION_REQUIRED =
   "PROXY_COMMAND_CONFIRMATION_REQUIRED";
 
-type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
+type ConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "reconnecting"
+  | "connected"
+  | "error";
+type SshConnectMode = "connect" | "reconnect";
+type SshDisconnectIntent = "none" | "user" | "replace";
+export type SshFailureKind =
+  | "auth"
+  | "connection_refused"
+  | "timeout"
+  | "host_key"
+  | "certificate"
+  | "key_missing"
+  | "permission"
+  | "tcp_connect"
+  | "network_unreachable"
+  | "transport"
+  | "unknown";
+export interface SshConnectionFailure {
+  kind: SshFailureKind;
+  summary: string;
+  technicalDetails: string;
+  recoverable: boolean;
+  occurredAt: string;
+  retryScheduled: boolean;
+  retryAttempt: number;
+  maxRetryAttempts: number;
+  retryDelaySeconds: number;
+}
 type SshOutputEvent = { session_id: string; data: string };
 type SshErrorEvent = { session_id: string; message: string };
-type SshClosedEvent = { session_id: string };
+type SshClosedEvent = {
+  session_id: string;
+  /** Added by newer backends. Missing fields retain legacy unexpected-close semantics. */
+  reason?: "requested" | "remote_eof" | "transport_error" | string;
+  recoverable?: boolean;
+  message?: string | null;
+};
 type HostKeyPromptDecision = "accept_once" | "accept_and_save" | "reject";
 type SshHostKeyPromptEvent = {
   session_id: string;
@@ -182,6 +222,29 @@ export function useWebTerminal(
     [settings.sshConnection, connection?.sshConnectionConfigOverride],
   );
 
+  const initialSessionError = useMemo(() => {
+    if (session.protocol !== "ssh" || session.status !== "error") return "";
+    const message =
+      session.errorMessage?.trim() || "SSH connection could not be established";
+    return redactSecrets(
+      message,
+      [
+        connection?.password,
+        connection?.passphrase,
+        connection?.totpSecret,
+        sshConnectionConfig.proxyCommandPassword,
+      ].filter((value): value is string => Boolean(value)),
+    );
+  }, [
+    connection?.passphrase,
+    connection?.password,
+    connection?.totpSecret,
+    session.errorMessage,
+    session.protocol,
+    session.status,
+    sshConnectionConfig.proxyCommandPassword,
+  ]);
+
   /* ── terminal refs ── */
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -212,13 +275,53 @@ export function useWebTerminal(
   const hasRecordedConnectedActivityRef = useRef(false);
   const isConnecting = useRef(false);
   const isDisposed = useRef(false);
+  const disconnectIntentRef = useRef<SshDisconnectIntent>("none");
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoReconnectAttemptRef = useRef(0);
+  const wasSshEstablishedRef = useRef(
+    session.status === "connected" && Boolean(session.backendSessionId),
+  );
+  const autoReconnectEligibleRef = useRef(false);
+  const closingSshActorsRef = useRef(new Set<string>());
+  const lastSshTransportErrorRef = useRef<{
+    sessionId: string;
+    message: string;
+  } | null>(null);
   const outputUnlistenRef = useRef<(() => void) | null>(null);
   const errorUnlistenRef = useRef<(() => void) | null>(null);
   const closeUnlistenRef = useRef<(() => void) | null>(null);
+  const initSshRef = useRef<
+    (force?: boolean, mode?: SshConnectMode) => Promise<void>
+  >(async () => undefined);
 
   /* ── UI state ── */
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<ConnectionStatus>(() => {
+    if (session.status === "reconnecting") return "reconnecting";
+    if (session.status === "connected" || session.status === "connecting") {
+      return "connecting";
+    }
+    if (session.status === "error") return "error";
+    return "idle";
+  });
+  const statusRef = useRef<ConnectionStatus>(status);
+  const [error, setError] = useState(() => initialSessionError);
+  const [sshFailure, setSshFailure] = useState<SshConnectionFailure | null>(
+    () => {
+      if (!initialSessionError) return null;
+      const policy = resolveSshReconnectPolicy(settings, connection);
+      return {
+        kind: "unknown",
+        summary: initialSessionError,
+        technicalDetails: initialSessionError,
+        recoverable: false,
+        occurredAt: new Date().toISOString(),
+        retryScheduled: false,
+        retryAttempt: 0,
+        maxRetryAttempts: policy.maxAttempts,
+        retryDelaySeconds: getSshReconnectDelayMs(policy, 0) / 1_000,
+      };
+    },
+  );
 
   /* ── Script selector state ── */
   const [showScriptSelector, setShowScriptSelector] = useState(false);
@@ -471,8 +574,17 @@ export function useWebTerminal(
     (next: ConnectionStatus) => {
       const wasSshReady = isSshReady.current;
       setStatus(next);
-      isConnecting.current = next === "connecting";
+      statusRef.current = next;
+      isConnecting.current = next === "connecting" || next === "reconnecting";
       isSshReady.current = next === "connected";
+      if (next === "connected") {
+        wasSshEstablishedRef.current = true;
+        autoReconnectEligibleRef.current = false;
+        autoReconnectAttemptRef.current = 0;
+        disconnectIntentRef.current = "none";
+        lastSshTransportErrorRef.current = null;
+        setSshFailure(null);
+      }
       if (
         isSsh &&
         next === "connected" &&
@@ -679,6 +791,30 @@ export function useWebTerminal(
 
   /* ── Error helpers ── */
 
+  const currentSshSecrets = useCallback(
+    () =>
+      [
+        connectionRef.current?.password,
+        connectionRef.current?.passphrase,
+        connectionRef.current?.totpSecret,
+        sshConnectionConfig.proxyCommandPassword,
+      ].filter((value): value is string => Boolean(value)),
+    [sshConnectionConfig.proxyCommandPassword],
+  );
+
+  const sanitizeCurrentSshMessage = useCallback(
+    (value: unknown) => {
+      const message =
+        value instanceof Error
+          ? value.message
+          : typeof value === "string"
+            ? value
+            : String(value);
+      return redactSecrets(message, currentSshSecrets());
+    },
+    [currentSshSecrets],
+  );
+
   const formatErrorDetails = useCallback(
     (err: unknown, secrets: readonly string[] = []) => {
       if (err instanceof Error)
@@ -710,81 +846,116 @@ export function useWebTerminal(
     [],
   );
 
-  const classifySshError = useCallback((message: string) => {
-    const lower = message.toLowerCase();
-    if (
-      message.includes("All authentication methods failed") ||
-      message.includes("Authentication failed")
-    )
+  const classifySshError = useCallback(
+    (
+      message: string,
+    ): { kind: SshFailureKind; friendly: string; recoverable: boolean } => {
+      const lower = message.toLowerCase();
+      if (
+        message.includes("All authentication methods failed") ||
+        message.includes("Authentication failed")
+      )
+        return {
+          kind: "auth",
+          friendly: "Authentication failed - please check your credentials",
+          recoverable: false,
+        };
+      if (
+        lower.includes("connection refused") ||
+        lower.includes("os error 10061")
+      )
+        return {
+          kind: "connection_refused",
+          friendly: "Connection refused - please check the host and port",
+          recoverable: true,
+        };
+      if (
+        lower.includes("timeout") ||
+        lower.includes("timed out") ||
+        lower.includes("os error 10060") ||
+        lower.includes("connection attempt failed")
+      )
+        return {
+          kind: "timeout",
+          friendly: "Connection timeout - please check network connectivity",
+          recoverable: true,
+        };
+      if (message.includes("Host key verification failed"))
+        return {
+          kind: "host_key",
+          friendly: "Host key verification failed - server may have changed",
+          recoverable: false,
+        };
+      if (lower.includes("certificate") || lower.includes("x509"))
+        return {
+          kind: "certificate",
+          friendly:
+            "Certificate validation failed - please verify the server identity",
+          recoverable: false,
+        };
+      if (
+        message.includes("No such file or directory") &&
+        message.includes("private key")
+      )
+        return {
+          kind: "key_missing",
+          friendly: "Private key file not found - please check the key path",
+          recoverable: false,
+        };
+      if (message.includes("Permission denied"))
+        return {
+          kind: "permission",
+          friendly: "Permission denied - please check your credentials",
+          recoverable: false,
+        };
+      if (
+        lower.includes("failed to establish tcp connection") ||
+        lower.includes("failed to connect")
+      )
+        return {
+          kind: "tcp_connect",
+          friendly: "TCP connection failed - please verify the host and port",
+          recoverable: true,
+        };
+      if (
+        lower.includes("no route to host") ||
+        lower.includes("network unreachable")
+      )
+        return {
+          kind: "network_unreachable",
+          friendly: "Network unreachable - please check routing or VPN",
+          recoverable: true,
+        };
+      if (
+        lower.includes("transport") ||
+        lower.includes("connection reset") ||
+        lower.includes("broken pipe") ||
+        lower.includes("unexpected eof") ||
+        lower.includes("end of file")
+      )
+        return {
+          kind: "transport",
+          friendly: "SSH transport was interrupted",
+          recoverable: true,
+        };
       return {
-        kind: "auth",
-        friendly: "Authentication failed - please check your credentials",
-      };
-    if (
-      lower.includes("connection refused") ||
-      lower.includes("os error 10061")
-    )
-      return {
-        kind: "connection_refused",
-        friendly: "Connection refused - please check the host and port",
-      };
-    if (
-      lower.includes("timeout") ||
-      lower.includes("timed out") ||
-      lower.includes("os error 10060") ||
-      lower.includes("connection attempt failed")
-    )
-      return {
-        kind: "timeout",
-        friendly: "Connection timeout - please check network connectivity",
-      };
-    if (message.includes("Host key verification failed"))
-      return {
-        kind: "host_key",
-        friendly: "Host key verification failed - server may have changed",
-      };
-    if (lower.includes("certificate") || lower.includes("x509"))
-      return {
-        kind: "certificate",
+        kind: "unknown",
         friendly:
-          "Certificate validation failed - please verify the server identity",
+          "SSH connection failed - please check credentials and network",
+        recoverable: false,
       };
-    if (
-      message.includes("No such file or directory") &&
-      message.includes("private key")
-    )
-      return {
-        kind: "key_missing",
-        friendly: "Private key file not found - please check the key path",
-      };
-    if (message.includes("Permission denied"))
-      return {
-        kind: "permission",
-        friendly: "Permission denied - please check your credentials",
-      };
-    if (
-      lower.includes("failed to establish tcp connection") ||
-      lower.includes("failed to connect")
-    )
-      return {
-        kind: "tcp_connect",
-        friendly: "TCP connection failed - please verify the host and port",
-      };
-    if (
-      lower.includes("no route to host") ||
-      lower.includes("network unreachable")
-    )
-      return {
-        kind: "network_unreachable",
-        friendly: "Network unreachable - please check routing or VPN",
-      };
-    return {
-      kind: "unknown",
-      friendly: "SSH connection failed - please check credentials and network",
-    };
-  }, []);
+    },
+    [],
+  );
 
   /* ── SSH connect / disconnect ── */
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
 
   const releaseVpnLeaseOwner = useCallback(
     async (ownerId: string): Promise<boolean> => {
@@ -854,7 +1025,10 @@ export function useWebTerminal(
   );
 
   const disconnectCurrentSsh = useCallback(
-    async (preserveConnecting = false): Promise<boolean> => {
+    async (
+      preserveAttemptStatus = false,
+      suppressDisconnectedMessage = false,
+    ): Promise<boolean> => {
       const sid =
         sshSessionId.current ?? sessionRef.current.backendSessionId ?? null;
       const backendSessionIds = [
@@ -969,8 +1143,10 @@ export function useWebTerminal(
       }
       if (backendSessionIds.length > 0) {
         isSshReady.current = false;
-        if (!preserveConnecting) isConnecting.current = false;
-        writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
+        if (!preserveAttemptStatus) isConnecting.current = false;
+        if (!suppressDisconnectedMessage) {
+          writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
+        }
       }
 
       for (const ownerId of [...safeBackendlessVpnLeaseOwnersRef.current]) {
@@ -1002,15 +1178,23 @@ export function useWebTerminal(
         return false;
       }
 
-      setStatusState("idle");
-      setError("");
+      if (!preserveAttemptStatus) {
+        setStatusState("idle");
+        setError("");
+        setSshFailure(null);
+      }
       if (!hadManagedState) return true;
       const updatedSession = {
         ...sessionRef.current,
         backendSessionId: undefined,
         shellId: undefined,
-        status: "disconnected" as const,
-        errorMessage: undefined,
+        status:
+          preserveAttemptStatus && statusRef.current !== "idle"
+            ? statusRef.current
+            : ("disconnected" as const),
+        errorMessage: preserveAttemptStatus
+          ? sessionRef.current.errorMessage
+          : undefined,
       };
       sessionRef.current = updatedSession;
       dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
@@ -1026,12 +1210,111 @@ export function useWebTerminal(
   );
 
   const disconnectSsh = useCallback(async (): Promise<boolean> => {
+    clearReconnectTimer();
+    disconnectIntentRef.current = "user";
+    autoReconnectEligibleRef.current = false;
+    autoReconnectAttemptRef.current = 0;
     sshInitGenRef.current++;
     return disconnectCurrentSsh();
-  }, [disconnectCurrentSsh]);
+  }, [clearReconnectTimer, disconnectCurrentSsh]);
+
+  const getReconnectPolicy = useCallback(
+    () =>
+      resolveSshReconnectPolicy(
+        settingsRef.current,
+        connectionRef.current ?? undefined,
+      ),
+    [],
+  );
+
+  const scheduleAutoReconnect = useCallback(
+    (failure: SshConnectionFailure): boolean => {
+      const policy = getReconnectPolicy();
+      if (
+        !policy.enabled ||
+        !autoReconnectEligibleRef.current ||
+        !failure.recoverable ||
+        disconnectIntentRef.current === "user" ||
+        isDisposed.current ||
+        hasSessionVpnCleanupQuarantine(sessionRef.current)
+      ) {
+        autoReconnectEligibleRef.current = false;
+        setSshFailure({ ...failure, retryScheduled: false });
+        return false;
+      }
+
+      const maxAttempts = policy.maxAttempts;
+      const nextAttempt = autoReconnectAttemptRef.current + 1;
+      if (maxAttempts > 0 && nextAttempt > maxAttempts) {
+        autoReconnectEligibleRef.current = false;
+        setSshFailure({
+          ...failure,
+          retryScheduled: false,
+          retryAttempt: autoReconnectAttemptRef.current,
+          maxRetryAttempts: maxAttempts,
+        });
+        return false;
+      }
+
+      clearReconnectTimer();
+      autoReconnectAttemptRef.current = nextAttempt;
+      const retryDelayMs = getSshReconnectDelayMs(
+        policy,
+        Math.max(0, nextAttempt - 1),
+      );
+      const retryDelaySeconds = retryDelayMs / 1_000;
+      const scheduledFailure: SshConnectionFailure = {
+        ...failure,
+        retryScheduled: true,
+        retryAttempt: nextAttempt,
+        maxRetryAttempts: maxAttempts,
+        retryDelaySeconds,
+      };
+      setSshFailure(scheduledFailure);
+      setStatusState("reconnecting");
+      const attemptLabel =
+        maxAttempts > 0 ? `${nextAttempt}/${maxAttempts}` : `${nextAttempt}`;
+      const reconnectMessage = `${failure.summary}. Reconnecting (attempt ${attemptLabel})`;
+      setError(reconnectMessage);
+      const reconnectingSession = {
+        ...sessionRef.current,
+        status: "reconnecting" as const,
+        reconnectAttempts: nextAttempt,
+        maxReconnectAttempts: maxAttempts,
+        errorMessage: failure.summary,
+      };
+      sessionRef.current = reconnectingSession;
+      dispatch({ type: "UPDATE_SESSION", payload: reconnectingSession });
+      writeLine(
+        `\x1b[33m${failure.summary}. Reconnecting in ${retryDelaySeconds}s (attempt ${attemptLabel})...\x1b[0m`,
+      );
+
+      disconnectIntentRef.current = "none";
+      const expectedGeneration = sshInitGenRef.current;
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        if (
+          isDisposed.current ||
+          disconnectIntentRef.current === "user" ||
+          sshInitGenRef.current !== expectedGeneration
+        ) {
+          return;
+        }
+        void initSshRef.current(true, "reconnect");
+      }, retryDelayMs);
+      return true;
+    },
+    [
+      clearReconnectTimer,
+      dispatch,
+      getReconnectPolicy,
+      setStatusState,
+      writeLine,
+    ],
+  );
 
   const initSsh = useCallback(
-    async (force = false) => {
+    async (force = false, mode: SshConnectMode = "connect") => {
       const currentSession = sessionRef.current;
       const currentConnection = connectionRef.current;
       if (!isSsh || !currentConnection || !termRef.current) return;
@@ -1194,24 +1477,36 @@ export function useWebTerminal(
       );
       const strictHostKeyChecking =
         !ignoreHostKey && sshTrustPolicy !== "always-trust";
+      disconnectIntentRef.current = "none";
       isConnecting.current = true;
-      setStatusState("connecting");
-      setError("");
-      if (typeof (termRef.current as any).reset === "function") {
-        try {
-          (termRef.current as any).reset();
-        } catch {
-          /* ignore */
+      setStatusState(mode === "reconnect" ? "reconnecting" : "connecting");
+      if (mode === "connect") {
+        setError("");
+        setSshFailure(null);
+        if (typeof (termRef.current as any).reset === "function") {
+          try {
+            (termRef.current as any).reset();
+          } catch {
+            /* ignore */
+          }
+        } else {
+          try {
+            termRef.current.clear();
+          } catch {
+            /* ignore */
+          }
         }
       } else {
-        try {
-          termRef.current.clear();
-        } catch {
-          /* ignore */
-        }
+        writeLine(
+          "\x1b[90m── Reconnecting SSH session; previous output preserved ──\x1b[0m",
+        );
       }
 
-      writeLine("\x1b[36mConnecting to SSH server...\x1b[0m");
+      writeLine(
+        mode === "reconnect"
+          ? "\x1b[36mReconnecting to SSH server...\x1b[0m"
+          : "\x1b[36mConnecting to SSH server...\x1b[0m",
+      );
       writeLine(`\x1b[90mHost: ${currentSession.hostname}\x1b[0m`);
       writeLine(`\x1b[90mPort: ${currentConnection.port || 22}\x1b[0m`);
       writeLine(
@@ -1399,7 +1694,7 @@ export function useWebTerminal(
           }
         }
 
-        if (!(await disconnectCurrentSsh(true))) return;
+        if (!(await disconnectCurrentSsh(true, true))) return;
         if (await stopIfStale()) return;
         runtimePath = await resolveAndAcquireVpnPath();
         if (await stopIfStale()) return;
@@ -1532,12 +1827,12 @@ export function useWebTerminal(
           keep_alive_interval: tcpOptions?.tcpKeepAlive
             ? (tcpOptions?.keepAliveInterval ??
               currentConnection.sshKeepAliveInterval ??
-              60)
+              30)
             : null,
           strict_host_key_checking: strictHostKeyChecking,
           known_hosts_path: currentConnection.sshKnownHostsPath || null,
           tcp_no_delay: tcpOptions?.tcpNoDelay ?? true,
-          tcp_keepalive: tcpOptions?.tcpKeepAlive ?? true,
+          tcp_keepalive: tcpOptions?.soKeepAlive ?? true,
           keepalive_probes: tcpOptions?.keepAliveProbes ?? 3,
           ip_protocol: tcpOptions?.ipProtocol ?? "auto",
           compression: sshTerminalConfig?.enableCompression ?? false,
@@ -1780,8 +2075,29 @@ export function useWebTerminal(
           name: details.name,
           stack: details.stack,
         });
+        const reconnectPolicy = getReconnectPolicy();
+        const failure: SshConnectionFailure = {
+          kind: classification.kind,
+          summary: classification.friendly,
+          technicalDetails: details.message,
+          recoverable: classification.recoverable,
+          occurredAt: new Date().toISOString(),
+          retryScheduled: false,
+          retryAttempt: autoReconnectAttemptRef.current,
+          maxRetryAttempts: reconnectPolicy.maxAttempts,
+          retryDelaySeconds:
+            getSshReconnectDelayMs(
+              reconnectPolicy,
+              autoReconnectAttemptRef.current,
+            ) / 1_000,
+        };
+        if (mode === "reconnect" && scheduleAutoReconnect(failure)) {
+          writeLine(`\x1b[90mRetry reason: ${details.message}\x1b[0m`);
+          return;
+        }
         setStatusState("error");
         setError(classification.friendly);
+        setSshFailure(failure);
         const updatedSession = {
           ...sessionRef.current,
           status: "error" as const,
@@ -1833,9 +2149,11 @@ export function useWebTerminal(
       classifySshError,
       disconnectCurrentSsh,
       formatErrorDetails,
+      getReconnectPolicy,
       isSsh,
       dispatch,
       restoreBuffer,
+      scheduleAutoReconnect,
       setStatusState,
       settleVpnLeaseOwner,
       writeLine,
@@ -1844,7 +2162,6 @@ export function useWebTerminal(
 
   // Self-ref so the ProxyCommand confirm flow can retry the connection after
   // the user approves the imported command (avoids a useCallback self-cycle).
-  const initSshRef = useRef(initSsh);
   useEffect(() => {
     initSshRef.current = initSsh;
   }, [initSsh]);
@@ -2023,8 +2340,10 @@ export function useWebTerminal(
     const container = containerRef.current;
     if (!container) return;
     const mountedSessionId = session.id;
+    const closingSshActors = closingSshActorsRef.current;
 
     isDisposed.current = false;
+    disconnectIntentRef.current = "none";
 
     const fontFamily =
       sshTerminalConfig?.useCustomFont && sshTerminalConfig?.font?.family
@@ -2284,10 +2603,22 @@ export function useWebTerminal(
         const unlistenError = await listen<SshErrorEvent>(
           "ssh-error",
           (event) => {
-            if (event.payload.session_id !== sshSessionId.current) return;
-            safeWriteln(
-              `\r\n\x1b[31mSSH error: ${event.payload.message}\x1b[0m`,
+            const actorId = event.payload.session_id;
+            if (
+              actorId !== sshSessionId.current ||
+              disconnectIntentRef.current !== "none" ||
+              closingSshActorsRef.current.has(actorId)
+            ) {
+              return;
+            }
+            const safeMessage = sanitizeCurrentSshMessage(
+              event.payload.message,
             );
+            lastSshTransportErrorRef.current = {
+              sessionId: actorId,
+              message: safeMessage,
+            };
+            safeWriteln(`\r\n\x1b[31mSSH error: ${safeMessage}\x1b[0m`);
           },
         );
         if (!cancelled) errorUnlistenRef.current = unlistenError;
@@ -2296,25 +2627,117 @@ export function useWebTerminal(
         const unlistenClosed = await listen<SshClosedEvent>(
           "ssh-shell-closed",
           (event) => {
-            if (event.payload.session_id !== sshSessionId.current) return;
+            const payload = event.payload;
+            const actorId = payload.session_id;
+            if (
+              actorId !== sshSessionId.current ||
+              isDisposed.current ||
+              closingSshActorsRef.current.has(actorId)
+            ) {
+              return;
+            }
+
+            // Requested closes can race the disconnect command that initiated
+            // them. They are completion signals, never reconnect triggers.
+            if (
+              payload.reason === "requested" ||
+              disconnectIntentRef.current !== "none"
+            ) {
+              return;
+            }
+
+            closingSshActorsRef.current.add(actorId);
             isSshReady.current = false;
             void (async () => {
-              // A shell-close event is not sufficient proof that the native
-              // SSH actor ended. Confirm actor cleanup before releasing VPN.
-              const vpnClean = await disconnectCurrentSsh();
-              const message = vpnClean
-                ? "Shell closed"
-                : "Shell closed; VPN cleanup needs attention. Disconnect again to retry.";
+              const lastTransportError =
+                lastSshTransportErrorRef.current?.sessionId === actorId
+                  ? lastSshTransportErrorRef.current.message
+                  : null;
+              const technicalDetails = sanitizeCurrentSshMessage(
+                payload.message ||
+                  lastTransportError ||
+                  (payload.reason === "remote_eof"
+                    ? "The SSH server closed the transport (remote EOF)."
+                    : "The SSH transport closed unexpectedly."),
+              );
+              const classification = classifySshError(technicalDetails);
+              const recoverable =
+                payload.recoverable ??
+                (payload.reason !== "requested" &&
+                  (classification.recoverable ||
+                    payload.reason === "remote_eof" ||
+                    payload.reason === "transport_error" ||
+                    payload.reason === undefined));
+              const summary =
+                payload.reason === "remote_eof"
+                  ? "SSH server closed the connection"
+                  : payload.reason === "transport_error" ||
+                      classification.kind === "transport"
+                    ? "SSH transport was interrupted"
+                    : classification.friendly;
+              const reconnectPolicy = getReconnectPolicy();
+              const failure: SshConnectionFailure = {
+                kind:
+                  payload.reason === "remote_eof" ||
+                  payload.reason === "transport_error"
+                    ? "transport"
+                    : classification.kind,
+                summary,
+                technicalDetails,
+                recoverable,
+                occurredAt: new Date().toISOString(),
+                retryScheduled: false,
+                retryAttempt: autoReconnectAttemptRef.current,
+                maxRetryAttempts: reconnectPolicy.maxAttempts,
+                retryDelaySeconds:
+                  getSshReconnectDelayMs(
+                    reconnectPolicy,
+                    autoReconnectAttemptRef.current,
+                  ) / 1_000,
+              };
+              autoReconnectEligibleRef.current =
+                wasSshEstablishedRef.current && failure.recoverable;
+              const shouldPrepareRetry =
+                reconnectPolicy.enabled && autoReconnectEligibleRef.current;
+              setStatusState(shouldPrepareRetry ? "reconnecting" : "error");
+              setError(
+                shouldPrepareRetry
+                  ? `${summary}. Preparing to reconnect`
+                  : summary,
+              );
+              setSshFailure(failure);
+              writeLine(`\x1b[33m${summary}: ${technicalDetails}\x1b[0m`);
+
+              // A shell-close event proves only that the shell task stopped.
+              // The idempotent disconnect command still owns actor/forward
+              // cleanup and must finish before a replacement can acquire VPN.
+              const closeGeneration = ++sshInitGenRef.current;
+              disconnectIntentRef.current = "replace";
+              const backendClean = await disconnectCurrentSsh(true, true);
+              if (
+                !backendClean ||
+                isDisposed.current ||
+                sshInitGenRef.current !== closeGeneration ||
+                disconnectIntentRef.current !== "replace"
+              ) {
+                return;
+              }
+              disconnectIntentRef.current = "none";
+              if (scheduleAutoReconnect(failure)) return;
+
               setStatusState("error");
-              setError(message);
+              setError(summary);
+              setSshFailure({ ...failure, retryScheduled: false });
               const updatedSession = {
                 ...sessionRef.current,
                 status: "error" as const,
-                errorMessage: message,
+                errorMessage: summary,
               };
               sessionRef.current = updatedSession;
               dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
-            })();
+            })().finally(() => {
+              closingSshActorsRef.current.delete(actorId);
+            });
           },
         );
         if (!cancelled) closeUnlistenRef.current = unlistenClosed;
@@ -2327,7 +2750,13 @@ export function useWebTerminal(
     attachListeners();
 
     if (isSsh) {
-      initSsh();
+      // Persisted/pre-existing failures mount the full recovery surface but
+      // wait for an explicit user retry. A live connecting→error transition
+      // keeps this same hook/terminal instance and therefore never reaches
+      // this initial-mount branch again.
+      if (sessionRef.current.status !== "error") {
+        initSsh();
+      }
     } else {
       const s = sessionRef.current;
       safeWriteln(
@@ -2344,6 +2773,9 @@ export function useWebTerminal(
       sshInitGenRef.current++;
       cancelSessionLifecycleActorAttempts(mountedSessionId);
       isDisposed.current = true;
+      disconnectIntentRef.current = "user";
+      clearReconnectTimer();
+      closingSshActors.clear();
       cancelled = true;
       cancelAnimationFrame(openTimer);
       if (rafId) cancelAnimationFrame(rafId);
@@ -2371,7 +2803,10 @@ export function useWebTerminal(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-init terminal when session changes; callbacks are memoized
   }, [
+    classifySshError,
+    clearReconnectTimer,
     getTerminalTheme,
+    getReconnectPolicy,
     handleInput,
     initSsh,
     isSsh,
@@ -2380,7 +2815,10 @@ export function useWebTerminal(
     session.id,
     safeWrite,
     safeWriteln,
+    sanitizeCurrentSshMessage,
+    scheduleAutoReconnect,
     setStatusState,
+    writeLine,
   ]);
 
   /* ── Apply theme on settings change ── */
@@ -2423,23 +2861,35 @@ export function useWebTerminal(
   });
 
   const handleReconnect = useCallback(async () => {
-    if (!isSsh) return;
-    setStatusState("connecting");
-    if (!(await disconnectSsh())) return;
-    const currentSession = sessionRef.current;
-    if (currentSession.backendSessionId || currentSession.shellId) {
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: {
-          ...currentSession,
-          backendSessionId: undefined,
-          shellId: undefined,
-        },
-      });
-    }
-    await initSsh(true);
+    if (!isSsh || statusRef.current === "reconnecting") return;
+    clearReconnectTimer();
+    autoReconnectEligibleRef.current = false;
+    autoReconnectAttemptRef.current = 0;
+    disconnectIntentRef.current = "replace";
+    sshInitGenRef.current++;
+    setStatusState("reconnecting");
+    setError("Reconnecting SSH session");
+    const currentSession = {
+      ...sessionRef.current,
+      status: "reconnecting" as const,
+      errorMessage: undefined,
+    };
+    sessionRef.current = currentSession;
+    dispatch({ type: "UPDATE_SESSION", payload: currentSession });
+    if (!(await disconnectCurrentSsh(true, true))) return;
+    if (disconnectIntentRef.current !== "replace" || isDisposed.current) return;
+    disconnectIntentRef.current = "none";
+    await initSsh(true, "reconnect");
     setTimeout(() => safeFit(), 80);
-  }, [dispatch, disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
+  }, [
+    clearReconnectTimer,
+    disconnectCurrentSsh,
+    dispatch,
+    initSsh,
+    isSsh,
+    safeFit,
+    setStatusState,
+  ]);
 
   const clearTerminal = useCallback(() => {
     if (!termRef.current || !canRender()) return;
@@ -2592,6 +3042,7 @@ export function useWebTerminal(
       case "connected":
         return "app-badge--success";
       case "connecting":
+      case "reconnecting":
         return "app-badge--warning";
       case "error":
         return "app-badge--error";
@@ -2614,6 +3065,7 @@ export function useWebTerminal(
     settings,
     isSsh,
     sshTerminalConfig,
+    sshConnectionConfig,
     /* refs */
     containerRef,
     keyPopupRef,
@@ -2622,6 +3074,7 @@ export function useWebTerminal(
     /* status */
     status,
     error,
+    sshFailure,
     isFullscreen,
     statusToneClass,
     /* script selector */

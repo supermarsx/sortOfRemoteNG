@@ -28,6 +28,7 @@ ssh2 = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 shell-escape = "0.1"
+socket2 = { version = "0.5", features = ["all"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 rquickjs = { version = "0.6", features = ["full-async"], optional = true }
@@ -75,6 +76,9 @@ h3 = "0.0.8"
 h3-quinn = "0.0.10"
 bytes = "1"
 http = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
 
 [dev-dependencies]
 # Generate a self-signed client cert + key PEM bundle to unit-test the SSH3

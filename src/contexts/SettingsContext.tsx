@@ -107,9 +107,11 @@ export const defaultSettings: GlobalSettings = {
   showIdleDuration: false,
 
   // Reconnection Behavior
-  autoReconnectOnDisconnect: false,
-  autoReconnectMaxAttempts: 5,
-  autoReconnectDelaySecs: 3,
+  autoReconnectOnDisconnect: true,
+  autoReconnectMaxAttempts: 20,
+  autoReconnectDelaySecs: 2,
+  autoReconnectBackoff: "exponential",
+  autoReconnectMaxDelaySecs: 30,
   notifyOnReconnect: true,
 
   // Notification Behavior

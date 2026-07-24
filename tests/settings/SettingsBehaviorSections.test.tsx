@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import BehaviorSettings from "../../src/components/SettingsDialog/sections/BehaviorSettings";
@@ -47,6 +47,8 @@ const behaviorSettings = {
   autoReconnectOnDisconnect: true,
   autoReconnectMaxAttempts: 3,
   autoReconnectDelaySecs: 5,
+  autoReconnectBackoff: "exponential",
+  autoReconnectMaxDelaySecs: 30,
   notifyOnReconnect: true,
   notifyOnConnect: true,
   notifyOnDisconnect: true,
@@ -105,5 +107,30 @@ describe("Behavior settings section accents", () => {
     expect(updateSettings).toHaveBeenCalledWith({
       folderDoubleClickToggle: false,
     });
+  });
+
+  it("persists the bounded reconnect backoff controls", () => {
+    const updateSettings = vi.fn();
+
+    render(
+      <BehaviorSettings
+        settings={behaviorSettings}
+        updateSettings={updateSettings}
+      />,
+    );
+
+    const backoffRow = document.querySelector(
+      '[data-setting-key="autoReconnectBackoff"]',
+    );
+    expect(backoffRow).toBeTruthy();
+    fireEvent.click(within(backoffRow as HTMLElement).getByRole("combobox"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Fixed" }));
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      autoReconnectBackoff: "fixed",
+    });
+    expect(
+      document.querySelector('[data-setting-key="autoReconnectMaxDelaySecs"]'),
+    ).toBeTruthy();
   });
 });

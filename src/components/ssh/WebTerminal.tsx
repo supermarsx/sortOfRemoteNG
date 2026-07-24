@@ -9,6 +9,7 @@ import TerminalBackgroundLayer from "./webTerminal/TerminalBackgroundLayer";
 import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
 import ProxyCommandConfirmDialog from "./webTerminal/ProxyCommandConfirmDialog";
+import SSHConnectionOverview from "./webTerminal/SSHConnectionOverview";
 import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
 import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 
@@ -53,7 +54,7 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
       )}
 
       <div
-        className={`flex-1 min-h-0 flex ${showCommandHistory ? "flex-row" : ""}`}
+        className={`relative flex-1 min-h-0 flex ${showCommandHistory ? "flex-row" : ""}`}
       >
         <div
           className={`${showCommandHistory ? "flex-1" : "w-full h-full"} ${mgr.isFullscreen ? "p-0" : "p-3"}`}
@@ -81,6 +82,10 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
             <SSHCommandHistoryPanel mgr={mgr.commandHistory} t={t} compact />
           </div>
         )}
+        {mgr.isSsh &&
+          (mgr.status === "error" || mgr.status === "reconnecting") && (
+            <SSHConnectionOverview mgr={mgr} />
+          )}
       </div>
 
       <ScriptSelectorModal mgr={mgr} />

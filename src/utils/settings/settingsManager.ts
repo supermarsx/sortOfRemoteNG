@@ -9,6 +9,8 @@ import {
   migrateCloudSyncConfig,
   defaultSSHTerminalConfig,
   defaultSSHConnectionConfig,
+  mergeSSHTerminalConfig,
+  mergeSSHConnectionConfig,
   defaultCloudSyncConfig,
   defaultDiagnosticsConfig,
   defaultMemoryWatchdogSettings,
@@ -20,6 +22,7 @@ import { SecureStorage } from "../storage/storage";
 import { IndexedDbService } from "../storage/indexedDbService";
 import { generateId } from "../core/id";
 import { getInvoke as tauriInvoke } from "../tauri/invoke";
+import { normalizeSshReconnectSettings } from "../ssh/sshReconnectPolicy";
 
 /** Unique label for this window — used to ignore our own sync events. */
 let _windowLabel: string | null = null;
@@ -201,9 +204,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showIdleDuration: false,
 
   // Reconnection Behavior
-  autoReconnectOnDisconnect: false,
-  autoReconnectMaxAttempts: 5,
-  autoReconnectDelaySecs: 3,
+  autoReconnectOnDisconnect: true,
+  autoReconnectMaxAttempts: 20,
+  autoReconnectDelaySecs: 2,
+  autoReconnectBackoff: "exponential",
+  autoReconnectMaxDelaySecs: 30,
   notifyOnReconnect: true,
 
   // Notification Behavior
@@ -918,6 +923,8 @@ export class SettingsManager {
       const stored = await this.readPersistedSettings();
       if (stored) {
         const storedSettings = stored;
+        const sshReconnectSettings =
+          normalizeSshReconnectSettings(storedSettings);
         // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
         const validColorSchemes = [
           "red",
@@ -953,6 +960,15 @@ export class SettingsManager {
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...storedSettings,
+          ...sshReconnectSettings,
+          sshTerminal: mergeSSHTerminalConfig(
+            DEFAULT_SETTINGS.sshTerminal,
+            storedSettings.sshTerminal,
+          ),
+          sshConnection: mergeSSHConnectionConfig(
+            DEFAULT_SETTINGS.sshConnection,
+            storedSettings.sshConnection,
+          ),
           httpsTrustPolicy:
             storedSettings.httpsTrustPolicy ??
             storedSettings.tlsTrustPolicy ??

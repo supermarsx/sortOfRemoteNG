@@ -335,6 +335,74 @@ describe("advanced protocol portability", () => {
     expect(fullAppleAccountClone.password).toBe("remote-mac-fallback-secret");
   });
 
+  it("preserves non-secret SSH keepalive and retry overrides across export, import, and clone", async () => {
+    const ssh = baseConnection({
+      protocol: "ssh",
+      port: 22,
+      retryAttempts: 12,
+      retryDelay: 2_500,
+      sshKeepAliveInterval: 25,
+      sshTerminalConfigOverride: {
+        tcpOptions: {
+          tcpNoDelay: true,
+          tcpKeepAlive: true,
+          soKeepAlive: true,
+          ipProtocol: "auto",
+          keepAliveInterval: 25,
+          keepAliveProbes: 4,
+          connectionTimeout: 20,
+        },
+      },
+      sshConnectionConfigOverride: {
+        keepAliveInterval: 25,
+        proxyCommandConfirmed: true,
+      },
+    });
+
+    const exported = prepareConnectionForExport(ssh, false);
+    expect(exported).toMatchObject({
+      retryAttempts: 12,
+      retryDelay: 2_500,
+      sshKeepAliveInterval: 25,
+      sshTerminalConfigOverride: {
+        tcpOptions: {
+          keepAliveInterval: 25,
+          keepAliveProbes: 4,
+        },
+      },
+      sshConnectionConfigOverride: {
+        keepAliveInterval: 25,
+      },
+    });
+
+    const [imported] = await importFromJSON(JSON.stringify([exported]));
+    expect(imported).toMatchObject({
+      retryAttempts: 12,
+      retryDelay: 2_500,
+      sshKeepAliveInterval: 25,
+      sshTerminalConfigOverride: {
+        tcpOptions: {
+          keepAliveInterval: 25,
+          keepAliveProbes: 4,
+        },
+      },
+      sshConnectionConfigOverride: {
+        keepAliveInterval: 25,
+      },
+    });
+    expect(
+      imported.sshConnectionConfigOverride?.proxyCommandConfirmed,
+    ).toBeUndefined();
+
+    const cloned = prepareConnectionForClone(imported, false);
+    expect(cloned.retryAttempts).toBe(12);
+    expect(cloned.retryDelay).toBe(2_500);
+    expect(cloned.sshKeepAliveInterval).toBe(25);
+    expect(
+      cloned.sshTerminalConfigOverride?.tcpOptions?.keepAliveInterval,
+    ).toBe(25);
+  });
+
   it("deep-copies clones and always removes operational state", () => {
     const [raw, rlogin, powerShell] = advancedConnections();
     const source = {

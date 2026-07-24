@@ -1,10 +1,13 @@
 use chrono::Utc;
 use secrecy::{ExposeSecret, SecretString};
+use socket2::{SockRef, TcpKeepalive};
 use sorng_core::events::DynEventEmitter;
-use ssh2::{KeyboardInteractivePrompt, MethodType, Prompt, Session};
+use ssh2::{ErrorCode as SshErrorCode, KeyboardInteractivePrompt, MethodType, Prompt, Session};
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+#[cfg(windows)]
+use std::os::windows::io::AsRawSocket;
 use std::path::Path;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,6 +27,157 @@ use super::{MAX_BUFFER_SIZE, PENDING_HOST_KEY_PROMPTS, TERMINAL_BUFFERS};
 /// hard ceiling so a fast producer with a slow consumer applies backpressure
 /// instead of growing process memory without bound (see t40-e7 F1).
 const RELAY_CHANNEL_CAPACITY: usize = 32;
+const DEFAULT_TCP_KEEPALIVE_INTERVAL_SECS: u64 = 60;
+const MAX_TCP_KEEPALIVE_PROBES: u32 = 255;
+const LIBSSH2_ERROR_EAGAIN: i32 = -37;
+const SHELL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn normalized_keepalive_interval(interval_secs: Option<u64>) -> Duration {
+    Duration::from_secs(
+        interval_secs
+            .filter(|interval| *interval > 0)
+            .unwrap_or(DEFAULT_TCP_KEEPALIVE_INTERVAL_SECS)
+            .min(u32::MAX as u64),
+    )
+}
+
+fn normalized_keepalive_probes(probes: u32) -> u32 {
+    probes.clamp(1, MAX_TCP_KEEPALIVE_PROBES)
+}
+
+fn tcp_keepalive_parameters(interval: Duration, _probes: u32) -> TcpKeepalive {
+    let keepalive = TcpKeepalive::new().with_time(interval);
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "visionos",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "windows",
+        target_os = "cygwin",
+    ))]
+    let keepalive = keepalive.with_interval(interval);
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "fuchsia",
+        target_os = "illumos",
+        target_os = "ios",
+        target_os = "visionos",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "cygwin",
+    ))]
+    let keepalive = keepalive.with_retries(normalized_keepalive_probes(_probes));
+
+    keepalive
+}
+
+#[cfg(windows)]
+fn configure_windows_keepalive_retries(stream: &TcpStream, probes: u32) -> std::io::Result<()> {
+    use windows_sys::Win32::Networking::WinSock::{
+        setsockopt, IPPROTO_TCP, SOCKET_ERROR, TCP_KEEPCNT,
+    };
+
+    let probes = normalized_keepalive_probes(probes);
+    let result = unsafe {
+        setsockopt(
+            stream.as_raw_socket() as usize,
+            IPPROTO_TCP,
+            TCP_KEEPCNT,
+            (&probes as *const u32).cast(),
+            std::mem::size_of_val(&probes) as i32,
+        )
+    };
+    if result == SOCKET_ERROR {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn configure_tcp_options(stream: &TcpStream, config: &SshConnectionConfig) {
+    if let Err(error) = stream.set_nodelay(config.tcp_no_delay) {
+        log::warn!(
+            "Failed to configure TCP_NODELAY for {}:{}: {}",
+            config.host,
+            config.port,
+            error
+        );
+    }
+
+    let socket = SockRef::from(stream);
+    if !config.tcp_keepalive {
+        if let Err(error) = socket.set_keepalive(false) {
+            log::warn!(
+                "Failed to disable TCP keepalive for {}:{}: {}",
+                config.host,
+                config.port,
+                error
+            );
+        }
+        return;
+    }
+
+    if let Err(error) = socket.set_keepalive(true) {
+        log::warn!(
+            "Failed to enable TCP keepalive for {}:{}: {}",
+            config.host,
+            config.port,
+            error
+        );
+        return;
+    }
+
+    let interval = normalized_keepalive_interval(config.keep_alive_interval);
+    let keepalive = tcp_keepalive_parameters(interval, config.keepalive_probes);
+    if let Err(error) = socket.set_tcp_keepalive(&keepalive) {
+        // Keepalive tuning is an availability aid, not a prerequisite for a
+        // secure SSH transport. Preserve connectivity on platforms that reject
+        // one of the optional socket parameters, but make the degraded state
+        // observable instead of silently ignoring it.
+        log::warn!(
+            "Failed to configure TCP keepalive for {}:{}: {}",
+            config.host,
+            config.port,
+            error
+        );
+    }
+
+    #[cfg(windows)]
+    if let Err(error) = configure_windows_keepalive_retries(stream, config.keepalive_probes) {
+        // socket2 0.5 configures Windows keepalive time/interval through
+        // SIO_KEEPALIVE_VALS but does not expose TCP_KEEPCNT. Windows itself
+        // supports TCP_KEEPCNT from Windows 10 version 1703. Older kernels keep
+        // their system probe count, so state that limitation rather than
+        // claiming the requested value was applied.
+        log::warn!(
+            "Windows could not apply TCP keepalive probe count {} for {}:{}; \
+             the operating-system default remains active: {}",
+            normalized_keepalive_probes(config.keepalive_probes),
+            config.host,
+            config.port,
+            error
+        );
+    }
+}
+
+fn is_transient_keepalive_error(error: &ssh2::Error) -> bool {
+    matches!(error.code(), SshErrorCode::Session(LIBSSH2_ERROR_EAGAIN))
+}
 
 fn host_key_type_label(host_key_type: ssh2::HostKeyType) -> &'static str {
     match host_key_type {
@@ -197,6 +351,19 @@ fn is_transient_shell_io_error(error: &std::io::Error) -> bool {
             .contains("timed out waiting on socket")
 }
 
+fn shell_closed_event(
+    session_id: String,
+    reason: SshShellCloseReason,
+    message: Option<String>,
+) -> SshShellClosed {
+    SshShellClosed {
+        session_id,
+        reason,
+        recoverable: reason != SshShellCloseReason::Requested,
+        message,
+    }
+}
+
 pub struct SshService {
     pub sessions: HashMap<String, SshSession>,
     #[allow(dead_code)]
@@ -248,6 +415,39 @@ impl SshService {
                 |value| value.checked_sub(1),
             );
         }
+    }
+
+    fn prune_finished_shell(&mut self, session_id: &str) {
+        let is_finished = self
+            .shells
+            .get(session_id)
+            .is_some_and(SshShellHandle::is_finished);
+        if !is_finished {
+            return;
+        }
+
+        if let Some(shell) = self.shells.remove(session_id) {
+            if shell.thread.join().is_err() {
+                log::warn!("SSH shell thread panicked for session {}", session_id);
+            }
+        }
+    }
+
+    pub fn is_session_alive(&self, session_id: &str) -> bool {
+        if !self.sessions.contains_key(session_id) {
+            return false;
+        }
+        match self.shells.get(session_id) {
+            Some(shell) => !shell.is_finished(),
+            None => true,
+        }
+    }
+
+    pub fn active_shell_id(&self, session_id: &str) -> Option<String> {
+        self.shells
+            .get(session_id)
+            .filter(|shell| !shell.is_finished())
+            .map(|shell| shell.id.clone())
     }
 
     pub async fn connect_ssh(&mut self, config: SshConnectionConfig) -> Result<String, String> {
@@ -311,8 +511,10 @@ impl SshService {
                 (s, Vec::new(), Vec::new())
             };
 
-        // Apply TCP options to the stream for optimal performance
-        final_stream.set_nodelay(config.tcp_no_delay).ok();
+        // Configure both application-level SSH keepalives and operating-system
+        // TCP keepalives. The latter was previously represented in the config
+        // but never applied to the socket.
+        configure_tcp_options(&final_stream, &config);
 
         let timeout_secs = config.connect_timeout.unwrap_or(15);
         final_stream
@@ -384,10 +586,12 @@ impl SshService {
         // Populate negotiated compression info from the handshake result
         Self::populate_compression_stats(&mut session);
 
-        if let Some(interval) = config.keep_alive_interval {
+        if let Some(interval) = config.keep_alive_interval.filter(|interval| *interval > 0) {
             // Configure the ssh2 library to send SSH keepalive packets
+            let interval = interval.min(u32::MAX as u64);
             session.session.set_keepalive(true, interval as u32);
-            session.keep_alive_handle = Some(self.start_keep_alive(session_id.clone(), interval));
+            session.keep_alive_handle =
+                Some(self.start_keep_alive(session_id.clone(), interval, session.session.clone()));
         }
 
         self.sessions.insert(session_id.clone(), session);
@@ -1785,15 +1989,39 @@ impl SshService {
         &self,
         session_id: String,
         interval_secs: u64,
+        session: Session,
     ) -> tokio::task::JoinHandle<()> {
-        // We need to send a keepalive from the SSH session, but the session
-        // is behind the service mutex. The ssh2 session is already configured
-        // via set_keepalive(); this task exists to keep observable activity.
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(interval_secs));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // Tokio intervals tick immediately. The server only needs a probe
+            // after the configured idle interval, so consume the initial tick.
+            tick.tick().await;
             loop {
                 tick.tick().await;
-                log::debug!("Keep-alive tick for session {}", session_id);
+                match session.keepalive_send() {
+                    Ok(seconds_to_next) => {
+                        log::debug!(
+                            "Sent SSH keepalive for session {}; next due in {}s",
+                            session_id,
+                            seconds_to_next
+                        );
+                    }
+                    Err(error) if is_transient_keepalive_error(&error) => {
+                        log::debug!(
+                            "SSH keepalive for session {} would block; retrying on next interval",
+                            session_id
+                        );
+                    }
+                    Err(error) => {
+                        // The shell reader owns user-facing transport failure
+                        // reporting and emits exactly one close event. Stop this
+                        // auxiliary task so a dead transport cannot create an
+                        // unbounded stream of duplicate diagnostics.
+                        log::warn!("SSH keepalive failed for session {}: {}", session_id, error);
+                        break;
+                    }
+                }
             }
         })
     }
@@ -2162,6 +2390,7 @@ impl SshService {
         session_id: &str,
         event_emitter: DynEventEmitter,
     ) -> Result<String, String> {
+        self.prune_finished_shell(session_id);
         if let Some(existing) = self.shells.get(session_id) {
             return Ok(existing.id.clone());
         }
@@ -2252,6 +2481,8 @@ impl SshService {
         let thread = std::thread::spawn(move || {
             let mut buffer = [0u8; 16384];
             let mut running = true;
+            let mut close_reason = SshShellCloseReason::RemoteEof;
+            let mut close_message: Option<String> = None;
             let mut idle_count: u32 = 0;
             const MIN_SLEEP_MS: u64 = 1;
             const MAX_SLEEP_MS: u64 = 10;
@@ -2264,18 +2495,35 @@ impl SshService {
                             record_input(&session_id_owned, &data);
 
                             if let Err(error) = channel.write_all(data.as_bytes()) {
+                                let message = error.to_string();
                                 let payload = SshShellError {
                                     session_id: session_id_owned.clone(),
-                                    message: error.to_string(),
+                                    message: message.clone(),
                                 };
                                 let _ = emitter.emit_event(
                                     "ssh-error",
                                     serde_json::to_value(&payload).unwrap_or_default(),
                                 );
+                                close_reason = SshShellCloseReason::TransportError;
+                                close_message = Some(message);
                                 running = false;
                                 break;
                             }
-                            let _ = channel.flush();
+                            if let Err(error) = channel.flush() {
+                                let message = error.to_string();
+                                let payload = SshShellError {
+                                    session_id: session_id_owned.clone(),
+                                    message: message.clone(),
+                                };
+                                let _ = emitter.emit_event(
+                                    "ssh-error",
+                                    serde_json::to_value(&payload).unwrap_or_default(),
+                                );
+                                close_reason = SshShellCloseReason::TransportError;
+                                close_message = Some(message);
+                                running = false;
+                                break;
+                            }
                             idle_count = 0;
                         }
                         SshShellCommand::Resize(cols, rows) => {
@@ -2283,11 +2531,17 @@ impl SshService {
                             let _ = channel.request_pty_size(cols, rows, None, None);
                         }
                         SshShellCommand::Close => {
+                            close_reason = SshShellCloseReason::Requested;
+                            close_message = None;
                             let _ = channel.close();
                             let _ = channel.wait_close();
                             running = false;
                         }
                     }
+                }
+
+                if !running {
+                    break;
                 }
 
                 if shell_suspend_count.load(std::sync::atomic::Ordering::Acquire) > 0 {
@@ -2335,19 +2589,24 @@ impl SshService {
                         idle_count = idle_count.saturating_add(1);
                     }
                     Err(error) => {
+                        let message = error.to_string();
                         let payload = SshShellError {
                             session_id: session_id_owned.clone(),
-                            message: error.to_string(),
+                            message: message.clone(),
                         };
                         let _ = emitter.emit_event(
                             "ssh-error",
                             serde_json::to_value(&payload).unwrap_or_default(),
                         );
+                        close_reason = SshShellCloseReason::TransportError;
+                        close_message = Some(message);
                         running = false;
                     }
                 }
 
-                if channel.eof() {
+                if running && channel.eof() {
+                    close_reason = SshShellCloseReason::RemoteEof;
+                    close_message = None;
                     running = false;
                 }
 
@@ -2359,9 +2618,7 @@ impl SshService {
                 std::thread::sleep(Duration::from_millis(sleep_ms));
             }
 
-            let payload = SshShellClosed {
-                session_id: session_id_owned,
-            };
+            let payload = shell_closed_event(session_id_owned, close_reason, close_message);
             let _ = emitter.emit_event(
                 "ssh-shell-closed",
                 serde_json::to_value(&payload).unwrap_or_default(),
@@ -2405,6 +2662,23 @@ impl SshService {
     pub async fn stop_shell(&mut self, session_id: &str) -> Result<(), String> {
         if let Some(shell) = self.shells.remove(session_id) {
             let _ = shell.sender.send(SshShellCommand::Close);
+            let deadline = tokio::time::Instant::now() + SHELL_STOP_TIMEOUT;
+            while !shell.is_finished() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            if !shell.is_finished() {
+                self.shells.insert(session_id.to_string(), shell);
+                return Err(format!(
+                    "Timed out waiting for SSH shell to stop for session {}",
+                    session_id
+                ));
+            }
+            if shell.thread.join().is_err() {
+                return Err(format!(
+                    "SSH shell thread panicked for session {}",
+                    session_id
+                ));
+            }
         }
         Ok(())
     }
@@ -2520,9 +2794,8 @@ impl SshService {
         id: String,
     ) -> Result<PortForwardHandle, String> {
         let bind_host = Self::resolve_forward_bind(config)?;
-        let listener =
-            std::net::TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
-                .map_err(|e| format!("Failed to bind local port: {}", e))?;
+        let listener = std::net::TcpListener::bind(format!("{}:{}", bind_host, config.local_port))
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
 
         listener
             .set_nonblocking(true)
@@ -3230,7 +3503,10 @@ impl SshService {
     }
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
-        let _ = self.stop_shell(session_id).await;
+        // Do not report the backend actor as closed until the shell thread has
+        // actually exited. This keeps VPN/session cleanup fail-closed when a
+        // native actor cannot be stopped deterministically.
+        self.stop_shell(session_id).await?;
 
         // Clean up X11 forwarding
         let _ = self.disable_x11_forwarding(session_id);
@@ -3272,7 +3548,7 @@ impl SshService {
             config: session.config.clone(),
             connected_at: session.connected_at,
             last_activity: session.last_activity,
-            is_alive: true,
+            is_alive: self.is_session_alive(session_id),
         })
     }
 
@@ -3284,7 +3560,7 @@ impl SshService {
                 config: session.config.clone(),
                 connected_at: session.connected_at,
                 last_activity: session.last_activity,
-                is_alive: true,
+                is_alive: self.is_session_alive(&session.id),
             })
             .collect()
     }
@@ -4071,7 +4347,43 @@ impl SshService {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::ssh::types::ScriptExecutionResult;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    fn empty_test_service() -> SshService {
+        SshService {
+            sessions: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: HashMap::new(),
+            shells: HashMap::new(),
+            event_emitter: None,
+        }
+    }
+
+    fn tcp_test_config() -> SshConnectionConfig {
+        serde_json::from_value(json!({
+            "host": "127.0.0.1",
+            "port": 22,
+            "username": "tester",
+            "password": null,
+            "private_key_path": null,
+            "private_key_passphrase": null,
+            "jump_hosts": [],
+            "proxy_config": null,
+            "proxy_chain": null,
+            "mixed_chain": null,
+            "openvpn_config": null,
+            "connect_timeout": 15,
+            "keep_alive_interval": 30,
+            "strict_host_key_checking": false,
+            "known_hosts_path": null,
+            "totp_secret": null,
+            "keyboard_interactive_responses": []
+        }))
+        .expect("valid SSH test config")
+    }
 
     // ── Sentinel parsing ────────────────────────────────────────
 
@@ -4149,6 +4461,165 @@ mod tests {
     fn unrelated_shell_errors_are_not_treated_as_transient() {
         let error = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "connection reset");
         assert!(!super::is_transient_shell_io_error(&error));
+    }
+
+    #[test]
+    fn shell_close_event_marks_requested_close_as_intentional() {
+        let event = super::shell_closed_event(
+            "session-requested".to_string(),
+            SshShellCloseReason::Requested,
+            None,
+        );
+
+        assert!(!event.recoverable);
+        assert_eq!(
+            serde_json::to_value(event).expect("serialize requested close"),
+            json!({
+                "session_id": "session-requested",
+                "reason": "requested",
+                "recoverable": false,
+                "message": null
+            })
+        );
+    }
+
+    #[test]
+    fn shell_close_event_marks_transport_failure_as_recoverable() {
+        let event = super::shell_closed_event(
+            "session-transport".to_string(),
+            SshShellCloseReason::TransportError,
+            Some("transport read".to_string()),
+        );
+
+        assert!(event.recoverable);
+        assert_eq!(
+            serde_json::to_value(event).expect("serialize transport close"),
+            json!({
+                "session_id": "session-transport",
+                "reason": "transport_error",
+                "recoverable": true,
+                "message": "transport read"
+            })
+        );
+    }
+
+    #[test]
+    fn zero_keepalive_interval_uses_safe_tcp_default() {
+        assert_eq!(
+            super::normalized_keepalive_interval(Some(0)),
+            Duration::from_secs(DEFAULT_TCP_KEEPALIVE_INTERVAL_SECS)
+        );
+    }
+
+    #[test]
+    fn keepalive_probe_count_is_bounded_to_socket_contract() {
+        assert_eq!(super::normalized_keepalive_probes(0), 1);
+        assert_eq!(super::normalized_keepalive_probes(3), 3);
+        assert_eq!(
+            super::normalized_keepalive_probes(u32::MAX),
+            MAX_TCP_KEEPALIVE_PROBES
+        );
+    }
+
+    #[test]
+    fn configured_tcp_keepalive_is_applied_and_can_be_disabled() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+        let client = TcpStream::connect(listener.local_addr().expect("listener address"))
+            .expect("connect loopback client");
+        let (_server, _) = listener.accept().expect("accept loopback client");
+        let mut config = tcp_test_config();
+        config.tcp_keepalive = true;
+        config.keep_alive_interval = Some(30);
+        config.keepalive_probes = 7;
+
+        super::configure_tcp_options(&client, &config);
+        assert!(SockRef::from(&client)
+            .keepalive()
+            .expect("read enabled keepalive"));
+
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Networking::WinSock::{
+                getsockopt, IPPROTO_TCP, SOCKET_ERROR, TCP_KEEPCNT,
+            };
+
+            let mut probes = 0u32;
+            let mut probes_len = std::mem::size_of_val(&probes) as i32;
+            let result = unsafe {
+                getsockopt(
+                    client.as_raw_socket() as usize,
+                    IPPROTO_TCP,
+                    TCP_KEEPCNT,
+                    (&mut probes as *mut u32).cast(),
+                    &mut probes_len,
+                )
+            };
+            assert_ne!(
+                result,
+                SOCKET_ERROR,
+                "read Windows TCP_KEEPCNT: {}",
+                std::io::Error::last_os_error()
+            );
+            assert_eq!(probes, 7);
+        }
+
+        config.tcp_keepalive = false;
+        super::configure_tcp_options(&client, &config);
+        assert!(!SockRef::from(&client)
+            .keepalive()
+            .expect("read disabled keepalive"));
+    }
+
+    #[test]
+    fn finished_shell_handles_are_not_reported_active_and_are_pruned() {
+        let mut service = empty_test_service();
+        let (sender, _receiver) = mpsc::unbounded_channel();
+        let thread = std::thread::spawn(|| {});
+        let session_id = "finished-shell";
+        service.shells.insert(
+            session_id.to_string(),
+            SshShellHandle {
+                id: "shell-id".to_string(),
+                sender,
+                thread,
+                suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            },
+        );
+        while !service.shells[session_id].is_finished() {
+            std::thread::yield_now();
+        }
+
+        assert_eq!(service.active_shell_id(session_id), None);
+        service.prune_finished_shell(session_id);
+        assert!(!service.shells.contains_key(session_id));
+    }
+
+    #[tokio::test]
+    async fn stop_shell_waits_for_actor_exit_before_reporting_success() {
+        let mut service = empty_test_service();
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let thread = std::thread::spawn(move || {
+            assert!(matches!(
+                receiver.blocking_recv(),
+                Some(SshShellCommand::Close)
+            ));
+        });
+        let session_id = "stoppable-shell";
+        service.shells.insert(
+            session_id.to_string(),
+            SshShellHandle {
+                id: "shell-id".to_string(),
+                sender,
+                thread,
+                suspend_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            },
+        );
+
+        service
+            .stop_shell(session_id)
+            .await
+            .expect("shell actor should stop");
+        assert!(!service.shells.contains_key(session_id));
     }
 
     #[test]

@@ -134,6 +134,16 @@ let hostKeyPromptListener:
       };
     }) => Promise<void>)
   | undefined;
+let shellClosedListener:
+  | ((event: {
+      payload: {
+        session_id: string;
+        reason: string;
+        recoverable: boolean;
+        message: string | null;
+      };
+    }) => void)
+  | undefined;
 
 // Mock useConnections hook
 vi.mock("../../src/contexts/useConnections", () => ({
@@ -171,6 +181,7 @@ describe("WebTerminal", () => {
     vi.clearAllMocks();
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
+    shellClosedListener = undefined;
     localStorage.clear();
     delete (mockConnection as any).security;
     delete (mockConnection as any).proxyChainId;
@@ -180,6 +191,9 @@ describe("WebTerminal", () => {
     mockListen.mockImplementation(async (event, callback) => {
       if (event === "ssh://host-key-prompt") {
         hostKeyPromptListener = callback as typeof hostKeyPromptListener;
+      }
+      if (event === "ssh-shell-closed") {
+        shellClosedListener = callback as typeof shellClosedListener;
       }
       return () => {};
     });
@@ -413,11 +427,96 @@ describe("WebTerminal", () => {
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
         expect(
-          screen.getByText(
+          screen.getAllByText(
             "Connection refused - please check the host and port",
           ),
-        ).toBeInTheDocument();
+        ).not.toHaveLength(0);
       });
+    });
+
+    it("mounts a persisted SSH error in the recovery overview without reconnecting", async () => {
+      renderWithProviders({
+        ...mockSession,
+        status: "error",
+        errorMessage: "transport read: password=testpass",
+      });
+
+      expect(
+        await screen.findByRole("region", {
+          name: "SSH connection failed",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getAllByText("transport read: password=[redacted]"),
+      ).not.toHaveLength(0);
+      expect(screen.queryByText(/testpass/)).not.toBeInTheDocument();
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "connect_ssh"),
+      ).toBe(false);
+    });
+
+    it("disables reconnect controls while an SSH attempt is active", async () => {
+      let resolveConnect!: (sessionId: string) => void;
+      const deferredConnect = new Promise<string>((resolve) => {
+        resolveConnect = resolve;
+      });
+      mockInvoke.mockImplementation((command) => {
+        if (command === "connect_ssh") return deferredConnect;
+        if (command === "start_shell") return Promise.resolve("shell-123");
+        return Promise.resolve(undefined);
+      });
+
+      renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_ssh",
+          expect.anything(),
+        ),
+      );
+
+      expect(screen.getByTestId("terminal-reconnect")).toBeDisabled();
+
+      await act(async () => {
+        resolveConnect("ssh-session-123");
+        await deferredConnect;
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId("terminal-reconnect")).toBeEnabled(),
+      );
+    });
+
+    it("disables both Retry now and toolbar reconnect during automatic recovery", async () => {
+      mockInvoke.mockImplementation((command) => {
+        if (command === "connect_ssh") {
+          return Promise.resolve("ssh-session-123");
+        }
+        if (command === "start_shell") return Promise.resolve("shell-123");
+        return Promise.resolve(undefined);
+      });
+
+      const view = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(screen.getByTestId("terminal-reconnect")).toBeEnabled(),
+      );
+      await waitFor(() => expect(shellClosedListener).toBeDefined());
+
+      act(() => {
+        shellClosedListener?.({
+          payload: {
+            session_id: "ssh-session-123",
+            reason: "transport_error",
+            recoverable: true,
+            message: "transport read",
+          },
+        });
+      });
+
+      const retryNow = await screen.findByRole("button", {
+        name: "Retry now",
+      });
+      expect(retryNow).toBeDisabled();
+      expect(screen.getByTestId("terminal-reconnect")).toBeDisabled();
+      view.unmount();
     });
 
     it("redacts secrets from raw SSH error details", async () => {
@@ -591,10 +690,10 @@ describe("WebTerminal", () => {
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
         expect(
-          screen.getByText(
+          screen.getAllByText(
             "Host key verification failed - server may have changed",
           ),
-        ).toBeInTheDocument();
+        ).not.toHaveLength(0);
       });
 
       expect(

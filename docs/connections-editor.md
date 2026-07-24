@@ -46,6 +46,18 @@ Before connecting a critical target:
 3. Review any Network Path diagnostics.
 4. Connect and inspect the resulting session rather than assuming editor presence equals runtime support.
 
+## SSH resilience and continuity
+
+New installations enable recovery for an established SSH session by default. The bounded policy makes up to 20 attempts, starts at 2 seconds, doubles the delay, and caps each delay at 30 seconds. This gives a host and its SSH daemon time to complete an ordinary reboot without retrying at a tight fixed interval. Existing explicit settings and per-connection retry overrides remain authoritative.
+
+SSH keepalive is enabled by default with a 30-second interval and three probes. Keepalive helps a live transport survive idle NAT and firewall timeouts; it cannot preserve a TCP connection while the remote machine is rebooting. When an established transport is lost, recovery creates a new authenticated SSH transport and a new PTY after the host becomes reachable.
+
+The client does not currently provision or automatically attach `tmux`, GNU `screen`, or Mosh. Consequently, a reconnect restores access to the host but cannot resurrect the old remote shell or any foreground process that died with it. Start important long-running work inside a server-side session manager if it must survive a network interruption or client restart.
+
+Renderer remounts can reattach to a still-live native backend actor within the same application process. A full application exit or local machine reboot destroys that in-memory actor; **Reconnect sessions on reload** can establish a new connection from persisted metadata, but it is not process continuity.
+
+Automatic transport recovery applies only after a session was successfully established. Authentication failures, rejected or changed host keys, invalid routes, and user-requested disconnects require user action and must not be retried as transient network loss. This avoids repeated credential attempts and account-lockout pressure.
+
 ## Connection-level safety
 
 - Use per-connection trust exceptions sparingly; prefer the central trust policy.

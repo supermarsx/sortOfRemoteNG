@@ -79,6 +79,9 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
             data-tooltip="Reconnect"
             aria-label="Reconnect"
             data-testid="terminal-reconnect"
+            disabled={
+              mgr.status === "connecting" || mgr.status === "reconnecting"
+            }
           >
             <RotateCcw size={14} />
           </button>

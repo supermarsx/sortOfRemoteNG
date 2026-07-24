@@ -551,6 +551,12 @@ pub struct SshShellHandle {
     pub suspend_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
+impl SshShellHandle {
+    pub fn is_finished(&self) -> bool {
+        self.thread.is_finished()
+    }
+}
+
 #[derive(Debug)]
 pub enum SshShellCommand {
     Input(String),
@@ -573,6 +579,17 @@ pub struct SshShellError {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SshShellClosed {
     pub session_id: String,
+    pub reason: SshShellCloseReason,
+    pub recoverable: bool,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshShellCloseReason {
+    Requested,
+    RemoteEof,
+    TransportError,
 }
 
 // ===============================

@@ -64,6 +64,10 @@ Before exporting, decide whether the artifact needs secrets and whether the dest
 - Treat plaintext JSON, XML, CSV, and diagnostic exports as sensitive until inspected.
 - Test restoration from important backups; a file existing is not proof that it is usable.
 
+SSH connection exports and clones preserve non-secret resilience overrides, including the keepalive interval, terminal TCP options, retry-attempt count, and retry delay. Imported ProxyCommand approval is intentionally cleared and must be reviewed again; importing a reconnect policy must never import trust for executable proxy content.
+
+Global reconnect defaults live in the application settings store and are not embedded into a connection collection export. A connection with no explicit retry or keepalive override inherits the receiving installation's defaults. Reopen representative SSH records after import to confirm whether each value is inherited or overridden.
+
 The detailed at-rest and backup threat model lives in [Encryption at rest]({{ '/security/encryption-at-rest/' | relative_url }}).
 
 ### VPN portability and credentials

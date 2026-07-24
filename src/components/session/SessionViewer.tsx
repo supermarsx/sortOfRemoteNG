@@ -256,7 +256,8 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       session.protocol === "ssh" &&
       (session.status === "connecting" ||
         session.status === "connected" ||
-        session.status === "reconnecting")
+        session.status === "reconnecting" ||
+        session.status === "error")
     ) {
       return <WebTerminal session={session} />;
     }

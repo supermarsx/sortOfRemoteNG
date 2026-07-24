@@ -161,6 +161,8 @@ function sampleValueFor(
     sidebarPosition: "right",
     statusCheckMethod: "http",
     logLevel: "debug",
+    autoReconnectBackoff: "fixed",
+    autoReconnectMaxDelaySecs: 47,
     exportPassword: "coverage-export-password",
     trustPolicy: "strict",
     httpsTrustPolicy: "always-trust",

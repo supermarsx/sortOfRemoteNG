@@ -7,11 +7,13 @@ function TerminalStatusBar({ mgr }: { mgr: WebTerminalMgr }) {
       <span className={`app-badge ${mgr.statusToneClass}`}>
         {mgr.status === "connected"
           ? "Connected"
-          : mgr.status === "connecting"
-            ? "Connecting"
-            : mgr.status === "error"
-              ? "Error"
-              : "Idle"}
+          : mgr.status === "reconnecting"
+            ? "Reconnecting"
+            : mgr.status === "connecting"
+              ? "Connecting"
+              : mgr.status === "error"
+                ? "Error"
+                : "Idle"}
       </span>
       {mgr.error && (
         <span className="app-badge app-badge--error normal-case tracking-normal">

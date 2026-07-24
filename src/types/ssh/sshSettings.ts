@@ -544,8 +544,8 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
     tcpKeepAlive: true,
     soKeepAlive: true,
     ipProtocol: "auto",
-    keepAliveInterval: 30, // Faster keepalive detection (was 60)
-    keepAliveProbes: 2, // Fewer probes before disconnect (was 3)
+    keepAliveInterval: 30,
+    keepAliveProbes: 3,
     connectionTimeout: 15, // Faster timeout for unresponsive hosts (was 30)
   },
 
@@ -777,7 +777,7 @@ export type ProxyCommandTemplate = (typeof ProxyCommandTemplates)[number];
 export const defaultSSHConnectionConfig: SSHConnectionConfig = {
   // Connection behavior
   connectTimeout: 30,
-  keepAliveInterval: 60,
+  keepAliveInterval: 30,
   strictHostKeyChecking: true,
   knownHostsPath: undefined,
 

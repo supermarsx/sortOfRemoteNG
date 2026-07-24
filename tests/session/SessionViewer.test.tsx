@@ -74,7 +74,16 @@ vi.mock("../../src/components/ssh/WebTerminal", () => ({
     if (mockState.throwWebTerminal) {
       throw new Error("Mock terminal renderer crashed");
     }
-    return <div data-testid="mock-web-terminal">Web Terminal</div>;
+    return (
+      <div data-testid="mock-web-terminal">
+        Web Terminal
+        {props.session.status === "error" && (
+          <section data-testid="ssh-connection-overview">
+            SSH connection failed
+          </section>
+        )}
+      </div>
+    );
   },
 }));
 
@@ -337,6 +346,38 @@ describe("SessionViewer", () => {
     expect(mockState.webTerminalProps).toHaveBeenCalled();
   });
 
+  it("retains the same SSH terminal when the session transitions to its rich error overview", async () => {
+    const connectedSession = createSession({
+      protocol: "ssh",
+      status: "connected",
+    });
+    const { rerender } = render(<SessionViewer session={connectedSession} />);
+    const mountedTerminal = await screen.findByTestId("mock-web-terminal");
+
+    rerender(
+      <SessionViewer
+        session={{
+          ...connectedSession,
+          status: "error",
+          errorMessage: "SSH transport was interrupted",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("mock-web-terminal")).toBe(mountedTerminal);
+    expect(screen.getByTestId("ssh-connection-overview")).toBeInTheDocument();
+    expect(screen.getByText("SSH connection failed")).toBeInTheDocument();
+    expect(screen.queryByText("Connection Failed")).not.toBeInTheDocument();
+    expect(mockState.webTerminalProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        session: expect.objectContaining({
+          id: connectedSession.id,
+          status: "error",
+        }),
+      }),
+    );
+  });
+
   it("routes RDP connected and RDP error sessions to their dedicated views", async () => {
     const { rerender } = render(
       <SessionViewer
@@ -441,11 +482,11 @@ describe("SessionViewer", () => {
     expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
   });
 
-  it("renders generic error view for non-RDP error sessions", () => {
+  it("renders generic error view for non-SSH protocol errors", () => {
     render(
       <SessionViewer
         session={createSession({
-          protocol: "ssh",
+          protocol: "telnet",
           status: "error",
           errorMessage: "Network path unreachable",
         })}
@@ -453,7 +494,7 @@ describe("SessionViewer", () => {
     );
 
     expect(screen.getByText("Connection Failed")).toBeInTheDocument();
-    expect(screen.getByText("SSH to example-host")).toBeInTheDocument();
+    expect(screen.getByText("TELNET to example-host")).toBeInTheDocument();
     expect(screen.getByText("Network path unreachable")).toBeInTheDocument();
   });
 

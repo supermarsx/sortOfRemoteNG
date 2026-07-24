@@ -270,10 +270,7 @@ pub async fn is_session_alive(
     session_id: String,
 ) -> Result<bool, String> {
     let ssh = state.lock().await;
-    if !ssh.sessions.contains_key(&session_id) {
-        return Ok(false);
-    }
-    Ok(ssh.shells.contains_key(&session_id))
+    Ok(ssh.is_session_alive(&session_id))
 }
 
 /// Get info about an active shell for a session
@@ -283,11 +280,7 @@ pub async fn get_shell_info(
     session_id: String,
 ) -> Result<Option<String>, String> {
     let ssh = state.lock().await;
-    if let Some(shell) = ssh.shells.get(&session_id) {
-        Ok(Some(shell.id.clone()))
-    } else {
-        Ok(None)
-    }
+    Ok(ssh.active_shell_id(&session_id))
 }
 
 /// Reattach to an existing SSH session - restarts the shell event listeners
@@ -301,10 +294,6 @@ pub async fn reattach_session(
 
     if !ssh.sessions.contains_key(&session_id) {
         return Err("Session not found - may have been disconnected".to_string());
-    }
-
-    if let Some(shell) = ssh.shells.get(&session_id) {
-        return Ok(shell.id.clone());
     }
 
     let emitter = ssh

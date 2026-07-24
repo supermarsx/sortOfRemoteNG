@@ -12380,6 +12380,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "shell-escape",
+ "socket2 0.5.10",
  "sorng-core",
  "sorng-dns",
  "ssh-key 0.6.7",
@@ -12389,6 +12390,7 @@ dependencies = [
  "totp-rs",
  "tracing",
  "uuid",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

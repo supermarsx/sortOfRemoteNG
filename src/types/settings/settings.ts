@@ -279,6 +279,10 @@ export interface GlobalSettings {
   autoReconnectMaxAttempts: number;
   /** Base delay between reconnect attempts in seconds */
   autoReconnectDelaySecs: number;
+  /** Delay strategy used after an established session drops */
+  autoReconnectBackoff: "fixed" | "exponential";
+  /** Upper bound for an individual reconnect delay in seconds */
+  autoReconnectMaxDelaySecs: number;
   /** Show a notification when a session reconnects */
   notifyOnReconnect: boolean;
 

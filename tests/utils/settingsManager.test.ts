@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from "vitest";
 // @ts-expect-error - no type declarations for jsdom
-import { JSDOM } from 'jsdom';
+import { JSDOM } from "jsdom";
 import {
   SettingsManager,
   _resetInMemorySettingsStore,
-} from '../../src/utils/settings/settingsManager';
-import { _resetInvokeCache } from '../../src/utils/tauri/invoke';
-import type { GlobalSettings } from '../../src/types/settings/settings';
+} from "../../src/utils/settings/settingsManager";
+import { _resetInvokeCache } from "../../src/utils/tauri/invoke";
+import type { GlobalSettings } from "../../src/types/settings/settings";
 
 let dom: JSDOM;
 
@@ -30,10 +30,10 @@ let fakeStoredSettings: Record<string, unknown> | null = null;
  */
 function installFakeTauri(): void {
   const invoke = async (cmd: string, args?: Record<string, unknown>) => {
-    if (cmd === 'read_app_settings') {
+    if (cmd === "read_app_settings") {
       return fakeStoredSettings;
     }
-    if (cmd === 'write_app_settings') {
+    if (cmd === "write_app_settings") {
       const patch = (args?.patch ?? {}) as Record<string, unknown>;
       fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...patch };
       return null;
@@ -44,7 +44,7 @@ function installFakeTauri(): void {
 }
 
 beforeEach(async () => {
-  dom = new JSDOM('<!doctype html><html><body></body></html>');
+  dom = new JSDOM("<!doctype html><html><body></body></html>");
   (global as any).window = dom.window;
   (global as any).document = dom.window.document;
   SettingsManager.resetInstance();
@@ -68,42 +68,42 @@ function seedStoredSettings(seed: Partial<GlobalSettings>): void {
   fakeStoredSettings = { ...(fakeStoredSettings ?? {}), ...seed };
 }
 
-describe('SettingsManager colorScheme', () => {
-  it('defaults to blue', async () => {
+describe("SettingsManager colorScheme", () => {
+  it("defaults to blue", async () => {
     const manager = SettingsManager.getInstance();
     const settings = await manager.loadSettings();
-    expect(settings.colorScheme).toBe('blue');
+    expect(settings.colorScheme).toBe("blue");
   });
 
-  it('persists colorScheme changes', async () => {
+  it("persists colorScheme changes", async () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
-    await manager.saveSettings({ colorScheme: 'green' });
+    await manager.saveSettings({ colorScheme: "green" });
 
     SettingsManager.resetInstance();
     const again = SettingsManager.getInstance();
     const loaded = await again.loadSettings();
-    expect(loaded.colorScheme).toBe('green');
+    expect(loaded.colorScheme).toBe("green");
   });
 
-  it('accepts grey colorScheme', async () => {
+  it("accepts grey colorScheme", async () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
-    await manager.saveSettings({ colorScheme: 'grey' });
+    await manager.saveSettings({ colorScheme: "grey" });
 
     SettingsManager.resetInstance();
     const again = SettingsManager.getInstance();
     const loaded = await again.loadSettings();
-    expect(loaded.colorScheme).toBe('grey');
+    expect(loaded.colorScheme).toBe("grey");
   });
 });
 
-describe('SettingsManager save-before-load race', () => {
-  it('does not clobber stored settings when a partial save races the initial load', async () => {
+describe("SettingsManager save-before-load race", () => {
+  it("does not clobber stored settings when a partial save races the initial load", async () => {
     // Seed storage with a non-default user config, as if from a prior run.
     seedStoredSettings({
-      colorScheme: 'green',
-      theme: 'light',
+      colorScheme: "green",
+      theme: "light",
       autoSaveEnabled: true,
     });
 
@@ -113,22 +113,80 @@ describe('SettingsManager save-before-load race', () => {
     // partial save WITHOUT first awaiting loadSettings(). The save must wait
     // for the load internally so it merges onto the stored config, not the
     // in-memory defaults.
-    await manager.saveSettings({ windowSize: { width: 800, height: 600 } } as any);
+    await manager.saveSettings({
+      windowSize: { width: 800, height: 600 },
+    } as any);
 
     SettingsManager.resetInstance();
     const reloaded = await SettingsManager.getInstance().loadSettings();
 
     // The pre-existing custom values must survive.
-    expect(reloaded.colorScheme).toBe('green');
-    expect(reloaded.theme).toBe('light');
+    expect(reloaded.colorScheme).toBe("green");
+    expect(reloaded.theme).toBe("light");
     expect(reloaded.autoSaveEnabled).toBe(true);
     // And the new partial value must be persisted too.
     expect(reloaded.windowSize).toEqual({ width: 800, height: 600 });
   });
 });
 
-describe('SettingsManager loadSettings', () => {
-  it('applies default network discovery TTLs when missing', async () => {
+describe("SettingsManager loadSettings", () => {
+  it("defaults to bounded SSH recovery and preserves explicit persisted choices", async () => {
+    const defaults = await SettingsManager.getInstance().loadSettings();
+
+    expect(defaults.autoReconnectOnDisconnect).toBe(true);
+    expect(defaults.autoReconnectMaxAttempts).toBe(20);
+    expect(defaults.autoReconnectDelaySecs).toBe(2);
+    expect(defaults.autoReconnectBackoff).toBe("exponential");
+    expect(defaults.autoReconnectMaxDelaySecs).toBe(30);
+    expect(defaults.sshTerminal.tcpOptions).toMatchObject({
+      tcpKeepAlive: true,
+      soKeepAlive: true,
+      keepAliveInterval: 30,
+      keepAliveProbes: 3,
+    });
+
+    await SettingsManager.getInstance().saveSettings({
+      autoReconnectOnDisconnect: false,
+      autoReconnectMaxAttempts: 4,
+      autoReconnectDelaySecs: 9,
+      autoReconnectBackoff: "fixed",
+      autoReconnectMaxDelaySecs: 50,
+    });
+    SettingsManager.resetInstance();
+
+    const restored = await SettingsManager.getInstance().loadSettings();
+    expect(restored.autoReconnectOnDisconnect).toBe(false);
+    expect(restored.autoReconnectMaxAttempts).toBe(4);
+    expect(restored.autoReconnectDelaySecs).toBe(9);
+    expect(restored.autoReconnectBackoff).toBe("fixed");
+    expect(restored.autoReconnectMaxDelaySecs).toBe(50);
+  });
+
+  it("deep-merges SSH settings from older persisted snapshots", async () => {
+    seedStoredSettings({
+      sshTerminal: {
+        tcpOptions: {
+          keepAliveInterval: 45,
+        },
+      },
+      sshConnection: {
+        keepAliveInterval: 75,
+      },
+    } as any);
+
+    const settings = await SettingsManager.getInstance().loadSettings();
+    expect(settings.sshTerminal.tcpOptions.keepAliveInterval).toBe(45);
+    expect(settings.sshTerminal.tcpOptions.tcpKeepAlive).toBe(true);
+    expect(settings.sshTerminal.tcpOptions.keepAliveProbes).toBe(3);
+    expect(settings.sshConnection.keepAliveInterval).toBe(75);
+    expect(settings.sshConnection.preferredAuthMethods).toEqual([
+      "publickey",
+      "keyboard-interactive",
+      "password",
+    ]);
+  });
+
+  it("applies default network discovery TTLs when missing", async () => {
     seedStoredSettings({
       networkDiscovery: { cacheTTL: 12345 },
     } as any);
@@ -140,61 +198,61 @@ describe('SettingsManager loadSettings', () => {
     expect(settings.networkDiscovery.macTtl).toBe(300000);
   });
 
-  it('defaults SSH trust policy to always-ask while preserving explicit stored values', async () => {
+  it("defaults SSH trust policy to always-ask while preserving explicit stored values", async () => {
     seedStoredSettings({
-      theme: 'dark',
+      theme: "dark",
     });
 
     const manager = SettingsManager.getInstance();
     const settings = await manager.loadSettings();
-    expect(settings.sshTrustPolicy).toBe('always-ask');
+    expect(settings.sshTrustPolicy).toBe("always-ask");
 
-    await manager.saveSettings({ sshTrustPolicy: 'strict' });
+    await manager.saveSettings({ sshTrustPolicy: "strict" });
     SettingsManager.resetInstance();
 
     const reloaded = await SettingsManager.getInstance().loadSettings();
-    expect(reloaded.sshTrustPolicy).toBe('strict');
+    expect(reloaded.sshTrustPolicy).toBe("strict");
   });
 
-  it('defaults trust policies to root tofu with inherited certificate categories', async () => {
+  it("defaults trust policies to root tofu with inherited certificate categories", async () => {
     const manager = SettingsManager.getInstance();
     const settings = await manager.loadSettings();
 
-    expect(settings.trustPolicy).toBe('tofu');
-    expect(settings.httpsTrustPolicy).toBe('inherit');
-    expect(settings.certificateTrustPolicy).toBe('inherit');
-    expect(settings.rdpTrustPolicy).toBe('inherit');
-    expect(settings.sshTrustPolicy).toBe('always-ask');
-    expect(settings.tlsTrustPolicy).toBe('tofu');
+    expect(settings.trustPolicy).toBe("tofu");
+    expect(settings.httpsTrustPolicy).toBe("inherit");
+    expect(settings.certificateTrustPolicy).toBe("inherit");
+    expect(settings.rdpTrustPolicy).toBe("inherit");
+    expect(settings.sshTrustPolicy).toBe("always-ask");
+    expect(settings.tlsTrustPolicy).toBe("tofu");
   });
 
-  it('backfills HTTPS trust policy from legacy TLS only when HTTPS is absent', async () => {
+  it("backfills HTTPS trust policy from legacy TLS only when HTTPS is absent", async () => {
     seedStoredSettings({
-      tlsTrustPolicy: 'strict',
+      tlsTrustPolicy: "strict",
     });
 
     const legacyOnly = await SettingsManager.getInstance().loadSettings();
-    expect(legacyOnly.httpsTrustPolicy).toBe('strict');
-    expect(legacyOnly.certificateTrustPolicy).toBe('inherit');
-    expect(legacyOnly.tlsTrustPolicy).toBe('strict');
+    expect(legacyOnly.httpsTrustPolicy).toBe("strict");
+    expect(legacyOnly.certificateTrustPolicy).toBe("inherit");
+    expect(legacyOnly.tlsTrustPolicy).toBe("strict");
 
     SettingsManager.resetInstance();
     // Fresh store with HTTPS explicitly set — the backfill must NOT override it.
     fakeStoredSettings = null;
     seedStoredSettings({
-      httpsTrustPolicy: 'always-trust',
-      tlsTrustPolicy: 'strict',
+      httpsTrustPolicy: "always-trust",
+      tlsTrustPolicy: "strict",
     });
 
     const explicitHttps = await SettingsManager.getInstance().loadSettings();
-    expect(explicitHttps.httpsTrustPolicy).toBe('always-trust');
-    expect(explicitHttps.certificateTrustPolicy).toBe('inherit');
-    expect(explicitHttps.tlsTrustPolicy).toBe('strict');
+    expect(explicitHttps.httpsTrustPolicy).toBe("always-trust");
+    expect(explicitHttps.certificateTrustPolicy).toBe("inherit");
+    expect(explicitHttps.tlsTrustPolicy).toBe("strict");
   });
 });
 
-describe('SettingsManager.benchmarkKeyDerivation', () => {
-  it('returns a positive iteration count and logs completion', async () => {
+describe("SettingsManager.benchmarkKeyDerivation", () => {
+  it("returns a positive iteration count and logs completion", async () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
 
@@ -203,10 +261,10 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
 
     expect(iterations).toBeGreaterThan(0);
     const [last] = manager.getActionLog();
-    expect(last.action).toBe('Key derivation benchmark completed');
+    expect(last.action).toBe("Key derivation benchmark completed");
   });
 
-  it('throws when required Web APIs are missing', async () => {
+  it("throws when required Web APIs are missing", async () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
 
@@ -220,15 +278,17 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
     globalThis.performance = originalPerformance;
   });
 
-  it('stops when exceeding max time and returns last iteration count', async () => {
+  it("stops when exceeding max time and returns last iteration count", async () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
     // Mock performance.now to simulate time passing quickly
     let time = 0;
-    const nowSpy = vi.spyOn(globalThis.performance, 'now').mockImplementation(() => {
-      time += 100; // increase by 100ms each call
-      return time;
-    });
+    const nowSpy = vi
+      .spyOn(globalThis.performance, "now")
+      .mockImplementation(() => {
+        time += 100; // increase by 100ms each call
+        return time;
+      });
 
     const iterations = await manager.benchmarkKeyDerivation(5, 0.03); // 30ms max
 

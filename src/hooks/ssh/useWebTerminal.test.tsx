@@ -44,10 +44,10 @@ const mocks = vi.hoisted(() => {
       this.element = container;
     }
     focus(): void {}
-    reset(): void {}
-    clear(): void {}
-    write(): void {}
-    writeln(): void {}
+    reset = vi.fn();
+    clear = vi.fn();
+    write = vi.fn();
+    writeln = vi.fn();
     dispose(): void {}
     getSelection(): string {
       return "";
@@ -83,8 +83,9 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
   };
   const settingsContext = {
-    settings: {},
+    settings: {} as Record<string, unknown>,
   };
+  const listeners = new Map<string, (event: { payload: any }) => void>();
   const runtimePath = {
     protocol: "ssh" as const,
     transport: {
@@ -111,6 +112,7 @@ const mocks = vi.hoisted(() => {
     invoke: vi.fn(),
     addHistoryEntry: vi.fn(),
     listen: vi.fn(async (..._args: unknown[]) => vi.fn()),
+    listeners,
     macroRecorder: idleMacroRecorder,
     idleMacroRecorder,
     terminalConfig: {},
@@ -204,13 +206,39 @@ const session: ConnectionSession = {
   hostname: mocks.connection.hostname,
 };
 
+const emitTauriEvent = (event: string, payload: unknown) => {
+  const listener = mocks.listeners.get(event);
+  if (!listener) throw new Error(`Missing ${event} listener`);
+  listener({ payload });
+};
+
 beforeEach(() => {
   resetSessionLifecycleAllocatorForTests();
   mocks.MockTerminal.instances.length = 0;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
   mocks.addHistoryEntry.mockReset();
-  mocks.listen.mockClear();
+  mocks.listeners.clear();
+  mocks.listen.mockReset();
+  mocks.listen.mockImplementation(async (...args: unknown[]) => {
+    const [event, callback] = args as [
+      string,
+      (event: { payload: any }) => void,
+    ];
+    mocks.listeners.set(event, callback);
+    return vi.fn(() => {
+      if (mocks.listeners.get(event) === callback) {
+        mocks.listeners.delete(event);
+      }
+    });
+  });
+  mocks.settingsContext.settings = {};
+  delete (
+    mocks.connection as typeof mocks.connection & { retryAttempts?: number }
+  ).retryAttempts;
+  delete (mocks.connection as typeof mocks.connection & { retryDelay?: number })
+    .retryDelay;
+  mocks.terminalConfig = {};
   mocks.idleMacroRecorder.recordInput.mockReset();
   mocks.macroRecorder = mocks.idleMacroRecorder;
   mocks.runtimePath.transport.vpnPreSteps = [];
@@ -247,6 +275,415 @@ beforeEach(() => {
 });
 
 describe("useWebTerminal input lifecycle", () => {
+  it("shows connecting from the first render until a deferred SSH attempt settles", async () => {
+    let resolveConnect!: (sessionId: string) => void;
+    const deferredConnect = new Promise<string>((resolve) => {
+      resolveConnect = resolve;
+    });
+    const fallbackInvoke = mocks.invoke.getMockImplementation();
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "connect_ssh") return deferredConnect;
+      return fallbackInvoke?.(command, args);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "connect_ssh",
+        expect.anything(),
+      ),
+    );
+    expect((model as WebTerminalMgr | null)?.status).toBe("connecting");
+
+    await act(async () => {
+      resolveConnect("backend-ssh-1");
+      await deferredConnect;
+    });
+    await waitFor(() => expect(model?.status).toBe("connected"));
+  });
+
+  it("maps TCP socket keepalive independently from SSH keepalive", async () => {
+    mocks.terminalConfig = {
+      tcpOptions: {
+        tcpKeepAlive: true,
+        soKeepAlive: false,
+      },
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("connect_ssh", {
+        config: expect.objectContaining({
+          keep_alive_interval: 30,
+          tcp_keepalive: false,
+        }),
+      }),
+    );
+    await waitFor(() => expect(model?.status).toBe("connected"));
+  });
+
+  it("keeps manual reconnect in reconnecting state and ignores the old actor's close", async () => {
+    let connectCalls = 0;
+    let resolveDisconnect!: () => void;
+    const deferredDisconnect = new Promise<void>((resolve) => {
+      resolveDisconnect = resolve;
+    });
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return Promise.resolve(
+          connectCalls === 1 ? "backend-ssh-old" : "backend-ssh-new",
+        );
+      }
+      if (command === "start_shell") {
+        return Promise.resolve(
+          connectCalls === 1 ? "shell-ssh-old" : "shell-ssh-new",
+        );
+      }
+      if (command === "disconnect_ssh") return deferredDisconnect;
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+
+    let reconnect!: Promise<void>;
+    act(() => {
+      reconnect = model!.handleReconnect();
+    });
+    await waitFor(() => expect(model?.status).toBe("reconnecting"));
+    await act(async () => {
+      await model!.handleReconnect();
+    });
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) => command === "disconnect_ssh",
+      ),
+    ).toHaveLength(1);
+    act(() => {
+      emitTauriEvent("ssh-shell-closed", {
+        session_id: "backend-ssh-old",
+        reason: "requested",
+        recoverable: false,
+        message: null,
+      });
+    });
+    expect((model as WebTerminalMgr | null)?.status).toBe("reconnecting");
+
+    await act(async () => {
+      resolveDisconnect();
+      await reconnect;
+    });
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(connectCalls).toBe(2);
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+
+    act(() => {
+      emitTauriEvent("ssh-error", {
+        session_id: "backend-ssh-old",
+        message: "stale transport read",
+      });
+      emitTauriEvent("ssh-shell-closed", {
+        session_id: "backend-ssh-old",
+        reason: "transport_error",
+        recoverable: true,
+        message: "stale transport read",
+      });
+    });
+    await act(async () => Promise.resolve());
+    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+    expect(connectCalls).toBe(2);
+    expect(
+      mocks.MockTerminal.instances[0].writeln.mock.calls.flat().join("\n"),
+    ).not.toContain("Shell closed");
+  });
+
+  it("automatically replaces a recoverably closed actor while preserving the frontend session", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectMaxAttempts: 3,
+      autoReconnectDelaySecs: 0,
+    };
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryAttempts = 3;
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryDelay = 0;
+    let connectCalls = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return Promise.resolve(
+          connectCalls === 1 ? "backend-ssh-old" : "backend-ssh-new",
+        );
+      }
+      if (command === "start_shell") {
+        return Promise.resolve(
+          connectCalls === 1 ? "shell-ssh-old" : "shell-ssh-new",
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+
+    act(() => {
+      emitTauriEvent("ssh-error", {
+        session_id: "backend-ssh-old",
+        message: "transport read",
+      });
+      emitTauriEvent("ssh-shell-closed", {
+        session_id: "backend-ssh-old",
+        reason: "transport_error",
+        recoverable: true,
+        message: "transport read",
+      });
+    });
+
+    await waitFor(() => expect(connectCalls).toBe(2));
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(mocks.MockTerminal.instances).toHaveLength(1);
+    expect(
+      mocks.context.dispatch.mock.calls
+        .map(([action]) => action.payload)
+        .filter(Boolean)
+        .every((payload) => payload.id === session.id),
+    ).toBe(true);
+    expect(
+      mocks.MockTerminal.instances[0].writeln.mock.calls.flat().join("\n"),
+    ).not.toContain("Shell closed");
+  });
+
+  it("uses per-connection exponential delays and caps runtime reconnect scheduling", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectMaxAttempts: 9,
+      autoReconnectDelaySecs: 2,
+      autoReconnectBackoff: "exponential",
+      autoReconnectMaxDelaySecs: 12,
+    };
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryAttempts = 3;
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryDelay = 5_000;
+
+    let connectCalls = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return connectCalls === 1
+          ? Promise.resolve("backend-ssh-old")
+          : Promise.reject(new Error("transport read"));
+      }
+      if (command === "start_shell") return Promise.resolve("shell-ssh-old");
+      return Promise.resolve(undefined);
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() =>
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true),
+    );
+
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const runReconnectTimer = async (delayMs: number) => {
+      const callIndex = timeoutSpy.mock.calls.findIndex(
+        ([, delay]) => delay === delayMs,
+      );
+      expect(callIndex).toBeGreaterThanOrEqual(0);
+      const [callback] = timeoutSpy.mock.calls[callIndex];
+      clearTimeout(
+        timeoutSpy.mock.results[callIndex].value as ReturnType<
+          typeof setTimeout
+        >,
+      );
+      await act(async () => {
+        (callback as () => void)();
+        await Promise.resolve();
+      });
+    };
+
+    act(() => {
+      emitTauriEvent("ssh-shell-closed", {
+        session_id: "backend-ssh-old",
+        reason: "transport_error",
+        recoverable: true,
+        message: "transport read",
+      });
+    });
+    await waitFor(() => {
+      expect(model?.sshFailure).toMatchObject({
+        retryScheduled: true,
+        retryAttempt: 1,
+        maxRetryAttempts: 3,
+        retryDelaySeconds: 5,
+      });
+    });
+
+    await runReconnectTimer(5_000);
+    await waitFor(() => {
+      expect(model?.sshFailure).toMatchObject({
+        retryScheduled: true,
+        retryAttempt: 2,
+        retryDelaySeconds: 10,
+      });
+    });
+
+    await runReconnectTimer(10_000);
+    await waitFor(() => {
+      expect(model?.sshFailure).toMatchObject({
+        retryScheduled: true,
+        retryAttempt: 3,
+        retryDelaySeconds: 12,
+      });
+    });
+
+    view.unmount();
+    timeoutSpy.mockRestore();
+  });
+
+  it("does not start an automatic loop when manual retry follows an initial failure", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectMaxAttempts: 3,
+      autoReconnectDelaySecs: 1,
+    };
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryAttempts = 3;
+    (
+      mocks.connection as typeof mocks.connection & {
+        retryAttempts?: number;
+        retryDelay?: number;
+      }
+    ).retryDelay = 0;
+    let connectCalls = 0;
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return Promise.reject(new Error("transport read"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("error"));
+    expect(connectCalls).toBe(1);
+
+    await act(async () => {
+      await model!.handleReconnect();
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(connectCalls).toBe(2);
+    expect((model as WebTerminalMgr | null)?.status).toBe("error");
+    expect((model as WebTerminalMgr | null)?.sshFailure?.retryScheduled).toBe(
+      false,
+    );
+  });
+
+  it("never auto-reconnects after an explicit disconnect", async () => {
+    mocks.settingsContext.settings = {
+      autoReconnectOnDisconnect: true,
+      autoReconnectMaxAttempts: 3,
+      autoReconnectDelaySecs: 0,
+    };
+    let connectCalls = 0;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return Promise.resolve("backend-ssh-1");
+      }
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "disconnect_ssh") {
+        emitTauriEvent("ssh-shell-closed", {
+          session_id: (args as { sessionId: string }).sessionId,
+          reason: "requested",
+          recoverable: false,
+          message: null,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    await act(async () => {
+      await model?.disconnectSsh();
+    });
+    await waitFor(() => expect(model?.status).toBe("idle"));
+    await act(
+      async () =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        }),
+    );
+    expect(connectCalls).toBe(1);
+  });
+
   it("uses the latest macro recorder without rebuilding the terminal", async () => {
     let model: WebTerminalMgr | null = null;
     const Harness = () => {

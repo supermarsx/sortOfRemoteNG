@@ -186,6 +186,8 @@ export const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     "autoReconnectOnDisconnect",
     "autoReconnectMaxAttempts",
     "autoReconnectDelaySecs",
+    "autoReconnectBackoff",
+    "autoReconnectMaxDelaySecs",
     "notifyOnReconnect",
     "notifyOnConnect",
     "notifyOnDisconnect",

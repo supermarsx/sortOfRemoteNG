@@ -271,11 +271,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                     <InfoTooltip text="Interval in seconds between keep-alive messages sent to prevent idle disconnection." />
                   </label>
                   <NumberInput
-                    value={formData.sshKeepAliveInterval ?? 60}
+                    value={formData.sshKeepAliveInterval ?? 30}
                     onChange={(v: number) =>
                       setFormData({
                         ...formData,
-                        sshKeepAliveInterval: v || 60,
+                        sshKeepAliveInterval: v || 30,
                       })
                     }
                     variant="form"
