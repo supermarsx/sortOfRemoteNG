@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
 import { SettingsManager } from "../../utils/settings/settingsManager";
 import { Connection } from "../../types/connection/connection";
@@ -110,6 +110,7 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
 
   // Fetch backup status from Rust backend
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     const fetchBackupStatus = async () => {
       try {
         const status = await invoke<BackupStatus>("backup_get_status");

@@ -6,12 +6,14 @@ import { SyncBackupStatusBar } from "../../src/components/sync/SyncBackupStatusB
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  isTauri: vi.fn(() => true),
   dispatch: vi.fn(),
   saveSettings: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mocks.invoke,
+  isTauri: mocks.isTauri,
 }));
 
 vi.mock("../../src/contexts/useConnections", () => ({
@@ -57,6 +59,7 @@ const backupStatusFixture = {
 describe("Status popovers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isTauri.mockReturnValue(true);
     mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "backup_get_status") return backupStatusFixture;
       if (command === "backup_list") return [];
@@ -115,5 +118,18 @@ describe("Status popovers", () => {
         screen.queryByTestId("sync-backup-status-popover"),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("does not invoke the native backup status API in a browser runtime", async () => {
+    mocks.isTauri.mockReturnValue(false);
+    render(
+      <>
+        <BackupStatusPopup />
+        <SyncBackupStatusBar />
+      </>,
+    );
+
+    await waitFor(() => expect(mocks.isTauri).toHaveBeenCalled());
+    expect(mocks.invoke).not.toHaveBeenCalled();
   });
 });

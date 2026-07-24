@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import { GlobalSettings } from "../../types/settings/settings";
 
 /**
@@ -11,16 +12,18 @@ export function useWindowTheme(
 ): void {
   useEffect(() => {
     if (!appSettings) return;
-    const window = getCurrentWindow();
     const targetOpacity = appSettings.windowTransparencyEnabled
       ? Math.min(1, Math.max(0, appSettings.windowTransparencyOpacity || 1))
       : 1;
     const root = document.documentElement;
     // Get the current theme colors from CSS variables (set by ThemeManager on body)
     const computedStyle = getComputedStyle(document.body);
-    const background = computedStyle.getPropertyValue('--color-background').trim() || '#111827';
-    const surface = computedStyle.getPropertyValue('--color-surface').trim() || '#1f2937';
-    const border = computedStyle.getPropertyValue('--color-border').trim() || '#374151';
+    const background =
+      computedStyle.getPropertyValue("--color-background").trim() || "#111827";
+    const surface =
+      computedStyle.getPropertyValue("--color-surface").trim() || "#1f2937";
+    const border =
+      computedStyle.getPropertyValue("--color-border").trim() || "#374151";
 
     // Helper to extract RGB values from color
     const extractRgb = (color: string): { r: number; g: number; b: number } => {
@@ -51,33 +54,64 @@ export function useWindowTheme(
     const borderRgb = extractRgb(border);
 
     // Create shades based on theme background color
-    root.style.setProperty("--app-surface-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-surface-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-surface-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
+    root.style.setProperty(
+      "--app-surface-900",
+      `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-surface-800",
+      `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-surface-700",
+      `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`,
+    );
 
     // Lighter shades (derived from surface color)
-    root.style.setProperty("--app-surface-600", `rgba(${Math.min(255, surfaceRgb.r + 20)}, ${Math.min(255, surfaceRgb.g + 20)}, ${Math.min(255, surfaceRgb.b + 20)}, ${alpha})`);
-    root.style.setProperty("--app-surface-500", `rgba(${Math.min(255, surfaceRgb.r + 40)}, ${Math.min(255, surfaceRgb.g + 40)}, ${Math.min(255, surfaceRgb.b + 40)}, ${alpha})`);
+    root.style.setProperty(
+      "--app-surface-600",
+      `rgba(${Math.min(255, surfaceRgb.r + 20)}, ${Math.min(255, surfaceRgb.g + 20)}, ${Math.min(255, surfaceRgb.b + 20)}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-surface-500",
+      `rgba(${Math.min(255, surfaceRgb.r + 40)}, ${Math.min(255, surfaceRgb.g + 40)}, ${Math.min(255, surfaceRgb.b + 40)}, ${alpha})`,
+    );
 
     // Darker shades (derived from background color)
-    root.style.setProperty("--app-slate-950", `rgba(${Math.max(0, bgRgb.r - 15)}, ${Math.max(0, bgRgb.g - 18)}, ${Math.max(0, bgRgb.b - 16)}, ${alpha})`);
-    root.style.setProperty("--app-slate-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-slate-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-slate-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
+    root.style.setProperty(
+      "--app-slate-950",
+      `rgba(${Math.max(0, bgRgb.r - 15)}, ${Math.max(0, bgRgb.g - 18)}, ${Math.max(0, bgRgb.b - 16)}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-slate-900",
+      `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-slate-800",
+      `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`,
+    );
+    root.style.setProperty(
+      "--app-slate-700",
+      `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`,
+    );
 
     document.documentElement.style.backgroundColor =
       appSettings.windowTransparencyEnabled ? "transparent" : "";
     document.body.style.backgroundColor = appSettings.windowTransparencyEnabled
       ? "transparent"
       : "";
+    if (typeof isTauri !== "function" || !isTauri()) return;
+    const window = getCurrentWindow();
     const setBackgroundColor = window.setBackgroundColor;
     if (typeof setBackgroundColor === "function") {
       const windowAlpha = Math.round(255 * targetOpacity);
-      setBackgroundColor([bgRgb.r, bgRgb.g, bgRgb.b, windowAlpha]).catch((error) => {
-        if (!isWindowPermissionError(error)) {
-          console.error("Failed to set window background color:", error);
-        }
-      });
+      setBackgroundColor([bgRgb.r, bgRgb.g, bgRgb.b, windowAlpha]).catch(
+        (error) => {
+          if (!isWindowPermissionError(error)) {
+            console.error("Failed to set window background color:", error);
+          }
+        },
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setBackgroundColor is a stable Tauri API
   }, [

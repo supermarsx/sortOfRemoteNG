@@ -7,18 +7,14 @@
  * unit tests on individual components would miss.
  */
 import React from "react";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-} from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Tauri mocks (hoisted) ────────────────────────────────────────────────
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(undefined),
+  isTauri: vi.fn(() => true),
   transformCallback: vi.fn(),
   SERIALIZE_TO_IPC_FN: "__TAURI_TO_IPC_KEY__",
   Channel: class {
@@ -102,10 +98,16 @@ vi.mock("@tauri-apps/api/path", () => ({
 
 vi.mock("@tauri-apps/api/dpi", () => ({
   LogicalPosition: class LogicalPosition {
-    constructor(public x: number, public y: number) {}
+    constructor(
+      public x: number,
+      public y: number,
+    ) {}
   },
   LogicalSize: class LogicalSize {
-    constructor(public width: number, public height: number) {}
+    constructor(
+      public width: number,
+      public height: number,
+    ) {}
   },
 }));
 
@@ -143,9 +145,13 @@ vi.mock("../../src/components/rdp/rdpCanvas", () => ({
     offscreen = { width: 1920, height: 1080 };
     ctx = {};
     hasPainted = false;
-    paintDirect() { this.hasPainted = true; }
+    paintDirect() {
+      this.hasPainted = true;
+    }
     syncFromVisible() {}
-    applyRegion() { this.hasPainted = true; }
+    applyRegion() {
+      this.hasPainted = true;
+    }
     resize() {}
     blitTo() {}
     blitFull() {}
@@ -190,10 +196,16 @@ vi.mock("../../src/i18n", () => ({
 
 import App from "../../src/App";
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
-import { ToastProvider, useToastContext } from "../../src/contexts/ToastContext";
+import {
+  ToastProvider,
+  useToastContext,
+} from "../../src/contexts/ToastContext";
 import { ErrorBoundary } from "../../src/components/app/ErrorBoundary";
 import { useConnections } from "../../src/contexts/useConnections";
-import { Connection, ConnectionSession } from "../../src/types/connection/connection";
+import {
+  Connection,
+  ConnectionSession,
+} from "../../src/types/connection/connection";
 import { generateId } from "../../src/utils/core/id";
 import { SplashScreen } from "../../src/components/app/SplashScreen";
 import { APP_VERSION } from "../../src/generated/version";
@@ -264,9 +276,7 @@ function ConnectionStateView() {
       <div data-testid="sidebar-collapsed">
         {state.sidebarCollapsed ? "true" : "false"}
       </div>
-      <div data-testid="is-loading">
-        {state.isLoading ? "loading" : "idle"}
-      </div>
+      <div data-testid="is-loading">{state.isLoading ? "loading" : "idle"}</div>
       <div data-testid="filter-search">{state.filter.searchTerm}</div>
       <div data-testid="filter-protocols">
         {state.filter.protocols.join(",")}
@@ -463,7 +473,9 @@ describe("ConnectionProvider state management", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("conn-count")).toHaveTextContent("1");
-      expect(screen.getByTestId("conn-names")).toHaveTextContent("Added Server");
+      expect(screen.getByTestId("conn-names")).toHaveTextContent(
+        "Added Server",
+      );
     });
   });
 
@@ -614,7 +626,9 @@ describe("ConnectionProvider state management", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("sess-names")).toHaveTextContent("Second,First");
+      expect(screen.getByTestId("sess-names")).toHaveTextContent(
+        "Second,First",
+      );
     });
   });
 
@@ -765,7 +779,9 @@ describe("ConnectionProvider state management", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("sess-statuses")).toHaveTextContent("connected");
+      expect(screen.getByTestId("sess-statuses")).toHaveTextContent(
+        "connected",
+      );
     });
   });
 });
@@ -981,13 +997,17 @@ describe("ToolPanel helpers runtime", () => {
   });
 
   it("getToolKeyFromProtocol extracts tool key", () => {
-    expect(getToolKeyFromProtocol("tool:performanceMonitor")).toBe("performanceMonitor");
+    expect(getToolKeyFromProtocol("tool:performanceMonitor")).toBe(
+      "performanceMonitor",
+    );
     expect(getToolKeyFromProtocol("tool:actionLog")).toBe("actionLog");
     expect(getToolKeyFromProtocol("ssh")).toBeNull();
   });
 
   it("getToolProtocol builds protocol string", () => {
-    expect(getToolProtocol("performanceMonitor")).toBe("tool:performanceMonitor");
+    expect(getToolProtocol("performanceMonitor")).toBe(
+      "tool:performanceMonitor",
+    );
     expect(getToolProtocol("wol")).toBe("tool:wol");
   });
 
@@ -1001,20 +1021,31 @@ describe("ToolPanel helpers runtime", () => {
 
   it("TOOL_LABELS contains all tool keys", () => {
     const expectedKeys = [
-      "performanceMonitor", "actionLog", "shortcutManager", "proxyChain",
-      "internalProxy", "wol", "bulkSsh", "scriptManager", "macroManager",
+      "performanceMonitor",
+      "actionLog",
+      "shortcutManager",
+      "proxyChain",
+      "internalProxy",
+      "wol",
+      "bulkSsh",
+      "scriptManager",
+      "macroManager",
       "recordingManager",
     ];
     for (const key of expectedKeys) {
       expect(TOOL_LABELS[key as keyof typeof TOOL_LABELS]).toBeDefined();
-      expect(typeof TOOL_LABELS[key as keyof typeof TOOL_LABELS]).toBe("string");
+      expect(typeof TOOL_LABELS[key as keyof typeof TOOL_LABELS]).toBe(
+        "string",
+      );
     }
   });
 });
 
 describe("SplashScreen runtime", () => {
   it("renders when isLoading is true", () => {
-    const { container } = render(<SplashScreen isLoading={true} progress={0} status="Loading..." />);
+    const { container } = render(
+      <SplashScreen isLoading={true} progress={0} status="Loading..." />,
+    );
     expect(container.querySelector('[class*="fixed"]')).toBeTruthy();
     expect(container).toHaveTextContent(`v${APP_VERSION}`);
   });
@@ -1023,11 +1054,21 @@ describe("SplashScreen runtime", () => {
     const onComplete = vi.fn();
 
     const { rerender } = render(
-      <SplashScreen isLoading={true} progress={50} status="Loading..." onLoadComplete={onComplete} />,
+      <SplashScreen
+        isLoading={true}
+        progress={50}
+        status="Loading..."
+        onLoadComplete={onComplete}
+      />,
     );
 
     rerender(
-      <SplashScreen isLoading={false} progress={100} status="Done" onLoadComplete={onComplete} />,
+      <SplashScreen
+        isLoading={false}
+        progress={100}
+        status="Done"
+        onLoadComplete={onComplete}
+      />,
     );
 
     await waitFor(
@@ -1079,8 +1120,21 @@ describe("Connection type runtime checks", () => {
 
   it("supports all defined protocols", () => {
     const protocols = [
-      "rdp", "ssh", "vnc", "anydesk", "http", "https", "telnet",
-      "rlogin", "mysql", "ftp", "sftp", "scp", "winrm", "rustdesk", "smb",
+      "rdp",
+      "ssh",
+      "vnc",
+      "anydesk",
+      "http",
+      "https",
+      "telnet",
+      "rlogin",
+      "mysql",
+      "ftp",
+      "sftp",
+      "scp",
+      "winrm",
+      "rustdesk",
+      "smb",
     ];
     for (const protocol of protocols) {
       const conn = makeConnection({ protocol: protocol as any, port: 1 });
@@ -1134,7 +1188,9 @@ describe("Multiple connections workflow", () => {
       React.useEffect(() => {
         if (!didAdd.current) {
           didAdd.current = true;
-          conns.forEach((c) => dispatch({ type: "ADD_CONNECTION", payload: c }));
+          conns.forEach((c) =>
+            dispatch({ type: "ADD_CONNECTION", payload: c }),
+          );
         }
       }, [dispatch]);
       return null;
@@ -1221,7 +1277,9 @@ describe("Multiple connections workflow", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("sess-names")).toHaveTextContent("Host A,Host B");
+      expect(screen.getByTestId("sess-names")).toHaveTextContent(
+        "Host A,Host B",
+      );
     });
   });
 });
@@ -1289,14 +1347,19 @@ describe("Connection filter and selection workflow", () => {
       React.useEffect(() => {
         if (step.current === 0) {
           step.current = 1;
-          conns.forEach((c) => dispatch({ type: "ADD_CONNECTION", payload: c }));
+          conns.forEach((c) =>
+            dispatch({ type: "ADD_CONNECTION", payload: c }),
+          );
         }
       }, [dispatch]);
 
       React.useEffect(() => {
         if (step.current === 1 && state.connections.length === 3) {
           step.current = 2;
-          dispatch({ type: "SET_FILTER", payload: { searchTerm: "Production" } });
+          dispatch({
+            type: "SET_FILTER",
+            payload: { searchTerm: "Production" },
+          });
         }
       }, [dispatch, state.connections]);
 
@@ -1336,14 +1399,18 @@ describe("Connection filter and selection workflow", () => {
       React.useEffect(() => {
         if (step.current === 0) {
           step.current = 1;
-          conns.forEach((c) => dispatch({ type: "ADD_CONNECTION", payload: c }));
+          conns.forEach((c) =>
+            dispatch({ type: "ADD_CONNECTION", payload: c }),
+          );
           dispatch({ type: "SET_FILTER", payload: { protocols: ["ssh"] } });
         }
       }, [dispatch]);
 
       const filtered =
         state.filter.protocols.length > 0
-          ? state.connections.filter((c) => state.filter.protocols.includes(c.protocol))
+          ? state.connections.filter((c) =>
+              state.filter.protocols.includes(c.protocol),
+            )
           : state.connections;
 
       return <div data-testid="filtered">{filtered.length}</div>;
@@ -1370,7 +1437,9 @@ describe("Connection filter and selection workflow", () => {
       React.useEffect(() => {
         if (step.current === 0) {
           step.current = 1;
-          conns.forEach((c) => dispatch({ type: "ADD_CONNECTION", payload: c }));
+          conns.forEach((c) =>
+            dispatch({ type: "ADD_CONNECTION", payload: c }),
+          );
           dispatch({ type: "SET_FILTER", payload: { tags: ["prod"] } });
         }
       }, [dispatch]);
@@ -1405,7 +1474,9 @@ describe("Connection filter and selection workflow", () => {
       React.useEffect(() => {
         if (step.current === 0) {
           step.current = 1;
-          conns.forEach((c) => dispatch({ type: "ADD_CONNECTION", payload: c }));
+          conns.forEach((c) =>
+            dispatch({ type: "ADD_CONNECTION", payload: c }),
+          );
           dispatch({ type: "SET_FILTER", payload: { showFavorites: true } });
         }
       }, [dispatch]);
@@ -1452,7 +1523,10 @@ describe("Session lifecycle simulation", () => {
             type: "UPDATE_SESSION",
             payload: { ...session, status: "connected" },
           });
-        } else if (step.current === 2 && state.sessions[0]?.status === "connected") {
+        } else if (
+          step.current === 2 &&
+          state.sessions[0]?.status === "connected"
+        ) {
           step.current = 3;
           dispatch({ type: "REMOVE_SESSION", payload: session.id });
         }
@@ -1514,16 +1588,39 @@ describe("Theme and settings defaults", () => {
 
   it("default settings have valid theme values", () => {
     const settings = SettingsManager.getInstance().getSettings();
-    const validThemes = ["dark", "light", "auto", "darkest", "oled", "semilight"];
+    const validThemes = [
+      "dark",
+      "light",
+      "auto",
+      "darkest",
+      "oled",
+      "semilight",
+    ];
     expect(validThemes).toContain(settings.theme);
   });
 
   it("default settings have valid color scheme", () => {
     const settings = SettingsManager.getInstance().getSettings();
     const validSchemes = [
-      "red", "rose", "pink", "orange", "amber", "yellow", "lime",
-      "green", "emerald", "teal", "cyan", "sky", "blue", "indigo",
-      "violet", "purple", "fuchsia", "slate", "grey",
+      "red",
+      "rose",
+      "pink",
+      "orange",
+      "amber",
+      "yellow",
+      "lime",
+      "green",
+      "emerald",
+      "teal",
+      "cyan",
+      "sky",
+      "blue",
+      "indigo",
+      "violet",
+      "purple",
+      "fuchsia",
+      "slate",
+      "grey",
     ];
     expect(validSchemes).toContain(settings.colorScheme);
   });
@@ -1578,7 +1675,9 @@ describe("Concurrent operations stress test", () => {
       React.useEffect(() => {
         if (step.current === 0) {
           step.current = 1;
-          sessions.forEach((s) => dispatch({ type: "ADD_SESSION", payload: s }));
+          sessions.forEach((s) =>
+            dispatch({ type: "ADD_SESSION", payload: s }),
+          );
         }
       }, [dispatch]);
 

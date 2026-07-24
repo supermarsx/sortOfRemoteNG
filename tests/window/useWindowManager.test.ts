@@ -8,9 +8,16 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string, f?: string) => f || k }),
 }));
 
-const { mockEmitTo, mockWindowListeners } = vi.hoisted(() => ({
+const { mockEmitTo, mockWindowListeners, mockIsTauri } = vi.hoisted(() => ({
   mockEmitTo: vi.fn().mockResolvedValue(undefined),
   mockWindowListeners: new Map<string, (event: { payload: any }) => void>(),
+  mockIsTauri: vi.fn(() => true),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: mockIsTauri,
+  invoke: vi.fn().mockResolvedValue(1),
+  transformCallback: vi.fn(() => 1),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -85,6 +92,7 @@ describe("useWindowManager", () => {
     vi.clearAllMocks();
     mockWindowListeners.clear();
     mockEmitTo.mockResolvedValue(undefined);
+    mockIsTauri.mockReturnValue(true);
   });
 
   it("initializes with a main window in the registry", () => {
@@ -92,6 +100,13 @@ describe("useWindowManager", () => {
     const reg = result.current.registry.current;
     expect(reg.windows.has("main")).toBe(true);
     expect(reg.windows.get("main")!.windowId).toBe("main");
+  });
+
+  it("does not subscribe to native window events in a browser runtime", async () => {
+    mockIsTauri.mockReturnValue(false);
+    renderWindowManager();
+    await act(async () => Promise.resolve());
+    expect(mockWindowListeners.size).toBe(0);
   });
 
   it("main window entry contains session IDs for non-detached sessions", () => {

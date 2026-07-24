@@ -1,12 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
-import {
-  repatriateWindow,
-} from "../../utils/window/windowRepatriation";
+import { repatriateWindow } from "../../utils/window/windowRepatriation";
 
 export interface WindowControlsReturn {
   isAlwaysOnTop: boolean;
@@ -20,6 +18,8 @@ export interface WindowControlsReturn {
   handleClose: () => Promise<void>;
 }
 
+const hasTauriRuntime = () => typeof isTauri === "function" && isTauri();
+
 export function useWindowControls(
   appSettings: GlobalSettings,
   settingsManager: SettingsManager,
@@ -27,6 +27,7 @@ export function useWindowControls(
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
   useEffect(() => {
+    if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
     window.isAlwaysOnTop().then(setIsAlwaysOnTop).catch(console.error);
   }, []);
@@ -41,18 +42,23 @@ export function useWindowControls(
   }, []);
 
   const handleMinimize = async () => {
+    if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
     await window.minimize();
   };
 
   const handleToggleTransparency = async () => {
     const nextValue = !appSettings.windowTransparencyEnabled;
-    await settingsManager.saveSettings({
-      windowTransparencyEnabled: nextValue,
-    }, { silent: true });
+    await settingsManager.saveSettings(
+      {
+        windowTransparencyEnabled: nextValue,
+      },
+      { silent: true },
+    );
   };
 
   const handleToggleAlwaysOnTop = async () => {
+    if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
     const nextValue = !isAlwaysOnTop;
     await window.setAlwaysOnTop(nextValue);
@@ -60,13 +66,14 @@ export function useWindowControls(
   };
 
   const handleRepatriateWindow = async () => {
+    if (!hasTauriRuntime()) return;
     try {
       const result = await repatriateWindow(true);
       if (result.wasOffScreen) {
         console.log(
           `Window repatriated from (${result.previousPosition.x}, ${result.previousPosition.y}) ` +
             `to (${result.newPosition.x}, ${result.newPosition.y})` +
-            (result.targetMonitor ? ` on ${result.targetMonitor}` : "")
+            (result.targetMonitor ? ` on ${result.targetMonitor}` : ""),
         );
       } else {
         // Window is already on screen, just center it
@@ -86,6 +93,7 @@ export function useWindowControls(
   };
 
   const handleMaximize = async () => {
+    if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
     const isMaximized = await window.isMaximized();
     if (isMaximized) {
@@ -100,10 +108,12 @@ export function useWindowControls(
   };
 
   const handleOpenDevtools = async () => {
+    if (!hasTauriRuntime()) return;
     await invoke("open_devtools");
   };
 
   const handleClose = async () => {
+    if (!hasTauriRuntime()) return;
     const window = getCurrentWindow();
     await window.close();
   };

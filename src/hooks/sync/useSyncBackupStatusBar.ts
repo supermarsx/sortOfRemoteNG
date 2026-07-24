@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { CloudSyncProvider } from "../../types/settings/settings";
 import { providersFromCloudSyncConfig } from "../../utils/services/cloudSyncService";
 
@@ -82,6 +82,7 @@ export function useSyncBackupStatusBar(
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     const fetchBackupStatus = async () => {
       try {
         const status = await invoke<BackupStatus>("backup_get_status");

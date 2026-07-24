@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "@tauri-apps/api/core";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { GlobalSettings } from "../../types/settings/settings";
 import { SettingsManager } from "../../utils/settings/settingsManager";
@@ -18,7 +19,9 @@ export function useWindowPersistence(
   sidebarPosition: "left" | "right",
   setSidebarPosition: React.Dispatch<React.SetStateAction<"left" | "right">>,
   sidebarCollapsed: boolean,
-  dispatch: React.Dispatch<{ type: "SET_SIDEBAR_COLLAPSED"; payload: boolean } | any>,
+  dispatch: React.Dispatch<
+    { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean } | any
+  >,
 ): void {
   const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -48,7 +51,7 @@ export function useWindowPersistence(
 
   // Restore window size and position
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || typeof isTauri !== "function" || !isTauri()) return;
 
     const window = getCurrentWindow();
 
@@ -64,11 +67,13 @@ export function useWindowPersistence(
       // Validate and enforce minimum size
       const validWidth = Math.max(width || MIN_WIDTH, MIN_WIDTH);
       const validHeight = Math.max(height || MIN_HEIGHT, MIN_HEIGHT);
-      window.setSize(new LogicalSize(validWidth, validHeight)).catch((error) => {
-        if (!isWindowPermissionError(error)) {
-          console.error(error);
-        }
-      });
+      window
+        .setSize(new LogicalSize(validWidth, validHeight))
+        .catch((error) => {
+          if (!isWindowPermissionError(error)) {
+            console.error(error);
+          }
+        });
     }
 
     if (appSettings.persistWindowPosition && appSettings.windowPosition) {
@@ -77,17 +82,23 @@ export function useWindowPersistence(
       if (appSettings.autoRepatriateWindow) {
         validateSavedPosition(
           { x: x ?? 0, y: y ?? 0 },
-          { width: savedWidth, height: savedHeight }
+          { width: savedWidth, height: savedHeight },
         )
           .then((result) => {
             if (result) {
-              window.setPosition(new LogicalPosition(result.position.x, result.position.y)).catch((error) => {
-                if (!isWindowPermissionError(error)) {
-                  console.error(error);
-                }
-              });
+              window
+                .setPosition(
+                  new LogicalPosition(result.position.x, result.position.y),
+                )
+                .catch((error) => {
+                  if (!isWindowPermissionError(error)) {
+                    console.error(error);
+                  }
+                });
               if (result.adjusted) {
-                console.log("Window position adjusted: saved position was off-screen");
+                console.log(
+                  "Window position adjusted: saved position was off-screen",
+                );
               }
             } else {
               // Fallback: center the window
@@ -97,17 +108,21 @@ export function useWindowPersistence(
           .catch((error) => {
             console.error("Failed to validate window position:", error);
             // Fallback to saved position
-            window.setPosition(new LogicalPosition(x ?? 0, y ?? 0)).catch(console.error);
+            window
+              .setPosition(new LogicalPosition(x ?? 0, y ?? 0))
+              .catch(console.error);
           });
       } else {
         // Allow negative coordinates for multi-monitor setups without validation
         const validX = x ?? 0;
         const validY = y ?? 0;
-        window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
-          if (!isWindowPermissionError(error)) {
-            console.error(error);
-          }
-        });
+        window
+          .setPosition(new LogicalPosition(validX, validY))
+          .catch((error) => {
+            if (!isWindowPermissionError(error)) {
+              console.error(error);
+            }
+          });
       }
     }
   }, [
@@ -122,7 +137,7 @@ export function useWindowPersistence(
 
   // Listen for window resize/move events and persist
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || typeof isTauri !== "function" || !isTauri()) return;
 
     const window = getCurrentWindow();
     let unlistenResize: (() => void) | undefined;
@@ -242,7 +257,9 @@ export function useWindowPersistence(
       }
 
       if (Object.keys(updates).length > 0) {
-        settingsManager.saveSettings(updates, { silent: true }).catch(console.error);
+        settingsManager
+          .saveSettings(updates, { silent: true })
+          .catch(console.error);
       }
     }, 300);
 

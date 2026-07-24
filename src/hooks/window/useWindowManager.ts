@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import {
   ConnectionSession,
   Connection,
@@ -666,6 +667,7 @@ export function useWindowManager({
   handleCommandRef.current = handleCommand;
 
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     let unlisten: (() => void) | null = null;
     let mounted = true;
 
@@ -691,6 +693,7 @@ export function useWindowManager({
   // chooses "Connect in New Window" or "Connect in Window > X".
 
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     const cleanups: Array<() => void> = [];
     let mounted = true;
 
@@ -750,6 +753,7 @@ export function useWindowManager({
   // ── Periodic orphan detection ──────────────────────────────────────
 
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     const interval = setInterval(async () => {
       try {
         const { getAllWindows } = await import("@tauri-apps/api/window");

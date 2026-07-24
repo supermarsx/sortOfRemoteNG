@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ShieldAlert, ShieldCheck, ShieldX, AlertTriangle } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
 
@@ -36,6 +36,7 @@ export const RDPCertTrustPrompt: React.FC = () => {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   useEffect(() => {
+    if (typeof isTauri !== "function" || !isTauri()) return;
     const unlisteners: Array<() => void> = [];
     let mounted = true;
 
@@ -47,8 +48,14 @@ export const RDPCertTrustPrompt: React.FC = () => {
         setSecondsLeft(event.payload.timeoutSecs);
       };
 
-      const u1 = await listen<CertTrustPrompt>("rdp://cert-trust-prompt", handle);
-      const u2 = await listen<CertTrustPrompt>("rdp://cert-trust-change", handle);
+      const u1 = await listen<CertTrustPrompt>(
+        "rdp://cert-trust-prompt",
+        handle,
+      );
+      const u2 = await listen<CertTrustPrompt>(
+        "rdp://cert-trust-change",
+        handle,
+      );
       unlisteners.push(u1, u2);
     };
 
@@ -63,7 +70,10 @@ export const RDPCertTrustPrompt: React.FC = () => {
   useEffect(() => {
     if (!prompt || secondsLeft === null) return;
     if (secondsLeft <= 0) return;
-    const id = setTimeout(() => setSecondsLeft((s) => (s === null ? null : s - 1)), 1000);
+    const id = setTimeout(
+      () => setSecondsLeft((s) => (s === null ? null : s - 1)),
+      1000,
+    );
     return () => clearTimeout(id);
   }, [prompt, secondsLeft]);
 
@@ -123,17 +133,24 @@ export const RDPCertTrustPrompt: React.FC = () => {
             <p className="text-sm text-[var(--color-textSecondary)] mb-4">
               {isChanged ? (
                 <>
-                  The RDP certificate for <strong>{prompt.host}:{prompt.port}</strong>{" "}
+                  The RDP certificate for{" "}
+                  <strong>
+                    {prompt.host}:{prompt.port}
+                  </strong>{" "}
                   doesn&apos;t match the one previously trusted. This can be a
-                  legitimate cert rotation — or an active man-in-the-middle. Verify
-                  the new fingerprint with the server admin before approving.
+                  legitimate cert rotation — or an active man-in-the-middle.
+                  Verify the new fingerprint with the server admin before
+                  approving.
                 </>
               ) : (
                 <>
-                  The RDP certificate presented by <strong>{prompt.host}:{prompt.port}</strong>{" "}
-                  isn&apos;t trusted by your system. This is normal for self-signed
-                  or internal-CA hosts. Verify the fingerprint with the server admin
-                  before approving.
+                  The RDP certificate presented by{" "}
+                  <strong>
+                    {prompt.host}:{prompt.port}
+                  </strong>{" "}
+                  isn&apos;t trusted by your system. This is normal for
+                  self-signed or internal-CA hosts. Verify the fingerprint with
+                  the server admin before approving.
                 </>
               )}
             </p>
@@ -149,17 +166,25 @@ export const RDPCertTrustPrompt: React.FC = () => {
 
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs mb-4">
               <dt className="text-[var(--color-textMuted)]">Subject</dt>
-              <dd className="text-[var(--color-text)] break-all font-mono">{prompt.subject}</dd>
+              <dd className="text-[var(--color-text)] break-all font-mono">
+                {prompt.subject}
+              </dd>
               <dt className="text-[var(--color-textMuted)]">Issuer</dt>
-              <dd className="text-[var(--color-text)] break-all font-mono">{prompt.issuer}</dd>
+              <dd className="text-[var(--color-text)] break-all font-mono">
+                {prompt.issuer}
+              </dd>
               <dt className="text-[var(--color-textMuted)]">Valid</dt>
               <dd className="text-[var(--color-text)] font-mono">
                 {prompt.validFrom} — {prompt.validTo}
               </dd>
               <dt className="text-[var(--color-textMuted)]">Serial</dt>
-              <dd className="text-[var(--color-text)] break-all font-mono">{prompt.serial}</dd>
+              <dd className="text-[var(--color-text)] break-all font-mono">
+                {prompt.serial}
+              </dd>
               <dt className="text-[var(--color-textMuted)]">Algorithm</dt>
-              <dd className="text-[var(--color-text)] font-mono">{prompt.signatureAlgorithm}</dd>
+              <dd className="text-[var(--color-text)] font-mono">
+                {prompt.signatureAlgorithm}
+              </dd>
               {prompt.san.length > 0 && (
                 <>
                   <dt className="text-[var(--color-textMuted)]">SAN</dt>
