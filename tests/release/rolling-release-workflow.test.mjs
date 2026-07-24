@@ -379,18 +379,22 @@ test("Windows ARM64 QuickJS builds map alloca to the MSVC intrinsic", () => {
 
   assert.match(
     buildDefinition,
-    /# QuickJS calls the POSIX spelling `alloca`, while MSVC ARM64 exposes the\r?\n\s+# stack-allocation intrinsic as `_alloca`\. cc-rs reads this normalized,\r?\n\s+# target-specific CFLAGS key for both native and target QuickJS builds\.\r?\n\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca/,
+    /# QuickJS calls the POSIX spelling `alloca`, while MSVC ARM64 exposes the\r?\n\s+# stack-allocation intrinsic as `_alloca`\. Use the compiler-neutral `-D`\r?\n\s+# spelling because this target also builds ring assembly with clang\.\r?\n\s+CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca/,
   );
   assert.equal(
     (
       releaseWorkflow.match(
-        /^\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca$/gm,
+        /^\s+CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca$/gm,
       ) ?? []
     ).length,
     1,
   );
+  assert.doesNotMatch(
+    buildDefinition,
+    /^\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca$/m,
+  );
   assert.ok(
-    buildJob.indexOf("CFLAGS_aarch64_pc_windows_msvc: /Dalloca=_alloca") <
+    buildJob.indexOf("CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca") <
       buildJob.indexOf("- name: Build native bundles with static Kafka"),
   );
 });
