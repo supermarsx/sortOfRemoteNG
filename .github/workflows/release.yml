@@ -1355,6 +1355,35 @@ jobs:
 
               expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
               expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
+              normalize_deb_file_list() {
+                awk '
+                  $1 ~ /^-/ {
+                    path = $NF
+                    sub(/^\.\//, "", path)
+                    sub(/^\/+/, "", path)
+                    if (path == "" || path ~ /(^|\/)\.\.?(\/|$)/) {
+                      printf "::error::Unsafe DEB payload path %s.\n", $NF > "/dev/stderr"
+                      invalid = 1
+                      next
+                    }
+                    print "/" path
+                  }
+                  END {
+                    if (invalid) {
+                      exit 1
+                    }
+                  }
+                '
+              }
+              relative_deb_files_under_exact_root() {
+                local root="${1%/}"
+                test -n "$root"
+                awk -v prefix="$root/" '
+                  index($0, prefix) == 1 {
+                    print substr($0, length(prefix) + 1)
+                  }
+                '
+              }
               opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
               expected_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-opkssh-files.txt"
               (
@@ -1381,12 +1410,15 @@ jobs:
 
               deb_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-deb-files.txt"
               dpkg-deb -c "$deb_source" | tee "$deb_file_list"
-              grep -Eq "[[:space:]]\\.${expected_binary_path}$" "$deb_file_list"
-              grep -Eq "[[:space:]]\\.${expected_resource_root}/.+[^/]$" "$deb_file_list"
+              deb_payload_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-payload-files.txt"
+              normalize_deb_file_list < "$deb_file_list" |
+                LC_ALL=C sort > "$deb_payload_files"
+              test -s "$deb_payload_files"
+              grep -Fx "$expected_binary_path" "$deb_payload_files"
+              grep -Eq "^${expected_resource_root}/.+[^/]$" "$deb_payload_files"
               deb_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-opkssh-files.txt"
-              awk -v prefix=".${expected_resource_root}/" \
-                '$1 ~ /^-/ && index($NF, prefix) == 1 { print substr($NF, length(prefix) + 1) }' \
-                "$deb_file_list" |
+              relative_deb_files_under_exact_root "$expected_resource_root" \
+                < "$deb_payload_files" |
                 grep -Ev '(^|/)\.gitkeep$' |
                 LC_ALL=C sort > "$deb_resource_files"
               diff -u "$expected_resource_files" "$deb_resource_files"

@@ -129,6 +129,27 @@ function extractQuotedHeredoc(script, delimiter) {
   return match[1];
 }
 
+function extractShellFunction(script, functionName) {
+  const escapedName = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = script.match(
+    new RegExp(`^([ \\t]*)${escapedName}\\(\\) \\{\\n[\\s\\S]*?^\\1\\}`, "m"),
+  );
+  assert.ok(match, `workflow script must define ${functionName}`);
+  return match[0];
+}
+
+function runBashSnippet(program) {
+  const command = process.platform === "win32" ? "wsl.exe" : "bash";
+  const args = process.platform === "win32" ? ["--exec", "bash", "-s"] : ["-s"];
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    input: `${program}\n`,
+    env: process.env,
+  });
+  assert.ifError(result.error);
+  return result;
+}
+
 function releaseIdHelperProgram() {
   const helperStart = releaseWorkflow.indexOf(
     "- name: Install immutable release-ID helpers",
@@ -1227,6 +1248,100 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(releaseWorkflow, /expected_asset_count=22/);
   assert.match(releaseWorkflow, /expected_asset_count=31/);
   assert.doesNotMatch(updaterFeed, /\.(?:rpm|flatpak)/);
+});
+
+test("DEB staging canonicalizes supported dpkg paths before exact validation", () => {
+  const stageStart = releaseWorkflow.indexOf(
+    "- name: Stage architecture-specific release assets",
+  );
+  const stageEnd = releaseWorkflow.indexOf(
+    "- name: Validate staged version metadata",
+    stageStart,
+  );
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+
+  const stageScript = extractLiteralRunScript(
+    releaseWorkflow.slice(stageStart, stageEnd),
+  );
+  const normalizer = extractShellFunction(
+    stageScript,
+    "normalize_deb_file_list",
+  );
+  const resourceExtractor = extractShellFunction(
+    stageScript,
+    "relative_deb_files_under_exact_root",
+  );
+  const expectedPayload = [
+    "/usr/bin/app",
+    "/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so",
+  ].join("\n");
+
+  for (const prefix of ["usr", "./usr"]) {
+    const listing = [
+      `-rwxr-xr-x 0/0 42 2026-07-24 09:22 ${prefix}/bin/app`,
+      `-rwxr-xr-x 0/0 17 2026-07-24 09:22 ${prefix}/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so`,
+    ].join("\n");
+    const result = runBashSnippet(String.raw`
+set -euo pipefail
+${normalizer}
+cat <<'DPKG_LIST' | normalize_deb_file_list
+${listing}
+DPKG_LIST
+`);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout.trim(), expectedPayload);
+  }
+
+  const exactResourceResult = runBashSnippet(String.raw`
+set -euo pipefail
+${resourceExtractor}
+cat <<'NORMALIZED_PATHS' | relative_deb_files_under_exact_root "/usr/lib/sortOfRemoteNG/opkssh"
+/opt/cache/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/unrelated.so
+/usr/lib/sortOfRemoteNG/opkssh-evil/linux-amd64/unrelated.so
+/usr/lib/sortOfRemoteNG/opkssh/linux-amd64/libsorng_opkssh_vendor.so
+NORMALIZED_PATHS
+`);
+  assert.equal(
+    exactResourceResult.status,
+    0,
+    `${exactResourceResult.stdout}\n${exactResourceResult.stderr}`,
+  );
+  assert.equal(
+    exactResourceResult.stdout.trim(),
+    "linux-amd64/libsorng_opkssh_vendor.so",
+  );
+
+  const unrelatedBinaryResult = runBashSnippet(String.raw`
+set -o pipefail
+${normalizer}
+cat <<'DPKG_LIST' | normalize_deb_file_list | grep -Fx "/usr/bin/app"
+-rwxr-xr-x 0/0 42 2026-07-24 09:22 opt/cache/usr/bin/app
+DPKG_LIST
+`);
+  assert.notEqual(unrelatedBinaryResult.status, 0);
+
+  const traversalResult = runBashSnippet(String.raw`
+set -o pipefail
+${normalizer}
+cat <<'DPKG_LIST' | normalize_deb_file_list
+-rwxr-xr-x 0/0 42 2026-07-24 09:22 usr/lib/sortOfRemoteNG/opkssh/../escape.so
+DPKG_LIST
+`);
+  assert.notEqual(traversalResult.status, 0);
+  assert.match(traversalResult.stderr, /Unsafe DEB payload path/);
+
+  assert.match(
+    stageScript,
+    /grep -Fx "\$expected_binary_path" "\$deb_payload_files"/,
+  );
+  assert.match(
+    stageScript,
+    /relative_deb_files_under_exact_root "\$expected_resource_root"[\s\\]+< "\$deb_payload_files"/,
+  );
+  assert.doesNotMatch(
+    stageScript,
+    /grep -E[qx]* "[^"]*\$\{expected_binary_path\}/,
+  );
 });
 
 test("platform resource inspection is exact and immediately precedes native building", () => {
