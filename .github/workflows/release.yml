@@ -925,7 +925,7 @@ jobs:
             "flatpak-builder=${FLATPAK_BUILDER_PACKAGE}"
           flatpak_builder_version_output=$(flatpak-builder --version)
           printf 'flatpak_builder_version_output=%s\n' "$flatpak_builder_version_output"
-          flatpak_builder_version_pattern='^flatpak-builder([[:space:]]+|-)([0-9]+\.[0-9]+\.[0-9]+)([[:space:]].*)?$'
+          flatpak_builder_version_pattern='^flatpak-builder([[:space:]]+|-)([0-9]+\.[0-9]+\.[0-9]+)([[:space:]]+\(libflatpak version [0-9]+\.[0-9]+\.[0-9]+\))?$'
           if [[ "$flatpak_builder_version_output" == *$'\n'* ]] ||
              [[ ! "$flatpak_builder_version_output" =~ $flatpak_builder_version_pattern ]]; then
             echo "::error::flatpak-builder returned an invalid version string: $flatpak_builder_version_output"

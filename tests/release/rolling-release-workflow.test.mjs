@@ -1045,7 +1045,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakSetup,
-    /flatpak_builder_version_pattern='\^flatpak-builder\(\[\[:space:\]\]\+\|-\)\(\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\)\(\[\[:space:\]\]\.\*\)\?\$'/,
+    /flatpak_builder_version_pattern='\^flatpak-builder\(\[\[:space:\]\]\+\|-\)\(\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\)\(\[\[:space:\]\]\+\\\(libflatpak version \[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\\\)\)\?\$'/,
   );
   assert.match(
     flatpakSetup,
@@ -1060,7 +1060,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     /if \[ "\$actual_flatpak_builder_version" != "\$FLATPAK_BUILDER_VERSION" \]; then/,
   );
   const flatpakBuilderVersionPattern =
-    /^flatpak-builder(?:\s+|-)([0-9]+\.[0-9]+\.[0-9]+)(\s.*)?$/;
+    /^flatpak-builder(?:\s+|-)([0-9]+\.[0-9]+\.[0-9]+)(?:\s+\(libflatpak version [0-9]+\.[0-9]+\.[0-9]+\))?$/;
   const parseFlatpakBuilderVersion = (output) =>
     output.includes("\n")
       ? undefined
@@ -1069,12 +1069,14 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     "flatpak-builder 1.4.2",
     "flatpak-builder-1.4.2",
     "flatpak-builder 1.4.2 (libflatpak version 1.14.6)",
+    "flatpak-builder-1.4.2 (libflatpak version 1.14.6)",
   ]) {
     assert.equal(parseFlatpakBuilderVersion(accepted), "1.4.2");
   }
   for (const rejected of [
     "flatpak-builder 1.4.20",
     "flatpak-builder 1.4.2ubuntu1",
+    "flatpak-builder 1.4.2 garbage",
     "flatpak-builder--1.4.2",
     "flatpak-builder v1.4.2",
     "flatpak-builder 1.4.2\nunexpected",
