@@ -20,6 +20,8 @@ import { useConnections } from "../../contexts/useConnections";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSessionFullscreen } from "../session/useSessionFullscreen";
+import { debugLog } from "../../utils/core/debugLogger";
 import {
   mergeSSHTerminalConfig,
   mergeSSHConnectionConfig,
@@ -58,6 +60,8 @@ import {
 } from "../../utils/network/sessionVpnLeaseCleanup";
 import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
+import { appendSSHSessionActivity } from "../../utils/ssh/sshSessionActivity";
+import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 import {
   cancelSessionLifecycleActorAttempts,
   finishSessionLifecycleActorAttempt,
@@ -205,6 +209,7 @@ export function useWebTerminal(
   const protectedVpnLeaseOwnersRef = useRef(new Set<string>());
   const sshInitGenRef = useRef(0);
   const isSshReady = useRef(false);
+  const hasRecordedConnectedActivityRef = useRef(false);
   const isConnecting = useRef(false);
   const isDisposed = useRef(false);
   const outputUnlistenRef = useRef<(() => void) | null>(null);
@@ -214,7 +219,6 @@ export function useWebTerminal(
   /* ── UI state ── */
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [error, setError] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   /* ── Script selector state ── */
   const [showScriptSelector, setShowScriptSelector] = useState(false);
@@ -262,6 +266,7 @@ export function useWebTerminal(
 
   /* ── SSH command history ── */
   const commandHistory = useSSHCommandHistory(session.id);
+  const addCommandHistoryEntry = commandHistory.addEntry;
 
   /* ── Stable refs for callbacks ── */
   const sessionRef = useRef(session);
@@ -449,11 +454,38 @@ export function useWebTerminal(
    * SSH helpers
    * ────────────────────────────────────────────────────────────── */
 
-  const setStatusState = useCallback((next: ConnectionStatus) => {
-    setStatus(next);
-    isConnecting.current = next === "connecting";
-    isSshReady.current = next === "connected";
-  }, []);
+  const recordSshLifecycleActivity = useCallback(
+    (kind: "connected" | "disconnected") => {
+      const currentSession = sessionRef.current;
+      appendSSHSessionActivity({
+        sessionId: currentSession.id,
+        sessionName: currentSession.name,
+        hostname: currentSession.hostname ?? "",
+        kind,
+      });
+    },
+    [],
+  );
+
+  const setStatusState = useCallback(
+    (next: ConnectionStatus) => {
+      const wasSshReady = isSshReady.current;
+      setStatus(next);
+      isConnecting.current = next === "connecting";
+      isSshReady.current = next === "connected";
+      if (
+        isSsh &&
+        next === "connected" &&
+        !wasSshReady &&
+        sshSessionId.current &&
+        !hasRecordedConnectedActivityRef.current
+      ) {
+        hasRecordedConnectedActivityRef.current = true;
+        recordSshLifecycleActivity("connected");
+      }
+    },
+    [isSsh, recordSshLifecycleActivity],
+  );
 
   /* ── Buffer serialize / restore ── */
 
@@ -838,6 +870,8 @@ export function useWebTerminal(
       const hadManagedState =
         backendSessionIds.length > 0 ||
         trackedVpnLeaseOwnerIds(vpnLeaseOwnersRef.current).length > 0;
+      let allBackendActorsClosed = true;
+      let cleanupFailureMessage: string | null = null;
       for (const backendSessionId of backendSessionIds) {
         const pendingOwnerId =
           pendingSshBackendOwnersRef.current.get(backendSessionId);
@@ -905,22 +939,33 @@ export function useWebTerminal(
             pendingSshBackendOwnersRef.current.delete(backendSessionId);
           }
         }
+        allBackendActorsClosed &&= cleanup.backendClosed;
         if (
           !cleanup.backendClosed ||
           cleanup.failures.length > 0 ||
           cleanup.blockedReason
         ) {
-          const message =
+          cleanupFailureMessage ??=
             cleanup.sessions[0]?.errorMessage ??
             cleanup.blockedReason ??
             "SSH cleanup could not be completed. Retry disconnect.";
-          setStatusState("error");
-          setError(message);
-          return false;
         }
         if (sshSessionId.current === backendSessionId) {
           sshSessionId.current = null;
         }
+      }
+      if (
+        backendSessionIds.length > 0 &&
+        allBackendActorsClosed &&
+        hasRecordedConnectedActivityRef.current
+      ) {
+        recordSshLifecycleActivity("disconnected");
+        hasRecordedConnectedActivityRef.current = false;
+      }
+      if (cleanupFailureMessage) {
+        setStatusState("error");
+        setError(cleanupFailureMessage);
+        return false;
       }
       if (backendSessionIds.length > 0) {
         isSshReady.current = false;
@@ -971,7 +1016,13 @@ export function useWebTerminal(
       dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
       return true;
     },
-    [dispatch, setStatusState, settleVpnLeaseOwner, writeLine],
+    [
+      dispatch,
+      recordSshLifecycleActivity,
+      setStatusState,
+      settleVpnLeaseOwner,
+      writeLine,
+    ],
   );
 
   const disconnectSsh = useCallback(async (): Promise<boolean> => {
@@ -1723,7 +1774,7 @@ export function useWebTerminal(
           secrets,
         );
         const classification = classifySshError(details.message);
-        console.error("SSH connection failed:", {
+        debugLog("SSH connection failed:", {
           kind: classification.kind,
           message: details.message,
           name: details.name,
@@ -1840,72 +1891,128 @@ export function useWebTerminal(
         isConnecting.current
       )
         return;
-      try {
-        const lines = script.script
-          .split("\n")
-          .filter((line) => !line.startsWith("#!"));
-        const command = lines.join("\n");
-        const isSingleLine = lines.length === 1;
+      const targetSessionId = sshSessionId.current;
+      const currentSession = sessionRef.current;
+      const lines = script.script
+        .split("\n")
+        .filter((line) => !line.startsWith("#!"));
+      const command = lines.join("\n");
+      const isSingleLine = lines.length === 1;
+      const recordExecution = (
+        execution: Omit<
+          CommandExecution,
+          "sessionId" | "sessionName" | "hostname" | "source"
+        >,
+      ) => {
+        addCommandHistoryEntry(command, [
+          {
+            sessionId: currentSession.id,
+            sessionName: currentSession.name,
+            hostname: currentSession.hostname ?? "",
+            source: "web-terminal-script",
+            ...execution,
+          },
+        ]);
+      };
 
-        if (isSingleLine) {
+      if (isSingleLine) {
+        try {
           // Single-line: pipe directly into the shell
           await invoke("send_ssh_input", {
-            sessionId: sshSessionId.current,
+            sessionId: targetSessionId,
             data: command + "\n",
           });
-        } else {
-          // Multi-line: upload as temp file on the remote server, execute, capture output, clean up
-          const interpreter =
-            script.language === "powershell"
-              ? "powershell"
-              : script.language === "sh"
-                ? "sh"
-                : "bash";
-
-          try {
-            const result = await invoke<{
-              stdout: string;
-              stderr: string;
-              exitCode: number;
-            }>("execute_script", {
-              sessionId: sshSessionId.current,
-              script: command,
-              interpreter,
-            });
-            const term = termRef.current;
-            if (term) {
-              term.write(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
-              if (result.stdout) {
-                for (const line of result.stdout.split("\n")) {
-                  term.write(line + "\r\n");
-                }
+          recordExecution({
+            status: "pending",
+            evidence: "dispatch-accepted",
+            executedAt: new Date().toISOString(),
+          });
+        } catch (dispatchError) {
+          recordExecution({
+            status: "cancelled",
+            evidence: "dispatch-failed",
+            errorMessage: formatErrorDetails(dispatchError).message,
+            executedAt: new Date().toISOString(),
+          });
+          console.error("Failed to run script:", dispatchError);
+        }
+      } else {
+        // Multi-line: upload as temp file on the remote server, execute, capture output, clean up
+        const interpreter =
+          script.language === "powershell"
+            ? "powershell"
+            : script.language === "sh"
+              ? "sh"
+              : "bash";
+        const startedAt = Date.now();
+        try {
+          const result = await invoke<{
+            stdout: string;
+            stderr: string;
+            exitCode: number;
+          }>("execute_script", {
+            sessionId: targetSessionId,
+            script: command,
+            interpreter,
+          });
+          const completedAt = new Date().toISOString();
+          recordExecution({
+            status: result.exitCode === 0 ? "success" : "error",
+            evidence: "remote-completion",
+            executedAt: completedAt,
+            output: result.stdout || undefined,
+            stderr: result.stderr || undefined,
+            errorMessage:
+              result.exitCode !== 0 ? result.stderr || undefined : undefined,
+            exitCode: result.exitCode,
+            durationMs: Math.max(0, Date.now() - startedAt),
+          });
+          const term = termRef.current;
+          if (term) {
+            term.write(`\r\n\x1b[90m── Script: ${script.name} ──\x1b[0m\r\n`);
+            if (result.stdout) {
+              for (const line of result.stdout.split("\n")) {
+                term.write(line + "\r\n");
               }
-              if (result.stderr) {
-                term.write(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
-              }
-              const codeColor = result.exitCode === 0 ? "32" : "31";
-              term.write(
-                `\x1b[90m── Exit: \x1b[${codeColor}m${result.exitCode}\x1b[90m ──\x1b[0m\r\n`,
-              );
             }
-          } catch (execErr) {
-            // Fall back to shell piping if execute_script fails
-            console.warn(
-              "execute_script failed, falling back to shell piping:",
-              execErr,
+            if (result.stderr) {
+              term.write(`\x1b[31m${result.stderr}\x1b[0m\r\n`);
+            }
+            const codeColor = result.exitCode === 0 ? "32" : "31";
+            term.write(
+              `\x1b[90m── Exit: \x1b[${codeColor}m${result.exitCode}\x1b[90m ──\x1b[0m\r\n`,
             );
+          }
+        } catch (execErr) {
+          // Fall back to shell piping if execute_script fails
+          console.warn(
+            "execute_script failed, falling back to shell piping:",
+            execErr,
+          );
+          try {
             await invoke("send_ssh_input", {
-              sessionId: sshSessionId.current,
+              sessionId: targetSessionId,
               data: command + "\n",
             });
+            recordExecution({
+              status: "pending",
+              evidence: "dispatch-accepted",
+              executedAt: new Date().toISOString(),
+            });
+          } catch (dispatchError) {
+            recordExecution({
+              status: "cancelled",
+              evidence: "dispatch-failed",
+              errorMessage: formatErrorDetails(dispatchError).message,
+              executedAt: new Date().toISOString(),
+            });
+            console.error("Failed to run script:", dispatchError);
           }
         }
-        closeScriptSelector();
-      } catch (err) {
-        console.error("Failed to run script:", err);
       }
+      closeScriptSelector();
     },
-    [isSsh, closeScriptSelector],
+    [addCommandHistoryEntry, closeScriptSelector, formatErrorDetails, isSsh],
   );
 
   /* ──────────────────────────────────────────────────────────────
@@ -2303,10 +2410,17 @@ export function useWebTerminal(
     }
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen((prev) => !prev);
-    setTimeout(() => safeFit(), 60);
+  const reflowFullscreenTerminal = useCallback(() => {
+    setTimeout(() => {
+      safeFit();
+      termRef.current?.focus();
+    }, 60);
   }, [safeFit]);
+
+  const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id, {
+    onEnter: reflowFullscreenTerminal,
+    onExit: reflowFullscreenTerminal,
+  });
 
   const handleReconnect = useCallback(async () => {
     if (!isSsh) return;

@@ -41,13 +41,10 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                     {output?.status === "running" && (
                       <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
                     )}
-                    {output?.status === "success" && (
-                      <Check
-                        size={12}
-                        className="text-success dark:text-success"
-                      />
+                    {output?.status === "dispatched" && (
+                      <Check size={12} className="text-info" />
                     )}
-                    {output?.status === "error" && (
+                    {output?.status === "cancelled" && (
                       <AlertCircle size={12} className="text-error" />
                     )}
                     <button
@@ -75,7 +72,7 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                         <span className="text-[var(--color-textMuted)]">
                           {t(
                             "bulkSsh.waitingOutput",
-                            "Waiting for output...",
+                            "Waiting to dispatch command input...",
                           )}
                         </span>
                       )
@@ -102,6 +99,5 @@ function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
     </div>
   );
 }
-
 
 export default MosaicOutputView;

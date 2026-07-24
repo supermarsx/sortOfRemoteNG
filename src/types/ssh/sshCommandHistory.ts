@@ -6,15 +6,40 @@
 // ─── Core Entry ────────────────────────────────────────────────
 
 /** Result status of a command execution. */
-export type CommandExecutionStatus = "success" | "error" | "pending" | "cancelled";
+export type CommandExecutionStatus =
+  | "success"
+  | "error"
+  | "pending"
+  | "cancelled";
+export type CommandExecutionEvidence =
+  | "dispatch-accepted"
+  | "dispatch-failed"
+  | "remote-completion";
+export type CommandExecutionSource =
+  | "bulk-dispatch"
+  | "web-terminal-script"
+  | "imported";
+export type CommandExecutionDisplayStatus =
+  | "success"
+  | "error"
+  | "dispatched"
+  | "dispatch-failed"
+  | "unverified";
 
 /** A single execution of a command against one session. */
 export interface CommandExecution {
   sessionId: string;
   sessionName: string;
   hostname: string;
+  /** Exact execution timestamp. Absent on history written before this field existed. */
+  executedAt?: string;
+  /** Evidence observed by the producer; absent records are legacy/unverified. */
+  evidence?: CommandExecutionEvidence;
+  /** Internal producer provenance. Absent records predate provenance tracking. */
+  source?: CommandExecutionSource;
   status: CommandExecutionStatus;
   output?: string;
+  stderr?: string;
   errorMessage?: string;
   exitCode?: number;
   durationMs?: number;
@@ -67,7 +92,11 @@ export type SSHCommandCategory = (typeof SSHCommandCategories)[number];
 
 // ─── Filters ───────────────────────────────────────────────────
 
-export type HistorySortField = "lastExecutedAt" | "createdAt" | "executionCount" | "command";
+export type HistorySortField =
+  | "lastExecutedAt"
+  | "createdAt"
+  | "executionCount"
+  | "command";
 export type HistorySortDirection = "asc" | "desc";
 
 export interface SSHCommandHistoryFilter {
@@ -84,7 +113,7 @@ export interface SSHCommandHistoryFilter {
   /** Only entries executed before this ISO date */
   dateTo: string | null;
   /** Only entries with this execution status (most recent) */
-  statusFilter: CommandExecutionStatus | "all";
+  statusFilter: CommandExecutionDisplayStatus | "all";
   /** Sort field */
   sortBy: HistorySortField;
   /** Sort direction */

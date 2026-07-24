@@ -1,5 +1,11 @@
 import { Mgr, TFunc } from "./types";
-import { AlertCircle, Check, CheckSquare, Square, Terminal } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckSquare,
+  Square,
+  Terminal,
+} from "lucide-react";
 import { Select } from "../../ui/forms";
 
 function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
@@ -67,13 +73,10 @@ function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
                 {output?.status === "running" && (
                   <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
                 )}
-                {output?.status === "success" && (
-                  <Check
-                    size={12}
-                    className="text-success"
-                  />
+                {output?.status === "dispatched" && (
+                  <Check size={12} className="text-info" />
                 )}
-                {output?.status === "error" && (
+                {output?.status === "cancelled" && (
                   <AlertCircle size={12} className="text-error" />
                 )}
               </button>

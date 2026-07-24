@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BulkSSHCommander } from "../../src/components/ssh/BulkSSHCommander";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { invoke } from "@tauri-apps/api/core";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -255,6 +256,73 @@ describe("BulkSSHCommander", () => {
       renderComponent();
       const sendButton = screen.getByText("Send").closest("button");
       expect(sendButton).toBeDisabled();
+    });
+
+    it("persists accepted input as dispatched without claiming completion", async () => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: {},
+      });
+      vi.mocked(invoke).mockResolvedValue(undefined);
+      renderComponent();
+
+      fireEvent.change(screen.getByPlaceholderText(/Enter command/i), {
+        target: { value: "uptime" },
+      });
+      fireEvent.click(screen.getByText("Send"));
+
+      await waitFor(() => {
+        const stored = JSON.parse(
+          localStorage.getItem("sshCommandHistory") ?? "[]",
+        );
+        expect(stored).toHaveLength(1);
+        expect(stored[0].executions).toHaveLength(2);
+        expect(
+          stored[0].executions.every(
+            (execution: Record<string, unknown>) =>
+              execution.status === "pending" &&
+              execution.source === "bulk-dispatch" &&
+              execution.evidence === "dispatch-accepted" &&
+              !("output" in execution) &&
+              !("exitCode" in execution),
+          ),
+        ).toBe(true);
+      });
+      expect(
+        screen.getAllByText(/remote completion is not tracked/i),
+      ).toHaveLength(2);
+      delete (window as any).__TAURI_INTERNALS__;
+    });
+
+    it("persists rejected input as dispatch failed rather than cancelled execution", async () => {
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: {},
+      });
+      vi.mocked(invoke).mockRejectedValue(new Error("transport unavailable"));
+      renderComponent();
+
+      fireEvent.change(screen.getByPlaceholderText(/Enter command/i), {
+        target: { value: "hostname" },
+      });
+      fireEvent.click(screen.getByText("Send"));
+
+      await waitFor(() => {
+        const stored = JSON.parse(
+          localStorage.getItem("sshCommandHistory") ?? "[]",
+        );
+        expect(stored[0].executions).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              status: "cancelled",
+              evidence: "dispatch-failed",
+              errorMessage: "transport unavailable",
+            }),
+          ]),
+        );
+      });
+      expect(screen.queryByText(/command sent successfully/i)).toBeNull();
+      delete (window as any).__TAURI_INTERNALS__;
     });
   });
 

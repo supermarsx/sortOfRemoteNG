@@ -2,14 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions. NOTE: 'core:webview:allow-internal-toggle-devtools' authorizes Tauri's built-in internal_toggle_devtools command, which Tauri gates behind cfg(any(debug_assertions, feature = \"devtools\")). Since the 'devtools' Tauri feature is NOT enabled (see src-tauri/Cargo.toml), this permission is inert in release builds (the underlying command does not exist) and only active in debug builds.",
-  "windows": [
-    "*"
-  ],
+  "windows": ["*"],
   "remote": {
-    "urls": [
-      "http://localhost:*",
-      "http://127.0.0.1:*"
-    ]
+    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
   },
   "permissions": [
     "core:default",
@@ -34,6 +29,7 @@
     "core:window:allow-inner-size",
     "core:window:allow-outer-size",
     "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen",
     "core:window:allow-is-maximized",
     "core:window:allow-is-minimized",
     "core:window:allow-is-visible",

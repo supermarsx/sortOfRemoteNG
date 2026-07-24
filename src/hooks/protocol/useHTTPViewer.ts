@@ -4,6 +4,7 @@ import { ConnectionSession } from "../../types/connection/connection";
 import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSessionFullscreen } from "../session/useSessionFullscreen";
 
 interface ProxyMediatorResponse {
   local_port: number;
@@ -28,7 +29,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   const [proxyUrl, setProxyUrl] = useState<string>("");
   const [proxySessionId, setProxySessionId] = useState<string>("");
   const [currentUrl, setCurrentUrl] = useState<string>("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id);
   const [showSettings, setShowSettings] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -141,7 +142,13 @@ export function useHTTPViewer(session: ConnectionSession) {
       setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [connection, buildTargetUrl, resolveCredentials, proxySessionId, stopProxy]);
+  }, [
+    connection,
+    buildTargetUrl,
+    resolveCredentials,
+    proxySessionId,
+    stopProxy,
+  ]);
 
   useEffect(() => {
     initProxy();
@@ -199,8 +206,6 @@ export function useHTTPViewer(session: ConnectionSession) {
       navigateTo(proxyUrl);
     }
   }, [proxyUrl, navigateTo]);
-
-  const toggleFullscreen = () => setIsFullscreen((prev) => !prev);
 
   const openExternal = useCallback(() => {
     const targetUrl = buildTargetUrl();

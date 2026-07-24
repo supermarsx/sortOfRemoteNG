@@ -48,6 +48,8 @@ import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
 import { SettingsProvider } from "./contexts/SettingsContext";
+import { SessionFullscreenProvider } from "./contexts/SessionFullscreenProvider";
+import { useSessionFullscreenController } from "./hooks/session/useSessionFullscreen";
 import { UnlockScreen } from "./components/encryption/UnlockScreen";
 import { AutoLockController } from "./components/encryption/AutoLockController";
 import { Sidebar } from "./components/connection/Sidebar";
@@ -97,6 +99,8 @@ const AppDialogs = dynamic(
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
+  const sessionFullscreen = useSessionFullscreenController();
+  const isSessionFullscreen = sessionFullscreen?.activeSessionId != null;
   const settingsManager = SettingsManager.getInstance();
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
@@ -1563,93 +1567,97 @@ const AppContent: React.FC = () => {
           onLoadComplete={() => setShowSplash(false)}
         />
       )}
-      <AppToolbar
-        appSettings={appSettings}
-        isAlwaysOnTop={isAlwaysOnTop}
-        rdpPanelOpen={false}
-        showErrorLog={showErrorLog}
-        databaseManager={databaseManager}
-        connections={state.connections}
-        setShowQuickConnect={setShowQuickConnect}
-        setShowDatabasePanel={(v) => {
-          if (v) {
-            setDatabasePanelInitialTab("collections");
-            toolShowSetters.current.database(true);
-          } else {
-            toolShowSetters.current.database(false);
-          }
-          // Legacy modal flag — keep in sync for any other consumers
-          // that still read it until they're migrated off.
-          setShowDatabasePanel(v);
-        }}
-        openImportExport={() => {
-          toolShowSetters.current.importExport(true);
-        }}
-        setShowSettings={handleOpenSettings}
-        setRdpPanelOpen={toolShowSetters.current.rdpSessions}
-        setShowProxyMenu={toolShowSetters.current.proxyChain}
-        setShowShortcutManager={toolShowSetters.current.shortcutManager}
-        setShowWol={toolShowSetters.current.wol}
-        setShowBulkSSH={toolShowSetters.current.bulkSsh}
-        setShowServerStats={toolShowSetters.current.serverStats}
-        setShowOpkssh={toolShowSetters.current.opkssh}
-        setShowMcpServer={toolShowSetters.current.mcpServer}
-        setShowScriptManager={toolShowSetters.current.scriptManager}
-        setShowMacroManager={toolShowSetters.current.macroManager}
-        setShowRecordingManager={toolShowSetters.current.recordingManager}
-        setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
-        setShowActionLog={toolShowSetters.current.actionLog}
-        setShowErrorLog={setShowErrorLog}
-        handleToggleTransparency={handleToggleTransparency}
-        handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-        handleRepatriateWindow={handleRepatriateWindow}
-        handleMinimize={handleMinimize}
-        handleMaximize={handleMaximize}
-        handleClose={handleClose}
-        handleOpenDevtools={handleOpenDevtools}
-        handleShowPasswordDialog={handleShowPasswordDialog}
-        performCloudSync={performCloudSync}
-        setShowDebugPanel={setShowDebugPanel}
-        setShowTagManager={toolShowSetters.current.tagManager}
-        setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
-      />
+      {!isSessionFullscreen && (
+        <AppToolbar
+          appSettings={appSettings}
+          isAlwaysOnTop={isAlwaysOnTop}
+          rdpPanelOpen={false}
+          showErrorLog={showErrorLog}
+          databaseManager={databaseManager}
+          connections={state.connections}
+          setShowQuickConnect={setShowQuickConnect}
+          setShowDatabasePanel={(v) => {
+            if (v) {
+              setDatabasePanelInitialTab("collections");
+              toolShowSetters.current.database(true);
+            } else {
+              toolShowSetters.current.database(false);
+            }
+            // Legacy modal flag — keep in sync for any other consumers
+            // that still read it until they're migrated off.
+            setShowDatabasePanel(v);
+          }}
+          openImportExport={() => {
+            toolShowSetters.current.importExport(true);
+          }}
+          setShowSettings={handleOpenSettings}
+          setRdpPanelOpen={toolShowSetters.current.rdpSessions}
+          setShowProxyMenu={toolShowSetters.current.proxyChain}
+          setShowShortcutManager={toolShowSetters.current.shortcutManager}
+          setShowWol={toolShowSetters.current.wol}
+          setShowBulkSSH={toolShowSetters.current.bulkSsh}
+          setShowServerStats={toolShowSetters.current.serverStats}
+          setShowOpkssh={toolShowSetters.current.opkssh}
+          setShowMcpServer={toolShowSetters.current.mcpServer}
+          setShowScriptManager={toolShowSetters.current.scriptManager}
+          setShowMacroManager={toolShowSetters.current.macroManager}
+          setShowRecordingManager={toolShowSetters.current.recordingManager}
+          setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
+          setShowActionLog={toolShowSetters.current.actionLog}
+          setShowErrorLog={setShowErrorLog}
+          handleToggleTransparency={handleToggleTransparency}
+          handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+          handleRepatriateWindow={handleRepatriateWindow}
+          handleMinimize={handleMinimize}
+          handleMaximize={handleMaximize}
+          handleClose={handleClose}
+          handleOpenDevtools={handleOpenDevtools}
+          handleShowPasswordDialog={handleShowPasswordDialog}
+          performCloudSync={performCloudSync}
+          setShowDebugPanel={setShowDebugPanel}
+          setShowTagManager={toolShowSetters.current.tagManager}
+          setShowTabGroupManager={toolShowSetters.current.tabGroupManager}
+        />
+      )}
 
       <div
         className="relative flex min-h-0 min-w-0 max-w-full flex-1 overflow-hidden"
         ref={layoutRef}
       >
-        {renderSidebar("left")}
+        {!isSessionFullscreen && renderSidebar("left")}
 
         <div className="relative flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
-          <SessionTabs
-            activeSessionId={activeSessionId}
-            onSessionSelect={setActiveSessionId}
-            onSessionClose={handleSessionClose}
-            onSessionDetach={handleSessionDetach}
-            enableReorder={appSettings.enableTabReorder}
-            middleClickCloseTab={appSettings.middleClickCloseTab}
-            tabLayout={tabLayout}
-            onAssignSessionToSlot={(sessionId, slotIndex) => {
-              setTabLayout((current) => {
-                if (slotIndex < 0 || slotIndex >= current.sessions.length)
-                  return current;
-                const existingSlot = current.sessions.findIndex(
-                  (s) => s.sessionId === sessionId,
-                );
-                const next = [...current.sessions];
-                const prevOccupant = next[slotIndex].sessionId;
-                next[slotIndex] = { ...next[slotIndex], sessionId };
-                if (existingSlot >= 0 && existingSlot !== slotIndex) {
-                  next[existingSlot] = {
-                    ...next[existingSlot],
-                    sessionId: prevOccupant,
-                  };
-                }
-                return { ...current, sessions: next };
-              });
-              setActiveSessionId(sessionId);
-            }}
-          />
+          {!isSessionFullscreen && (
+            <SessionTabs
+              activeSessionId={activeSessionId}
+              onSessionSelect={setActiveSessionId}
+              onSessionClose={handleSessionClose}
+              onSessionDetach={handleSessionDetach}
+              enableReorder={appSettings.enableTabReorder}
+              middleClickCloseTab={appSettings.middleClickCloseTab}
+              tabLayout={tabLayout}
+              onAssignSessionToSlot={(sessionId, slotIndex) => {
+                setTabLayout((current) => {
+                  if (slotIndex < 0 || slotIndex >= current.sessions.length)
+                    return current;
+                  const existingSlot = current.sessions.findIndex(
+                    (s) => s.sessionId === sessionId,
+                  );
+                  const next = [...current.sessions];
+                  const prevOccupant = next[slotIndex].sessionId;
+                  next[slotIndex] = { ...next[slotIndex], sessionId };
+                  if (existingSlot >= 0 && existingSlot !== slotIndex) {
+                    next[existingSlot] = {
+                      ...next[existingSlot],
+                      sessionId: prevOccupant,
+                    };
+                  }
+                  return { ...current, sessions: next };
+                });
+                setActiveSessionId(sessionId);
+              }}
+            />
+          )}
 
           {/* Session viewer */}
           <div
@@ -1766,15 +1774,17 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {renderSidebar("right")}
+        {!isSessionFullscreen && renderSidebar("right")}
       </div>
 
-      <AppStatusBar
-        connections={state.connections}
-        sessions={state.sessions}
-        databaseManager={databaseManager}
-        isInitialized={isInitialized}
-      />
+      {!isSessionFullscreen && (
+        <AppStatusBar
+          connections={state.connections}
+          sessions={state.sessions}
+          databaseManager={databaseManager}
+          isInitialized={isInitialized}
+        />
+      )}
 
       <AppDialogs
         appSettings={appSettings}
@@ -1828,9 +1838,10 @@ const App: React.FC = () => (
   <ToastProvider>
     <SettingsProvider>
       <ConnectionProvider>
-        <ErrorBoundary>
-          <AppContent />
-          {/*
+        <SessionFullscreenProvider>
+          <ErrorBoundary>
+            <AppContent />
+            {/*
             Encryption-at-rest unlock overlay. Self-hides when no master
             key exists on disk yet (the vast majority of users today) or
             when the state is already unlocked. Renders above the main
@@ -1838,16 +1849,17 @@ const App: React.FC = () => (
             anything underneath while it's open. See
             `shouldShowUnlockScreen` for the exact predicate.
           */}
-          <UnlockScreen />
-          {/*
+            <UnlockScreen />
+            {/*
             Auto-lock policy enforcer. Watches `settings.autoLock` and
             attaches idle / blur / minimise / visibility-hidden
             listeners that call `encryption_lock` when the user's
             configured signal fires. Renders nothing; lives at the
             root so the listeners survive every nested re-render.
           */}
-          <AutoLockController />
-        </ErrorBoundary>
+            <AutoLockController />
+          </ErrorBoundary>
+        </SessionFullscreenProvider>
       </ConnectionProvider>
     </SettingsProvider>
   </ToastProvider>

@@ -44,6 +44,7 @@ import {
   UnifiedSessionRow,
 } from "../../../hooks/session/useUnifiedSessionManager";
 import { RdpHistoryView } from "./RdpHistoryView";
+import { SshSessionsView } from "./SshSessionsView";
 
 /* ═══════════════════════════════════════════════════════════════════
    Props
@@ -85,6 +86,7 @@ function formatSessionSourceSummary(mgr: Mgr): string {
 
 type ManagerView =
   | "sessions"
+  | "ssh-sessions"
   | "rdp-logs"
   | "rdp-history"
   | "proxy-logs"
@@ -987,6 +989,7 @@ const VIEWS: {
   icon: React.ElementType;
 }[] = [
   { id: "sessions", label: "Sessions", icon: LayoutGrid },
+  { id: "ssh-sessions", label: "SSH Sessions", icon: Terminal },
   { id: "rdp-logs", label: "RDP Logs", icon: ScrollText },
   { id: "rdp-history", label: "RDP History", icon: History },
   { id: "proxy-logs", label: "Proxy Log", icon: ScrollText },
@@ -1083,11 +1086,13 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               const count =
                 v.id === "sessions"
                   ? totalSessions
-                  : v.id === "rdp-history"
-                    ? rdpHistory.length
-                    : v.id === "proxy-logs"
-                      ? mgr.proxy.requestLog.length
-                      : undefined;
+                  : v.id === "ssh-sessions"
+                    ? mgr.sshRows.length
+                    : v.id === "rdp-history"
+                      ? rdpHistory.length
+                      : v.id === "proxy-logs"
+                        ? mgr.proxy.requestLog.length
+                        : undefined;
               return (
                 <button
                   key={v.id}
@@ -1161,6 +1166,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               onDisconnectAllSsh={handleDisconnectAllSsh}
             />
           )}
+          {view === "ssh-sessions" && <SshSessionsView />}
           {view === "rdp-logs" && (
             <div className="flex-1 min-h-0">
               <RDPLogViewer isVisible sessionFilter={logSessionFilter} />

@@ -1,8 +1,16 @@
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WebTerminal } from "../../src/components/ssh/WebTerminal";
 import { ConnectionSession } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { SessionFullscreenProvider } from "../../src/contexts/SessionFullscreenProvider";
 import { getStoredIdentity } from "../../src/utils/auth/trustStore";
 
 const mockConnection = {
@@ -30,6 +38,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
   emit: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockNativeWindow = {
+  isFullscreen: vi.fn().mockResolvedValue(false),
+  setFullscreen: vi.fn().mockResolvedValue(undefined),
+  setFocus: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => mockNativeWindow),
 }));
 
 // Mock xterm.js
@@ -61,21 +79,24 @@ const mockTerminal = {
     },
   },
 };
+const mockFit = vi.hoisted(() => vi.fn());
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn(function() { return mockTerminal; }),
+  Terminal: vi.fn(function () {
+    return mockTerminal;
+  }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: vi.fn(function() {
+  FitAddon: vi.fn(function () {
     return {
-      fit: vi.fn(),
+      fit: mockFit,
     };
   }),
 }));
 
 vi.mock("@xterm/addon-web-links", () => ({
-  WebLinksAddon: vi.fn(function() {
+  WebLinksAddon: vi.fn(function () {
     return {};
   }),
 }));
@@ -138,7 +159,9 @@ const mockSession: ConnectionSession = {
 const renderWithProviders = (session: ConnectionSession) => {
   return render(
     <ConnectionProvider>
-      <WebTerminal session={session} />
+      <SessionFullscreenProvider>
+        <WebTerminal session={session} />
+      </SessionFullscreenProvider>
     </ConnectionProvider>,
   );
 };
@@ -390,7 +413,9 @@ describe("WebTerminal", () => {
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
         expect(
-          screen.getByText("Connection refused - please check the host and port"),
+          screen.getByText(
+            "Connection refused - please check the host and port",
+          ),
         ).toBeInTheDocument();
       });
     });
@@ -461,9 +486,7 @@ describe("WebTerminal", () => {
         });
       });
 
-      expect(
-        await screen.findByText("Unknown Host Key"),
-      ).toBeInTheDocument();
+      expect(await screen.findByText("Unknown Host Key")).toBeInTheDocument();
 
       fireEvent.click(
         screen.getByRole("checkbox", {
@@ -475,10 +498,13 @@ describe("WebTerminal", () => {
       );
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
-          sessionId: "prompt-session-123",
-          decision: "accept_and_save",
-        });
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "ssh_respond_to_host_key_prompt",
+          {
+            sessionId: "prompt-session-123",
+            decision: "accept_and_save",
+          },
+        );
       });
 
       await waitFor(() => {
@@ -486,7 +512,8 @@ describe("WebTerminal", () => {
       });
 
       expect(
-        getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection")?.identity.fingerprint,
+        getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection")
+          ?.identity.fingerprint,
       ).toBe("SHA256:new-host-key");
     });
 
@@ -502,7 +529,9 @@ describe("WebTerminal", () => {
 
         if (command === "ssh_respond_to_host_key_prompt") {
           if ((args as { decision: string }).decision === "reject") {
-            rejectConnect?.(new Error("Host key verification failed: key rejected by user"));
+            rejectConnect?.(
+              new Error("Host key verification failed: key rejected by user"),
+            );
           }
           return Promise.resolve(undefined);
         }
@@ -538,24 +567,33 @@ describe("WebTerminal", () => {
 
       const dialogTitle = await screen.findByText("Unknown Host Key");
       expect(dialogTitle).toBeInTheDocument();
-      const modal = dialogTitle.closest('[role="dialog"]') ?? dialogTitle.parentElement?.parentElement?.parentElement;
+      const modal =
+        dialogTitle.closest('[role="dialog"]') ??
+        dialogTitle.parentElement?.parentElement?.parentElement;
       expect(modal).toBeTruthy();
 
       fireEvent.click(
-        within(modal as HTMLElement).getByRole("button", { name: /^disconnect$/i }),
+        within(modal as HTMLElement).getByRole("button", {
+          name: /^disconnect$/i,
+        }),
       );
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith("ssh_respond_to_host_key_prompt", {
-          sessionId: "prompt-session-reject",
-          decision: "reject",
-        });
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "ssh_respond_to_host_key_prompt",
+          {
+            sessionId: "prompt-session-reject",
+            decision: "reject",
+          },
+        );
       });
 
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
         expect(
-          screen.getByText("Host key verification failed - server may have changed"),
+          screen.getByText(
+            "Host key verification failed - server may have changed",
+          ),
         ).toBeInTheDocument();
       });
 
@@ -641,14 +679,40 @@ describe("WebTerminal", () => {
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
+      await waitFor(() => expect(mockFit).toHaveBeenCalled());
+      mockFit.mockClear();
+      mockTerminal.focus.mockClear();
 
       const fullscreenButton = screen.getByRole("button", {
         name: /fullscreen/i,
       });
+      fullscreenButton.focus();
       fireEvent.click(fullscreenButton);
 
-      // Component should still be rendered
-      expect(screen.getByText("Connected")).toBeInTheDocument();
+      expect(screen.getByTestId("ssh-terminal")).toHaveClass("fixed");
+      expect(screen.getByTestId("terminal-canvas")).toBeInTheDocument();
+      expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: "Exit no-distraction fullscreen for Test Session",
+        }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(mockFit).toHaveBeenCalledTimes(1);
+        expect(mockTerminal.focus).toHaveBeenCalledTimes(1);
+      });
+      mockFit.mockClear();
+      mockTerminal.focus.mockClear();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /fullscreen/i }),
+        ).toHaveFocus();
+        expect(mockFit).toHaveBeenCalledTimes(1);
+        expect(mockTerminal.focus).toHaveBeenCalledTimes(1);
+      });
     });
   });
 
@@ -667,10 +731,14 @@ describe("WebTerminal", () => {
       });
 
       expect(historyButton).toHaveAttribute("aria-label", "Command History");
-      expect(screen.queryByTestId("ssh-command-history-panel")).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("ssh-command-history-panel"),
+      ).not.toBeInTheDocument();
 
       fireEvent.click(historyButton);
-      expect(await screen.findByTestId("ssh-command-history-panel")).toBeInTheDocument();
+      expect(
+        await screen.findByTestId("ssh-command-history-panel"),
+      ).toBeInTheDocument();
 
       fireEvent.click(historyButton);
       await waitFor(() => {
@@ -834,7 +902,9 @@ describe("WebTerminal", () => {
       const selects = screen.getAllByRole("combobox");
       const osTagSelect = selects[2];
       fireEvent.click(osTagSelect);
-      const windowsOption = await screen.findByRole("option", { name: /windows/i });
+      const windowsOption = await screen.findByRole("option", {
+        name: /windows/i,
+      });
       fireEvent.mouseDown(windowsOption);
 
       await waitFor(() => {
@@ -976,7 +1046,9 @@ describe("WebTerminal", () => {
       // Apply a filter — custom Select: click trigger, then mouseDown on option
       const selects = screen.getAllByRole("combobox");
       fireEvent.click(selects[0]);
-      const systemOption = await screen.findByRole("option", { name: "System" });
+      const systemOption = await screen.findByRole("option", {
+        name: "System",
+      });
       fireEvent.mouseDown(systemOption);
 
       await waitFor(() => {
@@ -1005,7 +1077,9 @@ describe("WebTerminal", () => {
       // Apply OS tag filter — custom Select: click trigger, then mouseDown on option
       const selects = screen.getAllByRole("combobox");
       fireEvent.click(selects[2]);
-      const windowsOption = await screen.findByRole("option", { name: /windows/i });
+      const windowsOption = await screen.findByRole("option", {
+        name: /windows/i,
+      });
       fireEvent.mouseDown(windowsOption);
 
       await waitFor(() => {

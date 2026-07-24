@@ -14,7 +14,14 @@ import {
   MessageSquare,
   X,
 } from "lucide-react";
-import type { SSHCommandHistoryEntry, SSHCommandCategory } from "../../../types/ssh/sshCommandHistory";
+import type {
+  SSHCommandHistoryEntry,
+  SSHCommandCategory,
+} from "../../../types/ssh/sshCommandHistory";
+import {
+  commandExecutionDisplayStatus,
+  type CommandExecutionDisplayStatus,
+} from "../../../utils/ssh/sshCommandEvidence";
 import type { TFunc } from "./types";
 
 const CATEGORY_COLORS: Record<SSHCommandCategory, string> = {
@@ -35,12 +42,44 @@ const CATEGORY_COLORS: Record<SSHCommandCategory, string> = {
   unknown: "text-text-secondary bg-text-secondary/10",
 };
 
-function StatusIcon({ status }: { status: string }) {
+function StatusIcon({ status }: { status: CommandExecutionDisplayStatus }) {
   if (status === "success")
-    return <CheckCircle2 size={12} className="text-success" />;
+    return (
+      <CheckCircle2
+        size={12}
+        className="text-success"
+        role="img"
+        aria-label="Verified success"
+      />
+    );
   if (status === "error")
-    return <XCircle size={12} className="text-error" />;
-  return <Clock size={12} className="text-warning" />;
+    return (
+      <XCircle
+        size={12}
+        className="text-error"
+        role="img"
+        aria-label="Verified failure"
+      />
+    );
+  if (status === "dispatch-failed")
+    return (
+      <XCircle
+        size={12}
+        className="text-error"
+        role="img"
+        aria-label="Dispatch failed"
+      />
+    );
+  return (
+    <Clock
+      size={12}
+      className={
+        status === "dispatched" ? "text-info" : "text-[var(--color-textMuted)]"
+      }
+      role="img"
+      aria-label={status === "dispatched" ? "Dispatched" : "Unverified record"}
+    />
+  );
 }
 
 function formatRelativeTime(isoDate: string): string {
@@ -89,6 +128,9 @@ function HistoryEntry({
   const [tagInput, setTagInput] = React.useState("");
 
   const lastExecution = entry.executions[entry.executions.length - 1];
+  const lastExecutionDisplayStatus = lastExecution
+    ? commandExecutionDisplayStatus(lastExecution)
+    : null;
   const catColor = CATEGORY_COLORS[entry.category] ?? CATEGORY_COLORS.unknown;
 
   return (
@@ -122,10 +164,7 @@ function HistoryEntry({
           }`}
           title={t("sshHistory.toggleStar", "Toggle star")}
         >
-          <Star
-            size={14}
-            fill={entry.starred ? "currentColor" : "none"}
-          />
+          <Star size={14} fill={entry.starred ? "currentColor" : "none"} />
         </button>
 
         {/* Command + metadata */}
@@ -148,8 +187,8 @@ function HistoryEntry({
                 <Clock size={9} />
                 {formatRelativeTime(entry.lastExecutedAt)}
               </span>
-              {lastExecution && (
-                <StatusIcon status={lastExecution.status} />
+              {lastExecutionDisplayStatus && (
+                <StatusIcon status={lastExecutionDisplayStatus} />
               )}
               {entry.tags.length > 0 &&
                 entry.tags.map((tag) => (
@@ -201,12 +240,13 @@ function HistoryEntry({
                 setIsExpanded((prev) => !prev);
               }}
               className="p-1 rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+              aria-label={
+                isExpanded
+                  ? "Collapse command details"
+                  : "Expand command details"
+              }
             >
-              {isExpanded ? (
-                <ChevronUp size={12} />
-              ) : (
-                <ChevronDown size={12} />
-              )}
+              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
           )}
           <button
@@ -330,33 +370,36 @@ function HistoryEntry({
                 {entry.executions
                   .slice(-5)
                   .reverse()
-                  .map((ex, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 text-[10px] text-[var(--color-textSecondary)] px-2 py-1 rounded bg-[var(--color-background)]/50"
-                    >
-                      <StatusIcon status={ex.status} />
-                      <span className="font-medium truncate">
-                        {ex.sessionName || ex.hostname}
-                      </span>
-                      {ex.durationMs != null && (
-                        <span>{ex.durationMs}ms</span>
-                      )}
-                      {ex.exitCode != null && (
-                        <span className="font-mono">
-                          exit: {ex.exitCode}
+                  .map((ex, idx) => {
+                    const displayStatus = commandExecutionDisplayStatus(ex);
+                    const hasVerifiedCompletion =
+                      displayStatus === "success" || displayStatus === "error";
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 text-[10px] text-[var(--color-textSecondary)] px-2 py-1 rounded bg-[var(--color-background)]/50"
+                      >
+                        <StatusIcon status={displayStatus} />
+                        <span className="font-medium truncate">
+                          {ex.sessionName || ex.hostname}
                         </span>
-                      )}
-                      {ex.output && (
-                        <span
-                          className="truncate flex-1 font-mono opacity-60"
-                          title={ex.output}
-                        >
-                          {ex.output.slice(0, 80)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                        {hasVerifiedCompletion && ex.durationMs != null && (
+                          <span>{ex.durationMs}ms</span>
+                        )}
+                        {hasVerifiedCompletion && ex.exitCode != null && (
+                          <span className="font-mono">exit: {ex.exitCode}</span>
+                        )}
+                        {hasVerifiedCompletion && ex.output && (
+                          <span
+                            className="truncate flex-1 font-mono opacity-60"
+                            title={ex.output}
+                          >
+                            {ex.output.slice(0, 80)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

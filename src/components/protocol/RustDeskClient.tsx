@@ -1,9 +1,20 @@
-import React from 'react';
-import { Monitor, Settings, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection/connection';
-import { useRustDeskClient, type RustDeskQuality } from '../../hooks/protocol/useRustDeskClient';
-import { StatusBar, ConnectingSpinner } from '../ui/display';
-import { Checkbox, Select } from '../ui/forms';
+import React from "react";
+import {
+  Monitor,
+  Settings,
+  Maximize2,
+  Minimize2,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { ConnectionSession } from "../../types/connection/connection";
+import {
+  useRustDeskClient,
+  type RustDeskQuality,
+} from "../../hooks/protocol/useRustDeskClient";
+import { StatusBar, ConnectingSpinner } from "../ui/display";
+import { Checkbox, Select } from "../ui/forms";
+import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 
 type Mgr = ReturnType<typeof useRustDeskClient>;
 
@@ -16,82 +27,163 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
 
   const getStatusIcon = () => {
     switch (mgr.connectionStatus) {
-      case 'connected': return <Wifi size={14} />;
-      case 'connecting': return <Wifi size={14} className="animate-pulse" />;
-      default: return <WifiOff size={14} />;
+      case "connected":
+        return <Wifi size={14} />;
+      case "connecting":
+        return <Wifi size={14} className="animate-pulse" />;
+      default:
+        return <WifiOff size={14} />;
     }
   };
 
   return (
-    <div className={`flex flex-col bg-[var(--color-background)] ${mgr.isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
+    <div
+      className={`flex flex-col bg-[var(--color-background)] ${mgr.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : "h-full"}`}
+      data-session-fullscreen-root={session.id}
+      tabIndex={-1}
+    >
+      <SessionFullscreenExitControl
+        sessionId={session.id}
+        sessionName={session.name || session.hostname}
+        isFullscreen={mgr.isFullscreen}
+        onExit={mgr.toggleFullscreen}
+      />
       {/* RustDesk Header */}
-      <div className="sor-toolbar-row">
-        <div className="flex items-center space-x-3">
-          <Monitor size={16} className="text-warning" />
-          <span className="text-sm text-[var(--color-textSecondary)]">
-            RustDesk - {session.hostname}
-          </span>
-          <div className={`flex items-center space-x-1 ${mgr.getStatusColor()}`}>
-            {getStatusIcon()}
-            <span className="text-xs capitalize">{mgr.connectionStatus}</span>
+      {!mgr.isFullscreen && (
+        <div className="sor-toolbar-row">
+          <div className="flex items-center space-x-3">
+            <Monitor size={16} className="text-warning" />
+            <span className="text-sm text-[var(--color-textSecondary)]">
+              RustDesk - {session.hostname}
+            </span>
+            <div
+              className={`flex items-center space-x-1 ${mgr.getStatusColor()}`}
+            >
+              {getStatusIcon()}
+              <span className="text-xs capitalize">{mgr.connectionStatus}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)]">
+              <span>Quality: {mgr.settings.quality}</span>
+            </div>
+
+            <button
+              onClick={() => mgr.setShowSettings(!mgr.showSettings)}
+              className="sor-icon-btn-sm"
+              title="RustDesk Settings"
+            >
+              <Settings size={14} />
+            </button>
+
+            <button
+              onClick={mgr.toggleFullscreen}
+              className="sor-icon-btn-sm"
+              title={mgr.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              aria-label={
+                mgr.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
+              }
+              aria-pressed={mgr.isFullscreen}
+              data-session-fullscreen-trigger={session.id}
+            >
+              {mgr.isFullscreen ? (
+                <Minimize2 size={14} />
+              ) : (
+                <Maximize2 size={14} />
+              )}
+            </button>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)]">
-            <span>Quality: {mgr.settings.quality}</span>
-          </div>
-          
-          <button
-            onClick={() => mgr.setShowSettings(!mgr.showSettings)}
-            className="sor-icon-btn-sm"
-            title="RustDesk Settings"
-          >
-            <Settings size={14} />
-          </button>
-          
-          <button
-            onClick={() => mgr.setIsFullscreen(!mgr.isFullscreen)}
-            className="sor-icon-btn-sm"
-            title={mgr.isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {mgr.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Settings Panel */}
-      {mgr.showSettings && (
+      {!mgr.isFullscreen && mgr.showSettings && (
         <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
-              <label className="block text-[var(--color-textSecondary)] mb-1">Quality</label>
-              <Select value={mgr.settings.quality} onChange={(v: string) => mgr.setSettings({...mgr.settings, quality: v as RustDeskQuality})} options={[{ value: "low", label: "Low" }, { value: "balanced", label: "Balanced" }, { value: "best", label: "Best" }, { value: "custom", label: "Custom" }]} className="sor-form-input-xs" />
+              <label className="block text-[var(--color-textSecondary)] mb-1">
+                Quality
+              </label>
+              <Select
+                value={mgr.settings.quality}
+                onChange={(v: string) =>
+                  mgr.setSettings({
+                    ...mgr.settings,
+                    quality: v as RustDeskQuality,
+                  })
+                }
+                options={[
+                  { value: "low", label: "Low" },
+                  { value: "balanced", label: "Balanced" },
+                  { value: "best", label: "Best" },
+                  { value: "custom", label: "Custom" },
+                ]}
+                className="sor-form-input-xs"
+              />
             </div>
-            
+
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.settings.viewOnly} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, viewOnly: v})} className="rounded" />
-              <span className="text-[var(--color-textSecondary)]">View Only</span>
+              <Checkbox
+                checked={mgr.settings.viewOnly}
+                onChange={(v: boolean) =>
+                  mgr.setSettings({ ...mgr.settings, viewOnly: v })
+                }
+                className="rounded"
+              />
+              <span className="text-[var(--color-textSecondary)]">
+                View Only
+              </span>
             </label>
-            
+
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.settings.showCursor} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, showCursor: v})} className="rounded" />
-              <span className="text-[var(--color-textSecondary)]">Show Cursor</span>
+              <Checkbox
+                checked={mgr.settings.showCursor}
+                onChange={(v: boolean) =>
+                  mgr.setSettings({ ...mgr.settings, showCursor: v })
+                }
+                className="rounded"
+              />
+              <span className="text-[var(--color-textSecondary)]">
+                Show Cursor
+              </span>
             </label>
-            
+
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.settings.enableAudio} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableAudio: v})} className="rounded" />
+              <Checkbox
+                checked={mgr.settings.enableAudio}
+                onChange={(v: boolean) =>
+                  mgr.setSettings({ ...mgr.settings, enableAudio: v })
+                }
+                className="rounded"
+              />
               <span className="text-[var(--color-textSecondary)]">Audio</span>
             </label>
-            
+
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.settings.enableClipboard} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableClipboard: v})} className="rounded" />
-              <span className="text-[var(--color-textSecondary)]">Clipboard</span>
+              <Checkbox
+                checked={mgr.settings.enableClipboard}
+                onChange={(v: boolean) =>
+                  mgr.setSettings({ ...mgr.settings, enableClipboard: v })
+                }
+                className="rounded"
+              />
+              <span className="text-[var(--color-textSecondary)]">
+                Clipboard
+              </span>
             </label>
-            
+
             <label className="flex items-center space-x-2">
-              <Checkbox checked={mgr.settings.enableFileTransfer} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableFileTransfer: v})} className="rounded" />
-              <span className="text-[var(--color-textSecondary)]">File Transfer</span>
+              <Checkbox
+                checked={mgr.settings.enableFileTransfer}
+                onChange={(v: boolean) =>
+                  mgr.setSettings({ ...mgr.settings, enableFileTransfer: v })
+                }
+                className="rounded"
+              />
+              <span className="text-[var(--color-textSecondary)]">
+                File Transfer
+              </span>
             </label>
           </div>
         </div>
@@ -99,14 +191,14 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
 
       {/* RustDesk Content */}
       <div className="flex-1 flex items-center justify-center bg-black">
-        {mgr.connectionStatus === 'connecting' && (
+        {mgr.connectionStatus === "connecting" && (
           <ConnectingSpinner
             message="Connecting to RustDesk..."
             detail={session.hostname}
           />
         )}
-        
-        {mgr.connectionStatus === 'error' && (
+
+        {mgr.connectionStatus === "error" && (
           <div className="text-center max-w-lg px-4">
             <WifiOff size={48} className="text-error mx-auto mb-4" />
             <p className="text-error mb-2">RustDesk Connection Failed</p>
@@ -126,24 +218,51 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
             </button>
           </div>
         )}
-        
-        {mgr.connectionStatus === 'connected' && (
+
+        {mgr.connectionStatus === "connected" && (
           <div className="w-full h-full bg-[var(--color-surface)] flex items-center justify-center">
             <div className="text-center">
               <Monitor size={64} className="text-warning mx-auto mb-4" />
-              <h3 className="text-xl font-medium text-[var(--color-text)] mb-2">RustDesk Connected</h3>
+              <h3 className="text-xl font-medium text-[var(--color-text)] mb-2">
+                RustDesk Connected
+              </h3>
               <p className="text-[var(--color-textSecondary)] mb-4">
                 Remote desktop session active with {session.hostname}
               </p>
               <div className="bg-[var(--color-border)] rounded-lg p-4 max-w-md">
-                <p className="text-xs text-[var(--color-textMuted)] mb-2">Connection Details:</p>
+                <p className="text-xs text-[var(--color-textMuted)] mb-2">
+                  Connection Details:
+                </p>
                 <div className="space-y-1 text-sm text-left">
-                  <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
-                  <div>Protocol: <span className="text-[var(--color-text)]">RustDesk</span></div>
-                  <div>Quality: <span className="text-[var(--color-text)]">{mgr.settings.quality}</span></div>
-                  <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
+                  <div>
+                    Host:{" "}
+                    <span className="text-[var(--color-text)]">
+                      {session.hostname}
+                    </span>
+                  </div>
+                  <div>
+                    Protocol:{" "}
+                    <span className="text-[var(--color-text)]">RustDesk</span>
+                  </div>
+                  <div>
+                    Quality:{" "}
+                    <span className="text-[var(--color-text)]">
+                      {mgr.settings.quality}
+                    </span>
+                  </div>
+                  <div>
+                    Started:{" "}
+                    <span className="text-[var(--color-text)]">
+                      {session.startTime.toLocaleTimeString()}
+                    </span>
+                  </div>
                   {mgr.binaryInfo?.version && (
-                    <div>Client: <span className="text-[var(--color-text)]">RustDesk v{mgr.binaryInfo.version}</span></div>
+                    <div>
+                      Client:{" "}
+                      <span className="text-[var(--color-text)]">
+                        RustDesk v{mgr.binaryInfo.version}
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -153,25 +272,27 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <StatusBar
-        left={
-          <div className="flex items-center space-x-4">
-            <span>Session: {session.id.slice(0, 8)}</span>
-            <span>Protocol: RustDesk</span>
-            {mgr.isConnected && (
-              <>
-                <span>Quality: {mgr.settings.quality}</span>
-                <span>Audio: {mgr.settings.enableAudio ? 'On' : 'Off'}</span>
-              </>
-            )}
-          </div>
-        }
-        right={
-          <div className="flex items-center space-x-2">
-            <span>RustDesk Remote Desktop</span>
-          </div>
-        }
-      />
+      {!mgr.isFullscreen && (
+        <StatusBar
+          left={
+            <div className="flex items-center space-x-4">
+              <span>Session: {session.id.slice(0, 8)}</span>
+              <span>Protocol: RustDesk</span>
+              {mgr.isConnected && (
+                <>
+                  <span>Quality: {mgr.settings.quality}</span>
+                  <span>Audio: {mgr.settings.enableAudio ? "On" : "Off"}</span>
+                </>
+              )}
+            </div>
+          }
+          right={
+            <div className="flex items-center space-x-2">
+              <span>RustDesk Remote Desktop</span>
+            </div>
+          }
+        />
+      )}
     </div>
   );
 };

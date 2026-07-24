@@ -27,9 +27,7 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
           sessionName={p.sessionName}
           sessionHostname={p.sessionHostname}
         />
-        <div
-          className={`flex items-center space-x-1 ${p.getStatusColor()}`}
-        >
+        <div className={`flex items-center space-x-1 ${p.getStatusColor()}`}>
           {p.getStatusIcon()}
           <span className="text-xs capitalize">{p.connectionStatus}</span>
         </div>
@@ -75,6 +73,9 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
           onClick={p.toggleFullscreen}
           className={btnDefault}
           data-tooltip={p.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          aria-label={p.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          aria-pressed={p.isFullscreen}
+          data-session-fullscreen-trigger={p.sessionId}
         >
           {p.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
@@ -96,4 +97,3 @@ export default function RDPClientHeader(p: RDPClientHeaderProps) {
     </div>
   );
 }
-

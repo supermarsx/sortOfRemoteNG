@@ -10,41 +10,57 @@ import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
 import ProxyCommandConfirmDialog from "./webTerminal/ProxyCommandConfirmDialog";
 import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
+import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 
 const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
   const mgr = useWebTerminal(session, onResize);
   const { t } = useTranslation();
   const bgMgr = useTerminalBackground(mgr.sshTerminalConfig?.background);
+  const showCommandHistory = mgr.commandHistory.isOpen && !mgr.isFullscreen;
 
   return (
     <div
-      className={`flex flex-col ${mgr.isFullscreen ? "fixed inset-0 z-50" : "h-full"}`}
+      className={`flex flex-col ${mgr.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : "h-full"}`}
       data-testid="ssh-terminal"
+      data-session-fullscreen-root={session.id}
+      tabIndex={-1}
       style={{
         backgroundColor: "var(--color-background)",
         color: "var(--color-text)",
       }}
     >
-      <div className="app-bar border-b relative z-20 overflow-visible">
-        <div className="flex items-start justify-between gap-4 px-4 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">
-              {session.name || "Terminal"}
+      <SessionFullscreenExitControl
+        sessionId={session.id}
+        sessionName={session.name || session.hostname}
+        isFullscreen={mgr.isFullscreen}
+        onExit={mgr.toggleFullscreen}
+      />
+      {!mgr.isFullscreen && (
+        <div className="app-bar border-b relative z-20 overflow-visible">
+          <div className="flex items-start justify-between gap-4 px-4 py-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">
+                {session.name || "Terminal"}
+              </div>
+              <div className="truncate text-xs uppercase tracking-[0.2em] text-[var(--color-textSecondary)]">
+                {session.protocol.toUpperCase()} - {session.hostname}
+              </div>
             </div>
-            <div className="truncate text-xs uppercase tracking-[0.2em] text-[var(--color-textSecondary)]">
-              {session.protocol.toUpperCase()} - {session.hostname}
-            </div>
+            <TerminalToolbar mgr={mgr} />
           </div>
-          <TerminalToolbar mgr={mgr} />
+          <TerminalStatusBar mgr={mgr} />
         </div>
-        <TerminalStatusBar mgr={mgr} />
-      </div>
+      )}
 
-      <div className={`flex-1 min-h-0 flex ${mgr.commandHistory.isOpen ? "flex-row" : ""}`}>
-        <div className={`${mgr.commandHistory.isOpen ? "flex-1" : "w-full h-full"} p-3`}>
+      <div
+        className={`flex-1 min-h-0 flex ${showCommandHistory ? "flex-row" : ""}`}
+      >
+        <div
+          className={`${showCommandHistory ? "flex-1" : "w-full h-full"} ${mgr.isFullscreen ? "p-0" : "p-3"}`}
+        >
           <div
             ref={mgr.containerRef}
-            className="h-full w-full rounded-lg border relative overflow-hidden"
+            className={`relative h-full w-full overflow-hidden ${mgr.isFullscreen ? "" : "rounded-lg border"}`}
             data-testid="terminal-canvas"
             style={{
               backgroundColor: "var(--color-background)",
@@ -52,18 +68,17 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
               ...bgMgr.fadingStyle,
             }}
           >
-            <TerminalBackgroundLayer mgr={bgMgr} containerRef={mgr.containerRef} />
+            <TerminalBackgroundLayer
+              mgr={bgMgr}
+              containerRef={mgr.containerRef}
+            />
           </div>
         </div>
 
         {/* Command history side panel */}
-        {mgr.commandHistory.isOpen && (
+        {showCommandHistory && (
           <div className="w-80 border-l border-[var(--color-border)] overflow-hidden">
-            <SSHCommandHistoryPanel
-              mgr={mgr.commandHistory}
-              t={t}
-              compact
-            />
+            <SSHCommandHistoryPanel mgr={mgr.commandHistory} t={t} compact />
           </div>
         )}
       </div>
@@ -77,4 +92,3 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
 
 export { WebTerminal };
 export default WebTerminal;
-

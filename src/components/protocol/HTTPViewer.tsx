@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   Globe,
   RefreshCw,
@@ -15,12 +15,13 @@ import {
   Settings,
   Shield,
   X,
-} from 'lucide-react';
-import { ConnectionSession } from '../../types/connection/connection';
-import { useHTTPViewer } from '../../hooks/protocol/useHTTPViewer';
-import { StatusBar } from '../ui/display';
-import { LoadingElement } from '../ui/display/loadingElement';
-import RDPTotpPanel from '../rdp/RDPTotpPanel';
+} from "lucide-react";
+import { ConnectionSession } from "../../types/connection/connection";
+import { useHTTPViewer } from "../../hooks/protocol/useHTTPViewer";
+import { StatusBar } from "../ui/display";
+import { LoadingElement } from "../ui/display/loadingElement";
+import RDPTotpPanel from "../rdp/RDPTotpPanel";
+import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 
 interface HTTPViewerProps {
   session: ConnectionSession;
@@ -32,11 +33,26 @@ type Mgr = ReturnType<typeof useHTTPViewer>;
 
 function ErrorScreen({ m }: { m: Mgr }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)] p-8">
+    <div
+      className={`flex flex-col items-center justify-center bg-[var(--color-background)] text-[var(--color-text)] p-8 ${m.isFullscreen ? "fixed inset-0 z-[1200]" : "h-full"}`}
+      data-session-fullscreen-root={m.session.id}
+      tabIndex={-1}
+    >
+      <SessionFullscreenExitControl
+        sessionId={m.session.id}
+        sessionName={m.session.name || m.session.hostname}
+        isFullscreen={m.isFullscreen}
+        onExit={m.toggleFullscreen}
+      />
       <AlertCircle className="w-16 h-16 text-error mb-4" />
       <h2 className="text-xl font-semibold mb-2">Connection Failed</h2>
-      <p className="text-[var(--color-textSecondary)] mb-4 text-center max-w-md">{m.error}</p>
-      <button onClick={m.initProxy} className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-2">
+      <p className="text-[var(--color-textSecondary)] mb-4 text-center max-w-md">
+        {m.error}
+      </p>
+      <button
+        onClick={m.initProxy}
+        className="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-2"
+      >
         <RefreshCw className="w-4 h-4" />
         Retry Connection
       </button>
@@ -46,10 +62,24 @@ function ErrorScreen({ m }: { m: Mgr }) {
 
 function ConnectingScreen({ m }: { m: Mgr }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
-      <div className="mb-4"><LoadingElement size={48} ariaLabel="Connecting" /></div>
+    <div
+      className={`flex flex-col items-center justify-center bg-[var(--color-background)] text-[var(--color-text)] ${m.isFullscreen ? "fixed inset-0 z-[1200]" : "h-full"}`}
+      data-session-fullscreen-root={m.session.id}
+      tabIndex={-1}
+    >
+      <SessionFullscreenExitControl
+        sessionId={m.session.id}
+        sessionName={m.session.name || m.session.hostname}
+        isFullscreen={m.isFullscreen}
+        onExit={m.toggleFullscreen}
+      />
+      <div className="mb-4">
+        <LoadingElement size={48} ariaLabel="Connecting" />
+      </div>
       <h2 className="text-lg font-medium">Connecting...</h2>
-      <p className="text-[var(--color-textSecondary)] text-sm mt-2">{m.buildTargetUrl()}</p>
+      <p className="text-[var(--color-textSecondary)] text-sm mt-2">
+        {m.buildTargetUrl()}
+      </p>
     </div>
   );
 }
@@ -57,10 +87,20 @@ function ConnectingScreen({ m }: { m: Mgr }) {
 function NavButtons({ m }: { m: Mgr }) {
   return (
     <div className="flex items-center gap-1">
-      <button onClick={m.goBack} disabled={m.historyIndex <= 0} className="sor-icon-btn-sm disabled:opacity-50 disabled:cursor-not-allowed" title="Back">
+      <button
+        onClick={m.goBack}
+        disabled={m.historyIndex <= 0}
+        className="sor-icon-btn-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Back"
+      >
         <ArrowLeft className="w-4 h-4" />
       </button>
-      <button onClick={m.goForward} disabled={m.historyIndex >= m.history.length - 1} className="sor-icon-btn-sm disabled:opacity-50 disabled:cursor-not-allowed" title="Forward">
+      <button
+        onClick={m.goForward}
+        disabled={m.historyIndex >= m.history.length - 1}
+        className="sor-icon-btn-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Forward"
+      >
         <ArrowRight className="w-4 h-4" />
       </button>
       <button onClick={m.refresh} className="sor-icon-btn-sm" title="Refresh">
@@ -76,8 +116,14 @@ function NavButtons({ m }: { m: Mgr }) {
 function UrlBar({ m }: { m: Mgr }) {
   return (
     <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/50 border border-[var(--color-border)] rounded-lg">
-      {m.isSecure ? <Lock className="w-4 h-4 text-success flex-shrink-0" /> : <Unlock className="w-4 h-4 text-warning flex-shrink-0" />}
-      <span className="text-[var(--color-textSecondary)] text-sm truncate flex-1">{m.currentUrl}</span>
+      {m.isSecure ? (
+        <Lock className="w-4 h-4 text-success flex-shrink-0" />
+      ) : (
+        <Unlock className="w-4 h-4 text-warning flex-shrink-0" />
+      )}
+      <span className="text-[var(--color-textSecondary)] text-sm truncate flex-1">
+        {m.currentUrl}
+      </span>
       {m.resolveCredentials() && (
         <span className="flex items-center gap-1 text-xs text-primary flex-shrink-0">
           <Shield className="w-3 h-3" />
@@ -91,25 +137,58 @@ function UrlBar({ m }: { m: Mgr }) {
 function ActionButtons({ m }: { m: Mgr }) {
   return (
     <div className="flex items-center gap-1">
-      <button onClick={m.openExternal} className="sor-icon-btn-sm" title="Open in Browser">
+      <button
+        onClick={m.openExternal}
+        className="sor-icon-btn-sm"
+        title="Open in Browser"
+      >
         <ExternalLink className="w-4 h-4" />
       </button>
       <div className="relative" ref={m.totpBtnRef}>
-        <button type="button" onClick={() => m.setShowTotpPanel(!m.showTotpPanel)} className={`p-1.5 rounded relative ${m.showTotpPanel ? 'text-primary bg-primary/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="2FA Codes">
+        <button
+          type="button"
+          onClick={() => m.setShowTotpPanel(!m.showTotpPanel)}
+          className={`p-1.5 rounded relative ${m.showTotpPanel ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
+          title="2FA Codes"
+        >
           <Shield className="w-4 h-4" />
           {m.totpConfigs.length > 0 && (
             <span className="sor-notification-dot">{m.totpConfigs.length}</span>
           )}
         </button>
         {m.showTotpPanel && (
-          <RDPTotpPanel configs={m.totpConfigs} onUpdate={m.handleUpdateTotpConfigs} onClose={() => m.setShowTotpPanel(false)} defaultIssuer={m.settings.totpIssuer} defaultDigits={m.settings.totpDigits} defaultPeriod={m.settings.totpPeriod} defaultAlgorithm={m.settings.totpAlgorithm} anchorRef={m.totpBtnRef} />
+          <RDPTotpPanel
+            configs={m.totpConfigs}
+            onUpdate={m.handleUpdateTotpConfigs}
+            onClose={() => m.setShowTotpPanel(false)}
+            defaultIssuer={m.settings.totpIssuer}
+            defaultDigits={m.settings.totpDigits}
+            defaultPeriod={m.settings.totpPeriod}
+            defaultAlgorithm={m.settings.totpAlgorithm}
+            anchorRef={m.totpBtnRef}
+          />
         )}
       </div>
-      <button onClick={() => m.setShowSettings(!m.showSettings)} className={`p-1.5 rounded ${m.showSettings ? 'text-primary bg-primary/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="Settings">
+      <button
+        onClick={() => m.setShowSettings(!m.showSettings)}
+        className={`p-1.5 rounded ${m.showSettings ? "text-primary bg-primary/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
+        title="Settings"
+      >
         <Settings className="w-4 h-4" />
       </button>
-      <button onClick={m.toggleFullscreen} className="sor-icon-btn-sm" title={m.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}>
-        {m.isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+      <button
+        onClick={m.toggleFullscreen}
+        className="sor-icon-btn-sm"
+        title={m.isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        aria-label={m.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        aria-pressed={m.isFullscreen}
+        data-session-fullscreen-trigger={m.session.id}
+      >
+        {m.isFullscreen ? (
+          <Minimize2 className="w-4 h-4" />
+        ) : (
+          <Maximize2 className="w-4 h-4" />
+        )}
       </button>
     </div>
   );
@@ -120,27 +199,44 @@ function SettingsPanel({ m }: { m: Mgr }) {
   return (
     <div className="px-4 py-3 bg-[var(--color-surface)]/80 border-b border-[var(--color-border)]">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-[var(--color-text)]">Connection Settings</h3>
-        <button onClick={() => m.setShowSettings(false)} className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+        <h3 className="text-sm font-medium text-[var(--color-text)]">
+          Connection Settings
+        </h3>
+        <button
+          onClick={() => m.setShowSettings(false)}
+          className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span className="text-[var(--color-textSecondary)]">Target URL:</span>
-          <p className="text-[var(--color-text)] truncate">{m.buildTargetUrl()}</p>
+          <p className="text-[var(--color-text)] truncate">
+            {m.buildTargetUrl()}
+          </p>
         </div>
         <div>
-          <span className="text-[var(--color-textSecondary)]">Proxy Session:</span>
-          <p className="text-[var(--color-text)] font-mono text-xs truncate">{m.proxySessionId || 'Direct'}</p>
+          <span className="text-[var(--color-textSecondary)]">
+            Proxy Session:
+          </span>
+          <p className="text-[var(--color-text)] font-mono text-xs truncate">
+            {m.proxySessionId || "Direct"}
+          </p>
         </div>
         <div>
-          <span className="text-[var(--color-textSecondary)]">Authentication:</span>
-          <p className="text-[var(--color-text)]">{m.resolveCredentials() ? 'Basic Auth' : 'None'}</p>
+          <span className="text-[var(--color-textSecondary)]">
+            Authentication:
+          </span>
+          <p className="text-[var(--color-text)]">
+            {m.resolveCredentials() ? "Basic Auth" : "None"}
+          </p>
         </div>
         <div>
           <span className="text-[var(--color-textSecondary)]">Protocol:</span>
-          <p className="text-[var(--color-text)]">{m.session.protocol.toUpperCase()}</p>
+          <p className="text-[var(--color-text)]">
+            {m.session.protocol.toUpperCase()}
+          </p>
         </div>
       </div>
     </div>
@@ -151,7 +247,15 @@ function IframeContent({ m }: { m: Mgr }) {
   return (
     <div className="flex-1 relative min-h-0">
       {m.proxyUrl && (
-        <iframe ref={m.iframeRef} src={m.proxyUrl} className="absolute inset-0 w-full h-full border-0 bg-white" onLoad={m.handleIframeLoad} sandbox="allow-scripts allow-forms allow-popups allow-modals" title={`HTTP Viewer - ${m.connection?.name || m.session.hostname}`} />
+        <iframe
+          ref={m.iframeRef}
+          data-session-focus-target
+          src={m.proxyUrl}
+          className="absolute inset-0 w-full h-full border-0 bg-white"
+          onLoad={m.handleIframeLoad}
+          sandbox="allow-scripts allow-forms allow-popups allow-modals"
+          title={`HTTP Viewer - ${m.connection?.name || m.session.hostname}`}
+        />
       )}
     </div>
   );
@@ -169,9 +273,17 @@ function HTTPStatusBar({ m }: { m: Mgr }) {
       }
       right={
         <div className="flex items-center gap-4">
-          {m.proxySessionId && <span className="text-[var(--color-textMuted)]">Proxied via localhost</span>}
-          <span className={m.status === 'connected' ? 'text-success' : 'text-warning'}>
-            {m.status === 'connected' ? 'Connected' : 'Loading...'}
+          {m.proxySessionId && (
+            <span className="text-[var(--color-textMuted)]">
+              Proxied via localhost
+            </span>
+          )}
+          <span
+            className={
+              m.status === "connected" ? "text-success" : "text-warning"
+            }
+          >
+            {m.status === "connected" ? "Connected" : "Loading..."}
           </span>
         </div>
       }
@@ -184,19 +296,31 @@ function HTTPStatusBar({ m }: { m: Mgr }) {
 export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
   const m = useHTTPViewer(session);
 
-  if (m.status === 'error') return <ErrorScreen m={m} />;
-  if (m.status === 'connecting') return <ConnectingScreen m={m} />;
+  if (m.status === "error") return <ErrorScreen m={m} />;
+  if (m.status === "connecting") return <ConnectingScreen m={m} />;
 
   return (
-    <div className={`flex flex-col h-full bg-[var(--color-background)] ${m.isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-        <NavButtons m={m} />
-        <UrlBar m={m} />
-        <ActionButtons m={m} />
-      </div>
-      <SettingsPanel m={m} />
+    <div
+      className={`flex flex-col h-full bg-[var(--color-background)] ${m.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : ""}`}
+      data-session-fullscreen-root={session.id}
+      tabIndex={-1}
+    >
+      <SessionFullscreenExitControl
+        sessionId={session.id}
+        sessionName={session.name || session.hostname}
+        isFullscreen={m.isFullscreen}
+        onExit={m.toggleFullscreen}
+      />
+      {!m.isFullscreen && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+          <NavButtons m={m} />
+          <UrlBar m={m} />
+          <ActionButtons m={m} />
+        </div>
+      )}
+      {!m.isFullscreen && <SettingsPanel m={m} />}
       <IframeContent m={m} />
-      <HTTPStatusBar m={m} />
+      {!m.isFullscreen && <HTTPStatusBar m={m} />}
     </div>
   );
 };

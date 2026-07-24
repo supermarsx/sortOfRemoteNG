@@ -14,6 +14,7 @@ import { ConnectionSession } from "../../types/connection/connection";
 import { useVNCClient, VNCSettings } from "../../hooks/protocol/useVNCClient";
 import { StatusBar, ConnectingSpinner } from "../ui/display";
 import { Checkbox } from "../ui/forms";
+import { SessionFullscreenExitControl } from "../session/SessionFullscreenExitControl";
 
 interface VNCClientProps {
   session: ConnectionSession;
@@ -67,6 +68,9 @@ function VNCHeader({ m }: { m: Mgr }) {
           onClick={m.toggleFullscreen}
           className="sor-icon-btn-sm"
           title={m.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          aria-label={m.isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          aria-pressed={m.isFullscreen}
+          data-session-fullscreen-trigger={m.session.id}
         >
           {m.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
@@ -127,11 +131,14 @@ function SettingsPanel({ m }: { m: Mgr }) {
 
 function CanvasArea({ m }: { m: Mgr }) {
   return (
-    <div className="relative flex-1 flex items-center justify-center bg-black p-4">
+    <div
+      className={`relative flex-1 flex items-center justify-center bg-black ${m.isFullscreen ? "p-0" : "p-4"}`}
+    >
       {m.connectionStatus !== "error" && (
         <canvas
           ref={m.canvasRef}
-          className={`border border-[var(--color-border)] cursor-crosshair max-w-full max-h-full ${m.connectionStatus === "connected" ? "block" : "absolute opacity-0 pointer-events-none"}`}
+          data-session-focus-target
+          className={`${m.isFullscreen ? "max-h-full max-w-full border-0" : "max-h-full max-w-full border border-[var(--color-border)]"} cursor-crosshair ${m.connectionStatus === "connected" ? "block" : "absolute opacity-0 pointer-events-none"}`}
           onClick={m.handleCanvasClick}
           onKeyDown={m.handleKeyDown}
           onKeyUp={m.handleKeyUp}
@@ -195,12 +202,20 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
   const m = useVNCClient(session);
   return (
     <div
-      className={`flex flex-col bg-[var(--color-background)] ${m.isFullscreen ? "fixed inset-0 z-50" : "h-full"}`}
+      className={`flex flex-col bg-[var(--color-background)] ${m.isFullscreen ? "fixed inset-0 z-[1200] overflow-hidden" : "h-full"}`}
+      data-session-fullscreen-root={session.id}
+      tabIndex={-1}
     >
-      <VNCHeader m={m} />
-      <SettingsPanel m={m} />
+      <SessionFullscreenExitControl
+        sessionId={session.id}
+        sessionName={session.name || session.hostname}
+        isFullscreen={m.isFullscreen}
+        onExit={m.toggleFullscreen}
+      />
+      {!m.isFullscreen && <VNCHeader m={m} />}
+      {!m.isFullscreen && <SettingsPanel m={m} />}
       <CanvasArea m={m} />
-      <VNCStatusBar m={m} />
+      {!m.isFullscreen && <VNCStatusBar m={m} />}
     </div>
   );
 };

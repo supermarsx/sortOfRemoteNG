@@ -135,9 +135,7 @@ describe("useSSHCommandHistory", () => {
         act(() => {
           result.current.addEntry(cmd, [exec]);
         });
-        const entry = result.current.allEntries.find(
-          (e) => e.command === cmd,
-        );
+        const entry = result.current.allEntries.find((e) => e.command === cmd);
         expect(entry?.category).toBe(expectedCat);
       }
     });
@@ -151,7 +149,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("ls", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -177,7 +180,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("hostname", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -187,10 +195,7 @@ describe("useSSHCommandHistory", () => {
         result.current.updateTags(id, ["production", "info"]);
       });
 
-      expect(result.current.allEntries[0].tags).toEqual([
-        "production",
-        "info",
-      ]);
+      expect(result.current.allEntries[0].tags).toEqual(["production", "info"]);
     });
   });
 
@@ -202,7 +207,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("whoami", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -375,10 +385,20 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("cmd1", [
-          { sessionId: "s1", sessionName: "Server1", hostname: "h1", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "Server1",
+            hostname: "h1",
+            status: "success",
+          },
         ]);
         result.current.addEntry("cmd2", [
-          { sessionId: "s2", sessionName: "Server2", hostname: "h2", status: "success" },
+          {
+            sessionId: "s2",
+            sessionName: "Server2",
+            hostname: "h2",
+            status: "success",
+          },
         ]);
       });
 
@@ -481,13 +501,35 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("ls", [
-          { sessionId: "s1", sessionName: "S1", hostname: "h1", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S1",
+            hostname: "h1",
+            status: "success",
+            source: "web-terminal-script",
+            evidence: "remote-completion",
+          },
         ]);
         result.current.addEntry("pwd", [
-          { sessionId: "s2", sessionName: "S2", hostname: "h2", status: "error", errorMessage: "fail" },
+          {
+            sessionId: "s2",
+            sessionName: "S2",
+            hostname: "h2",
+            status: "error",
+            source: "web-terminal-script",
+            evidence: "remote-completion",
+            errorMessage: "fail",
+          },
         ]);
         result.current.addEntry("ls", [
-          { sessionId: "s1", sessionName: "S1", hostname: "h1", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S1",
+            hostname: "h1",
+            status: "success",
+            source: "web-terminal-script",
+            evidence: "remote-completion",
+          },
         ]);
       });
 
@@ -548,7 +590,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("test command", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -572,7 +619,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("echo hello", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -595,7 +647,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("ls -la", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -623,7 +680,9 @@ describe("useSSHCommandHistory", () => {
         { command: "imported-cmd-2" },
       ]);
 
-      let importResult: { imported: number; duplicatesSkipped: number; errors: string[] } | undefined;
+      let importResult:
+        | { imported: number; duplicatesSkipped: number; errors: string[] }
+        | undefined;
       act(() => {
         importResult = result.current.importHistory(importData);
       });
@@ -638,7 +697,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("existing-cmd", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -647,7 +711,9 @@ describe("useSSHCommandHistory", () => {
         { command: "new-cmd" },
       ]);
 
-      let importResult: { imported: number; duplicatesSkipped: number; errors: string[] } | undefined;
+      let importResult:
+        | { imported: number; duplicatesSkipped: number; errors: string[] }
+        | undefined;
       act(() => {
         importResult = result.current.importHistory(importData);
       });
@@ -659,9 +725,14 @@ describe("useSSHCommandHistory", () => {
     it("should report errors for invalid entries", () => {
       const { result } = renderHook(() => useSSHCommandHistory());
 
-      const importData = JSON.stringify([{ notACommand: true }, { command: "valid" }]);
+      const importData = JSON.stringify([
+        { notACommand: true },
+        { command: "valid" },
+      ]);
 
-      let importResult: { imported: number; duplicatesSkipped: number; errors: string[] } | undefined;
+      let importResult:
+        | { imported: number; duplicatesSkipped: number; errors: string[] }
+        | undefined;
       act(() => {
         importResult = result.current.importHistory(importData);
       });
@@ -795,7 +866,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("persisted cmd", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -834,7 +910,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("some command", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 
@@ -856,13 +937,28 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("cmd1", [
-          { sessionId: "s1", sessionName: "Server1", hostname: "h1", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "Server1",
+            hostname: "h1",
+            status: "success",
+          },
         ]);
         result.current.addEntry("cmd2", [
-          { sessionId: "s2", sessionName: "Server2", hostname: "h2", status: "success" },
+          {
+            sessionId: "s2",
+            sessionName: "Server2",
+            hostname: "h2",
+            status: "success",
+          },
         ]);
         result.current.addEntry("cmd3", [
-          { sessionId: "s1", sessionName: "Server1", hostname: "h1", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "Server1",
+            hostname: "h1",
+            status: "success",
+          },
         ]);
       });
 
@@ -878,7 +974,12 @@ describe("useSSHCommandHistory", () => {
 
       act(() => {
         result.current.addEntry("my command", [
-          { sessionId: "s1", sessionName: "S", hostname: "h", status: "success" },
+          {
+            sessionId: "s1",
+            sessionName: "S",
+            hostname: "h",
+            status: "success",
+          },
         ]);
       });
 

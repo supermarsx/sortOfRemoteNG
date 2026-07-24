@@ -1,10 +1,4 @@
-import {
-  useState,
-  useMemo,
-  useCallback,
-  useRef,
-  useEffect,
-} from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useConnections } from "../../contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -23,7 +17,7 @@ export interface CommandHistoryItem {
   sessionIds: string[];
   results: Record<
     string,
-    { output: string; error?: string; status: "pending" | "success" | "error" }
+    { detail: string; error?: string; status: "pending" | "cancelled" }
   >;
 }
 
@@ -32,7 +26,7 @@ export interface SessionOutput {
   sessionName: string;
   output: string;
   error?: string;
-  status: "idle" | "running" | "success" | "error";
+  status: "idle" | "running" | "dispatched" | "cancelled";
 }
 
 export type ViewMode = "tabs" | "mosaic";
@@ -99,18 +93,10 @@ export function useBulkSSHCommander(isOpen: boolean) {
     }
   }, []);
 
-  const saveScriptsToStorage = useCallback(
-    (scripts: SavedBulkScript[]) => {
-      const customScripts = scripts.filter(
-        (s) => !s.id.startsWith("default-"),
-      );
-      localStorage.setItem(
-        SCRIPTS_STORAGE_KEY,
-        JSON.stringify(customScripts),
-      );
-    },
-    [],
-  );
+  const saveScriptsToStorage = useCallback((scripts: SavedBulkScript[]) => {
+    const customScripts = scripts.filter((s) => !s.id.startsWith("default-"));
+    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(customScripts));
+  }, []);
 
   // Initialize session outputs when sessions change
   useEffect(() => {
@@ -199,9 +185,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
     const isTauri =
       typeof window !== "undefined" &&
-      Boolean(
-        (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-      );
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) {
       console.warn("Bulk SSH commander requires Tauri runtime");
       return;
@@ -246,30 +230,32 @@ export function useBulkSSHCommander(isOpen: boolean) {
           ...prev,
           [session.id]: {
             ...prev[session.id],
-            status: "success",
-            output: prev[session.id]?.output + `\n$ ${command.trim()}\n`,
+            status: "dispatched",
+            output:
+              prev[session.id]?.output +
+              `\n$ ${command.trim()}\nCommand input dispatched; remote completion is not tracked.\n`,
           },
         }));
 
         historyItem.results[session.id] = {
-          output: "Command sent successfully",
-          status: "success",
+          detail:
+            "Command input dispatched; remote completion was not observed.",
+          status: "pending",
         };
       } catch (error) {
-        const errorMsg =
-          error instanceof Error ? error.message : String(error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
         setSessionOutputs((prev) => ({
           ...prev,
           [session.id]: {
             ...prev[session.id],
-            status: "error",
+            status: "cancelled",
             error: errorMsg,
           },
         }));
         historyItem.results[session.id] = {
-          output: "",
+          detail: "Command input dispatch failed.",
           error: errorMsg,
-          status: "error",
+          status: "cancelled",
         };
       }
     });
@@ -285,8 +271,12 @@ export function useBulkSSHCommander(isOpen: boolean) {
           sessionId: session.id,
           sessionName: session.name,
           hostname: session.hostname ?? "",
-          status: result?.status === "success" ? "success" : result?.status === "error" ? "error" : "pending",
-          output: result?.output,
+          status: result?.status ?? "cancelled",
+          source: "bulk-dispatch",
+          evidence:
+            result?.status === "pending"
+              ? "dispatch-accepted"
+              : "dispatch-failed",
           errorMessage: result?.error,
         };
       },
@@ -327,9 +317,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
   const sendCancel = useCallback(async () => {
     const isTauri =
       typeof window !== "undefined" &&
-      Boolean(
-        (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-      );
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) return;
 
     const selectedSessions = sshSessions.filter((s) =>
@@ -353,11 +341,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
           },
         }));
       } catch (error) {
-        console.error(
-          "Failed to send cancel to session:",
-          session.id,
-          error,
-        );
+        console.error("Failed to send cancel to session:", session.id, error);
       }
     });
 
@@ -378,14 +362,11 @@ export function useBulkSSHCommander(isOpen: boolean) {
     setSessionOutputs(clearedOutputs);
   }, [sshSessions]);
 
-  const loadHistoryCommand = useCallback(
-    (historyItem: CommandHistoryItem) => {
-      setCommand(historyItem.command);
-      setShowHistory(false);
-      commandInputRef.current?.focus();
-    },
-    [],
-  );
+  const loadHistoryCommand = useCallback((historyItem: CommandHistoryItem) => {
+    setCommand(historyItem.command);
+    setShowHistory(false);
+    commandInputRef.current?.focus();
+  }, []);
 
   // ─── Script library ───────────────────────────────────────────
 

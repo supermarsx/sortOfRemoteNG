@@ -3,6 +3,8 @@ import { debugLog } from "../../utils/core/debugLogger";
 import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
+import { useSessionFullscreen } from "../session/useSessionFullscreen";
+import { dispatchVncPointerClick } from "../../utils/session/canvasCoordinates";
 
 export interface VNCSettings {
   viewOnly: boolean;
@@ -49,7 +51,15 @@ export function useVNCClient(session: ConnectionSession) {
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const reflowFullscreenCanvas = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+  }, []);
+  const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id, {
+    onEnter: reflowFullscreenCanvas,
+    onExit: reflowFullscreenCanvas,
+  });
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] =
     useState<VNCConnectionStatus>("connecting");
@@ -203,21 +213,21 @@ export function useVNCClient(session: ConnectionSession) {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const canvasX = x * scaleX;
-    const canvasY = y * scaleY;
-
-    debugLog(`VNC Click at: ${canvasX}, ${canvasY}`);
-
     const activeRfb = rfbRef.current;
-    if (activeRfb) {
-      activeRfb.sendPointerEvent(canvasX, canvasY, 0x1);
-      setTimeout(() => {
-        activeRfb.sendPointerEvent(canvasX, canvasY, 0x0);
-      }, 100);
+    if (!activeRfb) return;
+    const sent = dispatchVncPointerClick({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      objectFitContain: true,
+      sendPointerEvent: (x, y, buttonMask) => {
+        activeRfb.sendPointerEvent(x, y, buttonMask);
+      },
+    });
+    if (sent) {
+      debugLog("VNC pointer click sent");
     }
   };
 
@@ -235,8 +245,6 @@ export function useVNCClient(session: ConnectionSession) {
     const activeRfb = rfbRef.current;
     if (activeRfb) activeRfb.sendKey(event.keyCode, "KeyUp");
   };
-
-  const toggleFullscreen = () => setIsFullscreen((prev) => !prev);
 
   const sendCtrlAltDel = () => {
     const activeRfb = rfbRef.current;

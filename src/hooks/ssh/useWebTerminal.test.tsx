@@ -109,6 +109,7 @@ const mocks = vi.hoisted(() => {
     context,
     settingsContext,
     invoke: vi.fn(),
+    addHistoryEntry: vi.fn(),
     listen: vi.fn(async (..._args: unknown[]) => vi.fn()),
     macroRecorder: idleMacroRecorder,
     idleMacroRecorder,
@@ -155,11 +156,16 @@ vi.mock("../../utils/recording/macroService", () => ({
   saveRecording: vi.fn(async () => undefined),
   replayMacro: vi.fn(async () => undefined),
 }));
-vi.mock("../../types/settings/settings", () => ({
-  mergeSSHTerminalConfig: () => mocks.terminalConfig,
-  mergeSSHConnectionConfig: () => mocks.connectionConfig,
-  defaultSSHConnectionConfig: mocks.connectionConfig,
-}));
+vi.mock("../../types/settings/settings", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../types/settings/settings")>();
+  return {
+    ...actual,
+    mergeSSHTerminalConfig: () => mocks.terminalConfig,
+    mergeSSHConnectionConfig: () => mocks.connectionConfig,
+    defaultSSHConnectionConfig: mocks.connectionConfig,
+  };
+});
 vi.mock("../../components/recording/ScriptManager", () => ({
   getDefaultScripts: () => [],
 }));
@@ -179,7 +185,9 @@ vi.mock("../../utils/errors/redact", () => ({
   redactSecrets: (value: string) => value,
 }));
 vi.mock("./useSSHCommandHistory", () => ({
-  useSSHCommandHistory: () => ({}),
+  useSSHCommandHistory: () => ({
+    addEntry: mocks.addHistoryEntry,
+  }),
 }));
 
 import { useWebTerminal, type WebTerminalMgr } from "./useWebTerminal";
@@ -201,6 +209,7 @@ beforeEach(() => {
   mocks.MockTerminal.instances.length = 0;
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
+  mocks.addHistoryEntry.mockReset();
   mocks.listen.mockClear();
   mocks.idleMacroRecorder.recordInput.mockReset();
   mocks.macroRecorder = mocks.idleMacroRecorder;
@@ -268,7 +277,243 @@ describe("useWebTerminal input lifecycle", () => {
       sessionId: "backend-ssh-1",
       data: "whoami",
     });
+    expect(mocks.addHistoryEntry).not.toHaveBeenCalled();
   });
+
+  it("records one verified connected and disconnected lifecycle even when VPN cleanup later fails", async () => {
+    localStorage.clear();
+    mocks.runtimePath.transport.vpnPreSteps = [
+      { vpnType: "wireguard", connectionId: "wg-office" },
+    ];
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "disconnect_ssh") return Promise.resolve(undefined);
+      if (command === "acquire_vpn_leases") {
+        return Promise.resolve({
+          owner_id: (args as { ownerId: string }).ownerId,
+          leases: [],
+        });
+      }
+      if (command === "release_vpn_leases") {
+        return Promise.resolve({
+          owner_id: (args as { ownerId: string }).ownerId,
+          released: [],
+          errors: ["provider cleanup failed"],
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    view.rerender(<Harness />);
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      await model?.disconnectSsh();
+    });
+
+    const activity = JSON.parse(
+      localStorage.getItem("sshSessionActivity") ?? "[]",
+    );
+    expect(activity.map((record: { kind: string }) => record.kind)).toEqual([
+      "connected",
+      "disconnected",
+    ]);
+    expect(
+      activity.every(
+        (record: { sessionId: string }) =>
+          record.sessionId === "frontend-ssh-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("records verified script completion with frontend identity, duration, timestamp, and diagnostic stderr", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "execute_script") {
+        return Promise.resolve({
+          stdout: "ok\n",
+          stderr: "diagnostic warning",
+          exitCode: 0,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    const before = Date.now();
+    const dateNow = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(1_125);
+
+    await act(async () => {
+      await model?.runScript({
+        id: "script-1",
+        name: "Inspect",
+        description: "",
+        script: "echo ok\necho diagnostic >&2",
+        language: "bash",
+        category: "Test",
+        osTags: ["linux"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    });
+    const after = new Date().getTime();
+    dateNow.mockRestore();
+
+    expect(mocks.addHistoryEntry).toHaveBeenCalledWith(
+      "echo ok\necho diagnostic >&2",
+      [
+        expect.objectContaining({
+          sessionId: "frontend-ssh-1",
+          source: "web-terminal-script",
+          evidence: "remote-completion",
+          status: "success",
+          exitCode: 0,
+          durationMs: 125,
+          output: "ok\n",
+          stderr: "diagnostic warning",
+          errorMessage: undefined,
+        }),
+      ],
+    );
+    const execution = mocks.addHistoryEntry.mock.calls[0][1][0];
+    expect(Date.parse(execution.executedAt)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(execution.executedAt)).toBeLessThanOrEqual(after);
+  });
+
+  it("records nonzero script completion as verified failure", async () => {
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+      if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+      if (command === "execute_script") {
+        return Promise.resolve({
+          stdout: "",
+          stderr: "script failed",
+          exitCode: 7,
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(session);
+      return <div ref={model.containerRef} />;
+    };
+    render(<Harness />);
+    await waitFor(() => expect(model?.status).toBe("connected"));
+
+    await act(async () => {
+      await model?.runScript({
+        id: "script-2",
+        name: "Fail",
+        description: "",
+        script: "echo start\nexit 7",
+        language: "sh",
+        category: "Test",
+        osTags: ["linux"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    });
+
+    expect(mocks.addHistoryEntry).toHaveBeenCalledWith("echo start\nexit 7", [
+      expect.objectContaining({
+        sessionId: "frontend-ssh-1",
+        evidence: "remote-completion",
+        status: "error",
+        exitCode: 7,
+        stderr: "script failed",
+        errorMessage: "script failed",
+      }),
+    ]);
+  });
+
+  it.each([
+    ["accepted", undefined, "pending", "dispatch-accepted"],
+    [
+      "failed",
+      new Error("transport unavailable"),
+      "cancelled",
+      "dispatch-failed",
+    ],
+  ])(
+    "records fallback script dispatch as %s",
+    async (_label, fallbackError, expectedStatus, expectedEvidence) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      mocks.invoke.mockImplementation((command: string) => {
+        if (command === "connect_ssh") return Promise.resolve("backend-ssh-1");
+        if (command === "start_shell") return Promise.resolve("shell-ssh-1");
+        if (command === "execute_script")
+          return Promise.reject(new Error("unsupported"));
+        if (command === "send_ssh_input") {
+          return fallbackError
+            ? Promise.reject(fallbackError)
+            : Promise.resolve(undefined);
+        }
+        return Promise.resolve(undefined);
+      });
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      };
+      render(<Harness />);
+      await waitFor(() => expect(model?.status).toBe("connected"));
+
+      await act(async () => {
+        await model?.runScript({
+          id: "script-fallback",
+          name: "Fallback",
+          description: "",
+          script: "echo one\necho two",
+          language: "bash",
+          category: "Test",
+          osTags: ["linux"],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+      });
+
+      expect(mocks.addHistoryEntry).toHaveBeenCalledWith("echo one\necho two", [
+        expect.objectContaining({
+          sessionId: "frontend-ssh-1",
+          source: "web-terminal-script",
+          status: expectedStatus,
+          evidence: expectedEvidence,
+        }),
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        "execute_script failed, falling back to shell piping:",
+        expect.any(Error),
+      );
+      if (fallbackError) {
+        expect(error).toHaveBeenCalledWith(
+          "Failed to run script:",
+          fallbackError,
+        );
+      } else {
+        expect(error).not.toHaveBeenCalled();
+      }
+      warn.mockRestore();
+      error.mockRestore();
+    },
+  );
 
   it("acquires the VPN path before SSH and releases it after target disconnect", async () => {
     mocks.runtimePath.transport.vpnPreSteps = [

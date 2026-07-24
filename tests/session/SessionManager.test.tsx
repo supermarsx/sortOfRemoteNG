@@ -380,6 +380,7 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     first.unmount();
 
     renderManager();
+    await screen.findByText("https://example.com");
     expect(screen.getByTestId("session-filter-proxy")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -624,6 +625,11 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     });
 
     renderManagerWithConnectionState({ sessions, connections: [] });
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_rdp_sessions");
+      expect(invoke).toHaveBeenCalledWith("get_proxy_session_details");
+      expect(invoke).toHaveBeenCalledWith("list_sessions");
+    });
     fireEvent.click(screen.getByRole("button", { name: /sort by name/i }));
     fireEvent.change(screen.getByTestId("session-page-size"), {
       target: { value: "25" },
@@ -705,11 +711,13 @@ describe("SessionManager (unified RDP + internal proxy)", () => {
     ).toBeInTheDocument();
   });
 
-  it("projects SSH frontend sessions from ConnectionContext into unified rows", () => {
+  it("projects SSH frontend sessions from ConnectionContext into unified rows", async () => {
     const { result } = renderUnifiedSessionManagerHook({
       sessions: [SSH_SESSION],
       connections: [...CONNECTIONS, SSH_CONNECTION],
     });
+
+    await waitFor(() => expect(result.current.rdpRows).toHaveLength(1));
 
     const sshRow = result.current.frontendConnectionRows[0];
 

@@ -33,6 +33,8 @@ import {
   type FrameSchedulingMode,
 } from "../../components/rdp/rdpFramePipeline";
 import { useRdpFrameBackpressure } from "./useRdpFrameBackpressure";
+import { useSessionFullscreen } from "../session/useSessionFullscreen";
+import { mapClientPointToCanvas } from "../../utils/session/canvasCoordinates";
 import { useSessionRecorder } from "../recording/useSessionRecorder";
 import type {
   RDPStatusEvent,
@@ -194,7 +196,6 @@ export function useRDPClient(session: ConnectionSession) {
     "disconnected" | "connecting" | "connected" | "error" | "reconnecting"
   >("disconnected");
   const [statusMessage, setStatusMessage] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [rdpSessionId, setRdpSessionId] = useState<string | null>(null);
   const [desktopSize, setDesktopSize] = useState({ width: 1920, height: 1080 });
@@ -2485,6 +2486,17 @@ export function useRDPClient(session: ConnectionSession) {
 
   /** Cached canvas bounding rect — invalidated on resize/scroll/fullscreen. */
   const cachedRectRef = useRef<DOMRect | null>(null);
+  const reflowFullscreenCanvas = useCallback(() => {
+    cachedRectRef.current = null;
+    window.requestAnimationFrame(() => {
+      cachedRectRef.current = null;
+      window.dispatchEvent(new Event("resize"));
+    });
+  }, []);
+  const { isFullscreen, toggleFullscreen } = useSessionFullscreen(session.id, {
+    onEnter: reflowFullscreenCanvas,
+    onExit: reflowFullscreenCanvas,
+  });
 
   useEffect(() => {
     const invalidateRect = () => {
@@ -2509,22 +2521,24 @@ export function useRDPClient(session: ConnectionSession) {
     };
   }, []);
   const scaleCoords = useCallback(
-    (clientX: number, clientY: number): { x: number; y: number } => {
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
       const canvas = canvasRef.current;
-      if (!canvas) return { x: 0, y: 0 };
+      if (!canvas) return null;
       let rect = cachedRectRef.current;
       if (!rect) {
         rect = canvas.getBoundingClientRect();
         cachedRectRef.current = rect;
       }
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      return {
-        x: Math.round((clientX - rect.left) * scaleX),
-        y: Math.round((clientY - rect.top) * scaleY),
-      };
+      return mapClientPointToCanvas({
+        clientX,
+        clientY,
+        rect,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        objectFitContain: isFullscreen,
+      });
     },
-    [],
+    [isFullscreen],
   );
 
   // ─── Magnifier ─────────────────────────────────────────────────────
@@ -2582,7 +2596,9 @@ export function useRDPClient(session: ConnectionSession) {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!isConnected) return;
       if (mouseEnabled) {
-        const { x, y } = scaleCoords(e.clientX, e.clientY);
+        const point = scaleCoords(e.clientX, e.clientY);
+        if (!point) return;
+        const { x, y } = point;
         sendInput([{ type: "MouseMove", x, y }]);
       }
 
@@ -2653,7 +2669,9 @@ export function useRDPClient(session: ConnectionSession) {
       if (!isConnected || !mouseEnabled) return;
       e.preventDefault();
       (e.target as HTMLCanvasElement).focus();
-      const { x, y } = scaleCoords(e.clientX, e.clientY);
+      const point = scaleCoords(e.clientX, e.clientY);
+      if (!point) return;
+      const { x, y } = point;
       sendInput(
         [
           {
@@ -2673,7 +2691,9 @@ export function useRDPClient(session: ConnectionSession) {
   const handleMouseUp = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!isConnected || !mouseEnabled) return;
-      const { x, y } = scaleCoords(e.clientX, e.clientY);
+      const point = scaleCoords(e.clientX, e.clientY);
+      if (!point) return;
+      const { x, y } = point;
       sendInput(
         [
           {
@@ -2694,7 +2714,9 @@ export function useRDPClient(session: ConnectionSession) {
     (e: React.WheelEvent<HTMLCanvasElement>) => {
       if (!isConnected || !mouseEnabled) return;
       e.preventDefault();
-      const { x, y } = scaleCoords(e.clientX, e.clientY);
+      const point = scaleCoords(e.clientX, e.clientY);
+      if (!point) return;
+      const { x, y } = point;
       const horizontal = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
 
       // RDP wheel units: 120 = one notch.  Positive = scroll up / left.
@@ -2804,10 +2826,9 @@ export function useRDPClient(session: ConnectionSession) {
     e.preventDefault();
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    cachedRectRef.current = null;
-    setIsFullscreen((prev) => !prev);
-  }, []);
+  const handleToggleFullscreen = useCallback(() => {
+    toggleFullscreen();
+  }, [toggleFullscreen]);
 
   // ─── Update connection helper ──────────────────────────────────────
 
@@ -3007,7 +3028,7 @@ export function useRDPClient(session: ConnectionSession) {
     handleTrustReject,
     handleRetry,
     initializeRDPConnection,
-    toggleFullscreen,
+    toggleFullscreen: handleToggleFullscreen,
     handleRenameConnection,
     handleUpdateTotpConfigs,
     handleUpdateServerCertValidation,

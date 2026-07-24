@@ -175,6 +175,11 @@ const mockConnection = {
   password: "testpass",
   privateKey: null,
   passphrase: null,
+  rdpSettings: {
+    performance: {
+      frontendRenderer: "canvas2d" as const,
+    },
+  },
   createdAt: new Date(),
   updatedAt: new Date(),
   isGroup: false,
@@ -1383,6 +1388,116 @@ describe("RDPClient", () => {
       });
     });
 
+    it("rejects fullscreen letterbox input and maps every pointer handler to contained content", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        );
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      fireEvent.click(
+        document.querySelector('[data-tooltip="Fullscreen"]') as HTMLElement,
+      );
+      const canvas = screen.getByTestId("rdp-canvas") as HTMLCanvasElement;
+      await waitFor(() => expect(canvas).toHaveClass("max-h-full"));
+      vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 1000,
+        bottom: 1000,
+        width: 1000,
+        height: 1000,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      mockInvoke.mockClear();
+
+      fireEvent.mouseMove(canvas, { clientX: 500, clientY: 100 });
+      fireEvent.mouseDown(canvas, {
+        button: 0,
+        clientX: 500,
+        clientY: 900,
+      });
+      fireEvent.mouseUp(canvas, {
+        button: 0,
+        clientX: 500,
+        clientY: 100,
+      });
+      fireEvent.wheel(canvas, {
+        clientX: 500,
+        clientY: 900,
+        deltaY: -120,
+      });
+      await act(async () => Promise.resolve());
+      expect(mockInvoke).not.toHaveBeenCalledWith(
+        "rdp_send_input",
+        expect.anything(),
+      );
+
+      const expectOnlyInputEvent = async (
+        expected: Record<string, unknown>,
+      ) => {
+        await waitFor(() => {
+          const inputCalls = mockInvoke.mock.calls.filter(
+            ([command]) => command === "rdp_send_input",
+          );
+          expect(inputCalls).toHaveLength(1);
+          expect(inputCalls[0][1]).toMatchObject({
+            sessionId: "rdp-session-123",
+            events: [expected],
+          });
+        });
+        mockInvoke.mockClear();
+      };
+
+      fireEvent.mouseMove(canvas, { clientX: 500, clientY: 500 });
+      await expectOnlyInputEvent({ type: "MouseMove", x: 960, y: 540 });
+
+      fireEvent.mouseDown(canvas, {
+        button: 0,
+        clientX: 500,
+        clientY: 500,
+      });
+      await expectOnlyInputEvent({
+        type: "MouseButton",
+        x: 960,
+        y: 540,
+        pressed: true,
+      });
+
+      fireEvent.mouseUp(canvas, {
+        button: 0,
+        clientX: 500,
+        clientY: 500,
+      });
+      await expectOnlyInputEvent({
+        type: "MouseButton",
+        x: 960,
+        y: 540,
+        pressed: false,
+      });
+
+      fireEvent.wheel(canvas, {
+        clientX: 500,
+        clientY: 500,
+        deltaY: -120,
+      });
+      await expectOnlyInputEvent({
+        type: "Wheel",
+        x: 960,
+        y: 540,
+        horizontal: false,
+      });
+    });
+
     it("should request backend desktop resize when the connected container changes size", async () => {
       renderWithProviders(mockSession);
 
@@ -1464,9 +1579,28 @@ describe("RDPClient", () => {
       const fullscreenButton = document.querySelector(
         '[data-tooltip="Fullscreen"]',
       ) as HTMLElement;
-      fullscreenButton.click();
+      const resizeListener = vi.fn();
+      window.addEventListener("resize", resizeListener);
+      fireEvent.click(fullscreenButton);
 
-      expect(screen.getByText("connected")).toBeInTheDocument();
+      const canvas = screen.getByTestId("rdp-canvas");
+      await waitFor(() => {
+        expect(canvas).toHaveClass("max-h-full", "max-w-full", "border-0");
+        expect(canvas).not.toHaveClass("h-full", "w-full");
+        expect(resizeListener).toHaveBeenCalledTimes(1);
+      });
+      resizeListener.mockClear();
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Exit no-distraction fullscreen for Test RDP Session",
+        }),
+      );
+      await waitFor(() => {
+        expect(resizeListener).toHaveBeenCalledTimes(1);
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+      window.removeEventListener("resize", resizeListener);
     });
   });
 

@@ -3,6 +3,7 @@ import type { TOTPConfig } from "../../../types/settings/settings";
 import type { useRDPClientHeader } from "../../../hooks/rdp/useRDPClientHeader";
 
 export interface RDPClientHeaderProps {
+  sessionId: string;
   sessionName: string;
   sessionHostname: string;
   connectionStatus: string;
@@ -42,8 +43,8 @@ export interface RDPClientHeaderProps {
   certFingerprint: string;
   connectionName: string;
   onRenameConnection: (name: string) => void;
-  serverCertValidation?: 'validate' | 'warn' | 'ignore';
-  onUpdateServerCertValidation: (mode: 'validate' | 'warn' | 'ignore') => void;
+  serverCertValidation?: "validate" | "warn" | "ignore";
+  onUpdateServerCertValidation: (mode: "validate" | "warn" | "ignore") => void;
   totpConfigs?: TOTPConfig[];
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
   handleAutoTypeTOTP?: (code: string) => void;
@@ -57,7 +58,9 @@ export interface RDPClientHeaderProps {
 }
 
 /** Quarter-turn rotations cycled by the toolbar button. */
-export const ROTATION_CYCLE: ReadonlyArray<0 | 90 | 180 | 270> = [0, 90, 180, 270];
+export const ROTATION_CYCLE: ReadonlyArray<0 | 90 | 180 | 270> = [
+  0, 90, 180, 270,
+];
 
 /** Next rotation in the cycle. */
 export function nextRotation(current: 0 | 90 | 180 | 270): 0 | 90 | 180 | 270 {
@@ -71,7 +74,8 @@ export function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export const btnBase = "p-1 hover:bg-[var(--color-border)] rounded transition-colors";
+export const btnBase =
+  "p-1 hover:bg-[var(--color-border)] rounded transition-colors";
 export const btnDefault = `${btnBase} text-[var(--color-textSecondary)] hover:text-[var(--color-text)]`;
 export const btnActive = `${btnBase} text-[var(--color-text)] bg-[var(--color-border)]`;
 export const btnDisabled = `${btnBase} text-[var(--color-textSecondary)] cursor-not-allowed`;

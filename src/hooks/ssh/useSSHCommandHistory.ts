@@ -7,12 +7,17 @@ import {
   SSHCommandHistoryConfig,
   SSHCommandCategory,
   CommandExecution,
-  CommandExecutionStatus,
   HistoryExportOptions,
   HistoryImportResult,
   defaultHistoryFilter,
   defaultHistoryConfig,
 } from "../../types/ssh/sshCommandHistory";
+import { commandExecutionDisplayStatus } from "../../utils/ssh/sshCommandEvidence";
+import {
+  SSH_COMMAND_HISTORY_SYNC_EVENT,
+  sanitizeSSHCommandHistory,
+  sanitizeSSHCommandHistoryEntry,
+} from "../../utils/ssh/sshCommandHistorySanitizer";
 
 // ─── Constants ─────────────────────────────────────────────────
 
@@ -21,20 +26,58 @@ const CONFIG_STORAGE_KEY = "sshCommandHistoryConfig";
 
 // ─── Category auto-detection ───────────────────────────────────
 
-const CATEGORY_PATTERNS: Array<{ pattern: RegExp; category: SSHCommandCategory }> = [
+const CATEGORY_PATTERNS: Array<{
+  pattern: RegExp;
+  category: SSHCommandCategory;
+}> = [
   { pattern: /\b(docker|podman|container|compose)\b/i, category: "docker" },
   { pattern: /\b(kubectl|k8s|helm|minikube|kube)\b/i, category: "kubernetes" },
   { pattern: /\b(git|svn|hg)\b/i, category: "git" },
-  { pattern: /\b(mysql|psql|mongo|redis-cli|sqlite|pg_dump|mysqldump)\b/i, category: "database" },
-  { pattern: /\b(systemctl|service|journalctl|supervisorctl)\b/i, category: "service" },
-  { pattern: /\b(apt|yum|dnf|pacman|brew|pip|npm|gem|cargo)\b/i, category: "package" },
-  { pattern: /\b(netstat|ss|ifconfig|ip\s|ping|traceroute|nslookup|dig|curl|wget|nmap|tcpdump|iptables|firewall)\b/i, category: "network" },
-  { pattern: /\b(ps|top|htop|kill|killall|pkill|pgrep|nice|renice|nohup)\b/i, category: "process" },
-  { pattern: /\b(ls|cat|cp|mv|rm|mkdir|chmod|chown|find|grep|awk|sed|tar|zip|unzip|rsync|scp|ln|stat|du|head|tail|wc|sort|diff)\b/i, category: "file" },
-  { pattern: /\b(df|fdisk|mount|umount|lsblk|blkid|mkfs|fsck|swap)\b/i, category: "disk" },
-  { pattern: /\b(useradd|userdel|usermod|passwd|groupadd|su\s|sudo|who|w\s|last|id\s)\b/i, category: "user" },
-  { pattern: /\b(ssh-keygen|openssl|gpg|fail2ban|selinux|apparmor|ufw|audit)\b/i, category: "security" },
-  { pattern: /\b(uname|hostname|uptime|date|cal|free|lscpu|lsmod|dmesg|sysctl|vmstat|iostat|sar)\b/i, category: "system" },
+  {
+    pattern: /\b(mysql|psql|mongo|redis-cli|sqlite|pg_dump|mysqldump)\b/i,
+    category: "database",
+  },
+  {
+    pattern: /\b(systemctl|service|journalctl|supervisorctl)\b/i,
+    category: "service",
+  },
+  {
+    pattern: /\b(apt|yum|dnf|pacman|brew|pip|npm|gem|cargo)\b/i,
+    category: "package",
+  },
+  {
+    pattern:
+      /\b(netstat|ss|ifconfig|ip\s|ping|traceroute|nslookup|dig|curl|wget|nmap|tcpdump|iptables|firewall)\b/i,
+    category: "network",
+  },
+  {
+    pattern: /\b(ps|top|htop|kill|killall|pkill|pgrep|nice|renice|nohup)\b/i,
+    category: "process",
+  },
+  {
+    pattern:
+      /\b(ls|cat|cp|mv|rm|mkdir|chmod|chown|find|grep|awk|sed|tar|zip|unzip|rsync|scp|ln|stat|du|head|tail|wc|sort|diff)\b/i,
+    category: "file",
+  },
+  {
+    pattern: /\b(df|fdisk|mount|umount|lsblk|blkid|mkfs|fsck|swap)\b/i,
+    category: "disk",
+  },
+  {
+    pattern:
+      /\b(useradd|userdel|usermod|passwd|groupadd|su\s|sudo|who|w\s|last|id\s)\b/i,
+    category: "user",
+  },
+  {
+    pattern:
+      /\b(ssh-keygen|openssl|gpg|fail2ban|selinux|apparmor|ufw|audit)\b/i,
+    category: "security",
+  },
+  {
+    pattern:
+      /\b(uname|hostname|uptime|date|cal|free|lscpu|lsmod|dmesg|sysctl|vmstat|iostat|sar)\b/i,
+    category: "system",
+  },
 ];
 
 function detectCategory(command: string): SSHCommandCategory {
@@ -50,25 +93,43 @@ function loadHistory(): SSHCommandHistoryEntry[] {
   try {
     const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
     if (!stored) return [];
-    return JSON.parse(stored) as SSHCommandHistoryEntry[];
+    return sanitizeSSHCommandHistory(JSON.parse(stored), {
+      mode: "storage",
+      fallbackCategory: detectCategory,
+    });
   } catch {
     return [];
   }
 }
 
+function dispatchHistorySync(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SSH_COMMAND_HISTORY_SYNC_EVENT));
+  }
+}
+
 function saveHistory(entries: SSHCommandHistoryEntry[]): void {
   try {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries));
+    const serialized = JSON.stringify(entries);
+    if (localStorage.getItem(HISTORY_STORAGE_KEY) === serialized) return;
+    localStorage.setItem(HISTORY_STORAGE_KEY, serialized);
+    dispatchHistorySync();
   } catch {
     // Quota exceeded — trim oldest non-starred entries and retry
-    const trimmed = entries
+    const trimmed = [...entries]
       .sort((a, b) => {
         if (a.starred !== b.starred) return a.starred ? -1 : 1;
-        return new Date(b.lastExecutedAt).getTime() - new Date(a.lastExecutedAt).getTime();
+        return (
+          new Date(b.lastExecutedAt).getTime() -
+          new Date(a.lastExecutedAt).getTime()
+        );
       })
       .slice(0, Math.floor(entries.length * 0.75));
     try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed));
+      const serialized = JSON.stringify(trimmed);
+      if (localStorage.getItem(HISTORY_STORAGE_KEY) === serialized) return;
+      localStorage.setItem(HISTORY_STORAGE_KEY, serialized);
+      dispatchHistorySync();
     } catch {
       // give up silently
     }
@@ -123,9 +184,7 @@ function enforceRetention(
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - config.retentionDays);
     const cutoffStr = cutoff.toISOString();
-    result = result.filter(
-      (e) => e.starred || e.lastExecutedAt >= cutoffStr,
-    );
+    result = result.filter((e) => e.starred || e.lastExecutedAt >= cutoffStr);
   }
 
   // Enforce max entries
@@ -188,7 +247,14 @@ function exportAsCSV(
   entries: SSHCommandHistoryEntry[],
   options: HistoryExportOptions,
 ): string {
-  const headers = ["command", "lastExecutedAt", "executionCount", "category", "starred", "tags"];
+  const headers = [
+    "command",
+    "lastExecutedAt",
+    "executionCount",
+    "category",
+    "starred",
+    "tags",
+  ];
   if (options.includeMetadata) headers.push("note", "createdAt", "id");
   const rows = entries.map((e) => {
     const row: string[] = [
@@ -200,11 +266,7 @@ function exportAsCSV(
       `"${e.tags.join(", ")}"`,
     ];
     if (options.includeMetadata) {
-      row.push(
-        `"${(e.note ?? "").replace(/"/g, '""')}"`,
-        e.createdAt,
-        e.id,
-      );
+      row.push(`"${(e.note ?? "").replace(/"/g, '""')}"`, e.createdAt, e.id);
     }
     return row.join(",");
   });
@@ -214,9 +276,14 @@ function exportAsCSV(
 // ─── Hook ──────────────────────────────────────────────────────
 
 export function useSSHCommandHistory(sessionId?: string) {
-  const [entries, setEntries] = useState<SSHCommandHistoryEntry[]>(() => loadHistory());
-  const [config, setConfig] = useState<SSHCommandHistoryConfig>(() => loadConfig());
-  const [filter, setFilter] = useState<SSHCommandHistoryFilter>(defaultHistoryFilter);
+  const [entries, setEntries] = useState<SSHCommandHistoryEntry[]>(() =>
+    loadHistory(),
+  );
+  const [config, setConfig] = useState<SSHCommandHistoryConfig>(() =>
+    loadConfig(),
+  );
+  const [filter, setFilter] =
+    useState<SSHCommandHistoryFilter>(defaultHistoryFilter);
   const [isOpen, setIsOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
 
@@ -236,6 +303,19 @@ export function useSSHCommandHistory(sessionId?: string) {
       saveHistory(enforced.length !== entries.length ? enforced : entries);
     }
   }, [entries, config]);
+
+  useEffect(() => {
+    const syncHistory = () => setEntries(loadHistory());
+    const syncFromStorage = (event: StorageEvent) => {
+      if (event.key === HISTORY_STORAGE_KEY) syncHistory();
+    };
+    window.addEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, syncHistory);
+    window.addEventListener("storage", syncFromStorage);
+    return () => {
+      window.removeEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, syncHistory);
+      window.removeEventListener("storage", syncFromStorage);
+    };
+  }, []);
 
   useEffect(() => {
     saveConfig(config);
@@ -290,7 +370,10 @@ export function useSSHCommandHistory(sessionId?: string) {
     if (filter.statusFilter !== "all") {
       result = result.filter((e) => {
         const last = e.executions[e.executions.length - 1];
-        return last?.status === filter.statusFilter;
+        return (
+          last !== undefined &&
+          commandExecutionDisplayStatus(last) === filter.statusFilter
+        );
       });
     }
 
@@ -317,7 +400,10 @@ export function useSSHCommandHistory(sessionId?: string) {
   // ── Statistics ──────────────────────────────────────────────
 
   const stats = useMemo((): SSHCommandHistoryStats => {
-    const totalExecutions = entries.reduce((sum, e) => sum + e.executionCount, 0);
+    const totalExecutions = entries.reduce(
+      (sum, e) => sum + e.executionCount,
+      0,
+    );
     const allSessions = new Set<string>();
     let successCount = 0;
     let totalWithStatus = 0;
@@ -325,12 +411,14 @@ export function useSSHCommandHistory(sessionId?: string) {
     const categoryBreakdown = {} as Record<SSHCommandCategory, number>;
 
     for (const entry of entries) {
-      categoryBreakdown[entry.category] = (categoryBreakdown[entry.category] ?? 0) + 1;
+      categoryBreakdown[entry.category] =
+        (categoryBreakdown[entry.category] ?? 0) + 1;
       for (const ex of entry.executions) {
         allSessions.add(ex.sessionId);
-        if (ex.status === "success" || ex.status === "error") {
+        const displayStatus = commandExecutionDisplayStatus(ex);
+        if (displayStatus === "success" || displayStatus === "error") {
           totalWithStatus++;
-          if (ex.status === "success") successCount++;
+          if (displayStatus === "success") successCount++;
         }
       }
     }
@@ -387,11 +475,22 @@ export function useSSHCommandHistory(sessionId?: string) {
 
   const addEntry = useCallback(
     (command: string, executions: CommandExecution[]) => {
-      setEntries((prev) => {
+      const recordedAt = new Date().toISOString();
+      const stampedExecutions = executions.map((execution) => ({
+        ...execution,
+        executedAt: execution.executedAt ?? recordedAt,
+        output:
+          config.trackOutput && execution.output !== undefined
+            ? truncateOutput(execution.output, config.maxOutputSize)
+            : undefined,
+        stderr:
+          config.trackOutput && execution.stderr !== undefined
+            ? truncateOutput(execution.stderr, config.maxOutputSize)
+            : undefined,
+      }));
+      const updateEntries = (prev: SSHCommandHistoryEntry[]) => {
         // Check for duplicate
-        const existing = prev.find(
-          (e) => e.command.trim() === command.trim(),
-        );
+        const existing = prev.find((e) => e.command.trim() === command.trim());
 
         if (existing) {
           // Update existing entry
@@ -399,17 +498,11 @@ export function useSSHCommandHistory(sessionId?: string) {
             e.id === existing.id
               ? {
                   ...e,
-                  lastExecutedAt: new Date().toISOString(),
+                  lastExecutedAt: recordedAt,
                   executionCount: e.executionCount + 1,
-                  executions: [
-                    ...e.executions,
-                    ...executions.map((ex) => ({
-                      ...ex,
-                      output: config.trackOutput
-                        ? truncateOutput(ex.output ?? "", config.maxOutputSize)
-                        : undefined,
-                    })),
-                  ].slice(-20), // keep last 20 executions per entry
+                  executions: [...e.executions, ...stampedExecutions].slice(
+                    -20,
+                  ), // keep last 20 executions per entry
                 }
               : e,
           );
@@ -423,22 +516,24 @@ export function useSSHCommandHistory(sessionId?: string) {
         const newEntry: SSHCommandHistoryEntry = {
           id: generateId(),
           command: command.trim(),
-          createdAt: new Date().toISOString(),
-          lastExecutedAt: new Date().toISOString(),
+          createdAt: recordedAt,
+          lastExecutedAt: recordedAt,
           executionCount: 1,
           starred: false,
           tags: [],
           category,
-          executions: executions.map((ex) => ({
-            ...ex,
-            output: config.trackOutput
-              ? truncateOutput(ex.output ?? "", config.maxOutputSize)
-              : undefined,
-          })),
+          executions: stampedExecutions,
         };
 
         return enforceRetention([newEntry, ...prev], config);
-      });
+      };
+      if (config.persistEnabled) {
+        const next = updateEntries(loadHistory());
+        saveHistory(next);
+        setEntries(loadHistory());
+      } else {
+        setEntries(updateEntries);
+      }
     },
     [config],
   );
@@ -447,9 +542,7 @@ export function useSSHCommandHistory(sessionId?: string) {
 
   const toggleStar = useCallback((entryId: string) => {
     setEntries((prev) =>
-      prev.map((e) =>
-        e.id === entryId ? { ...e, starred: !e.starred } : e,
-      ),
+      prev.map((e) => (e.id === entryId ? { ...e, starred: !e.starred } : e)),
     );
   }, []);
 
@@ -489,17 +582,14 @@ export function useSSHCommandHistory(sessionId?: string) {
 
   // ── Delete all (with optional filter) ───────────────────────
 
-  const clearHistory = useCallback(
-    (keepStarred = true) => {
-      if (keepStarred) {
-        setEntries((prev) => prev.filter((e) => e.starred));
-      } else {
-        setEntries([]);
-      }
-      setSelectedEntryId(null);
-    },
-    [],
-  );
+  const clearHistory = useCallback((keepStarred = true) => {
+    if (keepStarred) {
+      setEntries((prev) => prev.filter((e) => e.starred));
+    } else {
+      setEntries([]);
+    }
+    setSelectedEntryId(null);
+  }, []);
 
   // ── Arrow-key history navigation ────────────────────────────
 
@@ -518,10 +608,7 @@ export function useSSHCommandHistory(sessionId?: string) {
       });
 
       // Return the command at the new index
-      const nextIdx = Math.min(
-        navigationIndex + 1,
-        historyList.length - 1,
-      );
+      const nextIdx = Math.min(navigationIndex + 1, historyList.length - 1);
       return historyList[nextIdx]?.command ?? null;
     },
     [filteredEntries, navigationIndex],
@@ -591,7 +678,7 @@ export function useSSHCommandHistory(sessionId?: string) {
       };
 
       try {
-        const parsed = JSON.parse(jsonString);
+        const parsed: unknown = JSON.parse(jsonString);
         if (!Array.isArray(parsed)) {
           result.errors.push("Import data must be a JSON array");
           return result;
@@ -599,33 +686,38 @@ export function useSSHCommandHistory(sessionId?: string) {
 
         setEntries((prev) => {
           const existingCommands = new Set(prev.map((e) => e.command.trim()));
+          const usedIds = new Set(prev.map((entry) => entry.id));
           const newEntries: SSHCommandHistoryEntry[] = [];
 
           for (const item of parsed) {
-            if (!item.command || typeof item.command !== "string") {
+            const sanitized = sanitizeSSHCommandHistoryEntry(item, {
+              mode: "import",
+              maxOutputSize: config.maxOutputSize,
+              fallbackCategory: detectCategory,
+            });
+            if (!sanitized) {
               result.errors.push(
                 `Skipped item: missing or invalid 'command' field`,
               );
               continue;
             }
 
-            if (existingCommands.has(item.command.trim())) {
+            if (existingCommands.has(sanitized.command)) {
               result.duplicatesSkipped++;
               continue;
             }
 
-            existingCommands.add(item.command.trim());
+            existingCommands.add(sanitized.command);
+            let id = sanitized.id;
+            let collisionIndex = 1;
+            while (usedIds.has(id)) {
+              id = `${generateId()}-${collisionIndex}`;
+              collisionIndex++;
+            }
+            usedIds.add(id);
             newEntries.push({
-              id: item.id ?? generateId(),
-              command: item.command.trim(),
-              createdAt: item.createdAt ?? new Date().toISOString(),
-              lastExecutedAt: item.lastExecutedAt ?? new Date().toISOString(),
-              executionCount: item.executionCount ?? 1,
-              starred: item.starred ?? false,
-              tags: Array.isArray(item.tags) ? item.tags : [],
-              category: item.category ?? detectCategory(item.command),
-              executions: Array.isArray(item.executions) ? item.executions : [],
-              note: item.note,
+              ...sanitized,
+              id,
             });
             result.imported++;
           }

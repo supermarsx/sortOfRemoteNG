@@ -5,6 +5,7 @@ import {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
+import { useSessionFullscreen } from "../session/useSessionFullscreen";
 
 // ─── Types mirroring the Rust backend (see sorng-rustdesk/src/rustdesk/types.rs) ──
 
@@ -96,7 +97,7 @@ function resolveRemotePassword(connection?: Connection): string | undefined {
 export function useRustDeskClient(session: ConnectionSession) {
   const { state, dispatch } = useConnections();
   const connection = state.connections.find(
-    candidate => candidate.id === session.connectionId,
+    (candidate) => candidate.id === session.connectionId,
   );
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -105,7 +106,8 @@ export function useRustDeskClient(session: ConnectionSession) {
     "connecting" | "connected" | "disconnected" | "error"
   >("connecting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { isFullscreen, setIsFullscreen, toggleFullscreen } =
+    useSessionFullscreen(session.id);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettingsState] =
     useState<ClientSettings>(DEFAULT_SETTINGS);
@@ -227,26 +229,29 @@ export function useRustDeskClient(session: ConnectionSession) {
     }
   }, [connection, session, settings, updateSession]);
 
-  const cleanup = useCallback(async (updateFrontend = true) => {
-    const sid = sessionIdRef.current;
-    sessionIdRef.current = null;
-    setIsConnected(false);
-    setConnectionStatus("disconnected");
-    if (updateFrontend) {
-      updateSession({
-        backendSessionId: undefined,
-        status: "disconnected",
-        errorMessage: undefined,
-      });
-    }
-    if (sid) {
-      try {
-        await invoke("rustdesk_disconnect", { sessionId: sid });
-      } catch (err) {
-        console.warn("[RustDesk] disconnect failed:", err);
+  const cleanup = useCallback(
+    async (updateFrontend = true) => {
+      const sid = sessionIdRef.current;
+      sessionIdRef.current = null;
+      setIsConnected(false);
+      setConnectionStatus("disconnected");
+      if (updateFrontend) {
+        updateSession({
+          backendSessionId: undefined,
+          status: "disconnected",
+          errorMessage: undefined,
+        });
       }
-    }
-  }, [updateSession]);
+      if (sid) {
+        try {
+          await invoke("rustdesk_disconnect", { sessionId: sid });
+        } catch (err) {
+          console.warn("[RustDesk] disconnect failed:", err);
+        }
+      }
+    },
+    [updateSession],
+  );
 
   useEffect(() => {
     activeRef.current = true;
@@ -285,6 +290,7 @@ export function useRustDeskClient(session: ConnectionSession) {
     errorMessage,
     isFullscreen,
     setIsFullscreen,
+    toggleFullscreen,
     showSettings,
     setShowSettings,
     settings,

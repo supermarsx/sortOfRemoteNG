@@ -4,13 +4,7 @@ import { SSHCommandCategories } from "../../../types/ssh/sshCommandHistory";
 import { Select } from "../../ui/forms";
 import type { HistoryMgr, TFunc } from "./types";
 
-function HistorySearchBar({
-  mgr,
-  t,
-}: {
-  mgr: HistoryMgr;
-  t: TFunc;
-}) {
+function HistorySearchBar({ mgr, t }: { mgr: HistoryMgr; t: TFunc }) {
   const [showAdvanced, setShowAdvanced] = React.useState(false);
 
   return (
@@ -25,9 +19,7 @@ function HistorySearchBar({
           <input
             type="text"
             value={mgr.filter.searchQuery}
-            onChange={(e) =>
-              mgr.updateFilter({ searchQuery: e.target.value })
-            }
+            onChange={(e) => mgr.updateFilter({ searchQuery: e.target.value })}
             placeholder={t(
               "sshHistory.searchPlaceholder",
               "Search commands, tags, notes...",
@@ -55,7 +47,10 @@ function HistorySearchBar({
           }`}
           title={t("sshHistory.starredOnly", "Starred only")}
         >
-          <Star size={14} fill={mgr.filter.starredOnly ? "currentColor" : "none"} />
+          <Star
+            size={14}
+            fill={mgr.filter.starredOnly ? "currentColor" : "none"}
+          />
         </button>
 
         <button
@@ -90,11 +85,19 @@ function HistorySearchBar({
           {/* Category filter */}
           <Select
             value={mgr.filter.category}
-            onChange={(v) => mgr.updateFilter({ category: v as typeof mgr.filter.category })}
+            onChange={(v) =>
+              mgr.updateFilter({ category: v as typeof mgr.filter.category })
+            }
             variant="form-sm"
             options={[
-              { value: 'all', label: t("sshHistory.allCategories", "All Categories") },
-              ...SSHCommandCategories.map((cat) => ({ value: cat, label: cat.charAt(0).toUpperCase() + cat.slice(1) })),
+              {
+                value: "all",
+                label: t("sshHistory.allCategories", "All Categories"),
+              },
+              ...SSHCommandCategories.map((cat) => ({
+                value: cat,
+                label: cat.charAt(0).toUpperCase() + cat.slice(1),
+              })),
             ]}
           />
 
@@ -104,34 +107,78 @@ function HistorySearchBar({
             onChange={(v) => mgr.updateFilter({ sessionId: v })}
             variant="form-sm"
             options={[
-              { value: 'all', label: t("sshHistory.allSessions", "All Sessions") },
-              ...mgr.availableSessions.map((s) => ({ value: s.id, label: s.name })),
+              {
+                value: "all",
+                label: t("sshHistory.allSessions", "All Sessions"),
+              },
+              ...mgr.availableSessions.map((s) => ({
+                value: s.id,
+                label: s.name,
+              })),
             ]}
           />
 
           {/* Status filter */}
           <Select
             value={mgr.filter.statusFilter}
-            onChange={(v) => mgr.updateFilter({ statusFilter: v as typeof mgr.filter.statusFilter })}
+            onChange={(v) =>
+              mgr.updateFilter({
+                statusFilter: v as typeof mgr.filter.statusFilter,
+              })
+            }
             variant="form-sm"
             options={[
-              { value: 'all', label: t("sshHistory.allStatuses", "All Statuses") },
-              { value: 'success', label: t("sshHistory.success", "Success") },
-              { value: 'error', label: t("sshHistory.error", "Error") },
-              { value: 'pending', label: t("sshHistory.pending", "Pending") },
+              {
+                value: "all",
+                label: t("sshHistory.allStatuses", "All Statuses"),
+              },
+              {
+                value: "success",
+                label: t("sshHistory.success", "Verified success"),
+              },
+              {
+                value: "error",
+                label: t("sshHistory.error", "Verified failure"),
+              },
+              {
+                value: "dispatched",
+                label: t("sshHistory.dispatched", "Dispatched"),
+              },
+              {
+                value: "dispatch-failed",
+                label: t("sshHistory.dispatchFailed", "Dispatch failed"),
+              },
+              {
+                value: "unverified",
+                label: t("sshHistory.unverified", "Unverified"),
+              },
             ]}
           />
 
           {/* Sort by */}
           <Select
             value={mgr.filter.sortBy}
-            onChange={(v) => mgr.updateFilter({ sortBy: v as typeof mgr.filter.sortBy })}
+            onChange={(v) =>
+              mgr.updateFilter({ sortBy: v as typeof mgr.filter.sortBy })
+            }
             variant="form-sm"
             options={[
-              { value: 'lastExecutedAt', label: t("sshHistory.sortByRecent", "Most Recent") },
-              { value: 'executionCount', label: t("sshHistory.sortByFrequency", "Most Frequent") },
-              { value: 'command', label: t("sshHistory.sortByCommand", "Alphabetical") },
-              { value: 'createdAt', label: t("sshHistory.sortByCreated", "Date Created") },
+              {
+                value: "lastExecutedAt",
+                label: t("sshHistory.sortByRecent", "Most Recent"),
+              },
+              {
+                value: "executionCount",
+                label: t("sshHistory.sortByFrequency", "Most Frequent"),
+              },
+              {
+                value: "command",
+                label: t("sshHistory.sortByCommand", "Alphabetical"),
+              },
+              {
+                value: "createdAt",
+                label: t("sshHistory.sortByCreated", "Date Created"),
+              },
             ]}
           />
 

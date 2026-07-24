@@ -7,6 +7,7 @@ const buildProps = () => {
 
   return {
     props: {
+      sessionId: "session-1",
       sessionName: "Server",
       sessionHostname: "server.local",
       connectionStatus: "connected",
@@ -61,7 +62,9 @@ describe("RDPClientHeader", () => {
     const { props, handleSendKeys } = buildProps();
     render(<RDPClientHeader {...props} />);
 
-    const sendKeysBtn = document.querySelector('[data-tooltip="Send key combination"]') as HTMLElement;
+    const sendKeysBtn = document.querySelector(
+      '[data-tooltip="Send key combination"]',
+    ) as HTMLElement;
     fireEvent.click(sendKeysBtn);
     expect(screen.getByTestId("rdp-send-keys-popover")).toBeInTheDocument();
     expect(screen.getByText("Send Key Sequence")).toBeInTheDocument();

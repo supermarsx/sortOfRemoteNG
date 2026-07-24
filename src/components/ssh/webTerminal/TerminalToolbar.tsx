@@ -4,7 +4,19 @@ import MacroRecordButton from "./MacroRecordButton";
 import MacroReplayPopover from "./MacroReplayPopover";
 import HostKeyPopover from "./HostKeyPopover";
 import TotpPopover from "./TotpPopover";
-import { Clipboard, Copy, FileCode, History, Maximize2, Minimize2, RotateCcw, Send, StopCircle, Trash2, Unplug } from "lucide-react";
+import {
+  Clipboard,
+  Copy,
+  FileCode,
+  History,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  Send,
+  StopCircle,
+  Trash2,
+  Unplug,
+} from "lucide-react";
 
 function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
   return (
@@ -90,6 +102,8 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
         className="app-bar-button p-2"
         data-tooltip={mgr.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         aria-label={mgr.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+        aria-pressed={mgr.isFullscreen}
+        data-session-fullscreen-trigger={mgr.session.id}
       >
         {mgr.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
       </button>
