@@ -11,7 +11,7 @@ name: cargo-update
 on:
   schedule:
     # 04:00 UTC every Monday.
-    - cron: '0 4 * * 1'
+    - cron: "0 4 * * 1"
   workflow_dispatch: {}
 
 permissions:
@@ -28,13 +28,13 @@ jobs:
         working-directory: src-tauri
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry & git
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry

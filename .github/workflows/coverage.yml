@@ -29,7 +29,7 @@ jobs:
       WORKSPACE_COVERAGE_THRESHOLD: "25.5"
       CRITICAL_RUNTIME_COVERAGE_THRESHOLD: "40"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload lcov artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: backend-coverage-lcov
           path: src-tauri/coverage.lcov
