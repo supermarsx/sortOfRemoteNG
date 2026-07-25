@@ -30,13 +30,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useHaproxy, type HaproxyManager } from "../../hooks/integration/useHaproxy";
+import {
+  useHaproxy,
+  type HaproxyManager,
+} from "../../hooks/integration/useHaproxy";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   AclEntry,
   ConfigValidationResult,
@@ -370,7 +370,9 @@ const ConnectForm: React.FC<{ mgr: HaproxyManager; instanceId?: string }> = ({
             onChange={(e) => set("dataplanePassword", e.target.value)}
           />
         </Labeled>
-        <Labeled label={t("integrations.haproxy.configPath", "Config file path")}>
+        <Labeled
+          label={t("integrations.haproxy.configPath", "Config file path")}
+        >
           <input
             className={field}
             value={form.configPath}
@@ -486,18 +488,51 @@ const OverviewTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
       </div>
       {info && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label={t("integrations.haproxy.node", "Node")} value={info.node ?? info.name} />
+          <Stat
+            label={t("integrations.haproxy.node", "Node")}
+            value={info.node ?? info.name}
+          />
           <Stat label={t("integrations.haproxy.pid", "PID")} value={info.pid} />
-          <Stat label={t("integrations.haproxy.uptime", "Uptime")} value={info.uptime} />
-          <Stat label={t("integrations.haproxy.threads", "Threads")} value={info.nbthread} />
-          <Stat label={t("integrations.haproxy.currConns", "Current conns")} value={info.curr_conns} />
-          <Stat label={t("integrations.haproxy.cumConns", "Total conns")} value={info.cum_conns} />
-          <Stat label={t("integrations.haproxy.connRate", "Conn rate")} value={info.conn_rate} />
-          <Stat label={t("integrations.haproxy.sessRate", "Session rate")} value={info.sess_rate} />
-          <Stat label={t("integrations.haproxy.maxconn", "Max conn")} value={info.maxconn} />
-          <Stat label={t("integrations.haproxy.currSsl", "Current SSL")} value={info.curr_ssl_conns} />
-          <Stat label={t("integrations.haproxy.idlePct", "Idle %")} value={info.idle_pct} />
-          <Stat label={t("integrations.haproxy.memMax", "Mem max (MB)")} value={info.mem_max_mb} />
+          <Stat
+            label={t("integrations.haproxy.uptime", "Uptime")}
+            value={info.uptime}
+          />
+          <Stat
+            label={t("integrations.haproxy.threads", "Threads")}
+            value={info.nbthread}
+          />
+          <Stat
+            label={t("integrations.haproxy.currConns", "Current conns")}
+            value={info.curr_conns}
+          />
+          <Stat
+            label={t("integrations.haproxy.cumConns", "Total conns")}
+            value={info.cum_conns}
+          />
+          <Stat
+            label={t("integrations.haproxy.connRate", "Conn rate")}
+            value={info.conn_rate}
+          />
+          <Stat
+            label={t("integrations.haproxy.sessRate", "Session rate")}
+            value={info.sess_rate}
+          />
+          <Stat
+            label={t("integrations.haproxy.maxconn", "Max conn")}
+            value={info.maxconn}
+          />
+          <Stat
+            label={t("integrations.haproxy.currSsl", "Current SSL")}
+            value={info.curr_ssl_conns}
+          />
+          <Stat
+            label={t("integrations.haproxy.idlePct", "Idle %")}
+            value={info.idle_pct}
+          />
+          <Stat
+            label={t("integrations.haproxy.memMax", "Mem max (MB)")}
+            value={info.mem_max_mb}
+          />
         </div>
       )}
       <JsonView value={info} />
@@ -549,16 +584,27 @@ const FrontendsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.haproxy.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.status", "Status")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.sessions", "Sessions")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.reqRate", "Req rate")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.status", "Status")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.sessions", "Sessions")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.reqRate", "Req rate")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((f) => (
-              <tr key={f.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={f.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{f.name}</td>
                 <td className="px-2 py-1">
                   <StatusBadge status={f.status} />
@@ -566,7 +612,9 @@ const FrontendsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
                 <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                   {f.current_sessions} / {f.max_sessions}
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{f.request_rate}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {f.request_rate}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <button className={btn} onClick={() => void view(f.name)}>
                     {t("integrations.haproxy.view", "View")}
@@ -576,7 +624,10 @@ const FrontendsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t("integrations.haproxy.noFrontends", "No frontends")}
                 </td>
               </tr>
@@ -659,16 +710,27 @@ const BackendsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.haproxy.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.status", "Status")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.activeServers", "Active srv")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.balance", "Balance")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.status", "Status")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.activeServers", "Active srv")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.balance", "Balance")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((b) => (
-              <tr key={b.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={b.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{b.name}</td>
                 <td className="px-2 py-1">
                   <StatusBadge status={b.status} />
@@ -688,7 +750,10 @@ const BackendsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t("integrations.haproxy.noBackends", "No backends")}
                 </td>
               </tr>
@@ -779,7 +844,11 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           onChange={(e) => setBackend(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void load()}
         />
-        <button className={btn} onClick={load} disabled={mgr.isLoading || !backend}>
+        <button
+          className={btn}
+          onClick={load}
+          disabled={mgr.isLoading || !backend}
+        >
           <List size={12} />
           {t("integrations.haproxy.listServers", "List servers")}
         </button>
@@ -800,16 +869,27 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.haproxy.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.address", "Address")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.status", "Status")}</th>
-              <th className="px-2 py-1">{t("integrations.haproxy.weight", "Weight")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.address", "Address")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.status", "Status")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.haproxy.weight", "Weight")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => (
-              <tr key={s.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={s.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
                 <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
                   {s.address}
@@ -818,7 +898,9 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
                 <td className="px-2 py-1">
                   <StatusBadge status={s.status} />
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{s.weight}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {s.weight}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
                     <button className={btn} onClick={() => void view(s.name)}>
@@ -833,8 +915,14 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
-                  {t("integrations.haproxy.noServers", "No servers — enter a backend and list")}
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
+                  {t(
+                    "integrations.haproxy.noServers",
+                    "No servers — enter a backend and list",
+                  )}
                 </td>
               </tr>
             )}
@@ -848,7 +936,11 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           <h4 className="text-xs font-semibold text-[var(--color-text)]">
             {t("integrations.haproxy.sessions", "Sessions")}
           </h4>
-          <button className={btn} onClick={loadSessions} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={loadSessions}
+            disabled={mgr.isLoading}
+          >
             <RefreshCw size={12} />
             {t("integrations.haproxy.loadSessions", "Load sessions")}
           </button>
@@ -857,26 +949,46 @@ const ServersTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.haproxy.id", "ID")}</th>
-                <th className="px-2 py-1">{t("integrations.haproxy.frontend", "Frontend")}</th>
-                <th className="px-2 py-1">{t("integrations.haproxy.backend", "Backend")}</th>
-                <th className="px-2 py-1">{t("integrations.haproxy.source", "Source")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.haproxy.id", "ID")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.haproxy.frontend", "Frontend")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.haproxy.backend", "Backend")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.haproxy.source", "Source")}
+                </th>
               </tr>
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.id}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{s.frontend}</td>
+                <tr
+                  key={s.id}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                    {s.id}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {s.frontend}
+                  </td>
                   <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                     {s.backend}/{s.server}
                   </td>
-                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.source}</td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                    {s.source}
+                  </td>
                 </tr>
               ))}
               {sessions.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
                     {t("integrations.haproxy.noSessions", "No sessions loaded")}
                   </td>
                 </tr>
@@ -951,7 +1063,15 @@ const AclsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
 
   const clear = useCallback(async () => {
     if (selected == null) return;
-    if (!window.confirm(t("integrations.haproxy.clearAclConfirm", "Clear all entries in this ACL?"))) return;
+    if (
+      !window.confirm(
+        t(
+          "integrations.haproxy.clearAclConfirm",
+          "Clear all entries in this ACL?",
+        ),
+      )
+    )
+      return;
     try {
       await mgr.run(() => mgr.api.clearAcl(cid, selected));
       await loadEntries(selected);
@@ -979,7 +1099,8 @@ const AclsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           >
             <span className="font-mono">#{a.id}</span>
             <span className="text-[var(--color-textMuted)]">
-              {a.description ?? `${a.entries.length} ${t("integrations.haproxy.entries", "entries")}`}
+              {a.description ??
+                `${a.entries.length} ${t("integrations.haproxy.entries", "entries")}`}
             </span>
           </button>
         ))}
@@ -1015,8 +1136,13 @@ const AclsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           </div>
           <div className="flex flex-col gap-1">
             {entries.map((e) => (
-              <div key={e.id} className="flex items-center justify-between text-xs">
-                <span className="font-mono text-[var(--color-textSecondary)]">{e.value}</span>
+              <div
+                key={e.id}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className="font-mono text-[var(--color-textSecondary)]">
+                  {e.value}
+                </span>
                 <button className={btn} onClick={() => void del(e.value)}>
                   <Trash2 size={12} />
                 </button>
@@ -1073,7 +1199,9 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
   const add = useCallback(async () => {
     if (selected == null || !form.key) return;
     try {
-      await mgr.run(() => mgr.api.addMapEntry(cid, selected, form.key, form.value));
+      await mgr.run(() =>
+        mgr.api.addMapEntry(cid, selected, form.key, form.value),
+      );
       setForm({ key: "", value: "" });
       await loadEntries(selected);
     } catch {
@@ -1109,7 +1237,15 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
 
   const clear = useCallback(async () => {
     if (selected == null) return;
-    if (!window.confirm(t("integrations.haproxy.clearMapConfirm", "Clear all entries in this map?"))) return;
+    if (
+      !window.confirm(
+        t(
+          "integrations.haproxy.clearMapConfirm",
+          "Clear all entries in this map?",
+        ),
+      )
+    )
+      return;
     try {
       await mgr.run(() => mgr.api.clearMap(cid, selected));
       await loadEntries(selected);
@@ -1137,7 +1273,8 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           >
             <span className="font-mono">{m.id}</span>
             <span className="text-[var(--color-textMuted)]">
-              {m.description ?? `${m.entries.length} ${t("integrations.haproxy.entries", "entries")}`}
+              {m.description ??
+                `${m.entries.length} ${t("integrations.haproxy.entries", "entries")}`}
             </span>
           </button>
         ))}
@@ -1170,7 +1307,9 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
               className={field}
               placeholder={t("integrations.haproxy.value", "Value")}
               value={form.value}
-              onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, value: e.target.value }))
+              }
             />
             <button className={btn} onClick={add} disabled={!form.key}>
               {t("integrations.haproxy.add", "Add")}
@@ -1180,21 +1319,31 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             <table className="w-full text-left text-xs">
               <thead className="text-[var(--color-textMuted)]">
                 <tr>
-                  <th className="px-2 py-1">{t("integrations.haproxy.key", "Key")}</th>
-                  <th className="px-2 py-1">{t("integrations.haproxy.value", "Value")}</th>
+                  <th className="px-2 py-1">
+                    {t("integrations.haproxy.key", "Key")}
+                  </th>
+                  <th className="px-2 py-1">
+                    {t("integrations.haproxy.value", "Value")}
+                  </th>
                   <th className="px-2 py-1" />
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.id} className="border-t border-[var(--color-border)]">
-                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{e.key}</td>
+                  <tr
+                    key={e.id}
+                    className="border-t border-[var(--color-border)]"
+                  >
+                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                      {e.key}
+                    </td>
                     <td className="px-2 py-1">
                       <input
                         className={field}
                         defaultValue={e.value}
                         onBlur={(ev) =>
-                          ev.target.value !== e.value && void setEntry(e.key, ev.target.value)
+                          ev.target.value !== e.value &&
+                          void setEntry(e.key, ev.target.value)
                         }
                       />
                     </td>
@@ -1207,7 +1356,10 @@ const MapsTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
                 ))}
                 {entries.length === 0 && (
                   <tr>
-                    <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                    <td
+                      className="px-2 py-3 text-[var(--color-textMuted)]"
+                      colSpan={3}
+                    >
                       {t("integrations.haproxy.noEntries", "No entries")}
                     </td>
                   </tr>
@@ -1260,7 +1412,9 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
   const setEntry = useCallback(async () => {
     if (selected == null || !form.key) return;
     try {
-      await mgr.run(() => mgr.api.setStickTableEntry(cid, selected, form.key, form.data));
+      await mgr.run(() =>
+        mgr.api.setStickTableEntry(cid, selected, form.key, form.data),
+      );
       setForm({ key: "", data: "" });
       await loadEntries(selected);
     } catch {
@@ -1270,7 +1424,12 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
 
   const clear = useCallback(async () => {
     if (selected == null) return;
-    if (!window.confirm(t("integrations.haproxy.clearTableConfirm", "Clear this stick table?"))) return;
+    if (
+      !window.confirm(
+        t("integrations.haproxy.clearTableConfirm", "Clear this stick table?"),
+      )
+    )
+      return;
     try {
       await mgr.run(() => mgr.api.clearStickTable(cid, selected));
       await loadEntries(selected);
@@ -1313,7 +1472,8 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
         <div className={card}>
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-xs font-semibold text-[var(--color-text)]">
-              {t("integrations.haproxy.tableEntries", "Table entries")} {selected}
+              {t("integrations.haproxy.tableEntries", "Table entries")}{" "}
+              {selected}
             </h4>
             <button className={btn} onClick={clear}>
               <Trash2 size={12} />
@@ -1329,7 +1489,10 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             />
             <input
               className={field}
-              placeholder={t("integrations.haproxy.tableData", "Data (e.g. gpc0=1)")}
+              placeholder={t(
+                "integrations.haproxy.tableData",
+                "Data (e.g. gpc0=1)",
+              )}
               value={form.data}
               onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))}
             />
@@ -1341,16 +1504,29 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             <table className="w-full text-left text-xs">
               <thead className="text-[var(--color-textMuted)]">
                 <tr>
-                  <th className="px-2 py-1">{t("integrations.haproxy.key", "Key")}</th>
-                  <th className="px-2 py-1">{t("integrations.haproxy.useCount", "Use count")}</th>
-                  <th className="px-2 py-1">{t("integrations.haproxy.data", "Data")}</th>
+                  <th className="px-2 py-1">
+                    {t("integrations.haproxy.key", "Key")}
+                  </th>
+                  <th className="px-2 py-1">
+                    {t("integrations.haproxy.useCount", "Use count")}
+                  </th>
+                  <th className="px-2 py-1">
+                    {t("integrations.haproxy.data", "Data")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.key} className="border-t border-[var(--color-border)]">
-                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{e.key}</td>
-                    <td className="px-2 py-1 text-[var(--color-textSecondary)]">{e.use_count}</td>
+                  <tr
+                    key={e.key}
+                    className="border-t border-[var(--color-border)]"
+                  >
+                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                      {e.key}
+                    </td>
+                    <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                      {e.use_count}
+                    </td>
                     <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-textSecondary)]">
                       {JSON.stringify(e.data)}
                     </td>
@@ -1358,7 +1534,10 @@ const StickTablesTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
                 ))}
                 {entries.length === 0 && (
                   <tr>
-                    <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                    <td
+                      className="px-2 py-3 text-[var(--color-textMuted)]"
+                      colSpan={3}
+                    >
                       {t("integrations.haproxy.noEntries", "No entries")}
                     </td>
                   </tr>
@@ -1414,7 +1593,11 @@ const RuntimeTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
             onKeyDown={(e) => e.key === "Enter" && void execute()}
             placeholder="show info"
           />
-          <button className={btn} onClick={execute} disabled={mgr.isLoading || !command}>
+          <button
+            className={btn}
+            onClick={execute}
+            disabled={mgr.isLoading || !command}
+          >
             <Terminal size={12} />
             {t("integrations.haproxy.execute", "Execute")}
           </button>
@@ -1426,7 +1609,11 @@ const RuntimeTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           <h4 className="text-xs font-semibold text-[var(--color-text)]">
             {t("integrations.haproxy.serversState", "Servers state")}
           </h4>
-          <button className={btn} onClick={loadServersState} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={loadServersState}
+            disabled={mgr.isLoading}
+          >
             <RefreshCw size={12} />
             {t("integrations.haproxy.load", "Load")}
           </button>
@@ -1445,7 +1632,9 @@ const ConfigTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
 }) => {
   const { t } = useTranslation();
   const [content, setContent] = useState("");
-  const [validation, setValidation] = useState<ConfigValidationResult | null>(null);
+  const [validation, setValidation] = useState<ConfigValidationResult | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     try {
@@ -1509,19 +1698,35 @@ const ConfigTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           {t("integrations.haproxy.validate", "Validate")}
         </button>
         <div className="ml-auto flex items-center gap-1">
-          <button className={btn} onClick={() => void control("reload")} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={() => void control("reload")}
+            disabled={mgr.isLoading}
+          >
             <RotateCw size={12} />
             {t("integrations.haproxy.reload", "Reload")}
           </button>
-          <button className={btn} onClick={() => void control("start")} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={() => void control("start")}
+            disabled={mgr.isLoading}
+          >
             <Play size={12} />
             {t("integrations.haproxy.start", "Start")}
           </button>
-          <button className={btn} onClick={() => void control("restart")} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={() => void control("restart")}
+            disabled={mgr.isLoading}
+          >
             <Power size={12} />
             {t("integrations.haproxy.restart", "Restart")}
           </button>
-          <button className={btn} onClick={() => void control("stop")} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={() => void control("stop")}
+            disabled={mgr.isLoading}
+          >
             <Power size={12} />
             {t("integrations.haproxy.stop", "Stop")}
           </button>
@@ -1538,13 +1743,20 @@ const ConfigTab: React.FC<{ mgr: HaproxyManager; cid: string }> = ({
           <div className="font-semibold">
             {validation.valid
               ? t("integrations.haproxy.configValid", "Configuration is valid")
-              : t("integrations.haproxy.configInvalid", "Configuration is invalid")}
+              : t(
+                  "integrations.haproxy.configInvalid",
+                  "Configuration is invalid",
+                )}
           </div>
           {validation.errors.map((e, i) => (
-            <div key={`e${i}`} className="font-mono">{e}</div>
+            <div key={`e${i}`} className="font-mono">
+              {e}
+            </div>
           ))}
           {validation.warnings.map((w, i) => (
-            <div key={`w${i}`} className="font-mono text-yellow-500">{w}</div>
+            <div key={`w${i}`} className="font-mono text-yellow-500">
+              {w}
+            </div>
           ))}
         </div>
       )}
@@ -1567,18 +1779,66 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "overview", labelKey: "integrations.haproxy.tabOverview", labelDefault: "Overview", icon: Activity },
-  { key: "frontends", labelKey: "integrations.haproxy.tabFrontends", labelDefault: "Frontends", icon: ArrowDownToLine },
-  { key: "backends", labelKey: "integrations.haproxy.tabBackends", labelDefault: "Backends", icon: ArrowUpFromLine },
-  { key: "servers", labelKey: "integrations.haproxy.tabServers", labelDefault: "Servers", icon: Server },
-  { key: "acls", labelKey: "integrations.haproxy.tabAcls", labelDefault: "ACLs", icon: ListTree },
-  { key: "maps", labelKey: "integrations.haproxy.tabMaps", labelDefault: "Maps", icon: Layers },
-  { key: "sticktables", labelKey: "integrations.haproxy.tabStickTables", labelDefault: "Stick tables", icon: Table2 },
-  { key: "runtime", labelKey: "integrations.haproxy.tabRuntime", labelDefault: "Runtime", icon: Terminal },
-  { key: "config", labelKey: "integrations.haproxy.tabConfig", labelDefault: "Config", icon: FileCode2 },
+  {
+    key: "overview",
+    labelKey: "integrations.haproxy.tabOverview",
+    labelDefault: "Overview",
+    icon: Activity,
+  },
+  {
+    key: "frontends",
+    labelKey: "integrations.haproxy.tabFrontends",
+    labelDefault: "Frontends",
+    icon: ArrowDownToLine,
+  },
+  {
+    key: "backends",
+    labelKey: "integrations.haproxy.tabBackends",
+    labelDefault: "Backends",
+    icon: ArrowUpFromLine,
+  },
+  {
+    key: "servers",
+    labelKey: "integrations.haproxy.tabServers",
+    labelDefault: "Servers",
+    icon: Server,
+  },
+  {
+    key: "acls",
+    labelKey: "integrations.haproxy.tabAcls",
+    labelDefault: "ACLs",
+    icon: ListTree,
+  },
+  {
+    key: "maps",
+    labelKey: "integrations.haproxy.tabMaps",
+    labelDefault: "Maps",
+    icon: Layers,
+  },
+  {
+    key: "sticktables",
+    labelKey: "integrations.haproxy.tabStickTables",
+    labelDefault: "Stick tables",
+    icon: Table2,
+  },
+  {
+    key: "runtime",
+    labelKey: "integrations.haproxy.tabRuntime",
+    labelDefault: "Runtime",
+    icon: Terminal,
+  },
+  {
+    key: "config",
+    labelKey: "integrations.haproxy.tabConfig",
+    labelDefault: "Config",
+    icon: FileCode2,
+  },
 ];
 
-const HaproxyPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const HaproxyPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useHaproxy();
   const [tab, setTab] = useState<TabKey>("overview");
@@ -1602,13 +1862,18 @@ const HaproxyPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.haproxy.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.haproxy.connected", "Connected"))
               : t("integrations.haproxy.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -1662,13 +1927,3 @@ const HaproxyPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
 };
 
 export default HaproxyPanel;
-
-/** Registry descriptor for the HAProxy integration (category: web).
- *  The Wave-4 web integrator appends this to `registry.web.ts`. */
-export const haproxyDescriptor: IntegrationDescriptor = {
-  key: "haproxy",
-  label: "HAProxy",
-  category: "web-server",
-  icon: Network,
-  importPanel: () => import("./HaproxyPanel"),
-};

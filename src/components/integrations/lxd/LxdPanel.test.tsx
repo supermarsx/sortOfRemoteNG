@@ -15,7 +15,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import { LxdPanel, lxdDescriptor } from "./LxdPanel";
+import { LxdPanel } from "./LxdPanel";
+import { lxdDescriptor } from "../descriptors";
 
 beforeEach(() => {
   invokeMock.mockReset();

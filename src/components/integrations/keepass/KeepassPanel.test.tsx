@@ -19,7 +19,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import { KeepassPanel, keepassDescriptor } from "./KeepassPanel";
+import { KeepassPanel } from "./KeepassPanel";
+import { keepassDescriptor } from "../descriptors";
 
 beforeEach(() => {
   invokeMock.mockReset();

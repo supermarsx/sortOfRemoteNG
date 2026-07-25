@@ -14,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import VmwarePanel, { vmwareDescriptor } from "./VmwarePanel";
+import VmwarePanel from "./VmwarePanel";
+import { vmwareDescriptor } from "./descriptors";
 import { vmwareApi } from "../../hooks/integration/useVmware";
 
 beforeEach(() => {

@@ -20,13 +20,13 @@ import {
   Waypoints,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useTraefik, type TraefikManager } from "../../hooks/integration/useTraefik";
+import {
+  useTraefik,
+  type TraefikManager,
+} from "../../hooks/integration/useTraefik";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   ProviderSummary,
   TraefikEntryPoint,
@@ -68,16 +68,18 @@ function Labeled({
 }
 
 /** Renders a fetched single resource (a get-by-name result) as pretty JSON. */
-const DetailView: React.FC<{ title: string; value: unknown; onClear: () => void }> = ({
-  title,
-  value,
-  onClear,
-}) => {
+const DetailView: React.FC<{
+  title: string;
+  value: unknown;
+  onClear: () => void;
+}> = ({ title, value, onClear }) => {
   const { t } = useTranslation();
   return (
     <div className={card}>
       <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-xs font-semibold text-[var(--color-text)]">{title}</h4>
+        <h4 className="text-xs font-semibold text-[var(--color-text)]">
+          {title}
+        </h4>
         <button className={btn} onClick={onClear}>
           {t("integrations.traefik.close", "Close")}
         </button>
@@ -516,13 +518,22 @@ const RoutersTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <ProtoBar proto={proto} setProto={setProto} withUdp onRefresh={refresh} mgr={mgr} />
+      <ProtoBar
+        proto={proto}
+        setProto={setProto}
+        withUdp
+        onRefresh={refresh}
+        mgr={mgr}
+      />
       <ResourceTable
         rows={rows as unknown as Record<string, unknown>[]}
         cols={[
           { key: "name", label: t("integrations.traefik.name", "Name") },
           { key: "rule", label: t("integrations.traefik.rule", "Rule") },
-          { key: "service", label: t("integrations.traefik.service", "Service") },
+          {
+            key: "service",
+            label: t("integrations.traefik.service", "Service"),
+          },
           { key: "status", label: t("integrations.traefik.status", "Status") },
         ]}
         onView={view}
@@ -598,13 +609,22 @@ const ServicesTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <ProtoBar proto={proto} setProto={setProto} withUdp onRefresh={refresh} mgr={mgr} />
+      <ProtoBar
+        proto={proto}
+        setProto={setProto}
+        withUdp
+        onRefresh={refresh}
+        mgr={mgr}
+      />
       <ResourceTable
         rows={rows as unknown as Record<string, unknown>[]}
         cols={[
           { key: "name", label: t("integrations.traefik.name", "Name") },
           { key: "type", label: t("integrations.traefik.type", "Type") },
-          { key: "provider", label: t("integrations.traefik.provider", "Provider") },
+          {
+            key: "provider",
+            label: t("integrations.traefik.provider", "Provider"),
+          },
           { key: "status", label: t("integrations.traefik.status", "Status") },
         ]}
         onView={view}
@@ -672,13 +692,21 @@ const MiddlewaresTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <ProtoBar proto={proto} setProto={setProto} onRefresh={refresh} mgr={mgr} />
+      <ProtoBar
+        proto={proto}
+        setProto={setProto}
+        onRefresh={refresh}
+        mgr={mgr}
+      />
       <ResourceTable
         rows={rows as unknown as Record<string, unknown>[]}
         cols={[
           { key: "name", label: t("integrations.traefik.name", "Name") },
           { key: "type", label: t("integrations.traefik.type", "Type") },
-          { key: "provider", label: t("integrations.traefik.provider", "Provider") },
+          {
+            key: "provider",
+            label: t("integrations.traefik.provider", "Provider"),
+          },
           { key: "status", label: t("integrations.traefik.status", "Status") },
         ]}
         onView={view}
@@ -723,7 +751,10 @@ const EntrypointsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
   const view = useCallback(
     async (name: string) => {
       try {
-        setDetail({ name, value: await mgr.run(() => mgr.api.getEntrypoint(cid, name)) });
+        setDetail({
+          name,
+          value: await mgr.run(() => mgr.api.getEntrypoint(cid, name)),
+        });
       } catch {
         /* surfaced */
       }
@@ -743,15 +774,24 @@ const EntrypointsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.traefik.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.traefik.address", "Address")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.traefik.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.traefik.address", "Address")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((ep) => (
-              <tr key={ep.name} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{ep.name}</td>
+              <tr
+                key={ep.name}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {ep.name}
+                </td>
                 <td className="px-2 py-1 font-mono">{ep.address}</td>
                 <td className="px-2 py-1 text-right">
                   <button className={btn} onClick={() => void view(ep.name)}>
@@ -762,7 +802,10 @@ const EntrypointsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.traefik.noEntrypoints", "No entrypoints")}
                 </td>
               </tr>
@@ -783,7 +826,10 @@ const EntrypointsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
 
 // ─── TLS tab (list + get certificate) ────────────────────────────────────────
 
-const TlsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({ mgr, cid }) => {
+const TlsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<TraefikTlsCertificate[]>([]);
   const [detail, setDetail] = useState<{ name: string; value: unknown } | null>(
@@ -829,17 +875,27 @@ const TlsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({ mgr, cid }) =>
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.traefik.subject", "Subject")}</th>
-              <th className="px-2 py-1">{t("integrations.traefik.sans", "SANs")}</th>
-              <th className="px-2 py-1">{t("integrations.traefik.notAfter", "Not after")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.traefik.subject", "Subject")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.traefik.sans", "SANs")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.traefik.notAfter", "Not after")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((certificate, i) => {
-              const primary = certificate.subject ?? certificate.sans[0] ?? String(i);
+              const primary =
+                certificate.subject ?? certificate.sans[0] ?? String(i);
               return (
-                <tr key={primary + i} className="border-t border-[var(--color-border)]">
+                <tr
+                  key={primary + i}
+                  className="border-t border-[var(--color-border)]"
+                >
                   <td className="px-2 py-1 text-[var(--color-text)]">
                     {certificate.subject ?? "—"}
                   </td>
@@ -860,7 +916,10 @@ const TlsTab: React.FC<{ mgr: TraefikManager; cid: string }> = ({ mgr, cid }) =>
             })}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.traefik.noCertificates", "No certificates")}
                 </td>
               </tr>
@@ -944,7 +1003,10 @@ const ResourceTable: React.FC<{
           {rows.map((row, i) => {
             const name = typeof row.name === "string" ? row.name : "";
             return (
-              <tr key={name || i} className="border-t border-[var(--color-border)]">
+              <tr
+                key={name || i}
+                className="border-t border-[var(--color-border)]"
+              >
                 {cols.map((c) => (
                   <td
                     key={c.key}
@@ -987,15 +1049,48 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "overview", labelKey: "integrations.traefik.tabOverview", labelDefault: "Overview", icon: Network },
-  { key: "routers", labelKey: "integrations.traefik.tabRouters", labelDefault: "Routers", icon: Route },
-  { key: "services", labelKey: "integrations.traefik.tabServices", labelDefault: "Services", icon: Boxes },
-  { key: "middlewares", labelKey: "integrations.traefik.tabMiddlewares", labelDefault: "Middlewares", icon: Layers },
-  { key: "entrypoints", labelKey: "integrations.traefik.tabEntrypoints", labelDefault: "Entrypoints", icon: DoorOpen },
-  { key: "tls", labelKey: "integrations.traefik.tabTls", labelDefault: "TLS", icon: ShieldCheck },
+  {
+    key: "overview",
+    labelKey: "integrations.traefik.tabOverview",
+    labelDefault: "Overview",
+    icon: Network,
+  },
+  {
+    key: "routers",
+    labelKey: "integrations.traefik.tabRouters",
+    labelDefault: "Routers",
+    icon: Route,
+  },
+  {
+    key: "services",
+    labelKey: "integrations.traefik.tabServices",
+    labelDefault: "Services",
+    icon: Boxes,
+  },
+  {
+    key: "middlewares",
+    labelKey: "integrations.traefik.tabMiddlewares",
+    labelDefault: "Middlewares",
+    icon: Layers,
+  },
+  {
+    key: "entrypoints",
+    labelKey: "integrations.traefik.tabEntrypoints",
+    labelDefault: "Entrypoints",
+    icon: DoorOpen,
+  },
+  {
+    key: "tls",
+    labelKey: "integrations.traefik.tabTls",
+    labelDefault: "TLS",
+    icon: ShieldCheck,
+  },
 ];
 
-const TraefikPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const TraefikPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useTraefik();
   const [tab, setTab] = useState<TabKey>("overview");
@@ -1023,8 +1118,8 @@ const TraefikPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
               className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
             />
             {mgr.isConnected
-              ? mgr.summary?.api_url ??
-                t("integrations.traefik.connected", "Connected")
+              ? (mgr.summary?.api_url ??
+                t("integrations.traefik.connected", "Connected"))
               : t("integrations.traefik.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
@@ -1081,13 +1176,3 @@ const TraefikPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
 };
 
 export default TraefikPanel;
-
-/** Registry descriptor for the Traefik integration (category: web).
- *  The Wave-4 web integrator appends this to `registry.web.ts`. */
-export const traefikDescriptor: IntegrationDescriptor = {
-  key: "traefik",
-  label: "Traefik",
-  category: "web-server",
-  icon: Waypoints,
-  importPanel: () => import("./TraefikPanel"),
-};

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import PerformanceSettings from "../../src/components/SettingsDialog/sections/PerformanceSettings";
 import ThemeSettings from "../../src/components/SettingsDialog/sections/ThemeSettings";
@@ -89,6 +89,16 @@ const baseSettings = {
 } as unknown as GlobalSettings;
 
 describe("Secondary settings section centralization", () => {
+  beforeEach(() => {
+    // ThemeSettings renders loading-element previews. jsdom has no canvas
+    // implementation; the preview already handles a missing context.
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("uses centralized card/input/checkbox classes in PerformanceSettings", () => {
     const updateSettings = vi.fn();
     const { container } = render(
@@ -153,7 +163,9 @@ describe("Secondary settings section centralization", () => {
     );
 
     // ThemeSettings now has more cards after package upgrades (theme, color scheme, glow, transparency, animations, custom CSS, etc.)
-    expect(container.querySelectorAll(".sor-settings-card").length).toBeGreaterThanOrEqual(3);
+    expect(
+      container.querySelectorAll(".sor-settings-card").length,
+    ).toBeGreaterThanOrEqual(3);
     expect(container.querySelector('[role="combobox"]')?.className).toContain(
       "sor-settings-select",
     );
@@ -244,10 +256,7 @@ describe("Secondary settings section centralization", () => {
 
   it("uses the accent color for StartupSettings heading and subsection icons", () => {
     const { container } = render(
-      <StartupSettings
-        settings={baseSettings}
-        updateSettings={vi.fn()}
-      />,
+      <StartupSettings settings={baseSettings} updateSettings={vi.fn()} />,
     );
 
     expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(

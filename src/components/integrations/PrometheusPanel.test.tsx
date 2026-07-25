@@ -14,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import PrometheusPanel, { prometheusDescriptor } from "./PrometheusPanel";
+import PrometheusPanel from "./PrometheusPanel";
+import { prometheusDescriptor } from "./descriptors";
 import { prometheusApi } from "../../hooks/integration/usePrometheus";
 
 beforeEach(() => {
@@ -24,7 +25,10 @@ beforeEach(() => {
       case "read_app_data":
         return Promise.resolve(null);
       case "prometheus_connect":
-        return Promise.resolve({ host: "prometheus.lab.local", version: "2.51.0" });
+        return Promise.resolve({
+          host: "prometheus.lab.local",
+          version: "2.51.0",
+        });
       default:
         return Promise.resolve(null);
     }
@@ -39,7 +43,9 @@ describe("PrometheusPanel", () => {
         screen.getByPlaceholderText("prometheus.lab.local"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /Connect/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Connect/i }),
+    ).toBeInTheDocument();
   });
 
   it("connect maps to prometheus_connect with a wire-shape config (snake_case)", async () => {

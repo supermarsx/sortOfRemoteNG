@@ -16,10 +16,7 @@ import React, {
 } from "react";
 import { Server, Plug, PlugZap, Loader2, Save, Boxes } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../../types/integrations/registry";
 import {
   defaultLxdConnectionConfig,
   type LxdConnectionConfig,
@@ -299,7 +296,10 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
                     : "border-[var(--color-border)] text-[var(--color-textSecondary)]"
                 }`}
               >
-                {t("integrations.lxd.form.authTls", "Client certificate (mTLS)")}
+                {t(
+                  "integrations.lxd.form.authTls",
+                  "Client certificate (mTLS)",
+                )}
               </button>
               <button
                 type="button"
@@ -401,7 +401,9 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
                 type="number"
                 className={inputClass}
                 value={config.timeoutSecs}
-                onChange={(e) => set("timeoutSecs", Number(e.target.value) || 30)}
+                onChange={(e) =>
+                  set("timeoutSecs", Number(e.target.value) || 30)
+                }
               />
             </div>
             <div className="flex items-end">
@@ -411,7 +413,10 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
                   checked={config.skipTlsVerify}
                   onChange={(e) => set("skipTlsVerify", e.target.checked)}
                 />
-                {t("integrations.lxd.form.skipTlsVerify", "Skip TLS verification")}
+                {t(
+                  "integrations.lxd.form.skipTlsVerify",
+                  "Skip TLS verification",
+                )}
               </label>
             </div>
           </div>
@@ -492,8 +497,7 @@ const LxdTabBar: React.FC<LxdTabBarProps> = ({
   const { t } = useTranslation();
 
   const active = useMemo(
-    () =>
-      categories.find((c) => c.categoryKey === activeTab) ?? categories[0],
+    () => categories.find((c) => c.categoryKey === activeTab) ?? categories[0],
     [categories, activeTab],
   );
 
@@ -545,15 +549,6 @@ const LxdTabBar: React.FC<LxdTabBarProps> = ({
       </div>
     </div>
   );
-};
-
-/** Registry descriptor — appended to `registry.infra.ts` by the wave integrator. */
-export const lxdDescriptor: IntegrationDescriptor = {
-  key: "lxd",
-  label: "LXD / Incus",
-  category: "virtualization",
-  icon: Boxes,
-  importPanel: () => import("./LxdPanel"),
 };
 
 export default LxdPanel;

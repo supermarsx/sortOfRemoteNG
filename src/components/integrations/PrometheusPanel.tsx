@@ -33,10 +33,7 @@ import {
 } from "../../hooks/integration/usePrometheus";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   Alert,
   PromTarget,
@@ -206,7 +203,9 @@ const ConnectForm: React.FC<{
             inputMode="numeric"
           />
         </Labeled>
-        <Labeled label={t("integrations.prometheus.authMode", "Authentication")}>
+        <Labeled
+          label={t("integrations.prometheus.authMode", "Authentication")}
+        >
           <select
             className={field}
             value={form.authMode}
@@ -218,7 +217,10 @@ const ConnectForm: React.FC<{
               {t("integrations.prometheus.authNone", "None")}
             </option>
             <option value="basic">
-              {t("integrations.prometheus.authBasic", "Basic (user / password)")}
+              {t(
+                "integrations.prometheus.authBasic",
+                "Basic (user / password)",
+              )}
             </option>
             <option value="bearer">
               {t("integrations.prometheus.authBearer", "Bearer token")}
@@ -266,7 +268,9 @@ const ConnectForm: React.FC<{
             />
           </Labeled>
         )}
-        <Labeled label={t("integrations.prometheus.instanceName", "Saved name")}>
+        <Labeled
+          label={t("integrations.prometheus.instanceName", "Saved name")}
+        >
           <input
             className={field}
             value={form.name}
@@ -408,7 +412,9 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
   return (
     <div className="flex flex-col gap-3">
       <div className={card}>
-        <Labeled label={t("integrations.prometheus.expression", "PromQL expression")}>
+        <Labeled
+          label={t("integrations.prometheus.expression", "PromQL expression")}
+        >
           <textarea
             className={`${field} font-mono`}
             rows={2}
@@ -424,14 +430,20 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           <input
             className={field}
             style={{ width: 190 }}
-            placeholder={t("integrations.prometheus.start", "start (RFC3339 / unix)")}
+            placeholder={t(
+              "integrations.prometheus.start",
+              "start (RFC3339 / unix)",
+            )}
             value={range.start}
             onChange={(e) => setRange((r) => ({ ...r, start: e.target.value }))}
           />
           <input
             className={field}
             style={{ width: 190 }}
-            placeholder={t("integrations.prometheus.end", "end (RFC3339 / unix)")}
+            placeholder={t(
+              "integrations.prometheus.end",
+              "end (RFC3339 / unix)",
+            )}
             value={range.end}
             onChange={(e) => setRange((r) => ({ ...r, end: e.target.value }))}
           />
@@ -451,7 +463,8 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           </button>
           {rangeSeries != null && (
             <span className="text-xs text-[var(--color-textSecondary)]">
-              {t("integrations.prometheus.seriesReturned", "series")}: {rangeSeries}
+              {t("integrations.prometheus.seriesReturned", "series")}:{" "}
+              {rangeSeries}
             </span>
           )}
         </div>
@@ -465,8 +478,12 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.prometheus.metric", "Metric")}</th>
-                <th className="px-2 py-1">{t("integrations.prometheus.value", "Value")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.prometheus.metric", "Metric")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.prometheus.value", "Value")}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -491,7 +508,10 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
 
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.prometheus.metadataExplorer", "Series & label explorer")}
+          {t(
+            "integrations.prometheus.metadataExplorer",
+            "Series & label explorer",
+          )}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled
@@ -518,13 +538,25 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           <button className={btn} onClick={runSeries} disabled={mgr.isLoading}>
             {t("integrations.prometheus.series", "Series")}
           </button>
-          <button className={btn} onClick={runLabelNames} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={runLabelNames}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.prometheus.labelNames", "Label names")}
           </button>
-          <button className={btn} onClick={runLabelValues} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={runLabelValues}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.prometheus.labelValues", "Label values")}
           </button>
-          <button className={btn} onClick={runFederate} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={runFederate}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.prometheus.federate", "Federate")}
           </button>
         </div>
@@ -543,7 +575,10 @@ const QueryTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         {seriesRows.length > 0 && (
           <div className="mt-2 max-h-48 overflow-auto text-xs">
             {seriesRows.map((row, i) => (
-              <div key={i} className="font-mono text-[var(--color-textSecondary)]">
+              <div
+                key={i}
+                className="font-mono text-[var(--color-textSecondary)]"
+              >
                 {JSON.stringify(row)}
               </div>
             ))}
@@ -572,9 +607,7 @@ const TargetsTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
   const refresh = useCallback(async () => {
     try {
       setTargets(
-        await mgr.run(() =>
-          mgr.api.listTargets(cid, stateFilter || undefined),
-        ),
+        await mgr.run(() => mgr.api.listTargets(cid, stateFilter || undefined)),
       );
     } catch {
       /* surfaced */
@@ -594,9 +627,15 @@ const TargetsTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
         >
-          <option value="">{t("integrations.prometheus.allStates", "All")}</option>
-          <option value="active">{t("integrations.prometheus.active", "Active")}</option>
-          <option value="dropped">{t("integrations.prometheus.dropped", "Dropped")}</option>
+          <option value="">
+            {t("integrations.prometheus.allStates", "All")}
+          </option>
+          <option value="active">
+            {t("integrations.prometheus.active", "Active")}
+          </option>
+          <option value="dropped">
+            {t("integrations.prometheus.dropped", "Dropped")}
+          </option>
         </select>
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
           <RefreshCw size={12} />
@@ -607,16 +646,26 @@ const TargetsTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.prometheus.pool", "Pool")}</th>
-              <th className="px-2 py-1">{t("integrations.prometheus.endpoint", "Endpoint")}</th>
-              <th className="px-2 py-1">{t("integrations.prometheus.health", "Health")}</th>
-              <th className="px-2 py-1">{t("integrations.prometheus.lastError", "Last error")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.prometheus.pool", "Pool")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.prometheus.endpoint", "Endpoint")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.prometheus.health", "Health")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.prometheus.lastError", "Last error")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {targets.map((tg, i) => (
               <tr key={i} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{tg.scrapePool}</td>
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {tg.scrapePool}
+                </td>
                 <td className="px-2 py-1 font-mono">{tg.scrapeUrl}</td>
                 <td className="px-2 py-1">
                   <span
@@ -636,7 +685,10 @@ const TargetsTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
             ))}
             {targets.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.prometheus.noTargets", "No targets")}
                 </td>
               </tr>
@@ -690,9 +742,15 @@ const RulesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           value={ruleType}
           onChange={(e) => setRuleType(e.target.value)}
         >
-          <option value="">{t("integrations.prometheus.allRules", "All rules")}</option>
-          <option value="alert">{t("integrations.prometheus.alertingRules", "Alerting")}</option>
-          <option value="record">{t("integrations.prometheus.recordingRules", "Recording")}</option>
+          <option value="">
+            {t("integrations.prometheus.allRules", "All rules")}
+          </option>
+          <option value="alert">
+            {t("integrations.prometheus.alertingRules", "Alerting")}
+          </option>
+          <option value="record">
+            {t("integrations.prometheus.recordingRules", "Recording")}
+          </option>
         </select>
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
           <RefreshCw size={12} />
@@ -702,13 +760,18 @@ const RulesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
 
       <section className={card}>
         <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-[var(--color-text)]">
-          <BellRing size={12} /> {t("integrations.prometheus.activeAlerts", "Active alerts")}
+          <BellRing size={12} />{" "}
+          {t("integrations.prometheus.activeAlerts", "Active alerts")}
         </h4>
         <div className="flex flex-col gap-1">
           {alerts.map((a, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
               <span className="font-mono text-[var(--color-textSecondary)]">
-                {a.labels.alertname ?? "—"} · {Object.entries(a.labels).filter(([k]) => k !== "alertname").map(([k, v]) => `${k}=${v}`).join(", ")}
+                {a.labels.alertname ?? "—"} ·{" "}
+                {Object.entries(a.labels)
+                  .filter(([k]) => k !== "alertname")
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join(", ")}
               </span>
               <span
                 className={
@@ -734,10 +797,13 @@ const RulesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           </h4>
           {groups.map((g, i) => (
             <div key={i} className="text-xs text-[var(--color-textSecondary)]">
-              {g.name} · {g.rules.length} {t("integrations.prometheus.rules", "rules")} · {g.file}
+              {g.name} · {g.rules.length}{" "}
+              {t("integrations.prometheus.rules", "rules")} · {g.file}
             </div>
           ))}
-          {groups.length === 0 && <span className="text-xs text-[var(--color-textMuted)]">—</span>}
+          {groups.length === 0 && (
+            <span className="text-xs text-[var(--color-textMuted)]">—</span>
+          )}
         </section>
         <section className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
@@ -745,10 +811,13 @@ const RulesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
           </h4>
           {recording.map((g, i) => (
             <div key={i} className="text-xs text-[var(--color-textSecondary)]">
-              {g.name} · {g.rules.length} {t("integrations.prometheus.rules", "rules")}
+              {g.name} · {g.rules.length}{" "}
+              {t("integrations.prometheus.rules", "rules")}
             </div>
           ))}
-          {recording.length === 0 && <span className="text-xs text-[var(--color-textMuted)]">—</span>}
+          {recording.length === 0 && (
+            <span className="text-xs text-[var(--color-textMuted)]">—</span>
+          )}
         </section>
       </div>
     </div>
@@ -832,7 +901,15 @@ const SilencesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
 
   const remove = useCallback(
     async (silenceId: string) => {
-      if (!window.confirm(t("integrations.prometheus.deleteSilenceConfirm", "Delete this silence?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.prometheus.deleteSilenceConfirm",
+            "Delete this silence?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteSilence(cid, silenceId));
         await refresh();
@@ -849,7 +926,10 @@ const SilencesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 220 }}
-          placeholder={t("integrations.prometheus.silenceFilter", "Filter (matcher)")}
+          placeholder={t(
+            "integrations.prometheus.silenceFilter",
+            "Filter (matcher)",
+          )}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -861,34 +941,78 @@ const SilencesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
 
       <div className={card}>
         <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-[var(--color-text)]">
-          <ShieldOff size={12} /> {t("integrations.prometheus.createSilence", "Create silence")}
+          <ShieldOff size={12} />{" "}
+          {t("integrations.prometheus.createSilence", "Create silence")}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Labeled label={t("integrations.prometheus.matcherName", "Matcher name")}>
-            <input className={field} value={form.matcherName} onChange={(e) => setF("matcherName", e.target.value)} placeholder="alertname" />
+          <Labeled
+            label={t("integrations.prometheus.matcherName", "Matcher name")}
+          >
+            <input
+              className={field}
+              value={form.matcherName}
+              onChange={(e) => setF("matcherName", e.target.value)}
+              placeholder="alertname"
+            />
           </Labeled>
-          <Labeled label={t("integrations.prometheus.matcherValue", "Matcher value")}>
-            <input className={field} value={form.matcherValue} onChange={(e) => setF("matcherValue", e.target.value)} />
+          <Labeled
+            label={t("integrations.prometheus.matcherValue", "Matcher value")}
+          >
+            <input
+              className={field}
+              value={form.matcherValue}
+              onChange={(e) => setF("matcherValue", e.target.value)}
+            />
           </Labeled>
-          <Labeled label={t("integrations.prometheus.startsAt", "Starts at (RFC3339)")}>
-            <input className={field} value={form.startsAt} onChange={(e) => setF("startsAt", e.target.value)} placeholder="2026-01-01T00:00:00Z" />
+          <Labeled
+            label={t("integrations.prometheus.startsAt", "Starts at (RFC3339)")}
+          >
+            <input
+              className={field}
+              value={form.startsAt}
+              onChange={(e) => setF("startsAt", e.target.value)}
+              placeholder="2026-01-01T00:00:00Z"
+            />
           </Labeled>
-          <Labeled label={t("integrations.prometheus.endsAt", "Ends at (RFC3339)")}>
-            <input className={field} value={form.endsAt} onChange={(e) => setF("endsAt", e.target.value)} placeholder="2026-01-01T01:00:00Z" />
+          <Labeled
+            label={t("integrations.prometheus.endsAt", "Ends at (RFC3339)")}
+          >
+            <input
+              className={field}
+              value={form.endsAt}
+              onChange={(e) => setF("endsAt", e.target.value)}
+              placeholder="2026-01-01T01:00:00Z"
+            />
           </Labeled>
           <Labeled label={t("integrations.prometheus.createdBy", "Created by")}>
-            <input className={field} value={form.createdBy} onChange={(e) => setF("createdBy", e.target.value)} />
+            <input
+              className={field}
+              value={form.createdBy}
+              onChange={(e) => setF("createdBy", e.target.value)}
+            />
           </Labeled>
           <Labeled label={t("integrations.prometheus.comment", "Comment")}>
-            <input className={field} value={form.comment} onChange={(e) => setF("comment", e.target.value)} />
+            <input
+              className={field}
+              value={form.comment}
+              onChange={(e) => setF("comment", e.target.value)}
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex items-center gap-3">
           <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-            <input type="checkbox" checked={form.isRegex} onChange={(e) => setF("isRegex", e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={form.isRegex}
+              onChange={(e) => setF("isRegex", e.target.checked)}
+            />
             {t("integrations.prometheus.isRegex", "Regex matcher")}
           </label>
-          <button className={btn} onClick={create} disabled={mgr.isLoading || !form.matcherName}>
+          <button
+            className={btn}
+            onClick={create}
+            disabled={mgr.isLoading || !form.matcherName}
+          >
             {t("integrations.prometheus.createSilence", "Create silence")}
           </button>
         </div>
@@ -898,7 +1022,10 @@ const SilencesTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         {silences.map((s) => (
           <div key={s.id} className="flex items-center justify-between text-xs">
             <span className="text-[var(--color-textSecondary)]">
-              {s.matchers.map((m) => `${m.name}${m.isRegex ? "=~" : "="}${m.value}`).join(", ")} · {s.status.state} · {s.endsAt}
+              {s.matchers
+                .map((m) => `${m.name}${m.isRegex ? "=~" : "="}${m.value}`)
+                .join(", ")}{" "}
+              · {s.status.state} · {s.endsAt}
             </span>
             <div className="flex gap-1">
               <button className={btn} onClick={() => void view(s.id)}>
@@ -929,8 +1056,12 @@ const StatusTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
   const { t } = useTranslation();
   const [yaml, setYaml] = useState<string>("");
   const [flags, setFlags] = useState<Record<string, string>>({});
-  const [tsdb, setTsdb] = useState<import("../../types/prometheus").TsdbStatus | null>(null);
-  const [metadata, setMetadata] = useState<Record<string, import("../../types/prometheus").MetricMetadata[]>>({});
+  const [tsdb, setTsdb] = useState<
+    import("../../types/prometheus").TsdbStatus | null
+  >(null);
+  const [metadata, setMetadata] = useState<
+    Record<string, import("../../types/prometheus").MetricMetadata[]>
+  >({});
 
   const refresh = useCallback(async () => {
     const safe = async (fn: () => Promise<void>) => {
@@ -984,14 +1115,30 @@ const StatusTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
       {tsdb && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
-            [t("integrations.prometheus.numSeries", "Series"), tsdb.headStats.numSeries],
-            [t("integrations.prometheus.numLabelPairs", "Label pairs"), tsdb.headStats.numLabelPairs],
-            [t("integrations.prometheus.chunkCount", "Chunks"), tsdb.headStats.chunkCount],
-            [t("integrations.prometheus.numChunks", "Head chunks"), tsdb.headStats.numChunks],
+            [
+              t("integrations.prometheus.numSeries", "Series"),
+              tsdb.headStats.numSeries,
+            ],
+            [
+              t("integrations.prometheus.numLabelPairs", "Label pairs"),
+              tsdb.headStats.numLabelPairs,
+            ],
+            [
+              t("integrations.prometheus.chunkCount", "Chunks"),
+              tsdb.headStats.chunkCount,
+            ],
+            [
+              t("integrations.prometheus.numChunks", "Head chunks"),
+              tsdb.headStats.numChunks,
+            ],
           ].map(([label, value]) => (
             <div key={String(label)} className={card}>
-              <div className="text-lg font-semibold text-[var(--color-text)]">{value}</div>
-              <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">{label}</div>
+              <div className="text-lg font-semibold text-[var(--color-text)]">
+                {value}
+              </div>
+              <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+                {label}
+              </div>
             </div>
           ))}
         </div>
@@ -1003,11 +1150,16 @@ const StatusTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         </h4>
         <div className="max-h-40 overflow-auto text-xs">
           {Object.entries(flags).map(([k, v]) => (
-            <div key={k} className="font-mono text-[var(--color-textSecondary)]">
+            <div
+              key={k}
+              className="font-mono text-[var(--color-textSecondary)]"
+            >
               {k} = {v}
             </div>
           ))}
-          {Object.keys(flags).length === 0 && <span className="text-[var(--color-textMuted)]">—</span>}
+          {Object.keys(flags).length === 0 && (
+            <span className="text-[var(--color-textMuted)]">—</span>
+          )}
         </div>
       </section>
 
@@ -1018,17 +1170,24 @@ const StatusTab: React.FC<{ mgr: PrometheusManager; cid: string }> = ({
         <div className="max-h-40 overflow-auto text-xs">
           {metadataEntries.map(([metric, entries]) => (
             <div key={metric} className="text-[var(--color-textSecondary)]">
-              <span className="font-mono text-[var(--color-text)]">{metric}</span>
+              <span className="font-mono text-[var(--color-text)]">
+                {metric}
+              </span>
               {entries[0] ? ` · ${entries[0].type} · ${entries[0].help}` : ""}
             </div>
           ))}
-          {metadataEntries.length === 0 && <span className="text-[var(--color-textMuted)]">—</span>}
+          {metadataEntries.length === 0 && (
+            <span className="text-[var(--color-textMuted)]">—</span>
+          )}
         </div>
       </section>
 
       <section className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.prometheus.config", "Configuration (prometheus.yml)")}
+          {t(
+            "integrations.prometheus.config",
+            "Configuration (prometheus.yml)",
+          )}
         </h4>
         <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-[var(--color-surface)] p-2 font-mono text-[10px] text-[var(--color-textSecondary)]">
           {yaml || "—"}
@@ -1046,11 +1205,36 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "query", labelKey: "integrations.prometheus.tabQuery", labelDefault: "Query", icon: Terminal },
-  { key: "targets", labelKey: "integrations.prometheus.tabTargets", labelDefault: "Targets", icon: Server },
-  { key: "rules", labelKey: "integrations.prometheus.tabRules", labelDefault: "Rules & Alerts", icon: BellRing },
-  { key: "silences", labelKey: "integrations.prometheus.tabSilences", labelDefault: "Silences", icon: ShieldOff },
-  { key: "status", labelKey: "integrations.prometheus.tabStatus", labelDefault: "Status", icon: Tags },
+  {
+    key: "query",
+    labelKey: "integrations.prometheus.tabQuery",
+    labelDefault: "Query",
+    icon: Terminal,
+  },
+  {
+    key: "targets",
+    labelKey: "integrations.prometheus.tabTargets",
+    labelDefault: "Targets",
+    icon: Server,
+  },
+  {
+    key: "rules",
+    labelKey: "integrations.prometheus.tabRules",
+    labelDefault: "Rules & Alerts",
+    icon: BellRing,
+  },
+  {
+    key: "silences",
+    labelKey: "integrations.prometheus.tabSilences",
+    labelDefault: "Silences",
+    icon: ShieldOff,
+  },
+  {
+    key: "status",
+    labelKey: "integrations.prometheus.tabStatus",
+    labelDefault: "Status",
+    icon: Tags,
+  },
 ];
 
 const PrometheusPanel: React.FC<IntegrationPanelProps> = ({
@@ -1080,13 +1264,18 @@ const PrometheusPanel: React.FC<IntegrationPanelProps> = ({
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.prometheus.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.prometheus.connected", "Connected"))
               : t("integrations.prometheus.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -1136,13 +1325,3 @@ const PrometheusPanel: React.FC<IntegrationPanelProps> = ({
 };
 
 export default PrometheusPanel;
-
-/** Registry descriptor for the Prometheus integration (category: app-service).
- *  The Wave-3 app-service integrator appends this to `registry.appservice.ts`. */
-export const prometheusDescriptor: IntegrationDescriptor = {
-  key: "prometheus",
-  label: "Prometheus",
-  category: "monitoring",
-  icon: Activity,
-  importPanel: () => import("./PrometheusPanel"),
-};

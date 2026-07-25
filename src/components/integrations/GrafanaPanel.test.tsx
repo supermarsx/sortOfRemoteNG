@@ -4,7 +4,8 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -13,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import GrafanaPanel, { grafanaDescriptor } from "./GrafanaPanel";
+import GrafanaPanel from "./GrafanaPanel";
+import { grafanaDescriptor } from "./descriptors";
 import { grafanaApi } from "../../hooks/integration/useGrafana";
 
 beforeEach(() => {
@@ -44,7 +46,9 @@ describe("GrafanaPanel", () => {
         screen.getByPlaceholderText("grafana.lab.local"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /^Connect$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Connect$/i }),
+    ).toBeInTheDocument();
   });
 
   it("connect maps to grafana_connect with a wire-shape config (snake_case + api_key)", async () => {

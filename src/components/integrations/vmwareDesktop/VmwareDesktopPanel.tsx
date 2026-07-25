@@ -5,15 +5,8 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import {
-  MonitorPlay,
-  Loader2,
-  Plug,
-  PlugZap,
-  ShieldAlert,
-} from "lucide-react";
+import { MonitorPlay, Loader2, Plug, PlugZap, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 import type { IntegrationPanelProps } from "../../../types/integrations/registry";
 import type { VmwDesktopTabProps } from "../../../types/vmwareDesktop";
 import { useVmwDesktopConnection } from "../../../hooks/integration/vmwareDesktop";
@@ -82,14 +75,8 @@ const VmwareDesktopPanel: React.FC<IntegrationPanelProps> = ({
   instanceId,
 }) => {
   const { t } = useTranslation();
-  const {
-    connected,
-    isConnecting,
-    error,
-    summary,
-    disconnect,
-    connect,
-  } = useVmwDesktopConnection();
+  const { connected, isConnecting, error, summary, disconnect, connect } =
+    useVmwDesktopConnection();
   const { instancesFor, createInstance, updateInstance, readSecret } =
     useIntegrationConfigStore();
 
@@ -187,7 +174,9 @@ const VmwareDesktopPanel: React.FC<IntegrationPanelProps> = ({
   );
 
   const ActiveTabComponent = useMemo(() => {
-    const entry = vmwDesktopTabs.find((tabDesc) => tabDesc.categoryKey === activeTab);
+    const entry = vmwDesktopTabs.find(
+      (tabDesc) => tabDesc.categoryKey === activeTab,
+    );
     return entry ? React.lazy(entry.importTab) : null;
   }, [activeTab]);
 
@@ -288,7 +277,10 @@ const VmwareDesktopPanel: React.FC<IntegrationPanelProps> = ({
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
-            {t("integrations.vmwareDesktop.form.vmrunPath", "vmrun path (optional)")}
+            {t(
+              "integrations.vmwareDesktop.form.vmrunPath",
+              "vmrun path (optional)",
+            )}
             <input
               type="text"
               value={form.vmrunPath}
@@ -430,12 +422,3 @@ const VmwareDesktopPanel: React.FC<IntegrationPanelProps> = ({
 };
 
 export default VmwareDesktopPanel;
-
-/** Registry descriptor — appended to `registry.infra.ts` by the Wave 1 integrator. */
-export const vmwareDesktopDescriptor: IntegrationDescriptor = {
-  key: INTEGRATION_KEY,
-  label: "VMware Workstation",
-  category: "virtualization",
-  icon: MonitorPlay,
-  importPanel: () => import("./VmwareDesktopPanel"),
-};

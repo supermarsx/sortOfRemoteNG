@@ -27,10 +27,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useMssql, type MssqlManager } from "../../hooks/integration/useMssql";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import {
   defaultExportOptions,
   type ColumnDef,
@@ -183,9 +180,7 @@ const emptyConnect: ConnectState = {
 function buildAuth(form: ConnectState): MssqlAuthMethod {
   if (form.authKind === "WindowsAuth") return "WindowsAuth";
   const creds = { username: form.username, password: form.password };
-  return form.authKind === "AzureAd"
-    ? { AzureAd: creds }
-    : { SqlAuth: creds };
+  return form.authKind === "AzureAd" ? { AzureAd: creds } : { SqlAuth: creds };
 }
 
 function buildConfig(form: ConnectState): MssqlConnectionConfig {
@@ -329,7 +324,9 @@ const ConnectForm: React.FC<{
             </option>
           </select>
         </Labeled>
-        <Labeled label={t("integrations.mssql.database", "Database (optional)")}>
+        <Labeled
+          label={t("integrations.mssql.database", "Database (optional)")}
+        >
           <input
             className={field}
             value={form.database}
@@ -358,7 +355,10 @@ const ConnectForm: React.FC<{
           </>
         )}
         <Labeled
-          label={t("integrations.mssql.instanceName", "Named instance (optional)")}
+          label={t(
+            "integrations.mssql.instanceName",
+            "Named instance (optional)",
+          )}
         >
           <input
             className={field}
@@ -652,10 +652,10 @@ const SchemaTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
       if (!sid) return;
       if (
         !window.confirm(
-          t("integrations.mssql.dropDbConfirm", "Drop database {{name}}?").replace(
-            "{{name}}",
-            name,
-          ),
+          t(
+            "integrations.mssql.dropDbConfirm",
+            "Drop database {{name}}?",
+          ).replace("{{name}}", name),
         )
       )
         return;
@@ -677,7 +677,9 @@ const SchemaTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
         )
       )
         return;
-      await mgr.run(() => mgr.api.dropTable(sid, schema, table)).catch(() => {});
+      await mgr
+        .run(() => mgr.api.dropTable(sid, schema, table))
+        .catch(() => {});
       await loadSchemaObjects();
     },
     [mgr, sid, schema, t, loadSchemaObjects],
@@ -705,7 +707,11 @@ const SchemaTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button className={btn} onClick={loadDatabases} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={loadDatabases}
+          disabled={mgr.isLoading}
+        >
           <RefreshCw size={12} />
           {t("integrations.mssql.databases", "Databases")}
         </button>
@@ -721,7 +727,11 @@ const SchemaTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
           value={schema}
           onChange={(e) => setSchema(e.target.value)}
         />
-        <button className={btn} onClick={loadSchemaObjects} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={loadSchemaObjects}
+          disabled={mgr.isLoading}
+        >
           <Layers size={12} />
           {t("integrations.mssql.loadObjects", "Load objects")}
         </button>
@@ -880,9 +890,8 @@ const SchemaTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
             </div>
             <div>
               {t("integrations.mssql.foreignKeys", "Foreign keys")}:{" "}
-              {fks
-                .map((f) => `${f.name}→${f.referenced_table}`)
-                .join(", ") || "—"}
+              {fks.map((f) => `${f.name}→${f.referenced_table}`).join(", ") ||
+                "—"}
             </div>
           </div>
         </section>
@@ -942,7 +951,10 @@ const DataTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
   const updateRows = useCallback(async () => {
     if (!sid || !table.trim()) return;
     const cols = window.prompt(
-      t("integrations.mssql.updateColsPrompt", "Columns to set (comma-separated)"),
+      t(
+        "integrations.mssql.updateColsPrompt",
+        "Columns to set (comma-separated)",
+      ),
     );
     if (!cols) return;
     const vals = window.prompt(
@@ -961,22 +973,27 @@ const DataTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
       )
       .catch(() => null);
     if (n != null)
-      window.alert(`${t("integrations.mssql.rowsAffected", "Rows affected")}: ${n}`);
+      window.alert(
+        `${t("integrations.mssql.rowsAffected", "Rows affected")}: ${n}`,
+      );
     await load();
   }, [mgr, sid, schema, table, t, load]);
 
   const deleteRows = useCallback(async () => {
     if (!sid || !table.trim()) return;
     const where = window.prompt(
-      t("integrations.mssql.deleteWherePrompt", "WHERE clause for DELETE (no 'WHERE')"),
+      t(
+        "integrations.mssql.deleteWherePrompt",
+        "WHERE clause for DELETE (no 'WHERE')",
+      ),
     );
     if (!where) return;
     if (
       !window.confirm(
-        t("integrations.mssql.deleteConfirm", "Delete rows matching: {{w}}?").replace(
-          "{{w}}",
-          where,
-        ),
+        t(
+          "integrations.mssql.deleteConfirm",
+          "Delete rows matching: {{w}}?",
+        ).replace("{{w}}", where),
       )
     )
       return;
@@ -984,7 +1001,9 @@ const DataTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
       .run(() => mgr.api.deleteRows(sid, schema, table.trim(), where))
       .catch(() => null);
     if (n != null)
-      window.alert(`${t("integrations.mssql.rowsDeleted", "Rows deleted")}: ${n}`);
+      window.alert(
+        `${t("integrations.mssql.rowsDeleted", "Rows deleted")}: ${n}`,
+      );
     await load();
   }, [mgr, sid, schema, table, t, load]);
 
@@ -1011,7 +1030,9 @@ const DataTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
       .run(() => mgr.api.importCsv(sid, schema, table.trim(), content, true))
       .catch(() => null);
     if (n != null)
-      window.alert(`${t("integrations.mssql.rowsImported", "Rows imported")}: ${n}`);
+      window.alert(
+        `${t("integrations.mssql.rowsImported", "Rows imported")}: ${n}`,
+      );
     await load();
   }, [mgr, sid, schema, table, t, load]);
 
@@ -1185,7 +1206,9 @@ const AdminTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
                   key={p.spid}
                   className="border-t border-[var(--color-border)]"
                 >
-                  <td className="px-2 py-1 text-[var(--color-text)]">{p.spid}</td>
+                  <td className="px-2 py-1 text-[var(--color-text)]">
+                    {p.spid}
+                  </td>
                   <td className="px-2 py-1">{p.login_name ?? "—"}</td>
                   <td className="px-2 py-1">{p.database_name ?? "—"}</td>
                   <td className="px-2 py-1">{p.command ?? "—"}</td>
@@ -1223,7 +1246,9 @@ const AdminTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
           {logins.map((l) => (
             <div key={l.name}>
               {l.name} · {l.login_type}
-              {l.is_disabled ? ` · ${t("integrations.mssql.disabled", "disabled")}` : ""}
+              {l.is_disabled
+                ? ` · ${t("integrations.mssql.disabled", "disabled")}`
+                : ""}
             </div>
           ))}
           {logins.length === 0 && <span>—</span>}
@@ -1252,9 +1277,7 @@ const SessionsTab: React.FC<{ mgr: MssqlManager }> = ({ mgr }) => {
   }, [refresh]);
 
   const statusText = (s: SessionInfo): string =>
-    typeof s.status === "string"
-      ? s.status
-      : `Error: ${s.status.Error}`;
+    typeof s.status === "string" ? s.status : `Error: ${s.status.Error}`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -1345,14 +1368,42 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "query", labelKey: "integrations.mssql.tabQuery", labelDefault: "Query", icon: Play },
-  { key: "schema", labelKey: "integrations.mssql.tabSchema", labelDefault: "Schema", icon: Layers },
-  { key: "data", labelKey: "integrations.mssql.tabData", labelDefault: "Data", icon: TableIcon },
-  { key: "admin", labelKey: "integrations.mssql.tabAdmin", labelDefault: "Admin", icon: ShieldCheck },
-  { key: "sessions", labelKey: "integrations.mssql.tabSessions", labelDefault: "Sessions", icon: Server },
+  {
+    key: "query",
+    labelKey: "integrations.mssql.tabQuery",
+    labelDefault: "Query",
+    icon: Play,
+  },
+  {
+    key: "schema",
+    labelKey: "integrations.mssql.tabSchema",
+    labelDefault: "Schema",
+    icon: Layers,
+  },
+  {
+    key: "data",
+    labelKey: "integrations.mssql.tabData",
+    labelDefault: "Data",
+    icon: TableIcon,
+  },
+  {
+    key: "admin",
+    labelKey: "integrations.mssql.tabAdmin",
+    labelDefault: "Admin",
+    icon: ShieldCheck,
+  },
+  {
+    key: "sessions",
+    labelKey: "integrations.mssql.tabSessions",
+    labelDefault: "Sessions",
+    icon: Server,
+  },
 ];
 
-const MssqlPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const MssqlPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useMssql();
   const [tab, setTab] = useState<TabKey>("query");
@@ -1364,7 +1415,8 @@ const MssqlPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => 
   }, []);
 
   const headerLabel = useMemo(() => {
-    if (!mgr.isConnected) return t("integrations.mssql.disconnected", "Disconnected");
+    if (!mgr.isConnected)
+      return t("integrations.mssql.disconnected", "Disconnected");
     return mgr.session?.host ?? t("integrations.mssql.connected", "Connected");
   }, [mgr.isConnected, mgr.session, t]);
 
@@ -1440,13 +1492,3 @@ const MssqlPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => 
 };
 
 export default MssqlPanel;
-
-/** Registry descriptor for the SQL Server integration (category: database).
- *  The Wave-2 database integrator appends this to `registry.database.ts`. */
-export const mssqlDescriptor: IntegrationDescriptor = {
-  key: "mssql",
-  label: "SQL Server",
-  category: "database",
-  icon: Database,
-  importPanel: () => import("./MssqlPanel"),
-};

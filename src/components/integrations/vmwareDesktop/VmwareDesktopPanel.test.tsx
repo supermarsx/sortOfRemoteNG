@@ -13,7 +13,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import VmwareDesktopPanel, { vmwareDesktopDescriptor } from "./VmwareDesktopPanel";
+import VmwareDesktopPanel from "./VmwareDesktopPanel";
+import { vmwareDesktopDescriptor } from "../descriptors";
 
 beforeEach(() => {
   invokeMock.mockReset();

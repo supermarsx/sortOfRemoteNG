@@ -4,7 +4,8 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -13,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import NginxPanel, { nginxDescriptor } from "./NginxPanel";
+import NginxPanel from "./NginxPanel";
+import { nginxDescriptor } from "./descriptors";
 import { nginxApi } from "../../hooks/integration/useNginx";
 
 beforeEach(() => {
@@ -43,7 +45,9 @@ describe("NginxPanel", () => {
         screen.getByPlaceholderText("web01.lab.local"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /^Connect$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Connect$/i }),
+    ).toBeInTheDocument();
   });
 
   it("connect maps to ngx_connect with a snake_case wire-shape config", async () => {

@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -19,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import MssqlPanel, { mssqlDescriptor } from "./MssqlPanel";
+import MssqlPanel from "./MssqlPanel";
+import { mssqlDescriptor } from "./descriptors";
 import { mssqlApi } from "../../hooks/integration/useMssql";
 
 beforeEach(() => {
@@ -52,9 +48,7 @@ describe("MssqlPanel", () => {
   it("renders the connect form when no backend session exists", async () => {
     render(<MssqlPanel isOpen onClose={() => {}} />);
     await waitFor(() =>
-      expect(
-        screen.getByPlaceholderText("sql.lab.local"),
-      ).toBeInTheDocument(),
+      expect(screen.getByPlaceholderText("sql.lab.local")).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: /^Connect$/i }),
@@ -64,9 +58,7 @@ describe("MssqlPanel", () => {
   it("connect maps to mssql_connect with a snake_case config + externally-tagged auth", async () => {
     const { container } = render(<MssqlPanel isOpen onClose={() => {}} />);
     await waitFor(() =>
-      expect(
-        screen.getByPlaceholderText("sql.lab.local"),
-      ).toBeInTheDocument(),
+      expect(screen.getByPlaceholderText("sql.lab.local")).toBeInTheDocument(),
     );
 
     fireEvent.change(screen.getByPlaceholderText("sql.lab.local"), {

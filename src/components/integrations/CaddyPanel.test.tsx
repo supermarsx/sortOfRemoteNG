@@ -4,7 +4,8 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -13,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import CaddyPanel, { caddyDescriptor } from "./CaddyPanel";
+import CaddyPanel from "./CaddyPanel";
+import { caddyDescriptor } from "./descriptors";
 import { caddyApi } from "../../hooks/integration/useCaddy";
 
 beforeEach(() => {
@@ -41,7 +43,9 @@ describe("CaddyPanel", () => {
         screen.getByPlaceholderText("http://localhost:2019"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /^Connect$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Connect$/i }),
+    ).toBeInTheDocument();
   });
 
   it("connect maps to caddy_connect with a snake_case wire-shape config", async () => {

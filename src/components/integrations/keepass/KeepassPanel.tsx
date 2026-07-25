@@ -30,10 +30,7 @@ import {
   ShieldCheck,
   FileKey2,
 } from "lucide-react";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../../types/integrations/registry";
 import type {
   KeePassDatabase,
   OpenDatabaseRequest,
@@ -167,7 +164,9 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
         keyFilePath: keyFilePath || undefined,
         readOnly,
       };
-      const db = await invoke<KeePassDatabase>("keepass_open_database", { req });
+      const db = await invoke<KeePassDatabase>("keepass_open_database", {
+        req,
+      });
       setDatabase(db);
       setActiveTab(keepassTabs[0]?.categoryKey ?? null);
       await persistInstance();
@@ -334,8 +333,7 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
             {database.name || database.filePath}
           </span>
           <span className="shrink-0 text-xs text-[var(--color-textMuted)]">
-            {database.entryCount}{" "}
-            {t("integrations.keepass.entries", "entries")}
+            {database.entryCount} {t("integrations.keepass.entries", "entries")}
           </span>
         </div>
         <button
@@ -401,16 +399,6 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
       </div>
     </div>
   );
-};
-
-/** Top-level integration descriptor. NOTE: exported only — the wave integrator
- *  appends it to `registry.vault.ts` (disjoint-append discipline, §3). */
-export const keepassDescriptor: IntegrationDescriptor = {
-  key: INTEGRATION_KEY,
-  label: "KeePass",
-  category: "vault",
-  icon: KeyRound,
-  importPanel: () => import("./KeepassPanel"),
 };
 
 export default KeepassPanel;

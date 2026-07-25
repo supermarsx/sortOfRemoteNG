@@ -25,11 +25,9 @@ import {
   Unlock,
 } from "lucide-react";
 import { useEncryption } from "../../hooks/settings/useEncryption";
-import type {
-  EncryptionStatus,
-  UnlockResult,
-} from "../../types/encryption/encryption";
+import type { UnlockResult } from "../../types/encryption/encryption";
 import { describeStorage } from "../../types/encryption/encryption";
+import { shouldShowUnlockScreen } from "./unlockScreenVisibility";
 
 interface UnlockScreenProps {
   /** Called once the state is unlocked. Optional — the overlay
@@ -70,8 +68,7 @@ const DEFAULT_LABELS: Labels = {
   showPassword: "Show password",
   hidePassword: "Hide password",
   wrongPassword: "Wrong password. Try again.",
-  cooldownNotice:
-    "Too many failed attempts. Try again in {seconds}.",
+  cooldownNotice: "Too many failed attempts. Try again in {seconds}.",
   cooldownSeconds: "{seconds}s",
   needsSetup:
     "No master key found. Set up encryption from Settings → Security.",
@@ -81,24 +78,19 @@ const DEFAULT_LABELS: Labels = {
   vaultBackendLabel: "Vault backend",
 };
 
-function formatCooldown(template: string, secondsTemplate: string, ms: number): string {
+function formatCooldown(
+  template: string,
+  secondsTemplate: string,
+  ms: number,
+): string {
   const totalSeconds = Math.ceil(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  const display = minutes > 0 ? `${minutes}m ${seconds.toString().padStart(2, "0")}s` : secondsTemplate.replace("{seconds}", seconds.toString());
+  const display =
+    minutes > 0
+      ? `${minutes}m ${seconds.toString().padStart(2, "0")}s`
+      : secondsTemplate.replace("{seconds}", seconds.toString());
   return template.replace("{seconds}", display);
-}
-
-/** Reason that controls whether the unlock screen renders at all. */
-export function shouldShowUnlockScreen(
-  status: EncryptionStatus | null,
-): boolean {
-  if (!status) return false;
-  if (status.unlocked) return false;
-  // Show only when a master key actually exists somewhere; otherwise
-  // the right next step is the setup wizard in Settings → Security,
-  // not a password prompt the user can't possibly satisfy.
-  return status.vaultHasMasterDek || status.passwordWrapPresent;
 }
 
 export const UnlockScreen: React.FC<UnlockScreenProps> = ({
@@ -163,7 +155,8 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
   }, [status?.unlocked, onUnlocked]);
 
   const handleImportDek = async () => {
-    if (importBusy || importPath.length === 0 || importPassword.length === 0) return;
+    if (importBusy || importPath.length === 0 || importPassword.length === 0)
+      return;
     setImportBusy(true);
     setImportError(null);
     try {
@@ -187,7 +180,10 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
     try {
       const result = await enc.unlock(password);
       setLastResult(result);
-      if (result !== "unlocked-from-password" && result !== "unlocked-from-vault") {
+      if (
+        result !== "unlocked-from-password" &&
+        result !== "unlocked-from-vault"
+      ) {
         setPassword("");
       }
     } catch (e) {
@@ -279,9 +275,7 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={
-                  submitting || cooldownActive || password.length === 0
-                }
+                disabled={submitting || cooldownActive || password.length === 0}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
                 {submitting ? (
@@ -306,13 +300,12 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
               </div>
             )}
 
-            {!cooldownActive &&
-              lastResult === "wrong-password" && (
-                <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>{labels.wrongPassword}</span>
-                </div>
-              )}
+            {!cooldownActive && lastResult === "wrong-password" && (
+              <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{labels.wrongPassword}</span>
+              </div>
+            )}
 
             {error && (
               <div className="flex items-start gap-2 p-2 rounded bg-error/10 border border-error/30 text-error text-xs mt-2">
@@ -360,10 +353,10 @@ export const UnlockScreen: React.FC<UnlockScreenProps> = ({
             {importExpanded && (
               <div className="mt-2 space-y-2 text-xs">
                 <p className="text-[var(--color-textMuted)]">
-                  If your OS keychain was wiped or you're recovering on
-                  a new machine, paste the absolute path of an exported{" "}
-                  <code>.dek</code> file and the export password used
-                  when it was created.
+                  If your OS keychain was wiped or you're recovering on a new
+                  machine, paste the absolute path of an exported{" "}
+                  <code>.dek</code> file and the export password used when it
+                  was created.
                 </p>
                 <input
                   type="text"

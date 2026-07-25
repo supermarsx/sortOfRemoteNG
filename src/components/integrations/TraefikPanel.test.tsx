@@ -14,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import TraefikPanel, { traefikDescriptor } from "./TraefikPanel";
+import TraefikPanel from "./TraefikPanel";
+import { traefikDescriptor } from "./descriptors";
 import { traefikApi } from "../../hooks/integration/useTraefik";
 
 beforeEach(() => {
@@ -42,7 +43,9 @@ describe("TraefikPanel", () => {
         screen.getByPlaceholderText("http://traefik.lab.local:8080"),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /^Connect$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Connect$/i }),
+    ).toBeInTheDocument();
   });
 
   it("connect maps to traefik_connect with a snake_case wire config", async () => {

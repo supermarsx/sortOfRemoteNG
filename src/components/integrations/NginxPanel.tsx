@@ -30,10 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useNginx, type NginxManager } from "../../hooks/integration/useNginx";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   AccessLogEntry,
   ConfigTestResult,
@@ -243,7 +240,12 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
             onChange={(e) => set("sshPassword", e.target.value)}
           />
         </Labeled>
-        <Labeled label={t("integrations.nginx.sshKey", "SSH private key (path or PEM)")}>
+        <Labeled
+          label={t(
+            "integrations.nginx.sshKey",
+            "SSH private key (path or PEM)",
+          )}
+        >
           <input
             className={field}
             value={form.sshKey}
@@ -275,7 +277,12 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
             placeholder="/etc/nginx/nginx.conf"
           />
         </Labeled>
-        <Labeled label={t("integrations.nginx.sitesAvailableDir", "sites-available dir")}>
+        <Labeled
+          label={t(
+            "integrations.nginx.sitesAvailableDir",
+            "sites-available dir",
+          )}
+        >
           <input
             className={field}
             value={form.sitesAvailableDir}
@@ -283,7 +290,9 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
             placeholder="/etc/nginx/sites-available"
           />
         </Labeled>
-        <Labeled label={t("integrations.nginx.sitesEnabledDir", "sites-enabled dir")}>
+        <Labeled
+          label={t("integrations.nginx.sitesEnabledDir", "sites-enabled dir")}
+        >
           <input
             className={field}
             value={form.sitesEnabledDir}
@@ -339,7 +348,10 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
 
 // ─── Status tab (health, stub_status, process, info, process control) ─────────
 
-const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [health, setHealth] = useState<NginxHealthCheck | null>(null);
   const [detail, setDetail] = useState<unknown>(null);
@@ -395,10 +407,16 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
           <RefreshCw size={12} />
           {t("integrations.nginx.refresh", "Refresh")}
         </button>
-        <button className={btn} onClick={() => show(() => mgr.api.stubStatus(cid))}>
+        <button
+          className={btn}
+          onClick={() => show(() => mgr.api.stubStatus(cid))}
+        >
           {t("integrations.nginx.stubStatus", "stub_status")}
         </button>
-        <button className={btn} onClick={() => show(() => mgr.api.processStatus(cid))}>
+        <button
+          className={btn}
+          onClick={() => show(() => mgr.api.processStatus(cid))}
+        >
           {t("integrations.nginx.processStatus", "Process status")}
         </button>
         <button className={btn} onClick={() => show(() => mgr.api.info(cid))}>
@@ -416,7 +434,9 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
               <span className="text-[var(--color-textMuted)]">
                 {t("integrations.nginx.running", "Running")}
               </span>
-              <div className={health.running ? "text-green-500" : "text-red-500"}>
+              <div
+                className={health.running ? "text-green-500" : "text-red-500"}
+              >
                 {health.running
                   ? t("integrations.nginx.yes", "Yes")
                   : t("integrations.nginx.no", "No")}
@@ -426,13 +446,19 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
               <span className="text-[var(--color-textMuted)]">
                 {t("integrations.nginx.workers", "Workers")}
               </span>
-              <div className="text-[var(--color-text)]">{health.worker_count}</div>
+              <div className="text-[var(--color-text)]">
+                {health.worker_count}
+              </div>
             </div>
             <div>
               <span className="text-[var(--color-textMuted)]">
                 {t("integrations.nginx.configValid", "Config valid")}
               </span>
-              <div className={health.config_valid ? "text-green-500" : "text-red-500"}>
+              <div
+                className={
+                  health.config_valid ? "text-green-500" : "text-red-500"
+                }
+              >
                 {health.config_valid
                   ? t("integrations.nginx.yes", "Yes")
                   : t("integrations.nginx.no", "No")}
@@ -442,7 +468,9 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
               <span className="text-[var(--color-textMuted)]">
                 {t("integrations.nginx.pid", "PID")}
               </span>
-              <div className="text-[var(--color-text)]">{health.pid ?? "—"}</div>
+              <div className="text-[var(--color-text)]">
+                {health.pid ?? "—"}
+              </div>
             </div>
           </div>
           {health.status && (
@@ -455,7 +483,9 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
       )}
 
       {version && (
-        <div className="text-xs text-[var(--color-textSecondary)]">{version}</div>
+        <div className="text-xs text-[var(--color-textSecondary)]">
+          {version}
+        </div>
       )}
 
       <div className={card}>
@@ -463,19 +493,31 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
           {t("integrations.nginx.processControl", "Process control")}
         </h4>
         <div className="flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={() => control(() => mgr.api.start(cid))}>
+          <button
+            className={btn}
+            onClick={() => control(() => mgr.api.start(cid))}
+          >
             <Play size={12} />
             {t("integrations.nginx.start", "Start")}
           </button>
-          <button className={btn} onClick={() => control(() => mgr.api.stop(cid))}>
+          <button
+            className={btn}
+            onClick={() => control(() => mgr.api.stop(cid))}
+          >
             <Square size={12} />
             {t("integrations.nginx.stop", "Stop")}
           </button>
-          <button className={btn} onClick={() => control(() => mgr.api.restart(cid))}>
+          <button
+            className={btn}
+            onClick={() => control(() => mgr.api.restart(cid))}
+          >
             <Power size={12} />
             {t("integrations.nginx.restart", "Restart")}
           </button>
-          <button className={btn} onClick={() => control(() => mgr.api.reload(cid))}>
+          <button
+            className={btn}
+            onClick={() => control(() => mgr.api.reload(cid))}
+          >
             <RotateCw size={12} />
             {t("integrations.nginx.reload", "Reload")}
           </button>
@@ -489,12 +531,22 @@ const StatusTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
 
 // ─── Sites tab ────────────────────────────────────────────────────────────────
 
-const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<NginxSite[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
-  const [form, setForm] = useState({ name: "", serverNames: "", listenPort: "80", root: "" });
-  const [edit, setEdit] = useState<{ name: string; content: string } | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    serverNames: "",
+    listenPort: "80",
+    root: "",
+  });
+  const [edit, setEdit] = useState<{ name: string; content: string } | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -546,7 +598,10 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
     if (!edit) return;
     try {
       await mgr.run(() =>
-        mgr.api.updateSite(cid, edit.name, { name: edit.name, content: edit.content }),
+        mgr.api.updateSite(cid, edit.name, {
+          name: edit.name,
+          content: edit.content,
+        }),
       );
       setEdit(null);
       await refresh();
@@ -559,7 +614,9 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
     async (name: string, enabled: boolean) => {
       try {
         await mgr.run(() =>
-          enabled ? mgr.api.disableSite(cid, name) : mgr.api.enableSite(cid, name),
+          enabled
+            ? mgr.api.disableSite(cid, name)
+            : mgr.api.enableSite(cid, name),
         );
         await refresh();
       } catch {
@@ -571,7 +628,12 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
 
   const remove = useCallback(
     async (name: string) => {
-      if (!window.confirm(t("integrations.nginx.deleteSiteConfirm", "Delete this site?"))) return;
+      if (
+        !window.confirm(
+          t("integrations.nginx.deleteSiteConfirm", "Delete this site?"),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteSite(cid, name));
         await refresh();
@@ -590,19 +652,46 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Labeled label={t("integrations.nginx.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.serverNames", "Server names")}>
-            <input className={field} value={form.serverNames} onChange={(e) => setForm((f) => ({ ...f, serverNames: e.target.value }))} placeholder="example.com www.example.com" />
+            <input
+              className={field}
+              value={form.serverNames}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, serverNames: e.target.value }))
+              }
+              placeholder="example.com www.example.com"
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.listenPort", "Listen port")}>
-            <input className={field} inputMode="numeric" value={form.listenPort} onChange={(e) => setForm((f) => ({ ...f, listenPort: e.target.value }))} />
+            <input
+              className={field}
+              inputMode="numeric"
+              value={form.listenPort}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, listenPort: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.root", "Root")}>
-            <input className={field} value={form.root} onChange={(e) => setForm((f) => ({ ...f, root: e.target.value }))} placeholder="/var/www/html" />
+            <input
+              className={field}
+              value={form.root}
+              onChange={(e) => setForm((f) => ({ ...f, root: e.target.value }))}
+              placeholder="/var/www/html"
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.name}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.name}
+        >
           {t("integrations.nginx.create", "Create")}
         </button>
       </div>
@@ -614,20 +703,39 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.nginx.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.nginx.serverNames", "Server names")}</th>
-              <th className="px-2 py-1">{t("integrations.nginx.enabled", "Enabled")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.serverNames", "Server names")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.enabled", "Enabled")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => (
-              <tr key={s.filename} className="border-t border-[var(--color-border)]">
+              <tr
+                key={s.filename}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{s.server_names.join(", ")}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {s.server_names.join(", ")}
+                </td>
                 <td className="px-2 py-1">
-                  <span className={s.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}>
-                    {s.enabled ? t("integrations.nginx.yes", "Yes") : t("integrations.nginx.no", "No")}
+                  <span
+                    className={
+                      s.enabled
+                        ? "text-green-500"
+                        : "text-[var(--color-textMuted)]"
+                    }
+                  >
+                    {s.enabled
+                      ? t("integrations.nginx.yes", "Yes")
+                      : t("integrations.nginx.no", "No")}
                   </span>
                 </td>
                 <td className="px-2 py-1">
@@ -635,8 +743,13 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
                     <button className={btn} onClick={() => void view(s.name)}>
                       {t("integrations.nginx.edit", "Edit")}
                     </button>
-                    <button className={btn} onClick={() => void toggle(s.name, s.enabled)}>
-                      {s.enabled ? t("integrations.nginx.disable", "Disable") : t("integrations.nginx.enable", "Enable")}
+                    <button
+                      className={btn}
+                      onClick={() => void toggle(s.name, s.enabled)}
+                    >
+                      {s.enabled
+                        ? t("integrations.nginx.disable", "Disable")
+                        : t("integrations.nginx.enable", "Enable")}
                     </button>
                     <button className={btn} onClick={() => void remove(s.name)}>
                       <Trash2 size={12} />
@@ -647,7 +760,10 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.nginx.noSites", "No sites")}
                 </td>
               </tr>
@@ -665,7 +781,9 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
             className={`${field} font-mono`}
             rows={10}
             value={edit.content}
-            onChange={(e) => setEdit((s) => (s ? { ...s, content: e.target.value } : s))}
+            onChange={(e) =>
+              setEdit((s) => (s ? { ...s, content: e.target.value } : s))
+            }
           />
           <div className="mt-2 flex gap-2">
             <button className={btn} onClick={saveEdit} disabled={mgr.isLoading}>
@@ -684,11 +802,19 @@ const SitesTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =>
 
 // ─── Upstreams tab ────────────────────────────────────────────────────────────
 
-const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<NginxUpstream[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
-  const [form, setForm] = useState({ name: "", servers: "", loadBalancing: "round_robin", keepalive: "" });
+  const [form, setForm] = useState({
+    name: "",
+    servers: "",
+    loadBalancing: "round_robin",
+    keepalive: "",
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -717,7 +843,12 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
           keepalive: form.keepalive ? Number(form.keepalive) : undefined,
         }),
       );
-      setForm({ name: "", servers: "", loadBalancing: "round_robin", keepalive: "" });
+      setForm({
+        name: "",
+        servers: "",
+        loadBalancing: "round_robin",
+        keepalive: "",
+      });
       await refresh();
     } catch {
       /* surfaced */
@@ -739,7 +870,10 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
     async (u: NginxUpstream, lb: string) => {
       try {
         await mgr.run(() =>
-          mgr.api.updateUpstream(cid, u.name, { name: u.name, load_balancing: lb }),
+          mgr.api.updateUpstream(cid, u.name, {
+            name: u.name,
+            load_balancing: lb,
+          }),
         );
         await refresh();
       } catch {
@@ -751,7 +885,15 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
 
   const remove = useCallback(
     async (name: string) => {
-      if (!window.confirm(t("integrations.nginx.deleteUpstreamConfirm", "Delete this upstream?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.nginx.deleteUpstreamConfirm",
+            "Delete this upstream?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteUpstream(cid, name));
         await refresh();
@@ -770,13 +912,32 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Labeled label={t("integrations.nginx.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.servers", "Servers")}>
-            <input className={field} value={form.servers} onChange={(e) => setForm((f) => ({ ...f, servers: e.target.value }))} placeholder="10.0.0.1:8080 10.0.0.2:8080" />
+            <input
+              className={field}
+              value={form.servers}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, servers: e.target.value }))
+              }
+              placeholder="10.0.0.1:8080 10.0.0.2:8080"
+            />
           </Labeled>
-          <Labeled label={t("integrations.nginx.loadBalancing", "Load balancing")}>
-            <select className={field} value={form.loadBalancing} onChange={(e) => setForm((f) => ({ ...f, loadBalancing: e.target.value }))}>
+          <Labeled
+            label={t("integrations.nginx.loadBalancing", "Load balancing")}
+          >
+            <select
+              className={field}
+              value={form.loadBalancing}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, loadBalancing: e.target.value }))
+              }
+            >
               <option value="round_robin">round_robin</option>
               <option value="least_conn">least_conn</option>
               <option value="ip_hash">ip_hash</option>
@@ -784,10 +945,21 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
             </select>
           </Labeled>
           <Labeled label={t("integrations.nginx.keepalive", "Keepalive")}>
-            <input className={field} inputMode="numeric" value={form.keepalive} onChange={(e) => setForm((f) => ({ ...f, keepalive: e.target.value }))} />
+            <input
+              className={field}
+              inputMode="numeric"
+              value={form.keepalive}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, keepalive: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.name || !form.servers}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.name || !form.servers}
+        >
           {t("integrations.nginx.create", "Create")}
         </button>
       </div>
@@ -799,15 +971,24 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.nginx.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.nginx.servers", "Servers")}</th>
-              <th className="px-2 py-1">{t("integrations.nginx.loadBalancing", "Load balancing")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.servers", "Servers")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.loadBalancing", "Load balancing")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((u) => (
-              <tr key={u.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={u.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{u.name}</td>
                 <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
                   {u.servers.map((s) => s.address).join(", ")}
@@ -838,7 +1019,10 @@ const UpstreamsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.nginx.noUpstreams", "No upstreams")}
                 </td>
               </tr>
@@ -900,7 +1084,9 @@ const SslTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2">
-        <Labeled label={t("integrations.nginx.certDir", "Certificate directory")}>
+        <Labeled
+          label={t("integrations.nginx.certDir", "Certificate directory")}
+        >
           <input
             className={field}
             style={{ width: 240 }}
@@ -936,7 +1122,11 @@ const SslTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
               onChange={(e) => setSiteName(e.target.value)}
             />
           </Labeled>
-          <button className={btn} onClick={loadSsl} disabled={mgr.isLoading || !siteName}>
+          <button
+            className={btn}
+            onClick={loadSsl}
+            disabled={mgr.isLoading || !siteName}
+          >
             {t("integrations.nginx.loadSsl", "Load SSL")}
           </button>
         </div>
@@ -947,7 +1137,11 @@ const SslTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
           onChange={(e) => setJson(e.target.value)}
           placeholder='{"certificate":"/etc/ssl/cert.pem","certificate_key":"/etc/ssl/key.pem"}'
         />
-        <button className={`${btn} mt-2`} onClick={saveSsl} disabled={mgr.isLoading || !siteName || !json}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={saveSsl}
+          disabled={mgr.isLoading || !siteName || !json}
+        >
           {t("integrations.nginx.updateSsl", "Update SSL")}
         </button>
       </div>
@@ -958,17 +1152,27 @@ const SslTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
 
 // ─── Logs tab ─────────────────────────────────────────────────────────────────
 
-const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [logFiles, setLogFiles] = useState<string[]>([]);
   const [logDir, setLogDir] = useState("");
-  const [query, setQuery] = useState({ path: "", lines: "100", filter: "", level: "" });
+  const [query, setQuery] = useState({
+    path: "",
+    lines: "100",
+    filter: "",
+    level: "",
+  });
   const [access, setAccess] = useState<AccessLogEntry[]>([]);
   const [errors, setErrors] = useState<ErrorLogEntry[]>([]);
 
   const listFiles = useCallback(async () => {
     try {
-      setLogFiles(await mgr.run(() => mgr.api.listLogFiles(cid, logDir || undefined)));
+      setLogFiles(
+        await mgr.run(() => mgr.api.listLogFiles(cid, logDir || undefined)),
+      );
     } catch {
       /* surfaced */
     }
@@ -1009,7 +1213,13 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2">
         <Labeled label={t("integrations.nginx.logDir", "Log directory")}>
-          <input className={field} style={{ width: 220 }} value={logDir} onChange={(e) => setLogDir(e.target.value)} placeholder="/var/log/nginx" />
+          <input
+            className={field}
+            style={{ width: 220 }}
+            value={logDir}
+            onChange={(e) => setLogDir(e.target.value)}
+            placeholder="/var/log/nginx"
+          />
         </Labeled>
         <button className={btn} onClick={listFiles} disabled={mgr.isLoading}>
           <RefreshCw size={12} />
@@ -1021,7 +1231,10 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
           <ul className="flex flex-col gap-1 font-mono text-xs text-[var(--color-textSecondary)]">
             {logFiles.map((f) => (
               <li key={f}>
-                <button className="hover:underline" onClick={() => setQuery((q) => ({ ...q, path: f }))}>
+                <button
+                  className="hover:underline"
+                  onClick={() => setQuery((q) => ({ ...q, path: f }))}
+                >
                   {f}
                 </button>
               </li>
@@ -1033,16 +1246,42 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
       <div className={card}>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Labeled label={t("integrations.nginx.logPath", "Log path")}>
-            <input className={field} value={query.path} onChange={(e) => setQuery((q) => ({ ...q, path: e.target.value }))} />
+            <input
+              className={field}
+              value={query.path}
+              onChange={(e) =>
+                setQuery((q) => ({ ...q, path: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.lines", "Lines")}>
-            <input className={field} inputMode="numeric" value={query.lines} onChange={(e) => setQuery((q) => ({ ...q, lines: e.target.value }))} />
+            <input
+              className={field}
+              inputMode="numeric"
+              value={query.lines}
+              onChange={(e) =>
+                setQuery((q) => ({ ...q, lines: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.filter", "Filter")}>
-            <input className={field} value={query.filter} onChange={(e) => setQuery((q) => ({ ...q, filter: e.target.value }))} />
+            <input
+              className={field}
+              value={query.filter}
+              onChange={(e) =>
+                setQuery((q) => ({ ...q, filter: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.level", "Level (error log)")}>
-            <input className={field} value={query.level} onChange={(e) => setQuery((q) => ({ ...q, level: e.target.value }))} placeholder="warn" />
+            <input
+              className={field}
+              value={query.level}
+              onChange={(e) =>
+                setQuery((q) => ({ ...q, level: e.target.value }))
+              }
+              placeholder="warn"
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex gap-2">
@@ -1060,19 +1299,35 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.nginx.remoteAddr", "Remote")}</th>
-                <th className="px-2 py-1">{t("integrations.nginx.request", "Request")}</th>
-                <th className="px-2 py-1">{t("integrations.nginx.status", "Status")}</th>
-                <th className="px-2 py-1">{t("integrations.nginx.bytes", "Bytes")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.nginx.remoteAddr", "Remote")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.nginx.request", "Request")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.nginx.status", "Status")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.nginx.bytes", "Bytes")}
+                </th>
               </tr>
             </thead>
             <tbody>
               {access.map((a, i) => (
                 <tr key={i} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{a.remote_addr}</td>
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{a.request}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{a.status}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{a.body_bytes_sent}</td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                    {a.remote_addr}
+                  </td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {a.request}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {a.status}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {a.body_bytes_sent}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1084,8 +1339,16 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
         <div className="flex flex-col gap-1 font-mono text-xs">
           {errors.map((e, i) => (
             <div key={i} className="text-[var(--color-textSecondary)]">
-              <span className="text-[var(--color-textMuted)]">{e.timestamp}</span>{" "}
-              <span className={e.level === "error" ? "text-red-500" : "text-yellow-500"}>[{e.level}]</span>{" "}
+              <span className="text-[var(--color-textMuted)]">
+                {e.timestamp}
+              </span>{" "}
+              <span
+                className={
+                  e.level === "error" ? "text-red-500" : "text-yellow-500"
+                }
+              >
+                [{e.level}]
+              </span>{" "}
               {e.message}
             </div>
           ))}
@@ -1097,7 +1360,10 @@ const LogsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => 
 
 // ─── Config tab ───────────────────────────────────────────────────────────────
 
-const ConfigTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const ConfigTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [content, setContent] = useState("");
   const [summary, setSummary] = useState<unknown>(null);
@@ -1145,7 +1411,11 @@ const ConfigTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
           <ShieldCheck size={12} />
           {t("integrations.nginx.testConfig", "Test config")}
         </button>
-        <button className={btn} onClick={save} disabled={mgr.isLoading || !content}>
+        <button
+          className={btn}
+          onClick={save}
+          disabled={mgr.isLoading || !content}
+        >
           {t("integrations.nginx.save", "Save")}
         </button>
       </div>
@@ -1163,7 +1433,9 @@ const ConfigTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
             </pre>
           )}
           {test.errors.map((err, i) => (
-            <div key={i} className="text-xs text-red-500">{err}</div>
+            <div key={i} className="text-xs text-red-500">
+              {err}
+            </div>
           ))}
         </div>
       )}
@@ -1181,11 +1453,16 @@ const ConfigTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) =
 
 // ─── Snippets tab ─────────────────────────────────────────────────────────────
 
-const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid }) => {
+const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<NginxSnippet[]>([]);
   const [form, setForm] = useState({ name: "", description: "", content: "" });
-  const [edit, setEdit] = useState<{ name: string; content: string } | null>(null);
+  const [edit, setEdit] = useState<{ name: string; content: string } | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -1241,7 +1518,12 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
 
   const remove = useCallback(
     async (name: string) => {
-      if (!window.confirm(t("integrations.nginx.deleteSnippetConfirm", "Delete this snippet?"))) return;
+      if (
+        !window.confirm(
+          t("integrations.nginx.deleteSnippetConfirm", "Delete this snippet?"),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteSnippet(cid, name));
         await refresh();
@@ -1260,10 +1542,20 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled label={t("integrations.nginx.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.nginx.description", "Description")}>
-            <input className={field} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+            <input
+              className={field}
+              value={form.description}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, description: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
         <textarea
@@ -1273,7 +1565,11 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
           onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
           placeholder="gzip on;"
         />
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.name || !form.content}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.name || !form.content}
+        >
           {t("integrations.nginx.create", "Create")}
         </button>
       </div>
@@ -1285,16 +1581,25 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.nginx.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.nginx.path", "Path")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.nginx.path", "Path")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => (
-              <tr key={s.path} className="border-t border-[var(--color-border)]">
+              <tr
+                key={s.path}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.path}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {s.path}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
                     <button className={btn} onClick={() => void view(s.name)}>
@@ -1309,7 +1614,10 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.nginx.noSnippets", "No snippets")}
                 </td>
               </tr>
@@ -1327,7 +1635,9 @@ const SnippetsTab: React.FC<{ mgr: NginxManager; cid: string }> = ({ mgr, cid })
             className={`${field} font-mono`}
             rows={8}
             value={edit.content}
-            onChange={(e) => setEdit((s) => (s ? { ...s, content: e.target.value } : s))}
+            onChange={(e) =>
+              setEdit((s) => (s ? { ...s, content: e.target.value } : s))
+            }
           />
           <div className="mt-2 flex gap-2">
             <button className={btn} onClick={saveEdit} disabled={mgr.isLoading}>
@@ -1351,16 +1661,54 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "status", labelKey: "integrations.nginx.tabStatus", labelDefault: "Status", icon: Activity },
-  { key: "sites", labelKey: "integrations.nginx.tabSites", labelDefault: "Sites", icon: Globe },
-  { key: "upstreams", labelKey: "integrations.nginx.tabUpstreams", labelDefault: "Upstreams", icon: Layers },
-  { key: "ssl", labelKey: "integrations.nginx.tabSsl", labelDefault: "SSL", icon: ShieldCheck },
-  { key: "logs", labelKey: "integrations.nginx.tabLogs", labelDefault: "Logs", icon: ScrollText },
-  { key: "config", labelKey: "integrations.nginx.tabConfig", labelDefault: "Config", icon: FileCog },
-  { key: "snippets", labelKey: "integrations.nginx.tabSnippets", labelDefault: "Snippets", icon: FileText },
+  {
+    key: "status",
+    labelKey: "integrations.nginx.tabStatus",
+    labelDefault: "Status",
+    icon: Activity,
+  },
+  {
+    key: "sites",
+    labelKey: "integrations.nginx.tabSites",
+    labelDefault: "Sites",
+    icon: Globe,
+  },
+  {
+    key: "upstreams",
+    labelKey: "integrations.nginx.tabUpstreams",
+    labelDefault: "Upstreams",
+    icon: Layers,
+  },
+  {
+    key: "ssl",
+    labelKey: "integrations.nginx.tabSsl",
+    labelDefault: "SSL",
+    icon: ShieldCheck,
+  },
+  {
+    key: "logs",
+    labelKey: "integrations.nginx.tabLogs",
+    labelDefault: "Logs",
+    icon: ScrollText,
+  },
+  {
+    key: "config",
+    labelKey: "integrations.nginx.tabConfig",
+    labelDefault: "Config",
+    icon: FileCog,
+  },
+  {
+    key: "snippets",
+    labelKey: "integrations.nginx.tabSnippets",
+    labelDefault: "Snippets",
+    icon: FileText,
+  },
 ];
 
-const NginxPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const NginxPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useNginx();
   const [tab, setTab] = useState<TabKey>("status");
@@ -1384,13 +1732,18 @@ const NginxPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => 
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.nginx.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.nginx.connected", "Connected"))
               : t("integrations.nginx.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -1442,13 +1795,3 @@ const NginxPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => 
 };
 
 export default NginxPanel;
-
-/** Registry descriptor for the Nginx integration (category: web).
- *  The Wave-4 web integrator appends this to `registry.web.ts`. */
-export const nginxDescriptor: IntegrationDescriptor = {
-  key: "nginx",
-  label: "Nginx",
-  category: "web-server",
-  icon: Server,
-  importPanel: () => import("./NginxPanel"),
-};

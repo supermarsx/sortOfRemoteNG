@@ -15,7 +15,6 @@ import { ShieldCheck, Loader2, Plug, PlugZap, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 
-import type { IntegrationDescriptor } from "../../../types/integrations/registry";
 import type {
   PfsenseConnectionConfig,
   PfsenseConnectionSummary,
@@ -400,13 +399,3 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
 };
 
 export default PfsensePanel;
-
-/** Descriptor registered into `registry.infra.ts` by the Wave-1 integrator.
- *  Do NOT edit `registry.infra.ts` here — just export this. */
-export const pfsenseDescriptor: IntegrationDescriptor = {
-  key: "pfsense",
-  label: "pfSense",
-  category: "networking",
-  icon: ShieldCheck,
-  importPanel: () => import("./PfsensePanel"),
-};

@@ -12,10 +12,8 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import {
-  shouldShowUnlockScreen,
-  UnlockScreen,
-} from "../../src/components/encryption/UnlockScreen";
+import { UnlockScreen } from "../../src/components/encryption/UnlockScreen";
+import { shouldShowUnlockScreen } from "../../src/components/encryption/unlockScreenVisibility";
 import type {
   EncryptionStatus,
   LockoutSnapshot,
@@ -85,9 +83,9 @@ describe("shouldShowUnlockScreen", () => {
   });
 
   it("returns false when state is unlocked", () => {
-    expect(
-      shouldShowUnlockScreen({ ...baseStatus, unlocked: true }),
-    ).toBe(false);
+    expect(shouldShowUnlockScreen({ ...baseStatus, unlocked: true })).toBe(
+      false,
+    );
   });
 
   it("returns false when no master key exists anywhere", () => {
@@ -137,9 +135,7 @@ describe("UnlockScreen", () => {
     render(<UnlockScreen onUnlocked={() => {}} />);
     expect(screen.getByText("Encrypted storage is locked")).toBeTruthy();
     expect(screen.getByPlaceholderText("Master password")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /^Unlock/ }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Unlock/ })).toBeTruthy();
   });
 
   it("disables Unlock when the password field is empty", () => {
@@ -149,7 +145,9 @@ describe("UnlockScreen", () => {
       unlock: vi.fn(),
     };
     render(<UnlockScreen onUnlocked={() => {}} />);
-    const btn = screen.getByRole("button", { name: /^Unlock/ }) as HTMLButtonElement;
+    const btn = screen.getByRole("button", {
+      name: /^Unlock/,
+    }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
   });
 
@@ -187,7 +185,9 @@ describe("UnlockScreen", () => {
     render(<UnlockScreen onUnlocked={() => {}} />);
     const banner = screen.getByTestId("unlock-cooldown");
     expect(banner.textContent).toContain("29s");
-    const btn = screen.getByRole("button", { name: /^Unlock/ }) as HTMLButtonElement;
+    const btn = screen.getByRole("button", {
+      name: /^Unlock/,
+    }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
   });
 
@@ -211,7 +211,9 @@ describe("UnlockScreen", () => {
   });
 
   it("renders the silent vault branch when only vault holds the DEK", () => {
-    const unlock = vi.fn(() => Promise.resolve("unlocked-from-vault" as UnlockResult));
+    const unlock = vi.fn(() =>
+      Promise.resolve("unlocked-from-vault" as UnlockResult),
+    );
     hookOverride = {
       status: {
         ...baseStatus,
@@ -355,7 +357,9 @@ describe("UnlockScreen", () => {
       target: { value: "hunter2" },
     });
 
-    const submit = screen.getByTestId("unlock-import-submit") as HTMLButtonElement;
+    const submit = screen.getByTestId(
+      "unlock-import-submit",
+    ) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
 

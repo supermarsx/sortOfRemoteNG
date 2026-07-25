@@ -32,12 +32,12 @@ import {
   Users,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useGdrive, type GdriveManager } from "../../hooks/integration/useGdrive";
+import {
+  useGdrive,
+  type GdriveManager,
+} from "../../hooks/integration/useGdrive";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import {
   GDRIVE_OOB_REDIRECT,
   GDRIVE_SCOPES,
@@ -242,7 +242,10 @@ const ConnectFlow: React.FC<{
       <div className={card}>
         <h4 className="mb-2 flex items-center gap-1 text-xs font-semibold text-[var(--color-text)]">
           <KeyRound size={12} />
-          {t("integrations.gdrive.oauthCredentials", "OAuth2 client credentials")}
+          {t(
+            "integrations.gdrive.oauthCredentials",
+            "OAuth2 client credentials",
+          )}
         </h4>
         <p className="mb-3 text-[11px] text-[var(--color-textMuted)]">
           {t(
@@ -269,16 +272,16 @@ const ConnectFlow: React.FC<{
               onChange={(e) => set("clientSecret", e.target.value)}
             />
           </Labeled>
-          <Labeled
-            label={t("integrations.gdrive.redirectUri", "Redirect URI")}
-          >
+          <Labeled label={t("integrations.gdrive.redirectUri", "Redirect URI")}>
             <input
               className={field}
               value={form.redirectUri}
               onChange={(e) => set("redirectUri", e.target.value)}
             />
           </Labeled>
-          <Labeled label={t("integrations.gdrive.scopes", "Scopes (space-separated)")}>
+          <Labeled
+            label={t("integrations.gdrive.scopes", "Scopes (space-separated)")}
+          >
             <input
               className={field}
               value={form.scope}
@@ -442,7 +445,11 @@ const FilesTab: React.FC<{
             {t("integrations.gdrive.sortSize", "Size")}
           </option>
         </select>
-        <button className={btn} onClick={() => void list()} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void list()}
+          disabled={mgr.isLoading}
+        >
           <Search size={12} />
           {query
             ? t("integrations.gdrive.search", "Search")
@@ -456,7 +463,10 @@ const FilesTab: React.FC<{
           style={{ maxWidth: 220 }}
           value={newFolder}
           onChange={(e) => setNewFolder(e.target.value)}
-          placeholder={t("integrations.gdrive.newFolderName", "New folder name")}
+          placeholder={t(
+            "integrations.gdrive.newFolderName",
+            "New folder name",
+          )}
         />
         <button className={btn} onClick={createFolder} disabled={mgr.isLoading}>
           <FolderPlus size={12} />
@@ -464,9 +474,7 @@ const FilesTab: React.FC<{
         </button>
         <button
           className={btn}
-          onClick={() =>
-            act(() => mgr.api.emptyTrash())
-          }
+          onClick={() => act(() => mgr.api.emptyTrash())}
           disabled={mgr.isLoading}
         >
           <Trash2 size={12} />
@@ -478,10 +486,18 @@ const FilesTab: React.FC<{
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.gdrive.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.gdrive.type", "Type")}</th>
-              <th className="px-2 py-1">{t("integrations.gdrive.modified", "Modified")}</th>
-              <th className="px-2 py-1">{t("integrations.gdrive.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.gdrive.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.gdrive.type", "Type")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.gdrive.modified", "Modified")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.gdrive.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -543,14 +559,19 @@ const FilesTab: React.FC<{
                       className={btn}
                       title={t("integrations.gdrive.copy", "Copy")}
                       onClick={() =>
-                        act(() => mgr.api.copyFile(f.id, `${f.name} (copy)`, []))
+                        act(() =>
+                          mgr.api.copyFile(f.id, `${f.name} (copy)`, []),
+                        )
                       }
                     >
                       {t("integrations.gdrive.copy", "Copy")}
                     </button>
                     <button
                       className={btn}
-                      title={t("integrations.gdrive.deleteForever", "Delete permanently")}
+                      title={t(
+                        "integrations.gdrive.deleteForever",
+                        "Delete permanently",
+                      )}
                       onClick={() => act(() => mgr.api.deleteFile(f.id))}
                     >
                       <Trash2 size={11} />
@@ -561,7 +582,10 @@ const FilesTab: React.FC<{
             ))}
             {files.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.gdrive.noFiles", "No files")}
                 </td>
               </tr>
@@ -583,7 +607,8 @@ const FilesTab: React.FC<{
       {selectedId && (
         <div className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-            {t("integrations.gdrive.selectedFile", "Selected file")}: {selectedId}
+            {t("integrations.gdrive.selectedFile", "Selected file")}:{" "}
+            {selectedId}
           </h4>
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -641,7 +666,10 @@ const SharingTab: React.FC<{ mgr: GdriveManager; fileId: string }> = ({
   if (!fileId) {
     return (
       <p className="text-xs text-[var(--color-textMuted)]">
-        {t("integrations.gdrive.selectFileFirst", "Select a file in the Files tab first.")}
+        {t(
+          "integrations.gdrive.selectFileFirst",
+          "Select a file in the Files tab first.",
+        )}
       </p>
     );
   }
@@ -663,13 +691,20 @@ const SharingTab: React.FC<{ mgr: GdriveManager; fileId: string }> = ({
               value={role}
               onChange={(e) => setRole(e.target.value as PermissionRole)}
             >
-              {(["reader", "commenter", "writer", "fileOrganizer", "organizer", "owner"] as PermissionRole[]).map(
-                (r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ),
-              )}
+              {(
+                [
+                  "reader",
+                  "commenter",
+                  "writer",
+                  "fileOrganizer",
+                  "organizer",
+                  "owner",
+                ] as PermissionRole[]
+              ).map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
             </select>
           </Labeled>
           <label className="flex items-end gap-2 pb-1 text-xs text-[var(--color-textSecondary)]">
@@ -790,7 +825,10 @@ const RevisionsTab: React.FC<{ mgr: GdriveManager; fileId: string }> = ({
   if (!fileId) {
     return (
       <p className="text-xs text-[var(--color-textMuted)]">
-        {t("integrations.gdrive.selectFileFirst", "Select a file in the Files tab first.")}
+        {t(
+          "integrations.gdrive.selectFileFirst",
+          "Select a file in the Files tab first.",
+        )}
       </p>
     );
   }
@@ -868,7 +906,10 @@ const CommentsTab: React.FC<{ mgr: GdriveManager; fileId: string }> = ({
   if (!fileId) {
     return (
       <p className="text-xs text-[var(--color-textMuted)]">
-        {t("integrations.gdrive.selectFileFirst", "Select a file in the Files tab first.")}
+        {t(
+          "integrations.gdrive.selectFileFirst",
+          "Select a file in the Files tab first.",
+        )}
       </p>
     );
   }
@@ -965,7 +1006,11 @@ const CommentsTab: React.FC<{ mgr: GdriveManager; fileId: string }> = ({
               onClick={async () => {
                 try {
                   await mgr.run(() =>
-                    mgr.api.createReply(fileId, c.id, (reply[c.id] ?? "").trim()),
+                    mgr.api.createReply(
+                      fileId,
+                      c.id,
+                      (reply[c.id] ?? "").trim(),
+                    ),
                   );
                   setReply((s) => ({ ...s, [c.id]: "" }));
                   await refresh();
@@ -1015,7 +1060,10 @@ const DrivesTab: React.FC<{ mgr: GdriveManager }> = ({ mgr }) => {
           style={{ maxWidth: 260 }}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={t("integrations.gdrive.driveName", "New shared drive name")}
+          placeholder={t(
+            "integrations.gdrive.driveName",
+            "New shared drive name",
+          )}
         />
         <button
           className={btn}
@@ -1132,7 +1180,8 @@ const ChangesTab: React.FC<{ mgr: GdriveManager }> = ({ mgr }) => {
             {c.removed
               ? t("integrations.gdrive.removed", "removed")
               : t("integrations.gdrive.changed", "changed")}{" "}
-            · {c.file?.name ?? c.fileId} · {c.time?.slice(0, 19).replace("T", " ")}
+            · {c.file?.name ?? c.fileId} ·{" "}
+            {c.time?.slice(0, 19).replace("T", " ")}
           </div>
         ))}
         {changes.length === 0 && (
@@ -1205,9 +1254,18 @@ const AccountTab: React.FC<{ mgr: GdriveManager }> = ({ mgr }) => {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {[
-              [t("integrations.gdrive.storageUsed", "Used"), fmtBytes(about.storageUsed)],
-              [t("integrations.gdrive.storageLimit", "Limit"), fmtBytes(about.storageLimit)],
-              [t("integrations.gdrive.storageTrash", "In trash"), fmtBytes(about.storageUsedInTrash)],
+              [
+                t("integrations.gdrive.storageUsed", "Used"),
+                fmtBytes(about.storageUsed),
+              ],
+              [
+                t("integrations.gdrive.storageLimit", "Limit"),
+                fmtBytes(about.storageLimit),
+              ],
+              [
+                t("integrations.gdrive.storageTrash", "In trash"),
+                fmtBytes(about.storageUsedInTrash),
+              ],
             ].map(([label, value]) => (
               <div key={String(label)} className={card}>
                 <div className="text-sm font-semibold text-[var(--color-text)]">
@@ -1233,16 +1291,54 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "files", labelKey: "integrations.gdrive.tabFiles", labelDefault: "Files", icon: Files },
-  { key: "sharing", labelKey: "integrations.gdrive.tabSharing", labelDefault: "Sharing", icon: Users },
-  { key: "revisions", labelKey: "integrations.gdrive.tabRevisions", labelDefault: "Revisions", icon: History },
-  { key: "comments", labelKey: "integrations.gdrive.tabComments", labelDefault: "Comments", icon: MessageSquare },
-  { key: "drives", labelKey: "integrations.gdrive.tabDrives", labelDefault: "Shared Drives", icon: HardDrive },
-  { key: "changes", labelKey: "integrations.gdrive.tabChanges", labelDefault: "Changes", icon: Clock },
-  { key: "account", labelKey: "integrations.gdrive.tabAccount", labelDefault: "Account", icon: Activity },
+  {
+    key: "files",
+    labelKey: "integrations.gdrive.tabFiles",
+    labelDefault: "Files",
+    icon: Files,
+  },
+  {
+    key: "sharing",
+    labelKey: "integrations.gdrive.tabSharing",
+    labelDefault: "Sharing",
+    icon: Users,
+  },
+  {
+    key: "revisions",
+    labelKey: "integrations.gdrive.tabRevisions",
+    labelDefault: "Revisions",
+    icon: History,
+  },
+  {
+    key: "comments",
+    labelKey: "integrations.gdrive.tabComments",
+    labelDefault: "Comments",
+    icon: MessageSquare,
+  },
+  {
+    key: "drives",
+    labelKey: "integrations.gdrive.tabDrives",
+    labelDefault: "Shared Drives",
+    icon: HardDrive,
+  },
+  {
+    key: "changes",
+    labelKey: "integrations.gdrive.tabChanges",
+    labelDefault: "Changes",
+    icon: Clock,
+  },
+  {
+    key: "account",
+    labelKey: "integrations.gdrive.tabAccount",
+    labelDefault: "Account",
+    icon: Activity,
+  },
 ];
 
-const GdrivePanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const GdrivePanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useGdrive();
   const [tab, setTab] = useState<TabKey>("files");
@@ -1267,12 +1363,14 @@ const GdrivePanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
           >
             <span
               className={`h-2 w-2 rounded-full ${
-                mgr.isAuthenticated ? "bg-green-500" : "bg-[var(--color-textMuted)]"
+                mgr.isAuthenticated
+                  ? "bg-green-500"
+                  : "bg-[var(--color-textMuted)]"
               }`}
             />
             {mgr.isAuthenticated
-              ? mgr.summary?.userEmail ??
-                t("integrations.gdrive.connected", "Connected")
+              ? (mgr.summary?.userEmail ??
+                t("integrations.gdrive.connected", "Connected"))
               : t("integrations.gdrive.disconnected", "Not connected")}
           </span>
           {mgr.isAuthenticated && (
@@ -1322,7 +1420,9 @@ const GdrivePanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
             {tab === "revisions" && (
               <RevisionsTab mgr={mgr} fileId={selectedId} />
             )}
-            {tab === "comments" && <CommentsTab mgr={mgr} fileId={selectedId} />}
+            {tab === "comments" && (
+              <CommentsTab mgr={mgr} fileId={selectedId} />
+            )}
             {tab === "drives" && <DrivesTab mgr={mgr} />}
             {tab === "changes" && <ChangesTab mgr={mgr} />}
             {tab === "account" && <AccountTab mgr={mgr} />}
@@ -1334,13 +1434,3 @@ const GdrivePanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
 };
 
 export default GdrivePanel;
-
-/** Registry descriptor for the Google Drive integration (category: app-service).
- *  The Wave-3 app-service integrator appends this to `registry.appservice.ts`. */
-export const gdriveDescriptor: IntegrationDescriptor = {
-  key: "gdrive",
-  label: "Google Drive",
-  category: "file-storage",
-  icon: HardDrive,
-  importPanel: () => import("./GdrivePanel"),
-};

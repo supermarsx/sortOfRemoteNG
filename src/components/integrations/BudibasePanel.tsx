@@ -31,10 +31,7 @@ import {
 } from "../../hooks/integration/useBudibase";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   BudibaseApp,
   BudibaseAutomation,
@@ -390,7 +387,10 @@ const AppsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 220 }}
-          placeholder={t("integrations.budibase.searchApps", "Search apps by name")}
+          placeholder={t(
+            "integrations.budibase.searchApps",
+            "Search apps by name",
+          )}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -407,28 +407,49 @@ const AppsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.status", "Status")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.appId", "App ID")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.status", "Status")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.appId", "App ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {apps.map((a) => (
-              <tr key={a._id ?? a.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={a._id ?? a.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{a.name}</td>
                 <td className="px-2 py-1">
-                  <span className={a.deployed ? "text-green-500" : "text-[var(--color-textSecondary)]"}>
+                  <span
+                    className={
+                      a.deployed
+                        ? "text-green-500"
+                        : "text-[var(--color-textSecondary)]"
+                    }
+                  >
                     {a.status ?? (a.deployed ? "deployed" : "draft")}
                   </span>
                 </td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{a._id}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {a._id}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
                     <button
                       className={btn}
                       onClick={() =>
-                        act(async () => setSelected(await mgr.api.getApp(cid, a._id!)))
+                        act(async () =>
+                          setSelected(await mgr.api.getApp(cid, a._id!)),
+                        )
                       }
                       disabled={!a._id}
                     >
@@ -443,7 +464,9 @@ const AppsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     </button>
                     <button
                       className={btn}
-                      onClick={() => act(() => mgr.api.unpublishApp(cid, a._id!))}
+                      onClick={() =>
+                        act(() => mgr.api.unpublishApp(cid, a._id!))
+                      }
                       disabled={!a._id}
                     >
                       {t("integrations.budibase.unpublish", "Unpublish")}
@@ -461,14 +484,23 @@ const AppsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     </button>
                     <button
                       className={btn}
-                      onClick={() => mgr.api.setAppContext(cid, a._id ?? undefined)}
+                      onClick={() =>
+                        mgr.api.setAppContext(cid, a._id ?? undefined)
+                      }
                     >
                       {t("integrations.budibase.setContext", "Set context")}
                     </button>
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteAppConfirm", "Delete this app?")))
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteAppConfirm",
+                              "Delete this app?",
+                            ),
+                          )
+                        )
                           void act(() => mgr.api.deleteApp(cid, a._id!));
                       }}
                       disabled={!a._id}
@@ -481,7 +513,10 @@ const AppsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {apps.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.budibase.noApps", "No apps")}
                 </td>
               </tr>
@@ -530,7 +565,8 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const create = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.createTable>[1]>(createJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.createTable>[1]>(createJson);
       if (!req) return;
       await mgr.run(() => mgr.api.createTable(cid, req));
       await refresh();
@@ -538,7 +574,8 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const update = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.updateTable>[2]>(updateJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.updateTable>[2]>(updateJson);
       if (!req) return;
       await mgr.run(() => mgr.api.updateTable(cid, req._id, req));
       await refresh();
@@ -557,25 +594,44 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.tableId", "Table ID")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.fields", "Fields")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.tableId", "Table ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.fields", "Fields")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {tables.map((tb) => (
-              <tr key={tb._id ?? tb.name} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{tb.name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{tb._id}</td>
-                <td className="px-2 py-1">{Object.keys(tb.schema ?? {}).length}</td>
+              <tr
+                key={tb._id ?? tb.name}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {tb.name}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {tb._id}
+                </td>
+                <td className="px-2 py-1">
+                  {Object.keys(tb.schema ?? {}).length}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
                     <button
                       className={btn}
                       onClick={async () => {
                         try {
-                          setDetail(await mgr.run(() => mgr.api.getTable(cid, tb._id!)));
+                          setDetail(
+                            await mgr.run(() => mgr.api.getTable(cid, tb._id!)),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -589,7 +645,9 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                       onClick={async () => {
                         try {
                           setDetail(
-                            await mgr.run(() => mgr.api.getTableSchema(cid, tb._id!)),
+                            await mgr.run(() =>
+                              mgr.api.getTableSchema(cid, tb._id!),
+                            ),
                           );
                         } catch {
                           /* surfaced */
@@ -602,8 +660,24 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteTableConfirm", "Delete this table?")))
-                          mgr.run(() => mgr.api.deleteTable(cid, tb._id!, tb._rev ?? undefined)).then(refresh).catch(() => {});
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteTableConfirm",
+                              "Delete this table?",
+                            ),
+                          )
+                        )
+                          mgr
+                            .run(() =>
+                              mgr.api.deleteTable(
+                                cid,
+                                tb._id!,
+                                tb._rev ?? undefined,
+                              ),
+                            )
+                            .then(refresh)
+                            .catch(() => {});
                       }}
                       disabled={!tb._id}
                     >
@@ -615,7 +689,10 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {tables.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.budibase.noTables", "No tables")}
                 </td>
               </tr>
@@ -627,21 +704,35 @@ const TablesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.createTable", "Create table (JSON)")}
+            label={t(
+              "integrations.budibase.createTable",
+              "Create table (JSON)",
+            )}
             value={createJson}
             onChange={setCreateJson}
           />
-          <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={create}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.budibase.createTable", "Create table")}
           </button>
         </div>
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.updateTable", "Update table (JSON)")}
+            label={t(
+              "integrations.budibase.updateTable",
+              "Update table (JSON)",
+            )}
             value={updateJson}
             onChange={setUpdateJson}
           />
-          <button className={`${btn} mt-2`} onClick={update} disabled={mgr.isLoading}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={update}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.budibase.updateTable", "Update table")}
           </button>
         </div>
@@ -687,7 +778,8 @@ const RowsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
   const search = () =>
     guard(async () => {
       if (!tableId) return;
-      const req = parseJson<Parameters<typeof mgr.api.searchRows>[2]>(searchJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.searchRows>[2]>(searchJson);
       if (!req) return;
       const res = await mgr.run(() => mgr.api.searchRows(cid, tableId, req));
       setRows(res.rows ?? []);
@@ -765,10 +857,18 @@ const RowsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
           </Labeled>
         </div>
         <Toolbar>
-          <button className={`${btn} mt-2`} onClick={list} disabled={!tableId || mgr.isLoading}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={list}
+            disabled={!tableId || mgr.isLoading}
+          >
             {t("integrations.budibase.listRows", "List rows")}
           </button>
-          <button className={`${btn} mt-2`} onClick={getOne} disabled={!tableId || !rowId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={getOne}
+            disabled={!tableId || !rowId}
+          >
             {t("integrations.budibase.getRow", "Get row")}
           </button>
         </Toolbar>
@@ -782,24 +882,43 @@ const RowsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             onChange={setRowJson}
           />
           <Toolbar>
-            <button className={`${btn} mt-2`} onClick={create} disabled={!tableId}>
+            <button
+              className={`${btn} mt-2`}
+              onClick={create}
+              disabled={!tableId}
+            >
               {t("integrations.budibase.createRow", "Create")}
             </button>
-            <button className={`${btn} mt-2`} onClick={update} disabled={!tableId || !rowId}>
+            <button
+              className={`${btn} mt-2`}
+              onClick={update}
+              disabled={!tableId || !rowId}
+            >
               {t("integrations.budibase.updateRow", "Update")}
             </button>
-            <button className={`${btn} mt-2`} onClick={remove} disabled={!tableId || !rowId}>
+            <button
+              className={`${btn} mt-2`}
+              onClick={remove}
+              disabled={!tableId || !rowId}
+            >
               {t("integrations.budibase.deleteRow", "Delete")}
             </button>
           </Toolbar>
         </div>
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.searchQuery", "Search request (JSON)")}
+            label={t(
+              "integrations.budibase.searchQuery",
+              "Search request (JSON)",
+            )}
             value={searchJson}
             onChange={setSearchJson}
           />
-          <button className={`${btn} mt-2`} onClick={search} disabled={!tableId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={search}
+            disabled={!tableId}
+          >
             {t("integrations.budibase.searchRows", "Search rows")}
           </button>
         </div>
@@ -813,10 +932,18 @@ const RowsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
           rows={4}
         />
         <Toolbar>
-          <button className={`${btn} mt-2`} onClick={bulkCreate} disabled={!tableId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={bulkCreate}
+            disabled={!tableId}
+          >
             {t("integrations.budibase.bulkCreate", "Bulk create")}
           </button>
-          <button className={`${btn} mt-2`} onClick={bulkDelete} disabled={!tableId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={bulkDelete}
+            disabled={!tableId}
+          >
             {t("integrations.budibase.bulkDelete", "Bulk delete")}
           </button>
         </Toolbar>
@@ -863,7 +990,8 @@ const ViewsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const create = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.createView>[1]>(createJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.createView>[1]>(createJson);
       if (!req) return;
       await mgr.run(() => mgr.api.createView(cid, req));
       if (tableId) await list();
@@ -872,7 +1000,8 @@ const ViewsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
   const update = () =>
     guard(async () => {
       if (!viewId) return;
-      const req = parseJson<Parameters<typeof mgr.api.updateView>[2]>(createJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.updateView>[2]>(createJson);
       if (!req) return;
       await mgr.run(() => mgr.api.updateView(cid, viewId, req));
       if (tableId) await list();
@@ -883,10 +1012,18 @@ const ViewsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
       <div className={card}>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled label={t("integrations.budibase.tableId", "Table ID")}>
-            <input className={field} value={tableId} onChange={(e) => setTableId(e.target.value)} />
+            <input
+              className={field}
+              value={tableId}
+              onChange={(e) => setTableId(e.target.value)}
+            />
           </Labeled>
           <Labeled label={t("integrations.budibase.viewId", "View ID")}>
-            <input className={field} value={viewId} onChange={(e) => setViewId(e.target.value)} />
+            <input
+              className={field}
+              value={viewId}
+              onChange={(e) => setViewId(e.target.value)}
+            />
           </Labeled>
         </div>
         <Toolbar>
@@ -922,8 +1059,20 @@ const ViewsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
           <button
             className={`${btn} mt-2`}
             onClick={() => {
-              if (window.confirm(t("integrations.budibase.deleteViewConfirm", "Delete this view?")))
-                mgr.run(() => mgr.api.deleteView(cid, viewId)).then(() => { if (tableId) void list(); }).catch(() => {});
+              if (
+                window.confirm(
+                  t(
+                    "integrations.budibase.deleteViewConfirm",
+                    "Delete this view?",
+                  ),
+                )
+              )
+                mgr
+                  .run(() => mgr.api.deleteView(cid, viewId))
+                  .then(() => {
+                    if (tableId) void list();
+                  })
+                  .catch(() => {});
             }}
             disabled={!viewId}
           >
@@ -1027,11 +1176,22 @@ const UsersTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className={card}>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Labeled label={t("integrations.budibase.newUserEmail", "New user email")}>
-            <input className={field} value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+          <Labeled
+            label={t("integrations.budibase.newUserEmail", "New user email")}
+          >
+            <input
+              className={field}
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
           </Labeled>
           <Labeled label={t("integrations.budibase.password", "Password")}>
-            <input className={field} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <input
+              className={field}
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
           </Labeled>
           <div className="flex items-end">
             <button className={btn} onClick={create} disabled={!newEmail}>
@@ -1045,7 +1205,10 @@ const UsersTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 220 }}
-          placeholder={t("integrations.budibase.searchUsers", "Search by email")}
+          placeholder={t(
+            "integrations.budibase.searchUsers",
+            "Search by email",
+          )}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
@@ -1062,23 +1225,38 @@ const UsersTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.email", "Email")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.status", "Status")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.email", "Email")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.status", "Status")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u._id ?? u.email} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{u.email}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{u.status ?? "—"}</td>
+              <tr
+                key={u._id ?? u.email}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {u.email}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {u.status ?? "—"}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
                     <button
                       className={btn}
                       onClick={async () => {
                         try {
-                          setDetail(await mgr.run(() => mgr.api.getUser(cid, u._id!)));
+                          setDetail(
+                            await mgr.run(() => mgr.api.getUser(cid, u._id!)),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -1108,8 +1286,18 @@ const UsersTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteUserConfirm", "Delete this user?")))
-                          mgr.run(() => mgr.api.deleteUser(cid, u._id!)).then(refresh).catch(() => {});
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteUserConfirm",
+                              "Delete this user?",
+                            ),
+                          )
+                        )
+                          mgr
+                            .run(() => mgr.api.deleteUser(cid, u._id!))
+                            .then(refresh)
+                            .catch(() => {});
                       }}
                       disabled={!u._id}
                     >
@@ -1121,7 +1309,10 @@ const UsersTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {users.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.budibase.noUsers", "No users")}
                 </td>
               </tr>
@@ -1170,7 +1361,8 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
   const execute = () =>
     guard(async () => {
       if (!queryId) return;
-      const req = parseJson<Parameters<typeof mgr.api.executeQuery>[2]>(execJson) ?? {};
+      const req =
+        parseJson<Parameters<typeof mgr.api.executeQuery>[2]>(execJson) ?? {};
       setResult(await mgr.run(() => mgr.api.executeQuery(cid, queryId, req)));
     });
 
@@ -1204,26 +1396,42 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.queryId", "Query ID")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.queryId", "Query ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {queries.map((q) => (
-              <tr key={q._id ?? q.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={q._id ?? q.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{q.name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{q._id}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {q._id}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
-                    <button className={btn} onClick={() => setQueryId(q._id ?? "")}>
+                    <button
+                      className={btn}
+                      onClick={() => setQueryId(q._id ?? "")}
+                    >
                       {t("integrations.budibase.select", "Select")}
                     </button>
                     <button
                       className={btn}
                       onClick={async () => {
                         try {
-                          setResult(await mgr.run(() => mgr.api.getQuery(cid, q._id!)));
+                          setResult(
+                            await mgr.run(() => mgr.api.getQuery(cid, q._id!)),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -1235,8 +1443,18 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteQueryConfirm", "Delete this query?")))
-                          mgr.run(() => mgr.api.deleteQuery(cid, q._id!)).then(refresh).catch(() => {});
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteQueryConfirm",
+                              "Delete this query?",
+                            ),
+                          )
+                        )
+                          mgr
+                            .run(() => mgr.api.deleteQuery(cid, q._id!))
+                            .then(refresh)
+                            .catch(() => {});
                       }}
                       disabled={!q._id}
                     >
@@ -1248,7 +1466,10 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {queries.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.budibase.noQueries", "No queries")}
                 </td>
               </tr>
@@ -1260,22 +1481,36 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className={card}>
           <Labeled label={t("integrations.budibase.queryId", "Query ID")}>
-            <input className={field} value={queryId} onChange={(e) => setQueryId(e.target.value)} />
+            <input
+              className={field}
+              value={queryId}
+              onChange={(e) => setQueryId(e.target.value)}
+            />
           </Labeled>
           <JsonEditor
-            label={t("integrations.budibase.execRequest", "Execute request (JSON)")}
+            label={t(
+              "integrations.budibase.execRequest",
+              "Execute request (JSON)",
+            )}
             value={execJson}
             onChange={setExecJson}
             rows={4}
           />
-          <button className={`${btn} mt-2`} onClick={execute} disabled={!queryId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={execute}
+            disabled={!queryId}
+          >
             <Play size={12} />
             {t("integrations.budibase.executeQuery", "Execute query")}
           </button>
         </div>
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.queryDef", "Query definition (JSON)")}
+            label={t(
+              "integrations.budibase.queryDef",
+              "Query definition (JSON)",
+            )}
             value={defJson}
             onChange={setDefJson}
             rows={4}
@@ -1284,7 +1519,11 @@ const QueriesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             <button className={`${btn} mt-2`} onClick={create}>
               {t("integrations.budibase.createQuery", "Create")}
             </button>
-            <button className={`${btn} mt-2`} onClick={update} disabled={!queryId}>
+            <button
+              className={`${btn} mt-2`}
+              onClick={update}
+              disabled={!queryId}
+            >
               {t("integrations.budibase.updateQuery", "Update")}
             </button>
           </Toolbar>
@@ -1336,7 +1575,8 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const create = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.createAutomation>[1]>(defJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.createAutomation>[1]>(defJson);
       if (!req) return;
       await mgr.run(() => mgr.api.createAutomation(cid, req));
       await refresh();
@@ -1354,13 +1594,20 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
   const trigger = () =>
     guard(async () => {
       if (!autoId) return;
-      const req = parseJson<Parameters<typeof mgr.api.triggerAutomation>[2]>(triggerJson) ?? {};
-      setDetail(await mgr.run(() => mgr.api.triggerAutomation(cid, autoId, req)));
+      const req =
+        parseJson<Parameters<typeof mgr.api.triggerAutomation>[2]>(
+          triggerJson,
+        ) ?? {};
+      setDetail(
+        await mgr.run(() => mgr.api.triggerAutomation(cid, autoId, req)),
+      );
     });
 
   const logs = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.getAutomationLogs>[1]>(logsJson) ?? {};
+      const req =
+        parseJson<Parameters<typeof mgr.api.getAutomationLogs>[1]>(logsJson) ??
+        {};
       setDetail(await mgr.run(() => mgr.api.getAutomationLogs(cid, req)));
     });
 
@@ -1377,28 +1624,50 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.automationId", "Automation ID")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.disabled", "Disabled")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.automationId", "Automation ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.disabled", "Disabled")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {autos.map((a) => (
-              <tr key={a._id ?? a.name ?? ""} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{a.name ?? "—"}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{a._id}</td>
+              <tr
+                key={a._id ?? a.name ?? ""}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {a.name ?? "—"}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {a._id}
+                </td>
                 <td className="px-2 py-1">{a.disabled ? "yes" : "no"}</td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
-                    <button className={btn} onClick={() => setAutoId(a._id ?? "")}>
+                    <button
+                      className={btn}
+                      onClick={() => setAutoId(a._id ?? "")}
+                    >
                       {t("integrations.budibase.select", "Select")}
                     </button>
                     <button
                       className={btn}
                       onClick={async () => {
                         try {
-                          setDetail(await mgr.run(() => mgr.api.getAutomation(cid, a._id!)));
+                          setDetail(
+                            await mgr.run(() =>
+                              mgr.api.getAutomation(cid, a._id!),
+                            ),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -1410,8 +1679,18 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteAutomationConfirm", "Delete this automation?")))
-                          mgr.run(() => mgr.api.deleteAutomation(cid, a._id!)).then(refresh).catch(() => {});
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteAutomationConfirm",
+                              "Delete this automation?",
+                            ),
+                          )
+                        )
+                          mgr
+                            .run(() => mgr.api.deleteAutomation(cid, a._id!))
+                            .then(refresh)
+                            .catch(() => {});
                       }}
                       disabled={!a._id}
                     >
@@ -1423,7 +1702,10 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {autos.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.budibase.noAutomations", "No automations")}
                 </td>
               </tr>
@@ -1433,15 +1715,24 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
       </div>
 
       <div className={card}>
-        <Labeled label={t("integrations.budibase.automationId", "Automation ID")}>
-          <input className={field} value={autoId} onChange={(e) => setAutoId(e.target.value)} />
+        <Labeled
+          label={t("integrations.budibase.automationId", "Automation ID")}
+        >
+          <input
+            className={field}
+            value={autoId}
+            onChange={(e) => setAutoId(e.target.value)}
+          />
         </Labeled>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.automationDef", "Definition (JSON)")}
+            label={t(
+              "integrations.budibase.automationDef",
+              "Definition (JSON)",
+            )}
             value={defJson}
             onChange={setDefJson}
             rows={4}
@@ -1450,19 +1741,30 @@ const AutomationsTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             <button className={`${btn} mt-2`} onClick={create}>
               {t("integrations.budibase.createAutomation", "Create")}
             </button>
-            <button className={`${btn} mt-2`} onClick={update} disabled={!autoId}>
+            <button
+              className={`${btn} mt-2`}
+              onClick={update}
+              disabled={!autoId}
+            >
               {t("integrations.budibase.updateAutomation", "Update")}
             </button>
           </Toolbar>
         </div>
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.triggerFields", "Trigger request (JSON)")}
+            label={t(
+              "integrations.budibase.triggerFields",
+              "Trigger request (JSON)",
+            )}
             value={triggerJson}
             onChange={setTriggerJson}
             rows={4}
           />
-          <button className={`${btn} mt-2`} onClick={trigger} disabled={!autoId}>
+          <button
+            className={`${btn} mt-2`}
+            onClick={trigger}
+            disabled={!autoId}
+          >
             <Play size={12} />
             {t("integrations.budibase.triggerAutomation", "Trigger")}
           </button>
@@ -1525,7 +1827,8 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const create = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.createDatasource>[1]>(createJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.createDatasource>[1]>(createJson);
       if (!req) return;
       await mgr.run(() => mgr.api.createDatasource(cid, req));
       await refresh();
@@ -1533,7 +1836,8 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
 
   const update = () =>
     guard(async () => {
-      const req = parseJson<Parameters<typeof mgr.api.updateDatasource>[2]>(updateJson);
+      const req =
+        parseJson<Parameters<typeof mgr.api.updateDatasource>[2]>(updateJson);
       if (!req) return;
       await mgr.run(() => mgr.api.updateDatasource(cid, req._id, req));
       await refresh();
@@ -1552,25 +1856,46 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.budibase.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.source", "Source")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.datasourceId", "Datasource ID")}</th>
-              <th className="px-2 py-1">{t("integrations.budibase.actions", "Actions")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.source", "Source")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.datasourceId", "Datasource ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.budibase.actions", "Actions")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {sources.map((ds) => (
-              <tr key={ds._id ?? ds.name} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{ds.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{ds.source}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{ds._id}</td>
+              <tr
+                key={ds._id ?? ds.name}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {ds.name}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {ds.source}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {ds._id}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex flex-wrap gap-1">
                     <button
                       className={btn}
                       onClick={async () => {
                         try {
-                          setDetail(await mgr.run(() => mgr.api.getDatasource(cid, ds._id!)));
+                          setDetail(
+                            await mgr.run(() =>
+                              mgr.api.getDatasource(cid, ds._id!),
+                            ),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -1583,7 +1908,11 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                       className={btn}
                       onClick={async () => {
                         try {
-                          setDetail(await mgr.run(() => mgr.api.testDatasource(cid, ds._id!)));
+                          setDetail(
+                            await mgr.run(() =>
+                              mgr.api.testDatasource(cid, ds._id!),
+                            ),
+                          );
                         } catch {
                           /* surfaced */
                         }
@@ -1595,8 +1924,24 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
                     <button
                       className={btn}
                       onClick={() => {
-                        if (window.confirm(t("integrations.budibase.deleteDatasourceConfirm", "Delete this datasource?")))
-                          mgr.run(() => mgr.api.deleteDatasource(cid, ds._id!, ds._rev ?? undefined)).then(refresh).catch(() => {});
+                        if (
+                          window.confirm(
+                            t(
+                              "integrations.budibase.deleteDatasourceConfirm",
+                              "Delete this datasource?",
+                            ),
+                          )
+                        )
+                          mgr
+                            .run(() =>
+                              mgr.api.deleteDatasource(
+                                cid,
+                                ds._id!,
+                                ds._rev ?? undefined,
+                              ),
+                            )
+                            .then(refresh)
+                            .catch(() => {});
                       }}
                       disabled={!ds._id}
                     >
@@ -1608,7 +1953,10 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
             ))}
             {sources.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.budibase.noDatasources", "No datasources")}
                 </td>
               </tr>
@@ -1620,7 +1968,10 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.createDatasource", "Create datasource (JSON)")}
+            label={t(
+              "integrations.budibase.createDatasource",
+              "Create datasource (JSON)",
+            )}
             value={createJson}
             onChange={setCreateJson}
           />
@@ -1630,7 +1981,10 @@ const DatasourcesTab: React.FC<{ mgr: BudibaseManager; cid: string }> = ({
         </div>
         <div className={card}>
           <JsonEditor
-            label={t("integrations.budibase.updateDatasource", "Update datasource (JSON)")}
+            label={t(
+              "integrations.budibase.updateDatasource",
+              "Update datasource (JSON)",
+            )}
             value={updateJson}
             onChange={setUpdateJson}
           />
@@ -1662,14 +2016,54 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "apps", labelKey: "integrations.budibase.tabApps", labelDefault: "Apps", icon: AppWindow },
-  { key: "tables", labelKey: "integrations.budibase.tabTables", labelDefault: "Tables", icon: Table2 },
-  { key: "rows", labelKey: "integrations.budibase.tabRows", labelDefault: "Rows", icon: Rows3 },
-  { key: "views", labelKey: "integrations.budibase.tabViews", labelDefault: "Views", icon: Layers },
-  { key: "users", labelKey: "integrations.budibase.tabUsers", labelDefault: "Users", icon: Users },
-  { key: "queries", labelKey: "integrations.budibase.tabQueries", labelDefault: "Queries", icon: FileJson },
-  { key: "automations", labelKey: "integrations.budibase.tabAutomations", labelDefault: "Automations", icon: Workflow },
-  { key: "datasources", labelKey: "integrations.budibase.tabDatasources", labelDefault: "Datasources", icon: Database },
+  {
+    key: "apps",
+    labelKey: "integrations.budibase.tabApps",
+    labelDefault: "Apps",
+    icon: AppWindow,
+  },
+  {
+    key: "tables",
+    labelKey: "integrations.budibase.tabTables",
+    labelDefault: "Tables",
+    icon: Table2,
+  },
+  {
+    key: "rows",
+    labelKey: "integrations.budibase.tabRows",
+    labelDefault: "Rows",
+    icon: Rows3,
+  },
+  {
+    key: "views",
+    labelKey: "integrations.budibase.tabViews",
+    labelDefault: "Views",
+    icon: Layers,
+  },
+  {
+    key: "users",
+    labelKey: "integrations.budibase.tabUsers",
+    labelDefault: "Users",
+    icon: Users,
+  },
+  {
+    key: "queries",
+    labelKey: "integrations.budibase.tabQueries",
+    labelDefault: "Queries",
+    icon: FileJson,
+  },
+  {
+    key: "automations",
+    labelKey: "integrations.budibase.tabAutomations",
+    labelDefault: "Automations",
+    icon: Workflow,
+  },
+  {
+    key: "datasources",
+    labelKey: "integrations.budibase.tabDatasources",
+    labelDefault: "Datasources",
+    icon: Database,
+  },
 ];
 
 const BudibasePanel: React.FC<IntegrationPanelProps> = ({
@@ -1699,13 +2093,18 @@ const BudibasePanel: React.FC<IntegrationPanelProps> = ({
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.status?.host ?? t("integrations.budibase.connected", "Connected")
+              ? (mgr.status?.host ??
+                t("integrations.budibase.connected", "Connected"))
               : t("integrations.budibase.disconnected", "Disconnected")}
           </span>
           {mgr.status?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.status.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.status.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -1758,13 +2157,3 @@ const BudibasePanel: React.FC<IntegrationPanelProps> = ({
 };
 
 export default BudibasePanel;
-
-/** Registry descriptor for the Budibase integration (category: app-service).
- *  The Wave-3 app-service integrator appends this to `registry.appservice.ts`. */
-export const budibaseDescriptor: IntegrationDescriptor = {
-  key: "budibase",
-  label: "Budibase",
-  category: "business-app",
-  icon: Boxes,
-  importPanel: () => import("./BudibasePanel"),
-};

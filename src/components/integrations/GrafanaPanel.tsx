@@ -33,13 +33,13 @@ import {
   Users,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useGrafana, type GrafanaManager } from "../../hooks/integration/useGrafana";
+import {
+  useGrafana,
+  type GrafanaManager,
+} from "../../hooks/integration/useGrafana";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../utils/core/id";
-import type {
-  IntegrationDescriptor,
-  IntegrationPanelProps,
-} from "../../types/integrations/registry";
+import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   AlertRule,
   Annotation,
@@ -400,7 +400,15 @@ const DashboardsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   const remove = useCallback(
     async (uid: string) => {
-      if (!window.confirm(t("integrations.grafana.deleteDashboardConfirm", "Delete this dashboard?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deleteDashboardConfirm",
+            "Delete this dashboard?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteDashboard(cid, uid));
         await search();
@@ -417,7 +425,10 @@ const DashboardsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 240 }}
-          placeholder={t("integrations.grafana.searchPlaceholder", "Search dashboards")}
+          placeholder={t(
+            "integrations.grafana.searchPlaceholder",
+            "Search dashboards",
+          )}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void search()}
@@ -434,24 +445,47 @@ const DashboardsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.title", "Title")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.folder", "Folder")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.tags", "Tags")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.title", "Title")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.folder", "Folder")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.tags", "Tags")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((d) => (
-              <tr key={d.uid ?? d.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{d.title}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{d.folderTitle ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{(d.tags ?? []).join(", ")}</td>
+              <tr
+                key={d.uid ?? d.id}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {d.title}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {d.folderTitle ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {(d.tags ?? []).join(", ")}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => d.uid && void view(d.uid)} disabled={!d.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => d.uid && void view(d.uid)}
+                      disabled={!d.uid}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => d.uid && void remove(d.uid)} disabled={!d.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => d.uid && void remove(d.uid)}
+                      disabled={!d.uid}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -460,7 +494,10 @@ const DashboardsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.grafana.noDashboards", "No dashboards")}
                 </td>
               </tr>
@@ -482,7 +519,12 @@ const DatasourcesTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
   const { t } = useTranslation();
   const [rows, setRows] = useState<Datasource[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
-  const [form, setForm] = useState({ name: "", type: "prometheus", url: "", access: "proxy" });
+  const [form, setForm] = useState({
+    name: "",
+    type: "prometheus",
+    url: "",
+    access: "proxy",
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -543,7 +585,15 @@ const DatasourcesTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   const remove = useCallback(
     async (dsId: number) => {
-      if (!window.confirm(t("integrations.grafana.deleteDatasourceConfirm", "Delete this datasource?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deleteDatasourceConfirm",
+            "Delete this datasource?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteDatasource(cid, dsId));
         await refresh();
@@ -562,19 +612,41 @@ const DatasourcesTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Labeled label={t("integrations.grafana.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.type", "Type")}>
-            <input className={field} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} />
+            <input
+              className={field}
+              value={form.type}
+              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.url", "URL")}>
-            <input className={field} value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
+            <input
+              className={field}
+              value={form.url}
+              onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.access", "Access")}>
-            <input className={field} value={form.access} onChange={(e) => setForm((f) => ({ ...f, access: e.target.value }))} />
+            <input
+              className={field}
+              value={form.access}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, access: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.name}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.name}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -586,27 +658,52 @@ const DatasourcesTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.type", "Type")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.url", "URL")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.type", "Type")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.url", "URL")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((ds) => (
               <tr key={ds.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{ds.name}{ds.isDefault ? " ★" : ""}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{ds.type}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{ds.url}</td>
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {ds.name}
+                  {ds.isDefault ? " ★" : ""}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {ds.type}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {ds.url}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => ds.id != null && void test(ds.id)} disabled={ds.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => ds.id != null && void test(ds.id)}
+                      disabled={ds.id == null}
+                    >
                       {t("integrations.grafana.test", "Test")}
                     </button>
-                    <button className={btn} onClick={() => ds.id != null && void view(ds.id)} disabled={ds.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => ds.id != null && void view(ds.id)}
+                      disabled={ds.id == null}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => ds.id != null && void remove(ds.id)} disabled={ds.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => ds.id != null && void remove(ds.id)}
+                      disabled={ds.id == null}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -615,7 +712,10 @@ const DatasourcesTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.grafana.noDatasources", "No datasources")}
                 </td>
               </tr>
@@ -675,7 +775,12 @@ const FoldersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   const remove = useCallback(
     async (uid: string) => {
-      if (!window.confirm(t("integrations.grafana.deleteFolderConfirm", "Delete this folder?"))) return;
+      if (
+        !window.confirm(
+          t("integrations.grafana.deleteFolderConfirm", "Delete this folder?"),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteFolder(cid, uid));
         await refresh();
@@ -692,11 +797,18 @@ const FoldersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 240 }}
-          placeholder={t("integrations.grafana.newFolderTitle", "New folder title")}
+          placeholder={t(
+            "integrations.grafana.newFolderTitle",
+            "New folder title",
+          )}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <button className={btn} onClick={create} disabled={mgr.isLoading || !title}>
+        <button
+          className={btn}
+          onClick={create}
+          disabled={mgr.isLoading || !title}
+        >
           {t("integrations.grafana.createFolder", "Create folder")}
         </button>
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
@@ -708,22 +820,41 @@ const FoldersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.title", "Title")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.uid", "UID")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.title", "Title")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.uid", "UID")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((f) => (
-              <tr key={f.uid ?? f.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{f.title}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{f.uid}</td>
+              <tr
+                key={f.uid ?? f.id}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {f.title}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {f.uid}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => f.uid && void view(f.uid)} disabled={!f.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => f.uid && void view(f.uid)}
+                      disabled={!f.uid}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => f.uid && void remove(f.uid)} disabled={!f.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => f.uid && void remove(f.uid)}
+                      disabled={!f.uid}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -732,7 +863,10 @@ const FoldersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.grafana.noFolders", "No folders")}
                 </td>
               </tr>
@@ -747,7 +881,10 @@ const FoldersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
 // ─── Organizations tab ───────────────────────────────────────────────────────
 
-const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) => {
+const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Organization[]>([]);
   const [current, setCurrent] = useState<Organization | null>(null);
@@ -798,7 +935,15 @@ const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) =
 
   const remove = useCallback(
     async (orgId: number) => {
-      if (!window.confirm(t("integrations.grafana.deleteOrgConfirm", "Delete this organization?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deleteOrgConfirm",
+            "Delete this organization?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteOrg(cid, orgId));
         await refresh();
@@ -825,11 +970,18 @@ const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) =
         <input
           className={field}
           style={{ width: 240 }}
-          placeholder={t("integrations.grafana.newOrgName", "New organization name")}
+          placeholder={t(
+            "integrations.grafana.newOrgName",
+            "New organization name",
+          )}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button className={btn} onClick={create} disabled={mgr.isLoading || !name}>
+        <button
+          className={btn}
+          onClick={create}
+          disabled={mgr.isLoading || !name}
+        >
           {t("integrations.grafana.createOrg", "Create organization")}
         </button>
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
@@ -841,22 +993,36 @@ const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) =
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.id", "ID")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.id", "ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((o) => (
               <tr key={o.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{o.id}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {o.id}
+                </td>
                 <td className="px-2 py-1 text-[var(--color-text)]">{o.name}</td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => o.id != null && void view(o.id)} disabled={o.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => o.id != null && void view(o.id)}
+                      disabled={o.id == null}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => o.id != null && void remove(o.id)} disabled={o.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => o.id != null && void remove(o.id)}
+                      disabled={o.id == null}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -865,7 +1031,10 @@ const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) =
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.grafana.noOrgs", "No organizations")}
                 </td>
               </tr>
@@ -880,11 +1049,19 @@ const OrgsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) =
 
 // ─── Users tab ───────────────────────────────────────────────────────────────
 
-const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) => {
+const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<GrafanaUser[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
-  const [form, setForm] = useState({ login: "", email: "", name: "", password: "" });
+  const [form, setForm] = useState({
+    login: "",
+    email: "",
+    name: "",
+    password: "",
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -930,7 +1107,12 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
 
   const remove = useCallback(
     async (userId: number) => {
-      if (!window.confirm(t("integrations.grafana.deleteUserConfirm", "Delete this user?"))) return;
+      if (
+        !window.confirm(
+          t("integrations.grafana.deleteUserConfirm", "Delete this user?"),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteUser(cid, userId));
         await refresh();
@@ -949,19 +1131,46 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
           <Labeled label={t("integrations.grafana.login", "Login")}>
-            <input className={field} value={form.login} onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))} />
+            <input
+              className={field}
+              value={form.login}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, login: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.email", "Email")}>
-            <input className={field} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+            <input
+              className={field}
+              value={form.email}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, email: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.password", "Password")}>
-            <input className={field} type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+            <input
+              className={field}
+              type="password"
+              value={form.password}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, password: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.login || !form.password}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.login || !form.password}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -973,9 +1182,15 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.login", "Login")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.email", "Email")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.login", "Login")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.email", "Email")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -986,14 +1201,26 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
                   {u.login}
                   {u.isGrafanaAdmin ? " ⚙" : ""}
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{u.email}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{u.name}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {u.email}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {u.name}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => u.id != null && void view(u.id)} disabled={u.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => u.id != null && void view(u.id)}
+                      disabled={u.id == null}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => u.id != null && void remove(u.id)} disabled={u.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => u.id != null && void remove(u.id)}
+                      disabled={u.id == null}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1002,7 +1229,10 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.grafana.noUsers", "No users")}
                 </td>
               </tr>
@@ -1017,7 +1247,10 @@ const UsersTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
 
 // ─── Teams tab ───────────────────────────────────────────────────────────────
 
-const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) => {
+const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Team[]>([]);
   const [query, setQuery] = useState("");
@@ -1042,7 +1275,9 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
   const create = useCallback(async () => {
     if (!form.name) return;
     try {
-      await mgr.run(() => mgr.api.createTeam(cid, form.name, form.email || undefined));
+      await mgr.run(() =>
+        mgr.api.createTeam(cid, form.name, form.email || undefined),
+      );
       setForm({ name: "", email: "" });
       await refresh();
     } catch {
@@ -1052,7 +1287,12 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
 
   const remove = useCallback(
     async (teamId: number) => {
-      if (!window.confirm(t("integrations.grafana.deleteTeamConfirm", "Delete this team?"))) return;
+      if (
+        !window.confirm(
+          t("integrations.grafana.deleteTeamConfirm", "Delete this team?"),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteTeam(cid, teamId));
         if (selected === teamId) setSelected(null);
@@ -1079,7 +1319,9 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
   const addMember = useCallback(async () => {
     if (selected == null || !memberUserId) return;
     try {
-      await mgr.run(() => mgr.api.addTeamMember(cid, selected, Number(memberUserId)));
+      await mgr.run(() =>
+        mgr.api.addTeamMember(cid, selected, Number(memberUserId)),
+      );
       setMemberUserId("");
       await loadMembers(selected);
     } catch {
@@ -1122,13 +1364,27 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled label={t("integrations.grafana.name", "Name")}>
-            <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input
+              className={field}
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.email", "Email")}>
-            <input className={field} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+            <input
+              className={field}
+              value={form.email}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, email: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.name}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.name}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -1136,24 +1392,44 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.email", "Email")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.members", "Members")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.email", "Email")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.members", "Members")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((tm) => (
               <tr key={tm.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{tm.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{tm.email}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{tm.memberCount ?? 0}</td>
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {tm.name}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {tm.email}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {tm.memberCount ?? 0}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => tm.id != null && void loadMembers(tm.id)} disabled={tm.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => tm.id != null && void loadMembers(tm.id)}
+                      disabled={tm.id == null}
+                    >
                       {t("integrations.grafana.members", "Members")}
                     </button>
-                    <button className={btn} onClick={() => tm.id != null && void remove(tm.id)} disabled={tm.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => tm.id != null && void remove(tm.id)}
+                      disabled={tm.id == null}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1162,7 +1438,10 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.grafana.noTeams", "No teams")}
                 </td>
               </tr>
@@ -1174,7 +1453,8 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
       {selected != null && (
         <div className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-            {t("integrations.grafana.teamMembers", "Team members")} (#{selected})
+            {t("integrations.grafana.teamMembers", "Team members")} (#{selected}
+            )
           </h4>
           <div className="mb-2 flex items-center gap-2">
             <input
@@ -1185,17 +1465,30 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
               value={memberUserId}
               onChange={(e) => setMemberUserId(e.target.value)}
             />
-            <button className={btn} onClick={addMember} disabled={mgr.isLoading || !memberUserId}>
+            <button
+              className={btn}
+              onClick={addMember}
+              disabled={mgr.isLoading || !memberUserId}
+            >
               {t("integrations.grafana.addMember", "Add member")}
             </button>
           </div>
           <div className="flex flex-col gap-1">
             {members.map((m) => (
-              <div key={m.userId} className="flex items-center justify-between text-xs">
+              <div
+                key={m.userId}
+                className="flex items-center justify-between text-xs"
+              >
                 <span className="text-[var(--color-textSecondary)]">
                   {m.login ?? m.email ?? m.userId} · #{m.userId}
                 </span>
-                <button className={btn} onClick={() => m.userId != null && void removeMember(m.userId)} disabled={m.userId == null}>
+                <button
+                  className={btn}
+                  onClick={() =>
+                    m.userId != null && void removeMember(m.userId)
+                  }
+                  disabled={m.userId == null}
+                >
                   <Trash2 size={12} />
                 </button>
               </div>
@@ -1214,7 +1507,10 @@ const TeamsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) 
 
 // ─── Alerts tab ──────────────────────────────────────────────────────────────
 
-const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid }) => {
+const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
+  mgr,
+  cid,
+}) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<AlertRule[]>([]);
   const [detail, setDetail] = useState<unknown>(null);
@@ -1284,7 +1580,15 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
 
   const remove = useCallback(
     async (uid: string) => {
-      if (!window.confirm(t("integrations.grafana.deleteAlertConfirm", "Delete this alert rule?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deleteAlertConfirm",
+            "Delete this alert rule?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteAlertRule(cid, uid));
         await refresh();
@@ -1303,14 +1607,18 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
           style={{ width: 160 }}
           placeholder={t("integrations.grafana.folderUid", "Folder UID")}
           value={filters.folderUid}
-          onChange={(e) => setFilters((f) => ({ ...f, folderUid: e.target.value }))}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, folderUid: e.target.value }))
+          }
         />
         <input
           className={field}
           style={{ width: 160 }}
           placeholder={t("integrations.grafana.ruleGroup", "Rule group")}
           value={filters.ruleGroup}
-          onChange={(e) => setFilters((f) => ({ ...f, ruleGroup: e.target.value }))}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, ruleGroup: e.target.value }))
+          }
         />
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
           <RefreshCw size={12} />
@@ -1321,19 +1629,33 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.title", "Title")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.ruleGroup", "Rule group")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.state", "State")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.title", "Title")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.ruleGroup", "Rule group")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.state", "State")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.uid} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{r.title}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{r.ruleGroup}</td>
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {r.title}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {r.ruleGroup}
+                </td>
                 <td className="px-2 py-1">
-                  <span className={r.isPaused ? "text-yellow-500" : "text-green-500"}>
+                  <span
+                    className={
+                      r.isPaused ? "text-yellow-500" : "text-green-500"
+                    }
+                  >
                     {r.isPaused
                       ? t("integrations.grafana.paused", "Paused")
                       : t("integrations.grafana.active", "Active")}
@@ -1341,15 +1663,27 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
                 </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => r.uid && void view(r.uid)} disabled={!r.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => r.uid && void view(r.uid)}
+                      disabled={!r.uid}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => r.uid && void pause(r.uid, !r.isPaused)} disabled={!r.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => r.uid && void pause(r.uid, !r.isPaused)}
+                      disabled={!r.uid}
+                    >
                       {r.isPaused
                         ? t("integrations.grafana.resume", "Resume")
                         : t("integrations.grafana.pause", "Pause")}
                     </button>
-                    <button className={btn} onClick={() => r.uid && void remove(r.uid)} disabled={!r.uid}>
+                    <button
+                      className={btn}
+                      onClick={() => r.uid && void remove(r.uid)}
+                      disabled={!r.uid}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1358,7 +1692,10 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.grafana.noAlertRules", "No alert rules")}
                 </td>
               </tr>
@@ -1368,7 +1705,10 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
       </div>
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.grafana.createAlertRule", "Create alert rule (JSON)")}
+          {t(
+            "integrations.grafana.createAlertRule",
+            "Create alert rule (JSON)",
+          )}
         </h4>
         <textarea
           className={`${field} font-mono`}
@@ -1377,7 +1717,11 @@ const AlertsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({ mgr, cid })
           onChange={(e) => setJson(e.target.value)}
           placeholder='{"title":"...","folderUID":"...","ruleGroup":"...","condition":"A","data":[]}'
         />
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !json}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !json}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -1394,11 +1738,28 @@ const AnnotationsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 }) => {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Annotation[]>([]);
-  const [form, setForm] = useState({ text: "", dashboardUID: "", panelId: "", tags: "" });
+  const [form, setForm] = useState({
+    text: "",
+    dashboardUID: "",
+    panelId: "",
+    tags: "",
+  });
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await mgr.run(() => mgr.api.listAnnotations(cid, undefined, undefined, undefined, undefined, undefined, 100)));
+      setRows(
+        await mgr.run(() =>
+          mgr.api.listAnnotations(
+            cid,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            100,
+          ),
+        ),
+      );
     } catch {
       /* surfaced */
     }
@@ -1417,7 +1778,10 @@ const AnnotationsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
           dashboardUID: form.dashboardUID || undefined,
           panelId: form.panelId ? Number(form.panelId) : undefined,
           tags: form.tags
-            ? form.tags.split(",").map((s) => s.trim()).filter(Boolean)
+            ? form.tags
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
             : undefined,
         }),
       );
@@ -1448,19 +1812,48 @@ const AnnotationsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled label={t("integrations.grafana.text", "Text")}>
-            <input className={field} value={form.text} onChange={(e) => setForm((f) => ({ ...f, text: e.target.value }))} />
+            <input
+              className={field}
+              value={form.text}
+              onChange={(e) => setForm((f) => ({ ...f, text: e.target.value }))}
+            />
           </Labeled>
-          <Labeled label={t("integrations.grafana.dashboardUid", "Dashboard UID")}>
-            <input className={field} value={form.dashboardUID} onChange={(e) => setForm((f) => ({ ...f, dashboardUID: e.target.value }))} />
+          <Labeled
+            label={t("integrations.grafana.dashboardUid", "Dashboard UID")}
+          >
+            <input
+              className={field}
+              value={form.dashboardUID}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, dashboardUID: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.grafana.panelId", "Panel ID")}>
-            <input className={field} inputMode="numeric" value={form.panelId} onChange={(e) => setForm((f) => ({ ...f, panelId: e.target.value }))} />
+            <input
+              className={field}
+              inputMode="numeric"
+              value={form.panelId}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, panelId: e.target.value }))
+              }
+            />
           </Labeled>
-          <Labeled label={t("integrations.grafana.tagsCsv", "Tags (comma-separated)")}>
-            <input className={field} value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} />
+          <Labeled
+            label={t("integrations.grafana.tagsCsv", "Tags (comma-separated)")}
+          >
+            <input
+              className={field}
+              value={form.tags}
+              onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
+            />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.text}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.text}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -1474,7 +1867,11 @@ const AnnotationsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             <span className="text-[var(--color-textSecondary)]">
               {a.text} · {(a.tags ?? []).join(", ")}
             </span>
-            <button className={btn} onClick={() => a.id != null && void remove(a.id)} disabled={a.id == null}>
+            <button
+              className={btn}
+              onClick={() => a.id != null && void remove(a.id)}
+              disabled={a.id == null}
+            >
               <Trash2 size={12} />
             </button>
           </div>
@@ -1524,7 +1921,15 @@ const PlaylistsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   const remove = useCallback(
     async (playlistId: number) => {
-      if (!window.confirm(t("integrations.grafana.deletePlaylistConfirm", "Delete this playlist?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deletePlaylistConfirm",
+            "Delete this playlist?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deletePlaylist(cid, playlistId));
         await refresh();
@@ -1545,8 +1950,12 @@ const PlaylistsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.interval", "Interval")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.interval", "Interval")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -1554,13 +1963,23 @@ const PlaylistsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             {rows.map((p) => (
               <tr key={p.id} className="border-t border-[var(--color-border)]">
                 <td className="px-2 py-1 text-[var(--color-text)]">{p.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{p.interval}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {p.interval}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => p.id != null && void view(p.id)} disabled={p.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => p.id != null && void view(p.id)}
+                      disabled={p.id == null}
+                    >
                       {t("integrations.grafana.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => p.id != null && void remove(p.id)} disabled={p.id == null}>
+                    <button
+                      className={btn}
+                      onClick={() => p.id != null && void remove(p.id)}
+                      disabled={p.id == null}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1569,7 +1988,10 @@ const PlaylistsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.grafana.noPlaylists", "No playlists")}
                 </td>
               </tr>
@@ -1613,7 +2035,9 @@ const SnapshotsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
       return;
     }
     try {
-      await mgr.run(() => mgr.api.createSnapshot(cid, dashboard, form.name || undefined));
+      await mgr.run(() =>
+        mgr.api.createSnapshot(cid, dashboard, form.name || undefined),
+      );
       setForm({ name: "", dashboard: "" });
       await refresh();
     } catch {
@@ -1623,7 +2047,15 @@ const SnapshotsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
 
   const remove = useCallback(
     async (key: string) => {
-      if (!window.confirm(t("integrations.grafana.deleteSnapshotConfirm", "Delete this snapshot?"))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.grafana.deleteSnapshotConfirm",
+            "Delete this snapshot?",
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteSnapshot(cid, key));
         await refresh();
@@ -1641,20 +2073,35 @@ const SnapshotsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
           {t("integrations.grafana.createSnapshot", "Create snapshot")}
         </h4>
         <Labeled label={t("integrations.grafana.name", "Name")}>
-          <input className={field} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input
+            className={field}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
         </Labeled>
         <div className="mt-2">
-          <Labeled label={t("integrations.grafana.dashboardJson", "Dashboard model (JSON)")}>
+          <Labeled
+            label={t(
+              "integrations.grafana.dashboardJson",
+              "Dashboard model (JSON)",
+            )}
+          >
             <textarea
               className={`${field} font-mono`}
               rows={4}
               value={form.dashboard}
-              onChange={(e) => setForm((f) => ({ ...f, dashboard: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, dashboard: e.target.value }))
+              }
               placeholder='{"title":"...","panels":[]}'
             />
           </Labeled>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={mgr.isLoading || !form.dashboard}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={mgr.isLoading || !form.dashboard}
+        >
           {t("integrations.grafana.create", "Create")}
         </button>
       </div>
@@ -1666,18 +2113,31 @@ const SnapshotsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.grafana.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.grafana.key", "Key")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.grafana.key", "Key")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => (
-              <tr key={s.key ?? s.id} className="border-t border-[var(--color-border)]">
+              <tr
+                key={s.key ?? s.id}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.key}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {s.key}
+                </td>
                 <td className="px-2 py-1">
-                  <button className={`${btn} float-right`} onClick={() => s.key && void remove(s.key)} disabled={!s.key}>
+                  <button
+                    className={`${btn} float-right`}
+                    onClick={() => s.key && void remove(s.key)}
+                    disabled={!s.key}
+                  >
                     <Trash2 size={12} />
                   </button>
                 </td>
@@ -1685,7 +2145,10 @@ const SnapshotsTab: React.FC<{ mgr: GrafanaManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.grafana.noSnapshots", "No snapshots")}
                 </td>
               </tr>
@@ -1705,19 +2168,72 @@ const TABS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "dashboards", labelKey: "integrations.grafana.tabDashboards", labelDefault: "Dashboards", icon: LayoutDashboard },
-  { key: "datasources", labelKey: "integrations.grafana.tabDatasources", labelDefault: "Datasources", icon: Database },
-  { key: "folders", labelKey: "integrations.grafana.tabFolders", labelDefault: "Folders", icon: FolderIcon },
-  { key: "orgs", labelKey: "integrations.grafana.tabOrgs", labelDefault: "Organizations", icon: Building2 },
-  { key: "users", labelKey: "integrations.grafana.tabUsers", labelDefault: "Users", icon: Users },
-  { key: "teams", labelKey: "integrations.grafana.tabTeams", labelDefault: "Teams", icon: Users },
-  { key: "alerts", labelKey: "integrations.grafana.tabAlerts", labelDefault: "Alerts", icon: Bell },
-  { key: "annotations", labelKey: "integrations.grafana.tabAnnotations", labelDefault: "Annotations", icon: Tag },
-  { key: "playlists", labelKey: "integrations.grafana.tabPlaylists", labelDefault: "Playlists", icon: FileStack },
-  { key: "snapshots", labelKey: "integrations.grafana.tabSnapshots", labelDefault: "Snapshots", icon: Camera },
+  {
+    key: "dashboards",
+    labelKey: "integrations.grafana.tabDashboards",
+    labelDefault: "Dashboards",
+    icon: LayoutDashboard,
+  },
+  {
+    key: "datasources",
+    labelKey: "integrations.grafana.tabDatasources",
+    labelDefault: "Datasources",
+    icon: Database,
+  },
+  {
+    key: "folders",
+    labelKey: "integrations.grafana.tabFolders",
+    labelDefault: "Folders",
+    icon: FolderIcon,
+  },
+  {
+    key: "orgs",
+    labelKey: "integrations.grafana.tabOrgs",
+    labelDefault: "Organizations",
+    icon: Building2,
+  },
+  {
+    key: "users",
+    labelKey: "integrations.grafana.tabUsers",
+    labelDefault: "Users",
+    icon: Users,
+  },
+  {
+    key: "teams",
+    labelKey: "integrations.grafana.tabTeams",
+    labelDefault: "Teams",
+    icon: Users,
+  },
+  {
+    key: "alerts",
+    labelKey: "integrations.grafana.tabAlerts",
+    labelDefault: "Alerts",
+    icon: Bell,
+  },
+  {
+    key: "annotations",
+    labelKey: "integrations.grafana.tabAnnotations",
+    labelDefault: "Annotations",
+    icon: Tag,
+  },
+  {
+    key: "playlists",
+    labelKey: "integrations.grafana.tabPlaylists",
+    labelDefault: "Playlists",
+    icon: FileStack,
+  },
+  {
+    key: "snapshots",
+    labelKey: "integrations.grafana.tabSnapshots",
+    labelDefault: "Snapshots",
+    icon: Camera,
+  },
 ];
 
-const GrafanaPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const GrafanaPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const mgr = useGrafana();
   const [tab, setTab] = useState<TabKey>("dashboards");
@@ -1741,13 +2257,18 @@ const GrafanaPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.grafana.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.grafana.connected", "Connected"))
               : t("integrations.grafana.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -1802,13 +2323,3 @@ const GrafanaPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =
 };
 
 export default GrafanaPanel;
-
-/** Registry descriptor for the Grafana integration (category: app-service).
- *  The Wave-3 app-service integrator appends this to `registry.appservice.ts`. */
-export const grafanaDescriptor: IntegrationDescriptor = {
-  key: "grafana",
-  label: "Grafana",
-  category: "monitoring",
-  icon: BarChart3,
-  importPanel: () => import("./GrafanaPanel"),
-};

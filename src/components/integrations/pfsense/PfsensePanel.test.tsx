@@ -15,7 +15,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import PfsensePanel, { pfsenseDescriptor } from "./PfsensePanel";
+import PfsensePanel from "./PfsensePanel";
+import { pfsenseDescriptor } from "../descriptors";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -48,23 +49,21 @@ describe("PfsensePanel (shell)", () => {
   });
 
   it("persists creds and maps connect to pfsense_connect", async () => {
-    invokeMock.mockImplementation(
-      (cmd: string) => {
-        switch (cmd) {
-          case "read_app_data":
-            return Promise.resolve(null);
-          case "pfsense_connect":
-            return Promise.resolve({
-              host: "192.168.1.1",
-              version: "2.7.2",
-              hostname: "fw",
-              platform: "amd64",
-            });
-          default:
-            return Promise.resolve(undefined);
-        }
-      },
-    );
+    invokeMock.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(null);
+        case "pfsense_connect":
+          return Promise.resolve({
+            host: "192.168.1.1",
+            version: "2.7.2",
+            hostname: "fw",
+            platform: "amd64",
+          });
+        default:
+          return Promise.resolve(undefined);
+      }
+    });
 
     render(<PfsensePanel isOpen onClose={() => {}} />);
     await screen.findByText("Connect");

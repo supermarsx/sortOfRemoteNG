@@ -37,8 +37,8 @@ import {
   ProxyLogsTab,
   ProxyStatsTab,
   StatusBadge,
-  classifySession,
 } from "../../network/InternalProxyManager";
+import { classifySession } from "../../network/internalProxySessionStatus";
 import {
   useUnifiedSessionManager,
   UnifiedSessionRow,

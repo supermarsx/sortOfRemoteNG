@@ -28,6 +28,11 @@ import {
   ManagerTab,
 } from "../../hooks/network/useInternalProxyManager";
 import { Checkbox } from "../ui/forms";
+import {
+  classifySession,
+  getProxySessionStatusMeta,
+  type ProxySessionStatus,
+} from "./internalProxySessionStatus";
 
 type Mgr = ReturnType<typeof useInternalProxyManager>;
 
@@ -50,83 +55,12 @@ interface InternalProxyManagerProps {
  * in flight, or a no-auth tab whose iframe hasn't navigated to the
  * proxy yet). Everything else surfaces the last failure category.
  */
-type SessionStatus =
-  | "healthy"
-  | "waiting"
-  | "refused"
-  | "dns"
-  | "tls"
-  | "timeout"
-  | "auth"
-  | "forbidden"
-  | "notfound"
-  | "ratelimited"
-  | "servererror"
-  | "errors";
+export type { ProxySessionStatus } from "./internalProxySessionStatus";
 
-const STATUS_META: Record<
-  SessionStatus,
-  { label: string; tone: "ok" | "warn" | "err" | "muted" }
-> = {
-  healthy: { label: "Healthy", tone: "ok" },
-  waiting: { label: "Waiting", tone: "muted" },
-  refused: { label: "Refused", tone: "err" },
-  dns: { label: "DNS error", tone: "err" },
-  tls: { label: "TLS error", tone: "err" },
-  timeout: { label: "Timeout", tone: "warn" },
-  auth: { label: "Auth required", tone: "warn" },
-  forbidden: { label: "Forbidden", tone: "err" },
-  notfound: { label: "Not found", tone: "err" },
-  ratelimited: { label: "Rate limited", tone: "warn" },
-  servererror: { label: "Server error", tone: "err" },
-  errors: { label: "Errors", tone: "err" },
-};
-
-export function classifySession(s: {
-  request_count: number;
-  error_count: number;
-  last_error?: string | null;
-}): SessionStatus {
-  if (s.error_count === 0 && s.request_count === 0) return "waiting";
-  if (s.error_count === 0) return "healthy";
-  const m = (s.last_error || "").toLowerCase();
-  // ── Transport failures (no upstream response received) ──
-  if (m.includes("connection refused") || m.includes("actively refused"))
-    return "refused";
-  if (
-    m.includes("dns") ||
-    m.includes("name or service not known") ||
-    m.includes("failed to lookup") ||
-    m.includes("no address associated")
-  )
-    return "dns";
-  if (
-    m.includes("certificate") ||
-    m.includes("ssl") ||
-    m.includes("tls") ||
-    m.includes("handshake") ||
-    m.includes("self-signed") ||
-    m.includes("self signed")
-  )
-    return "tls";
-  if (m.includes("timeout") || m.includes("timed out")) return "timeout";
-  // ── HTTP status-coded failures (P5) ──
-  // The backend formats these as `HTTP <code> for <url>` (http.rs:726),
-  // so a substring match on the digit-pattern is reliable. 401 and
-  // 407 share the "auth required" UX; 403 / 404 / 429 / 5xx get their
-  // own categories.
-  if (m.includes("http 401") || m.includes("http 407")) return "auth";
-  if (m.includes("http 403")) return "forbidden";
-  if (m.includes("http 404")) return "notfound";
-  if (m.includes("http 429")) return "ratelimited";
-  if (/http 5\d\d/.test(m)) return "servererror";
-  return "errors";
-}
-
-export type { SessionStatus as ProxySessionStatus };
-
-export const StatusBadge: React.FC<{ status: SessionStatus }> = ({ status }) => {
-  const meta = STATUS_META[status];
+export const StatusBadge: React.FC<{ status: ProxySessionStatus }> = ({
+  status,
+}) => {
+  const meta = getProxySessionStatusMeta(status);
   const cls =
     meta.tone === "ok"
       ? "bg-success/15 text-success border-success/30"

@@ -14,7 +14,8 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (_key: string, dflt?: string) => dflt ?? _key }),
 }));
 
-import GdrivePanel, { gdriveDescriptor } from "./GdrivePanel";
+import GdrivePanel from "./GdrivePanel";
+import { gdriveDescriptor } from "./descriptors";
 import { gdriveApi } from "../../hooks/integration/useGdrive";
 
 beforeEach(() => {
@@ -90,10 +91,7 @@ describe("GdrivePanel", () => {
     );
     // Step 2: authorization URL requested.
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "gdrive_get_auth_url",
-        undefined,
-      ),
+      expect(invokeMock).toHaveBeenCalledWith("gdrive_get_auth_url", undefined),
     );
 
     // Step 3: the code-entry box appears; exchanging maps to gdrive_exchange_code.
