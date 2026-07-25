@@ -1,7 +1,7 @@
 # sortOfRemoteNG
 
 [![CI](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/ci.yml?branch=main&label=CI&logo=github&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-26.1-2563eb?style=flat-square)](version.json)
+[![Latest release](https://img.shields.io/github/v/release/supermarsx/sortOfRemoteNG?display_name=tag&style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/supermarsx/sortOfRemoteNG/total?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG/releases)
 [![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=flat-square)](https://github.com/supermarsx/sortOfRemoteNG)
 [![License](https://img.shields.io/github/license/supermarsx/sortOfRemoteNG?style=flat-square)](license.md)
@@ -109,15 +109,18 @@ Read the [security policy](security.md) for vulnerability reporting and the [enc
 
 ## Releases
 
-Public releases use the rolling `YY.N` format:
+Public releases use the rolling `YY.N` format. The release badge above is
+derived from GitHub's latest public Release, so allocated tags and hidden drafts
+are never presented as the current release and publishing never needs to mutate
+`main` or trigger another CI run.
 
 - `YY` is the two-digit UTC release year.
 - `N` is that UTC year's monotonically increasing release sequence, starting again at 1 each January.
-- The first release in the current sequence is **26.1**; tags use that bare identity with no prefix.
+- For example, the first release allocated in 2026 is **26.1**; tags use that bare identity with no prefix.
 
 Every successful push to `main` queues an automatic release after the CI-internal jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates pass. The release snapshot records that source commit, and rerunning recovery for the same commit reuses its tag and GitHub Release instead of consuming another sequence number.
 
-Package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application, bare tag, and release title show `26.1`. The rolling allocator selects the public identity; [version.json](version.json) is synchronized in the release snapshot and CI verifies every generated projection.
+For a public version such as `26.1`, package managers and native manifests use the machine-readable SemVer projection `26.1.0`, while the application, bare tag, and release title show `26.1`. The rolling allocator selects the public identity; [version.json](version.json) is synchronized in the immutable release snapshot and CI verifies every generated projection.
 
 The release workflow builds Windows x64 and ARM64 installers plus an architecture-matched portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles. OS signing certificates are optional; the Tauri updater private key is required only for signed updater artifacts and `latest.json`. In-app self-update is limited to the feed-compatible AppImage, NSIS, and macOS app-bundle formats. Debian, RPM, Flatpak, MSI, and portable users download and reinstall or replace the newer matching GitHub release asset. See the [release guide](docs/releases.md) for publication and recovery details and the [updater setup](docs/release/updater-setup.md) for signature and feed requirements.
 

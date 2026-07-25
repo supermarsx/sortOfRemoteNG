@@ -72,6 +72,18 @@ const updaterSetupDocumentation = readFileSync(
   new URL("../../docs/release/updater-setup.md", import.meta.url),
   "utf8",
 );
+const releaseDocumentation = readFileSync(
+  new URL("../../docs/releases.md", import.meta.url),
+  "utf8",
+);
+const appleEnrollmentDocumentation = readFileSync(
+  new URL("../../docs/release/apple-developer-enrollment.md", import.meta.url),
+  "utf8",
+);
+const readme = readFileSync(
+  new URL("../../readme.md", import.meta.url),
+  "utf8",
+);
 const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
@@ -148,6 +160,29 @@ function runBashSnippet(program) {
   });
   assert.ifError(result.error);
   return result;
+}
+
+function runWorkflowBashStep(program, variableNames, environment = {}) {
+  const exports = Object.entries(environment)
+    .map(
+      ([name, value]) =>
+        `export ${name}='${String(value).replaceAll("'", String.raw`'"'"'`)}'`,
+    )
+    .join("\n");
+  return runBashSnippet(`
+output=$(mktemp)
+summary=$(mktemp)
+trap 'rm -f "$output" "$summary"' EXIT
+export GITHUB_OUTPUT="$output"
+export GITHUB_STEP_SUMMARY="$summary"
+unset ${variableNames.join(" ")}
+${exports}
+${program}
+echo "---GITHUB_OUTPUT---"
+cat "$output"
+echo "---GITHUB_STEP_SUMMARY---"
+cat "$summary"
+`);
 }
 
 function releaseIdHelperProgram() {
@@ -300,6 +335,88 @@ test("privileged release actions are immutable and Dependabot-managed", () => {
   }
   assert.match(dependabotConfig, /package-ecosystem: github-actions/);
   assert.match(dependabotConfig, /interval: weekly/);
+});
+
+test("release actions use audited Node 24-compatible immutable releases", () => {
+  const expectedActions = [
+    ["actions/checkout", "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09", "v5.1.0"],
+    [
+      "actions/setup-node",
+      "a0853c24544627f65ddf259abe73b1d18a591444",
+      "v5.0.0",
+    ],
+    ["actions/setup-go", "924ae3a1cded613372ab5595356fb5720e22ba16", "v6.5.0"],
+    [
+      "actions/upload-artifact",
+      "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "v6.0.0",
+    ],
+    [
+      "actions/download-artifact",
+      "37930b1c2abaa49bbe596cd826c3c89aef350131",
+      "v7.0.0",
+    ],
+    [
+      "softprops/action-gh-release",
+      "3d0d9888cb7fd7b750713d6e236d1fcb99157228",
+      "v3.0.2",
+    ],
+  ];
+  const actionLines = releaseWorkflow.match(/^\s+-?\s*uses:\s+.+$/gm) ?? [];
+
+  for (const [action, sha, tag] of expectedActions) {
+    const matchingLines = actionLines.filter((line) =>
+      line.includes(`uses: ${action}@`),
+    );
+    assert.ok(matchingLines.length > 0, `${action} must be used`);
+    assert.deepEqual(
+      new Set(matchingLines.map((line) => line.trim())),
+      new Set([`uses: ${action}@${sha} # ${tag}`]),
+    );
+  }
+
+  const metadataJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  metadata:"),
+    releaseWorkflow.indexOf("  build:"),
+  );
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const publishJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  assert.match(
+    metadataJob,
+    /Install Node toolchain[\s\S]*?package-manager-cache: false/,
+  );
+  assert.match(buildJob, /Install Node toolchain[\s\S]*?cache: npm/);
+  assert.match(
+    publishJob,
+    /Install Node toolchain[\s\S]*?package-manager-cache: false/,
+  );
+});
+
+test("README release identity follows immutable publication without mutating main", () => {
+  assert.match(
+    readme,
+    /\[!\[Latest release\]\(https:\/\/img\.shields\.io\/github\/v\/release\/supermarsx\/sortOfRemoteNG\?display_name=tag&style=flat-square\)\]\(https:\/\/github\.com\/supermarsx\/sortOfRemoteNG\/releases\/latest\)/,
+  );
+  assert.doesNotMatch(readme, /img\.shields\.io\/badge\/version-/);
+  assert.match(
+    readme,
+    /allocated tags and hidden drafts[\s\S]*?never presented as the current release[\s\S]*?never needs to mutate\s+`main`/,
+  );
+  assert.match(
+    releaseDocumentation,
+    /README badge resolves GitHub's latest public Release directly[\s\S]*?never commits a version-only change back to `main`/,
+  );
+  assert.equal((releaseWorkflow.match(/\bpush origin\b/g) ?? []).length, 1);
+  assert.match(
+    releaseWorkflow,
+    /push origin "refs\/tags\/\$PUBLIC_TAG:refs\/tags\/\$PUBLIC_TAG"/,
+  );
+  assert.doesNotMatch(releaseWorkflow, /refs\/heads\/main|\[skip ci\]/i);
 });
 
 test("normal main CI calls release only after every internal job", () => {
@@ -1646,6 +1763,143 @@ test("OS signing inputs are normalized and verified before updater signing", () 
   );
   assert.match(releaseWorkflow, /codesign --verify --deep --strict/);
   assert.match(releaseWorkflow, /xcrun stapler validate/);
+});
+
+test("optional signing states are annotation-clean while partial secrets fail closed", () => {
+  const updaterStep = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Detect protected updater signing key"),
+    releaseWorkflow.indexOf(
+      "- name: Install updater-key verification toolchain",
+    ),
+  );
+  const updaterProgram = extractLiteralRunScript(updaterStep);
+  const updaterVariables = [
+    "TAURI_SIGNING_PRIVATE_KEY",
+    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  ];
+
+  assert.doesNotMatch(updaterStep, /::(?:notice|warning)::?/);
+  const updaterAbsent = runWorkflowBashStep(updaterProgram, updaterVariables);
+  assert.equal(
+    updaterAbsent.status,
+    0,
+    `${updaterAbsent.stdout}\n${updaterAbsent.stderr}`,
+  );
+  assert.match(updaterAbsent.stdout, /enabled=false/);
+  assert.match(updaterAbsent.stdout, /### Optional updater signing/);
+  assert.match(
+    updaterAbsent.stdout,
+    /Public installers will be released without updater signatures or latest\.json/,
+  );
+  assert.doesNotMatch(updaterAbsent.stdout, /::(?:notice|warning)::?/);
+
+  const updaterKeyOnly = runWorkflowBashStep(updaterProgram, updaterVariables, {
+    TAURI_SIGNING_PRIVATE_KEY: "test-private-key",
+  });
+  assert.equal(
+    updaterKeyOnly.status,
+    0,
+    `${updaterKeyOnly.stdout}\n${updaterKeyOnly.stderr}`,
+  );
+  assert.match(updaterKeyOnly.stdout, /enabled=true/);
+  assert.doesNotMatch(updaterKeyOnly.stdout, /Optional updater signing/);
+
+  const updaterOrphanPassword = runWorkflowBashStep(
+    updaterProgram,
+    updaterVariables,
+    {
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "do-not-print-this-password",
+    },
+  );
+  assert.notEqual(updaterOrphanPassword.status, 0);
+  assert.match(
+    updaterOrphanPassword.stdout,
+    /::error title=Incomplete updater signing configuration::/,
+  );
+  assert.match(
+    updaterOrphanPassword.stdout,
+    /TAURI_SIGNING_PRIVATE_KEY_PASSWORD is configured without TAURI_SIGNING_PRIVATE_KEY/,
+  );
+  assert.doesNotMatch(
+    `${updaterOrphanPassword.stdout}\n${updaterOrphanPassword.stderr}`,
+    /do-not-print-this-password/,
+  );
+
+  const macosStep = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Check macOS Developer ID signing inputs"),
+    releaseWorkflow.indexOf("- name: Import Apple Developer ID certificate"),
+  );
+  const macosProgram = extractLiteralRunScript(macosStep);
+  const macosVariables = [
+    "APPLE_CERT_P12_BASE64",
+    "APPLE_CERT_PASSWORD",
+    "APPLE_ID",
+    "APPLE_PASSWORD",
+    "APPLE_TEAM_ID",
+  ];
+
+  assert.doesNotMatch(macosStep, /::(?:notice|warning)::?/);
+  const macosAbsent = runWorkflowBashStep(macosProgram, macosVariables);
+  assert.equal(
+    macosAbsent.status,
+    0,
+    `${macosAbsent.stdout}\n${macosAbsent.stderr}`,
+  );
+  assert.match(macosAbsent.stdout, /enabled=false/);
+  assert.match(macosAbsent.stdout, /### Optional macOS signing/);
+  assert.match(macosAbsent.stdout, /truthfully unsigned macOS artifacts/);
+  assert.doesNotMatch(macosAbsent.stdout, /::(?:notice|warning)::?/);
+
+  const macosComplete = runWorkflowBashStep(
+    macosProgram,
+    macosVariables,
+    Object.fromEntries(
+      macosVariables.map((name) => [name, `configured-${name}`]),
+    ),
+  );
+  assert.equal(
+    macosComplete.status,
+    0,
+    `${macosComplete.stdout}\n${macosComplete.stderr}`,
+  );
+  assert.match(macosComplete.stdout, /enabled=true/);
+  assert.doesNotMatch(macosComplete.stdout, /Optional macOS signing/);
+
+  const macosPartial = runWorkflowBashStep(macosProgram, macosVariables, {
+    APPLE_ID: "do-not-print-this-apple-id",
+  });
+  assert.notEqual(macosPartial.status, 0);
+  assert.match(
+    macosPartial.stdout,
+    /::error title=Incomplete macOS signing configuration::/,
+  );
+  assert.match(
+    macosPartial.stdout,
+    /missing: APPLE_CERT_P12_BASE64 APPLE_CERT_PASSWORD APPLE_PASSWORD APPLE_TEAM_ID/,
+  );
+  assert.doesNotMatch(
+    `${macosPartial.stdout}\n${macosPartial.stderr}`,
+    /do-not-print-this-apple-id/,
+  );
+
+  assert.match(
+    updaterSetupDocumentation,
+    /job summary rather than a\s+warning annotation[\s\S]*?password secret configured without the private key fails\s+closed/,
+  );
+  assert.match(
+    appleEnrollmentDocumentation,
+    /job summary without creating a warning annotation[\s\S]*?partially configured credential set is treated as an error/,
+  );
+
+  const windowsStep = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("- name: Check Windows Authenticode signing input"),
+    releaseWorkflow.indexOf("- name: Configure updater and OS signing"),
+  );
+  assert.doesNotMatch(windowsStep, /Write-Warning|::(?:notice|warning)::?/);
+  assert.match(
+    windowsStep,
+    /### Optional Windows signing[\s\S]*?GITHUB_STEP_SUMMARY/,
+  );
 });
 
 test("signed and unsigned release sets are validated before any release mutation", () => {

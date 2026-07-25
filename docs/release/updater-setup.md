@@ -121,7 +121,7 @@ Release identity has two deliberate representations:
   prefix.
 - `YY` is the two-digit UTC year and `N` is that year's monotonically
   increasing counter. The counter starts at 1 after each UTC year rollover;
-  the first current release is `26.1`.
+  `26.1` is the first-release example for 2026.
 - Package manifests, bundle filenames, and updater feeds use the machine-only
   SemVer projection `YY.N.0` (`26.1.0`).
 - `version.json` and the other projections are synchronized in an immutable,
@@ -138,10 +138,12 @@ source SHA reuses its tag and GitHub Release rather than incrementing `N`.
 The six updater targets are `windows-x86_64`, `windows-aarch64`,
 `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`. If the
 Tauri private key is absent, the workflow omits their updater signatures and
-`latest.json` but may still publish the corresponding public OS installers. If
-the key is present, missing or invalid updater artifacts fail publication of
-the feed. Public `.rpm` and `.flatpak` files do not add updater platform keys
-or signature entries.
+`latest.json` but may still publish the corresponding public OS installers,
+recording that intentional optional-off state in the job summary rather than a
+warning annotation. A password secret configured without the private key fails
+closed as an incomplete updater configuration. If the key is present, missing
+or invalid updater artifacts fail publication of the feed. Public `.rpm` and
+`.flatpak` files do not add updater platform keys or signature entries.
 
 ---
 

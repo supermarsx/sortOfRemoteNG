@@ -15,7 +15,7 @@ Public releases use a rolling `YY.N` identity, while package ecosystems and upda
 | Git tag                          | `26.1`   | Immutable release-snapshot identity; no `v` prefix |
 | Package / updater version        | `26.1.0` | Machine-compatible SemVer projection               |
 
-`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes. The first current release is `26.1`. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs.
+`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes; `26.1` is the first-release example for 2026. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs. The README badge resolves GitHub's latest public Release directly, so hidden drafts never appear current and the publisher never commits a version-only change back to `main`.
 
 The workflow records the successful `main` commit as the release `source_sha`.
 Its immutable bare tag identifies a detached, version-synchronized snapshot
@@ -29,9 +29,9 @@ tag and existing GitHub Release; it must not allocate another `N`.
 1. Run the normal CI jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates.
 2. Queue the successful `main` source commit, allocate or recover its bare `YY.N` tag, and synchronize the release snapshot.
 3. Build Windows x64 and ARM64 installers plus an architecture-matched, installer-free portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles.
-4. Publish the public OS installers and application bundles. Missing optional Apple or Windows certificates leaves them truthfully OS-unsigned and may produce platform warnings; it does not suppress the release.
+4. Publish the public OS installers and application bundles. When every credential for an optional OS-signing capability is absent, CI records that intentional unsigned mode in the job summary without creating a warning annotation. A partial Apple credential set fails closed; a fully absent set leaves the macOS bundles truthfully OS-unsigned and does not suppress the release.
 5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`.
-6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, omit updater signatures and `latest.json` while retaining the public installers and application bundles.
+6. Publish and promote `latest.json` only after every referenced updater artifact and signature is present and verifiable. Without the updater key, record the optional-off state in the job summary and omit updater signatures and `latest.json` while retaining the public installers and application bundles. An updater password configured without its private key fails closed as an incomplete secret set.
 
 The Windows x64 and ARM64 portable ZIPs are installer-free extract-and-run packages. Each archive contains the executable for its named architecture, the adjacent `.portable` runtime marker, and the bundled OPKSSH resources; release CI extracts the ZIP and verifies those files against the matching build inputs. Here, portable describes delivery without an installer; it does not promise that every setting, credential, cache, operating-system dependency, or updater state remains inside the extracted directory.
 

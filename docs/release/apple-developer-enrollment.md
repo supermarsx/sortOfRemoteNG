@@ -28,7 +28,10 @@ macOS bundles, and a configured Tauri updater key can still authenticate their
 updater archives. Users should expect Gatekeeper warnings until Apple signing
 and notarization are configured. When these optional credentials are present,
 the release workflow applies them to both macOS architectures before
-publication.
+publication. When all five credentials are absent, CI records the intentional
+unsigned mode in the job summary without creating a warning annotation. A
+partially configured credential set is treated as an error: configure all five
+secrets or remove them all before publishing.
 
 ---
 
