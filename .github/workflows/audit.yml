@@ -7,7 +7,7 @@ on:
     branches: ["**"]
   schedule:
     # Weekly on Monday 04:17 UTC.
-    - cron: '17 4 * * 1'
+    - cron: "17 4 * * 1"
 
 jobs:
   # ── Rust advisory scan (RustSec DB), gated at high+ severity ────────
@@ -22,7 +22,7 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -50,7 +50,7 @@ jobs:
     name: cargo deny (licenses+bans+sources)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: src-tauri/Cargo.toml
@@ -68,11 +68,15 @@ jobs:
     name: npm audit (high+)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci --ignore-scripts
-      - name: npm audit --audit-level=high
-        run: npm audit --audit-level=high
+      # Production dependencies must remain fully clean. The checker permits
+      # exactly GHSA-mh99-v99m-4gvg in dev-only nested brace-expansion copies
+      # that cannot yet consume the patched major, and fails closed when the
+      # advisory changes, gains a fix, reaches production, or becomes stale.
+      - name: npm audit (high+; strict temporary dev-only policy)
+        run: node scripts/ci/check-npm-audit.mjs
