@@ -1115,6 +1115,7 @@ jobs:
               test "${FLATPAK_ID:-}" = com.sortofremote.ng
               test -x /app/bin/sortOfRemoteNG
               test -s /app/share/applications/com.sortofremote.ng.desktop
+              grep -Fx "Icon=com.sortofremote.ng" /app/share/applications/com.sortofremote.ng.desktop
               test -s /app/share/metainfo/com.sortofremote.ng.metainfo.xml
               test -d /app/bin/resources/opkssh
               resource_count=$(find /app/bin/resources/opkssh -type f ! -name .gitkeep | wc -l)
@@ -1123,6 +1124,24 @@ jobs:
               printf "%s\n" "$ldd_output"
               ! printf "%s\n" "$ldd_output" | grep -F "not found"
             '
+
+          expected_flatpak_icon_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-icons.expected"
+          actual_flatpak_icon_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-icons.actual"
+          sha256sum \
+            src-tauri/icons/32x32.png \
+            src-tauri/icons/128x128.png \
+            src-tauri/icons/128x128@2x.png \
+            src-tauri/icons/icon.png |
+            awk '{ print $1 }' > "$expected_flatpak_icon_digests"
+          dbus-run-session -- flatpak run \
+            --command=sha256sum \
+            "$FLATPAK_APP_ID" \
+            /app/share/icons/hicolor/32x32/apps/com.sortofremote.ng.png \
+            /app/share/icons/hicolor/128x128/apps/com.sortofremote.ng.png \
+            /app/share/icons/hicolor/256x256/apps/com.sortofremote.ng.png \
+            /app/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png |
+            awk '{ print $1 }' > "$actual_flatpak_icon_digests"
+          diff -u "$expected_flatpak_icon_digests" "$actual_flatpak_icon_digests"
 
           manifest_sha256=$(sha256sum "$FLATPAK_MANIFEST" | awk '{ print $1 }')
           [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
@@ -1396,6 +1415,19 @@ jobs:
 
               expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
               expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
+              expected_icon_root="/usr/share/icons/hicolor"
+              expected_linux_icon_paths=(
+                "$expected_icon_root/32x32/apps/$FLATPAK_APP_ID.png"
+                "$expected_icon_root/128x128/apps/$FLATPAK_APP_ID.png"
+                "$expected_icon_root/256x256/apps/$FLATPAK_APP_ID.png"
+                "$expected_icon_root/512x512/apps/$FLATPAK_APP_ID.png"
+              )
+              expected_linux_icon_sources=(
+                "$GITHUB_WORKSPACE/src-tauri/icons/32x32.png"
+                "$GITHUB_WORKSPACE/src-tauri/icons/128x128.png"
+                "$GITHUB_WORKSPACE/src-tauri/icons/128x128@2x.png"
+                "$GITHUB_WORKSPACE/src-tauri/icons/icon.png"
+              )
               normalize_deb_file_list() {
                 awk '
                   $1 ~ /^-/ {
@@ -1441,6 +1473,26 @@ jobs:
               rpm -qpl "$rpm_source" | tee "$rpm_file_list"
               grep -Fx "$expected_binary_path" "$rpm_file_list"
               grep -Eq "^${expected_resource_root}/.+[^/]$" "$rpm_file_list"
+              for icon_path in "${expected_linux_icon_paths[@]}"; do
+                grep -Fx "$icon_path" "$rpm_file_list"
+              done
+              rpm_extract_root="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-extract"
+              if [ -e "$rpm_extract_root" ] || [ -L "$rpm_extract_root" ]; then
+                echo "::error::Refusing to replace unexpected RPM extraction path $rpm_extract_root."
+                exit 1
+              fi
+              mkdir -p "$rpm_extract_root"
+              (
+                cd "$rpm_extract_root"
+                rpm2cpio "$rpm_source" | cpio -idm --quiet
+              )
+              rpm_desktop_entry="$rpm_extract_root/usr/share/applications/sortOfRemoteNG.desktop"
+              test -s "$rpm_desktop_entry"
+              grep -Fx "Icon=$FLATPAK_APP_ID" "$rpm_desktop_entry"
+              for index in "${!expected_linux_icon_paths[@]}"; do
+                cmp "${expected_linux_icon_sources[$index]}" \
+                  "$rpm_extract_root${expected_linux_icon_paths[$index]}"
+              done
               rpm_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-opkssh-files.txt"
               rpm -qpvl "$rpm_source" |
                 awk -v prefix="${expected_resource_root}/" \

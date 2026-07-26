@@ -64,6 +64,10 @@ const flatpakMetainfo = readFileSync(
   ),
   "utf8",
 );
+const linuxDesktopTemplate = readFileSync(
+  new URL("../../src-tauri/packaging/linux.desktop", import.meta.url),
+  "utf8",
+);
 const opksshBinarySource = readFileSync(
   new URL("../../src-tauri/crates/sorng-opkssh/src/binary.rs", import.meta.url),
   "utf8",
@@ -1155,6 +1159,25 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(flatpakManifest, /cp -a resources \/app\/bin\/resources/);
   assert.match(flatpakManifest, /path: \.\.\/\.\.\/\.ci\/flatpak-payload/);
+  for (const [size, stagedName, source] of [
+    ["32x32", "32", "32x32.png"],
+    ["128x128", "128", "128x128.png"],
+    ["256x256", "256", "128x128@2x.png"],
+    ["512x512", "512", "icon.png"],
+  ]) {
+    assert.match(
+      flatpakManifest,
+      new RegExp(
+        `install -Dm644 com\\.sortofremote\\.ng-${stagedName}\\.png /app/share/icons/hicolor/${size}/apps/com\\.sortofremote\\.ng\\.png`,
+      ),
+    );
+    assert.match(
+      flatpakManifest,
+      new RegExp(
+        `path: \.\.\/\.\.\/src-tauri\/icons\/${source.replace(".", "\\.")}`,
+      ),
+    );
+  }
   assert.match(flatpakDesktop, /^Exec=sortOfRemoteNG$/m);
   assert.match(flatpakDesktop, /^Icon=com\.sortofremote\.ng$/m);
   assert.match(flatpakMetainfo, /<id>com\.sortofremote\.ng<\/id>/);
@@ -1162,6 +1185,32 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     flatpakMetainfo,
     /<launchable type="desktop-id">com\.sortofremote\.ng\.desktop<\/launchable>/,
   );
+  const expectedLinuxIconFiles = {
+    "/usr/share/icons/hicolor/32x32/apps/com.sortofremote.ng.png":
+      "icons/32x32.png",
+    "/usr/share/icons/hicolor/128x128/apps/com.sortofremote.ng.png":
+      "icons/128x128.png",
+    "/usr/share/icons/hicolor/256x256/apps/com.sortofremote.ng.png":
+      "icons/128x128@2x.png",
+    "/usr/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png":
+      "icons/icon.png",
+  };
+  assert.equal(
+    tauriConfig.bundle.linux.rpm.desktopTemplate,
+    "packaging/linux.desktop",
+  );
+  assert.deepEqual(tauriConfig.bundle.linux.rpm.files, expectedLinuxIconFiles);
+  assert.equal(tauriConfig.bundle.linux.deb, undefined);
+  assert.match(
+    linuxDesktopTemplate,
+    /^\[Desktop Entry\]\r?\nCategories=\{\{categories\}\}\r?\n/m,
+  );
+  assert.match(linuxDesktopTemplate, /^Icon=com\.sortofremote\.ng$/m);
+  assert.match(linuxDesktopTemplate, /^Exec=\{\{exec\}\}$/m);
+  assert.match(linuxDesktopTemplate, /^StartupWMClass=\{\{exec\}\}$/m);
+  assert.match(linuxDesktopTemplate, /^Name=\{\{name\}\}$/m);
+  assert.match(linuxDesktopTemplate, /^Terminal=false$/m);
+  assert.match(linuxDesktopTemplate, /^Type=Application$/m);
 
   assert.match(
     buildJob,
@@ -1316,6 +1365,31 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(
     stageStep,
     /expected_resource_root="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/opkssh"/,
+  );
+  assert.match(
+    stageStep,
+    /expected_icon_root="\/usr\/share\/icons\/hicolor"[\s\S]*?expected_linux_icon_paths=\([\s\S]*?32x32\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?128x128\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?256x256\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?512x512\/apps\/\$FLATPAK_APP_ID\.png/,
+  );
+  assert.match(
+    stageStep,
+    /for icon_path in "\$\{expected_linux_icon_paths\[@\]\}"; do[\s\S]*?grep -Fx "\$icon_path" "\$rpm_file_list"/,
+  );
+  assert.match(
+    stageStep,
+    /rpm2cpio "\$rpm_source" \| cpio -idm --quiet[\s\S]*?rpm_desktop_entry="\$rpm_extract_root\/usr\/share\/applications\/sortOfRemoteNG\.desktop"[\s\S]*?grep -Fx "Icon=\$FLATPAK_APP_ID" "\$rpm_desktop_entry"[\s\S]*?cmp "\$\{expected_linux_icon_sources\[\$index\]\}"/,
+  );
+  assert.doesNotMatch(
+    stageStep,
+    /expected_linux_icon_paths\[@\].*deb_payload_files/,
+  );
+  assert.doesNotMatch(stageStep, /deb_extract_root/);
+  assert.match(
+    flatpakBuild,
+    /sha256sum[\s\S]*?src-tauri\/icons\/icon\.png[\s\S]*?flatpak run[\s\S]*?\/app\/share\/icons\/hicolor\/512x512\/apps\/com\.sortofremote\.ng\.png[\s\S]*?diff -u "\$expected_flatpak_icon_digests" "\$actual_flatpak_icon_digests"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /test -s \/app\/share\/applications\/com\.sortofremote\.ng\.desktop[\s\S]*?grep -Fx "Icon=com\.sortofremote\.ng" \/app\/share\/applications\/com\.sortofremote\.ng\.desktop/,
   );
   assert.match(
     stageStep,

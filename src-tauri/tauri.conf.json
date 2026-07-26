@@ -41,9 +41,21 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "rpm": {
+        "desktopTemplate": "packaging/linux.desktop",
+        "files": {
+          "/usr/share/icons/hicolor/32x32/apps/com.sortofremote.ng.png": "icons/32x32.png",
+          "/usr/share/icons/hicolor/128x128/apps/com.sortofremote.ng.png": "icons/128x128.png",
+          "/usr/share/icons/hicolor/256x256/apps/com.sortofremote.ng.png": "icons/128x128@2x.png",
+          "/usr/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png": "icons/icon.png"
+        }
+      }
+    }
   },
   "plugins": {
     "updater": {
