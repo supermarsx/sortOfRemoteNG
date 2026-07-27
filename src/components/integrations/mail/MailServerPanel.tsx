@@ -1,26 +1,49 @@
 // MailServerPanel — the unified "Mail Server" integration panel SHELL (t42
-// Wave M, lead t42-mail-L). Hosts the 8 mail-chain crates (postfix, dovecot,
-// amavis, opendkim, cyrus-sasl, procmail, rspamd, clamav) as registry-driven
-// sub-tabs.
+// Wave M, lead t42-mail-L). Hosts independently connected mail services as
+// registry-driven sub-tabs.
 //
-// These are 8 INDEPENDENT daemons, so — unlike the cpanel/php shells — this shell
-// owns NO connection and NO shared connect form. Each sub-tab is a self-contained
-// mini-panel that manages its own connect lifecycle + persistence. The shell is a
-// pure router: header + sub-tab bar + Suspense-mounted active tab, driven entirely
-// by `./registry.ts`. It never changes as crates are added.
+// The services connect independently, so — unlike the cpanel/php shells — this
+// shell owns no shared connection or connect form. Each sub-tab manages its own
+// lifecycle and persistence. The shell is a registry-driven router.
 
-import React, { Suspense, useMemo, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import { Mail, Loader2, Inbox } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { IntegrationPanelProps } from "../../../types/integrations/registry";
+import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { mailSubTabs } from "./registry";
 
-const MailServerPanel: React.FC<IntegrationPanelProps> = ({ isOpen }) => {
+const MailServerPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
+  const { instances, isLoading } = useIntegrationConfigStore();
   const [activeTab, setActiveTab] = useState<string | null>(
     mailSubTabs[0]?.subTabKey ?? null,
   );
+
+  const launchedInstance = useMemo(
+    () =>
+      instanceId
+        ? instances.find((candidate) => candidate.id === instanceId)
+        : undefined,
+    [instanceId, instances],
+  );
+  const launchedSubTab = launchedInstance?.integrationKey.startsWith("mail.")
+    ? launchedInstance.integrationKey.slice("mail.".length)
+    : undefined;
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      launchedSubTab &&
+      mailSubTabs.some((tab) => tab.subTabKey === launchedSubTab)
+    ) {
+      setActiveTab(launchedSubTab);
+    }
+  }, [isLoading, launchedSubTab]);
 
   const active = activeTab ?? mailSubTabs[0]?.subTabKey ?? null;
 
@@ -77,7 +100,7 @@ const MailServerPanel: React.FC<IntegrationPanelProps> = ({ isOpen }) => {
                 </div>
               }
             >
-              {ActiveTab && <ActiveTab active />}
+              {ActiveTab && <ActiveTab active instanceId={instanceId} />}
             </Suspense>
           </div>
         </div>

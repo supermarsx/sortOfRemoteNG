@@ -85,7 +85,15 @@ impl UserManager {
         req: &CreateUserRequest,
     ) -> DovecotResult<DovecotUser> {
         // Build passwd-file entry: user:{password}:uid:gid::home:extra_fields
-        let password_hash = req.password.as_deref().unwrap_or("{PLAIN}changeme");
+        let password_hash = req
+            .password
+            .as_deref()
+            .filter(|password| !password.is_empty())
+            .ok_or_else(|| {
+                DovecotError::auth_failed(
+                    "A non-empty password hash is required; refusing the unsafe placeholder password",
+                )
+            })?;
         let uid_str = req.uid.map(|u| u.to_string()).unwrap_or_default();
         let gid_str = req.gid.map(|g| g.to_string()).unwrap_or_default();
         let home_str = req.home.as_deref().unwrap_or("");
@@ -138,12 +146,15 @@ impl UserManager {
         // Read current user, delete, re-create with updated fields
         let current = Self::get(client, username).await?;
 
-        let password_hash = req.password.as_deref().unwrap_or(
-            current
-                .password_hash
-                .as_deref()
-                .unwrap_or("{PLAIN}changeme"),
-        );
+        let password_hash = req
+            .password
+            .as_deref()
+            .filter(|password| !password.is_empty())
+            .ok_or_else(|| {
+                DovecotError::auth_failed(
+                    "A non-empty password hash is required for updates because the existing hash cannot be retrieved safely",
+                )
+            })?;
         let uid_str = req
             .uid
             .or(current.uid)
@@ -270,5 +281,50 @@ impl UserManager {
             });
         }
         Ok(processes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::test_support::FakeSshTransport;
+    use std::sync::Arc;
+
+    fn client(fake: Arc<FakeSshTransport>) -> DovecotClient {
+        DovecotClient::with_test_transport(
+            DovecotConnectionConfig {
+                host: "mail.example.test".into(),
+                port: Some(22),
+                ssh_user: Some("admin".into()),
+                ssh_password: None,
+                ssh_key: None,
+                doveadm_bin: None,
+                dovecot_bin: None,
+                config_dir: Some("/etc/dovecot".into()),
+                timeout_secs: Some(5),
+            },
+            fake,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn create_rejects_placeholder_password_before_remote_mutation() {
+        let fake = Arc::new(FakeSshTransport::new(Vec::new()));
+        let client = client(fake.clone());
+        let request = CreateUserRequest {
+            username: "alice".into(),
+            password: None,
+            uid: None,
+            gid: None,
+            home: None,
+            mail_location: None,
+            quota_rule: None,
+            extra_fields: None,
+        };
+
+        let error = UserManager::create(&client, &request).await.unwrap_err();
+        assert!(error.message.contains("unsafe placeholder"));
+        assert!(fake.commands().is_empty());
     }
 }

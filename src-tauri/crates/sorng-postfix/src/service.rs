@@ -49,11 +49,15 @@ impl PostfixService {
         id: String,
         config: PostfixConnectionConfig,
     ) -> PostfixResult<PostfixConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(PostfixError::already_connected(&id));
+        }
         let client = PostfixClient::new(config)?;
-        let ver = client.version().await.ok();
-        let mail_name = client.postconf("mail_name").await.ok();
-        let mydomain = client.postconf("mydomain").await.ok();
-        let myorigin = client.postconf("myorigin").await.ok();
+        client.probe().await?;
+        let ver = Some(client.version().await?);
+        let mail_name = Some(client.postconf("mail_name").await?);
+        let mydomain = Some(client.postconf("mydomain").await?);
+        let myorigin = Some(client.postconf("myorigin").await?);
         let summary = PostfixConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
@@ -65,13 +69,16 @@ impl PostfixService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> PostfixResult<()> {
-        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+    pub async fn disconnect(&mut self, id: &str) -> PostfixResult<()> {
+        let client = self.connections.get(id).ok_or_else(|| {
             PostfixError::new(
                 crate::error::PostfixErrorKind::NotConnected,
                 format!("No connection '{}'", id),
             )
-        })
+        })?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -467,5 +474,30 @@ impl PostfixService {
 
     pub async fn get_statistics(&self, id: &str) -> PostfixResult<MailStatistics> {
         PostfixLogManager::get_statistics(self.client(id)?).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn duplicate_connect_does_not_replace_retained_client() {
+        let mut service = PostfixService::new();
+        let original = PostfixClient::new(crate::client::test_connection_config()).unwrap();
+        service.connections.insert("mail".into(), original);
+
+        let mut replacement_config = crate::client::test_connection_config();
+        replacement_config.host = "replacement.example.test".into();
+        let error = service
+            .connect("mail".into(), replacement_config)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error.kind,
+            crate::error::PostfixErrorKind::AlreadyConnected
+        ));
+        assert_eq!(service.connections["mail"].config.host, "mail.example.test");
     }
 }

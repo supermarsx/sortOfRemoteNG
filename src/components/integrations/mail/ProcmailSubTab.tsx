@@ -133,37 +133,64 @@ const emptyConnect: ConnectState = {
 const ConnectForm: React.FC<{
   mgr: ProcmailManager;
   onUserChange: (user: string) => void;
-}> = ({ mgr, onUserChange }) => {
+  instanceId?: string;
+}> = ({ mgr, onUserChange, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, instancesFor, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>();
 
-  // Prefill from the first persisted `mail.procmail` instance (host/fields +
-  // vault secret), if any.
+  // Hydrate the exact session-selected Procmail instance. Falling back to the
+  // first saved instance is reserved for standalone mounts with no selection.
   useEffect(() => {
-    if (store.isLoading) return;
-    const inst = store.instancesFor(INTEGRATION_KEY)[0];
-    if (!inst) return;
+    if (isLoading) return;
+    const inst = instanceId
+      ? instances.find(
+          (candidate) =>
+            candidate.id === instanceId &&
+            candidate.integrationKey === INTEGRATION_KEY,
+        )
+      : instancesFor(INTEGRATION_KEY)[0];
+    if (!inst) {
+      setSavedId(undefined);
+      if (instanceId) {
+        setForm(emptyConnect);
+        onUserChange(emptyConnect.user);
+      }
+      return;
+    }
+    let cancelled = false;
     setSavedId(inst.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: inst.name,
-      host: inst.host ?? f.host,
-      port: inst.fields?.port ?? f.port,
-      sshUser: inst.fields?.sshUser ?? f.sshUser,
+      host: inst.host ?? emptyConnect.host,
+      port: inst.fields?.port ?? emptyConnect.port,
+      sshUser: inst.fields?.sshUser ?? emptyConnect.sshUser,
       sshKey: inst.fields?.sshKey ?? "",
       procmailBin: inst.fields?.procmailBin ?? "",
       procmailrcPath: inst.fields?.procmailrcPath ?? "",
       logPath: inst.fields?.logPath ?? "",
-      timeoutSecs: inst.fields?.timeoutSecs ?? f.timeoutSecs,
-      user: inst.fields?.user ?? f.user,
-    }));
-    void store.readSecret(inst).then((secret) => {
+      timeoutSecs: inst.fields?.timeoutSecs ?? emptyConnect.timeoutSecs,
+      user: inst.fields?.user ?? emptyConnect.user,
+    });
+    onUserChange(inst.fields?.user ?? emptyConnect.user);
+    void readSecret(inst).then((secret) => {
+      if (cancelled) return;
       if (secret) setForm((f) => ({ ...f, sshPassword: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    instanceId,
+    onUserChange,
+    instances,
+    instancesFor,
+    isLoading,
+    readSecret,
+  ]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -235,7 +262,9 @@ const ConnectForm: React.FC<{
             placeholder="22"
           />
         </Labeled>
-        <Labeled label={t("integrations.mail.procmail.sshUser", "SSH username")}>
+        <Labeled
+          label={t("integrations.mail.procmail.sshUser", "SSH username")}
+        >
           <input
             className={field}
             value={form.sshUser}
@@ -413,7 +442,13 @@ const RecipesSection: React.FC<{
           comment: form.comment || undefined,
         }),
       );
-      setForm({ conditions: "", action: "", flags: "", lockfile: "", comment: "" });
+      setForm({
+        conditions: "",
+        action: "",
+        flags: "",
+        lockfile: "",
+        comment: "",
+      });
       await refresh();
     } catch {
       /* surfaced */
@@ -454,7 +489,10 @@ const RecipesSection: React.FC<{
     async (recipeId: string) => {
       if (
         !window.confirm(
-          t("integrations.mail.procmail.deleteRecipeConfirm", "Delete this recipe?"),
+          t(
+            "integrations.mail.procmail.deleteRecipeConfirm",
+            "Delete this recipe?",
+          ),
         )
       )
         return;
@@ -470,7 +508,9 @@ const RecipesSection: React.FC<{
 
   const runTest = useCallback(async () => {
     try {
-      setTestResult(await mgr.run(() => mgr.api.testRecipe(cid, user, testBody)));
+      setTestResult(
+        await mgr.run(() => mgr.api.testRecipe(cid, user, testBody)),
+      );
     } catch {
       /* surfaced */
     }
@@ -565,7 +605,9 @@ const RecipesSection: React.FC<{
             className={`${field} font-mono`}
             rows={3}
             value={form.conditions}
-            onChange={(e) => setForm((f) => ({ ...f, conditions: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, conditions: e.target.value }))
+            }
             placeholder="* ^From.*spammer@"
           />
         </Labeled>
@@ -574,7 +616,9 @@ const RecipesSection: React.FC<{
             <input
               className={field}
               value={form.action}
-              onChange={(e) => setForm((f) => ({ ...f, action: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, action: e.target.value }))
+              }
               placeholder="$HOME/Mail/spam"
             />
           </Labeled>
@@ -582,7 +626,9 @@ const RecipesSection: React.FC<{
             <input
               className={field}
               value={form.flags}
-              onChange={(e) => setForm((f) => ({ ...f, flags: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, flags: e.target.value }))
+              }
               placeholder="HB"
             />
           </Labeled>
@@ -590,14 +636,18 @@ const RecipesSection: React.FC<{
             <input
               className={field}
               value={form.lockfile}
-              onChange={(e) => setForm((f) => ({ ...f, lockfile: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, lockfile: e.target.value }))
+              }
             />
           </Labeled>
           <Labeled label={t("integrations.mail.procmail.comment", "Comment")}>
             <input
               className={field}
               value={form.comment}
-              onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, comment: e.target.value }))
+              }
             />
           </Labeled>
         </div>
@@ -729,7 +779,10 @@ const RulesSection: React.FC<{
     async (ruleId: string) => {
       if (
         !window.confirm(
-          t("integrations.mail.procmail.deleteRuleConfirm", "Delete this rule?"),
+          t(
+            "integrations.mail.procmail.deleteRuleConfirm",
+            "Delete this rule?",
+          ),
         )
       )
         return;
@@ -944,7 +997,10 @@ const VariablesSection: React.FC<{
           </thead>
           <tbody>
             {rows.map((v) => (
-              <tr key={v.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={v.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                   {v.name}
                 </td>
@@ -958,9 +1014,7 @@ const VariablesSection: React.FC<{
                     </button>
                     <button
                       className={btn}
-                      onClick={() =>
-                        setForm({ name: v.name, value: v.value })
-                      }
+                      onClick={() => setForm({ name: v.name, value: v.value })}
                     >
                       {t("integrations.mail.procmail.edit", "Edit")}
                     </button>
@@ -1002,7 +1056,9 @@ const VariablesSection: React.FC<{
             <input
               className={field}
               value={form.value}
-              onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, value: e.target.value }))
+              }
               placeholder="$HOME/Mail"
             />
           </Labeled>
@@ -1104,7 +1160,10 @@ const IncludesSection: React.FC<{
           </thead>
           <tbody>
             {rows.map((inc) => (
-              <tr key={inc.path} className="border-t border-[var(--color-border)]">
+              <tr
+                key={inc.path}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                   {inc.path}
                 </td>
@@ -1118,7 +1177,10 @@ const IncludesSection: React.FC<{
                         ? t("integrations.mail.procmail.disable", "Disable")
                         : t("integrations.mail.procmail.enable", "Enable")}
                     </button>
-                    <button className={btn} onClick={() => void remove(inc.path)}>
+                    <button
+                      className={btn}
+                      onClick={() => void remove(inc.path)}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1141,7 +1203,10 @@ const IncludesSection: React.FC<{
 
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.procmail.addInclude", "Add include (INCLUDERC)")}
+          {t(
+            "integrations.mail.procmail.addInclude",
+            "Add include (INCLUDERC)",
+          )}
         </h4>
         <div className="flex items-end gap-2">
           <Labeled label={t("integrations.mail.procmail.path", "Path")}>
@@ -1253,7 +1318,9 @@ const ConfigSection: React.FC<{
 
   const validate = useCallback(async () => {
     try {
-      setDetail(await mgr.run(() => mgr.api.validateConfig(cid, user, validateBody)));
+      setDetail(
+        await mgr.run(() => mgr.api.validateConfig(cid, user, validateBody)),
+      );
     } catch {
       /* surfaced */
     }
@@ -1429,7 +1496,10 @@ const LogsSection: React.FC<{
   const clear = useCallback(async () => {
     if (
       !window.confirm(
-        t("integrations.mail.procmail.clearLogConfirm", "Clear the procmail log?"),
+        t(
+          "integrations.mail.procmail.clearLogConfirm",
+          "Clear the procmail log?",
+        ),
       )
     )
       return;
@@ -1617,7 +1687,7 @@ const SECTIONS: {
   },
 ];
 
-const ProcmailSubTab: React.FC<MailSubTabProps> = () => {
+const ProcmailSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = useProcmail();
   const [section, setSection] = useState<SectionKey>("recipes");
@@ -1687,7 +1757,10 @@ const ProcmailSubTab: React.FC<MailSubTabProps> = () => {
       {connections && mgr.isConnected && (
         <div className={`${card} mb-3`}>
           <span className="text-xs text-[var(--color-textMuted)]">
-            {t("integrations.mail.procmail.listConnections", "Active connections")}
+            {t(
+              "integrations.mail.procmail.listConnections",
+              "Active connections",
+            )}
             :{" "}
           </span>
           <span className="font-mono text-xs text-[var(--color-text)]">
@@ -1697,7 +1770,7 @@ const ProcmailSubTab: React.FC<MailSubTabProps> = () => {
       )}
 
       {!mgr.isConnected || !cid ? (
-        <ConnectForm mgr={mgr} onUserChange={setUser} />
+        <ConnectForm mgr={mgr} instanceId={instanceId} onUserChange={setUser} />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-3">

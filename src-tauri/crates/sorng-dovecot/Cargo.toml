@@ -12,3 +12,5 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
+sorng-ssh = { path = "../sorng-ssh" }
+async-trait = { workspace = true }

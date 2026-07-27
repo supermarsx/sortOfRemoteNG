@@ -4,7 +4,8 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: Record<string, unknown>) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: Record<string, unknown>) =>
+    invokeMock(cmd, args),
   isTauri: () => true,
 }));
 
@@ -15,9 +16,16 @@ vi.mock("react-i18next", () => ({
 
 import AmavisSubTab from "./AmavisSubTab";
 import { amavisApi } from "../../../hooks/integration/mail/useAmavis";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
 
 beforeEach(() => {
   invokeMock.mockReset();
+  resetIntegrationConfigStoreForTests();
+  (
+    globalThis as unknown as {
+      __TAURI__?: { core: { invoke: typeof invokeMock } };
+    }
+  ).__TAURI__ = { core: { invoke: invokeMock } };
   invokeMock.mockImplementation((cmd: string) => {
     switch (cmd) {
       case "read_app_data":
@@ -40,9 +48,7 @@ describe("AmavisSubTab", () => {
   it("renders its own connect form when disconnected", async () => {
     render(<AmavisSubTab active />);
     await waitFor(() =>
-      expect(
-        screen.getByPlaceholderText("mail.lab.local"),
-      ).toBeInTheDocument(),
+      expect(screen.getByPlaceholderText("mail.lab.local")).toBeInTheDocument(),
     );
     expect(
       screen.getByRole("button", { name: /^Connect$/i }),
@@ -52,9 +58,7 @@ describe("AmavisSubTab", () => {
   it("connect maps to amavis_connect with a snake_case wire-shape config", async () => {
     render(<AmavisSubTab active />);
     await waitFor(() =>
-      expect(
-        screen.getByPlaceholderText("mail.lab.local"),
-      ).toBeInTheDocument(),
+      expect(screen.getByPlaceholderText("mail.lab.local")).toBeInTheDocument(),
     );
 
     fireEvent.change(screen.getByPlaceholderText("mail.lab.local"), {
@@ -78,6 +82,99 @@ describe("AmavisSubTab", () => {
           }),
         }),
       ),
+    );
+  });
+
+  it("hydrates and connects the exact selected Amavis instance, including its vault secret", async () => {
+    const persisted = JSON.stringify([
+      {
+        id: "amavis-wrong",
+        integrationKey: "mail.amavis",
+        name: "Wrong Amavis",
+        host: "wrong.example.test",
+        credentialRefId: "wrong-ref",
+        fields: { username: "wrong-user" },
+        createdAt: "2026-07-27T00:00:00.000Z",
+        updatedAt: "2026-07-27T00:00:00.000Z",
+      },
+      {
+        id: "amavis-selected",
+        integrationKey: "mail.amavis",
+        name: "Selected Amavis",
+        host: "selected.example.test",
+        credentialRefId: "selected-ref",
+        fields: {
+          port: "2222",
+          username: "selected-user",
+          privateKey: "~/.ssh/amavis_ed25519",
+          timeoutSecs: "45",
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+        updatedAt: "2026-07-27T00:00:00.000Z",
+      },
+    ]);
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "read_app_data") return Promise.resolve(persisted);
+        if (cmd === "vault_read_secret") {
+          return Promise.resolve(
+            args?.account === "selected-ref"
+              ? JSON.stringify({
+                  password: "selected-password",
+                  privateKey: "~/.ssh/amavis_ed25519",
+                })
+              : JSON.stringify({
+                  password: "wrong-password",
+                  privateKey: "~/.ssh/wrong_ed25519",
+                }),
+          );
+        }
+        if (cmd === "amavis_connect") {
+          return Promise.resolve({
+            host: "selected.example.test",
+            version: "2.13.0",
+            running: true,
+            uptime_secs: 42,
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+
+    render(<AmavisSubTab active instanceId="amavis-selected" />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("selected.example.test")).toBeVisible();
+      expect(screen.getByDisplayValue("selected-user")).toBeVisible();
+      expect(screen.getByDisplayValue("selected-password")).toBeVisible();
+      expect(screen.getByDisplayValue("~/.ssh/amavis_ed25519")).toBeVisible();
+      expect(screen.getByText("SSH private key path")).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("amavis_connect", {
+        id: "amavis-selected",
+        config: expect.objectContaining({
+          host: "selected.example.test",
+          port: 2222,
+          username: "selected-user",
+          password: "selected-password",
+          private_key: "~/.ssh/amavis_ed25519",
+          timeout_secs: 45,
+        }),
+      }),
+    );
+    expect(JSON.stringify(invokeMock.mock.calls)).not.toContain(
+      "wrong-password",
+    );
+    expect(invokeMock).toHaveBeenCalledWith(
+      "vault_read_secret",
+      expect.objectContaining({ account: "selected-ref" }),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "vault_read_secret",
+      expect.objectContaining({ account: "wrong-ref" }),
     );
   });
 

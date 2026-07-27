@@ -34,9 +34,9 @@ impl AppConfigManager {
     ) -> CyrusSaslResult<SaslAppConfig> {
         let path = format!("{}/{}.conf", client.config_dir(), app_name);
         let content = client
-            .read_remote_file(&path)
-            .await
-            .map_err(|_| CyrusSaslError::config_not_found(&path))?;
+            .read_remote_file_if_exists(&path)
+            .await?
+            .ok_or_else(|| CyrusSaslError::config_not_found(&path))?;
         Ok(parse_app_config(app_name, &content))
     }
 
@@ -108,9 +108,10 @@ impl AppConfigManager {
         key: &str,
         value: &str,
     ) -> CyrusSaslResult<()> {
-        let mut config = Self::get_app_config(client, app_name)
-            .await
-            .unwrap_or_else(|_| SaslAppConfig {
+        let path = format!("{}/{}.conf", client.config_dir(), app_name);
+        let mut config = match client.read_remote_file_if_exists(&path).await? {
+            Some(content) => parse_app_config(app_name, &content),
+            None => SaslAppConfig {
                 app_name: app_name.to_string(),
                 pwcheck_method: None,
                 mech_list: None,
@@ -125,7 +126,8 @@ impl AppConfigManager {
                 ldapdb_id: None,
                 ldapdb_pw: None,
                 extra: HashMap::new(),
-            });
+            },
+        };
 
         let val = Some(value.to_string());
         match key {

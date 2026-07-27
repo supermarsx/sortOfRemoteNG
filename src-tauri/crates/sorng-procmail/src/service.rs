@@ -44,12 +44,16 @@ impl ProcmailService {
         id: String,
         config: ProcmailConnectionConfig,
     ) -> ProcmailResult<ProcmailConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(ProcmailError::new(
+                crate::error::ProcmailErrorKind::AlreadyConnected,
+                format!("Connection '{id}' already exists"),
+            ));
+        }
         let client = ProcmailClient::new(config)?;
-        let ver = client.version().await.ok();
-        let recipe_count = RecipeManager::list(&client, "")
-            .await
-            .map(|r| r.len())
-            .unwrap_or(0);
+        client.probe().await?;
+        let ver = Some(client.version().await?);
+        let recipe_count = RecipeManager::list(&client, "").await?.len();
         let log_path = client.log_path().to_string();
         let summary = ProcmailConnectionSummary {
             host: client.config.host.clone(),
@@ -61,13 +65,16 @@ impl ProcmailService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> ProcmailResult<()> {
-        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+    pub async fn disconnect(&mut self, id: &str) -> ProcmailResult<()> {
+        let client = self.connections.get(id).ok_or_else(|| {
             ProcmailError::new(
                 crate::error::ProcmailErrorKind::NotConnected,
                 format!("No connection '{}'", id),
             )
-        })
+        })?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -329,5 +336,30 @@ impl ProcmailService {
 
     pub async fn set_log_path(&self, id: &str, user: &str, path: &str) -> ProcmailResult<()> {
         ProcmailLogManager::set_log_path(self.client(id)?, user, path).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn duplicate_connect_does_not_replace_retained_client() {
+        let mut service = ProcmailService::new();
+        let original = ProcmailClient::new(crate::client::test_connection_config()).unwrap();
+        service.connections.insert("mail".into(), original);
+
+        let mut replacement_config = crate::client::test_connection_config();
+        replacement_config.host = "replacement.example.test".into();
+        let error = service
+            .connect("mail".into(), replacement_config)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error.kind,
+            crate::error::ProcmailErrorKind::AlreadyConnected
+        ));
+        assert_eq!(service.connections["mail"].config.host, "mail.example.test");
     }
 }

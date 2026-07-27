@@ -33,10 +33,10 @@ impl StatsManager {
         Self::get_graph(client, "throughput").await
     }
 
-    /// POST /statreset — reset all statistics counters
+    /// GET /statreset — reset all statistics counters
     pub async fn reset_stats(client: &RspamdClient) -> RspamdResult<()> {
         debug!("RSPAMD reset_stats");
-        client.post_no_body("/statreset").await
+        client.get_no_body("/statreset").await
     }
 
     /// GET /errors — retrieve error log entries
@@ -63,15 +63,25 @@ impl StatsManager {
     // ── Internal helpers ─────────────────────────────────────────────
 
     fn parse_stat(raw: &serde_json::Value) -> RspamdResult<RspamdStat> {
-        let scanned = raw.get("scanned").and_then(|v| v.as_u64()).unwrap_or(0);
-        let learned = raw.get("learned").and_then(|v| v.as_u64()).unwrap_or(0);
-        let spam_count = raw.get("spam_count").and_then(|v| v.as_u64()).unwrap_or(0);
-        let ham_count = raw.get("ham_count").and_then(|v| v.as_u64()).unwrap_or(0);
-        let connections = raw.get("connections").and_then(|v| v.as_u64()).unwrap_or(0);
-        let control_connections = raw
-            .get("control_connections")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let object = raw
+            .as_object()
+            .ok_or_else(|| RspamdError::parse("Rspamd /stat response must be a JSON object"))?;
+        let required_u64 = |name: &str| {
+            object
+                .get(name)
+                .and_then(|value| value.as_u64())
+                .ok_or_else(|| {
+                    RspamdError::parse(format!(
+                        "Rspamd /stat response is missing required numeric field '{name}'"
+                    ))
+                })
+        };
+        let scanned = required_u64("scanned")?;
+        let learned = required_u64("learned")?;
+        let spam_count = required_u64("spam_count")?;
+        let ham_count = required_u64("ham_count")?;
+        let connections = required_u64("connections")?;
+        let control_connections = required_u64("control_connections")?;
         let pools_allocated = raw
             .get("pools_allocated")
             .and_then(|v| v.as_u64())

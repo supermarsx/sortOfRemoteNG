@@ -14,6 +14,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   CreateRecipeRequest,
   CreateRuleRequest,
@@ -175,8 +176,11 @@ function errMsg(e: unknown): string {
  * through the same loading/error handling. There is no ping (procmail has none).
  */
 export function useProcmail() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
-  const [summary, setSummary] = useState<ProcmailConnectionSummary | null>(null);
+  const [summary, setSummary] = useState<ProcmailConnectionSummary | null>(
+    null,
+  );
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,9 +207,23 @@ export function useProcmail() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await procmailApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.procmail:${id}`,
+          async () => {
+            const result = await procmailApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await procmailApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -214,20 +232,20 @@ export function useProcmail() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await procmailApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.procmail:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   const clearError = useCallback(() => setError(null), []);
 

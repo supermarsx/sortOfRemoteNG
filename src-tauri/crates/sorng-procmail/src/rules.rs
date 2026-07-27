@@ -60,7 +60,7 @@ impl RuleManager {
         }
 
         // Insert rule markers into the procmailrc
-        let mut content = client.get_procmailrc(user).await.unwrap_or_default();
+        let mut content = client.get_procmailrc(user).await?;
         let desc = req.description.clone().unwrap_or_default();
         let marker = format!(
             "## SORNG-RULE: {} | {} | {} | {} | {}\n",
@@ -122,7 +122,7 @@ impl RuleManager {
         if let Some(recipe_reqs) = req.recipes {
             // Delete old recipes
             for old_recipe in &rule.recipes {
-                let _ = RecipeManager::delete(client, user, &old_recipe.id).await;
+                RecipeManager::delete(client, user, &old_recipe.id).await?;
             }
             // Create new ones
             let mut new_recipes = Vec::new();
@@ -151,7 +151,7 @@ impl RuleManager {
 
         // Delete each recipe in the rule
         for recipe in &rule.recipes {
-            let _ = RecipeManager::delete(client, user, &recipe.id).await;
+            RecipeManager::delete(client, user, &recipe.id).await?;
         }
 
         // Remove rule markers from file
@@ -287,7 +287,7 @@ async fn rewrite_rule_markers(
     user: &str,
     rules: &[ProcmailRule],
 ) -> ProcmailResult<()> {
-    let content = client.get_procmailrc(user).await.unwrap_or_default();
+    let content = client.get_procmailrc(user).await?;
     let mut output_lines: Vec<String> = Vec::new();
     let lines: Vec<&str> = content.lines().collect();
     let mut i = 0;

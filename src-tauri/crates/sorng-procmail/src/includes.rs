@@ -16,7 +16,7 @@ impl IncludeManager {
 
     /// Add a new INCLUDERC directive.
     pub async fn add(client: &ProcmailClient, user: &str, path: &str) -> ProcmailResult<()> {
-        let mut content = client.get_procmailrc(user).await.unwrap_or_default();
+        let mut content = client.get_procmailrc(user).await?;
 
         // Check if already included
         let includes = parse_includes(&content);

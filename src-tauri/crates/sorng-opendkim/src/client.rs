@@ -5,15 +5,50 @@
 use crate::error::{OpendkimError, OpendkimResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+#[cfg(test)]
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
+
+const MISSING_FILE_MARKER: &str = "__SORNG_REMOTE_FILE_ABSENT_7D9360E9__";
 
 /// OpenDKIM management client – connects via SSH to manage opendkim remotely.
 pub struct OpendkimClient {
     pub config: OpendkimConnectionConfig,
+    ssh: IntegrationSshSession,
+    #[cfg(test)]
+    scripted_ssh: Option<Arc<ScriptedSsh>>,
 }
 
 impl OpendkimClient {
     pub fn new(config: OpendkimConnectionConfig) -> OpendkimResult<Self> {
-        Ok(Self { config })
+        let ssh = IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        });
+        Ok(Self {
+            config,
+            ssh,
+            #[cfg(test)]
+            scripted_ssh: None,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn scripted(
+        config: OpendkimConnectionConfig,
+        responses: Vec<Result<String, String>>,
+    ) -> (Self, Arc<ScriptedSsh>) {
+        let scripted_ssh = Arc::new(ScriptedSsh::new(responses));
+        let mut client = Self::new(config).expect("scripted OpenDKIM client");
+        client.scripted_ssh = Some(Arc::clone(&scripted_ssh));
+        (client, scripted_ssh)
     }
 
     // ── Paths ────────────────────────────────────────────────────────
@@ -45,64 +80,46 @@ impl OpendkimClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> OpendkimResult<SshOutput> {
-        debug!("DKIM SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
+        debug!("OPENDKIM SSH [{}]: {}", self.config.host, command);
+        #[cfg(test)]
+        if let Some(scripted_ssh) = &self.scripted_ssh {
+            let stdout = scripted_ssh.execute(command).map_err(OpendkimError::ssh)?;
+            return Ok(SshOutput {
+                stdout,
+                stderr: String::new(),
+                exit_code: 0,
+            });
         }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| OpendkimError::ssh(format!("Failed to execute ssh: {}", e)))?;
-
+            .map_err(OpendkimError::ssh)?;
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn probe(&self) -> OpendkimResult<()> {
+        #[cfg(test)]
+        if let Some(scripted_ssh) = &self.scripted_ssh {
+            scripted_ssh.execute("true").map_err(OpendkimError::ssh)?;
+            return Ok(());
+        }
+        self.ssh.probe().await.map_err(OpendkimError::ssh)
+    }
+
+    pub async fn disconnect(&self) -> OpendkimResult<()> {
+        #[cfg(test)]
+        if self.scripted_ssh.is_some() {
+            return Ok(());
+        }
+        self.ssh.disconnect().await.map_err(OpendkimError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> OpendkimResult<String> {
@@ -110,6 +127,29 @@ impl OpendkimClient {
             .exec_ssh(&format!("cat {}", shell_escape(path)))
             .await?;
         Ok(out.stdout)
+    }
+
+    /// Read a regular file while treating only a confirmed absent path as optional.
+    pub async fn read_remote_file_optional(&self, path: &str) -> OpendkimResult<Option<String>> {
+        let escaped_path = shell_escape(path);
+        let command = format!(
+            "stat_error=$(LC_ALL=C stat {escaped_path} 2>&1); stat_code=$?; \
+             if [ \"$stat_code\" -ne 0 ]; then \
+               if printf '%s' \"$stat_error\" | grep -Fq 'No such file or directory'; \
+               then printf '%s' '{MISSING_FILE_MARKER}'; \
+               else printf '%s\\n' \"$stat_error\" >&2; exit \"$stat_code\"; fi; \
+             elif [ ! -f {escaped_path} ]; then printf '%s\\n' {} >&2; exit 65; \
+             elif [ ! -r {escaped_path} ]; then printf '%s\\n' {} >&2; exit 66; \
+             else cat {escaped_path}; fi",
+            shell_escape(&format!("Remote path is not a regular file: {path}")),
+            shell_escape(&format!("Remote file is not readable: {path}")),
+        );
+        let output = self.exec_ssh(&command).await?.stdout;
+        if output == MISSING_FILE_MARKER {
+            Ok(None)
+        } else {
+            Ok(Some(output))
+        }
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> OpendkimResult<()> {
@@ -134,15 +174,41 @@ impl OpendkimClient {
     }
 
     pub async fn list_remote_dir(&self, path: &str) -> OpendkimResult<Vec<String>> {
-        let out = self
-            .exec_ssh(&format!("ls -1 {}", shell_escape(path)))
-            .await?;
-        Ok(out
-            .stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(String::from)
-            .collect())
+        self.list_remote_dir_optional(path)
+            .await?
+            .ok_or_else(|| OpendkimError::io(format!("Remote directory does not exist: {path}")))
+    }
+
+    /// List a directory while treating only a confirmed absent path as optional.
+    pub async fn list_remote_dir_optional(
+        &self,
+        path: &str,
+    ) -> OpendkimResult<Option<Vec<String>>> {
+        let escaped_path = shell_escape(path);
+        let command = format!(
+            "stat_error=$(LC_ALL=C stat {escaped_path} 2>&1); stat_code=$?; \
+             if [ \"$stat_code\" -ne 0 ]; then \
+               if printf '%s' \"$stat_error\" | grep -Fq 'No such file or directory'; \
+               then printf '%s' '{MISSING_FILE_MARKER}'; \
+               else printf '%s\\n' \"$stat_error\" >&2; exit \"$stat_code\"; fi; \
+             elif [ ! -d {escaped_path} ]; then printf '%s\\n' {} >&2; exit 65; \
+             elif [ ! -r {escaped_path} ]; then printf '%s\\n' {} >&2; exit 66; \
+             else ls -1 {escaped_path}; fi",
+            shell_escape(&format!("Remote path is not a directory: {path}")),
+            shell_escape(&format!("Remote directory is not readable: {path}")),
+        );
+        let output = self.exec_ssh(&command).await?.stdout;
+        if output == MISSING_FILE_MARKER {
+            Ok(None)
+        } else {
+            Ok(Some(
+                output
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(String::from)
+                    .collect(),
+            ))
+        }
     }
 
     pub async fn create_dir(&self, path: &str) -> OpendkimResult<()> {
@@ -165,6 +231,11 @@ impl OpendkimClient {
             .await?;
         // opendkim -V outputs: "opendkim: OpenDKIM Filter v2.11.0"
         let version = out.stdout.lines().next().unwrap_or("").trim().to_string();
+        if version.is_empty() {
+            return Err(OpendkimError::parse(
+                "opendkim returned an empty version string",
+            ));
+        }
         Ok(version)
     }
 
@@ -180,8 +251,49 @@ impl OpendkimClient {
     }
 
     pub async fn status(&self) -> OpendkimResult<String> {
-        let out = self.exec_ssh("systemctl is-active opendkim 2>&1").await?;
+        let out = self
+            .exec_ssh(
+                "state=$(systemctl is-active opendkim 2>&1); code=$?; \
+                 if [ \"$code\" -eq 0 ] || [ \"$code\" -eq 3 ]; then printf '%s\\n' \"$state\"; \
+                 else printf '%s\\n' \"$state\" >&2; exit \"$code\"; fi",
+            )
+            .await?;
         Ok(out.stdout.trim().to_string())
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct ScriptedSsh {
+    responses: Mutex<VecDeque<Result<String, String>>>,
+    commands: Mutex<Vec<String>>,
+}
+
+#[cfg(test)]
+impl ScriptedSsh {
+    fn new(responses: Vec<Result<String, String>>) -> Self {
+        Self {
+            responses: Mutex::new(responses.into()),
+            commands: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn execute(&self, command: &str) -> Result<String, String> {
+        self.commands
+            .lock()
+            .expect("scripted SSH command lock")
+            .push(command.to_string());
+        self.responses
+            .lock()
+            .expect("scripted SSH response lock")
+            .pop_front()
+            .unwrap_or_else(|| Err(format!("No scripted SSH response for command: {command}")))
+    }
+
+    pub(crate) fn commands(&self) -> Vec<String> {
+        self.commands
+            .lock()
+            .expect("scripted SSH command lock")
+            .clone()
     }
 }
 
@@ -189,4 +301,75 @@ impl OpendkimClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+pub(crate) fn test_connection_config() -> OpendkimConnectionConfig {
+    OpendkimConnectionConfig {
+        host: "mail.example.test".into(),
+        port: None,
+        ssh_user: None,
+        ssh_password: None,
+        ssh_key: None,
+        opendkim_bin: None,
+        config_path: None,
+        key_dir: None,
+        timeout_secs: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config() -> OpendkimConnectionConfig {
+        test_connection_config()
+    }
+
+    #[tokio::test]
+    async fn optional_file_propagates_permission_failure() {
+        let (client, _) = OpendkimClient::scripted(
+            config(),
+            vec![Err(
+                "Command failed with exit code 66: private key is not readable".into(),
+            )],
+        );
+
+        let error = client
+            .read_remote_file_optional("/etc/opendkim/keys/example/default.private")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("not readable"));
+    }
+
+    #[tokio::test]
+    async fn empty_version_is_rejected() {
+        let (client, _) = OpendkimClient::scripted(config(), vec![Ok(String::new())]);
+
+        let error = client.version().await.unwrap_err();
+        assert!(matches!(
+            error.kind,
+            crate::error::OpendkimErrorKind::ParseError
+        ));
+    }
+
+    #[tokio::test]
+    async fn inactive_is_a_valid_status_but_transport_errors_are_not() {
+        let (client, scripted) = OpendkimClient::scripted(
+            config(),
+            vec![
+                Ok("inactive\n".into()),
+                Err("transport read: broken pipe".into()),
+            ],
+        );
+
+        assert_eq!(client.status().await.unwrap(), "inactive");
+        assert!(client
+            .status()
+            .await
+            .unwrap_err()
+            .message
+            .contains("broken pipe"));
+        assert!(scripted.commands()[0].contains("\"$code\" -eq 3"));
+    }
 }

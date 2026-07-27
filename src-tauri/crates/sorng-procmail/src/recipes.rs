@@ -104,7 +104,10 @@ impl RecipeManager {
         }
 
         // Rebuild raw for the modified recipe
-        let r = &recipes[recipes.iter().position(|r| r.id == id).expect("recipe id exists in collection")];
+        let r = &recipes[recipes
+            .iter()
+            .position(|r| r.id == id)
+            .expect("recipe id exists in collection")];
         let raw = build_recipe_raw(
             &r.flags,
             &r.lockfile,
@@ -113,7 +116,10 @@ impl RecipeManager {
             &r.action,
             r.enabled,
         );
-        let idx = recipes.iter().position(|r| r.id == id).expect("recipe id exists in collection");
+        let idx = recipes
+            .iter()
+            .position(|r| r.id == id)
+            .expect("recipe id exists in collection");
         let r = &mut recipes[idx];
         r.raw = raw;
 
@@ -207,11 +213,10 @@ impl RecipeManager {
             client.procmail_bin(),
             crate::client::shell_escape(&rc_path),
         );
-        let out = client.exec_ssh(&cmd).await?;
-        let log_output = format!("{}\n{}", out.stdout, out.stderr);
+        let (log_output, exit_code) = client.exec_ssh_diagnostic(&cmd).await?;
 
         // Parse output for delivery info
-        let matched = out.exit_code == 0;
+        let matched = exit_code == 0;
         let mut delivery_target = None;
         let mut matching_recipe_id = None;
 
@@ -456,7 +461,7 @@ async fn reindex_and_write(
     recipes: &mut [ProcmailRecipe],
 ) -> ProcmailResult<()> {
     // Read existing content for variables/includes
-    let existing = client.get_procmailrc(user).await.unwrap_or_default();
+    let existing = client.get_procmailrc(user).await?;
 
     let mut header_lines = Vec::new();
     let lines: Vec<&str> = existing.lines().collect();

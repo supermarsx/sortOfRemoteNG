@@ -20,15 +20,22 @@ impl PostfixConfigManager {
         let value = client.postconf(name).await?;
         let default_out = client
             .exec_ssh(&format!("postconf -d {}", shell_escape(name)))
-            .await
-            .ok();
-        let default_value =
-            default_out.and_then(|o| o.stdout.split_once('=').map(|(_, v)| v.trim().to_string()));
-        let is_default = default_value.as_deref() == Some(value.as_str());
+            .await?;
+        let default_value = default_out
+            .stdout
+            .split_once('=')
+            .map(|(_, value)| value.trim().to_string())
+            .ok_or_else(|| {
+                PostfixError::parse(format!(
+                    "postconf -d returned malformed output for '{name}': {:?}",
+                    default_out.stdout.trim()
+                ))
+            })?;
+        let is_default = default_value == value;
         Ok(PostfixMainCfParam {
             name: name.to_string(),
             value,
-            default_value,
+            default_value: Some(default_value),
             is_default,
         })
     }
@@ -142,7 +149,7 @@ impl PostfixConfigManager {
 
     /// List all lookup tables referenced in main.cf.
     pub async fn get_maps(client: &PostfixClient) -> PostfixResult<Vec<PostfixMap>> {
-        let out = client.exec_ssh("postconf -m 2>/dev/null; postconf | grep -E '(hash|btree|regexp|pcre|lmdb):' 2>/dev/null").await?;
+        let out = client.exec_ssh("postconf").await?;
         let mut maps = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for line in out.stdout.lines() {
@@ -163,15 +170,14 @@ impl PostfixConfigManager {
                     };
                     let map_name = path.rsplit('/').next().unwrap_or(path).to_string();
                     if seen.insert(path.to_string()) {
-                        let count = client
-                            .exec_ssh(&format!(
-                                "wc -l < {} 2>/dev/null || echo 0",
-                                shell_escape(path)
+                        let count_output = client
+                            .exec_ssh(&format!("wc -l < {}", shell_escape(path)))
+                            .await?;
+                        let count = count_output.stdout.trim().parse::<u64>().map_err(|error| {
+                            PostfixError::parse(format!(
+                                "Invalid entry count for Postfix map '{path}': {error}"
                             ))
-                            .await
-                            .ok()
-                            .and_then(|o| o.stdout.trim().parse::<u64>().ok())
-                            .unwrap_or(0);
+                        })?;
                         maps.push(PostfixMap {
                             name: map_name,
                             map_type,
@@ -192,9 +198,9 @@ impl PostfixConfigManager {
     ) -> PostfixResult<Vec<PostfixMapEntry>> {
         let path = resolve_map_path(client, name);
         let content = client
-            .read_remote_file(&path)
-            .await
-            .map_err(|_| PostfixError::map_not_found(name))?;
+            .read_remote_file_optional(&path)
+            .await?
+            .ok_or_else(|| PostfixError::map_not_found(name))?;
         let mut entries = Vec::new();
         for line in content.lines() {
             let trimmed = line.trim();
@@ -224,7 +230,10 @@ impl PostfixConfigManager {
         value: &str,
     ) -> PostfixResult<()> {
         let path = resolve_map_path(client, name);
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         let mut new_lines = Vec::new();
         let mut replaced = false;
         for line in content.lines() {
@@ -256,9 +265,9 @@ impl PostfixConfigManager {
     ) -> PostfixResult<()> {
         let path = resolve_map_path(client, name);
         let content = client
-            .read_remote_file(&path)
-            .await
-            .map_err(|_| PostfixError::map_not_found(name))?;
+            .read_remote_file_optional(&path)
+            .await?
+            .ok_or_else(|| PostfixError::map_not_found(name))?;
         let new_lines: Vec<&str> = content
             .lines()
             .filter(|line| {

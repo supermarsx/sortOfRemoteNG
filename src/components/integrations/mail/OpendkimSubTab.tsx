@@ -8,13 +8,7 @@
 // stats, service). The mail shell passes NO connectionId — the tab connects
 // itself with the persisted instance id.
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   KeyRound,
   Plug,
@@ -96,7 +90,9 @@ const SectionShell: React.FC<{
 }> = ({ title, actions, children }) => (
   <div className="rounded border border-[var(--color-border)] p-3">
     <div className="mb-2 flex items-center justify-between">
-      <h4 className="text-sm font-semibold text-[var(--color-text)]">{title}</h4>
+      <h4 className="text-sm font-semibold text-[var(--color-text)]">
+        {title}
+      </h4>
       <div className="flex items-center gap-2">{actions}</div>
     </div>
     {children}
@@ -384,10 +380,7 @@ const KeysSection: React.FC<SectionProps> = ({ id, api, t }) => {
       {detail && (
         <pre className="mt-3 max-h-48 overflow-auto rounded bg-[var(--color-surfaceHover)] p-2 text-xs text-[var(--color-text)]">
           {detail}
-          <button
-            className="ml-2 underline"
-            onClick={() => setDetail(null)}
-          >
+          <button className="ml-2 underline" onClick={() => setDetail(null)}>
             {t("integrations.mail.opendkim.actions.close", "close")}
           </button>
         </pre>
@@ -705,11 +698,7 @@ const HostsSection: React.FC<SectionProps> = ({ id, api, t }) => {
           onChange={(e) => setInput(e.target.value)}
           placeholder="127.0.0.1, ::1, host.example.com"
         />
-        <button
-          className={btnPrimary}
-          onClick={add}
-          disabled={busy || !input}
-        >
+        <button className={btnPrimary} onClick={add} disabled={busy || !input}>
           <Plus size={14} />
         </button>
       </div>
@@ -740,7 +729,10 @@ const HostsSection: React.FC<SectionProps> = ({ id, api, t }) => {
 
   return (
     <SectionShell
-      title={t("integrations.mail.opendkim.hosts.title", "Trusted / Internal Hosts")}
+      title={t(
+        "integrations.mail.opendkim.hosts.title",
+        "Trusted / Internal Hosts",
+      )}
       actions={
         <button className={btnSmall} onClick={refresh} disabled={busy}>
           <RefreshCw size={12} />
@@ -763,7 +755,10 @@ const HostsSection: React.FC<SectionProps> = ({ id, api, t }) => {
             await run(() => api.removeTrustedHost(id, h));
             await refresh();
           },
-          t("integrations.mail.opendkim.hosts.trusted", "Trusted (external) hosts"),
+          t(
+            "integrations.mail.opendkim.hosts.trusted",
+            "Trusted (external) hosts",
+          ),
         )}
         {hostList(
           "internal",
@@ -983,7 +978,10 @@ const StatsSection: React.FC<SectionProps> = ({ id, api, t }) => {
             }}
             disabled={busy}
           >
-            {t("integrations.mail.opendkim.stats.lastMessages", "Last messages")}
+            {t(
+              "integrations.mail.opendkim.stats.lastMessages",
+              "Last messages",
+            )}
           </button>
           <button
             className={btnSmall}
@@ -1058,7 +1056,11 @@ const ServiceSection: React.FC<SectionProps> = ({ id, api, t }) => {
     void refresh();
   }, [refresh]);
 
-  const ctl = (label: string, icon: React.ReactNode, fn: () => Promise<void>) => (
+  const ctl = (
+    label: string,
+    icon: React.ReactNode,
+    fn: () => Promise<void>,
+  ) => (
     <button
       className={btnGhost}
       onClick={async () => {
@@ -1118,7 +1120,9 @@ const ServiceSection: React.FC<SectionProps> = ({ id, api, t }) => {
             <span className="text-[var(--color-textSecondary)]">
               {t("integrations.mail.opendkim.service.version", "Version")}:{" "}
             </span>
-            <span className="font-mono text-[var(--color-text)]">{version}</span>
+            <span className="font-mono text-[var(--color-text)]">
+              {version}
+            </span>
           </p>
         )}
         {info && (
@@ -1144,11 +1148,17 @@ type SectionKey =
   | "stats"
   | "service";
 
-const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
+const OpendkimSubTab: React.FC<MailSubTabProps> = ({
+  instanceId: requestedInstanceId,
+}) => {
   const { t } = useTranslation();
   const tt = t as unknown as (k: string, d: string) => string;
-  const { instancesFor, createInstance, updateInstance, readSecret } =
-    useIntegrationConfigStore();
+  const {
+    instances: allInstances,
+    createInstance,
+    updateInstance,
+    readSecret,
+  } = useIntegrationConfigStore();
   const conn = useOpendkim();
 
   const [config, setConfig] = useState<OpendkimConnectionConfig>(() =>
@@ -1161,20 +1171,41 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [section, setSection] = useState<SectionKey>("keys");
   const [knownConnections, setKnownConnections] = useState<string[]>([]);
-  const hydrated = useRef(false);
 
-  // Hydrate from the first persisted "mail.opendkim" instance (if any).
-  const instances = instancesFor(INTEGRATION_KEY);
+  const instances = useMemo(
+    () =>
+      allInstances.filter(
+        (instance) => instance.integrationKey === INTEGRATION_KEY,
+      ),
+    [allInstances],
+  );
+  const selectedInstance = useMemo(
+    () =>
+      requestedInstanceId
+        ? instances.find((instance) => instance.id === requestedInstanceId)
+        : instances[0],
+    [instances, requestedInstanceId],
+  );
+
+  // Hydrate the exact launch selection. Standalone mounts without an explicit
+  // instance retain the first-saved-instance convenience.
   useEffect(() => {
-    if (hydrated.current) return;
-    const inst = instances[0];
-    if (!inst) return;
-    hydrated.current = true;
+    const inst = selectedInstance;
+    if (!inst) {
+      setInstanceId(null);
+      if (requestedInstanceId) {
+        setName("");
+        setConfig(defaultOpendkimConnectionConfig());
+      }
+      return;
+    }
+    let cancelled = false;
     const fields = (inst.fields ?? {}) as Record<string, string>;
     setInstanceId(inst.id);
     setName(inst.name);
-    (async () => {
+    void (async () => {
       const secret = await readSecret(inst);
+      if (cancelled) return;
       setConfig({
         host: inst.host ?? "",
         port: Number(fields.port) || 22,
@@ -1187,7 +1218,10 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
         timeout_secs: Number(fields.timeout_secs) || 30,
       });
     })();
-  }, [instances, readSecret]);
+    return () => {
+      cancelled = true;
+    };
+  }, [readSecret, requestedInstanceId, selectedInstance]);
 
   const set = useCallback(
     <K extends keyof OpendkimConnectionConfig>(
@@ -1230,7 +1264,10 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
   const handleSave = useCallback(async () => {
     if (!config.host) {
       setFormError(
-        tt("integrations.mail.opendkim.errors.hostRequired", "Host is required"),
+        tt(
+          "integrations.mail.opendkim.errors.hostRequired",
+          "Host is required",
+        ),
       );
       return;
     }
@@ -1249,7 +1286,10 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
   const handleConnect = useCallback(async () => {
     if (!config.host) {
       setFormError(
-        tt("integrations.mail.opendkim.errors.hostRequired", "Host is required"),
+        tt(
+          "integrations.mail.opendkim.errors.hostRequired",
+          "Host is required",
+        ),
       );
       return;
     }
@@ -1354,7 +1394,10 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
         <div className="mb-4 rounded border border-[var(--color-border)] p-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field
-              label={tt("integrations.mail.opendkim.form.name", "Instance name")}
+              label={tt(
+                "integrations.mail.opendkim.form.name",
+                "Instance name",
+              )}
               value={name}
               onChange={(v) => {
                 setName(v);
@@ -1415,7 +1458,10 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
               placeholder="/etc/opendkim.conf"
             />
             <Field
-              label={tt("integrations.mail.opendkim.form.keyDir", "Key directory")}
+              label={tt(
+                "integrations.mail.opendkim.form.keyDir",
+                "Key directory",
+              )}
               value={config.key_dir ?? ""}
               onChange={(v) => set("key_dir", v)}
               placeholder="/etc/opendkim/keys"
@@ -1479,11 +1525,8 @@ const OpendkimSubTab: React.FC<MailSubTabProps> = () => {
             </button>
             {knownConnections.length > 0 && (
               <span className="text-xs text-[var(--color-textSecondary)]">
-                {tt(
-                  "integrations.mail.opendkim.sessions",
-                  "Active sessions",
-                )}
-                : {knownConnections.length}
+                {tt("integrations.mail.opendkim.sessions", "Active sessions")}:{" "}
+                {knownConnections.length}
               </span>
             )}
           </div>

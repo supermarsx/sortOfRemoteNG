@@ -37,9 +37,9 @@ impl PostfixProcessManager {
     }
 
     pub async fn info(client: &PostfixClient) -> PostfixResult<PostfixInfo> {
-        let version = client.version().await.unwrap_or_else(|_| "unknown".into());
-        let mail_name = client.postconf("mail_name").await.ok();
-        let daemon_directory = client.postconf("daemon_directory").await.ok();
+        let version = client.version().await?;
+        let mail_name = Some(client.postconf("mail_name").await?);
+        let daemon_directory = Some(client.postconf("daemon_directory").await?);
         Ok(PostfixInfo {
             version,
             mail_name,

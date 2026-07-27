@@ -5,15 +5,48 @@
 use crate::error::{CyrusSaslError, CyrusSaslResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+use std::sync::Arc;
+
+#[async_trait::async_trait]
+pub(crate) trait SshTransport: Send + Sync {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String>;
+    async fn disconnect(&self) -> Result<(), String>;
+}
+#[async_trait::async_trait]
+impl SshTransport for IntegrationSshSession {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
+        IntegrationSshSession::execute(self, command, timeout_ms).await
+    }
+    async fn disconnect(&self) -> Result<(), String> {
+        IntegrationSshSession::disconnect(self).await
+    }
+}
 
 /// Cyrus SASL management client – connects via SSH to manage SASL remotely.
 pub struct CyrusSaslClient {
     pub config: CyrusSaslConnectionConfig,
+    ssh: Arc<dyn SshTransport>,
 }
 
 impl CyrusSaslClient {
     pub fn new(config: CyrusSaslConnectionConfig) -> CyrusSaslResult<Self> {
-        Ok(Self { config })
+        let ssh = Arc::new(IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        }));
+        Ok(Self { config, ssh })
+    }
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(
+        config: CyrusSaslConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> Self {
+        Self { config, ssh }
     }
 
     // ── Paths ────────────────────────────────────────────────────────
@@ -50,65 +83,23 @@ impl CyrusSaslClient {
 
     pub async fn exec_ssh(&self, command: &str) -> CyrusSaslResult<SshOutput> {
         debug!("SASL SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        ssh_args.push("-l".to_string());
-        ssh_args.push(ssh_user.to_string());
-        ssh_args.push("--".to_string());
-        ssh_args.push(self.config.host.clone());
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| CyrusSaslError::ssh(format!("Failed to execute ssh: {}", e)))?;
-
+            .map_err(CyrusSaslError::ssh)?;
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn disconnect(&self) -> CyrusSaslResult<()> {
+        self.ssh.disconnect().await.map_err(CyrusSaslError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> CyrusSaslResult<String> {
@@ -116,6 +107,20 @@ impl CyrusSaslClient {
             .exec_ssh(&format!("cat {}", shell_escape(path)))
             .await?;
         Ok(out.stdout)
+    }
+    pub async fn read_remote_file_if_exists(&self, path: &str) -> CyrusSaslResult<Option<String>> {
+        const MISSING: &str = "__SORNG_FILE_NOT_FOUND__";
+        let escaped = shell_escape(path);
+        let out = self
+            .exec_ssh(&format!(
+                "if [ -f {escaped} ]; then cat -- {escaped}; elif [ ! -e {escaped} ]; then printf '%s' '{MISSING}'; else echo 'Path is not a regular file' >&2; exit 1; fi"
+            ))
+            .await?;
+        if out.stdout == MISSING {
+            Ok(None)
+        } else {
+            Ok(Some(out.stdout))
+        }
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> CyrusSaslResult<()> {
@@ -143,21 +148,22 @@ impl CyrusSaslClient {
 
     pub async fn version(&self) -> CyrusSaslResult<String> {
         let out = self
-            .exec_ssh("saslauthd -v 2>&1 || pluginviewer --version 2>&1 || echo unknown")
+            .exec_ssh(
+                "if command -v saslauthd >/dev/null 2>&1; then saslauthd -v 2>&1; elif command -v pluginviewer >/dev/null 2>&1; then pluginviewer --version 2>&1; else echo 'Cyrus SASL binaries not found' >&2; exit 127; fi",
+            )
             .await?;
-        let ver = out
-            .stdout
-            .lines()
-            .next()
-            .unwrap_or("unknown")
-            .trim()
-            .to_string();
+        let ver = out.stdout.lines().next().unwrap_or("").trim().to_string();
+        if ver.is_empty() {
+            return Err(CyrusSaslError::parse("Cyrus SASL version output was empty"));
+        }
         Ok(ver)
     }
 
     pub async fn list_mechanisms(&self) -> CyrusSaslResult<Vec<String>> {
         let out = self
-            .exec_ssh("pluginviewer --saslmechlist 2>/dev/null || saslauthd -v 2>&1")
+            .exec_ssh(
+                "if command -v pluginviewer >/dev/null 2>&1; then pluginviewer --saslmechlist; elif command -v saslauthd >/dev/null 2>&1; then saslauthd -v 2>&1; else echo 'Cyrus SASL binaries not found' >&2; exit 127; fi",
+            )
             .await?;
         let mechs: Vec<String> = out
             .stdout
@@ -178,7 +184,7 @@ impl CyrusSaslClient {
 
     pub async fn saslauthd_status(&self) -> CyrusSaslResult<SaslauthStatus> {
         let pid_out = self
-            .exec_ssh("pidof saslauthd 2>/dev/null || echo 0")
+            .exec_ssh("systemctl show saslauthd --property=MainPID --value")
             .await?;
         let pid_str = pid_out.stdout.trim();
         let first_pid = pid_str
@@ -188,17 +194,23 @@ impl CyrusSaslClient {
         let running = first_pid.map(|p| p > 0).unwrap_or(false);
 
         let socket_out = self
-            .exec_ssh("ls /var/run/saslauthd/mux 2>/dev/null && echo exists || echo missing")
-            .await;
+            .exec_ssh("test -S /var/run/saslauthd/mux && echo exists || echo missing")
+            .await?;
         let socket_path = socket_out
-            .ok()
-            .filter(|o| o.stdout.contains("exists"))
-            .map(|_| "/var/run/saslauthd/mux".to_string());
+            .stdout
+            .contains("exists")
+            .then(|| "/var/run/saslauthd/mux".to_string());
 
-        let mech_out = self
-            .exec_ssh("grep -oP '(?<=MECH=)\\S+' /etc/default/saslauthd 2>/dev/null || echo pam")
-            .await;
-        let mechanism = mech_out.ok().map(|o| o.stdout.trim().to_string());
+        let mechanism = self
+            .read_remote_file_if_exists("/etc/default/saslauthd")
+            .await?
+            .and_then(|content| {
+                content.lines().find_map(|line| {
+                    line.trim()
+                        .strip_prefix("MECH=")
+                        .map(|value| value.trim_matches(['\"', '\'']).to_string())
+                })
+            });
 
         Ok(SaslauthStatus {
             running,
@@ -217,4 +229,40 @@ impl CyrusSaslClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::SshTransport;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    pub(crate) struct FakeSshTransport {
+        outcomes: Mutex<VecDeque<Result<String, String>>>,
+        commands: Mutex<Vec<String>>,
+    }
+    impl FakeSshTransport {
+        pub(crate) fn new(outcomes: Vec<Result<String, String>>) -> Self {
+            Self {
+                outcomes: Mutex::new(outcomes.into()),
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+        pub(crate) fn commands(&self) -> Vec<String> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+    #[async_trait::async_trait]
+    impl SshTransport for FakeSshTransport {
+        async fn execute(&self, command: &str, _: Option<u64>) -> Result<String, String> {
+            self.commands.lock().unwrap().push(command.into());
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("fake SSH outcome exhausted")
+        }
+        async fn disconnect(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
 }

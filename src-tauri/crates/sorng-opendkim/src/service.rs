@@ -49,14 +49,17 @@ impl OpendkimService {
             return Err(OpendkimError::already_connected(&id));
         }
         let client = OpendkimClient::new(config)?;
-        let ver = client.version().await.ok();
-        let mode = crate::config::OpendkimConfigManager::get_mode(&client)
-            .await
-            .ok();
-        let domain = crate::config::OpendkimConfigManager::get_param(&client, "Domain")
-            .await
-            .ok()
-            .map(|p| p.value);
+        client.probe().await?;
+        let ver = Some(client.version().await?);
+        let mode = Some(crate::config::OpendkimConfigManager::get_mode(&client).await?);
+        let domain = match crate::config::OpendkimConfigManager::get_param(&client, "Domain").await
+        {
+            Ok(param) => Some(param.value),
+            Err(error) if matches!(error.kind, crate::error::OpendkimErrorKind::ConfigNotFound) => {
+                None
+            }
+            Err(error) => return Err(error),
+        };
         let summary = OpendkimConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
@@ -67,11 +70,14 @@ impl OpendkimService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> OpendkimResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(OpendkimError::not_connected)
+    pub async fn disconnect(&mut self, id: &str) -> OpendkimResult<()> {
+        let client = self
+            .connections
+            .get(id)
+            .ok_or_else(OpendkimError::not_connected)?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {
@@ -310,5 +316,30 @@ impl OpendkimService {
 
     pub async fn info(&self, id: &str) -> OpendkimResult<OpendkimInfo> {
         OpendkimProcessManager::info(self.client(id)?).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn duplicate_connect_does_not_replace_retained_client() {
+        let mut service = OpendkimService::new();
+        let original = OpendkimClient::new(crate::client::test_connection_config()).unwrap();
+        service.connections.insert("mail".into(), original);
+
+        let mut replacement_config = crate::client::test_connection_config();
+        replacement_config.host = "replacement.example.test".into();
+        let error = service
+            .connect("mail".into(), replacement_config)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error.kind,
+            crate::error::OpendkimErrorKind::AlreadyConnected
+        ));
+        assert_eq!(service.connections["mail"].config.host, "mail.example.test");
     }
 }

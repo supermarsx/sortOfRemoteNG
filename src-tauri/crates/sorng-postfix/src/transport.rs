@@ -11,8 +11,8 @@ impl TransportManager {
     pub async fn list(client: &PostfixClient) -> PostfixResult<Vec<PostfixTransport>> {
         let transport_path = format!("{}/transport", client.config_dir());
         let content = client
-            .read_remote_file(&transport_path)
-            .await
+            .read_remote_file_optional(&transport_path)
+            .await?
             .unwrap_or_default();
         let mut transports = Vec::new();
         for line in content.lines() {
@@ -42,8 +42,8 @@ impl TransportManager {
     ) -> PostfixResult<PostfixTransport> {
         let transport_path = format!("{}/transport", client.config_dir());
         let existing = client
-            .read_remote_file(&transport_path)
-            .await
+            .read_remote_file_optional(&transport_path)
+            .await?
             .unwrap_or_default();
 
         // Check for duplicates
@@ -147,10 +147,23 @@ impl TransportManager {
 
     /// Test a transport entry by sending a probe message.
     pub async fn test_transport(client: &PostfixClient, domain: &str) -> PostfixResult<String> {
+        let maps_output = client.exec_ssh("postconf -x transport_maps").await?;
+        let maps = maps_output
+            .stdout
+            .split_whitespace()
+            .map(shell_escape)
+            .collect::<Vec<_>>();
+        if maps.is_empty() {
+            return Ok(format!(
+                "No explicit transport mapping found for '{}'",
+                domain
+            ));
+        }
         let out = client
             .exec_ssh(&format!(
-                "postconf -x transport_maps | xargs -I{{}} postmap -q {} {{}} 2>&1",
-                shell_escape(domain)
+                "postmap -q {} {} 2>&1",
+                shell_escape(domain),
+                maps.join(" ")
             ))
             .await?;
         if out.stdout.trim().is_empty() {

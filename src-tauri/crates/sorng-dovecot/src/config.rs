@@ -78,8 +78,8 @@ impl DovecotConfigManager {
         // Write to local.conf override file
         let local_conf = format!("{}/local.conf", client.config_dir());
         let content = client
-            .read_remote_file(&local_conf)
-            .await
+            .read_remote_file_if_exists(&local_conf)
+            .await?
             .unwrap_or_default();
 
         let new_line = format!("{} = {}", name, value);
@@ -271,9 +271,9 @@ impl DovecotConfigManager {
     ) -> DovecotResult<()> {
         let plugin_conf = format!("{}/conf.d/90-plugin.conf", client.config_dir());
         let mut content = client
-            .read_remote_file(&plugin_conf)
-            .await
-            .unwrap_or_else(|_| "plugin {\n}\n".to_string());
+            .read_remote_file_if_exists(&plugin_conf)
+            .await?
+            .unwrap_or_else(|| "plugin {\n}\n".to_string());
 
         for (key, value) in settings {
             let setting_key = format!("{}_{}", name, key);
@@ -304,10 +304,7 @@ impl DovecotConfigManager {
     /// Get authentication config details.
     pub async fn list_auth_config(client: &DovecotClient) -> DovecotResult<DovecotAuthConfig> {
         let auth_conf = format!("{}/conf.d/10-auth.conf", client.config_dir());
-        let content = client
-            .read_remote_file(&auth_conf)
-            .await
-            .unwrap_or_default();
+        let content = client.read_remote_file(&auth_conf).await?;
 
         let mut mechanisms = Vec::new();
         let mut passdb_drivers = Vec::new();
@@ -516,11 +513,14 @@ impl DovecotConfigManager {
                     errors,
                 })
             }
-            Err(_) => Ok(ConfigTestResult {
-                success: false,
-                output: String::new(),
-                errors: vec!["Failed to execute dovecot config test".into()],
-            }),
+            Err(error) if error.message.contains("Command failed with exit code") => {
+                Ok(ConfigTestResult {
+                    success: false,
+                    output: String::new(),
+                    errors: vec![error.message],
+                })
+            }
+            Err(error) => Err(error),
         }
     }
 }

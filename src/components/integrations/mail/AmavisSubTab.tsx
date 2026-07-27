@@ -30,7 +30,10 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { useAmavis, type AmavisManager } from "../../../hooks/integration/mail/useAmavis";
+import {
+  useAmavis,
+  type AmavisManager,
+} from "../../../hooks/integration/mail/useAmavis";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../../utils/core/id";
 import type { MailSubTabProps } from "./registry";
@@ -135,49 +138,69 @@ const emptyConnect: ConnectState = {
   name: "",
 };
 
-/** The instance's SSH secrets are bundled into ONE opaque vault secret (the
- *  store keeps a single secret per instance). */
+/** Legacy bundled shape. New saves vault only the password; privateKey is a
+ * filesystem path persisted in the non-secret fields. */
 interface AmavisSecrets {
   password?: string;
   privateKey?: string;
 }
 
-const ConnectForm: React.FC<{ mgr: AmavisManager }> = ({ mgr }) => {
+const ConnectForm: React.FC<{
+  mgr: AmavisManager;
+  instanceId?: string;
+}> = ({ mgr, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, instancesFor, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>(undefined);
 
-  // Prefill from the first persisted `mail.amavis` instance, if any.
+  // Respect the launcher's exact service instance; standalone mounts retain
+  // the legacy first-instance default when no instance was requested.
   useEffect(() => {
-    if (store.isLoading) return;
-    const inst = store.instancesFor(INTEGRATION_KEY)[0];
-    if (!inst) return;
+    if (isLoading) return;
+    const inst = instanceId
+      ? instances.find(
+          (candidate) =>
+            candidate.id === instanceId &&
+            candidate.integrationKey === INTEGRATION_KEY,
+        )
+      : instancesFor(INTEGRATION_KEY)[0];
+    if (!inst) {
+      setSavedId(undefined);
+      if (instanceId) setForm(emptyConnect);
+      return;
+    }
+    let cancelled = false;
     setSavedId(inst.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: inst.name,
       host: inst.host ?? "",
       port: inst.fields?.port ?? "22",
       username: inst.fields?.username ?? "",
+      privateKey: inst.fields?.privateKey ?? "",
       timeoutSecs: inst.fields?.timeoutSecs ?? "30",
-    }));
-    store.readSecret(inst).then((raw) => {
+    });
+    void readSecret(inst).then((raw) => {
+      if (cancelled) return;
       if (!raw) return;
       try {
         const s = JSON.parse(raw) as AmavisSecrets;
         setForm((f) => ({
           ...f,
           password: s.password ?? "",
-          privateKey: s.privateKey ?? "",
+          privateKey: inst.fields?.privateKey ?? s.privateKey ?? "",
         }));
       } catch {
         // Legacy / non-JSON secret — treat as the SSH password.
         setForm((f) => ({ ...f, password: raw }));
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, instances, instancesFor, isLoading, readSecret]);
 
   const set = <Key extends keyof ConnectState>(k: Key, v: ConnectState[Key]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -198,14 +221,10 @@ const ConnectForm: React.FC<{ mgr: AmavisManager }> = ({ mgr }) => {
     const fields: Record<string, string> = {
       port: form.port,
       username: form.username,
+      privateKey: form.privateKey,
       timeoutSecs: form.timeoutSecs,
     };
-    const secrets: AmavisSecrets = {
-      password: form.password || undefined,
-      privateKey: form.privateKey || undefined,
-    };
-    const hasSecret = Object.values(secrets).some(Boolean);
-    const secret = hasSecret ? JSON.stringify(secrets) : undefined;
+    const secret = form.password || undefined;
     if (savedId) {
       await store.updateInstance(savedId, {
         name: form.name || form.host,
@@ -259,13 +278,12 @@ const ConnectForm: React.FC<{ mgr: AmavisManager }> = ({ mgr }) => {
             onChange={(e) => set("password", e.target.value)}
           />
         </Labeled>
-        <Labeled label={t(`${K}.privateKey`, "SSH private key")}>
-          <textarea
-            className={`${field} font-mono`}
-            rows={2}
+        <Labeled label={t(`${K}.privateKey`, "SSH private key path")}>
+          <input
+            className={field}
             value={form.privateKey}
             onChange={(e) => set("privateKey", e.target.value)}
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            placeholder="~/.ssh/id_ed25519"
           />
         </Labeled>
         <Labeled label={t(`${K}.timeout`, "Timeout (seconds)")}>
@@ -405,11 +423,17 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   const [snipForm, setSnipForm] = useState({ name: "", content: "" });
 
   const loadConfig = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.getMainConfig(cid)), setConfig);
+    await safe(
+      mgr.run(() => mgr.api.getMainConfig(cid)),
+      setConfig,
+    );
   }, [mgr, cid]);
 
   const loadSnippets = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.listSnippets(cid)), setSnippets);
+    await safe(
+      mgr.run(() => mgr.api.listSnippets(cid)),
+      setSnippets,
+    );
   }, [mgr, cid]);
 
   useEffect(() => {
@@ -433,11 +457,17 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   }, [mgr, cid, config]);
 
   const test = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.testConfig(cid)), setTestResult);
+    await safe(
+      mgr.run(() => mgr.api.testConfig(cid)),
+      setTestResult,
+    );
   }, [mgr, cid]);
 
   const showConfig = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.showConfig(cid)), setRawConfig);
+    await safe(
+      mgr.run(() => mgr.api.showConfig(cid)),
+      setRawConfig,
+    );
   }, [mgr, cid]);
 
   const viewSnippet = useCallback(
@@ -501,7 +531,11 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <RefreshCw size={12} />
           {t(`${K}.reloadConfig`, "Reload config")}
         </button>
-        <button className={btn} onClick={saveConfig} disabled={mgr.isLoading || !config}>
+        <button
+          className={btn}
+          onClick={saveConfig}
+          disabled={mgr.isLoading || !config}
+        >
           <FileCode2 size={12} />
           {t(`${K}.saveConfig`, "Save config")}
         </button>
@@ -540,9 +574,7 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
               <Labeled key={k} label={k}>
                 <input
                   className={field}
-                  value={
-                    config[k] == null ? "" : String(config[k] as number)
-                  }
+                  value={config[k] == null ? "" : String(config[k] as number)}
                   onChange={(e) => setField(k, e.target.value, true)}
                   inputMode="decimal"
                 />
@@ -557,7 +589,11 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <h4 className="text-xs font-semibold text-[var(--color-text)]">
             {t(`${K}.snippets`, "Config snippets")}
           </h4>
-          <button className={btn} onClick={loadSnippets} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={loadSnippets}
+            disabled={mgr.isLoading}
+          >
             <RefreshCw size={12} />
             {t(`${K}.refresh`, "Refresh")}
           </button>
@@ -583,7 +619,10 @@ const ConfigSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
                     ? t(`${K}.disable`, "Disable")
                     : t(`${K}.enable`, "Enable")}
                 </button>
-                <button className={btn} onClick={() => void deleteSnippet(s.name)}>
+                <button
+                  className={btn}
+                  onClick={() => void deleteSnippet(s.name)}
+                >
                   <Trash2 size={12} />
                 </button>
               </div>
@@ -649,7 +688,10 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   const [name, setName] = useState("");
 
   const refresh = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.listPolicyBanks(cid)), setRows);
+    await safe(
+      mgr.run(() => mgr.api.listPolicyBanks(cid)),
+      setRows,
+    );
   }, [mgr, cid]);
 
   useEffect(() => {
@@ -658,7 +700,10 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const view = useCallback(
     async (n: string) => {
-      await safe(mgr.run(() => mgr.api.getPolicyBank(cid, n)), setDetail);
+      await safe(
+        mgr.run(() => mgr.api.getPolicyBank(cid, n)),
+        setDetail,
+      );
     },
     [mgr, cid],
   );
@@ -738,13 +783,18 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <thead className="text-[var(--color-textMuted)]">
             <tr>
               <th className="px-2 py-1">{t(`${K}.name`, "Name")}</th>
-              <th className="px-2 py-1">{t(`${K}.description`, "Description")}</th>
+              <th className="px-2 py-1">
+                {t(`${K}.description`, "Description")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((b) => (
-              <tr key={b.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={b.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                   {b.name}
                 </td>
@@ -756,10 +806,16 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
                     <button className={btn} onClick={() => void view(b.name)}>
                       {t(`${K}.edit`, "Edit")}
                     </button>
-                    <button className={btn} onClick={() => void toggle(b, true)}>
+                    <button
+                      className={btn}
+                      onClick={() => void toggle(b, true)}
+                    >
                       {t(`${K}.activate`, "Activate")}
                     </button>
-                    <button className={btn} onClick={() => void toggle(b, false)}>
+                    <button
+                      className={btn}
+                      onClick={() => void toggle(b, false)}
+                    >
                       {t(`${K}.deactivate`, "Deactivate")}
                     </button>
                     <button className={btn} onClick={() => void remove(b.name)}>
@@ -771,7 +827,10 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t(`${K}.noBanks`, "No policy banks")}
                 </td>
               </tr>
@@ -786,7 +845,11 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             <h4 className="text-xs font-semibold text-[var(--color-text)]">
               {t(`${K}.editBank`, "Edit policy bank")} — {detail.name}
             </h4>
-            <button className={btn} onClick={saveDetail} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={saveDetail}
+              disabled={mgr.isLoading}
+            >
               {t(`${K}.save`, "Save")}
             </button>
           </div>
@@ -815,7 +878,9 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
                 <input
                   type="checkbox"
                   checked={!!detail[k]}
-                  onChange={(e) => setDetail({ ...detail, [k]: e.target.checked })}
+                  onChange={(e) =>
+                    setDetail({ ...detail, [k]: e.target.checked })
+                  }
                 />
                 {lbl}
               </label>
@@ -836,7 +901,8 @@ const PolicyBanksSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
                   onChange={(e) =>
                     setDetail({
                       ...detail,
-                      [k]: e.target.value === "" ? null : Number(e.target.value),
+                      [k]:
+                        e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                 />
@@ -880,7 +946,10 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   const [filenameResult, setFilenameResult] = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.listBannedRules(cid)), setRows);
+    await safe(
+      mgr.run(() => mgr.api.listBannedRules(cid)),
+      setRows,
+    );
   }, [mgr, cid]);
 
   useEffect(() => {
@@ -889,7 +958,10 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const view = useCallback(
     async (banId: string) => {
-      await safe(mgr.run(() => mgr.api.getBannedRule(cid, banId)), setDetail);
+      await safe(
+        mgr.run(() => mgr.api.getBannedRule(cid, banId)),
+        setDetail,
+      );
     },
     [mgr, cid],
   );
@@ -980,7 +1052,9 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <thead className="text-[var(--color-textMuted)]">
             <tr>
               <th className="px-2 py-1">{t(`${K}.pattern`, "Pattern")}</th>
-              <th className="px-2 py-1">{t(`${K}.description`, "Description")}</th>
+              <th className="px-2 py-1">
+                {t(`${K}.description`, "Description")}
+              </th>
               <th className="px-2 py-1">{t(`${K}.enabled`, "Enabled")}</th>
               <th className="px-2 py-1" />
             </tr>
@@ -1011,7 +1085,10 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t(`${K}.noRules`, "No banned rules")}
                 </td>
               </tr>
@@ -1029,7 +1106,9 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             className={`${field} font-mono`}
             placeholder={t(`${K}.pattern`, "Pattern")}
             value={form.pattern}
-            onChange={(e) => setForm((f) => ({ ...f, pattern: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, pattern: e.target.value }))
+            }
           />
           <input
             className={field}
@@ -1051,7 +1130,11 @@ const BannedSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             <h4 className="text-xs font-semibold text-[var(--color-text)]">
               {t(`${K}.editRule`, "Edit rule")} — {detail.id}
             </h4>
-            <button className={btn} onClick={saveDetail} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={saveDetail}
+              disabled={mgr.isLoading}
+            >
               {t(`${K}.save`, "Save")}
             </button>
           </div>
@@ -1115,7 +1198,10 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   const [checkResult, setCheckResult] = useState<unknown>(null);
 
   const refresh = useCallback(async () => {
-    await safe(mgr.run(() => mgr.api.listEntries(cid, listType)), setRows);
+    await safe(
+      mgr.run(() => mgr.api.listEntries(cid, listType)),
+      setRows,
+    );
   }, [mgr, cid, listType]);
 
   useEffect(() => {
@@ -1133,7 +1219,10 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const view = useCallback(
     async (entryId: string) => {
-      await safe(mgr.run(() => mgr.api.getListEntry(cid, entryId)), setDetail);
+      await safe(
+        mgr.run(() => mgr.api.getListEntry(cid, entryId)),
+        setDetail,
+      );
     },
     [mgr, cid],
   );
@@ -1162,7 +1251,10 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const check = useCallback(async () => {
     if (!sender) return;
-    await safe(mgr.run(() => mgr.api.checkSender(cid, sender)), setCheckResult);
+    await safe(
+      mgr.run(() => mgr.api.checkSender(cid, sender)),
+      setCheckResult,
+    );
   }, [mgr, cid, sender]);
 
   return (
@@ -1222,7 +1314,9 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <thead className="text-[var(--color-textMuted)]">
             <tr>
               <th className="px-2 py-1">{t(`${K}.address`, "Address")}</th>
-              <th className="px-2 py-1">{t(`${K}.description`, "Description")}</th>
+              <th className="px-2 py-1">
+                {t(`${K}.description`, "Description")}
+              </th>
               <th className="px-2 py-1">{t(`${K}.enabled`, "Enabled")}</th>
               <th className="px-2 py-1" />
             </tr>
@@ -1253,7 +1347,10 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t(`${K}.noEntries`, "No entries")}
                 </td>
               </tr>
@@ -1268,7 +1365,11 @@ const ListsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             <h4 className="text-xs font-semibold text-[var(--color-text)]">
               {t(`${K}.editEntry`, "Edit entry")} — {detail.id}
             </h4>
-            <button className={btn} onClick={saveDetail} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={saveDetail}
+              disabled={mgr.isLoading}
+            >
               {t(`${K}.save`, "Save")}
             </button>
           </div>
@@ -1359,7 +1460,10 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const view = useCallback(
     async (mailId: string) => {
-      await safe(mgr.run(() => mgr.api.getQuarantine(cid, mailId)), setDetail);
+      await safe(
+        mgr.run(() => mgr.api.getQuarantine(cid, mailId)),
+        setDetail,
+      );
     },
     [mgr, cid],
   );
@@ -1401,9 +1505,7 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
       )
     )
       return;
-    await mgr.run(() =>
-      mgr.api.deleteAllQuarantine(cid, typeFilter || "spam"),
-    );
+    await mgr.run(() => mgr.api.deleteAllQuarantine(cid, typeFilter || "spam"));
     await refresh();
   }, [mgr, cid, typeFilter, refresh, t]);
 
@@ -1440,8 +1542,14 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           />
           <Stat label={t(`${K}.spam`, "Spam")} value={stats.spam_count} />
           <Stat label={t(`${K}.virus`, "Virus")} value={stats.virus_count} />
-          <Stat label={t(`${K}.bannedCount`, "Banned")} value={stats.banned_count} />
-          <Stat label={t(`${K}.oldest`, "Oldest")} value={stats.oldest_item_time} />
+          <Stat
+            label={t(`${K}.bannedCount`, "Banned")}
+            value={stats.banned_count}
+          />
+          <Stat
+            label={t(`${K}.oldest`, "Oldest")}
+            value={stats.oldest_item_time}
+          />
         </div>
       )}
 
@@ -1458,7 +1566,10 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           </thead>
           <tbody>
             {rows.map((q) => (
-              <tr key={q.mail_id} className="border-t border-[var(--color-border)]">
+              <tr
+                key={q.mail_id}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                   {q.mail_id}
                 </td>
@@ -1473,13 +1584,22 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
                 </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => void view(q.mail_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void view(q.mail_id)}
+                    >
                       {t(`${K}.view`, "View")}
                     </button>
-                    <button className={btn} onClick={() => void release(q.mail_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void release(q.mail_id)}
+                    >
                       {t(`${K}.release`, "Release")}
                     </button>
-                    <button className={btn} onClick={() => void remove(q.mail_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void remove(q.mail_id)}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1488,7 +1608,10 @@ const QuarantineSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t(`${K}.noQuarantine`, "Quarantine is empty")}
                 </td>
               </tr>
@@ -1528,7 +1651,9 @@ const StatsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
   }, [refresh]);
 
   const reset = useCallback(async () => {
-    if (!window.confirm(t(`${K}.resetStatsConfirm`, "Reset accumulated stats?")))
+    if (
+      !window.confirm(t(`${K}.resetStatsConfirm`, "Reset accumulated stats?"))
+    )
       return;
     await mgr.run(() => mgr.api.resetStats(cid));
     await refresh();
@@ -1553,7 +1678,10 @@ const StatsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <Stat label={t(`${K}.msgsClean`, "Clean")} value={stats.msgs_clean} />
           <Stat label={t(`${K}.msgsSpam`, "Spam")} value={stats.msgs_spam} />
           <Stat label={t(`${K}.msgsVirus`, "Virus")} value={stats.msgs_virus} />
-          <Stat label={t(`${K}.msgsBanned`, "Banned")} value={stats.msgs_banned} />
+          <Stat
+            label={t(`${K}.msgsBanned`, "Banned")}
+            value={stats.msgs_banned}
+          />
           <Stat
             label={t(`${K}.msgsBadHeader`, "Bad header")}
             value={stats.msgs_bad_header}
@@ -1604,13 +1732,20 @@ const StatsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
               <tr>
                 <th className="px-2 py-1">{t(`${K}.pid`, "PID")}</th>
                 <th className="px-2 py-1">{t(`${K}.state`, "State")}</th>
-                <th className="px-2 py-1">{t(`${K}.processed`, "Processed")}</th>
-                <th className="px-2 py-1">{t(`${K}.startedAt`, "Started at")}</th>
+                <th className="px-2 py-1">
+                  {t(`${K}.processed`, "Processed")}
+                </th>
+                <th className="px-2 py-1">
+                  {t(`${K}.startedAt`, "Started at")}
+                </th>
               </tr>
             </thead>
             <tbody>
               {children.map((c) => (
-                <tr key={c.pid} className="border-t border-[var(--color-border)]">
+                <tr
+                  key={c.pid}
+                  className="border-t border-[var(--color-border)]"
+                >
                   <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                     {c.pid}
                   </td>
@@ -1627,7 +1762,10 @@ const StatsSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
               ))}
               {children.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
                     {t(`${K}.noChildren`, "No child processes")}
                   </td>
                 </tr>
@@ -1681,7 +1819,10 @@ const ServiceSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
 
   const debugSa = useCallback(async () => {
     if (!message) return;
-    await safe(mgr.run(() => mgr.api.debugSa(cid, message)), setDebugOut);
+    await safe(
+      mgr.run(() => mgr.api.debugSa(cid, message)),
+      setDebugOut,
+    );
   }, [mgr, cid, message]);
 
   return (
@@ -1691,19 +1832,35 @@ const ServiceSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           <RefreshCw size={12} />
           {t(`${K}.refresh`, "Refresh")}
         </button>
-        <button className={btn} onClick={() => void control("start")} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void control("start")}
+          disabled={mgr.isLoading}
+        >
           <Play size={12} />
           {t(`${K}.start`, "Start")}
         </button>
-        <button className={btn} onClick={() => void control("reload")} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void control("reload")}
+          disabled={mgr.isLoading}
+        >
           <RotateCw size={12} />
           {t(`${K}.reload`, "Reload")}
         </button>
-        <button className={btn} onClick={() => void control("restart")} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void control("restart")}
+          disabled={mgr.isLoading}
+        >
           <Power size={12} />
           {t(`${K}.restart`, "Restart")}
         </button>
-        <button className={btn} onClick={() => void control("stop")} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void control("stop")}
+          disabled={mgr.isLoading}
+        >
           <Power size={12} />
           {t(`${K}.stop`, "Stop")}
         </button>
@@ -1721,8 +1878,14 @@ const ServiceSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
             value={info.running ? t(`${K}.yes`, "Yes") : t(`${K}.no`, "No")}
           />
           <Stat label={t(`${K}.pid`, "PID")} value={info.pid} />
-          <Stat label={t(`${K}.uptime`, "Uptime (s)")} value={info.uptime_secs} />
-          <Stat label={t(`${K}.configFile`, "Config file")} value={info.config_file} />
+          <Stat
+            label={t(`${K}.uptime`, "Uptime (s)")}
+            value={info.uptime_secs}
+          />
+          <Stat
+            label={t(`${K}.configFile`, "Config file")}
+            value={info.config_file}
+          />
         </div>
       )}
 
@@ -1738,7 +1901,11 @@ const ServiceSection: React.FC<{ mgr: AmavisManager; cid: string }> = ({
           onChange={(e) => setMessage(e.target.value)}
         />
         <div className="mt-2">
-          <button className={btn} onClick={debugSa} disabled={!message || mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={debugSa}
+            disabled={!message || mgr.isLoading}
+          >
             <FlaskConical size={12} />
             {t(`${K}.debugSa`, "Debug SA")}
           </button>
@@ -1767,17 +1934,57 @@ const SECTIONS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "overview", labelKey: `${K}.sectionOverview`, labelDefault: "Overview", icon: Activity },
-  { key: "config", labelKey: `${K}.sectionConfig`, labelDefault: "Config", icon: FileCode2 },
-  { key: "banks", labelKey: `${K}.sectionBanks`, labelDefault: "Policy banks", icon: Layers },
-  { key: "banned", labelKey: `${K}.sectionBanned`, labelDefault: "Banned", icon: Ban },
-  { key: "lists", labelKey: `${K}.sectionLists`, labelDefault: "Lists", icon: ListChecks },
-  { key: "quarantine", labelKey: `${K}.sectionQuarantine`, labelDefault: "Quarantine", icon: ShieldAlert },
-  { key: "stats", labelKey: `${K}.sectionStats`, labelDefault: "Stats", icon: Gauge },
-  { key: "service", labelKey: `${K}.sectionService`, labelDefault: "Service", icon: Power },
+  {
+    key: "overview",
+    labelKey: `${K}.sectionOverview`,
+    labelDefault: "Overview",
+    icon: Activity,
+  },
+  {
+    key: "config",
+    labelKey: `${K}.sectionConfig`,
+    labelDefault: "Config",
+    icon: FileCode2,
+  },
+  {
+    key: "banks",
+    labelKey: `${K}.sectionBanks`,
+    labelDefault: "Policy banks",
+    icon: Layers,
+  },
+  {
+    key: "banned",
+    labelKey: `${K}.sectionBanned`,
+    labelDefault: "Banned",
+    icon: Ban,
+  },
+  {
+    key: "lists",
+    labelKey: `${K}.sectionLists`,
+    labelDefault: "Lists",
+    icon: ListChecks,
+  },
+  {
+    key: "quarantine",
+    labelKey: `${K}.sectionQuarantine`,
+    labelDefault: "Quarantine",
+    icon: ShieldAlert,
+  },
+  {
+    key: "stats",
+    labelKey: `${K}.sectionStats`,
+    labelDefault: "Stats",
+    icon: Gauge,
+  },
+  {
+    key: "service",
+    labelKey: `${K}.sectionService`,
+    labelDefault: "Service",
+    icon: Power,
+  },
 ];
 
-const AmavisSubTab: React.FC<MailSubTabProps> = () => {
+const AmavisSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = useAmavis();
   const [section, setSection] = useState<SectionKey>("overview");
@@ -1803,7 +2010,7 @@ const AmavisSubTab: React.FC<MailSubTabProps> = () => {
               className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
             />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t(`${K}.connected`, "Connected")
+              ? (mgr.summary?.host ?? t(`${K}.connected`, "Connected"))
               : t(`${K}.disconnected`, "Disconnected")}
           </span>
           {mgr.summary?.version && (
@@ -1826,7 +2033,7 @@ const AmavisSubTab: React.FC<MailSubTabProps> = () => {
       )}
 
       {!mgr.isConnected || !cid ? (
-        <ConnectForm mgr={mgr} />
+        <ConnectForm mgr={mgr} instanceId={instanceId} />
       ) : (
         <>
           <div className="flex flex-wrap gap-1 border-b border-[var(--color-border)]">

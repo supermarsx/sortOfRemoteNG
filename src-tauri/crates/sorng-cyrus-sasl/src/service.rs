@@ -46,11 +46,22 @@ impl CyrusSaslService {
         id: String,
         config: CyrusSaslConnectionConfig,
     ) -> CyrusSaslResult<CyrusSaslConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(CyrusSaslError::already_connected(&id));
+        }
         let client = CyrusSaslClient::new(config)?;
-        let ver = client.version().await.ok();
-        let mechs = client.list_mechanisms().await.unwrap_or_default();
-        let status = client.saslauthd_status().await;
-        let running = status.as_ref().map(|s| s.running).unwrap_or(false);
+        let probe = client.exec_ssh("true").await?;
+        if probe.exit_code != 0 {
+            return Err(CyrusSaslError::ssh(format!(
+                "SSH probe failed with exit code {}: {}",
+                probe.exit_code,
+                probe.stderr.trim()
+            )));
+        }
+        let ver = Some(client.version().await?);
+        let mechs = client.list_mechanisms().await?;
+        let status = client.saslauthd_status().await?;
+        let running = status.running;
 
         let summary = CyrusSaslConnectionSummary {
             host: client.config.host.clone(),
@@ -62,13 +73,16 @@ impl CyrusSaslService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> CyrusSaslResult<()> {
-        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+    pub async fn disconnect(&mut self, id: &str) -> CyrusSaslResult<()> {
+        let client = self.connections.get(id).ok_or_else(|| {
             CyrusSaslError::new(
                 crate::error::CyrusSaslErrorKind::NotConnected,
                 format!("No connection '{}'", id),
             )
-        })
+        })?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

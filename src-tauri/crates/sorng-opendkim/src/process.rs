@@ -57,7 +57,7 @@ impl OpendkimProcessManager {
     }
 
     pub async fn info(client: &OpendkimClient) -> OpendkimResult<OpendkimInfo> {
-        let version_raw = client.version().await.unwrap_or_default();
+        let version_raw = client.version().await?;
         // Parse version string: "opendkim: OpenDKIM Filter v2.11.0"
         let version = version_raw
             .split('v')
@@ -66,10 +66,7 @@ impl OpendkimProcessManager {
             .trim()
             .to_string();
         // Read config to extract mode/socket/pid
-        let conf_raw = client
-            .read_remote_file(client.config_path())
-            .await
-            .unwrap_or_default();
+        let conf_raw = client.read_remote_file(client.config_path()).await?;
         let mut mode = None;
         let mut socket = None;
         let mut pid_file = None;
@@ -118,10 +115,10 @@ impl OpendkimProcessManager {
                     vec![]
                 },
             }),
-            Err(_) => Ok(ConfigTestResult {
+            Err(error) => Ok(ConfigTestResult {
                 success: false,
-                output: String::new(),
-                errors: vec!["Failed to execute opendkim -n".into()],
+                output: error.to_string(),
+                errors: vec![format!("Failed to execute opendkim -n: {error}")],
             }),
         }
     }

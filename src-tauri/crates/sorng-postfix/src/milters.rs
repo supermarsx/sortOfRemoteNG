@@ -10,11 +10,8 @@ impl MilterManager {
     /// List all configured milters from smtpd_milters and non_smtpd_milters.
     pub async fn list(client: &PostfixClient) -> PostfixResult<Vec<PostfixMilter>> {
         let mut milters = Vec::new();
-        let smtpd_raw = client.postconf("smtpd_milters").await.unwrap_or_default();
-        let non_smtpd_raw = client
-            .postconf("non_smtpd_milters")
-            .await
-            .unwrap_or_default();
+        let smtpd_raw = client.postconf("smtpd_milters").await?;
+        let non_smtpd_raw = client.postconf("non_smtpd_milters").await?;
 
         for socket_str in smtpd_raw.split(',').chain(non_smtpd_raw.split(',')) {
             let socket = socket_str.trim().to_string();
@@ -35,11 +32,8 @@ impl MilterManager {
         }
 
         // Enrich with milter_default_action and milter_protocol
-        let flags = client
-            .postconf("milter_default_action")
-            .await
-            .unwrap_or_default();
-        let protocol = client.postconf("milter_protocol").await.unwrap_or_default();
+        let flags = client.postconf("milter_default_action").await?;
+        let protocol = client.postconf("milter_protocol").await?;
         for milter in &mut milters {
             if !flags.is_empty() {
                 milter.flags = Some(flags.clone());
@@ -54,7 +48,7 @@ impl MilterManager {
 
     /// Add a new milter to smtpd_milters.
     pub async fn add(client: &PostfixClient, milter: &PostfixMilter) -> PostfixResult<()> {
-        let current_raw = client.postconf("smtpd_milters").await.unwrap_or_default();
+        let current_raw = client.postconf("smtpd_milters").await?;
         let mut sockets: Vec<String> = current_raw
             .split(',')
             .map(|s| s.trim().to_string())
@@ -73,10 +67,7 @@ impl MilterManager {
         client.postconf_set("smtpd_milters", &new_value).await?;
 
         // Also add to non_smtpd_milters
-        let non_smtpd_raw = client
-            .postconf("non_smtpd_milters")
-            .await
-            .unwrap_or_default();
+        let non_smtpd_raw = client.postconf("non_smtpd_milters").await?;
         let mut non_smtpd_sockets: Vec<String> = non_smtpd_raw
             .split(',')
             .map(|s| s.trim().to_string())
@@ -116,7 +107,7 @@ impl MilterManager {
         let socket_to_remove = milter.socket.clone();
 
         // Remove from smtpd_milters
-        let smtpd_raw = client.postconf("smtpd_milters").await.unwrap_or_default();
+        let smtpd_raw = client.postconf("smtpd_milters").await?;
         let new_smtpd: Vec<String> = smtpd_raw
             .split(',')
             .map(|s| s.trim().to_string())
@@ -127,10 +118,7 @@ impl MilterManager {
             .await?;
 
         // Remove from non_smtpd_milters
-        let non_smtpd_raw = client
-            .postconf("non_smtpd_milters")
-            .await
-            .unwrap_or_default();
+        let non_smtpd_raw = client.postconf("non_smtpd_milters").await?;
         let new_non_smtpd: Vec<String> = non_smtpd_raw
             .split(',')
             .map(|s| s.trim().to_string())
@@ -162,7 +150,7 @@ impl MilterManager {
         let old_socket = existing.socket.clone();
 
         // Replace socket in smtpd_milters
-        let smtpd_raw = client.postconf("smtpd_milters").await.unwrap_or_default();
+        let smtpd_raw = client.postconf("smtpd_milters").await?;
         let new_smtpd: Vec<String> = smtpd_raw
             .split(',')
             .map(|s| {
@@ -180,10 +168,7 @@ impl MilterManager {
             .await?;
 
         // Replace socket in non_smtpd_milters
-        let non_smtpd_raw = client
-            .postconf("non_smtpd_milters")
-            .await
-            .unwrap_or_default();
+        let non_smtpd_raw = client.postconf("non_smtpd_milters").await?;
         let new_non_smtpd: Vec<String> = non_smtpd_raw
             .split(',')
             .map(|s| {

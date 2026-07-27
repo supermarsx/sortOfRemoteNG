@@ -19,8 +19,8 @@ impl AliasManager {
     pub async fn list_virtual(client: &PostfixClient) -> PostfixResult<Vec<PostfixAlias>> {
         let virtual_path = format!("{}/virtual", client.config_dir());
         let content = client
-            .read_remote_file(&virtual_path)
-            .await
+            .read_remote_file_optional(&virtual_path)
+            .await?
             .unwrap_or_default();
         let mut aliases = Vec::new();
         for line in content.lines() {
@@ -49,8 +49,8 @@ impl AliasManager {
     pub async fn list_local(client: &PostfixClient) -> PostfixResult<Vec<PostfixAlias>> {
         let aliases_path = "/etc/aliases".to_string();
         let content = client
-            .read_remote_file(&aliases_path)
-            .await
+            .read_remote_file_optional(&aliases_path)
+            .await?
             .unwrap_or_default();
         let mut aliases = Vec::new();
         for line in content.lines() {
@@ -92,8 +92,8 @@ impl AliasManager {
             AliasType::Virtual => {
                 let virtual_path = format!("{}/virtual", client.config_dir());
                 let existing = client
-                    .read_remote_file(&virtual_path)
-                    .await
+                    .read_remote_file_optional(&virtual_path)
+                    .await?
                     .unwrap_or_default();
                 // Check for duplicates
                 for line in existing.lines() {
@@ -118,8 +118,8 @@ impl AliasManager {
             AliasType::Local => {
                 let aliases_path = "/etc/aliases".to_string();
                 let existing = client
-                    .read_remote_file(&aliases_path)
-                    .await
+                    .read_remote_file_optional(&aliases_path)
+                    .await?
                     .unwrap_or_default();
                 let recipients_str = req.recipients.join(", ");
                 let new_content = format!("{}{}:\t{}\n", existing, req.address, recipients_str);

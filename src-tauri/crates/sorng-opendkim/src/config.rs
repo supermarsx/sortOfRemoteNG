@@ -111,21 +111,17 @@ impl OpendkimConfigManager {
                     vec![]
                 },
             }),
-            Err(_) => Ok(ConfigTestResult {
+            Err(error) => Ok(ConfigTestResult {
                 success: false,
-                output: String::new(),
-                errors: vec!["Failed to execute opendkim -n".into()],
+                output: error.to_string(),
+                errors: vec![format!("Failed to execute opendkim -n: {error}")],
             }),
         }
     }
 
     /// Get the current operating mode (s = sign, v = verify, sv = both).
     pub async fn get_mode(client: &OpendkimClient) -> OpendkimResult<String> {
-        let param = Self::get_param(client, "Mode").await;
-        match param {
-            Ok(p) => Ok(p.value),
-            Err(_) => Ok("sv".to_string()), // default mode
-        }
+        Ok(Self::get_param(client, "Mode").await?.value)
     }
 
     /// Set the operating mode.
@@ -143,11 +139,7 @@ impl OpendkimConfigManager {
 
     /// Get the milter socket configuration.
     pub async fn get_socket(client: &OpendkimClient) -> OpendkimResult<String> {
-        let param = Self::get_param(client, "Socket").await;
-        match param {
-            Ok(p) => Ok(p.value),
-            Err(_) => Ok("local:/run/opendkim/opendkim.sock".to_string()),
-        }
+        Ok(Self::get_param(client, "Socket").await?.value)
     }
 
     /// Set the milter socket configuration.
@@ -187,4 +179,43 @@ fn parse_config(content: &str) -> Vec<OpendkimConfig> {
         }
     }
     params
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::OpendkimConnectionConfig;
+
+    fn config() -> OpendkimConnectionConfig {
+        crate::client::test_connection_config()
+    }
+
+    #[tokio::test]
+    async fn missing_mode_is_not_replaced_with_a_fabricated_default() {
+        let (client, _) = OpendkimClient::scripted(
+            config(),
+            vec![Ok("Socket local:/run/opendkim/opendkim.sock\n".into())],
+        );
+
+        let error = OpendkimConfigManager::get_mode(&client).await.unwrap_err();
+        assert!(matches!(
+            error.kind,
+            crate::error::OpendkimErrorKind::ConfigNotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn config_test_preserves_command_failure_details() {
+        let (client, _) = OpendkimClient::scripted(
+            config(),
+            vec![Err(
+                "Command failed with exit code 78: unsafe permissions".into()
+            )],
+        );
+
+        let result = OpendkimConfigManager::test_config(&client).await.unwrap();
+        assert!(!result.success);
+        assert!(result.output.contains("unsafe permissions"));
+        assert!(result.errors[0].contains("unsafe permissions"));
+    }
 }

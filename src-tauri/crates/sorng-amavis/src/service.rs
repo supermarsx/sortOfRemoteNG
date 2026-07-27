@@ -46,19 +46,25 @@ impl AmavisService {
         id: String,
         config: AmavisConnectionConfig,
     ) -> AmavisResult<AmavisConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(AmavisError::already_connected(&id));
+        }
         let client = AmavisClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> AmavisResult<()> {
-        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+    pub async fn disconnect(&mut self, id: &str) -> AmavisResult<()> {
+        let client = self.connections.get(id).ok_or_else(|| {
             AmavisError::new(
                 AmavisErrorKind::NotConnected,
                 format!("No connection '{}'", id),
             )
-        })
+        })?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

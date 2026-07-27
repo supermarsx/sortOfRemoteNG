@@ -5,15 +5,50 @@
 use crate::error::{PostfixError, PostfixResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+#[cfg(test)]
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
+
+const MISSING_FILE_MARKER: &str = "__SORNG_REMOTE_FILE_ABSENT_7D9360E9__";
 
 /// Postfix management client – connects via SSH to manage Postfix remotely.
 pub struct PostfixClient {
     pub config: PostfixConnectionConfig,
+    ssh: IntegrationSshSession,
+    #[cfg(test)]
+    scripted_ssh: Option<Arc<ScriptedSsh>>,
 }
 
 impl PostfixClient {
     pub fn new(config: PostfixConnectionConfig) -> PostfixResult<Self> {
-        Ok(Self { config })
+        let ssh = IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        });
+        Ok(Self {
+            config,
+            ssh,
+            #[cfg(test)]
+            scripted_ssh: None,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn scripted(
+        config: PostfixConnectionConfig,
+        responses: Vec<Result<String, String>>,
+    ) -> (Self, Arc<ScriptedSsh>) {
+        let scripted_ssh = Arc::new(ScriptedSsh::new(responses));
+        let mut client = Self::new(config).expect("scripted Postfix client");
+        client.scripted_ssh = Some(Arc::clone(&scripted_ssh));
+        (client, scripted_ssh)
     }
 
     // ── Paths ────────────────────────────────────────────────────────
@@ -43,65 +78,45 @@ impl PostfixClient {
 
     pub async fn exec_ssh(&self, command: &str) -> PostfixResult<SshOutput> {
         debug!("POSTFIX SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
+        #[cfg(test)]
+        if let Some(scripted_ssh) = &self.scripted_ssh {
+            let stdout = scripted_ssh.execute(command).map_err(PostfixError::ssh)?;
+            return Ok(SshOutput {
+                stdout,
+                stderr: String::new(),
+                exit_code: 0,
+            });
         }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        ssh_args.push("-l".to_string());
-        ssh_args.push(ssh_user.to_string());
-        ssh_args.push("--".to_string());
-        ssh_args.push(self.config.host.clone());
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| PostfixError::ssh(format!("Failed to execute ssh: {}", e)))?;
-
+            .map_err(PostfixError::ssh)?;
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn probe(&self) -> PostfixResult<()> {
+        #[cfg(test)]
+        if let Some(scripted_ssh) = &self.scripted_ssh {
+            scripted_ssh.execute("true").map_err(PostfixError::ssh)?;
+            return Ok(());
+        }
+        self.ssh.probe().await.map_err(PostfixError::ssh)
+    }
+
+    pub async fn disconnect(&self) -> PostfixResult<()> {
+        #[cfg(test)]
+        if self.scripted_ssh.is_some() {
+            return Ok(());
+        }
+        self.ssh.disconnect().await.map_err(PostfixError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> PostfixResult<String> {
@@ -109,6 +124,29 @@ impl PostfixClient {
             .exec_ssh(&format!("cat {}", shell_escape(path)))
             .await?;
         Ok(out.stdout)
+    }
+
+    /// Read a regular file while treating only a confirmed absent path as optional.
+    pub async fn read_remote_file_optional(&self, path: &str) -> PostfixResult<Option<String>> {
+        let escaped_path = shell_escape(path);
+        let command = format!(
+            "stat_error=$(LC_ALL=C stat {escaped_path} 2>&1); stat_code=$?; \
+             if [ \"$stat_code\" -ne 0 ]; then \
+               if printf '%s' \"$stat_error\" | grep -Fq 'No such file or directory'; \
+               then printf '%s' '{MISSING_FILE_MARKER}'; \
+               else printf '%s\\n' \"$stat_error\" >&2; exit \"$stat_code\"; fi; \
+             elif [ ! -f {escaped_path} ]; then printf '%s\\n' {} >&2; exit 65; \
+             elif [ ! -r {escaped_path} ]; then printf '%s\\n' {} >&2; exit 66; \
+             else cat {escaped_path}; fi",
+            shell_escape(&format!("Remote path is not a regular file: {path}")),
+            shell_escape(&format!("Remote file is not readable: {path}")),
+        );
+        let output = self.exec_ssh(&command).await?.stdout;
+        if output == MISSING_FILE_MARKER {
+            Ok(None)
+        } else {
+            Ok(Some(output))
+        }
     }
 
     pub async fn write_remote_file(&self, path: &str, content: &str) -> PostfixResult<()> {
@@ -142,6 +180,11 @@ impl PostfixClient {
             .nth(1)
             .map(|v| v.trim().to_string())
             .unwrap_or(raw);
+        if version.is_empty() {
+            return Err(PostfixError::parse(
+                "postconf returned an empty mail_version",
+            ));
+        }
         Ok(version)
     }
 
@@ -152,9 +195,12 @@ impl PostfixClient {
         let raw = out.stdout.trim().to_string();
         let value = raw
             .split_once('=')
-            .map(|x| x.1)
-            .map(|v| v.trim().to_string())
-            .unwrap_or_default();
+            .map(|(_, value)| value.trim().to_string())
+            .ok_or_else(|| {
+                PostfixError::parse(format!(
+                    "postconf returned malformed output for '{param}': {raw:?}"
+                ))
+            })?;
         Ok(value)
     }
 
@@ -177,13 +223,11 @@ impl PostfixClient {
 
     pub async fn postconf_all(&self) -> PostfixResult<Vec<PostfixMainCfParam>> {
         let out = self.exec_ssh("postconf").await?;
-        let default_out = self.exec_ssh("postconf -d").await.ok();
+        let default_out = self.exec_ssh("postconf -d").await?;
         let mut defaults = std::collections::HashMap::new();
-        if let Some(ref dout) = default_out {
-            for line in dout.stdout.lines() {
-                if let Some((k, v)) = line.split_once('=') {
-                    defaults.insert(k.trim().to_string(), v.trim().to_string());
-                }
+        for line in default_out.stdout.lines() {
+            if let Some((k, v)) = line.split_once('=') {
+                defaults.insert(k.trim().to_string(), v.trim().to_string());
             }
         }
         let mut params = Vec::new();
@@ -227,7 +271,12 @@ impl PostfixClient {
 
     pub async fn postqueue_list(&self) -> PostfixResult<Vec<PostfixQueueEntry>> {
         let out = self
-            .exec_ssh("postqueue -j 2>/dev/null || postqueue -p")
+            .exec_ssh(
+                "queue_output=$(postqueue -j 2>&1); queue_code=$?; \
+                 if [ \"$queue_code\" -eq 0 ]; then printf '%s\\n' \"$queue_output\"; \
+                 elif printf '%s' \"$queue_output\" | grep -Eqi 'invalid option|unknown option|usage:'; \
+                 then postqueue -p; else printf '%s\\n' \"$queue_output\" >&2; exit \"$queue_code\"; fi",
+            )
             .await?;
         let mut entries = Vec::new();
         // Try JSON format first (Postfix 3.1+)
@@ -474,12 +523,47 @@ impl PostfixClient {
                     errors,
                 })
             }
-            Err(_) => Ok(ConfigTestResult {
+            Err(error) => Ok(ConfigTestResult {
                 success: false,
-                output: String::new(),
-                errors: vec!["Failed to execute postfix check".into()],
+                output: error.to_string(),
+                errors: vec![format!("Failed to execute postfix check: {error}")],
             }),
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct ScriptedSsh {
+    responses: Mutex<VecDeque<Result<String, String>>>,
+    commands: Mutex<Vec<String>>,
+}
+
+#[cfg(test)]
+impl ScriptedSsh {
+    fn new(responses: Vec<Result<String, String>>) -> Self {
+        Self {
+            responses: Mutex::new(responses.into()),
+            commands: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn execute(&self, command: &str) -> Result<String, String> {
+        self.commands
+            .lock()
+            .expect("scripted SSH command lock")
+            .push(command.to_string());
+        self.responses
+            .lock()
+            .expect("scripted SSH response lock")
+            .pop_front()
+            .unwrap_or_else(|| Err(format!("No scripted SSH response for command: {command}")))
+    }
+
+    pub(crate) fn commands(&self) -> Vec<String> {
+        self.commands
+            .lock()
+            .expect("scripted SSH command lock")
+            .clone()
     }
 }
 
@@ -487,4 +571,78 @@ impl PostfixClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+pub(crate) fn test_connection_config() -> PostfixConnectionConfig {
+    PostfixConnectionConfig {
+        host: "mail.example.test".into(),
+        port: None,
+        ssh_user: None,
+        ssh_password: None,
+        ssh_key: None,
+        postfix_bin: None,
+        config_dir: None,
+        queue_dir: None,
+        timeout_secs: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config() -> PostfixConnectionConfig {
+        test_connection_config()
+    }
+
+    #[tokio::test]
+    async fn optional_file_only_swallows_the_explicit_absent_marker() {
+        let (client, scripted) = PostfixClient::scripted(
+            config(),
+            vec![
+                Ok(MISSING_FILE_MARKER.into()),
+                Err("Command failed with exit code 66: permission denied".into()),
+            ],
+        );
+
+        assert_eq!(
+            client
+                .read_remote_file_optional("/etc/postfix/virtual")
+                .await
+                .unwrap(),
+            None
+        );
+        let error = client
+            .read_remote_file_optional("/etc/postfix/virtual")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("permission denied"));
+        assert!(scripted.commands()[0].contains("Remote file is not readable"));
+    }
+
+    #[tokio::test]
+    async fn malformed_postconf_output_is_not_an_empty_setting() {
+        let (client, _) = PostfixClient::scripted(config(), vec![Ok("unexpected output".into())]);
+
+        let error = client.postconf("mydomain").await.unwrap_err();
+        assert!(matches!(
+            error.kind,
+            crate::error::PostfixErrorKind::ParseError
+        ));
+        assert!(error.message.contains("mydomain"));
+    }
+
+    #[tokio::test]
+    async fn config_check_preserves_transport_failure_details() {
+        let (client, _) = PostfixClient::scripted(
+            config(),
+            vec![Err("transport read: connection reset by peer".into())],
+        );
+
+        let result = client.check_config().await.unwrap();
+        assert!(!result.success);
+        assert!(result.output.contains("connection reset by peer"));
+        assert!(result.errors[0].contains("connection reset by peer"));
+    }
 }

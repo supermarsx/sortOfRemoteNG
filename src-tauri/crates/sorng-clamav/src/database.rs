@@ -10,7 +10,9 @@ impl DatabaseManager {
     /// List all signature databases.
     pub async fn list(client: &ClamavClient) -> ClamavResult<Vec<DatabaseInfo>> {
         let out = client
-            .exec_ssh("ls -1 /var/lib/clamav/*.{cvd,cld} 2>/dev/null || true")
+            .exec_ssh(
+                "find /var/lib/clamav -maxdepth 1 -type f \\( -name '*.cvd' -o -name '*.cld' \\) -print",
+            )
             .await?;
         let mut databases = Vec::new();
         for line in out.stdout.lines() {
@@ -22,11 +24,8 @@ impl DatabaseManager {
             // Query sigtool for database info
             let info_out = client
                 .exec_ssh(&format!("sigtool --info {} 2>&1", shell_escape(line)))
-                .await;
-            let (version, signatures, build_time) = match info_out {
-                Ok(ref o) => parse_sigtool_info(&o.stdout),
-                Err(_) => (None, None, None),
-            };
+                .await?;
+            let (version, signatures, build_time) = parse_sigtool_info(&info_out.stdout);
             databases.push(DatabaseInfo {
                 name,
                 version,

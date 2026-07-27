@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   AmavisBannedRule,
   AmavisChildProcess,
@@ -46,8 +47,7 @@ export const amavisApi = {
     invoke<AmavisConnectionSummary>("amavis_connect", { id, config }),
   disconnect: (id: string) => invoke<void>("amavis_disconnect", { id }),
   listConnections: () => invoke<string[]>("amavis_list_connections"),
-  ping: (id: string) =>
-    invoke<AmavisConnectionSummary>("amavis_ping", { id }),
+  ping: (id: string) => invoke<AmavisConnectionSummary>("amavis_ping", { id }),
 
   // Main config & snippets (10)
   getMainConfig: (id: string) =>
@@ -77,11 +77,8 @@ export const amavisApi = {
     invoke<AmavisPolicyBank>("amavis_get_policy_bank", { id, name }),
   createPolicyBank: (id: string, req: CreatePolicyBankRequest) =>
     invoke<AmavisPolicyBank>("amavis_create_policy_bank", { id, req }),
-  updatePolicyBank: (
-    id: string,
-    name: string,
-    req: UpdatePolicyBankRequest,
-  ) => invoke<AmavisPolicyBank>("amavis_update_policy_bank", { id, name, req }),
+  updatePolicyBank: (id: string, name: string, req: UpdatePolicyBankRequest) =>
+    invoke<AmavisPolicyBank>("amavis_update_policy_bank", { id, name, req }),
   deletePolicyBank: (id: string, name: string) =>
     invoke<void>("amavis_delete_policy_bank", { id, name }),
   activatePolicyBank: (id: string, name: string) =>
@@ -96,11 +93,8 @@ export const amavisApi = {
     invoke<AmavisBannedRule>("amavis_get_banned_rule", { id, banId }),
   createBannedRule: (id: string, req: CreateBannedRuleRequest) =>
     invoke<AmavisBannedRule>("amavis_create_banned_rule", { id, req }),
-  updateBannedRule: (
-    id: string,
-    banId: string,
-    req: UpdateBannedRuleRequest,
-  ) => invoke<AmavisBannedRule>("amavis_update_banned_rule", { id, banId, req }),
+  updateBannedRule: (id: string, banId: string, req: UpdateBannedRuleRequest) =>
+    invoke<AmavisBannedRule>("amavis_update_banned_rule", { id, banId, req }),
   deleteBannedRule: (id: string, banId: string) =>
     invoke<void>("amavis_delete_banned_rule", { id, banId }),
   testFilename: (id: string, filename: string) =>
@@ -113,11 +107,8 @@ export const amavisApi = {
     invoke<AmavisListEntry>("amavis_get_list_entry", { id, entryId }),
   addListEntry: (id: string, req: CreateListEntryRequest) =>
     invoke<AmavisListEntry>("amavis_add_list_entry", { id, req }),
-  updateListEntry: (
-    id: string,
-    entryId: string,
-    req: UpdateListEntryRequest,
-  ) => invoke<AmavisListEntry>("amavis_update_list_entry", { id, entryId, req }),
+  updateListEntry: (id: string, entryId: string, req: UpdateListEntryRequest) =>
+    invoke<AmavisListEntry>("amavis_update_list_entry", { id, entryId, req }),
   removeListEntry: (id: string, entryId: string) =>
     invoke<void>("amavis_remove_list_entry", { id, entryId }),
   checkSender: (id: string, senderAddress: string) =>
@@ -176,6 +167,7 @@ function errMsg(e: unknown): string {
  * (matching useHaproxy / useGrafana).
  */
 export function useAmavis() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<AmavisConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -204,9 +196,23 @@ export function useAmavis() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await amavisApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.amavis:${id}`,
+          async () => {
+            const result = await amavisApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await amavisApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -215,20 +221,20 @@ export function useAmavis() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await amavisApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.amavis:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   /** Re-ping the live connection to refresh the summary header. */
   const refreshSummary = useCallback(async (): Promise<void> => {

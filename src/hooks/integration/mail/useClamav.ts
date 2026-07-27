@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   ClamavConfigTestResult,
   ClamavConnectionConfig,
@@ -64,16 +65,13 @@ export const clamavApi = {
     invoke<ClamavDatabaseUpdateResult[]>("clamav_update_databases", { id }),
   updateDatabase: (id: string, name: string) =>
     invoke<ClamavDatabaseUpdateResult>("clamav_update_database", { id, name }),
-  checkUpdate: (id: string) =>
-    invoke<boolean>("clamav_check_update", { id }),
-  getMirrors: (id: string) =>
-    invoke<string[]>("clamav_get_mirrors", { id }),
+  checkUpdate: (id: string) => invoke<boolean>("clamav_check_update", { id }),
+  getMirrors: (id: string) => invoke<string[]>("clamav_get_mirrors", { id }),
   addMirror: (id: string, url: string) =>
     invoke<void>("clamav_add_mirror", { id, url }),
   removeMirror: (id: string, url: string) =>
     invoke<void>("clamav_remove_mirror", { id, url }),
-  getDbVersion: (id: string) =>
-    invoke<string>("clamav_get_db_version", { id }),
+  getDbVersion: (id: string) => invoke<string>("clamav_get_db_version", { id }),
 
   // Quarantine (6)
   listQuarantine: (id: string) =>
@@ -201,6 +199,7 @@ function errMsg(e: unknown): string {
  * (matching useHaproxy).
  */
 export function useClamav() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<ClamavConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -229,9 +228,23 @@ export function useClamav() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await clamavApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.clamav:${id}`,
+          async () => {
+            const result = await clamavApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await clamavApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -240,20 +253,20 @@ export function useClamav() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await clamavApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.clamav:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   /** Ping the live connection for a liveness check (returns backend `bool`). */
   const ping = useCallback(async (): Promise<boolean> => {

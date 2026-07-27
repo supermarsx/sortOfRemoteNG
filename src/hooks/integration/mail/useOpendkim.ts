@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   OpendkimConnectionConfig,
   OpendkimConnectionSummary,
@@ -60,11 +61,8 @@ export const opendkimApi = {
     invoke<SigningTableEntry>("dkim_get_signing_entry", { id, pattern }),
   addSigningEntry: (id: string, entry: SigningTableEntry) =>
     invoke<void>("dkim_add_signing_entry", { id, entry }),
-  updateSigningEntry: (
-    id: string,
-    pattern: string,
-    entry: SigningTableEntry,
-  ) => invoke<void>("dkim_update_signing_entry", { id, pattern, entry }),
+  updateSigningEntry: (id: string, pattern: string, entry: SigningTableEntry) =>
+    invoke<void>("dkim_update_signing_entry", { id, pattern, entry }),
   removeSigningEntry: (id: string, pattern: string) =>
     invoke<void>("dkim_remove_signing_entry", { id, pattern }),
   rebuildSigningTable: (id: string) =>
@@ -99,7 +97,8 @@ export const opendkimApi = {
     invoke<void>("dkim_remove_internal_host", { id, host }),
 
   // ── Config (9) ──────────────────────────────────────────────────
-  getConfig: (id: string) => invoke<OpendkimConfig[]>("dkim_get_config", { id }),
+  getConfig: (id: string) =>
+    invoke<OpendkimConfig[]>("dkim_get_config", { id }),
   getConfigParam: (id: string, key: string) =>
     invoke<OpendkimConfig>("dkim_get_config_param", { id, key }),
   setConfigParam: (id: string, key: string, value: string) =>
@@ -134,7 +133,10 @@ export const opendkimApi = {
 // ─── React hook: connection lifecycle bound to a persisted instance id ──────────
 
 export function useOpendkim() {
-  const [summary, setSummary] = useState<OpendkimConnectionSummary | null>(null);
+  const lifecycle = useIntegrationConnectionLifecycle();
+  const [summary, setSummary] = useState<OpendkimConnectionSummary | null>(
+    null,
+  );
   const [connected, setConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,11 +157,27 @@ export function useOpendkim() {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await opendkimApi.connect(id, config);
-        if (mounted.current) {
-          setSummary(result);
-          setConnected(true);
-        }
+        const result = await lifecycle.trackConnect(
+          `mail.opendkim:${id}`,
+          async () => {
+            const result = await opendkimApi.connect(id, config);
+            if (mounted.current) {
+              setSummary(result);
+              setConnected(true);
+            }
+            return result;
+          },
+          async () => {
+            try {
+              await opendkimApi.disconnect(id);
+            } finally {
+              if (mounted.current) {
+                setConnected(false);
+                setSummary(null);
+              }
+            }
+          },
+        );
         return result;
       } catch (e) {
         const msg = typeof e === "string" ? e : (e as Error).message;
@@ -172,24 +190,27 @@ export function useOpendkim() {
         if (mounted.current) setIsLoading(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
-  const disconnect = useCallback(async (id: string): Promise<void> => {
-    setIsLoading(true);
-    try {
-      await opendkimApi.disconnect(id);
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      if (mounted.current) setError(msg);
-    } finally {
-      if (mounted.current) {
-        setConnected(false);
-        setSummary(null);
-        setIsLoading(false);
+  const disconnect = useCallback(
+    async (id: string): Promise<void> => {
+      setIsLoading(true);
+      try {
+        await lifecycle.trackDisconnect(`mail.opendkim:${id}`);
+      } catch (e) {
+        const msg = typeof e === "string" ? e : (e as Error).message;
+        if (mounted.current) setError(msg);
+      } finally {
+        if (mounted.current) {
+          setConnected(false);
+          setSummary(null);
+          setIsLoading(false);
+        }
       }
-    }
-  }, []);
+    },
+    [lifecycle],
+  );
 
   /** Re-ping the daemon and refresh the summary. */
   const ping = useCallback(async (id: string): Promise<boolean> => {

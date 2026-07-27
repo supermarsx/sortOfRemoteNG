@@ -21,24 +21,19 @@ impl QueueManager {
             let dir = format!("{}/{}", client.queue_dir(), queue_dir_name);
             let out = client
                 .exec_ssh(&format!(
-                    "find {} -type f 2>/dev/null | wc -l",
+                    "find {} -type f -printf '%p\\n'",
                     shell_escape(&dir)
                 ))
-                .await;
-            let count = out
-                .ok()
-                .and_then(|o| o.stdout.trim().parse::<u64>().ok())
-                .unwrap_or(0);
+                .await?;
+            let count = u64::try_from(out.stdout.lines().count()).map_err(|error| {
+                PostfixError::queue_error(format!(
+                    "Postfix '{queue_dir_name}' queue count overflow: {error}"
+                ))
+            })?;
             let size_out = client
-                .exec_ssh(&format!(
-                    "du -sb {} 2>/dev/null | cut -f1",
-                    shell_escape(&dir)
-                ))
-                .await;
-            let size_bytes = size_out
-                .ok()
-                .and_then(|o| o.stdout.trim().parse::<u64>().ok())
-                .unwrap_or(0);
+                .exec_ssh(&format!("du -sb {}", shell_escape(&dir)))
+                .await?;
+            let size_bytes = parse_queue_metric(&size_out.stdout, queue_dir_name, "size")?;
             queues.push(PostfixQueue {
                 queue_name: queue_enum.clone(),
                 count,
@@ -146,4 +141,17 @@ impl QueueManager {
         }
         Ok(())
     }
+}
+
+fn parse_queue_metric(raw: &str, queue: &str, metric: &str) -> PostfixResult<u64> {
+    let value = raw.split_whitespace().next().ok_or_else(|| {
+        PostfixError::queue_error(format!(
+            "Missing {metric} for Postfix '{queue}' queue; output was {raw:?}"
+        ))
+    })?;
+    value.parse::<u64>().map_err(|error| {
+        PostfixError::queue_error(format!(
+            "Invalid {metric} for Postfix '{queue}' queue: {error}; output was {raw:?}"
+        ))
+    })
 }

@@ -5,8 +5,8 @@
 // `clamavApi`. Unlike the cpanel/php shells, this sub-tab owns its OWN connect
 // form + connection lifecycle + persistence — the mail shell provides no
 // connection. Persistence uses `useIntegrationConfigStore` under the namespaced
-// key `"mail.clamav"`; the SSH password + private key are bundled into the one
-// opaque vault secret the store keeps per instance.
+// key `"mail.clamav"`; the SSH password is vaulted while the private-key path
+// is persisted as non-secret instance metadata.
 //
 // The connect form maps to `clamav_connect` (SSH host/creds + the 4 binary
 // paths, 2 config-file paths and the clamd socket). Management is grouped into
@@ -32,7 +32,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useClamav, type ClamavManager } from "../../../hooks/integration/mail/useClamav";
+import {
+  useClamav,
+  type ClamavManager,
+} from "../../../hooks/integration/mail/useClamav";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../../utils/core/id";
 import type { MailSubTabProps } from "./registry";
@@ -222,59 +225,84 @@ const emptyConnect: ConnectState = {
   name: "",
 };
 
-/** SSH secrets bundled into ONE opaque vault secret. */
+/** Legacy bundled shape. New saves vault only the password; sshKey is a
+ * filesystem path persisted in the non-secret fields. */
 interface ClamavSecrets {
   sshPassword?: string;
   sshKey?: string;
 }
 
-const ConnectForm: React.FC<{ mgr: ClamavManager }> = ({ mgr }) => {
+const ConnectForm: React.FC<{
+  mgr: ClamavManager;
+  instanceId?: string;
+}> = ({ mgr, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>();
 
   // Discover this sub-tab's own persisted instance (first under "mail.clamav")
   // and prefill host/fields + the bundled vault secret.
   const persisted = useMemo(
-    () => store.instances.find((i) => i.integrationKey === INTEGRATION_KEY),
-    [store.instances],
+    () =>
+      instanceId
+        ? instances.find(
+            (candidate) =>
+              candidate.id === instanceId &&
+              candidate.integrationKey === INTEGRATION_KEY,
+          )
+        : instances.find(
+            (candidate) => candidate.integrationKey === INTEGRATION_KEY,
+          ),
+    [instanceId, instances],
   );
 
   useEffect(() => {
-    if (!persisted || store.isLoading) return;
+    if (isLoading) return;
+    if (!persisted) {
+      setSavedId(undefined);
+      if (instanceId) setForm(emptyConnect);
+      return;
+    }
+    let cancelled = false;
     setSavedId(persisted.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: persisted.name,
       host: persisted.host ?? "",
-      port: persisted.fields?.port ?? f.port,
+      port: persisted.fields?.port ?? emptyConnect.port,
       sshUser: persisted.fields?.sshUser ?? "",
-      clamscanBin: persisted.fields?.clamscanBin ?? f.clamscanBin,
-      clamdscanBin: persisted.fields?.clamdscanBin ?? f.clamdscanBin,
-      clamdBin: persisted.fields?.clamdBin ?? f.clamdBin,
-      freshclamBin: persisted.fields?.freshclamBin ?? f.freshclamBin,
-      clamdConf: persisted.fields?.clamdConf ?? f.clamdConf,
-      freshclamConf: persisted.fields?.freshclamConf ?? f.freshclamConf,
-      clamdSocket: persisted.fields?.clamdSocket ?? f.clamdSocket,
-      timeoutSecs: persisted.fields?.timeoutSecs ?? f.timeoutSecs,
-    }));
-    store.readSecret(persisted).then((raw) => {
+      sshKey: persisted.fields?.sshKey ?? "",
+      clamscanBin: persisted.fields?.clamscanBin ?? emptyConnect.clamscanBin,
+      clamdscanBin: persisted.fields?.clamdscanBin ?? emptyConnect.clamdscanBin,
+      clamdBin: persisted.fields?.clamdBin ?? emptyConnect.clamdBin,
+      freshclamBin: persisted.fields?.freshclamBin ?? emptyConnect.freshclamBin,
+      clamdConf: persisted.fields?.clamdConf ?? emptyConnect.clamdConf,
+      freshclamConf:
+        persisted.fields?.freshclamConf ?? emptyConnect.freshclamConf,
+      clamdSocket: persisted.fields?.clamdSocket ?? emptyConnect.clamdSocket,
+      timeoutSecs: persisted.fields?.timeoutSecs ?? emptyConnect.timeoutSecs,
+    });
+    void readSecret(persisted).then((raw) => {
+      if (cancelled) return;
       if (!raw) return;
       try {
         const s = JSON.parse(raw) as ClamavSecrets;
         setForm((f) => ({
           ...f,
           sshPassword: s.sshPassword ?? "",
-          sshKey: s.sshKey ?? "",
+          sshKey: persisted.fields?.sshKey ?? s.sshKey ?? "",
         }));
       } catch {
         // Legacy / non-JSON secret — treat as the SSH password.
         setForm((f) => ({ ...f, sshPassword: raw }));
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persisted?.id, store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, isLoading, persisted, readSecret]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -302,6 +330,7 @@ const ConnectForm: React.FC<{ mgr: ClamavManager }> = ({ mgr }) => {
     const fields: Record<string, string> = {
       port: form.port,
       sshUser: form.sshUser,
+      sshKey: form.sshKey,
       clamscanBin: form.clamscanBin,
       clamdscanBin: form.clamdscanBin,
       clamdBin: form.clamdBin,
@@ -311,12 +340,7 @@ const ConnectForm: React.FC<{ mgr: ClamavManager }> = ({ mgr }) => {
       clamdSocket: form.clamdSocket,
       timeoutSecs: form.timeoutSecs,
     };
-    const secrets: ClamavSecrets = {
-      sshPassword: form.sshPassword || undefined,
-      sshKey: form.sshKey || undefined,
-    };
-    const hasSecret = Object.values(secrets).some(Boolean);
-    const secret = hasSecret ? JSON.stringify(secrets) : undefined;
+    const secret = form.sshPassword || undefined;
     if (savedId) {
       await store.updateInstance(savedId, {
         name: form.name || form.host,
@@ -373,14 +397,13 @@ const ConnectForm: React.FC<{ mgr: ClamavManager }> = ({ mgr }) => {
           />
         </Labeled>
         <Labeled
-          label={t("integrations.mail.clamav.sshKey", "SSH private key")}
+          label={t("integrations.mail.clamav.sshKey", "SSH private key path")}
         >
-          <textarea
-            className={`${field} font-mono`}
-            rows={2}
+          <input
+            className={field}
             value={form.sshKey}
             onChange={(e) => set("sshKey", e.target.value)}
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            placeholder="~/.ssh/id_ed25519"
           />
         </Labeled>
         <Labeled
@@ -577,7 +600,10 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             className={`text-xs ${updateAvailable ? "text-yellow-500" : "text-green-500"}`}
           >
             {updateAvailable
-              ? t("integrations.mail.clamav.updateAvailable", "Update available")
+              ? t(
+                  "integrations.mail.clamav.updateAvailable",
+                  "Update available",
+                )
               : t("integrations.mail.clamav.upToDate", "Up to date")}
           </span>
         )}
@@ -618,13 +644,25 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
 
       {stats && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Stat label={t("integrations.mail.clamav.state", "State")} value={stats.state} />
-          <Stat label={t("integrations.mail.clamav.pools", "Pools")} value={stats.pools} />
           <Stat
-            label={t("integrations.mail.clamav.threads", "Threads (live/idle/max)")}
+            label={t("integrations.mail.clamav.state", "State")}
+            value={stats.state}
+          />
+          <Stat
+            label={t("integrations.mail.clamav.pools", "Pools")}
+            value={stats.pools}
+          />
+          <Stat
+            label={t(
+              "integrations.mail.clamav.threads",
+              "Threads (live/idle/max)",
+            )}
             value={`${stats.threads_live}/${stats.threads_idle}/${stats.threads_max}`}
           />
-          <Stat label={t("integrations.mail.clamav.queue", "Queue")} value={stats.queue_items} />
+          <Stat
+            label={t("integrations.mail.clamav.queue", "Queue")}
+            value={stats.queue_items}
+          />
           <Stat
             label={t("integrations.mail.clamav.memory", "Memory used")}
             value={stats.memory_used}
@@ -649,7 +687,10 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           {t("integrations.mail.clamav.clamdService", "clamd service")}
         </h4>
         <div className="flex flex-wrap gap-2">
-          <button className={btn} onClick={() => void control(() => mgr.api.startClamd(cid))}>
+          <button
+            className={btn}
+            onClick={() => void control(() => mgr.api.startClamd(cid))}
+          >
             <Power size={12} />
             {t("integrations.mail.clamav.start", "Start")}
           </button>
@@ -665,11 +706,17 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             <Power size={12} />
             {t("integrations.mail.clamav.stop", "Stop")}
           </button>
-          <button className={btn} onClick={() => void control(() => mgr.api.restartClamd(cid))}>
+          <button
+            className={btn}
+            onClick={() => void control(() => mgr.api.restartClamd(cid))}
+          >
             <RotateCw size={12} />
             {t("integrations.mail.clamav.restart", "Restart")}
           </button>
-          <button className={btn} onClick={() => void control(() => mgr.api.reloadClamd(cid))}>
+          <button
+            className={btn}
+            onClick={() => void control(() => mgr.api.reloadClamd(cid))}
+          >
             <RefreshCw size={12} />
             {t("integrations.mail.clamav.reload", "Reload")}
           </button>
@@ -681,7 +728,10 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           {t("integrations.mail.clamav.freshclamService", "freshclam service")}
         </h4>
         <div className="flex flex-wrap gap-2">
-          <button className={btn} onClick={() => void control(() => mgr.api.startFreshclam(cid))}>
+          <button
+            className={btn}
+            onClick={() => void control(() => mgr.api.startFreshclam(cid))}
+          >
             <Power size={12} />
             {t("integrations.mail.clamav.start", "Start")}
           </button>
@@ -690,14 +740,20 @@ const OverviewSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             onClick={() =>
               void control(
                 () => mgr.api.stopFreshclam(cid),
-                t("integrations.mail.clamav.stopFreshclamConfirm", "Stop freshclam?"),
+                t(
+                  "integrations.mail.clamav.stopFreshclamConfirm",
+                  "Stop freshclam?",
+                ),
               )
             }
           >
             <Power size={12} />
             {t("integrations.mail.clamav.stop", "Stop")}
           </button>
-          <button className={btn} onClick={() => void control(() => mgr.api.restartFreshclam(cid))}>
+          <button
+            className={btn}
+            onClick={() => void control(() => mgr.api.restartFreshclam(cid))}
+          >
             <RotateCw size={12} />
             {t("integrations.mail.clamav.restart", "Restart")}
           </button>
@@ -736,7 +792,10 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             path,
             recursive,
             exclude_patterns: excludePatterns
-              ? excludePatterns.split(",").map((s) => s.trim()).filter(Boolean)
+              ? excludePatterns
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
               : [],
             max_filesize_mb: maxFilesizeMb ? Number(maxFilesizeMb) : undefined,
             max_scansize_mb: maxScansizeMb ? Number(maxScansizeMb) : undefined,
@@ -795,7 +854,9 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className={card}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Labeled label={t("integrations.mail.clamav.scanPath", "Path to scan")}>
+          <Labeled
+            label={t("integrations.mail.clamav.scanPath", "Path to scan")}
+          >
             <input
               className={field}
               value={path}
@@ -803,7 +864,12 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               placeholder="/var/spool/mail"
             />
           </Labeled>
-          <Labeled label={t("integrations.mail.clamav.excludePatterns", "Exclude patterns (comma-separated)")}>
+          <Labeled
+            label={t(
+              "integrations.mail.clamav.excludePatterns",
+              "Exclude patterns (comma-separated)",
+            )}
+          >
             <input
               className={field}
               value={excludePatterns}
@@ -811,7 +877,12 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               placeholder="*.log, *.tmp"
             />
           </Labeled>
-          <Labeled label={t("integrations.mail.clamav.maxFilesize", "Max file size (MB)")}>
+          <Labeled
+            label={t(
+              "integrations.mail.clamav.maxFilesize",
+              "Max file size (MB)",
+            )}
+          >
             <input
               className={field}
               value={maxFilesizeMb}
@@ -819,7 +890,12 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               inputMode="numeric"
             />
           </Labeled>
-          <Labeled label={t("integrations.mail.clamav.maxScansize", "Max scan size (MB)")}>
+          <Labeled
+            label={t(
+              "integrations.mail.clamav.maxScansize",
+              "Max scan size (MB)",
+            )}
+          >
             <input
               className={field}
               value={maxScansizeMb}
@@ -845,30 +921,44 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           </label>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className={btn} onClick={fullScan} disabled={mgr.isLoading || !path}>
+          <button
+            className={btn}
+            onClick={fullScan}
+            disabled={mgr.isLoading || !path}
+          >
             <FileScan size={12} />
             {t("integrations.mail.clamav.scan", "Scan")}
           </button>
-          <button className={btn} onClick={quick} disabled={mgr.isLoading || !path}>
+          <button
+            className={btn}
+            onClick={quick}
+            disabled={mgr.isLoading || !path}
+          >
             {t("integrations.mail.clamav.quickScan", "Quick scan")}
           </button>
           <button
             className={btn}
-            onClick={() => void runSummaryScan(() => mgr.api.multiscan(cid, path))}
+            onClick={() =>
+              void runSummaryScan(() => mgr.api.multiscan(cid, path))
+            }
             disabled={mgr.isLoading || !path}
           >
             {t("integrations.mail.clamav.multiscan", "Multiscan")}
           </button>
           <button
             className={btn}
-            onClick={() => void runSummaryScan(() => mgr.api.contscan(cid, path))}
+            onClick={() =>
+              void runSummaryScan(() => mgr.api.contscan(cid, path))
+            }
             disabled={mgr.isLoading || !path}
           >
             {t("integrations.mail.clamav.contscan", "Contscan")}
           </button>
           <button
             className={btn}
-            onClick={() => void runSummaryScan(() => mgr.api.allmatchscan(cid, path))}
+            onClick={() =>
+              void runSummaryScan(() => mgr.api.allmatchscan(cid, path))
+            }
             disabled={mgr.isLoading || !path}
           >
             {t("integrations.mail.clamav.allmatchscan", "All-match scan")}
@@ -885,10 +975,17 @@ const ScanSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           rows={3}
           value={streamData}
           onChange={(e) => setStreamData(e.target.value)}
-          placeholder={t("integrations.mail.clamav.streamPlaceholder", "Raw / base64 data to scan…")}
+          placeholder={t(
+            "integrations.mail.clamav.streamPlaceholder",
+            "Raw / base64 data to scan…",
+          )}
         />
         <div className="mt-2">
-          <button className={btn} onClick={stream} disabled={mgr.isLoading || !streamData}>
+          <button
+            className={btn}
+            onClick={stream}
+            disabled={mgr.isLoading || !streamData}
+          >
             <FileScan size={12} />
             {t("integrations.mail.clamav.scanStream", "Scan stream")}
           </button>
@@ -1013,22 +1110,42 @@ const DatabasesSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.version", "Version")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.signatures", "Signatures")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.buildTime", "Build time")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.version", "Version")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.signatures", "Signatures")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.buildTime", "Build time")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((d) => (
-              <tr key={d.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={d.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{d.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{d.version ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{d.signatures ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{d.build_time ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {d.version ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {d.signatures ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {d.build_time ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-right">
-                  <button className={btn} onClick={() => void updateOne(d.name)}>
+                  <button
+                    className={btn}
+                    onClick={() => void updateOne(d.name)}
+                  >
                     {t("integrations.mail.clamav.update", "Update")}
                   </button>
                 </td>
@@ -1036,7 +1153,10 @@ const DatabasesSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t("integrations.mail.clamav.noDatabases", "No databases")}
                 </td>
               </tr>
@@ -1064,7 +1184,9 @@ const DatabasesSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <div className="flex flex-col gap-1">
           {mirrors.map((m) => (
             <div key={m} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-[var(--color-textSecondary)]">{m}</span>
+              <span className="font-mono text-[var(--color-textSecondary)]">
+                {m}
+              </span>
               <button className={btn} onClick={() => void removeMirror(m)}>
                 <Trash2 size={12} />
               </button>
@@ -1117,7 +1239,9 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
   const view = useCallback(
     async (entryId: string) => {
       try {
-        setDetail(await mgr.run(() => mgr.api.getQuarantineEntry(cid, entryId)));
+        setDetail(
+          await mgr.run(() => mgr.api.getQuarantineEntry(cid, entryId)),
+        );
       } catch {
         /* surfaced */
       }
@@ -1152,7 +1276,10 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
   const delAll = useCallback(async () => {
     if (
       !window.confirm(
-        t("integrations.mail.clamav.deleteAllConfirm", "Delete ALL quarantined files?"),
+        t(
+          "integrations.mail.clamav.deleteAllConfirm",
+          "Delete ALL quarantined files?",
+        ),
       )
     )
       return;
@@ -1177,8 +1304,9 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         </button>
         {stats && (
           <span className="text-xs text-[var(--color-textMuted)]">
-            {t("integrations.mail.clamav.quarantineTotals", "Items")}: {stats.total_items} ·{" "}
-            {stats.total_size_bytes} {t("integrations.mail.clamav.bytes", "bytes")}
+            {t("integrations.mail.clamav.quarantineTotals", "Items")}:{" "}
+            {stats.total_items} · {stats.total_size_bytes}{" "}
+            {t("integrations.mail.clamav.bytes", "bytes")}
           </span>
         )}
       </div>
@@ -1187,10 +1315,18 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.virus", "Virus")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.originalPath", "Original path")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.quarantinedAt", "Quarantined")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.size", "Size")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.virus", "Virus")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.originalPath", "Original path")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.quarantinedAt", "Quarantined")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.size", "Size")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -1198,9 +1334,15 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             {rows.map((q) => (
               <tr key={q.id} className="border-t border-[var(--color-border)]">
                 <td className="px-2 py-1 text-red-500">{q.virus_name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{q.original_path}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{q.quarantined_at}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{q.size_bytes}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {q.original_path}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {q.quarantined_at}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {q.size_bytes}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
                     <button className={btn} onClick={() => void view(q.id)}>
@@ -1218,8 +1360,14 @@ const QuarantineSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
-                  {t("integrations.mail.clamav.noQuarantine", "Quarantine is empty")}
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
+                  {t(
+                    "integrations.mail.clamav.noQuarantine",
+                    "Quarantine is empty",
+                  )}
                 </td>
               </tr>
             )}
@@ -1332,7 +1480,10 @@ const ConfigEditor: React.FC<{
           <input
             className={field}
             style={{ maxWidth: 200 }}
-            placeholder={t("integrations.mail.clamav.lookupKey", "Look up a key")}
+            placeholder={t(
+              "integrations.mail.clamav.lookupKey",
+              "Look up a key",
+            )}
             value={lookup}
             onChange={(e) => setLookup(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void doLookup()}
@@ -1352,16 +1503,27 @@ const ConfigEditor: React.FC<{
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.paramKey", "Key")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.paramValue", "Value")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.paramKey", "Key")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.paramValue", "Value")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((c, i) => (
-              <tr key={`${c.key}-${i}`} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{c.key}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{c.value}</td>
+              <tr
+                key={`${c.key}-${i}`}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {c.key}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {c.value}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <button className={btn} onClick={() => void del(c.key)}>
                     <Trash2 size={12} />
@@ -1371,7 +1533,10 @@ const ConfigEditor: React.FC<{
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.mail.clamav.noParams", "No directives")}
                 </td>
               </tr>
@@ -1391,7 +1556,9 @@ const ClamdConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
 }) => {
   const { t } = useTranslation();
   const [socket, setSocketState] = useState("");
-  const [testResult, setTestResult] = useState<ClamavConfigTestResult | null>(null);
+  const [testResult, setTestResult] = useState<ClamavConfigTestResult | null>(
+    null,
+  );
 
   const load = useCallback(
     () => mgr.api.getClamdConfig(cid) as Promise<ClamdConfigEntry[]>,
@@ -1444,7 +1611,11 @@ const ClamdConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             <RefreshCw size={12} />
             {t("integrations.mail.clamav.load", "Load")}
           </button>
-          <button className={btn} onClick={saveSocket} disabled={mgr.isLoading || !socket}>
+          <button
+            className={btn}
+            onClick={saveSocket}
+            disabled={mgr.isLoading || !socket}
+          >
             {t("integrations.mail.clamav.setParam", "Set")}
           </button>
           <button className={btn} onClick={testConfig} disabled={mgr.isLoading}>
@@ -1460,9 +1631,13 @@ const ClamdConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
                 : "border-red-500/40 bg-red-500/10 text-red-500"
             }`}
           >
-            <div className="whitespace-pre-wrap font-mono">{testResult.output}</div>
+            <div className="whitespace-pre-wrap font-mono">
+              {testResult.output}
+            </div>
             {testResult.errors.map((e, i) => (
-              <div key={i} className="font-mono">{e}</div>
+              <div key={i} className="font-mono">
+                {e}
+              </div>
             ))}
           </div>
         )}
@@ -1470,7 +1645,10 @@ const ClamdConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
 
       <ConfigEditor
         mgr={mgr}
-        title={t("integrations.mail.clamav.clamdConfTitle", "clamd.conf directives")}
+        title={t(
+          "integrations.mail.clamav.clamdConfTitle",
+          "clamd.conf directives",
+        )}
         load={load}
         getParam={(key) => mgr.api.getClamdParam(cid, key)}
         setParam={(key, value) => mgr.api.setClamdParam(cid, key, value)}
@@ -1520,7 +1698,10 @@ const FreshclamConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.clamav.updateInterval", "Update interval (checks/day → hours)")}
+          {t(
+            "integrations.mail.clamav.updateInterval",
+            "Update interval (checks/day → hours)",
+          )}
         </h4>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -1531,11 +1712,19 @@ const FreshclamConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             inputMode="numeric"
             placeholder={t("integrations.mail.clamav.hours", "Hours")}
           />
-          <button className={btn} onClick={loadInterval} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={loadInterval}
+            disabled={mgr.isLoading}
+          >
             <RefreshCw size={12} />
             {t("integrations.mail.clamav.load", "Load")}
           </button>
-          <button className={btn} onClick={saveInterval} disabled={mgr.isLoading || !interval}>
+          <button
+            className={btn}
+            onClick={saveInterval}
+            disabled={mgr.isLoading || !interval}
+          >
             {t("integrations.mail.clamav.setParam", "Set")}
           </button>
         </div>
@@ -1543,7 +1732,10 @@ const FreshclamConfigSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
 
       <ConfigEditor
         mgr={mgr}
-        title={t("integrations.mail.clamav.freshclamConfTitle", "freshclam.conf directives")}
+        title={t(
+          "integrations.mail.clamav.freshclamConfTitle",
+          "freshclam.conf directives",
+        )}
         load={load}
         getParam={(key) => mgr.api.getFreshclamParam(cid, key)}
         setParam={(key, value) => mgr.api.setFreshclamParam(cid, key, value)}
@@ -1629,14 +1821,24 @@ const OnAccessSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           <RefreshCw size={12} />
           {t("integrations.mail.clamav.refresh", "Refresh")}
         </button>
-        <button className={btn} onClick={() => void toggle(true)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void toggle(true)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.clamav.enable", "Enable")}
         </button>
-        <button className={btn} onClick={() => void toggle(false)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void toggle(false)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.clamav.disable", "Disable")}
         </button>
         {config && (
-          <span className={`text-xs ${config.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}`}>
+          <span
+            className={`text-xs ${config.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}`}
+          >
             {config.enabled
               ? t("integrations.mail.clamav.enabled", "Enabled")
               : t("integrations.mail.clamav.disabled", "Disabled")}
@@ -1651,20 +1853,29 @@ const OnAccessSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               <select
                 className={field}
                 value={config.action}
-                onChange={(e) => setConfig({ ...config, action: e.target.value })}
+                onChange={(e) =>
+                  setConfig({ ...config, action: e.target.value })
+                }
               >
                 <option value="notify">notify</option>
                 <option value="deny">deny</option>
               </select>
             </Labeled>
-            <Labeled label={t("integrations.mail.clamav.maxFileSize", "Max file size (MB)")}>
+            <Labeled
+              label={t(
+                "integrations.mail.clamav.maxFileSize",
+                "Max file size (MB)",
+              )}
+            >
               <input
                 className={field}
                 value={config.max_file_size_mb ?? ""}
                 onChange={(e) =>
                   setConfig({
                     ...config,
-                    max_file_size_mb: e.target.value ? Number(e.target.value) : undefined,
+                    max_file_size_mb: e.target.value
+                      ? Number(e.target.value)
+                      : undefined,
                   })
                 }
                 inputMode="numeric"
@@ -1698,7 +1909,9 @@ const OnAccessSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <div className="flex flex-col gap-1">
           {(config?.include_paths ?? []).map((p) => (
             <div key={p} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-[var(--color-textSecondary)]">{p}</span>
+              <span className="font-mono text-[var(--color-textSecondary)]">
+                {p}
+              </span>
               <button className={btn} onClick={() => void removePath(p)}>
                 <Trash2 size={12} />
               </button>
@@ -1767,14 +1980,24 @@ const MilterSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
           <RefreshCw size={12} />
           {t("integrations.mail.clamav.refresh", "Refresh")}
         </button>
-        <button className={btn} onClick={() => void toggle(true)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void toggle(true)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.clamav.enable", "Enable")}
         </button>
-        <button className={btn} onClick={() => void toggle(false)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void toggle(false)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.clamav.disable", "Disable")}
         </button>
         {config && (
-          <span className={`text-xs ${config.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}`}>
+          <span
+            className={`text-xs ${config.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}`}
+          >
             {config.enabled
               ? t("integrations.mail.clamav.enabled", "Enabled")
               : t("integrations.mail.clamav.disabled", "Disabled")}
@@ -1785,20 +2008,35 @@ const MilterSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
       {config && (
         <div className={card}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Labeled label={t("integrations.mail.clamav.milterSocket", "Milter socket")}>
+            <Labeled
+              label={t(
+                "integrations.mail.clamav.milterSocket",
+                "Milter socket",
+              )}
+            >
               <input
                 className={field}
                 value={config.socket}
-                onChange={(e) => setConfig({ ...config, socket: e.target.value })}
+                onChange={(e) =>
+                  setConfig({ ...config, socket: e.target.value })
+                }
                 placeholder="/var/run/clamav/clamav-milter.ctl"
               />
             </Labeled>
-            <Labeled label={t("integrations.mail.clamav.condition", "OnInfected condition")}>
+            <Labeled
+              label={t(
+                "integrations.mail.clamav.condition",
+                "OnInfected condition",
+              )}
+            >
               <input
                 className={field}
                 value={config.condition ?? ""}
                 onChange={(e) =>
-                  setConfig({ ...config, condition: e.target.value || undefined })
+                  setConfig({
+                    ...config,
+                    condition: e.target.value || undefined,
+                  })
                 }
                 placeholder="Reject"
               />
@@ -1807,9 +2045,14 @@ const MilterSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               <input
                 type="checkbox"
                 checked={config.add_header ?? false}
-                onChange={(e) => setConfig({ ...config, add_header: e.target.checked })}
+                onChange={(e) =>
+                  setConfig({ ...config, add_header: e.target.checked })
+                }
               />
-              {t("integrations.mail.clamav.addHeader", "Add X-Virus-Scanned header")}
+              {t(
+                "integrations.mail.clamav.addHeader",
+                "Add X-Virus-Scanned header",
+              )}
             </label>
             <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
               <input
@@ -1819,7 +2062,10 @@ const MilterSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
                   setConfig({ ...config, reject_infected: e.target.checked })
                 }
               />
-              {t("integrations.mail.clamav.rejectInfected", "Reject infected mail")}
+              {t(
+                "integrations.mail.clamav.rejectInfected",
+                "Reject infected mail",
+              )}
             </label>
           </div>
           <div className="mt-2">
@@ -1932,7 +2178,9 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
   const run = useCallback(
     async (scanId: string) => {
       try {
-        setRunResult(await mgr.run(() => mgr.api.runScheduledScan(cid, scanId)));
+        setRunResult(
+          await mgr.run(() => mgr.api.runScheduledScan(cid, scanId)),
+        );
         await refresh();
       } catch {
         /* surfaced */
@@ -1962,7 +2210,9 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </Labeled>
-          <Labeled label={t("integrations.mail.clamav.scanPath", "Path to scan")}>
+          <Labeled
+            label={t("integrations.mail.clamav.scanPath", "Path to scan")}
+          >
             <input
               className={field}
               value={draft.path}
@@ -1973,7 +2223,9 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             <input
               className={`${field} font-mono`}
               value={draft.schedule_cron}
-              onChange={(e) => setDraft({ ...draft, schedule_cron: e.target.value })}
+              onChange={(e) =>
+                setDraft({ ...draft, schedule_cron: e.target.value })
+              }
               placeholder="0 2 * * *"
             />
           </Labeled>
@@ -1982,7 +2234,9 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               <input
                 type="checkbox"
                 checked={draft.recursive}
-                onChange={(e) => setDraft({ ...draft, recursive: e.target.checked })}
+                onChange={(e) =>
+                  setDraft({ ...draft, recursive: e.target.checked })
+                }
               />
               {t("integrations.mail.clamav.recursive", "Recursive")}
             </label>
@@ -1990,7 +2244,9 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
               <input
                 type="checkbox"
                 checked={draft.enabled}
-                onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+                onChange={(e) =>
+                  setDraft({ ...draft, enabled: e.target.checked })
+                }
               />
               {t("integrations.mail.clamav.enabledLabel", "Enabled")}
             </label>
@@ -1999,10 +2255,17 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <div className="mt-2 flex gap-2">
           {draft.id ? (
             <>
-              <button className={btn} onClick={() => void edit(draft)} disabled={mgr.isLoading}>
+              <button
+                className={btn}
+                onClick={() => void edit(draft)}
+                disabled={mgr.isLoading}
+              >
                 {t("integrations.mail.clamav.saveScan", "Save changes")}
               </button>
-              <button className={btn} onClick={() => setDraft(emptyScheduled())}>
+              <button
+                className={btn}
+                onClick={() => setDraft(emptyScheduled())}
+              >
                 {t("integrations.mail.clamav.newScan", "New")}
               </button>
             </>
@@ -2022,10 +2285,18 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.scanPath", "Path")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.cron", "Cron")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.clamav.status", "Status")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.scanPath", "Path")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.cron", "Cron")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.clamav.status", "Status")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -2033,10 +2304,20 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             {rows.map((s) => (
               <tr key={s.id} className="border-t border-[var(--color-border)]">
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.path}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{s.schedule_cron}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {s.path}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {s.schedule_cron}
+                </td>
                 <td className="px-2 py-1">
-                  <span className={s.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}>
+                  <span
+                    className={
+                      s.enabled
+                        ? "text-green-500"
+                        : "text-[var(--color-textMuted)]"
+                    }
+                  >
                     {s.enabled
                       ? t("integrations.mail.clamav.enabled", "Enabled")
                       : t("integrations.mail.clamav.disabled", "Disabled")}
@@ -2064,8 +2345,14 @@ const ScheduledSection: React.FC<{ mgr: ClamavManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
-                  {t("integrations.mail.clamav.noScheduled", "No scheduled scans")}
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
+                  {t(
+                    "integrations.mail.clamav.noScheduled",
+                    "No scheduled scans",
+                  )}
                 </td>
               </tr>
             )}
@@ -2086,18 +2373,63 @@ const SECTIONS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "overview", labelKey: "integrations.mail.clamav.secOverview", labelDefault: "Overview", icon: Activity },
-  { key: "scan", labelKey: "integrations.mail.clamav.secScan", labelDefault: "Scan", icon: FileScan },
-  { key: "databases", labelKey: "integrations.mail.clamav.secDatabases", labelDefault: "Databases", icon: Database },
-  { key: "quarantine", labelKey: "integrations.mail.clamav.secQuarantine", labelDefault: "Quarantine", icon: ShieldAlert },
-  { key: "clamd", labelKey: "integrations.mail.clamav.secClamd", labelDefault: "clamd config", icon: Sliders },
-  { key: "freshclam", labelKey: "integrations.mail.clamav.secFreshclam", labelDefault: "freshclam", icon: FolderCog },
-  { key: "onaccess", labelKey: "integrations.mail.clamav.secOnAccess", labelDefault: "On-access", icon: ShieldCheck },
-  { key: "milter", labelKey: "integrations.mail.clamav.secMilter", labelDefault: "Milter", icon: Bug },
-  { key: "scheduled", labelKey: "integrations.mail.clamav.secScheduled", labelDefault: "Scheduled", icon: CalendarClock },
+  {
+    key: "overview",
+    labelKey: "integrations.mail.clamav.secOverview",
+    labelDefault: "Overview",
+    icon: Activity,
+  },
+  {
+    key: "scan",
+    labelKey: "integrations.mail.clamav.secScan",
+    labelDefault: "Scan",
+    icon: FileScan,
+  },
+  {
+    key: "databases",
+    labelKey: "integrations.mail.clamav.secDatabases",
+    labelDefault: "Databases",
+    icon: Database,
+  },
+  {
+    key: "quarantine",
+    labelKey: "integrations.mail.clamav.secQuarantine",
+    labelDefault: "Quarantine",
+    icon: ShieldAlert,
+  },
+  {
+    key: "clamd",
+    labelKey: "integrations.mail.clamav.secClamd",
+    labelDefault: "clamd config",
+    icon: Sliders,
+  },
+  {
+    key: "freshclam",
+    labelKey: "integrations.mail.clamav.secFreshclam",
+    labelDefault: "freshclam",
+    icon: FolderCog,
+  },
+  {
+    key: "onaccess",
+    labelKey: "integrations.mail.clamav.secOnAccess",
+    labelDefault: "On-access",
+    icon: ShieldCheck,
+  },
+  {
+    key: "milter",
+    labelKey: "integrations.mail.clamav.secMilter",
+    labelDefault: "Milter",
+    icon: Bug,
+  },
+  {
+    key: "scheduled",
+    labelKey: "integrations.mail.clamav.secScheduled",
+    labelDefault: "Scheduled",
+    icon: CalendarClock,
+  },
 ];
 
-const ClamavSubTab: React.FC<MailSubTabProps> = () => {
+const ClamavSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = useClamav();
   const [section, setSection] = useState<SectionKey>("overview");
@@ -2123,11 +2455,14 @@ const ClamavSubTab: React.FC<MailSubTabProps> = () => {
               className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
             />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.mail.clamav.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.mail.clamav.connected", "Connected"))
               : t("integrations.mail.clamav.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <button className={btn} onClick={() => void mgr.disconnect()}>
@@ -2144,7 +2479,7 @@ const ClamavSubTab: React.FC<MailSubTabProps> = () => {
       )}
 
       {!mgr.isConnected || !cid ? (
-        <ConnectForm mgr={mgr} />
+        <ConnectForm mgr={mgr} instanceId={instanceId} />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-1 border-b border-[var(--color-border)]">
@@ -2166,13 +2501,21 @@ const ClamavSubTab: React.FC<MailSubTabProps> = () => {
           <div className="min-h-0 flex-1">
             {section === "overview" && <OverviewSection mgr={mgr} cid={cid} />}
             {section === "scan" && <ScanSection mgr={mgr} cid={cid} />}
-            {section === "databases" && <DatabasesSection mgr={mgr} cid={cid} />}
-            {section === "quarantine" && <QuarantineSection mgr={mgr} cid={cid} />}
+            {section === "databases" && (
+              <DatabasesSection mgr={mgr} cid={cid} />
+            )}
+            {section === "quarantine" && (
+              <QuarantineSection mgr={mgr} cid={cid} />
+            )}
             {section === "clamd" && <ClamdConfigSection mgr={mgr} cid={cid} />}
-            {section === "freshclam" && <FreshclamConfigSection mgr={mgr} cid={cid} />}
+            {section === "freshclam" && (
+              <FreshclamConfigSection mgr={mgr} cid={cid} />
+            )}
             {section === "onaccess" && <OnAccessSection mgr={mgr} cid={cid} />}
             {section === "milter" && <MilterSection mgr={mgr} cid={cid} />}
-            {section === "scheduled" && <ScheduledSection mgr={mgr} cid={cid} />}
+            {section === "scheduled" && (
+              <ScheduledSection mgr={mgr} cid={cid} />
+            )}
           </div>
         </>
       )}

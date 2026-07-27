@@ -13,10 +13,7 @@ impl DomainManager {
         let mut domains = Vec::new();
 
         // Virtual domains
-        let virtual_raw = client
-            .postconf("virtual_mailbox_domains")
-            .await
-            .unwrap_or_default();
+        let virtual_raw = client.postconf("virtual_mailbox_domains").await?;
         for d in parse_domain_list(&virtual_raw) {
             domains.push(PostfixDomain {
                 domain: d,
@@ -27,7 +24,7 @@ impl DomainManager {
         }
 
         // Relay domains
-        let relay_raw = client.postconf("relay_domains").await.unwrap_or_default();
+        let relay_raw = client.postconf("relay_domains").await?;
         for d in parse_domain_list(&relay_raw) {
             domains.push(PostfixDomain {
                 domain: d,
@@ -38,7 +35,7 @@ impl DomainManager {
         }
 
         // Local domains (mydestination)
-        let local_raw = client.postconf("mydestination").await.unwrap_or_default();
+        let local_raw = client.postconf("mydestination").await?;
         for d in parse_domain_list(&local_raw) {
             domains.push(PostfixDomain {
                 domain: d,
@@ -50,7 +47,7 @@ impl DomainManager {
 
         // Augment with transport info from transport table
         let transport_path = format!("{}/transport", client.config_dir());
-        if let Ok(content) = client.read_remote_file(&transport_path).await {
+        if let Some(content) = client.read_remote_file_optional(&transport_path).await? {
             for line in content.lines() {
                 let trimmed = line.trim();
                 if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -86,7 +83,7 @@ impl DomainManager {
             DomainType::Relay => "relay_domains",
             DomainType::Local => "mydestination",
         };
-        let current = client.postconf(param_name).await.unwrap_or_default();
+        let current = client.postconf(param_name).await?;
         let mut entries = parse_domain_list(&current);
         if entries.iter().any(|d| d == &req.domain) {
             return Err(PostfixError::new(
@@ -102,8 +99,8 @@ impl DomainManager {
         if let Some(ref transport) = req.transport {
             let transport_path = format!("{}/transport", client.config_dir());
             let existing = client
-                .read_remote_file(&transport_path)
-                .await
+                .read_remote_file_optional(&transport_path)
+                .await?
                 .unwrap_or_default();
             let new_content = format!("{}{}\t{}\n", existing, req.domain, transport);
             client
@@ -142,7 +139,7 @@ impl DomainManager {
         };
         if old_param != new_param {
             // Remove from old
-            let old_val = client.postconf(old_param).await.unwrap_or_default();
+            let old_val = client.postconf(old_param).await?;
             let old_entries: Vec<String> = parse_domain_list(&old_val)
                 .into_iter()
                 .filter(|d| d != domain)
@@ -152,7 +149,7 @@ impl DomainManager {
                 .await?;
 
             // Add to new
-            let new_val = client.postconf(new_param).await.unwrap_or_default();
+            let new_val = client.postconf(new_param).await?;
             let mut new_entries = parse_domain_list(&new_val);
             new_entries.push(domain.to_string());
             client
@@ -164,8 +161,8 @@ impl DomainManager {
         if let Some(ref transport) = req.transport {
             let transport_path = format!("{}/transport", client.config_dir());
             let content = client
-                .read_remote_file(&transport_path)
-                .await
+                .read_remote_file_optional(&transport_path)
+                .await?
                 .unwrap_or_default();
             let mut lines: Vec<String> = Vec::new();
             let mut found = false;
@@ -202,7 +199,7 @@ impl DomainManager {
     /// Delete a domain from all domain lists and the transport table.
     pub async fn delete(client: &PostfixClient, domain: &str) -> PostfixResult<()> {
         for param in &["virtual_mailbox_domains", "relay_domains", "mydestination"] {
-            let current = client.postconf(param).await.unwrap_or_default();
+            let current = client.postconf(param).await?;
             let entries: Vec<String> = parse_domain_list(&current)
                 .into_iter()
                 .filter(|d| d != domain)
@@ -213,7 +210,7 @@ impl DomainManager {
 
         // Remove from transport table
         let transport_path = format!("{}/transport", client.config_dir());
-        if let Ok(content) = client.read_remote_file(&transport_path).await {
+        if let Some(content) = client.read_remote_file_optional(&transport_path).await? {
             let new_lines: Vec<&str> = content
                 .lines()
                 .filter(|line| {

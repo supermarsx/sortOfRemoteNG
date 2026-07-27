@@ -28,7 +28,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type { MailSubTabProps } from "./registry";
-import { useCyrusSasl, type CyrusSaslManager } from "../../../hooks/integration/mail/useCyrusSasl";
+import {
+  useCyrusSasl,
+  type CyrusSaslManager,
+} from "../../../hooks/integration/mail/useCyrusSasl";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../../utils/core/id";
 import type {
@@ -131,20 +134,34 @@ const emptyConnect: ConnectState = {
 const ConnectForm: React.FC<{
   mgr: CyrusSaslManager;
   onConnected: (id: string) => void;
-}> = ({ mgr, onConnected }) => {
+  instanceId?: string;
+}> = ({ mgr, onConnected, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, instancesFor, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>(undefined);
 
-  // Prefill from the first persisted "mail.cyrusSasl" instance (+ vault secret).
+  // Hydrate the exact launcher selection. Only a standalone mount without a
+  // selection may fall back to the first saved Cyrus SASL instance.
   useEffect(() => {
-    if (store.isLoading) return;
-    const inst = store.instancesFor(INTEGRATION_KEY)[0];
-    if (!inst) return;
+    if (isLoading) return;
+    const inst = instanceId
+      ? instances.find(
+          (candidate) =>
+            candidate.id === instanceId &&
+            candidate.integrationKey === INTEGRATION_KEY,
+        )
+      : instancesFor(INTEGRATION_KEY)[0];
+    if (!inst) {
+      setSavedId(undefined);
+      if (instanceId) setForm(emptyConnect);
+      return;
+    }
+    let cancelled = false;
     setSavedId(inst.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: inst.name,
       host: inst.host ?? "",
       port: inst.fields?.port ?? "22",
@@ -155,12 +172,15 @@ const ConnectForm: React.FC<{
       saslpasswd_bin: inst.fields?.saslpasswd_bin ?? "",
       config_dir: inst.fields?.config_dir ?? "",
       timeout_secs: inst.fields?.timeout_secs ?? "30",
-    }));
-    store.readSecret(inst).then((secret) => {
+    });
+    void readSecret(inst).then((secret) => {
+      if (cancelled) return;
       if (secret) setForm((f) => ({ ...f, ssh_password: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, instances, instancesFor, isLoading, readSecret]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -251,7 +271,10 @@ const ConnectForm: React.FC<{
           />
         </Labeled>
         <Labeled
-          label={t("integrations.mail.cyrusSasl.sshKey", "SSH private key path")}
+          label={t(
+            "integrations.mail.cyrusSasl.sshKey",
+            "SSH private key path",
+          )}
         >
           <input
             className={field}
@@ -281,7 +304,10 @@ const ConnectForm: React.FC<{
           />
         </Labeled>
         <Labeled
-          label={t("integrations.mail.cyrusSasl.saslauthdBin", "saslauthd binary")}
+          label={t(
+            "integrations.mail.cyrusSasl.saslauthdBin",
+            "saslauthd binary",
+          )}
         >
           <input
             className={field}
@@ -405,29 +431,54 @@ const ServiceSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
-        <button className={btn} onClick={() => void action(mgr.api.start)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void action(mgr.api.start)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.start", "Start")}
         </button>
-        <button className={btn} onClick={() => void action(mgr.api.stop)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void action(mgr.api.stop)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.stop", "Stop")}
         </button>
-        <button className={btn} onClick={() => void action(mgr.api.restart)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void action(mgr.api.restart)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.restart", "Restart")}
         </button>
-        <button className={btn} onClick={() => void action(mgr.api.reload)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void action(mgr.api.reload)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.reload", "Reload")}
         </button>
-        <button className={btn} onClick={runTestConfig} disabled={mgr.isLoading}>
-          <ShieldCheck size={12} /> {t("integrations.mail.cyrusSasl.testConfig", "Test config")}
+        <button
+          className={btn}
+          onClick={runTestConfig}
+          disabled={mgr.isLoading}
+        >
+          <ShieldCheck size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.testConfig", "Test config")}
         </button>
         <TestBadge result={test} />
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          [t("integrations.mail.cyrusSasl.version", "Version"), info?.version ?? (version || "—")],
+          [
+            t("integrations.mail.cyrusSasl.version", "Version"),
+            info?.version ?? (version || "—"),
+          ],
           [
             t("integrations.mail.cyrusSasl.saslauthd", "saslauthd"),
             info
@@ -436,12 +487,22 @@ const ServiceSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
                 : t("integrations.mail.cyrusSasl.stopped", "stopped")
               : "—",
           ],
-          [t("integrations.mail.cyrusSasl.pluginDir", "Plugin dir"), info?.plugin_dir ?? "—"],
-          [t("integrations.mail.cyrusSasl.configDir", "Config dir"), info?.config_dir ?? "—"],
+          [
+            t("integrations.mail.cyrusSasl.pluginDir", "Plugin dir"),
+            info?.plugin_dir ?? "—",
+          ],
+          [
+            t("integrations.mail.cyrusSasl.configDir", "Config dir"),
+            info?.config_dir ?? "—",
+          ],
         ].map(([label, value]) => (
           <div key={String(label)} className={card}>
-            <div className="truncate text-sm font-semibold text-[var(--color-text)]">{value}</div>
-            <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">{label}</div>
+            <div className="truncate text-sm font-semibold text-[var(--color-text)]">
+              {value}
+            </div>
+            <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+              {label}
+            </div>
           </div>
         ))}
       </div>
@@ -449,7 +510,10 @@ const ServiceSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
       {info && info.available_mechanisms.length > 0 && (
         <section className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-            {t("integrations.mail.cyrusSasl.availableMechanisms", "Available mechanisms")}
+            {t(
+              "integrations.mail.cyrusSasl.availableMechanisms",
+              "Available mechanisms",
+            )}
           </h4>
           <p className="break-words text-xs text-[var(--color-textSecondary)]">
             {info.available_mechanisms.join(", ")}
@@ -493,7 +557,9 @@ const MechanismsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     await mgr.run(async () => {
       await Promise.all([
         safe(async () => setMechs(await mgr.api.listMechanisms(cid))),
-        safe(async () => setAvailable(await mgr.api.listAvailableMechanisms(cid))),
+        safe(async () =>
+          setAvailable(await mgr.api.listAvailableMechanisms(cid)),
+        ),
         safe(async () => setEnabled(await mgr.api.listEnabledMechanisms(cid))),
       ]);
     });
@@ -507,7 +573,9 @@ const MechanismsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     async (name: string, on: boolean) => {
       try {
         await mgr.run(() =>
-          on ? mgr.api.enableMechanism(cid, name) : mgr.api.disableMechanism(cid, name),
+          on
+            ? mgr.api.enableMechanism(cid, name)
+            : mgr.api.disableMechanism(cid, name),
         );
         await refresh();
       } catch {
@@ -530,33 +598,51 @@ const MechanismsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
         <span className="text-xs text-[var(--color-textSecondary)]">
-          {t("integrations.mail.cyrusSasl.enabledList", "Enabled")}: {enabled.join(", ") || "—"}
+          {t("integrations.mail.cyrusSasl.enabledList", "Enabled")}:{" "}
+          {enabled.join(", ") || "—"}
         </span>
       </div>
 
       <section className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.cyrusSasl.configuredMechanisms", "Configured mechanisms")}
+          {t(
+            "integrations.mail.cyrusSasl.configuredMechanisms",
+            "Configured mechanisms",
+          )}
         </h4>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.name", "Name")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.enabled", "Enabled")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.description", "Description")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.name", "Name")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.enabled", "Enabled")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.description", "Description")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {mechs.map((m) => (
-                <tr key={m.name} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{m.name}</td>
+                <tr
+                  key={m.name}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {m.name}
+                  </td>
                   <td className="px-2 py-1">{m.enabled ? "✓" : "—"}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{m.description}</td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {m.description}
+                  </td>
                   <td className="px-2 py-1">
                     <button
                       className={btn}
@@ -572,7 +658,10 @@ const MechanismsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
               ))}
               {mechs.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
                     {t("integrations.mail.cyrusSasl.none", "None")}
                   </td>
                 </tr>
@@ -595,21 +684,35 @@ const MechanismsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
               placeholder="PLAIN"
             />
           </Labeled>
-          <button className={btn} onClick={loadDetail} disabled={mgr.isLoading || !detailName}>
+          <button
+            className={btn}
+            onClick={loadDetail}
+            disabled={mgr.isLoading || !detailName}
+          >
             {t("integrations.mail.cyrusSasl.load", "Load")}
           </button>
         </div>
         {detail && (
           <p className="mt-2 break-words text-xs text-[var(--color-textSecondary)]">
-            <span className="font-mono text-[var(--color-text)]">{detail.name}</span> ·{" "}
-            {detail.enabled ? t("integrations.mail.cyrusSasl.enabled", "Enabled") : t("integrations.mail.cyrusSasl.disabled", "Disabled")}
-            {detail.security_flags.length > 0 ? ` · ${detail.security_flags.join(", ")}` : ""}
-            {detail.features.length > 0 ? ` · ${detail.features.join(", ")}` : ""}
+            <span className="font-mono text-[var(--color-text)]">
+              {detail.name}
+            </span>{" "}
+            ·{" "}
+            {detail.enabled
+              ? t("integrations.mail.cyrusSasl.enabled", "Enabled")
+              : t("integrations.mail.cyrusSasl.disabled", "Disabled")}
+            {detail.security_flags.length > 0
+              ? ` · ${detail.security_flags.join(", ")}`
+              : ""}
+            {detail.features.length > 0
+              ? ` · ${detail.features.join(", ")}`
+              : ""}
           </p>
         )}
         {available.length > 0 && (
           <p className="mt-2 break-words text-[10px] text-[var(--color-textMuted)]">
-            {t("integrations.mail.cyrusSasl.available", "Available")}: {available.map((m) => m.name).join(", ")}
+            {t("integrations.mail.cyrusSasl.available", "Available")}:{" "}
+            {available.map((m) => m.name).join(", ")}
           </p>
         )}
       </section>
@@ -679,7 +782,9 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
       );
       if (!pw) return;
       try {
-        await mgr.run(() => mgr.api.updateUser(cid, u.username, u.realm, { password: pw }));
+        await mgr.run(() =>
+          mgr.api.updateUser(cid, u.username, u.realm, { password: pw }),
+        );
         await refresh();
       } catch {
         /* surfaced */
@@ -692,9 +797,13 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     async (u: SaslUser) => {
       if (
         !window.confirm(
-          t("integrations.mail.cyrusSasl.deleteUserConfirm", "Delete user {{u}}?", {
-            u: `${u.username}@${u.realm}`,
-          }),
+          t(
+            "integrations.mail.cyrusSasl.deleteUserConfirm",
+            "Delete user {{u}}?",
+            {
+              u: `${u.username}@${u.realm}`,
+            },
+          ),
         )
       )
         return;
@@ -711,7 +820,9 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const viewUser = useCallback(
     async (u: SaslUser) => {
       try {
-        setDetail(await mgr.run(() => mgr.api.getUser(cid, u.username, u.realm)));
+        setDetail(
+          await mgr.run(() => mgr.api.getUser(cid, u.username, u.realm)),
+        );
       } catch {
         /* surfaced */
       }
@@ -736,33 +847,64 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
         <span className="text-xs text-[var(--color-textSecondary)]">
-          {t("integrations.mail.cyrusSasl.realms", "Realms")}: {realms.join(", ") || "—"}
+          {t("integrations.mail.cyrusSasl.realms", "Realms")}:{" "}
+          {realms.join(", ") || "—"}
         </span>
       </div>
 
       <section className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.cyrusSasl.createUser", "Create user / test auth")}
+          {t(
+            "integrations.mail.cyrusSasl.createUser",
+            "Create user / test auth",
+          )}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Labeled label={t("integrations.mail.cyrusSasl.username", "Username")}>
-            <input className={field} value={form.username} onChange={(e) => setF("username", e.target.value)} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.username", "Username")}
+          >
+            <input
+              className={field}
+              value={form.username}
+              onChange={(e) => setF("username", e.target.value)}
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.realm", "Realm")}>
-            <input className={field} value={form.realm} onChange={(e) => setF("realm", e.target.value)} placeholder="example.com" />
+            <input
+              className={field}
+              value={form.realm}
+              onChange={(e) => setF("realm", e.target.value)}
+              placeholder="example.com"
+            />
           </Labeled>
-          <Labeled label={t("integrations.mail.cyrusSasl.password", "Password")}>
-            <input className={field} type="password" value={form.password} onChange={(e) => setF("password", e.target.value)} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.password", "Password")}
+          >
+            <input
+              className={field}
+              type="password"
+              value={form.password}
+              onChange={(e) => setF("password", e.target.value)}
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={create} disabled={mgr.isLoading || !form.username || !form.password}>
+          <button
+            className={btn}
+            onClick={create}
+            disabled={mgr.isLoading || !form.username || !form.password}
+          >
             {t("integrations.mail.cyrusSasl.create", "Create")}
           </button>
-          <button className={btn} onClick={testAuth} disabled={mgr.isLoading || !form.username || !form.password}>
+          <button
+            className={btn}
+            onClick={testAuth}
+            disabled={mgr.isLoading || !form.username || !form.password}
+          >
             {t("integrations.mail.cyrusSasl.testAuth", "Test auth")}
           </button>
           <TestBadge result={test} />
@@ -777,27 +919,53 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.username", "Username")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.realm", "Realm")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.password", "Password")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.username", "Username")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.realm", "Realm")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.password", "Password")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={`${u.username}@${u.realm}`} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{u.username}</td>
+                <tr
+                  key={`${u.username}@${u.realm}`}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {u.username}
+                  </td>
                   <td className="px-2 py-1">{u.realm}</td>
                   <td className="px-2 py-1">{u.password_exists ? "✓" : "—"}</td>
                   <td className="px-2 py-1">
                     <div className="flex gap-1">
-                      <button className={btn} onClick={() => void viewUser(u)} disabled={mgr.isLoading}>
+                      <button
+                        className={btn}
+                        onClick={() => void viewUser(u)}
+                        disabled={mgr.isLoading}
+                      >
                         {t("integrations.mail.cyrusSasl.details", "Details")}
                       </button>
-                      <button className={btn} onClick={() => void setPassword(u)} disabled={mgr.isLoading}>
-                        {t("integrations.mail.cyrusSasl.setPassword", "Set password")}
+                      <button
+                        className={btn}
+                        onClick={() => void setPassword(u)}
+                        disabled={mgr.isLoading}
+                      >
+                        {t(
+                          "integrations.mail.cyrusSasl.setPassword",
+                          "Set password",
+                        )}
                       </button>
-                      <button className={btn} onClick={() => void remove(u)} disabled={mgr.isLoading}>
+                      <button
+                        className={btn}
+                        onClick={() => void remove(u)}
+                        disabled={mgr.isLoading}
+                      >
                         <Trash2 size={12} />
                       </button>
                     </div>
@@ -806,7 +974,10 @@ const UsersSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
                     {t("integrations.mail.cyrusSasl.none", "None")}
                   </td>
                 </tr>
@@ -838,7 +1009,12 @@ const SaslauthdSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const [status, setStatus] = useState<SaslauthStatus | null>(null);
   const [flagsText, setFlagsText] = useState("");
   const [mech, setMech] = useState("");
-  const [auth, setAuth] = useState({ username: "", password: "", service: "smtp", realm: "" });
+  const [auth, setAuth] = useState({
+    username: "",
+    password: "",
+    service: "smtp",
+    realm: "",
+  });
   const [test, setTest] = useState<SaslTestResult | null>(null);
 
   const refresh = useCallback(async () => {
@@ -918,7 +1094,13 @@ const SaslauthdSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     try {
       setTest(
         await mgr.run(() =>
-          mgr.api.testSaslauthdAuth(cid, auth.username, auth.password, auth.service, auth.realm),
+          mgr.api.testSaslauthdAuth(
+            cid,
+            auth.username,
+            auth.password,
+            auth.service,
+            auth.realm,
+          ),
         ),
       );
     } catch {
@@ -930,15 +1112,28 @@ const SaslauthdSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
-        <button className={btn} onClick={() => void service(mgr.api.startSaslauthd)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void service(mgr.api.startSaslauthd)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.start", "Start")}
         </button>
-        <button className={btn} onClick={() => void service(mgr.api.stopSaslauthd)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void service(mgr.api.stopSaslauthd)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.stop", "Stop")}
         </button>
-        <button className={btn} onClick={() => void service(mgr.api.restartSaslauthd)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void service(mgr.api.restartSaslauthd)}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.cyrusSasl.restart", "Restart")}
         </button>
       </div>
@@ -948,15 +1143,27 @@ const SaslauthdSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           {[
             [
               t("integrations.mail.cyrusSasl.state", "State"),
-              status.running ? t("integrations.mail.cyrusSasl.running", "running") : t("integrations.mail.cyrusSasl.stopped", "stopped"),
+              status.running
+                ? t("integrations.mail.cyrusSasl.running", "running")
+                : t("integrations.mail.cyrusSasl.stopped", "stopped"),
             ],
             [t("integrations.mail.cyrusSasl.pid", "PID"), status.pid ?? "—"],
-            [t("integrations.mail.cyrusSasl.threads", "Threads (act/idle)"), `${status.threads_active ?? "—"}/${status.threads_idle ?? "—"}`],
-            [t("integrations.mail.cyrusSasl.cache", "Cache (hit/miss)"), `${status.cache_hits ?? "—"}/${status.cache_misses ?? "—"}`],
+            [
+              t("integrations.mail.cyrusSasl.threads", "Threads (act/idle)"),
+              `${status.threads_active ?? "—"}/${status.threads_idle ?? "—"}`,
+            ],
+            [
+              t("integrations.mail.cyrusSasl.cache", "Cache (hit/miss)"),
+              `${status.cache_hits ?? "—"}/${status.cache_misses ?? "—"}`,
+            ],
           ].map(([label, value]) => (
             <div key={String(label)} className={card}>
-              <div className="truncate text-sm font-semibold text-[var(--color-text)]">{value}</div>
-              <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">{label}</div>
+              <div className="truncate text-sm font-semibold text-[var(--color-text)]">
+                {value}
+              </div>
+              <div className="text-[10px] uppercase tracking-wide text-[var(--color-textMuted)]">
+                {label}
+              </div>
             </div>
           ))}
         </div>
@@ -967,54 +1174,122 @@ const SaslauthdSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           {t("integrations.mail.cyrusSasl.saslauthdConfig", "saslauthd config")}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Labeled label={t("integrations.mail.cyrusSasl.mechanism", "Mechanism")}>
-            <input className={field} value={mech} onChange={(e) => setMech(e.target.value)} placeholder="pam" />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.mechanism", "Mechanism")}
+          >
+            <input
+              className={field}
+              value={mech}
+              onChange={(e) => setMech(e.target.value)}
+              placeholder="pam"
+            />
           </Labeled>
-          <Labeled label={t("integrations.mail.cyrusSasl.flags", "Flags (space-separated)")}>
-            <input className={field} value={flagsText} onChange={(e) => setFlagsText(e.target.value)} />
+          <Labeled
+            label={t(
+              "integrations.mail.cyrusSasl.flags",
+              "Flags (space-separated)",
+            )}
+          >
+            <input
+              className={field}
+              value={flagsText}
+              onChange={(e) => setFlagsText(e.target.value)}
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={saveConfig} disabled={mgr.isLoading || !config}>
+          <button
+            className={btn}
+            onClick={saveConfig}
+            disabled={mgr.isLoading || !config}
+          >
             {t("integrations.mail.cyrusSasl.saveConfig", "Save config")}
           </button>
-          <button className={btn} onClick={setDaemonMech} disabled={mgr.isLoading || !mech}>
+          <button
+            className={btn}
+            onClick={setDaemonMech}
+            disabled={mgr.isLoading || !mech}
+          >
             {t("integrations.mail.cyrusSasl.setMechanism", "Set mechanism")}
           </button>
-          <button className={btn} onClick={setDaemonFlags} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={setDaemonFlags}
+            disabled={mgr.isLoading}
+          >
             {t("integrations.mail.cyrusSasl.setFlags", "Set flags")}
           </button>
         </div>
         {config && (
           <p className="mt-2 text-[10px] text-[var(--color-textMuted)]">
-            {t("integrations.mail.cyrusSasl.runDir", "run dir")}: {config.run_dir ?? "—"} ·{" "}
-            {t("integrations.mail.cyrusSasl.threadCount", "threads")}: {config.threads ?? "—"} ·{" "}
-            {t("integrations.mail.cyrusSasl.cacheTimeout", "cache timeout")}: {config.cache_timeout ?? "—"} ·{" "}
-            {t("integrations.mail.cyrusSasl.logLevel", "log level")}: {config.log_level ?? "—"}
+            {t("integrations.mail.cyrusSasl.runDir", "run dir")}:{" "}
+            {config.run_dir ?? "—"} ·{" "}
+            {t("integrations.mail.cyrusSasl.threadCount", "threads")}:{" "}
+            {config.threads ?? "—"} ·{" "}
+            {t("integrations.mail.cyrusSasl.cacheTimeout", "cache timeout")}:{" "}
+            {config.cache_timeout ?? "—"} ·{" "}
+            {t("integrations.mail.cyrusSasl.logLevel", "log level")}:{" "}
+            {config.log_level ?? "—"}
           </p>
         )}
       </section>
 
       <section className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.cyrusSasl.testSaslauthd", "Test saslauthd auth")}
+          {t(
+            "integrations.mail.cyrusSasl.testSaslauthd",
+            "Test saslauthd auth",
+          )}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Labeled label={t("integrations.mail.cyrusSasl.username", "Username")}>
-            <input className={field} value={auth.username} onChange={(e) => setAuth((a) => ({ ...a, username: e.target.value }))} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.username", "Username")}
+          >
+            <input
+              className={field}
+              value={auth.username}
+              onChange={(e) =>
+                setAuth((a) => ({ ...a, username: e.target.value }))
+              }
+            />
           </Labeled>
-          <Labeled label={t("integrations.mail.cyrusSasl.password", "Password")}>
-            <input className={field} type="password" value={auth.password} onChange={(e) => setAuth((a) => ({ ...a, password: e.target.value }))} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.password", "Password")}
+          >
+            <input
+              className={field}
+              type="password"
+              value={auth.password}
+              onChange={(e) =>
+                setAuth((a) => ({ ...a, password: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.service", "Service")}>
-            <input className={field} value={auth.service} onChange={(e) => setAuth((a) => ({ ...a, service: e.target.value }))} />
+            <input
+              className={field}
+              value={auth.service}
+              onChange={(e) =>
+                setAuth((a) => ({ ...a, service: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.realm", "Realm")}>
-            <input className={field} value={auth.realm} onChange={(e) => setAuth((a) => ({ ...a, realm: e.target.value }))} />
+            <input
+              className={field}
+              value={auth.realm}
+              onChange={(e) =>
+                setAuth((a) => ({ ...a, realm: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={runTest} disabled={mgr.isLoading || !auth.username}>
+          <button
+            className={btn}
+            onClick={runTest}
+            disabled={mgr.isLoading || !auth.username}
+          >
             {t("integrations.mail.cyrusSasl.testAuth", "Test auth")}
           </button>
           <TestBadge result={test} />
@@ -1060,8 +1335,10 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     [mgr, cid],
   );
 
-  const setConfigField = <K extends keyof SaslAppConfig>(k: K, v: SaslAppConfig[K]) =>
-    setConfig((c) => (c ? { ...c, [k]: v } : c));
+  const setConfigField = <K extends keyof SaslAppConfig>(
+    k: K,
+    v: SaslAppConfig[K],
+  ) => setConfig((c) => (c ? { ...c, [k]: v } : c));
 
   const saveConfig = useCallback(async () => {
     if (!config || !selected) return;
@@ -1075,7 +1352,16 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
 
   const deleteConfig = useCallback(async () => {
     if (!selected) return;
-    if (!window.confirm(t("integrations.mail.cyrusSasl.deleteAppConfirm", "Delete config for {{a}}?", { a: selected }))) return;
+    if (
+      !window.confirm(
+        t(
+          "integrations.mail.cyrusSasl.deleteAppConfirm",
+          "Delete config for {{a}}?",
+          { a: selected },
+        ),
+      )
+    )
+      return;
     try {
       await mgr.run(() => mgr.api.deleteAppConfig(cid, selected));
       setConfig(null);
@@ -1089,7 +1375,9 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const getParam = useCallback(async () => {
     if (!selected || !param.key) return;
     try {
-      const v = await mgr.run(() => mgr.api.getAppParam(cid, selected, param.key));
+      const v = await mgr.run(() =>
+        mgr.api.getAppParam(cid, selected, param.key),
+      );
       setParam((p) => ({ ...p, value: v }));
     } catch {
       /* surfaced */
@@ -1099,7 +1387,9 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const setParamValue = useCallback(async () => {
     if (!selected || !param.key) return;
     try {
-      await mgr.run(() => mgr.api.setAppParam(cid, selected, param.key, param.value));
+      await mgr.run(() =>
+        mgr.api.setAppParam(cid, selected, param.key, param.value),
+      );
       await loadConfig(selected);
     } catch {
       /* surfaced */
@@ -1135,7 +1425,8 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refreshApps} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
         <select
           className={field}
@@ -1143,9 +1434,13 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           value={selected}
           onChange={(e) => void loadConfig(e.target.value)}
         >
-          <option value="">{t("integrations.mail.cyrusSasl.selectApp", "Select application…")}</option>
+          <option value="">
+            {t("integrations.mail.cyrusSasl.selectApp", "Select application…")}
+          </option>
           {apps.map((a) => (
-            <option key={a} value={a}>{a}</option>
+            <option key={a} value={a}>
+              {a}
+            </option>
           ))}
         </select>
       </div>
@@ -1153,7 +1448,8 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
       {config && (
         <section className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-            {t("integrations.mail.cyrusSasl.appConfig", "App config")}: {selected}
+            {t("integrations.mail.cyrusSasl.appConfig", "App config")}:{" "}
+            {selected}
           </h4>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {configRows.map(([key, label]) => (
@@ -1161,23 +1457,39 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
                 <input
                   className={field}
                   value={(config[key] as string | null | undefined) ?? ""}
-                  onChange={(e) => setConfigField(key, (e.target.value || null) as SaslAppConfig[typeof key])}
+                  onChange={(e) =>
+                    setConfigField(
+                      key,
+                      (e.target.value || null) as SaslAppConfig[typeof key],
+                    )
+                  }
                 />
               </Labeled>
             ))}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button className={btn} onClick={saveConfig} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={saveConfig}
+              disabled={mgr.isLoading}
+            >
               {t("integrations.mail.cyrusSasl.saveConfig", "Save config")}
             </button>
-            <button className={btn} onClick={deleteConfig} disabled={mgr.isLoading}>
-              <Trash2 size={12} /> {t("integrations.mail.cyrusSasl.deleteConfig", "Delete config")}
+            <button
+              className={btn}
+              onClick={deleteConfig}
+              disabled={mgr.isLoading}
+            >
+              <Trash2 size={12} />{" "}
+              {t("integrations.mail.cyrusSasl.deleteConfig", "Delete config")}
             </button>
           </div>
           {Object.keys(config.extra).length > 0 && (
             <p className="mt-2 break-words text-[10px] text-[var(--color-textMuted)]">
               {t("integrations.mail.cyrusSasl.extra", "Extra")}:{" "}
-              {Object.entries(config.extra).map(([k, v]) => `${k}=${v}`).join(", ")}
+              {Object.entries(config.extra)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(", ")}
             </p>
           )}
         </section>
@@ -1189,21 +1501,44 @@ const AppsSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Labeled label={t("integrations.mail.cyrusSasl.key", "Key")}>
-            <input className={field} value={param.key} onChange={(e) => setParam((p) => ({ ...p, key: e.target.value }))} />
+            <input
+              className={field}
+              value={param.key}
+              onChange={(e) => setParam((p) => ({ ...p, key: e.target.value }))}
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.value", "Value")}>
-            <input className={field} value={param.value} onChange={(e) => setParam((p) => ({ ...p, value: e.target.value }))} />
+            <input
+              className={field}
+              value={param.value}
+              onChange={(e) =>
+                setParam((p) => ({ ...p, value: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={getParam} disabled={mgr.isLoading || !selected || !param.key}>
+          <button
+            className={btn}
+            onClick={getParam}
+            disabled={mgr.isLoading || !selected || !param.key}
+          >
             {t("integrations.mail.cyrusSasl.get", "Get")}
           </button>
-          <button className={btn} onClick={setParamValue} disabled={mgr.isLoading || !selected || !param.key}>
+          <button
+            className={btn}
+            onClick={setParamValue}
+            disabled={mgr.isLoading || !selected || !param.key}
+          >
             {t("integrations.mail.cyrusSasl.set", "Set")}
           </button>
-          <button className={btn} onClick={deleteParam} disabled={mgr.isLoading || !selected || !param.key}>
-            <Trash2 size={12} /> {t("integrations.mail.cyrusSasl.delete", "Delete")}
+          <button
+            className={btn}
+            onClick={deleteParam}
+            disabled={mgr.isLoading || !selected || !param.key}
+          >
+            <Trash2 size={12} />{" "}
+            {t("integrations.mail.cyrusSasl.delete", "Delete")}
           </button>
         </div>
       </section>
@@ -1253,7 +1588,8 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     const settings: Record<string, string> = {};
     for (const line of settingsText.split("\n")) {
       const idx = line.indexOf("=");
-      if (idx > 0) settings[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      if (idx > 0)
+        settings[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
     }
     try {
       await mgr.run(() => mgr.api.configureAuxprop(cid, selected, settings));
@@ -1276,7 +1612,8 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
       </div>
 
@@ -1288,22 +1625,41 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.name", "Name")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.type", "Type")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.available", "Available")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.description", "Description")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.name", "Name")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.type", "Type")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.available", "Available")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.description", "Description")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {plugins.map((p) => (
-                <tr key={p.name} className={`border-t border-[var(--color-border)] ${selected === p.name ? "bg-[var(--color-surface)]" : ""}`}>
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{p.name}</td>
+                <tr
+                  key={p.name}
+                  className={`border-t border-[var(--color-border)] ${selected === p.name ? "bg-[var(--color-surface)]" : ""}`}
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {p.name}
+                  </td>
                   <td className="px-2 py-1">{p.plugin_type}</td>
                   <td className="px-2 py-1">{p.available ? "✓" : "—"}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{p.description}</td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {p.description}
+                  </td>
                   <td className="px-2 py-1">
-                    <button className={btn} onClick={() => void loadPlugin(p.name)} disabled={mgr.isLoading}>
+                    <button
+                      className={btn}
+                      onClick={() => void loadPlugin(p.name)}
+                      disabled={mgr.isLoading}
+                    >
                       {t("integrations.mail.cyrusSasl.select", "Select")}
                     </button>
                   </td>
@@ -1311,7 +1667,10 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
               ))}
               {plugins.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={5}
+                  >
                     {t("integrations.mail.cyrusSasl.none", "None")}
                   </td>
                 </tr>
@@ -1323,9 +1682,15 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
 
       <section className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.cyrusSasl.configureAuxprop", "Configure")}: {selected || "—"}
+          {t("integrations.mail.cyrusSasl.configureAuxprop", "Configure")}:{" "}
+          {selected || "—"}
         </h4>
-        <Labeled label={t("integrations.mail.cyrusSasl.settings", "Settings (key=value per line)")}>
+        <Labeled
+          label={t(
+            "integrations.mail.cyrusSasl.settings",
+            "Settings (key=value per line)",
+          )}
+        >
           <textarea
             className={`${field} font-mono`}
             rows={4}
@@ -1335,10 +1700,18 @@ const AuxpropSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           />
         </Labeled>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={configure} disabled={mgr.isLoading || !selected}>
+          <button
+            className={btn}
+            onClick={configure}
+            disabled={mgr.isLoading || !selected}
+          >
             {t("integrations.mail.cyrusSasl.configure", "Configure")}
           </button>
-          <button className={btn} onClick={runTest} disabled={mgr.isLoading || !selected}>
+          <button
+            className={btn}
+            onClick={runTest}
+            disabled={mgr.isLoading || !selected}
+          >
             {t("integrations.mail.cyrusSasl.test", "Test")}
           </button>
           <TestBadge result={test} />
@@ -1357,7 +1730,11 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const { t } = useTranslation();
   const [entries, setEntries] = useState<SaslDbEntry[]>([]);
   const [lookup, setLookup] = useState({ username: "", realm: "" });
-  const [pwForm, setPwForm] = useState({ username: "", realm: "", password: "" });
+  const [pwForm, setPwForm] = useState({
+    username: "",
+    realm: "",
+    password: "",
+  });
   const [dump, setDump] = useState("");
   const [importText, setImportText] = useState("");
 
@@ -1376,7 +1753,11 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const doLookup = useCallback(async () => {
     if (!lookup.username) return;
     try {
-      setEntries(await mgr.run(() => mgr.api.getDbEntry(cid, lookup.username, lookup.realm)));
+      setEntries(
+        await mgr.run(() =>
+          mgr.api.getDbEntry(cid, lookup.username, lookup.realm),
+        ),
+      );
     } catch {
       /* surfaced */
     }
@@ -1385,7 +1766,14 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
   const setPassword = useCallback(async () => {
     if (!pwForm.username || !pwForm.password) return;
     try {
-      await mgr.run(() => mgr.api.setDbPassword(cid, pwForm.username, pwForm.realm, pwForm.password));
+      await mgr.run(() =>
+        mgr.api.setDbPassword(
+          cid,
+          pwForm.username,
+          pwForm.realm,
+          pwForm.password,
+        ),
+      );
       setPwForm({ username: "", realm: "", password: "" });
       await refresh();
     } catch {
@@ -1395,7 +1783,16 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
 
   const remove = useCallback(
     async (e: SaslDbEntry) => {
-      if (!window.confirm(t("integrations.mail.cyrusSasl.deleteDbConfirm", "Delete DB entry {{u}}?", { u: `${e.username}@${e.realm}` }))) return;
+      if (
+        !window.confirm(
+          t(
+            "integrations.mail.cyrusSasl.deleteDbConfirm",
+            "Delete DB entry {{u}}?",
+            { u: `${e.username}@${e.realm}` },
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteDbEntry(cid, e.username, e.realm));
         await refresh();
@@ -1429,7 +1826,8 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className={btn} onClick={refresh} disabled={mgr.isLoading}>
-          <RefreshCw size={12} /> {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
+          <RefreshCw size={12} />{" "}
+          {t("integrations.mail.cyrusSasl.refresh", "Refresh")}
         </button>
         <button className={btn} onClick={doDump} disabled={mgr.isLoading}>
           {t("integrations.mail.cyrusSasl.dump", "Dump DB")}
@@ -1441,31 +1839,76 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           {t("integrations.mail.cyrusSasl.lookup", "Lookup / set password")}
         </h4>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Labeled label={t("integrations.mail.cyrusSasl.username", "Username")}>
-            <input className={field} value={lookup.username} onChange={(e) => setLookup((l) => ({ ...l, username: e.target.value }))} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.username", "Username")}
+          >
+            <input
+              className={field}
+              value={lookup.username}
+              onChange={(e) =>
+                setLookup((l) => ({ ...l, username: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.realm", "Realm")}>
-            <input className={field} value={lookup.realm} onChange={(e) => setLookup((l) => ({ ...l, realm: e.target.value }))} />
+            <input
+              className={field}
+              value={lookup.realm}
+              onChange={(e) =>
+                setLookup((l) => ({ ...l, realm: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={doLookup} disabled={mgr.isLoading || !lookup.username}>
+          <button
+            className={btn}
+            onClick={doLookup}
+            disabled={mgr.isLoading || !lookup.username}
+          >
             {t("integrations.mail.cyrusSasl.lookupBtn", "Lookup")}
           </button>
         </div>
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Labeled label={t("integrations.mail.cyrusSasl.username", "Username")}>
-            <input className={field} value={pwForm.username} onChange={(e) => setPwForm((p) => ({ ...p, username: e.target.value }))} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.username", "Username")}
+          >
+            <input
+              className={field}
+              value={pwForm.username}
+              onChange={(e) =>
+                setPwForm((p) => ({ ...p, username: e.target.value }))
+              }
+            />
           </Labeled>
           <Labeled label={t("integrations.mail.cyrusSasl.realm", "Realm")}>
-            <input className={field} value={pwForm.realm} onChange={(e) => setPwForm((p) => ({ ...p, realm: e.target.value }))} />
+            <input
+              className={field}
+              value={pwForm.realm}
+              onChange={(e) =>
+                setPwForm((p) => ({ ...p, realm: e.target.value }))
+              }
+            />
           </Labeled>
-          <Labeled label={t("integrations.mail.cyrusSasl.password", "Password")}>
-            <input className={field} type="password" value={pwForm.password} onChange={(e) => setPwForm((p) => ({ ...p, password: e.target.value }))} />
+          <Labeled
+            label={t("integrations.mail.cyrusSasl.password", "Password")}
+          >
+            <input
+              className={field}
+              type="password"
+              value={pwForm.password}
+              onChange={(e) =>
+                setPwForm((p) => ({ ...p, password: e.target.value }))
+              }
+            />
           </Labeled>
         </div>
         <div className="mt-2">
-          <button className={btn} onClick={setPassword} disabled={mgr.isLoading || !pwForm.username || !pwForm.password}>
+          <button
+            className={btn}
+            onClick={setPassword}
+            disabled={mgr.isLoading || !pwForm.username || !pwForm.password}
+          >
             {t("integrations.mail.cyrusSasl.setDbPassword", "Set DB password")}
           </button>
         </div>
@@ -1479,22 +1922,39 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.username", "Username")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.realm", "Realm")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.property", "Property")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.cyrusSasl.value", "Value")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.username", "Username")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.realm", "Realm")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.property", "Property")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.cyrusSasl.value", "Value")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {entries.map((e, i) => (
-                <tr key={`${e.username}@${e.realm}:${e.property}:${i}`} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{e.username}</td>
+                <tr
+                  key={`${e.username}@${e.realm}:${e.property}:${i}`}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {e.username}
+                  </td>
                   <td className="px-2 py-1">{e.realm}</td>
                   <td className="px-2 py-1">{e.property}</td>
                   <td className="px-2 py-1 font-mono">{e.value}</td>
                   <td className="px-2 py-1">
-                    <button className={btn} onClick={() => void remove(e)} disabled={mgr.isLoading}>
+                    <button
+                      className={btn}
+                      onClick={() => void remove(e)}
+                      disabled={mgr.isLoading}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </td>
@@ -1502,7 +1962,10 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
               ))}
               {entries.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={5}
+                  >
                     {t("integrations.mail.cyrusSasl.none", "None")}
                   </td>
                 </tr>
@@ -1527,7 +1990,9 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
           {t("integrations.mail.cyrusSasl.importDb", "Import DB")}
         </h4>
-        <Labeled label={t("integrations.mail.cyrusSasl.importData", "Dump data")}>
+        <Labeled
+          label={t("integrations.mail.cyrusSasl.importData", "Dump data")}
+        >
           <textarea
             className={`${field} font-mono`}
             rows={4}
@@ -1536,7 +2001,11 @@ const SasldbSection: React.FC<{ mgr: CyrusSaslManager; cid: string }> = ({
           />
         </Labeled>
         <div className="mt-2">
-          <button className={btn} onClick={doImport} disabled={mgr.isLoading || !importText}>
+          <button
+            className={btn}
+            onClick={doImport}
+            disabled={mgr.isLoading || !importText}
+          >
             {t("integrations.mail.cyrusSasl.import", "Import")}
           </button>
         </div>
@@ -1553,16 +2022,51 @@ const SECTIONS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "service", labelKey: "integrations.mail.cyrusSasl.sectionService", labelDefault: "Service", icon: Server },
-  { key: "mechanisms", labelKey: "integrations.mail.cyrusSasl.sectionMechanisms", labelDefault: "Mechanisms", icon: KeyRound },
-  { key: "users", labelKey: "integrations.mail.cyrusSasl.sectionUsers", labelDefault: "Users & Realms", icon: Users },
-  { key: "saslauthd", labelKey: "integrations.mail.cyrusSasl.sectionSaslauthd", labelDefault: "saslauthd", icon: Play },
-  { key: "apps", labelKey: "integrations.mail.cyrusSasl.sectionApps", labelDefault: "App config", icon: Cog },
-  { key: "auxprop", labelKey: "integrations.mail.cyrusSasl.sectionAuxprop", labelDefault: "auxprop", icon: Puzzle },
-  { key: "sasldb", labelKey: "integrations.mail.cyrusSasl.sectionSasldb", labelDefault: "sasldb", icon: Database },
+  {
+    key: "service",
+    labelKey: "integrations.mail.cyrusSasl.sectionService",
+    labelDefault: "Service",
+    icon: Server,
+  },
+  {
+    key: "mechanisms",
+    labelKey: "integrations.mail.cyrusSasl.sectionMechanisms",
+    labelDefault: "Mechanisms",
+    icon: KeyRound,
+  },
+  {
+    key: "users",
+    labelKey: "integrations.mail.cyrusSasl.sectionUsers",
+    labelDefault: "Users & Realms",
+    icon: Users,
+  },
+  {
+    key: "saslauthd",
+    labelKey: "integrations.mail.cyrusSasl.sectionSaslauthd",
+    labelDefault: "saslauthd",
+    icon: Play,
+  },
+  {
+    key: "apps",
+    labelKey: "integrations.mail.cyrusSasl.sectionApps",
+    labelDefault: "App config",
+    icon: Cog,
+  },
+  {
+    key: "auxprop",
+    labelKey: "integrations.mail.cyrusSasl.sectionAuxprop",
+    labelDefault: "auxprop",
+    icon: Puzzle,
+  },
+  {
+    key: "sasldb",
+    labelKey: "integrations.mail.cyrusSasl.sectionSasldb",
+    labelDefault: "sasldb",
+    icon: Database,
+  },
 ];
 
-const CyrusSaslSubTab: React.FC<MailSubTabProps> = () => {
+const CyrusSaslSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = useCyrusSasl();
   const [section, setSection] = useState<SectionKey>("service");
@@ -1593,13 +2097,18 @@ const CyrusSaslSubTab: React.FC<MailSubTabProps> = () => {
                 : "bg-[var(--color-border)] text-[var(--color-textSecondary)]"
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${mgr.isConnected ? "bg-green-500" : "bg-[var(--color-textMuted)]"}`}
+            />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.mail.cyrusSasl.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.mail.cyrusSasl.connected", "Connected"))
               : t("integrations.mail.cyrusSasl.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.isConnected && (
             <>
@@ -1628,7 +2137,11 @@ const CyrusSaslSubTab: React.FC<MailSubTabProps> = () => {
       )}
 
       {!mgr.isConnected || !cid ? (
-        <ConnectForm mgr={mgr} onConnected={() => setSection("service")} />
+        <ConnectForm
+          mgr={mgr}
+          instanceId={instanceId}
+          onConnected={() => setSection("service")}
+        />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-1 border-b border-[var(--color-border)]">
@@ -1649,9 +2162,13 @@ const CyrusSaslSubTab: React.FC<MailSubTabProps> = () => {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {section === "service" && <ServiceSection mgr={mgr} cid={cid} />}
-            {section === "mechanisms" && <MechanismsSection mgr={mgr} cid={cid} />}
+            {section === "mechanisms" && (
+              <MechanismsSection mgr={mgr} cid={cid} />
+            )}
             {section === "users" && <UsersSection mgr={mgr} cid={cid} />}
-            {section === "saslauthd" && <SaslauthdSection mgr={mgr} cid={cid} />}
+            {section === "saslauthd" && (
+              <SaslauthdSection mgr={mgr} cid={cid} />
+            )}
             {section === "apps" && <AppsSection mgr={mgr} cid={cid} />}
             {section === "auxprop" && <AuxpropSection mgr={mgr} cid={cid} />}
             {section === "sasldb" && <SasldbSection mgr={mgr} cid={cid} />}

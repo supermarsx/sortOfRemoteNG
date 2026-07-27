@@ -14,7 +14,10 @@ impl ListManager {
         client: &AmavisClient,
         list_type: &AmavisListType,
     ) -> AmavisResult<Vec<AmavisListEntry>> {
-        let content = client.read_file(LISTS_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file_if_exists(LISTS_CONF)
+            .await?
+            .unwrap_or_default();
         let var_name = list_type_to_var(list_type);
         let entries = parse_list_entries(&content, &var_name, list_type);
         Ok(entries)
@@ -22,7 +25,10 @@ impl ListManager {
 
     /// Get a single list entry by ID.
     pub async fn get_entry(client: &AmavisClient, id: &str) -> AmavisResult<AmavisListEntry> {
-        let content = client.read_file(LISTS_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file_if_exists(LISTS_CONF)
+            .await?
+            .unwrap_or_default();
         // Search all list types
         for lt in &[
             AmavisListType::SenderWhitelist,
@@ -52,7 +58,10 @@ impl ListManager {
             enabled: true,
         };
         let var_name = list_type_to_var(&req.list_type);
-        let mut content = client.read_file(LISTS_CONF).await.unwrap_or_default();
+        let mut content = client
+            .read_file_if_exists(LISTS_CONF)
+            .await?
+            .unwrap_or_default();
         let line = render_list_entry(&entry);
 
         // Find or create the list hash
@@ -102,7 +111,7 @@ impl ListManager {
         }
 
         // Remove old entry and re-add
-        let content = client.read_file(LISTS_CONF).await.unwrap_or_default();
+        let content = client.read_file(LISTS_CONF).await?;
         let cleaned = remove_entry_by_id(&content, id);
         let line = render_list_entry(&entry);
         let var_name = list_type_to_var(&entry.list_type);
@@ -139,7 +148,10 @@ impl ListManager {
         client: &AmavisClient,
         sender_address: &str,
     ) -> AmavisResult<AmavisListCheckResult> {
-        let content = client.read_file(LISTS_CONF).await.unwrap_or_default();
+        let content = client
+            .read_file_if_exists(LISTS_CONF)
+            .await?
+            .unwrap_or_default();
         let addr_lower = sender_address.to_lowercase();
 
         let whitelist_entries = parse_list_entries(
@@ -308,6 +320,41 @@ fn remove_entry_by_id(content: &str, id: &str) -> String {
         .filter(|line| !line.contains(&marker))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::client::test_support::FakeSshTransport;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn add_entry_stops_after_failed_existing_list_read() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Err(
+            "Command failed with exit code 1: Permission denied".into(),
+        )]));
+        let client = AmavisClient::with_test_transport(
+            AmavisConnectionConfig {
+                host: "mail.example.test".into(),
+                port: 22,
+                username: "admin".into(),
+                password: None,
+                private_key: None,
+                timeout_secs: Some(5),
+            },
+            fake.clone(),
+        );
+        let request = CreateListEntryRequest {
+            list_type: AmavisListType::SenderWhitelist,
+            address: "sender@example.test".into(),
+            description: None,
+        };
+
+        let error = ListManager::add_entry(&client, &request).await.unwrap_err();
+        assert!(error.message.contains("Permission denied"));
+        assert_eq!(fake.commands().len(), 1);
+    }
 }
 
 fn find_hash_close(s: &str) -> Option<usize> {

@@ -24,16 +24,26 @@ impl KeyTableManager {
                     .strip_prefix("refile:")
                     .or_else(|| value.strip_prefix("file:"))
                     .unwrap_or(value);
+                if path.is_empty() {
+                    return Err(OpendkimError::config_not_found(
+                        "KeyTable is configured without a path",
+                    ));
+                }
                 return Ok(path.to_string());
             }
         }
-        Ok("/etc/opendkim/key.table".to_string())
+        Err(OpendkimError::config_not_found(
+            "KeyTable is not configured in opendkim.conf",
+        ))
     }
 
     /// Parse all entries from the key table file.
     pub async fn list(client: &OpendkimClient) -> OpendkimResult<Vec<KeyTableEntry>> {
         let path = Self::table_path(client).await?;
-        let content = client.read_remote_file(&path).await?;
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         Ok(parse_key_table(&content))
     }
 
@@ -48,7 +58,10 @@ impl KeyTableManager {
     /// Add a new entry to the key table.
     pub async fn add(client: &OpendkimClient, entry: &KeyTableEntry) -> OpendkimResult<()> {
         let path = Self::table_path(client).await?;
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         let existing = parse_key_table(&content);
         if existing.iter().any(|e| e.key_name == entry.key_name) {
             return Err(OpendkimError::key_table(format!(
@@ -110,10 +123,7 @@ impl KeyTableManager {
         let mut entries = Vec::new();
         for domain in &domains {
             let domain_dir = format!("{}/{}", key_dir, domain);
-            let files = client
-                .list_remote_dir(&domain_dir)
-                .await
-                .unwrap_or_default();
+            let files = client.list_remote_dir(&domain_dir).await?;
             for file in &files {
                 if !file.ends_with(".private") {
                     continue;

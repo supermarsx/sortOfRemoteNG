@@ -40,7 +40,7 @@ impl VariableManager {
         name: &str,
         value: &str,
     ) -> ProcmailResult<()> {
-        let content = client.get_procmailrc(user).await.unwrap_or_default();
+        let content = client.get_procmailrc(user).await?;
         let lines: Vec<&str> = content.lines().collect();
         let mut output = Vec::new();
         let mut found = false;

@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   AuxpropPlugin,
   CreateSaslUserRequest,
@@ -171,6 +172,7 @@ function errMsg(e: unknown): string {
  * wrapper funnels arbitrary ops through the same loading/error handling.
  */
 export function useCyrusSasl() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<CyrusSaslConnectionSummary | null>(
     null,
@@ -201,9 +203,23 @@ export function useCyrusSasl() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await cyrusSaslApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.cyrus-sasl:${id}`,
+          async () => {
+            const result = await cyrusSaslApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await cyrusSaslApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -212,20 +228,20 @@ export function useCyrusSasl() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await cyrusSaslApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.cyrus-sasl:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   const clearError = useCallback(() => setError(null), []);
 

@@ -8,6 +8,7 @@ use crate::includes::IncludeManager;
 use crate::recipes::RecipeManager;
 use crate::types::*;
 use crate::variables::VariableManager;
+use uuid::Uuid;
 
 pub struct ProcmailConfigManager;
 
@@ -105,23 +106,29 @@ impl ProcmailConfigManager {
         content: &str,
     ) -> ProcmailResult<RecipeTestResult> {
         // Write content to a temporary file and test it
-        let tmp_path = "/tmp/.sorng-procmail-validate.rc";
-        client.write_remote_file(tmp_path, content).await?;
+        let tmp_path = format!("/tmp/.sorng-procmail-validate-{}.rc", Uuid::new_v4());
+        client.write_remote_file(&tmp_path, content).await?;
 
         let cmd = format!(
-            "echo 'From: test@test.com\nSubject: test\n\ntest' | VERBOSE=yes {} -m {} 2>&1; echo EXIT:$?",
+            "printf '%s' 'From: test@test.com\nSubject: test\n\ntest\n' | VERBOSE=yes {} -m {} 2>&1",
             client.procmail_bin(),
-            crate::client::shell_escape(tmp_path),
+            crate::client::shell_escape(&tmp_path),
         );
-        let out = client.exec_ssh(&cmd).await?;
-        let log_output = format!("{}\n{}", out.stdout, out.stderr);
+        let execution = client.exec_ssh_diagnostic(&cmd).await;
 
-        // Clean up temp file
-        let _ = client
-            .exec_ssh(&format!("rm -f {}", crate::client::shell_escape(tmp_path)))
+        // Always attempt cleanup, while preserving the primary validation failure.
+        let cleanup = client
+            .exec_ssh(&format!(
+                "sudo rm -f {}",
+                crate::client::shell_escape(&tmp_path)
+            ))
             .await;
+        let (log_output, exit_code) = execution?;
+        cleanup?;
 
-        let success = !log_output.contains("Error") && !log_output.contains("syntax error");
+        let success = exit_code == 0
+            && !log_output.to_ascii_lowercase().contains("error")
+            && !log_output.to_ascii_lowercase().contains("syntax error");
         let _ = user; // validated for the user context
 
         Ok(RecipeTestResult {
@@ -140,5 +147,35 @@ impl ProcmailConfigManager {
     /// Set raw procmailrc content from a string.
     pub async fn set_raw(client: &ProcmailClient, user: &str, content: &str) -> ProcmailResult<()> {
         client.write_procmailrc(user, content).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config() -> ProcmailConnectionConfig {
+        crate::client::test_connection_config()
+    }
+
+    #[tokio::test]
+    async fn validation_uses_real_exit_status_and_cleans_up() {
+        let (client, scripted) = ProcmailClient::scripted(
+            config(),
+            vec![
+                Ok(String::new()),
+                Ok("syntax error\n__SORNG_REMOTE_EXIT_69A3E10C__:78\n".to_string()),
+                Ok(String::new()),
+            ],
+        );
+
+        let result = ProcmailConfigManager::validate(&client, "", "BROKEN")
+            .await
+            .unwrap();
+        assert!(!result.matched);
+        assert!(result.log_output.contains("syntax error"));
+        let commands = scripted.commands();
+        assert!(commands[0].contains(".sorng-procmail-validate-"));
+        assert!(commands[2].contains("sudo rm -f"));
     }
 }

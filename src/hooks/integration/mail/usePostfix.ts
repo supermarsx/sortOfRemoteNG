@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   CertificateInfo,
   ConfigTestResult,
@@ -236,6 +237,7 @@ function errMsg(e: unknown): string {
  * the same loading/error handling (matching the other integration hooks).
  */
 export function usePostfix() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<PostfixConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -264,9 +266,23 @@ export function usePostfix() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await postfixApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.postfix:${id}`,
+          async () => {
+            const result = await postfixApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await postfixApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -275,20 +291,20 @@ export function usePostfix() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await postfixApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.postfix:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   /** Re-ping the live connection (health check — returns a status string, not a
    *  summary; the header summary is fixed from connect). Non-fatal. */

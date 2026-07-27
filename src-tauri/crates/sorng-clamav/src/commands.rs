@@ -29,7 +29,7 @@ pub async fn clamav_connect(
 
 #[tauri::command]
 pub async fn clamav_disconnect(state: State<'_, ClamavServiceState>, id: String) -> CmdResult<()> {
-    state.lock().await.disconnect(&id).map_err(map_err)
+    state.lock().await.disconnect(&id).await.map_err(map_err)
 }
 
 #[tauri::command]

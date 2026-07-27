@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::client::RoundcubeClient;
-use crate::error::{RoundcubeError, RoundcubeResult};
+use crate::error::{RoundcubeError, RoundcubeErrorKind, RoundcubeResult};
 use crate::types::*;
 
 use crate::address_books::AddressBookManager;
@@ -47,6 +47,12 @@ impl RoundcubeService {
         id: String,
         config: RoundcubeConnectionConfig,
     ) -> RoundcubeResult<RoundcubeConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(RoundcubeError::new(
+                RoundcubeErrorKind::AlreadyConnected,
+                format!("Connection '{id}' already exists"),
+            ));
+        }
         let client = RoundcubeClient::new(config)?;
         client.login().await?;
         let summary = client.ping().await?;

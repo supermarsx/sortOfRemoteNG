@@ -72,8 +72,8 @@ impl MechanismManager {
         let config_path = format!("{}/sasl-mech.conf", client.config_dir());
 
         let existing = client
-            .read_remote_file(&config_path)
-            .await
+            .read_remote_file_if_exists(&config_path)
+            .await?
             .unwrap_or_default();
         let new_content = if existing.contains("mech_list:") {
             existing
@@ -111,8 +111,8 @@ impl MechanismManager {
         let config_path = format!("{}/sasl-mech.conf", client.config_dir());
 
         let existing = client
-            .read_remote_file(&config_path)
-            .await
+            .read_remote_file_if_exists(&config_path)
+            .await?
             .unwrap_or_default();
         let new_content = if existing.contains("mech_list:") {
             existing
@@ -193,6 +193,43 @@ fn parse_mechanism_list(raw: &str) -> Vec<SaslMechanism> {
     }
 
     mechanisms
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::client::test_support::FakeSshTransport;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn enable_stops_after_failed_existing_config_read() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Ok("mech_list: PLAIN".into()),
+            Err("Command failed with exit code 1: Permission denied".into()),
+        ]));
+        let client = CyrusSaslClient::with_test_transport(
+            CyrusSaslConnectionConfig {
+                host: "mail.example.test".into(),
+                port: Some(22),
+                ssh_user: Some("admin".into()),
+                ssh_password: None,
+                ssh_key: None,
+                saslauthd_bin: None,
+                sasldblistusers_bin: None,
+                saslpasswd_bin: None,
+                config_dir: Some("/etc/sasl2".into()),
+                timeout_secs: Some(5),
+            },
+            fake.clone(),
+        );
+
+        let error = MechanismManager::enable(&client, "LOGIN")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("Permission denied"));
+        assert_eq!(fake.commands().len(), 2);
+    }
 }
 
 fn extract_plugin_name(line: &str) -> Option<String> {

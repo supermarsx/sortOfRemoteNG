@@ -1,7 +1,7 @@
 // ── postfix log management ───────────────────────────────────────────────────
 
 use crate::client::{shell_escape, PostfixClient};
-use crate::error::PostfixResult;
+use crate::error::{PostfixError, PostfixResult};
 use crate::types::*;
 
 pub struct PostfixLogManager;
@@ -17,11 +17,21 @@ impl PostfixLogManager {
         let limit = lines.unwrap_or(200);
         let cmd = match filter {
             Some(f) => format!(
-                "tail -n {} /var/log/mail.log 2>/dev/null | grep -i {} || true",
+                "if [ ! -e /var/log/mail.log ]; then exit 0; \
+                 elif [ ! -r /var/log/mail.log ]; then printf '%s\\n' 'Mail log is not readable' >&2; exit 66; fi; \
+                 mail_tail=$(tail -n {} /var/log/mail.log) || exit $?; \
+                 matches=$(printf '%s\\n' \"$mail_tail\" | grep -i {}); grep_code=$?; \
+                 if [ \"$grep_code\" -eq 0 ]; then printf '%s\\n' \"$matches\"; \
+                 elif [ \"$grep_code\" -ne 1 ]; then exit \"$grep_code\"; fi",
                 limit,
                 shell_escape(f)
             ),
-            None => format!("tail -n {} /var/log/mail.log 2>/dev/null || true", limit),
+            None => format!(
+                "if [ ! -e /var/log/mail.log ]; then exit 0; \
+                 elif [ ! -r /var/log/mail.log ]; then printf '%s\\n' 'Mail log is not readable' >&2; exit 66; \
+                 else tail -n {} /var/log/mail.log; fi",
+                limit
+            ),
         };
         let out = client.exec_ssh(&cmd).await?;
         let entries: Vec<PostfixMailLog> = out
@@ -36,7 +46,7 @@ impl PostfixLogManager {
     /// List available mail log files.
     pub async fn list_log_files(client: &PostfixClient) -> PostfixResult<Vec<String>> {
         let out = client
-            .exec_ssh("ls -1 /var/log/mail* 2>/dev/null || true")
+            .exec_ssh("find /var/log -maxdepth 1 -type f -name 'mail*' -print")
             .await?;
         let files: Vec<String> = out
             .stdout
@@ -51,7 +61,10 @@ impl PostfixLogManager {
     pub async fn get_statistics(client: &PostfixClient) -> PostfixResult<MailStatistics> {
         let out = client
             .exec_ssh(
-                "tail -n 10000 /var/log/mail.log 2>/dev/null | \
+                "if [ ! -e /var/log/mail.log ]; then printf '%s' '0 0 0 0 0'; exit 0; \
+                elif [ ! -r /var/log/mail.log ]; then printf '%s\\n' 'Mail log is not readable' >&2; exit 66; fi; \
+                mail_tail=$(tail -n 10000 /var/log/mail.log) || exit $?; \
+                printf '%s\\n' \"$mail_tail\" | \
                 awk '
                     /status=sent/    { sent++ }
                     /status=bounced/ { bounced++ }
@@ -62,16 +75,26 @@ impl PostfixLogManager {
                 '",
             )
             .await?;
-        let parts: Vec<u64> = out
-            .stdout
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        let sent = parts.first().copied().unwrap_or(0);
-        let bounced = parts.get(1).copied().unwrap_or(0);
-        let deferred = parts.get(2).copied().unwrap_or(0);
-        let rejected = parts.get(3).copied().unwrap_or(0);
-        let held = parts.get(4).copied().unwrap_or(0);
+        let parts: Vec<&str> = out.stdout.split_whitespace().collect();
+        if parts.len() != 5 {
+            return Err(PostfixError::parse(format!(
+                "Expected five Postfix mail statistics values, got {:?}",
+                out.stdout.trim()
+            )));
+        }
+        let parse = |index: usize, label: &str| {
+            parts[index].parse::<u64>().map_err(|error| {
+                PostfixError::parse(format!(
+                    "Invalid Postfix {label} statistic {:?}: {error}",
+                    parts[index]
+                ))
+            })
+        };
+        let sent = parse(0, "sent")?;
+        let bounced = parse(1, "bounced")?;
+        let deferred = parse(2, "deferred")?;
+        let rejected = parse(3, "rejected")?;
+        let held = parse(4, "held")?;
         let total = sent + bounced + deferred + rejected + held;
         Ok(MailStatistics {
             sent,

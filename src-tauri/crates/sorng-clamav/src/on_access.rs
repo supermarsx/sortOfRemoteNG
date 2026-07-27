@@ -79,10 +79,10 @@ fn parse_on_access_config(content: &str) -> OnAccessConfig {
                 "OnAccessExcludeUname" | "OnAccessExcludeUID" => {
                     exclude_users.push(value.to_string());
                 }
-                "OnAccessPrevention" => {
-                    if value.to_lowercase() == "yes" || value.to_lowercase() == "true" {
-                        action = "deny".to_string();
-                    }
+                "OnAccessPrevention"
+                    if value.eq_ignore_ascii_case("yes") || value.eq_ignore_ascii_case("true") =>
+                {
+                    action = "deny".to_string();
                 }
                 "OnAccessMaxFileSize" => {
                     // Parse value like "5M" to u64

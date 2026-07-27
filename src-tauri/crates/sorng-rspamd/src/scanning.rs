@@ -77,68 +77,43 @@ impl ScanManager {
         weight: f64,
     ) -> RspamdResult<()> {
         debug!("RSPAMD fuzzy_add flag={flag} weight={weight}");
-        let url = "/fuzzyadd".to_string();
-        let resp_text = client.post_raw(&url, message).await?;
-        // Rspamd returns JSON on success; for fuzzyadd we use header-based params.
-        // Use the client directly for better control.
-        let full_url = format!("{}/fuzzyadd", client.config.base_url.trim_end_matches('/'));
-        let mut req = reqwest::Client::new()
-            .post(&full_url)
-            .header("Content-Type", "text/plain")
-            .header("Flag", flag.to_string())
-            .header("Weight", weight.to_string())
-            .body(message.to_string());
-        if let Some(ref pw) = client.config.password {
-            req = req.header("Password", pw.as_str());
-        }
-        let resp = req
-            .send()
+        client
+            .post_body_with_headers(
+                "/fuzzyadd",
+                message,
+                &[("Flag", flag.to_string()), ("Weight", weight.to_string())],
+            )
             .await
-            .map_err(|e| RspamdError::connection(format!("POST /fuzzyadd: {e}")))?;
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(RspamdError::api(format!("fuzzyadd failed: {body}")));
-        }
-        let _ = resp_text; // consumed above for initial attempt
-        Ok(())
     }
 
     /// POST /fuzzydel — remove message from fuzzy storage
     pub async fn fuzzy_delete(client: &RspamdClient, message: &str, flag: u32) -> RspamdResult<()> {
         debug!("RSPAMD fuzzy_delete flag={flag}");
-        let full_url = format!("{}/fuzzydel", client.config.base_url.trim_end_matches('/'));
-        let mut req = reqwest::Client::new()
-            .post(&full_url)
-            .header("Content-Type", "text/plain")
-            .header("Flag", flag.to_string())
-            .body(message.to_string());
-        if let Some(ref pw) = client.config.password {
-            req = req.header("Password", pw.as_str());
-        }
-        let resp = req
-            .send()
+        client
+            .post_body_with_headers("/fuzzydel", message, &[("Flag", flag.to_string())])
             .await
-            .map_err(|e| RspamdError::connection(format!("POST /fuzzydel: {e}")))?;
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(RspamdError::api(format!("fuzzydel failed: {body}")));
-        }
-        Ok(())
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
 
     fn parse_scan_result(raw: &serde_json::Value) -> RspamdResult<RspamdScanResult> {
+        let object = raw
+            .as_object()
+            .ok_or_else(|| RspamdError::parse("Rspamd scan response must be a JSON object"))?;
         let action = raw
             .get("action")
             .and_then(|v| v.as_str())
-            .unwrap_or("no action")
+            .filter(|action| !action.trim().is_empty())
+            .ok_or_else(|| RspamdError::parse("Rspamd scan response is missing action"))?
             .to_string();
-        let score = raw.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let score = raw
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .ok_or_else(|| RspamdError::parse("Rspamd scan response is missing score"))?;
         let required_score = raw
             .get("required_score")
             .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
+            .ok_or_else(|| RspamdError::parse("Rspamd scan response is missing required_score"))?;
         let is_skipped = raw
             .get("is_skipped")
             .and_then(|v| v.as_bool())
@@ -160,11 +135,15 @@ impl ScanManager {
 
         // Parse symbols from the symbols map
         let mut symbols = Vec::new();
-        if let Some(sym_obj) = raw.get("symbols").and_then(|v| v.as_object()) {
+        if let Some(sym_obj) = object.get("symbols").and_then(|v| v.as_object()) {
             for (name, info) in sym_obj {
                 symbols.push(RspamdSymbolResult {
                     name: name.clone(),
-                    score: info.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    score: info.get("score").and_then(|v| v.as_f64()).ok_or_else(|| {
+                        RspamdError::parse(format!(
+                            "Rspamd scan symbol '{name}' is missing its score"
+                        ))
+                    })?,
                     weight: info.get("weight").and_then(|v| v.as_f64()),
                     description: info
                         .get("description")

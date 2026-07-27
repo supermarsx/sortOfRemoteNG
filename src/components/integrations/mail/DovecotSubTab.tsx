@@ -10,7 +10,7 @@
 // password is never persisted directly — the config store vaults it and keeps
 // only a reference (see `useIntegrationConfigStore`).
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Loader2,
   Plug,
@@ -78,10 +78,17 @@ const btnCls =
 const ghostBtnCls =
   "flex items-center gap-1.5 rounded border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-50";
 
-const DovecotSubTab: React.FC<MailSubTabProps> = () => {
+const DovecotSubTab: React.FC<MailSubTabProps> = ({
+  instanceId: requestedInstanceId,
+}) => {
   const { t } = useTranslation();
-  const { isLoading: storeLoading, instancesFor, createInstance, updateInstance, readSecret } =
-    useIntegrationConfigStore();
+  const {
+    instances,
+    isLoading: storeLoading,
+    createInstance,
+    updateInstance,
+    readSecret,
+  } = useIntegrationConfigStore();
   const {
     connectionId,
     summary,
@@ -96,21 +103,38 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [instanceId, setInstanceId] = useState<string | null>(null);
   const [section, setSection] = useState<SectionKey>("service");
+  const selectedInstance = useMemo(
+    () =>
+      requestedInstanceId
+        ? instances.find(
+            (candidate) =>
+              candidate.id === requestedInstanceId &&
+              candidate.integrationKey === INTEGRATION_KEY,
+          )
+        : instances.find(
+            (candidate) => candidate.integrationKey === INTEGRATION_KEY,
+          ),
+    [instances, requestedInstanceId],
+  );
 
-  // Prefill from the single persisted "mail.dovecot" instance, if one exists.
+  // Bind a launched session to the exact selected Dovecot instance. Only an
+  // unbound standalone mount may use the first persisted service instance.
   useEffect(() => {
     if (storeLoading) return;
-    const instance = instancesFor(INTEGRATION_KEY)[0];
-    if (!instance) return;
-    setInstanceId(instance.id);
+    if (!selectedInstance) {
+      setInstanceId(null);
+      if (requestedInstanceId) setForm(emptyForm);
+      return;
+    }
+    setInstanceId(selectedInstance.id);
     let cancelled = false;
     (async () => {
-      const secret = (await readSecret(instance)) ?? "";
+      const secret = (await readSecret(selectedInstance)) ?? "";
       if (cancelled) return;
-      const f = instance.fields ?? {};
+      const f = selectedInstance.fields ?? {};
       setForm({
-        name: instance.name,
-        host: instance.host ?? "",
+        name: selectedInstance.name,
+        host: selectedInstance.host ?? "",
         port: f.port ?? String(DEFAULT_PORT),
         ssh_user: f.ssh_user ?? "",
         ssh_password: secret,
@@ -124,7 +148,7 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
     return () => {
       cancelled = true;
     };
-  }, [storeLoading, instancesFor, readSecret]);
+  }, [readSecret, requestedInstanceId, selectedInstance, storeLoading]);
 
   const setField = useCallback(
     <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -193,7 +217,15 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
     } catch {
       // `connect` surfaced the error via the hook; leave the form editable.
     }
-  }, [buildConfig, form, instanceId, createInstance, updateInstance, connect, setError]);
+  }, [
+    buildConfig,
+    form,
+    instanceId,
+    createInstance,
+    updateInstance,
+    connect,
+    setError,
+  ]);
 
   if (connectionId) {
     return (
@@ -291,7 +323,10 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
 
         <details className="text-xs text-[var(--color-textSecondary)]">
           <summary className="cursor-pointer select-none py-1">
-            {t("integrations.mail.dovecot.advanced", "Advanced (binary & config paths)")}
+            {t(
+              "integrations.mail.dovecot.advanced",
+              "Advanced (binary & config paths)",
+            )}
           </summary>
           <div className="mt-2 flex flex-col gap-2">
             <label className={labelCls}>
@@ -304,7 +339,10 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
               />
             </label>
             <label className={labelCls}>
-              {t("integrations.mail.dovecot.fields.dovecotBin", "dovecot binary path")}
+              {t(
+                "integrations.mail.dovecot.fields.dovecotBin",
+                "dovecot binary path",
+              )}
               <input
                 className={inputCls}
                 value={form.dovecot_bin}
@@ -313,7 +351,10 @@ const DovecotSubTab: React.FC<MailSubTabProps> = () => {
               />
             </label>
             <label className={labelCls}>
-              {t("integrations.mail.dovecot.fields.configDir", "Config directory")}
+              {t(
+                "integrations.mail.dovecot.fields.configDir",
+                "Config directory",
+              )}
               <input
                 className={inputCls}
                 value={form.config_dir}
@@ -362,16 +403,66 @@ interface ConnectedViewProps {
   api: ReturnType<typeof useDovecot>["api"];
 }
 
-const SECTIONS: { key: SectionKey; labelKey: string; label: string; Icon: typeof Inbox }[] = [
-  { key: "service", labelKey: "integrations.mail.dovecot.sections.service", label: "Service", Icon: ServerCog },
-  { key: "mailboxes", labelKey: "integrations.mail.dovecot.sections.mailboxes", label: "Mailboxes", Icon: Inbox },
-  { key: "users", labelKey: "integrations.mail.dovecot.sections.users", label: "Users & auth", Icon: Users },
-  { key: "sieve", labelKey: "integrations.mail.dovecot.sections.sieve", label: "Sieve", Icon: FileCode2 },
-  { key: "quota", labelKey: "integrations.mail.dovecot.sections.quota", label: "Quota", Icon: Gauge },
-  { key: "config", labelKey: "integrations.mail.dovecot.sections.config", label: "Config & plugins", Icon: Settings2 },
-  { key: "acl", labelKey: "integrations.mail.dovecot.sections.acl", label: "ACL", Icon: Shield },
-  { key: "replication", labelKey: "integrations.mail.dovecot.sections.replication", label: "Replication", Icon: Copy },
-  { key: "logs", labelKey: "integrations.mail.dovecot.sections.logs", label: "Logs", Icon: ScrollText },
+const SECTIONS: {
+  key: SectionKey;
+  labelKey: string;
+  label: string;
+  Icon: typeof Inbox;
+}[] = [
+  {
+    key: "service",
+    labelKey: "integrations.mail.dovecot.sections.service",
+    label: "Service",
+    Icon: ServerCog,
+  },
+  {
+    key: "mailboxes",
+    labelKey: "integrations.mail.dovecot.sections.mailboxes",
+    label: "Mailboxes",
+    Icon: Inbox,
+  },
+  {
+    key: "users",
+    labelKey: "integrations.mail.dovecot.sections.users",
+    label: "Users & auth",
+    Icon: Users,
+  },
+  {
+    key: "sieve",
+    labelKey: "integrations.mail.dovecot.sections.sieve",
+    label: "Sieve",
+    Icon: FileCode2,
+  },
+  {
+    key: "quota",
+    labelKey: "integrations.mail.dovecot.sections.quota",
+    label: "Quota",
+    Icon: Gauge,
+  },
+  {
+    key: "config",
+    labelKey: "integrations.mail.dovecot.sections.config",
+    label: "Config & plugins",
+    Icon: Settings2,
+  },
+  {
+    key: "acl",
+    labelKey: "integrations.mail.dovecot.sections.acl",
+    label: "ACL",
+    Icon: Shield,
+  },
+  {
+    key: "replication",
+    labelKey: "integrations.mail.dovecot.sections.replication",
+    label: "Replication",
+    Icon: Copy,
+  },
+  {
+    key: "logs",
+    labelKey: "integrations.mail.dovecot.sections.logs",
+    label: "Logs",
+    Icon: ScrollText,
+  },
 ];
 
 const ConnectedView: React.FC<ConnectedViewProps> = ({
@@ -432,14 +523,20 @@ const ConnectedView: React.FC<ConnectedViewProps> = ({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {section === "service" && <ServiceSection id={connectionId} api={api} />}
-        {section === "mailboxes" && <MailboxesSection id={connectionId} api={api} />}
+        {section === "service" && (
+          <ServiceSection id={connectionId} api={api} />
+        )}
+        {section === "mailboxes" && (
+          <MailboxesSection id={connectionId} api={api} />
+        )}
         {section === "users" && <UsersSection id={connectionId} api={api} />}
         {section === "sieve" && <SieveSection id={connectionId} api={api} />}
         {section === "quota" && <QuotaSection id={connectionId} api={api} />}
         {section === "config" && <ConfigSection id={connectionId} api={api} />}
         {section === "acl" && <AclSection id={connectionId} api={api} />}
-        {section === "replication" && <ReplicationSection id={connectionId} api={api} />}
+        {section === "replication" && (
+          <ReplicationSection id={connectionId} api={api} />
+        )}
         {section === "logs" && <LogsSection id={connectionId} api={api} />}
       </div>
     </div>
@@ -458,18 +555,21 @@ interface SectionProps {
 function useRunner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
-    setBusy(true);
-    setErr(null);
-    try {
-      return await fn();
-    } catch (e) {
-      setErr(typeof e === "string" ? e : (e as Error).message);
-      return undefined;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const run = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+      setBusy(true);
+      setErr(null);
+      try {
+        return await fn();
+      } catch (e) {
+        setErr(typeof e === "string" ? e : (e as Error).message);
+        return undefined;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
   return { busy, err, setErr, run };
 }
 
@@ -510,44 +610,102 @@ const ServiceSection: React.FC<SectionProps> = ({ id, api }) => {
   const { busy, err, run } = useRunner();
   const [output, setOutput] = useState<string>("");
 
-  const show = useCallback((v: unknown) => setOutput(JSON.stringify(v, null, 2)), []);
+  const show = useCallback(
+    (v: unknown) => setOutput(JSON.stringify(v, null, 2)),
+    [],
+  );
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.service", "Service")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.service", "Service")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} onClick={() => run(() => api.start(id))} disabled={busy}>
-          <Play size={14} /> {t("integrations.mail.dovecot.actions.start", "Start")}
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.start(id))}
+          disabled={busy}
+        >
+          <Play size={14} />{" "}
+          {t("integrations.mail.dovecot.actions.start", "Start")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.stop(id))} disabled={busy}>
-          <Square size={14} /> {t("integrations.mail.dovecot.actions.stop", "Stop")}
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.stop(id))}
+          disabled={busy}
+        >
+          <Square size={14} />{" "}
+          {t("integrations.mail.dovecot.actions.stop", "Stop")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.restart(id))} disabled={busy}>
-          <RotateCcw size={14} /> {t("integrations.mail.dovecot.actions.restart", "Restart")}
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.restart(id))}
+          disabled={busy}
+        >
+          <RotateCcw size={14} />{" "}
+          {t("integrations.mail.dovecot.actions.restart", "Restart")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.reload(id))} disabled={busy}>
-          <RefreshCw size={14} /> {t("integrations.mail.dovecot.actions.reload", "Reload")}
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.reload(id))}
+          disabled={busy}
+        >
+          <RefreshCw size={14} />{" "}
+          {t("integrations.mail.dovecot.actions.reload", "Reload")}
         </button>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} onClick={() => run(() => api.status(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.status(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.status", "Status")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.version(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.version(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.version", "Version")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.info(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.info(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.info", "Info")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.testConfig(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.testConfig(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.testConfig", "Test config")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.processTestConfig(id).then(show))} disabled={busy}>
-          {t("integrations.mail.dovecot.actions.processTestConfig", "Process test config")}
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.processTestConfig(id).then(show))}
+          disabled={busy}
+        >
+          {t(
+            "integrations.mail.dovecot.actions.processTestConfig",
+            "Process test config",
+          )}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.processWho(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.processWho(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.processWho", "Process who")}
         </button>
-        <button className={ghostBtnCls} onClick={() => run(() => api.processStats(id).then(show))} disabled={busy}>
+        <button
+          className={ghostBtnCls}
+          onClick={() => run(() => api.processStats(id).then(show))}
+          disabled={busy}
+        >
           {t("integrations.mail.dovecot.actions.processStats", "Process stats")}
         </button>
       </div>
@@ -568,43 +726,98 @@ const MailboxesSection: React.FC<SectionProps> = ({ id, api }) => {
   const show = useCallback((v: unknown) => setOutput(v), []);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.mailboxes", "Mailboxes")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.mailboxes", "Mailboxes")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.user", "User")}
-          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" />
+          <input
+            className={inputCls}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.mailbox", "Mailbox")}
-          <input className={inputCls} value={mailbox} onChange={(e) => setMailbox(e.target.value)} placeholder="INBOX" />
+          <input
+            className={inputCls}
+            value={mailbox}
+            onChange={(e) => setMailbox(e.target.value)}
+            placeholder="INBOX"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.listMailboxes(id, user).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.listMailboxes(id, user).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.list", "List")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.mailboxStatus(id, user, mailbox).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() =>
+            run(() => api.mailboxStatus(id, user, mailbox).then(show))
+          }
+        >
           {t("integrations.mail.dovecot.actions.mailboxStatus", "Status")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.createMailbox(id, user, mailbox))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.createMailbox(id, user, mailbox))}
+        >
           {t("integrations.mail.dovecot.actions.create", "Create")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.deleteMailbox(id, user, mailbox))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.deleteMailbox(id, user, mailbox))}
+        >
           {t("integrations.mail.dovecot.actions.delete", "Delete")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.subscribeMailbox(id, user, mailbox))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.subscribeMailbox(id, user, mailbox))}
+        >
           {t("integrations.mail.dovecot.actions.subscribe", "Subscribe")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.unsubscribeMailbox(id, user, mailbox))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.unsubscribeMailbox(id, user, mailbox))}
+        >
           {t("integrations.mail.dovecot.actions.unsubscribe", "Unsubscribe")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.listSubscriptions(id, user).then(show))}>
-          {t("integrations.mail.dovecot.actions.subscriptions", "Subscriptions")}
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.listSubscriptions(id, user).then(show))}
+        >
+          {t(
+            "integrations.mail.dovecot.actions.subscriptions",
+            "Subscriptions",
+          )}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.syncMailbox(id, user))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.syncMailbox(id, user))}
+        >
           {t("integrations.mail.dovecot.actions.sync", "Sync")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.forceResync(id, user, mailbox))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.forceResync(id, user, mailbox))}
+        >
           {t("integrations.mail.dovecot.actions.forceResync", "Force resync")}
         </button>
       </div>
@@ -624,40 +837,106 @@ const UsersSection: React.FC<SectionProps> = ({ id, api }) => {
   const show = useCallback((v: unknown) => setOutput(v), []);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.users", "Users & auth")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.users", "Users & auth")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.username", "Username")}
-          <input className={inputCls} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="user@example.com" autoComplete="off" />
+          <input
+            className={inputCls}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="user@example.com"
+            autoComplete="off"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.password", "Password")}
-          <input type="password" className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+          <input
+            type="password"
+            className={inputCls}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="off"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listUsers(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listUsers(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.list", "List")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username} onClick={() => run(() => api.getUser(id, username).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username}
+          onClick={() => run(() => api.getUser(id, username).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.getUser", "Get")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username} onClick={() => run(() => api.createUser(id, { username, password: password || undefined }).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username}
+          onClick={() =>
+            run(() =>
+              api
+                .createUser(id, { username, password: password || undefined })
+                .then(show),
+            )
+          }
+        >
           {t("integrations.mail.dovecot.actions.create", "Create")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username} onClick={() => run(() => api.updateUser(id, username, { password: password || undefined }).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username}
+          onClick={() =>
+            run(() =>
+              api
+                .updateUser(id, username, { password: password || undefined })
+                .then(show),
+            )
+          }
+        >
           {t("integrations.mail.dovecot.actions.update", "Update")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username} onClick={() => run(() => api.deleteUser(id, username))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username}
+          onClick={() => run(() => api.deleteUser(id, username))}
+        >
           {t("integrations.mail.dovecot.actions.delete", "Delete")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username || !password} onClick={() => run(() => api.authTest(id, username, password).then((ok) => show({ authenticated: ok })))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username || !password}
+          onClick={() =>
+            run(() =>
+              api
+                .authTest(id, username, password)
+                .then((ok) => show({ authenticated: ok })),
+            )
+          }
+        >
           {t("integrations.mail.dovecot.actions.authTest", "Auth test")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !username} onClick={() => run(() => api.kickUser(id, username))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !username}
+          onClick={() => run(() => api.kickUser(id, username))}
+        >
           {t("integrations.mail.dovecot.actions.kick", "Kick")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.who(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.who(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.who", "Who")}
         </button>
       </div>
@@ -678,15 +957,29 @@ const SieveSection: React.FC<SectionProps> = ({ id, api }) => {
   const show = useCallback((v: unknown) => setOutput(v), []);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.sieve", "Sieve")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.sieve", "Sieve")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.user", "User")}
-          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" />
+          <input
+            className={inputCls}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.scriptName", "Script name")}
-          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="default" />
+          <input
+            className={inputCls}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="default"
+          />
         </label>
       </div>
       <label className={labelCls}>
@@ -699,28 +992,64 @@ const SieveSection: React.FC<SectionProps> = ({ id, api }) => {
         />
       </label>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.listSieve(id, user).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.listSieve(id, user).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.list", "List")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name} onClick={() => run(() => api.getSieve(id, user, name).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name}
+          onClick={() => run(() => api.getSieve(id, user, name).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.getScript", "Get")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name || !content} onClick={() => run(() => api.createSieve(id, user, { name, content }).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name || !content}
+          onClick={() =>
+            run(() => api.createSieve(id, user, { name, content }).then(show))
+          }
+        >
           {t("integrations.mail.dovecot.actions.create", "Create")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name} onClick={() => run(() => api.updateSieve(id, user, name, { content }).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name}
+          onClick={() =>
+            run(() => api.updateSieve(id, user, name, { content }).then(show))
+          }
+        >
           {t("integrations.mail.dovecot.actions.update", "Update")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name} onClick={() => run(() => api.deleteSieve(id, user, name))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name}
+          onClick={() => run(() => api.deleteSieve(id, user, name))}
+        >
           {t("integrations.mail.dovecot.actions.delete", "Delete")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name} onClick={() => run(() => api.activateSieve(id, user, name))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name}
+          onClick={() => run(() => api.activateSieve(id, user, name))}
+        >
           {t("integrations.mail.dovecot.actions.activate", "Activate")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.deactivateSieve(id, user))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.deactivateSieve(id, user))}
+        >
           {t("integrations.mail.dovecot.actions.deactivate", "Deactivate")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !name} onClick={() => run(() => api.compileSieve(id, user, name).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !name}
+          onClick={() => run(() => api.compileSieve(id, user, name).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.compile", "Compile")}
         </button>
       </div>
@@ -749,38 +1078,82 @@ const QuotaSection: React.FC<SectionProps> = ({ id, api }) => {
   };
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.quota", "Quota")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.quota", "Quota")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.user", "User")}
-          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" />
+          <input
+            className={inputCls}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.ruleName", "Rule name")}
-          <input className={inputCls} value={ruleName} onChange={(e) => setRuleName(e.target.value)} placeholder="*" />
+          <input
+            className={inputCls}
+            value={ruleName}
+            onChange={(e) => setRuleName(e.target.value)}
+            placeholder="*"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.storageMb", "Storage (MB)")}
-          <input className={inputCls} value={storageMb} onChange={(e) => setStorageMb(e.target.value)} inputMode="numeric" placeholder="1024" />
+          <input
+            className={inputCls}
+            value={storageMb}
+            onChange={(e) => setStorageMb(e.target.value)}
+            inputMode="numeric"
+            placeholder="1024"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.getQuota(id, user).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.getQuota(id, user).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.getQuota", "Get quota")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.setQuota(id, user, buildRule()))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.setQuota(id, user, buildRule()))}
+        >
           {t("integrations.mail.dovecot.actions.setQuota", "Set quota")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.recalculateQuota(id, user))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.recalculateQuota(id, user))}
+        >
           {t("integrations.mail.dovecot.actions.recalculate", "Recalculate")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listQuotaRules(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listQuotaRules(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.listRules", "List rules")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.setQuotaRule(id, buildRule()))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.setQuotaRule(id, buildRule()))}
+        >
           {t("integrations.mail.dovecot.actions.setRule", "Set rule")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !ruleName} onClick={() => run(() => api.deleteQuotaRule(id, ruleName))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !ruleName}
+          onClick={() => run(() => api.deleteQuotaRule(id, ruleName))}
+        >
           {t("integrations.mail.dovecot.actions.deleteRule", "Delete rule")}
         </button>
       </div>
@@ -801,60 +1174,136 @@ const ConfigSection: React.FC<SectionProps> = ({ id, api }) => {
   const show = useCallback((v: unknown) => setOutput(v), []);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.config", "Config & plugins")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.config", "Config & plugins")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.paramName", "Parameter")}
-          <input className={inputCls} value={paramName} onChange={(e) => setParamName(e.target.value)} placeholder="mail_location" />
+          <input
+            className={inputCls}
+            value={paramName}
+            onChange={(e) => setParamName(e.target.value)}
+            placeholder="mail_location"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.paramValue", "Value")}
-          <input className={inputCls} value={paramValue} onChange={(e) => setParamValue(e.target.value)} />
+          <input
+            className={inputCls}
+            value={paramValue}
+            onChange={(e) => setParamValue(e.target.value)}
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.pluginName", "Plugin")}
-          <input className={inputCls} value={pluginName} onChange={(e) => setPluginName(e.target.value)} placeholder="quota" />
+          <input
+            className={inputCls}
+            value={pluginName}
+            onChange={(e) => setPluginName(e.target.value)}
+            placeholder="quota"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.getConfig(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.getConfig(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.getConfig", "Get config")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !paramName} onClick={() => run(() => api.getConfigParam(id, paramName).then((v) => show({ [paramName]: v })))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !paramName}
+          onClick={() =>
+            run(() =>
+              api
+                .getConfigParam(id, paramName)
+                .then((v) => show({ [paramName]: v })),
+            )
+          }
+        >
           {t("integrations.mail.dovecot.actions.getParam", "Get param")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !paramName} onClick={() => run(() => api.setConfigParam(id, paramName, paramValue))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !paramName}
+          onClick={() =>
+            run(() => api.setConfigParam(id, paramName, paramValue))
+          }
+        >
           {t("integrations.mail.dovecot.actions.setParam", "Set param")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listNamespaces(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listNamespaces(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.listNamespaces", "Namespaces")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !paramName} onClick={() => run(() => api.getNamespace(id, paramName).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !paramName}
+          onClick={() => run(() => api.getNamespace(id, paramName).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.getNamespace", "Get namespace")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listServices(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listServices(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.listServices", "Services")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.getAuthConfig(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.getAuthConfig(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.authConfig", "Auth config")}
         </button>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listPlugins(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listPlugins(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.listPlugins", "List plugins")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !pluginName} onClick={() => run(() => api.enablePlugin(id, pluginName))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !pluginName}
+          onClick={() => run(() => api.enablePlugin(id, pluginName))}
+        >
           {t("integrations.mail.dovecot.actions.enablePlugin", "Enable plugin")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !pluginName} onClick={() => run(() => api.disablePlugin(id, pluginName))}>
-          {t("integrations.mail.dovecot.actions.disablePlugin", "Disable plugin")}
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !pluginName}
+          onClick={() => run(() => api.disablePlugin(id, pluginName))}
+        >
+          {t(
+            "integrations.mail.dovecot.actions.disablePlugin",
+            "Disable plugin",
+          )}
         </button>
         <button
           className={ghostBtnCls}
           disabled={busy || !pluginName || !paramName}
-          onClick={() => run(() => api.configurePlugin(id, pluginName, { [paramName]: paramValue }))}
+          onClick={() =>
+            run(() =>
+              api.configurePlugin(id, pluginName, { [paramName]: paramValue }),
+            )
+          }
         >
-          {t("integrations.mail.dovecot.actions.configurePlugin", "Configure plugin")}
+          {t(
+            "integrations.mail.dovecot.actions.configurePlugin",
+            "Configure plugin",
+          )}
         </button>
       </div>
       {output != null && <Pre>{JSON.stringify(output, null, 2)}</Pre>}
@@ -874,39 +1323,89 @@ const AclSection: React.FC<SectionProps> = ({ id, api }) => {
   const [output, setOutput] = useState<unknown>(null);
   const show = useCallback((v: unknown) => setOutput(v), []);
 
-  const rightsList = () => rights.split(/[\s,]+/).map((r) => r.trim()).filter(Boolean);
+  const rightsList = () =>
+    rights
+      .split(/[\s,]+/)
+      .map((r) => r.trim())
+      .filter(Boolean);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.acl", "ACL")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.acl", "ACL")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.user", "User")}
-          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" />
+          <input
+            className={inputCls}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.mailbox", "Mailbox")}
-          <input className={inputCls} value={mailbox} onChange={(e) => setMailbox(e.target.value)} placeholder="INBOX" />
+          <input
+            className={inputCls}
+            value={mailbox}
+            onChange={(e) => setMailbox(e.target.value)}
+            placeholder="INBOX"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.identifier", "Identifier")}
-          <input className={inputCls} value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="user=other@example.com" />
+          <input
+            className={inputCls}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="user=other@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.rights", "Rights")}
-          <input className={inputCls} value={rights} onChange={(e) => setRights(e.target.value)} placeholder="lookup read write" />
+          <input
+            className={inputCls}
+            value={rights}
+            onChange={(e) => setRights(e.target.value)}
+            placeholder="lookup read write"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox} onClick={() => run(() => api.listAcls(id, user, mailbox).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox}
+          onClick={() => run(() => api.listAcls(id, user, mailbox).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.list", "List")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox || !identifier} onClick={() => run(() => api.getAcl(id, user, mailbox, identifier).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox || !identifier}
+          onClick={() =>
+            run(() => api.getAcl(id, user, mailbox, identifier).then(show))
+          }
+        >
           {t("integrations.mail.dovecot.actions.getAcl", "Get")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox || !identifier} onClick={() => run(() => api.setAcl(id, user, mailbox, identifier, rightsList()))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox || !identifier}
+          onClick={() =>
+            run(() => api.setAcl(id, user, mailbox, identifier, rightsList()))
+          }
+        >
           {t("integrations.mail.dovecot.actions.setAcl", "Set")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !mailbox || !identifier} onClick={() => run(() => api.deleteAcl(id, user, mailbox, identifier))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !mailbox || !identifier}
+          onClick={() =>
+            run(() => api.deleteAcl(id, user, mailbox, identifier))
+          }
+        >
           {t("integrations.mail.dovecot.actions.delete", "Delete")}
         </button>
       </div>
@@ -927,32 +1426,70 @@ const ReplicationSection: React.FC<SectionProps> = ({ id, api }) => {
   const show = useCallback((v: unknown) => setOutput(v), []);
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.replication", "Replication")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.replication", "Replication")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.user", "User")}
-          <input className={inputCls} value={user} onChange={(e) => setUser(e.target.value)} placeholder="user@example.com" />
+          <input
+            className={inputCls}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user@example.com"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.priority", "Priority")}
-          <input className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)} placeholder="low | high" />
+          <input
+            className={inputCls}
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            placeholder="low | high"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.remote", "Remote")}
-          <input className={inputCls} value={remote} onChange={(e) => setRemote(e.target.value)} placeholder="backup.example.com" />
+          <input
+            className={inputCls}
+            value={remote}
+            onChange={(e) => setRemote(e.target.value)}
+            placeholder="backup.example.com"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.replicationStatus(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.replicationStatus(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.replicationStatus", "Status")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user} onClick={() => run(() => api.replicateUser(id, user, priority))}>
-          {t("integrations.mail.dovecot.actions.replicateUser", "Replicate user")}
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user}
+          onClick={() => run(() => api.replicateUser(id, user, priority))}
+        >
+          {t(
+            "integrations.mail.dovecot.actions.replicateUser",
+            "Replicate user",
+          )}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !remote} onClick={() => run(() => api.dsyncBackup(id, user, remote))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !remote}
+          onClick={() => run(() => api.dsyncBackup(id, user, remote))}
+        >
           {t("integrations.mail.dovecot.actions.dsyncBackup", "dsync backup")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !user || !remote} onClick={() => run(() => api.dsyncMirror(id, user, remote))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !user || !remote}
+          onClick={() => run(() => api.dsyncMirror(id, user, remote))}
+        >
           {t("integrations.mail.dovecot.actions.dsyncMirror", "dsync mirror")}
         </button>
       </div>
@@ -978,32 +1515,73 @@ const LogsSection: React.FC<SectionProps> = ({ id, api }) => {
   };
 
   return (
-    <SectionShell title={t("integrations.mail.dovecot.sections.logs", "Logs")} busy={busy} err={err}>
+    <SectionShell
+      title={t("integrations.mail.dovecot.sections.logs", "Logs")}
+      busy={busy}
+      err={err}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.lines", "Lines")}
-          <input className={inputCls} value={lines} onChange={(e) => setLines(e.target.value)} inputMode="numeric" />
+          <input
+            className={inputCls}
+            value={lines}
+            onChange={(e) => setLines(e.target.value)}
+            inputMode="numeric"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.filter", "Filter")}
-          <input className={inputCls} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="error" />
+          <input
+            className={inputCls}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="error"
+          />
         </label>
         <label className={labelCls}>
           {t("integrations.mail.dovecot.fields.logLevel", "Log level")}
-          <input className={inputCls} value={level} onChange={(e) => setLevel(e.target.value)} placeholder="info | debug" />
+          <input
+            className={inputCls}
+            value={level}
+            onChange={(e) => setLevel(e.target.value)}
+            placeholder="info | debug"
+          />
         </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.queryLog(id, linesNum(), filter || undefined).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() =>
+            run(() =>
+              api.queryLog(id, linesNum(), filter || undefined).then(show),
+            )
+          }
+        >
           {t("integrations.mail.dovecot.actions.queryLog", "Query log")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.listLogFiles(id).then(show))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() => run(() => api.listLogFiles(id).then(show))}
+        >
           {t("integrations.mail.dovecot.actions.listLogFiles", "Log files")}
         </button>
-        <button className={ghostBtnCls} disabled={busy} onClick={() => run(() => api.getLogLevel(id).then((v) => show({ level: v })))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy}
+          onClick={() =>
+            run(() => api.getLogLevel(id).then((v) => show({ level: v })))
+          }
+        >
           {t("integrations.mail.dovecot.actions.getLogLevel", "Get level")}
         </button>
-        <button className={ghostBtnCls} disabled={busy || !level} onClick={() => run(() => api.setLogLevel(id, level))}>
+        <button
+          className={ghostBtnCls}
+          disabled={busy || !level}
+          onClick={() => run(() => api.setLogLevel(id, level))}
+        >
           {t("integrations.mail.dovecot.actions.setLogLevel", "Set level")}
         </button>
       </div>

@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   RspamdAction,
   RspamdBayesLearnResult,
@@ -40,8 +41,7 @@ export const rspamdApi = {
     invoke<RspamdConnectionSummary>("rspamd_connect", { id, config }),
   disconnect: (id: string) => invoke<void>("rspamd_disconnect", { id }),
   listConnections: () => invoke<string[]>("rspamd_list_connections"),
-  ping: (id: string) =>
-    invoke<RspamdConnectionSummary>("rspamd_ping", { id }),
+  ping: (id: string) => invoke<RspamdConnectionSummary>("rspamd_ping", { id }),
 
   // Scanning (4)
   checkMessage: (id: string, message: string) =>
@@ -154,6 +154,7 @@ function errMsg(e: unknown): string {
  * handling. Self-contained — the sub-tab manages its own connection.
  */
 export function useRspamd() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<RspamdConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -182,9 +183,23 @@ export function useRspamd() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await rspamdApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `mail.rspamd:${id}`,
+          async () => {
+            const result = await rspamdApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await rspamdApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -193,20 +208,20 @@ export function useRspamd() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await rspamdApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.rspamd:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   const ping = useCallback(async (): Promise<void> => {
     if (!connectionId) return;

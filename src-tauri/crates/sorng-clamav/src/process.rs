@@ -126,10 +126,14 @@ impl ClamavProcessManager {
 
     /// Get comprehensive ClamAV info.
     pub async fn info(client: &ClamavClient) -> ClamavResult<ClamavInfo> {
-        let version = client.version().await.unwrap_or_default();
+        let version = client.version().await?;
 
         // Get clamd version for engine info
-        let clamd_ver = client.clamd_version().await.ok();
+        let clamd_ver = if client.socket_exists(client.clamd_socket()).await? {
+            Some(client.clamd_version().await?)
+        } else {
+            None
+        };
         let (database_version, signature_count, engine_version) = match clamd_ver {
             Some(ref ver_str) => parse_clamd_version(ver_str),
             None => (None, None, None),
@@ -137,19 +141,15 @@ impl ClamavProcessManager {
 
         // Check if clamd is running
         let clamd_out = client
-            .exec_ssh("systemctl is-active clamav-daemon 2>&1")
-            .await;
-        let clamd_running = clamd_out
-            .map(|o| o.stdout.trim() == "active")
-            .unwrap_or(false);
+            .exec_ssh("systemctl show clamav-daemon --property=ActiveState --value")
+            .await?;
+        let clamd_running = clamd_out.stdout.trim() == "active";
 
         // Check if freshclam is running
         let freshclam_out = client
-            .exec_ssh("systemctl is-active clamav-freshclam 2>&1")
-            .await;
-        let freshclam_running = freshclam_out
-            .map(|o| o.stdout.trim() == "active")
-            .unwrap_or(false);
+            .exec_ssh("systemctl show clamav-freshclam --property=ActiveState --value")
+            .await?;
+        let freshclam_running = freshclam_out.stdout.trim() == "active";
 
         Ok(ClamavInfo {
             version,

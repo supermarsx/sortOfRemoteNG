@@ -62,7 +62,7 @@ impl ProcmailLogManager {
             "/var/log"
         };
         let cmd = format!(
-            "ls -1 {} 2>/dev/null | grep -i procmail",
+            "find {} -maxdepth 1 -type f -iname '*procmail*' -print",
             crate::client::shell_escape(log_dir)
         );
         let out = client.exec_ssh(&cmd).await?;
@@ -70,7 +70,7 @@ impl ProcmailLogManager {
             .stdout
             .lines()
             .filter(|l| !l.is_empty())
-            .map(|l| format!("{}/{}", log_dir, l))
+            .map(String::from)
             .collect())
     }
 
@@ -103,7 +103,7 @@ impl ProcmailLogManager {
     /// or fall back to the client config path.
     async fn resolve_log_path(client: &ProcmailClient, user: &str) -> ProcmailResult<String> {
         // Try to read LOGFILE from the user's procmailrc
-        let content = client.get_procmailrc(user).await.unwrap_or_default();
+        let content = client.get_procmailrc(user).await?;
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("LOGFILE=") || trimmed.starts_with("LOGFILE =") {

@@ -5,25 +5,56 @@
 use crate::error::{AmavisError, AmavisResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+use std::sync::Arc;
+
+#[async_trait::async_trait]
+pub(crate) trait SshTransport: Send + Sync {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String>;
+    async fn disconnect(&self) -> Result<(), String>;
+    async fn is_connected(&self) -> bool;
+}
+
+#[async_trait::async_trait]
+impl SshTransport for IntegrationSshSession {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
+        IntegrationSshSession::execute(self, command, timeout_ms).await
+    }
+    async fn disconnect(&self) -> Result<(), String> {
+        IntegrationSshSession::disconnect(self).await
+    }
+    async fn is_connected(&self) -> bool {
+        IntegrationSshSession::is_connected(self).await
+    }
+}
 
 /// Amavis management client – connects via SSH to manage amavisd-new remotely.
 pub struct AmavisClient {
     pub config: AmavisConnectionConfig,
-    session: Option<SshSessionPlaceholder>,
+    ssh: Arc<dyn SshTransport>,
 }
-
-/// Placeholder for a real SSH session handle.
-#[allow(dead_code)]
-struct SshSessionPlaceholder;
 
 impl AmavisClient {
     /// Create a new client with the given connection configuration.
     /// Connection is lazily established on first command execution.
     pub fn new(config: AmavisConnectionConfig) -> AmavisResult<Self> {
-        Ok(Self {
-            config,
-            session: None,
-        })
+        let ssh = Arc::new(IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: &config.username,
+            port: config.port,
+            private_key: config.private_key.as_deref(),
+            password: config.password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        }));
+        Ok(Self { config, ssh })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(
+        config: AmavisConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> Self {
+        Self { config, ssh }
     }
 
     // ── SSH command execution stub ───────────────────────────────
@@ -35,63 +66,19 @@ impl AmavisClient {
     pub async fn ssh_exec(&self, command: &str) -> AmavisResult<SshOutput> {
         debug!("AMAVIS SSH [{}]: {}", self.config.host, command);
 
-        let ssh_user = self.config.username.as_str();
-        let port = self.config.port;
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.private_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.private_key.is_none() && self.config.password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        ssh_args.push("-l".to_string());
-        ssh_args.push(ssh_user.to_string());
-        ssh_args.push("--".to_string());
-        ssh_args.push(self.config.host.clone());
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.password.is_some() && self.config.private_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| AmavisError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(AmavisError::ssh)?;
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
     }
 
@@ -101,6 +88,21 @@ impl AmavisClient {
             .ssh_exec(&format!("cat {}", shell_escape(path)))
             .await?;
         Ok(out.stdout)
+    }
+
+    pub async fn read_file_if_exists(&self, path: &str) -> AmavisResult<Option<String>> {
+        const MISSING: &str = "__SORNG_FILE_NOT_FOUND__";
+        let escaped = shell_escape(path);
+        let out = self
+            .ssh_exec(&format!(
+                "if [ -f {escaped} ]; then cat -- {escaped}; elif [ ! -e {escaped} ]; then printf '%s' '{MISSING}'; else echo 'Path is not a regular file' >&2; exit 1; fi"
+            ))
+            .await?;
+        if out.stdout == MISSING {
+            Ok(None)
+        } else {
+            Ok(Some(out.stdout))
+        }
     }
 
     /// Write content to a remote file via SSH.
@@ -130,22 +132,23 @@ impl AmavisClient {
 
     /// Ping the remote host and build a connection summary.
     pub async fn ping(&self) -> AmavisResult<AmavisConnectionSummary> {
-        let version = self.version().await.ok();
+        self.ssh_exec("true").await?;
+        let version = Some(self.version().await?);
         let active_out = self
-            .ssh_exec("systemctl is-active amavisd 2>/dev/null || systemctl is-active amavis 2>/dev/null || echo inactive")
-            .await
-            .ok();
-        let running = active_out
-            .as_ref()
-            .map(|o| o.stdout.trim() == "active")
-            .unwrap_or(false);
-        let uptime_secs = if running {
-            self.ssh_exec(
-                "ps -o etimes= -p $(pgrep -x amavisd 2>/dev/null || pgrep -x amavisd-new 2>/dev/null || echo 0) 2>/dev/null | tr -d ' '"
+            .ssh_exec(
+                "if systemctl show amavisd --property=LoadState --value 2>/dev/null | grep -qx loaded; then systemctl show amavisd --property=ActiveState --value; else systemctl show amavis --property=ActiveState --value; fi",
             )
-            .await
-            .ok()
-            .and_then(|o| o.stdout.trim().parse::<u64>().ok())
+            .await?;
+        let running = active_out.stdout.trim() == "active";
+        let uptime_secs = if running {
+            let uptime = self
+                .ssh_exec(
+                    "pid=$(pgrep -x amavisd || pgrep -x amavisd-new) || exit $?; ps -o etimes= -p \"$pid\" | tr -d ' '",
+                )
+                .await?;
+            Some(uptime.stdout.trim().parse::<u64>().map_err(|error| {
+                AmavisError::parse(format!("Invalid Amavis uptime output: {error}"))
+            })?)
         } else {
             None
         };
@@ -160,7 +163,9 @@ impl AmavisClient {
     /// Retrieve the amavisd-new version string.
     pub async fn version(&self) -> AmavisResult<String> {
         let out = self
-            .ssh_exec("amavisd-new --version 2>&1 || amavisd --version 2>&1")
+            .ssh_exec(
+                "if command -v amavisd-new >/dev/null 2>&1; then amavisd-new --version 2>&1; elif command -v amavisd >/dev/null 2>&1; then amavisd --version 2>&1; else echo 'Amavis binary not found' >&2; exit 127; fi",
+            )
             .await?;
         let raw = out.stdout.trim().to_string();
         // The version line is typically "amavisd-new-2.13.0 ..."
@@ -168,10 +173,12 @@ impl AmavisClient {
         Ok(version)
     }
 
-    /// Return whether the `session` placeholder is populated.
-    #[allow(dead_code)]
-    pub fn is_connected(&self) -> bool {
-        self.session.is_some()
+    pub async fn is_connected(&self) -> bool {
+        self.ssh.is_connected().await
+    }
+
+    pub async fn disconnect(&self) -> AmavisResult<()> {
+        self.ssh.disconnect().await.map_err(AmavisError::ssh)
     }
 }
 
@@ -186,6 +193,45 @@ pub fn shell_escape(s: &str) -> String {
         return s.to_string();
     }
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::SshTransport;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    pub(crate) struct FakeSshTransport {
+        outcomes: Mutex<VecDeque<Result<String, String>>>,
+        commands: Mutex<Vec<String>>,
+    }
+    impl FakeSshTransport {
+        pub(crate) fn new(outcomes: Vec<Result<String, String>>) -> Self {
+            Self {
+                outcomes: Mutex::new(outcomes.into()),
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+        pub(crate) fn commands(&self) -> Vec<String> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+    #[async_trait::async_trait]
+    impl SshTransport for FakeSshTransport {
+        async fn execute(&self, command: &str, _: Option<u64>) -> Result<String, String> {
+            self.commands.lock().unwrap().push(command.into());
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("fake SSH outcome exhausted")
+        }
+        async fn disconnect(&self) -> Result<(), String> {
+            Ok(())
+        }
+        async fn is_connected(&self) -> bool {
+            true
+        }
+    }
 }
 
 #[cfg(test)]
@@ -217,8 +263,8 @@ mod tests {
         assert_eq!(shell_escape("/etc/amavis/conf.d"), "/etc/amavis/conf.d");
     }
 
-    #[test]
-    fn test_new_client() {
+    #[tokio::test]
+    async fn test_new_client() {
         let config = AmavisConnectionConfig {
             host: "mail.example.com".to_string(),
             port: 22,
@@ -229,6 +275,6 @@ mod tests {
         };
         let client = AmavisClient::new(config).unwrap();
         assert_eq!(client.config.host, "mail.example.com");
-        assert!(!client.is_connected());
+        assert!(!client.is_connected().await);
     }
 }

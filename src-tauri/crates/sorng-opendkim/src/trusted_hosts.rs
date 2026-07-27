@@ -27,16 +27,26 @@ impl TrustedHostManager {
                     .strip_prefix("refile:")
                     .or_else(|| value.strip_prefix("file:"))
                     .unwrap_or(value);
+                if path.is_empty() {
+                    return Err(OpendkimError::config_not_found(
+                        "TrustedHosts is configured without a path",
+                    ));
+                }
                 return Ok(path.to_string());
             }
         }
-        Ok("/etc/opendkim/trusted.hosts".to_string())
+        Err(OpendkimError::config_not_found(
+            "TrustedHosts or ExternalIgnoreList is not configured in opendkim.conf",
+        ))
     }
 
     /// List all trusted hosts.
     pub async fn list(client: &OpendkimClient) -> OpendkimResult<Vec<TrustedHost>> {
         let path = Self::trusted_hosts_path(client).await?;
-        let content = client.read_remote_file(&path).await?;
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         Ok(parse_host_list(&content)
             .into_iter()
             .map(|(host, comment)| TrustedHost { host, comment })
@@ -46,7 +56,10 @@ impl TrustedHostManager {
     /// Add a trusted host.
     pub async fn add(client: &OpendkimClient, host: &TrustedHost) -> OpendkimResult<()> {
         let path = Self::trusted_hosts_path(client).await?;
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         let existing = parse_host_list(&content);
         if existing.iter().any(|(h, _)| h == &host.host) {
             return Err(OpendkimError::trusted_host(format!(
@@ -96,16 +109,26 @@ impl TrustedHostManager {
                     .strip_prefix("refile:")
                     .or_else(|| value.strip_prefix("file:"))
                     .unwrap_or(value);
+                if path.is_empty() {
+                    return Err(OpendkimError::config_not_found(
+                        "InternalHosts is configured without a path",
+                    ));
+                }
                 return Ok(path.to_string());
             }
         }
-        Ok("/etc/opendkim/internal.hosts".to_string())
+        Err(OpendkimError::config_not_found(
+            "InternalHosts is not configured in opendkim.conf",
+        ))
     }
 
     /// List all internal hosts.
     pub async fn list_internal(client: &OpendkimClient) -> OpendkimResult<Vec<InternalHost>> {
         let path = Self::internal_hosts_path(client).await?;
-        let content = client.read_remote_file(&path).await?;
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         Ok(parse_host_list(&content)
             .into_iter()
             .map(|(host, comment)| InternalHost { host, comment })
@@ -115,7 +138,10 @@ impl TrustedHostManager {
     /// Add an internal host.
     pub async fn add_internal(client: &OpendkimClient, host: &InternalHost) -> OpendkimResult<()> {
         let path = Self::internal_hosts_path(client).await?;
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         let existing = parse_host_list(&content);
         if existing.iter().any(|(h, _)| h == &host.host) {
             return Err(OpendkimError::trusted_host(format!(

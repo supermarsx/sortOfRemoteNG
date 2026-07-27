@@ -1,9 +1,8 @@
 // Unified Mail Server integration — shared types + barrel (t42 Wave M, lead
 // t42-mail-L).
 //
-// This panel folds 8 independent mail-chain crates (postfix, dovecot, amavis,
-// opendkim, cyrus-sasl, procmail, rspamd, clamav) into one panel of self-managed
-// sub-tabs. Each crate owns its own config/summary/domain types in a sibling
+// This panel folds independently connected mail services into one panel of
+// self-managed sub-tabs. Each crate owns its own config/summary/domain types in a sibling
 // file `./<crate>.ts`; those re-exports are appended to the marked region at the
 // end of this file by the per-crate integrator. Keep this file's own shared
 // declarations above that region.
@@ -39,7 +38,7 @@ export interface MailSshConnectionFields {
 }
 
 // ── per-crate type namespaces (appended by the per-crate integrator) ─────────
-// NAMESPACED, not flat `export * from`: these 8 crates were authored
+// NAMESPACED, not flat `export * from`: these crates were authored
 // independently and a few generic helper types collide by name across them
 // (e.g. `ConfigTestResult`, `SshOutput`), which a flat re-export cannot merge
 // (TS2308). Each crate is exposed under its own namespace instead. Consume a
@@ -53,6 +52,7 @@ export * as cyrusSasl from "./cyrusSasl";
 export * as procmail from "./procmail";
 export * as rspamd from "./rspamd";
 export * as clamav from "./clamav";
+export * as roundcube from "./roundcube";
 
 // `ConfigTestResult` (opendkim/postfix/dovecot) and `SshOutput` (postfix/amavis)
 // are declared per-crate with crate-specific shapes, so a plain star re-export is

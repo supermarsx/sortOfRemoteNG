@@ -10,6 +10,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
 import type {
   ConfigTestResult,
@@ -76,7 +77,8 @@ export const dovecotApi = {
     invoke<void>("dovecot_force_resync", { id, user, mailbox }),
 
   // ── Users & auth (8) ───────────────────────────────────────────────────────
-  listUsers: (id: string) => invoke<DovecotUser[]>("dovecot_list_users", { id }),
+  listUsers: (id: string) =>
+    invoke<DovecotUser[]>("dovecot_list_users", { id }),
   getUser: (id: string, username: string) =>
     invoke<DovecotUser>("dovecot_get_user", { id, username }),
   createUser: (id: string, request: CreateUserRequest) =>
@@ -103,12 +105,13 @@ export const dovecotApi = {
     user: string,
     name: string,
     request: UpdateSieveRequest,
-  ) => invoke<DovecotSieveScript>("dovecot_update_sieve", {
-    id,
-    user,
-    name,
-    request,
-  }),
+  ) =>
+    invoke<DovecotSieveScript>("dovecot_update_sieve", {
+      id,
+      user,
+      name,
+      request,
+    }),
   deleteSieve: (id: string, user: string, name: string) =>
     invoke<void>("dovecot_delete_sieve", { id, user, name }),
   activateSieve: (id: string, user: string, name: string) =>
@@ -149,8 +152,11 @@ export const dovecotApi = {
     invoke<void>("dovecot_enable_plugin", { id, name }),
   disablePlugin: (id: string, name: string) =>
     invoke<void>("dovecot_disable_plugin", { id, name }),
-  configurePlugin: (id: string, name: string, settings: Record<string, string>) =>
-    invoke<void>("dovecot_configure_plugin", { id, name, settings }),
+  configurePlugin: (
+    id: string,
+    name: string,
+    settings: Record<string, string>,
+  ) => invoke<void>("dovecot_configure_plugin", { id, name, settings }),
   getAuthConfig: (id: string) =>
     invoke<DovecotAuthConfig>("dovecot_get_auth_config", { id }),
   listServices: (id: string) =>
@@ -169,19 +175,16 @@ export const dovecotApi = {
     mailbox: string,
     identifier: string,
     rights: string[],
-  ) => invoke<void>("dovecot_set_acl", {
-    id,
-    user,
-    mailbox,
-    identifier,
-    rights,
-  }),
-  deleteAcl: (
-    id: string,
-    user: string,
-    mailbox: string,
-    identifier: string,
-  ) => invoke<void>("dovecot_delete_acl", { id, user, mailbox, identifier }),
+  ) =>
+    invoke<void>("dovecot_set_acl", {
+      id,
+      user,
+      mailbox,
+      identifier,
+      rights,
+    }),
+  deleteAcl: (id: string, user: string, mailbox: string, identifier: string) =>
+    invoke<void>("dovecot_delete_acl", { id, user, mailbox, identifier }),
 
   // ── Replication (4) ────────────────────────────────────────────────────────
   replicationStatus: (id: string) =>
@@ -228,6 +231,7 @@ export type DovecotApi = typeof dovecotApi;
  *  `dovecot_ping` returns a boolean health check (not a summary), so the summary
  *  shown in the header is the one captured at connect time. */
 export function useDovecot() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<DovecotConnectionSummary | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -241,9 +245,23 @@ export function useDovecot() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await dovecotApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(result);
+        const result = await lifecycle.trackConnect(
+          `mail.dovecot:${id}`,
+          async () => {
+            const result = await dovecotApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await dovecotApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return result;
       } catch (e) {
         const msg = typeof e === "string" ? e : (e as Error).message;
@@ -253,20 +271,20 @@ export function useDovecot() {
         setConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await dovecotApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`mail.dovecot:${connectionId}`);
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   const ping = useCallback(async (): Promise<boolean> => {
     if (!connectionId) return false;

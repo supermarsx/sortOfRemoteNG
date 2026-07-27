@@ -143,8 +143,8 @@ impl QuotaManager {
         // Also check config files for quota_rule directives
         let config_path = format!("{}/conf.d/90-quota.conf", client.config_dir());
         let content = client
-            .read_remote_file(&config_path)
-            .await
+            .read_remote_file_if_exists(&config_path)
+            .await?
             .unwrap_or_default();
 
         for line in content.lines() {
@@ -206,8 +206,8 @@ impl QuotaManager {
     pub async fn set_rule(client: &DovecotClient, rule: &DovecotQuotaRule) -> DovecotResult<()> {
         let config_path = format!("{}/conf.d/90-quota.conf", client.config_dir());
         let content = client
-            .read_remote_file(&config_path)
-            .await
+            .read_remote_file_if_exists(&config_path)
+            .await?
             .unwrap_or_default();
 
         let mut parts = Vec::new();

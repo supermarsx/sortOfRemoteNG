@@ -48,33 +48,41 @@ impl DovecotServiceFacade {
         id: String,
         config: DovecotConnectionConfig,
     ) -> DovecotResult<DovecotConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(DovecotError::already_connected(&id));
+        }
         let client = DovecotClient::new(config)?;
-        let ver = client.version().await.ok();
+        let probe = client.exec_ssh("true").await?;
+        if probe.exit_code != 0 {
+            return Err(DovecotError::ssh(format!(
+                "SSH probe failed with exit code {}: {}",
+                probe.exit_code,
+                probe.stderr.trim()
+            )));
+        }
+        let ver = Some(client.version().await?);
 
         // Try to get protocols and auth mechanisms
-        let info = DovecotProcessManager::info(&client).await.ok();
+        let info = DovecotProcessManager::info(&client).await?;
         let summary = DovecotConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
-            protocols: info
-                .as_ref()
-                .map(|i| i.protocols.clone())
-                .unwrap_or_default(),
-            auth_mechanisms: info
-                .as_ref()
-                .map(|i| i.auth_mechanisms.clone())
-                .unwrap_or_default(),
+            protocols: info.protocols,
+            auth_mechanisms: info.auth_mechanisms,
             mail_location: None,
         };
         self.connections.insert(id, client);
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> DovecotResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(DovecotError::not_connected)
+    pub async fn disconnect(&mut self, id: &str) -> DovecotResult<()> {
+        let client = self
+            .connections
+            .get(id)
+            .ok_or_else(DovecotError::not_connected)?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

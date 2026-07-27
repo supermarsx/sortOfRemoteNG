@@ -26,16 +26,26 @@ impl SigningTableManager {
                     .strip_prefix("refile:")
                     .or_else(|| value.strip_prefix("file:"))
                     .unwrap_or(value);
+                if path.is_empty() {
+                    return Err(OpendkimError::config_not_found(
+                        "SigningTable is configured without a path",
+                    ));
+                }
                 return Ok(path.to_string());
             }
         }
-        Ok("/etc/opendkim/signing.table".to_string())
+        Err(OpendkimError::config_not_found(
+            "SigningTable is not configured in opendkim.conf",
+        ))
     }
 
     /// Parse all entries from the signing table file.
     pub async fn list(client: &OpendkimClient) -> OpendkimResult<Vec<SigningTableEntry>> {
         let path = Self::table_path(client).await?;
-        let content = client.read_remote_file(&path).await?;
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         Ok(parse_signing_table(&content))
     }
 
@@ -50,7 +60,10 @@ impl SigningTableManager {
     /// Add a new entry to the signing table.
     pub async fn add(client: &OpendkimClient, entry: &SigningTableEntry) -> OpendkimResult<()> {
         let path = Self::table_path(client).await?;
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client
+            .read_remote_file_optional(&path)
+            .await?
+            .unwrap_or_default();
         // Check for duplicate
         let existing = parse_signing_table(&content);
         if existing.iter().any(|e| e.pattern == entry.pattern) {
@@ -123,8 +136,16 @@ impl SigningTableManager {
                     .unwrap_or(v.trim())
                     .to_string()
             })
-            .unwrap_or_else(|| "/etc/opendkim/key.table".to_string());
-        let kt_content = client.read_remote_file(&kt_path).await.unwrap_or_default();
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| {
+                OpendkimError::config_not_found(
+                    "KeyTable is not configured with a path in opendkim.conf",
+                )
+            })?;
+        let kt_content = client
+            .read_remote_file_optional(&kt_path)
+            .await?
+            .unwrap_or_default();
         let mut entries = Vec::new();
         for line in kt_content.lines() {
             let line = line.trim();

@@ -145,7 +145,7 @@ impl AmavisConfigManager {
                 continue;
             }
             let path = format!("{}/{}", SNIPPETS_DIR, name);
-            let content = client.read_file(&path).await.unwrap_or_default();
+            let content = client.read_file(&path).await?;
             let enabled = !name.starts_with('.');
             snippets.push(AmavisConfigSnippet {
                 name,
@@ -183,7 +183,7 @@ impl AmavisConfigManager {
         content: &str,
     ) -> AmavisResult<AmavisConfigSnippet> {
         let path = format!("{}/{}", SNIPPETS_DIR, name);
-        if client.file_exists(&path).await.unwrap_or(false) {
+        if client.file_exists(&path).await? {
             return Err(AmavisError::config(format!(
                 "Snippet already exists: {}",
                 name
@@ -205,7 +205,7 @@ impl AmavisConfigManager {
         content: &str,
     ) -> AmavisResult<AmavisConfigSnippet> {
         let path = format!("{}/{}", SNIPPETS_DIR, name);
-        if !client.file_exists(&path).await.unwrap_or(false) {
+        if !client.file_exists(&path).await? {
             return Err(AmavisError::not_found(format!(
                 "Snippet not found: {}",
                 name

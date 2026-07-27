@@ -32,7 +32,10 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { usePostfix, type PostfixManager } from "../../../hooks/integration/mail/usePostfix";
+import {
+  usePostfix,
+  type PostfixManager,
+} from "../../../hooks/integration/mail/usePostfix";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../../utils/core/id";
 import type { MailSubTabProps } from "./registry";
@@ -190,7 +193,8 @@ const emptyConnect: ConnectState = {
   name: "",
 };
 
-/** SSH password + key bundled into ONE opaque vault secret. */
+/** Legacy bundled shape. New saves vault only the password; the key is a
+ * filesystem path and is persisted as non-secret instance metadata. */
 interface PostfixSecrets {
   sshPassword?: string;
   sshKey?: string;
@@ -198,46 +202,67 @@ interface PostfixSecrets {
 
 const INTEGRATION_KEY = "mail.postfix";
 
-const ConnectForm: React.FC<{ mgr: PostfixManager }> = ({ mgr }) => {
+const ConnectForm: React.FC<{
+  mgr: PostfixManager;
+  instanceId?: string;
+}> = ({ mgr, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>();
 
-  // Prefill from the first persisted "mail.postfix" instance, if any.
+  // A launched session must hydrate its exact saved instance. The first saved
+  // instance remains the standalone-panel default only when no selection was
+  // supplied by the session launcher.
   useEffect(() => {
-    if (store.isLoading) return;
-    const inst = store.instances.find(
-      (i) => i.integrationKey === INTEGRATION_KEY,
-    );
-    if (!inst) return;
+    if (isLoading) return;
+    const inst = instanceId
+      ? instances.find(
+          (candidate) =>
+            candidate.id === instanceId &&
+            candidate.integrationKey === INTEGRATION_KEY,
+        )
+      : instances.find(
+          (candidate) => candidate.integrationKey === INTEGRATION_KEY,
+        );
+    if (!inst) {
+      setSavedId(undefined);
+      if (instanceId) setForm(emptyConnect);
+      return;
+    }
+    let cancelled = false;
     setSavedId(inst.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: inst.name,
       host: inst.host ?? "",
       port: inst.fields?.port ?? "22",
       sshUser: inst.fields?.sshUser ?? "root",
-      postfixBin: inst.fields?.postfixBin ?? f.postfixBin,
-      configDir: inst.fields?.configDir ?? f.configDir,
-      queueDir: inst.fields?.queueDir ?? f.queueDir,
+      sshKey: inst.fields?.sshKey ?? "",
+      postfixBin: inst.fields?.postfixBin ?? emptyConnect.postfixBin,
+      configDir: inst.fields?.configDir ?? emptyConnect.configDir,
+      queueDir: inst.fields?.queueDir ?? emptyConnect.queueDir,
       timeoutSecs: inst.fields?.timeoutSecs ?? "30",
-    }));
-    store.readSecret(inst).then((raw) => {
+    });
+    void readSecret(inst).then((raw) => {
+      if (cancelled) return;
       if (!raw) return;
       try {
         const s = JSON.parse(raw) as PostfixSecrets;
         setForm((f) => ({
           ...f,
           sshPassword: s.sshPassword ?? "",
-          sshKey: s.sshKey ?? "",
+          sshKey: inst.fields?.sshKey ?? s.sshKey ?? "",
         }));
       } catch {
         setForm((f) => ({ ...f, sshPassword: raw }));
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, instances, isLoading, readSecret]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -261,17 +286,13 @@ const ConnectForm: React.FC<{ mgr: PostfixManager }> = ({ mgr }) => {
     const fields: Record<string, string> = {
       port: form.port,
       sshUser: form.sshUser,
+      sshKey: form.sshKey,
       postfixBin: form.postfixBin,
       configDir: form.configDir,
       queueDir: form.queueDir,
       timeoutSecs: form.timeoutSecs,
     };
-    const secrets: PostfixSecrets = {
-      sshPassword: form.sshPassword || undefined,
-      sshKey: form.sshKey || undefined,
-    };
-    const hasSecret = Object.values(secrets).some(Boolean);
-    const secret = hasSecret ? JSON.stringify(secrets) : undefined;
+    const secret = form.sshPassword || undefined;
     if (savedId) {
       await store.updateInstance(savedId, {
         name: form.name || form.host,
@@ -328,14 +349,13 @@ const ConnectForm: React.FC<{ mgr: PostfixManager }> = ({ mgr }) => {
           />
         </Labeled>
         <Labeled
-          label={t("integrations.mail.postfix.sshKey", "SSH private key")}
+          label={t("integrations.mail.postfix.sshKey", "SSH private key path")}
         >
-          <textarea
-            className={`${field} font-mono`}
-            rows={2}
+          <input
+            className={field}
             value={form.sshKey}
             onChange={(e) => set("sshKey", e.target.value)}
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            placeholder="~/.ssh/id_ed25519"
           />
         </Labeled>
         <Labeled
@@ -458,9 +478,7 @@ const OverviewSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             {t("integrations.mail.postfix.version", "Version")}: {version}
           </span>
         )}
-        {pong && (
-          <span className="text-xs text-green-500">{pong}</span>
-        )}
+        {pong && <span className="text-xs text-green-500">{pong}</span>}
       </div>
       {info && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -488,12 +506,30 @@ const OverviewSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
       )}
       {stats && (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-          <Stat label={t("integrations.mail.postfix.sent", "Sent")} value={stats.sent} />
-          <Stat label={t("integrations.mail.postfix.bounced", "Bounced")} value={stats.bounced} />
-          <Stat label={t("integrations.mail.postfix.deferred", "Deferred")} value={stats.deferred} />
-          <Stat label={t("integrations.mail.postfix.rejected", "Rejected")} value={stats.rejected} />
-          <Stat label={t("integrations.mail.postfix.held", "Held")} value={stats.held} />
-          <Stat label={t("integrations.mail.postfix.total", "Total")} value={stats.total} />
+          <Stat
+            label={t("integrations.mail.postfix.sent", "Sent")}
+            value={stats.sent}
+          />
+          <Stat
+            label={t("integrations.mail.postfix.bounced", "Bounced")}
+            value={stats.bounced}
+          />
+          <Stat
+            label={t("integrations.mail.postfix.deferred", "Deferred")}
+            value={stats.deferred}
+          />
+          <Stat
+            label={t("integrations.mail.postfix.rejected", "Rejected")}
+            value={stats.rejected}
+          />
+          <Stat
+            label={t("integrations.mail.postfix.held", "Held")}
+            value={stats.held}
+          />
+          <Stat
+            label={t("integrations.mail.postfix.total", "Total")}
+            value={stats.total}
+          />
         </div>
       )}
       <TextView value={status} />
@@ -590,7 +626,10 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 180 }}
-          placeholder={t("integrations.mail.postfix.paramName", "Parameter name")}
+          placeholder={t(
+            "integrations.mail.postfix.paramName",
+            "Parameter name",
+          )}
           value={lookup}
           onChange={(e) => setLookup(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void doGetParam()}
@@ -611,11 +650,16 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           <div className="font-semibold">
             {check.success
               ? t("integrations.mail.postfix.configValid", "Configuration OK")
-              : t("integrations.mail.postfix.configInvalid", "Configuration errors")}
+              : t(
+                  "integrations.mail.postfix.configInvalid",
+                  "Configuration errors",
+                )}
           </div>
           {check.output && <div className="font-mono">{check.output}</div>}
           {check.errors.map((e, i) => (
-            <div key={i} className="font-mono">{e}</div>
+            <div key={i} className="font-mono">
+              {e}
+            </div>
           ))}
         </div>
       )}
@@ -626,15 +670,22 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <div className="mb-2 flex items-center gap-2">
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.paramName", "Parameter name")}
+            placeholder={t(
+              "integrations.mail.postfix.paramName",
+              "Parameter name",
+            )}
             value={newParam.name}
-            onChange={(e) => setNewParam((p) => ({ ...p, name: e.target.value }))}
+            onChange={(e) =>
+              setNewParam((p) => ({ ...p, name: e.target.value }))
+            }
           />
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.paramValue", "Value")}
             value={newParam.value}
-            onChange={(e) => setNewParam((p) => ({ ...p, value: e.target.value }))}
+            onChange={(e) =>
+              setNewParam((p) => ({ ...p, value: e.target.value }))
+            }
           />
           <button
             className={btn}
@@ -651,14 +702,21 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.postfix.name", "Name")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.postfix.value", "Value")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.postfix.name", "Name")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.postfix.value", "Value")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {params.map((p) => (
-                <tr key={p.name} className="border-t border-[var(--color-border)]">
+                <tr
+                  key={p.name}
+                  className="border-t border-[var(--color-border)]"
+                >
                   <td className="px-2 py-1 font-mono text-[var(--color-text)]">
                     {p.name}
                     {p.is_default && (
@@ -678,7 +736,10 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
                     />
                   </td>
                   <td className="px-2 py-1 text-right">
-                    <button className={btn} onClick={() => void doDeleteParam(p.name)}>
+                    <button
+                      className={btn}
+                      onClick={() => void doDeleteParam(p.name)}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </td>
@@ -686,8 +747,14 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
               ))}
               {params.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
-                    {t("integrations.mail.postfix.noParams", "No parameters loaded")}
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={3}
+                  >
+                    {t(
+                      "integrations.mail.postfix.noParams",
+                      "No parameters loaded",
+                    )}
                   </td>
                 </tr>
               )}
@@ -704,18 +771,33 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <thead className="text-[var(--color-textMuted)]">
               <tr>
-                <th className="px-2 py-1">{t("integrations.mail.postfix.service", "Service")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.postfix.type", "Type")}</th>
-                <th className="px-2 py-1">{t("integrations.mail.postfix.command", "Command")}</th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.postfix.service", "Service")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.postfix.type", "Type")}
+                </th>
+                <th className="px-2 py-1">
+                  {t("integrations.mail.postfix.command", "Command")}
+                </th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
             <tbody>
               {master.map((m, i) => (
-                <tr key={`${m.service_name}-${i}`} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{m.service_name}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{m.service_type}</td>
-                  <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-textSecondary)]">{m.command}</td>
+                <tr
+                  key={`${m.service_name}-${i}`}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {m.service_name}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {m.service_type}
+                  </td>
+                  <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-textSecondary)]">
+                    {m.command}
+                  </td>
                   <td className="px-2 py-1 text-right">
                     <button className={btn} onClick={() => setEditEntry(m)}>
                       {t("integrations.mail.postfix.edit", "Edit")}
@@ -725,8 +807,14 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
               ))}
               {master.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
-                    {t("integrations.mail.postfix.noServices", "No services loaded")}
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
+                    {t(
+                      "integrations.mail.postfix.noServices",
+                      "No services loaded",
+                    )}
                   </td>
                 </tr>
               )}
@@ -767,7 +855,10 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
                 className={field}
                 value={editEntry.maxproc ?? ""}
                 onChange={(e) =>
-                  setEditEntry({ ...editEntry, maxproc: e.target.value || null })
+                  setEditEntry({
+                    ...editEntry,
+                    maxproc: e.target.value || null,
+                  })
                 }
               />
             </Labeled>
@@ -781,7 +872,11 @@ const ConfigSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
               />
             </Labeled>
             <div className="flex items-end gap-2">
-              <button className={btn} onClick={doUpdateMaster} disabled={mgr.isLoading}>
+              <button
+                className={btn}
+                onClick={doUpdateMaster}
+                disabled={mgr.isLoading}
+              >
                 {t("integrations.mail.postfix.saveEntry", "Save entry")}
               </button>
               <button className={btn} onClick={() => setEditEntry(null)}>
@@ -826,7 +921,9 @@ const MapsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
   const add = useCallback(async () => {
     if (!selected || !form.key) return;
     try {
-      await mgr.run(() => mgr.api.setMapEntry(cid, selected, form.key, form.value));
+      await mgr.run(() =>
+        mgr.api.setMapEntry(cid, selected, form.key, form.value),
+      );
       setForm({ key: "", value: "" });
       await loadEntries(selected);
     } catch {
@@ -874,7 +971,10 @@ const MapsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
                 : "text-[var(--color-textSecondary)]"
             }`}
           >
-            <button className="flex-1 text-left" onClick={() => void loadEntries(m.name)}>
+            <button
+              className="flex-1 text-left"
+              onClick={() => void loadEntries(m.name)}
+            >
               <span className="font-mono">{m.name}</span>
               <span className="ml-2 text-[var(--color-textMuted)]">
                 {m.map_type} · {m.path} · {m.entries_count}
@@ -909,7 +1009,9 @@ const MapsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
               className={field}
               placeholder={t("integrations.mail.postfix.value", "Value")}
               value={form.value}
-              onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, value: e.target.value }))
+              }
             />
             <button className={btn} onClick={add} disabled={!form.key}>
               {t("integrations.mail.postfix.set", "Set")}
@@ -919,9 +1021,16 @@ const MapsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             <table className="w-full text-left text-xs">
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.key} className="border-t border-[var(--color-border)]">
-                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{e.key}</td>
-                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{e.value}</td>
+                  <tr
+                    key={e.key}
+                    className="border-t border-[var(--color-border)]"
+                  >
+                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                      {e.key}
+                    </td>
+                    <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                      {e.value}
+                    </td>
                     <td className="px-2 py-1 text-right">
                       <button className={btn} onClick={() => void del(e.key)}>
                         <Trash2 size={12} />
@@ -931,7 +1040,10 @@ const MapsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
                 ))}
                 {entries.length === 0 && (
                   <tr>
-                    <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                    <td
+                      className="px-2 py-3 text-[var(--color-textMuted)]"
+                      colSpan={3}
+                    >
                       {t("integrations.mail.postfix.noEntries", "No entries")}
                     </td>
                   </tr>
@@ -987,7 +1099,12 @@ const DomainsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           description: form.description || null,
         }),
       );
-      setForm({ domain: "", domain_type: "virtual", transport: "", description: "" });
+      setForm({
+        domain: "",
+        domain_type: "virtual",
+        transport: "",
+        description: "",
+      });
       await refresh();
     } catch {
       /* surfaced */
@@ -1014,7 +1131,15 @@ const DomainsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
 
   const del = useCallback(
     async (domain: string) => {
-      if (!window.confirm(t("integrations.mail.postfix.deleteConfirm", "Delete {{n}}?").replace("{{n}}", domain))) return;
+      if (
+        !window.confirm(
+          t("integrations.mail.postfix.deleteConfirm", "Delete {{n}}?").replace(
+            "{{n}}",
+            domain,
+          ),
+        )
+      )
+        return;
       try {
         await mgr.run(() => mgr.api.deleteDomain(cid, domain));
         await refresh();
@@ -1043,27 +1168,43 @@ const DomainsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             className={field}
             value={form.domain_type}
             onChange={(e) =>
-              setForm((f) => ({ ...f, domain_type: e.target.value as DomainType }))
+              setForm((f) => ({
+                ...f,
+                domain_type: e.target.value as DomainType,
+              }))
             }
           >
             {DOMAIN_TYPES.map((d) => (
-              <option key={d} value={d}>{d}</option>
+              <option key={d} value={d}>
+                {d}
+              </option>
             ))}
           </select>
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.transport", "Transport")}
             value={form.transport}
-            onChange={(e) => setForm((f) => ({ ...f, transport: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, transport: e.target.value }))
+            }
           />
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.description", "Description")}
+            placeholder={t(
+              "integrations.mail.postfix.description",
+              "Description",
+            )}
             value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, description: e.target.value }))
+            }
           />
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={!form.domain}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={!form.domain}
+        >
           {t("integrations.mail.postfix.createDomain", "Create domain")}
         </button>
       </div>
@@ -1071,28 +1212,45 @@ const DomainsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.domain", "Domain")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.type", "Type")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.transport", "Transport")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.domain", "Domain")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.type", "Type")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.transport", "Transport")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((d) => (
-              <tr key={d.domain} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{d.domain}</td>
+              <tr
+                key={d.domain}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {d.domain}
+                </td>
                 <td className="px-2 py-1">
                   <select
                     className={field}
                     value={d.domain_type}
-                    onChange={(e) => void update(d, e.target.value as DomainType)}
+                    onChange={(e) =>
+                      void update(d, e.target.value as DomainType)
+                    }
                   >
                     {DOMAIN_TYPES.map((x) => (
-                      <option key={x} value={x}>{x}</option>
+                      <option key={x} value={x}>
+                        {x}
+                      </option>
                     ))}
                   </select>
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{d.transport ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {d.transport ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
                     <button className={btn} onClick={() => void view(d.domain)}>
@@ -1107,7 +1265,10 @@ const DomainsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.postfix.noDomains", "No domains")}
                 </td>
               </tr>
@@ -1163,7 +1324,10 @@ const AliasesSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
       await mgr.run(() =>
         mgr.api.createAlias(cid, {
           address: form.address,
-          recipients: form.recipients.split(",").map((r) => r.trim()).filter(Boolean),
+          recipients: form.recipients
+            .split(",")
+            .map((r) => r.trim())
+            .filter(Boolean),
           alias_type: form.alias_type,
         }),
       );
@@ -1211,11 +1375,19 @@ const AliasesSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           className={field}
           style={{ width: 140 }}
           value={scope}
-          onChange={(e) => setScope(e.target.value as "all" | "virtual" | "local")}
+          onChange={(e) =>
+            setScope(e.target.value as "all" | "virtual" | "local")
+          }
         >
-          <option value="all">{t("integrations.mail.postfix.allAliases", "All")}</option>
-          <option value="virtual">{t("integrations.mail.postfix.virtual", "Virtual")}</option>
-          <option value="local">{t("integrations.mail.postfix.local", "Local")}</option>
+          <option value="all">
+            {t("integrations.mail.postfix.allAliases", "All")}
+          </option>
+          <option value="virtual">
+            {t("integrations.mail.postfix.virtual", "Virtual")}
+          </option>
+          <option value="local">
+            {t("integrations.mail.postfix.local", "Local")}
+          </option>
         </select>
       </div>
       <div className={card}>
@@ -1224,27 +1396,43 @@ const AliasesSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             className={field}
             placeholder={t("integrations.mail.postfix.address", "Address")}
             value={form.address}
-            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, address: e.target.value }))
+            }
           />
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.recipientsCsv", "Recipients (comma-sep)")}
+            placeholder={t(
+              "integrations.mail.postfix.recipientsCsv",
+              "Recipients (comma-sep)",
+            )}
             value={form.recipients}
-            onChange={(e) => setForm((f) => ({ ...f, recipients: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, recipients: e.target.value }))
+            }
           />
           <select
             className={field}
             value={form.alias_type}
             onChange={(e) =>
-              setForm((f) => ({ ...f, alias_type: e.target.value as AliasType }))
+              setForm((f) => ({
+                ...f,
+                alias_type: e.target.value as AliasType,
+              }))
             }
           >
             {ALIAS_TYPES.map((a) => (
-              <option key={a} value={a}>{a}</option>
+              <option key={a} value={a}>
+                {a}
+              </option>
             ))}
           </select>
         </div>
-        <button className={`${btn} mt-2`} onClick={create} disabled={!form.address}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={create}
+          disabled={!form.address}
+        >
           {t("integrations.mail.postfix.createAlias", "Create alias")}
         </button>
       </div>
@@ -1252,21 +1440,39 @@ const AliasesSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.address", "Address")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.recipients", "Recipients")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.type", "Type")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.address", "Address")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.recipients", "Recipients")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.type", "Type")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((a) => (
-              <tr key={a.address} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{a.address}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{a.recipients.join(", ")}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{a.alias_type}</td>
+              <tr
+                key={a.address}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {a.address}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {a.recipients.join(", ")}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {a.alias_type}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => void view(a.address)}>
+                    <button
+                      className={btn}
+                      onClick={() => void view(a.address)}
+                    >
                       {t("integrations.mail.postfix.view", "View")}
                     </button>
                     <button className={btn} onClick={() => void toggle(a)}>
@@ -1283,7 +1489,10 @@ const AliasesSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.postfix.noAliases", "No aliases")}
                 </td>
               </tr>
@@ -1401,19 +1610,28 @@ const TransportsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             className={field}
             placeholder={t("integrations.mail.postfix.transport", "Transport")}
             value={form.transport}
-            onChange={(e) => setForm((f) => ({ ...f, transport: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, transport: e.target.value }))
+            }
           />
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.nexthop", "Next hop")}
             value={form.nexthop}
-            onChange={(e) => setForm((f) => ({ ...f, nexthop: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, nexthop: e.target.value }))
+            }
           />
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.description", "Description")}
+            placeholder={t(
+              "integrations.mail.postfix.description",
+              "Description",
+            )}
             value={form.description}
-            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, description: e.target.value }))
+            }
           />
         </div>
         <button
@@ -1428,16 +1646,27 @@ const TransportsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.domain", "Domain")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.transport", "Transport")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.nexthop", "Next hop")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.domain", "Domain")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.transport", "Transport")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.nexthop", "Next hop")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((tr) => (
-              <tr key={tr.domain} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{tr.domain}</td>
+              <tr
+                key={tr.domain}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {tr.domain}
+                </td>
                 <td className="px-2 py-1">
                   <input
                     className={field}
@@ -1448,13 +1677,21 @@ const TransportsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
                     }
                   />
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{tr.nexthop ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {tr.nexthop ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => void view(tr.domain)}>
+                    <button
+                      className={btn}
+                      onClick={() => void view(tr.domain)}
+                    >
                       {t("integrations.mail.postfix.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => void test(tr.domain)}>
+                    <button
+                      className={btn}
+                      onClick={() => void test(tr.domain)}
+                    >
                       <Send size={12} />
                       {t("integrations.mail.postfix.test", "Test")}
                     </button>
@@ -1467,7 +1704,10 @@ const TransportsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.postfix.noTransports", "No transports")}
                 </td>
               </tr>
@@ -1535,12 +1775,17 @@ const QueueSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
   );
 
   const bulk = useCallback(
-    async (op: "flush" | "flushQueue" | "deleteAll" | "requeueAll" | "purge") => {
+    async (
+      op: "flush" | "flushQueue" | "deleteAll" | "requeueAll" | "purge",
+    ) => {
       const destructive = op === "deleteAll" || op === "purge";
       if (
         destructive &&
         !window.confirm(
-          t("integrations.mail.postfix.queueBulkConfirm", "Run this on the whole queue?"),
+          t(
+            "integrations.mail.postfix.queueBulkConfirm",
+            "Run this on the whole queue?",
+          ),
         )
       )
         return;
@@ -1617,7 +1862,9 @@ const QueueSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           onChange={(e) => void loadEntries(e.target.value as QueueName)}
         >
           {QUEUE_NAMES.map((q) => (
-            <option key={q} value={q}>{q}</option>
+            <option key={q} value={q}>
+              {q}
+            </option>
           ))}
         </select>
         <button className={btn} onClick={() => void loadEntries(selected)}>
@@ -1628,32 +1875,63 @@ const QueueSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.queueId", "Queue ID")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.sender", "Sender")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.recipients", "Recipients")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.status", "Status")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.queueId", "Queue ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.sender", "Sender")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.recipients", "Recipients")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.status", "Status")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {entries.map((e) => (
-              <tr key={e.queue_id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{e.queue_id}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{e.sender}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{e.recipients.join(", ")}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{e.status}</td>
+              <tr
+                key={e.queue_id}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {e.queue_id}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {e.sender}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {e.recipients.join(", ")}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {e.status}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => void view(e.queue_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void view(e.queue_id)}
+                    >
                       {t("integrations.mail.postfix.view", "View")}
                     </button>
-                    <button className={btn} onClick={() => void entryAction("hold", e.queue_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void entryAction("hold", e.queue_id)}
+                    >
                       {t("integrations.mail.postfix.hold", "Hold")}
                     </button>
-                    <button className={btn} onClick={() => void entryAction("release", e.queue_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void entryAction("release", e.queue_id)}
+                    >
                       {t("integrations.mail.postfix.release", "Release")}
                     </button>
-                    <button className={btn} onClick={() => void entryAction("delete", e.queue_id)}>
+                    <button
+                      className={btn}
+                      onClick={() => void entryAction("delete", e.queue_id)}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -1662,8 +1940,14 @@ const QueueSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             ))}
             {entries.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
-                  {t("integrations.mail.postfix.noQueueEntries", "No entries in this queue")}
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
+                  {t(
+                    "integrations.mail.postfix.noQueueEntries",
+                    "No entries in this queue",
+                  )}
                 </td>
               </tr>
             )}
@@ -1767,7 +2051,10 @@ const TlsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <div className="mb-2 flex items-center gap-2">
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.paramName", "Parameter name")}
+            placeholder={t(
+              "integrations.mail.postfix.paramName",
+              "Parameter name",
+            )}
             value={param.name}
             onChange={(e) => setParam((p) => ({ ...p, name: e.target.value }))}
           />
@@ -1786,14 +2073,24 @@ const TlsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             <tbody>
               {Object.entries(config).map(([k, v]) => (
                 <tr key={k} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{k}</td>
-                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{v}</td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {k}
+                  </td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                    {v}
+                  </td>
                 </tr>
               ))}
               {Object.keys(config).length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={2}>
-                    {t("integrations.mail.postfix.noTlsConfig", "No TLS config loaded")}
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={2}
+                  >
+                    {t(
+                      "integrations.mail.postfix.noTlsConfig",
+                      "No TLS config loaded",
+                    )}
                   </td>
                 </tr>
               )}
@@ -1804,52 +2101,82 @@ const TlsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
 
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.postfix.tlsPolicies", "TLS policies (per-domain)")}
+          {t(
+            "integrations.mail.postfix.tlsPolicies",
+            "TLS policies (per-domain)",
+          )}
         </h4>
         <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.domain", "Domain")}
             value={policyForm.domain}
-            onChange={(e) => setPolicyForm((p) => ({ ...p, domain: e.target.value }))}
+            onChange={(e) =>
+              setPolicyForm((p) => ({ ...p, domain: e.target.value }))
+            }
           />
           <select
             className={field}
             value={policyForm.policy}
             onChange={(e) =>
-              setPolicyForm((p) => ({ ...p, policy: e.target.value as TlsPolicy }))
+              setPolicyForm((p) => ({
+                ...p,
+                policy: e.target.value as TlsPolicy,
+              }))
             }
           >
             {TLS_POLICIES.map((x) => (
-              <option key={x} value={x}>{x}</option>
+              <option key={x} value={x}>
+                {x}
+              </option>
             ))}
           </select>
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.matchType", "Match")}
             value={policyForm.match_type}
-            onChange={(e) => setPolicyForm((p) => ({ ...p, match_type: e.target.value }))}
+            onChange={(e) =>
+              setPolicyForm((p) => ({ ...p, match_type: e.target.value }))
+            }
           />
           <input
             className={field}
             placeholder={t("integrations.mail.postfix.params", "Params")}
             value={policyForm.params}
-            onChange={(e) => setPolicyForm((p) => ({ ...p, params: e.target.value }))}
+            onChange={(e) =>
+              setPolicyForm((p) => ({ ...p, params: e.target.value }))
+            }
           />
         </div>
-        <button className={btn} onClick={applyPolicy} disabled={!policyForm.domain}>
+        <button
+          className={btn}
+          onClick={applyPolicy}
+          disabled={!policyForm.domain}
+        >
           {t("integrations.mail.postfix.setPolicy", "Set policy")}
         </button>
         <div className="mt-2 overflow-x-auto">
           <table className="w-full text-left text-xs">
             <tbody>
               {policies.map((p) => (
-                <tr key={p.domain} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{p.domain}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{p.policy}</td>
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{p.match_type ?? "—"}</td>
+                <tr
+                  key={p.domain}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {p.domain}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {p.policy}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {p.match_type ?? "—"}
+                  </td>
                   <td className="px-2 py-1 text-right">
-                    <button className={btn} onClick={() => void delPolicy(p.domain)}>
+                    <button
+                      className={btn}
+                      onClick={() => void delPolicy(p.domain)}
+                    >
                       <Trash2 size={12} />
                     </button>
                   </td>
@@ -1857,7 +2184,10 @@ const TlsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
               ))}
               {policies.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={4}
+                  >
                     {t("integrations.mail.postfix.noPolicies", "No policies")}
                   </td>
                 </tr>
@@ -1885,12 +2215,30 @@ const TlsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         </div>
         {cert && (
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Stat label={t("integrations.mail.postfix.subject", "Subject")} value={cert.subject} />
-            <Stat label={t("integrations.mail.postfix.issuer", "Issuer")} value={cert.issuer} />
-            <Stat label={t("integrations.mail.postfix.notBefore", "Not before")} value={cert.not_before} />
-            <Stat label={t("integrations.mail.postfix.notAfter", "Not after")} value={cert.not_after} />
-            <Stat label={t("integrations.mail.postfix.fingerprint", "Fingerprint")} value={cert.fingerprint} />
-            <Stat label={t("integrations.mail.postfix.serial", "Serial")} value={cert.serial} />
+            <Stat
+              label={t("integrations.mail.postfix.subject", "Subject")}
+              value={cert.subject}
+            />
+            <Stat
+              label={t("integrations.mail.postfix.issuer", "Issuer")}
+              value={cert.issuer}
+            />
+            <Stat
+              label={t("integrations.mail.postfix.notBefore", "Not before")}
+              value={cert.not_before}
+            />
+            <Stat
+              label={t("integrations.mail.postfix.notAfter", "Not after")}
+              value={cert.not_after}
+            />
+            <Stat
+              label={t("integrations.mail.postfix.fingerprint", "Fingerprint")}
+              value={cert.fingerprint}
+            />
+            <Stat
+              label={t("integrations.mail.postfix.serial", "Serial")}
+              value={cert.serial}
+            />
           </div>
         )}
       </div>
@@ -1918,10 +2266,14 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
   const loadStage = useCallback(
     async (s: RestrictionStage) => {
       setStage(s);
-      await safeLoad(mgr, () => mgr.api.getRestrictions(cid, s), (v) => {
-        setList(v);
-        setDraft(v.join("\n"));
-      });
+      await safeLoad(
+        mgr,
+        () => mgr.api.getRestrictions(cid, s),
+        (v) => {
+          setList(v);
+          setDraft(v.join("\n"));
+        },
+      );
     },
     [mgr, cid],
   );
@@ -1932,7 +2284,10 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
   }, [refreshAll, loadStage]);
 
   const save = useCallback(async () => {
-    const arr = draft.split("\n").map((s) => s.trim()).filter(Boolean);
+    const arr = draft
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
     try {
       await mgr.run(() => mgr.api.setRestrictions(cid, stage, arr));
       await loadStage(stage);
@@ -1977,10 +2332,16 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           onChange={(e) => void loadStage(e.target.value as RestrictionStage)}
         >
           {RESTRICTION_STAGES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
-        <button className={btn} onClick={() => void loadStage(stage)} disabled={mgr.isLoading}>
+        <button
+          className={btn}
+          onClick={() => void loadStage(stage)}
+          disabled={mgr.isLoading}
+        >
           <RefreshCw size={12} />
           {t("integrations.mail.postfix.refresh", "Refresh")}
         </button>
@@ -1988,12 +2349,16 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
 
       <div className={card}>
         <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-          {t("integrations.mail.postfix.stageRestrictions", "Restrictions")}: {stage}
+          {t("integrations.mail.postfix.stageRestrictions", "Restrictions")}:{" "}
+          {stage}
         </h4>
         <div className="mb-2 flex items-center gap-2">
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.restriction", "Restriction, e.g. reject_unauth_destination")}
+            placeholder={t(
+              "integrations.mail.postfix.restriction",
+              "Restriction, e.g. reject_unauth_destination",
+            )}
             value={addValue}
             onChange={(e) => setAddValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void add()}
@@ -2004,8 +2369,13 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         </div>
         <div className="mb-2 flex flex-col gap-1">
           {list.map((r, i) => (
-            <div key={`${r}-${i}`} className="flex items-center justify-between text-xs">
-              <span className="font-mono text-[var(--color-textSecondary)]">{r}</span>
+            <div
+              key={`${r}-${i}`}
+              className="flex items-center justify-between text-xs"
+            >
+              <span className="font-mono text-[var(--color-textSecondary)]">
+                {r}
+              </span>
               <button className={btn} onClick={() => void remove(r)}>
                 <Trash2 size={12} />
               </button>
@@ -2017,7 +2387,12 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             </span>
           )}
         </div>
-        <Labeled label={t("integrations.mail.postfix.editOrdered", "Edit full ordered list (one per line)")}>
+        <Labeled
+          label={t(
+            "integrations.mail.postfix.editOrdered",
+            "Edit full ordered list (one per line)",
+          )}
+        >
           <textarea
             className={`${field} font-mono`}
             rows={5}
@@ -2025,7 +2400,11 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             onChange={(e) => setDraft(e.target.value)}
           />
         </Labeled>
-        <button className={`${btn} mt-2`} onClick={save} disabled={mgr.isLoading}>
+        <button
+          className={`${btn} mt-2`}
+          onClick={save}
+          disabled={mgr.isLoading}
+        >
           {t("integrations.mail.postfix.saveList", "Save list")}
         </button>
       </div>
@@ -2038,15 +2417,27 @@ const RestrictionsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           <table className="w-full text-left text-xs">
             <tbody>
               {all.map((r, i) => (
-                <tr key={`${r.stage}-${r.name}-${i}`} className="border-t border-[var(--color-border)]">
-                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">{r.stage}</td>
-                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">{r.name}</td>
-                  <td className="px-2 py-1 text-[var(--color-textMuted)]">#{r.position}</td>
+                <tr
+                  key={`${r.stage}-${r.name}-${i}`}
+                  className="border-t border-[var(--color-border)]"
+                >
+                  <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                    {r.stage}
+                  </td>
+                  <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                    {r.name}
+                  </td>
+                  <td className="px-2 py-1 text-[var(--color-textMuted)]">
+                    #{r.position}
+                  </td>
                 </tr>
               ))}
               {all.length === 0 && (
                 <tr>
-                  <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                  <td
+                    className="px-2 py-3 text-[var(--color-textMuted)]"
+                    colSpan={3}
+                  >
                     {t("integrations.mail.postfix.noRestrictions", "None set")}
                   </td>
                 </tr>
@@ -2103,7 +2494,9 @@ const MiltersSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
   const update = useCallback(
     async (m: PostfixMilter, socket: string) => {
       try {
-        await mgr.run(() => mgr.api.updateMilter(cid, m.name, { ...m, socket }));
+        await mgr.run(() =>
+          mgr.api.updateMilter(cid, m.name, { ...m, socket }),
+        );
         await refresh();
       } catch {
         /* surfaced */
@@ -2140,7 +2533,10 @@ const MiltersSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
           />
           <input
             className={field}
-            placeholder={t("integrations.mail.postfix.socket", "Socket, e.g. inet:localhost:8891")}
+            placeholder={t(
+              "integrations.mail.postfix.socket",
+              "Socket, e.g. inet:localhost:8891",
+            )}
             value={form.socket}
             onChange={(e) => setForm((f) => ({ ...f, socket: e.target.value }))}
           />
@@ -2154,7 +2550,9 @@ const MiltersSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             className={field}
             placeholder={t("integrations.mail.postfix.protocol", "Protocol")}
             value={form.protocol ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, protocol: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, protocol: e.target.value }))
+            }
           />
         </div>
         <button
@@ -2169,26 +2567,40 @@ const MiltersSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.name", "Name")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.socket", "Socket")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.flags", "Flags")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.name", "Name")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.socket", "Socket")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.flags", "Flags")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((m) => (
-              <tr key={m.name} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{m.name}</td>
+              <tr
+                key={m.name}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {m.name}
+                </td>
                 <td className="px-2 py-1">
                   <input
                     className={field}
                     defaultValue={m.socket}
                     onBlur={(ev) =>
-                      ev.target.value !== m.socket && void update(m, ev.target.value)
+                      ev.target.value !== m.socket &&
+                      void update(m, ev.target.value)
                     }
                   />
                 </td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{m.flags ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {m.flags ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-right">
                   <button className={btn} onClick={() => void remove(m.name)}>
                     <Trash2 size={12} />
@@ -2198,7 +2610,10 @@ const MiltersSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.postfix.noMilters", "No milters")}
                 </td>
               </tr>
@@ -2258,7 +2673,10 @@ const LogsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <input
           className={field}
           style={{ width: 220 }}
-          placeholder={t("integrations.mail.postfix.filter", "Filter (queue id / text)")}
+          placeholder={t(
+            "integrations.mail.postfix.filter",
+            "Filter (queue id / text)",
+          )}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void query()}
@@ -2277,24 +2695,43 @@ const LogsSection: React.FC<{ mgr: PostfixManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="sticky top-0 bg-[var(--color-surface)] text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.time", "Time")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.process", "Process")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.queueId", "Queue ID")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.postfix.message", "Message")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.time", "Time")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.process", "Process")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.queueId", "Queue ID")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.postfix.message", "Message")}
+              </th>
             </tr>
           </thead>
           <tbody>
             {logs.map((l, i) => (
               <tr key={i} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 whitespace-nowrap text-[var(--color-textMuted)]">{l.timestamp ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{l.process ?? "—"}</td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{l.queue_id ?? "—"}</td>
-                <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-textSecondary)]">{l.message}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-[var(--color-textMuted)]">
+                  {l.timestamp ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {l.process ?? "—"}
+                </td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {l.queue_id ?? "—"}
+                </td>
+                <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-textSecondary)]">
+                  {l.message}
+                </td>
               </tr>
             ))}
             {logs.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.postfix.noLogs", "No log lines")}
                 </td>
               </tr>
@@ -2314,20 +2751,75 @@ const SECTIONS: {
   labelDefault: string;
   icon: React.ComponentType<{ size?: number | string }>;
 }[] = [
-  { key: "overview", labelKey: "integrations.mail.postfix.secOverview", labelDefault: "Overview", icon: Activity },
-  { key: "config", labelKey: "integrations.mail.postfix.secConfig", labelDefault: "Config", icon: FileCode2 },
-  { key: "maps", labelKey: "integrations.mail.postfix.secMaps", labelDefault: "Maps", icon: Layers },
-  { key: "domains", labelKey: "integrations.mail.postfix.secDomains", labelDefault: "Domains", icon: Mail },
-  { key: "aliases", labelKey: "integrations.mail.postfix.secAliases", labelDefault: "Aliases", icon: Users },
-  { key: "transports", labelKey: "integrations.mail.postfix.secTransports", labelDefault: "Transports", icon: Send },
-  { key: "queue", labelKey: "integrations.mail.postfix.secQueue", labelDefault: "Queue", icon: Inbox },
-  { key: "tls", labelKey: "integrations.mail.postfix.secTls", labelDefault: "TLS", icon: Lock },
-  { key: "restrictions", labelKey: "integrations.mail.postfix.secRestrictions", labelDefault: "Restrictions", icon: ShieldAlert },
-  { key: "milters", labelKey: "integrations.mail.postfix.secMilters", labelDefault: "Milters", icon: ListTree },
-  { key: "logs", labelKey: "integrations.mail.postfix.secLogs", labelDefault: "Logs", icon: ScrollText },
+  {
+    key: "overview",
+    labelKey: "integrations.mail.postfix.secOverview",
+    labelDefault: "Overview",
+    icon: Activity,
+  },
+  {
+    key: "config",
+    labelKey: "integrations.mail.postfix.secConfig",
+    labelDefault: "Config",
+    icon: FileCode2,
+  },
+  {
+    key: "maps",
+    labelKey: "integrations.mail.postfix.secMaps",
+    labelDefault: "Maps",
+    icon: Layers,
+  },
+  {
+    key: "domains",
+    labelKey: "integrations.mail.postfix.secDomains",
+    labelDefault: "Domains",
+    icon: Mail,
+  },
+  {
+    key: "aliases",
+    labelKey: "integrations.mail.postfix.secAliases",
+    labelDefault: "Aliases",
+    icon: Users,
+  },
+  {
+    key: "transports",
+    labelKey: "integrations.mail.postfix.secTransports",
+    labelDefault: "Transports",
+    icon: Send,
+  },
+  {
+    key: "queue",
+    labelKey: "integrations.mail.postfix.secQueue",
+    labelDefault: "Queue",
+    icon: Inbox,
+  },
+  {
+    key: "tls",
+    labelKey: "integrations.mail.postfix.secTls",
+    labelDefault: "TLS",
+    icon: Lock,
+  },
+  {
+    key: "restrictions",
+    labelKey: "integrations.mail.postfix.secRestrictions",
+    labelDefault: "Restrictions",
+    icon: ShieldAlert,
+  },
+  {
+    key: "milters",
+    labelKey: "integrations.mail.postfix.secMilters",
+    labelDefault: "Milters",
+    icon: ListTree,
+  },
+  {
+    key: "logs",
+    labelKey: "integrations.mail.postfix.secLogs",
+    labelDefault: "Logs",
+    icon: ScrollText,
+  },
 ];
 
-const PostfixSubTab: React.FC<MailSubTabProps> = () => {
+const PostfixSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = usePostfix();
   const [section, setSection] = useState<SectionKey>("overview");
@@ -2340,10 +2832,10 @@ const PostfixSubTab: React.FC<MailSubTabProps> = () => {
       if (
         (op === "stop" || op === "restart") &&
         !window.confirm(
-          t("integrations.mail.postfix.controlConfirm", "Run '{{op}}' on Postfix?").replace(
-            "{{op}}",
-            op,
-          ),
+          t(
+            "integrations.mail.postfix.controlConfirm",
+            "Run '{{op}}' on Postfix?",
+          ).replace("{{op}}", op),
         )
       )
         return;
@@ -2373,31 +2865,52 @@ const PostfixSubTab: React.FC<MailSubTabProps> = () => {
               }`}
             />
             {mgr.isConnected
-              ? mgr.summary?.host ?? t("integrations.mail.postfix.connected", "Connected")
+              ? (mgr.summary?.host ??
+                t("integrations.mail.postfix.connected", "Connected"))
               : t("integrations.mail.postfix.disconnected", "Disconnected")}
           </span>
           {mgr.summary?.version && (
-            <span className="text-[var(--color-textMuted)]">v{mgr.summary.version}</span>
+            <span className="text-[var(--color-textMuted)]">
+              v{mgr.summary.version}
+            </span>
           )}
           {mgr.summary?.mydomain && (
-            <span className="text-[var(--color-textMuted)]">{mgr.summary.mydomain}</span>
+            <span className="text-[var(--color-textMuted)]">
+              {mgr.summary.mydomain}
+            </span>
           )}
         </div>
         {mgr.isConnected && (
           <div className="flex items-center gap-1">
-            <button className={btn} onClick={() => void control("reload")} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={() => void control("reload")}
+              disabled={mgr.isLoading}
+            >
               <RotateCw size={12} />
               {t("integrations.mail.postfix.reload", "Reload")}
             </button>
-            <button className={btn} onClick={() => void control("start")} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={() => void control("start")}
+              disabled={mgr.isLoading}
+            >
               <Power size={12} />
               {t("integrations.mail.postfix.start", "Start")}
             </button>
-            <button className={btn} onClick={() => void control("restart")} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={() => void control("restart")}
+              disabled={mgr.isLoading}
+            >
               <RotateCw size={12} />
               {t("integrations.mail.postfix.restart", "Restart")}
             </button>
-            <button className={btn} onClick={() => void control("stop")} disabled={mgr.isLoading}>
+            <button
+              className={btn}
+              onClick={() => void control("stop")}
+              disabled={mgr.isLoading}
+            >
               <Power size={12} />
               {t("integrations.mail.postfix.stop", "Stop")}
             </button>
@@ -2415,7 +2928,7 @@ const PostfixSubTab: React.FC<MailSubTabProps> = () => {
       )}
 
       {!mgr.isConnected || !cid ? (
-        <ConnectForm mgr={mgr} />
+        <ConnectForm mgr={mgr} instanceId={instanceId} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-2">
@@ -2440,10 +2953,14 @@ const PostfixSubTab: React.FC<MailSubTabProps> = () => {
             {section === "maps" && <MapsSection mgr={mgr} cid={cid} />}
             {section === "domains" && <DomainsSection mgr={mgr} cid={cid} />}
             {section === "aliases" && <AliasesSection mgr={mgr} cid={cid} />}
-            {section === "transports" && <TransportsSection mgr={mgr} cid={cid} />}
+            {section === "transports" && (
+              <TransportsSection mgr={mgr} cid={cid} />
+            )}
             {section === "queue" && <QueueSection mgr={mgr} cid={cid} />}
             {section === "tls" && <TlsSection mgr={mgr} cid={cid} />}
-            {section === "restrictions" && <RestrictionsSection mgr={mgr} cid={cid} />}
+            {section === "restrictions" && (
+              <RestrictionsSection mgr={mgr} cid={cid} />
+            )}
             {section === "milters" && <MiltersSection mgr={mgr} cid={cid} />}
             {section === "logs" && <LogsSection mgr={mgr} cid={cid} />}
           </div>

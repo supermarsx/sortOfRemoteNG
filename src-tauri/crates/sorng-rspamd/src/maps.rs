@@ -27,21 +27,18 @@ impl MapManager {
     /// GET /getmap — get raw map content and parse entries
     pub async fn get_entries(client: &RspamdClient, id: u64) -> RspamdResult<Vec<RspamdMapEntry>> {
         debug!("RSPAMD get_map_entries: {id}");
-        let path = format!("/getmap?map={}", id);
-        let raw = client.get_raw(&path).await?;
+        let raw = client
+            .get_raw_with_headers("/getmap", &[("Map", id.to_string())])
+            .await?;
         Ok(Self::parse_entries(&raw))
     }
 
     /// POST /savemap — save raw content to a map
     pub async fn save_entries(client: &RspamdClient, id: u64, content: &str) -> RspamdResult<()> {
         debug!("RSPAMD save_map_entries: {id}");
-        let path = "/savemap".to_string();
-        let body = serde_json::json!({
-            "map": id,
-            "content": content,
-        });
-        let _: serde_json::Value = client.post(&path, &body).await?;
-        Ok(())
+        client
+            .post_body_with_headers("/savemap", content, &[("Map", id.to_string())])
+            .await
     }
 
     /// Add a single entry to a map (reads current, appends, saves)
@@ -52,8 +49,9 @@ impl MapManager {
         value: Option<&str>,
     ) -> RspamdResult<()> {
         debug!("RSPAMD add_map_entry: map={id} key={key}");
-        let path = format!("/getmap?map={}", id);
-        let current = client.get_raw(&path).await?;
+        let current = client
+            .get_raw_with_headers("/getmap", &[("Map", id.to_string())])
+            .await?;
 
         let new_line = match value {
             Some(v) if !v.is_empty() => format!("{} {}", key, v),
@@ -66,19 +64,17 @@ impl MapManager {
             format!("{}\n{}", current.trim_end(), new_line)
         };
 
-        let body = serde_json::json!({
-            "map": id,
-            "content": updated,
-        });
-        let _: serde_json::Value = client.post("/savemap", &body).await?;
-        Ok(())
+        client
+            .post_body_with_headers("/savemap", &updated, &[("Map", id.to_string())])
+            .await
     }
 
     /// Remove an entry from a map by key (reads current, filters, saves)
     pub async fn remove_entry(client: &RspamdClient, id: u64, key: &str) -> RspamdResult<()> {
         debug!("RSPAMD remove_map_entry: map={id} key={key}");
-        let path = format!("/getmap?map={}", id);
-        let current = client.get_raw(&path).await?;
+        let current = client
+            .get_raw_with_headers("/getmap", &[("Map", id.to_string())])
+            .await?;
 
         let updated: Vec<&str> = current
             .lines()
@@ -92,43 +88,43 @@ impl MapManager {
             })
             .collect();
 
-        let body = serde_json::json!({
-            "map": id,
-            "content": updated.join("\n"),
-        });
-        let _: serde_json::Value = client.post("/savemap", &body).await?;
-        Ok(())
+        client
+            .post_body_with_headers("/savemap", &updated.join("\n"), &[("Map", id.to_string())])
+            .await
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
 
     fn parse_maps(raw: &serde_json::Value) -> RspamdResult<Vec<RspamdMap>> {
         let mut maps = Vec::new();
-        if let Some(arr) = raw.as_array() {
-            for item in arr {
-                maps.push(RspamdMap {
-                    id: item.get("map").and_then(|v| v.as_u64()).unwrap_or(0),
-                    uri: item
-                        .get("uri")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    description: item
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .map(String::from),
-                    map_type: item.get("type").and_then(|v| v.as_str()).map(String::from),
-                    entries_count: item
-                        .get("editable")
-                        .and_then(|_| item.get("nelts"))
-                        .and_then(|v| v.as_u64()),
-                    hits: item.get("hits").and_then(|v| v.as_u64()),
-                    last_reload: item
-                        .get("last_reload")
-                        .and_then(|v| v.as_str())
-                        .map(String::from),
-                });
-            }
+        let entries = raw
+            .as_array()
+            .ok_or_else(|| RspamdError::parse("Rspamd /maps response must be an array"))?;
+        for item in entries {
+            let id = item
+                .get("map")
+                .and_then(|value| value.as_u64())
+                .ok_or_else(|| RspamdError::parse("Rspamd map entry is missing its numeric id"))?;
+            let uri = item
+                .get("uri")
+                .and_then(|value| value.as_str())
+                .filter(|uri| !uri.trim().is_empty())
+                .ok_or_else(|| RspamdError::parse(format!("Rspamd map {id} is missing its URI")))?;
+            maps.push(RspamdMap {
+                id,
+                uri: uri.to_string(),
+                description: item
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                map_type: item.get("type").and_then(|v| v.as_str()).map(String::from),
+                entries_count: item.get("nelts").and_then(|v| v.as_u64()),
+                hits: item.get("hits").and_then(|v| v.as_u64()),
+                last_reload: item
+                    .get("last_reload")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+            });
         }
         Ok(maps)
     }

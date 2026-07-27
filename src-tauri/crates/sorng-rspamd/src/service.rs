@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::client::RspamdClient;
-use crate::error::{RspamdError, RspamdResult};
+use crate::error::{RspamdError, RspamdErrorKind, RspamdResult};
 use crate::types::*;
 
 use crate::actions::ActionManager;
@@ -48,6 +48,12 @@ impl RspamdService {
         id: String,
         config: RspamdConnectionConfig,
     ) -> RspamdResult<RspamdConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(RspamdError::new(
+                RspamdErrorKind::AlreadyConnected,
+                format!("Connection '{id}' already exists"),
+            ));
+        }
         let client = RspamdClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

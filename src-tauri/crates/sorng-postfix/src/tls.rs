@@ -10,11 +10,13 @@ pub struct PostfixTlsManager;
 impl PostfixTlsManager {
     /// Get all TLS-related main.cf parameters.
     pub async fn get_tls_config(client: &PostfixClient) -> PostfixResult<HashMap<String, String>> {
-        let out = client.exec_ssh("postconf | grep -i tls").await?;
+        let out = client.exec_ssh("postconf").await?;
         let mut config = HashMap::new();
         for line in out.stdout.lines() {
             if let Some((key, value)) = line.split_once('=') {
-                config.insert(key.trim().to_string(), value.trim().to_string());
+                if key.to_ascii_lowercase().contains("tls") {
+                    config.insert(key.trim().to_string(), value.trim().to_string());
+                }
             }
         }
         Ok(config)
@@ -41,8 +43,8 @@ impl PostfixTlsManager {
     pub async fn list_policies(client: &PostfixClient) -> PostfixResult<Vec<PostfixTlsPolicy>> {
         let tls_policy_path = format!("{}/tls_policy", client.config_dir());
         let content = client
-            .read_remote_file(&tls_policy_path)
-            .await
+            .read_remote_file_optional(&tls_policy_path)
+            .await?
             .unwrap_or_default();
         let mut policies = Vec::new();
         for line in content.lines() {
@@ -65,8 +67,8 @@ impl PostfixTlsManager {
     ) -> PostfixResult<()> {
         let tls_policy_path = format!("{}/tls_policy", client.config_dir());
         let content = client
-            .read_remote_file(&tls_policy_path)
-            .await
+            .read_remote_file_optional(&tls_policy_path)
+            .await?
             .unwrap_or_default();
         let policy_line = build_tls_policy_line(policy);
         let mut new_lines = Vec::new();

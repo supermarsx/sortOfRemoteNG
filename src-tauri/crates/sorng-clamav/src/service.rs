@@ -52,8 +52,20 @@ impl ClamavService {
             return Err(ClamavError::already_connected(&id));
         }
         let client = ClamavClient::new(config)?;
-        let ver = client.version().await.ok();
-        let clamd_ver = client.clamd_version().await.ok();
+        let probe = client.exec_ssh("true").await?;
+        if probe.exit_code != 0 {
+            return Err(ClamavError::ssh(format!(
+                "SSH probe failed with exit code {}: {}",
+                probe.exit_code,
+                probe.stderr.trim()
+            )));
+        }
+        let ver = Some(client.version().await?);
+        let clamd_ver = if client.socket_exists(client.clamd_socket()).await? {
+            Some(client.clamd_version().await?)
+        } else {
+            None
+        };
         let summary = ClamavConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
@@ -65,13 +77,16 @@ impl ClamavService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> ClamavResult<()> {
-        self.connections.remove(id).map(|_| ()).ok_or_else(|| {
+    pub async fn disconnect(&mut self, id: &str) -> ClamavResult<()> {
+        let client = self.connections.get(id).ok_or_else(|| {
             ClamavError::new(
                 crate::error::ClamavErrorKind::NotConnected,
                 format!("No connection '{}'", id),
             )
-        })
+        })?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

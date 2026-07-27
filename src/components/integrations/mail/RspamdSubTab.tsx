@@ -24,7 +24,10 @@ import {
   Tags,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useRspamd, type RspamdManager } from "../../../hooks/integration/mail/useRspamd";
+import {
+  useRspamd,
+  type RspamdManager,
+} from "../../../hooks/integration/mail/useRspamd";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { generateId } from "../../../utils/core/id";
 import type { MailSubTabProps } from "./registry";
@@ -94,30 +97,47 @@ const emptyConnect: ConnectState = {
 const ConnectForm: React.FC<{
   mgr: RspamdManager;
   onConnected: (id: string) => void;
-}> = ({ mgr, onConnected }) => {
+  instanceId?: string;
+}> = ({ mgr, onConnected, instanceId }) => {
   const { t } = useTranslation();
   const store = useIntegrationConfigStore();
+  const { instances, instancesFor, isLoading, readSecret } = store;
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>(undefined);
 
-  // Prefill from the first persisted rspamd instance (host/fields + vault secret).
+  // Session launches are bound to one exact persisted instance; the first
+  // saved instance is only a default for standalone panel mounts.
   useEffect(() => {
-    if (store.isLoading) return;
-    const inst = store.instancesFor(INTEGRATION_KEY)[0];
-    if (!inst) return;
+    if (isLoading) return;
+    const inst = instanceId
+      ? instances.find(
+          (candidate) =>
+            candidate.id === instanceId &&
+            candidate.integrationKey === INTEGRATION_KEY,
+        )
+      : instancesFor(INTEGRATION_KEY)[0];
+    if (!inst) {
+      setSavedId(undefined);
+      if (instanceId) setForm(emptyConnect);
+      return;
+    }
+    let cancelled = false;
     setSavedId(inst.id);
-    setForm((f) => ({
-      ...f,
+    setForm({
+      ...emptyConnect,
       name: inst.name,
-      baseUrl: inst.host ?? f.baseUrl,
-      timeoutSecs: inst.fields?.timeoutSecs ?? f.timeoutSecs,
+      baseUrl: inst.host ?? emptyConnect.baseUrl,
+      timeoutSecs: inst.fields?.timeoutSecs ?? emptyConnect.timeoutSecs,
       tlsSkipVerify: inst.fields?.tlsSkipVerify === "true",
-    }));
-    store.readSecret(inst).then((secret) => {
+    });
+    void readSecret(inst).then((secret) => {
+      if (cancelled) return;
       if (secret) setForm((f) => ({ ...f, password: secret }));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.isLoading]);
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, instances, instancesFor, isLoading, readSecret]);
 
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -161,7 +181,9 @@ const ConnectForm: React.FC<{
   return (
     <div className={card}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Labeled label={t("integrations.mail.rspamd.baseUrl", "Controller URL")}>
+        <Labeled
+          label={t("integrations.mail.rspamd.baseUrl", "Controller URL")}
+        >
           <input
             className={field}
             value={form.baseUrl}
@@ -190,7 +212,9 @@ const ConnectForm: React.FC<{
             inputMode="numeric"
           />
         </Labeled>
-        <Labeled label={t("integrations.mail.rspamd.instanceName", "Saved name")}>
+        <Labeled
+          label={t("integrations.mail.rspamd.instanceName", "Saved name")}
+        >
           <input
             className={field}
             value={form.name}
@@ -229,9 +253,7 @@ const ConnectForm: React.FC<{
           {t("integrations.mail.rspamd.save", "Save instance")}
         </button>
       </div>
-      {mgr.error && (
-        <p className="mt-2 text-xs text-red-500">{mgr.error}</p>
-      )}
+      {mgr.error && <p className="mt-2 text-xs text-red-500">{mgr.error}</p>}
     </div>
   );
 };
@@ -333,17 +355,33 @@ const ScanSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
           )}
         />
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button className={btn} onClick={checkMessage} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={checkMessage}
+            disabled={mgr.isLoading || !message}
+          >
             <ScanLine size={12} />
             {t("integrations.mail.rspamd.checkMessage", "Scan")}
           </button>
-          <button className={btn} onClick={() => learn(true)} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={() => learn(true)}
+            disabled={mgr.isLoading || !message}
+          >
             {t("integrations.mail.rspamd.learnSpam", "Learn spam")}
           </button>
-          <button className={btn} onClick={() => learn(false)} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={() => learn(false)}
+            disabled={mgr.isLoading || !message}
+          >
             {t("integrations.mail.rspamd.learnHam", "Learn ham")}
           </button>
-          <button className={btn} onClick={fuzzyCheck} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={fuzzyCheck}
+            disabled={mgr.isLoading || !message}
+          >
             {t("integrations.mail.rspamd.fuzzyCheck", "Fuzzy check")}
           </button>
         </div>
@@ -366,10 +404,18 @@ const ScanSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
               onChange={(e) => setFuzzyWeight(e.target.value)}
             />
           </Labeled>
-          <button className={btn} onClick={fuzzyAdd} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={fuzzyAdd}
+            disabled={mgr.isLoading || !message}
+          >
             {t("integrations.mail.rspamd.fuzzyAdd", "Fuzzy add")}
           </button>
-          <button className={btn} onClick={fuzzyDelete} disabled={mgr.isLoading || !message}>
+          <button
+            className={btn}
+            onClick={fuzzyDelete}
+            disabled={mgr.isLoading || !message}
+          >
             {t("integrations.mail.rspamd.fuzzyDelete", "Fuzzy delete")}
           </button>
         </div>
@@ -387,7 +433,11 @@ const ScanSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             onChange={(e) => setFilePath(e.target.value)}
             placeholder="/var/spool/mail/sample.eml"
           />
-          <button className={btn} onClick={checkFile} disabled={mgr.isLoading || !filePath}>
+          <button
+            className={btn}
+            onClick={checkFile}
+            disabled={mgr.isLoading || !filePath}
+          >
             <ScanLine size={12} />
             {t("integrations.mail.rspamd.checkFile", "Scan file")}
           </button>
@@ -399,32 +449,47 @@ const ScanSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <span
               className={
-                result.is_spam ? "font-semibold text-red-500" : "font-semibold text-green-500"
+                result.is_spam
+                  ? "font-semibold text-red-500"
+                  : "font-semibold text-green-500"
               }
             >
               {result.action}
             </span>
             <span className="text-[var(--color-textSecondary)]">
-              {t("integrations.mail.rspamd.score", "Score")}: {result.score.toFixed(2)} /{" "}
-              {result.required_score.toFixed(2)}
+              {t("integrations.mail.rspamd.score", "Score")}:{" "}
+              {result.score.toFixed(2)} / {result.required_score.toFixed(2)}
             </span>
             {result.subject && (
-              <span className="text-[var(--color-textSecondary)]">{result.subject}</span>
+              <span className="text-[var(--color-textSecondary)]">
+                {result.subject}
+              </span>
             )}
           </div>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="text-[var(--color-textMuted)]">
                 <tr>
-                  <th className="px-2 py-1">{t("integrations.mail.rspamd.symbol", "Symbol")}</th>
-                  <th className="px-2 py-1">{t("integrations.mail.rspamd.score", "Score")}</th>
-                  <th className="px-2 py-1">{t("integrations.mail.rspamd.options", "Options")}</th>
+                  <th className="px-2 py-1">
+                    {t("integrations.mail.rspamd.symbol", "Symbol")}
+                  </th>
+                  <th className="px-2 py-1">
+                    {t("integrations.mail.rspamd.score", "Score")}
+                  </th>
+                  <th className="px-2 py-1">
+                    {t("integrations.mail.rspamd.options", "Options")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {result.symbols.map((s) => (
-                  <tr key={s.name} className="border-t border-[var(--color-border)]">
-                    <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
+                  <tr
+                    key={s.name}
+                    className="border-t border-[var(--color-border)]"
+                  >
+                    <td className="px-2 py-1 text-[var(--color-text)]">
+                      {s.name}
+                    </td>
                     <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                       {s.score.toFixed(2)}
                     </td>
@@ -491,7 +556,14 @@ const StatsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
   }, [mgr, cid]);
 
   const reset = useCallback(async () => {
-    if (!window.confirm(t("integrations.mail.rspamd.resetStatsConfirm", "Reset all statistics?")))
+    if (
+      !window.confirm(
+        t(
+          "integrations.mail.rspamd.resetStatsConfirm",
+          "Reset all statistics?",
+        ),
+      )
+    )
       return;
     try {
       await mgr.run(() => mgr.api.resetStats(cid));
@@ -514,10 +586,18 @@ const StatsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
           value={graphType}
           onChange={(e) => setGraphType(e.target.value)}
         >
-          <option value="hourly">{t("integrations.mail.rspamd.hourly", "Hourly")}</option>
-          <option value="daily">{t("integrations.mail.rspamd.daily", "Daily")}</option>
-          <option value="weekly">{t("integrations.mail.rspamd.weekly", "Weekly")}</option>
-          <option value="monthly">{t("integrations.mail.rspamd.monthly", "Monthly")}</option>
+          <option value="hourly">
+            {t("integrations.mail.rspamd.hourly", "Hourly")}
+          </option>
+          <option value="daily">
+            {t("integrations.mail.rspamd.daily", "Daily")}
+          </option>
+          <option value="weekly">
+            {t("integrations.mail.rspamd.weekly", "Weekly")}
+          </option>
+          <option value="monthly">
+            {t("integrations.mail.rspamd.monthly", "Monthly")}
+          </option>
         </select>
         <button className={btn} onClick={graph} disabled={mgr.isLoading}>
           {t("integrations.mail.rspamd.graph", "Graph")}
@@ -613,17 +693,28 @@ const SymbolsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.symbol", "Symbol")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.group", "Group")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.weight", "Weight")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.symbol", "Symbol")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.group", "Group")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.weight", "Weight")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {symbols.map((s) => (
-              <tr key={s.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={s.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{s.name}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{s.group ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {s.group ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                   {s.weight ?? s.score ?? "—"}
                 </td>
@@ -638,7 +729,10 @@ const SymbolsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {symbols.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.rspamd.noSymbols", "No symbols")}
                 </td>
               </tr>
@@ -667,7 +761,9 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
       const rows = await mgr.run(() => mgr.api.listActions(cid));
       setActions(rows);
       setThresholds(
-        Object.fromEntries(rows.map((a) => [a.name, a.threshold?.toString() ?? ""])),
+        Object.fromEntries(
+          rows.map((a) => [a.name, a.threshold?.toString() ?? ""]),
+        ),
       );
     } catch {
       /* surfaced */
@@ -746,7 +842,11 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <button className={btn} onClick={viewConfig} disabled={mgr.isLoading}>
           {t("integrations.mail.rspamd.actionsConfig", "View config")}
         </button>
-        <button className={btn} onClick={saveConfig} disabled={mgr.isLoading || actions.length === 0}>
+        <button
+          className={btn}
+          onClick={saveConfig}
+          disabled={mgr.isLoading || actions.length === 0}
+        >
           {t("integrations.mail.rspamd.saveActionsConfig", "Save config")}
         </button>
       </div>
@@ -754,15 +854,24 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.action", "Action")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.threshold", "Threshold")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.enabled", "Enabled")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.action", "Action")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.threshold", "Threshold")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.enabled", "Enabled")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {actions.map((a) => (
-              <tr key={a.name} className="border-t border-[var(--color-border)]">
+              <tr
+                key={a.name}
+                className="border-t border-[var(--color-border)]"
+              >
                 <td className="px-2 py-1 text-[var(--color-text)]">{a.name}</td>
                 <td className="px-2 py-1">
                   <input
@@ -776,7 +885,13 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
                   />
                 </td>
                 <td className="px-2 py-1">
-                  <span className={a.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}>
+                  <span
+                    className={
+                      a.enabled
+                        ? "text-green-500"
+                        : "text-[var(--color-textMuted)]"
+                    }
+                  >
                     {a.enabled
                       ? t("integrations.mail.rspamd.yes", "Yes")
                       : t("integrations.mail.rspamd.no", "No")}
@@ -784,10 +899,18 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
                 </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end gap-1">
-                    <button className={btn} onClick={() => save(a.name)} disabled={mgr.isLoading}>
+                    <button
+                      className={btn}
+                      onClick={() => save(a.name)}
+                      disabled={mgr.isLoading}
+                    >
                       {t("integrations.mail.rspamd.setThreshold", "Set")}
                     </button>
-                    <button className={btn} onClick={() => toggle(a)} disabled={mgr.isLoading}>
+                    <button
+                      className={btn}
+                      onClick={() => toggle(a)}
+                      disabled={mgr.isLoading}
+                    >
                       {a.enabled
                         ? t("integrations.mail.rspamd.disable", "Disable")
                         : t("integrations.mail.rspamd.enable", "Enable")}
@@ -801,7 +924,10 @@ const ActionsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {actions.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.rspamd.noActions", "No actions")}
                 </td>
               </tr>
@@ -845,7 +971,10 @@ const MapsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
       setSelected(mapId);
       try {
         const [map, entries] = await mgr.run(() =>
-          Promise.all([mgr.api.getMap(cid, mapId), mgr.api.getMapEntries(cid, mapId)]),
+          Promise.all([
+            mgr.api.getMap(cid, mapId),
+            mgr.api.getMapEntries(cid, mapId),
+          ]),
         );
         setDetail(map);
         setContent(
@@ -905,17 +1034,27 @@ const MapsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.uri", "URI")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.type", "Type")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.entries", "Entries")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.uri", "URI")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.type", "Type")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.entries", "Entries")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {maps.map((m) => (
               <tr key={m.id} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 font-mono text-[var(--color-text)]">{m.uri}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{m.map_type ?? "—"}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-text)]">
+                  {m.uri}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {m.map_type ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                   {m.entries_count ?? "—"}
                 </td>
@@ -930,7 +1069,10 @@ const MapsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {maps.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.rspamd.noMaps", "No maps")}
                 </td>
               </tr>
@@ -942,7 +1084,8 @@ const MapsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
       {selected != null && (
         <div className={card}>
           <h4 className="mb-2 text-xs font-semibold text-[var(--color-text)]">
-            {t("integrations.mail.rspamd.mapContent", "Map content")} (#{selected})
+            {t("integrations.mail.rspamd.mapContent", "Map content")} (#
+            {selected})
           </h4>
           <textarea
             className={`${field} font-mono`}
@@ -972,10 +1115,18 @@ const MapsSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
                 onChange={(e) => setEntryValue(e.target.value)}
               />
             </Labeled>
-            <button className={btn} onClick={addEntry} disabled={mgr.isLoading || !entryKey}>
+            <button
+              className={btn}
+              onClick={addEntry}
+              disabled={mgr.isLoading || !entryKey}
+            >
               {t("integrations.mail.rspamd.addEntry", "Add entry")}
             </button>
-            <button className={btn} onClick={removeEntry} disabled={mgr.isLoading || !entryKey}>
+            <button
+              className={btn}
+              onClick={removeEntry}
+              disabled={mgr.isLoading || !entryKey}
+            >
               {t("integrations.mail.rspamd.removeEntry", "Remove entry")}
             </button>
           </div>
@@ -1021,7 +1172,14 @@ const HistorySection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
   );
 
   const reset = useCallback(async () => {
-    if (!window.confirm(t("integrations.mail.rspamd.resetHistoryConfirm", "Reset scan history?")))
+    if (
+      !window.confirm(
+        t(
+          "integrations.mail.rspamd.resetHistoryConfirm",
+          "Reset scan history?",
+        ),
+      )
+    )
       return;
     try {
       await mgr.run(() => mgr.api.resetHistory(cid));
@@ -1046,25 +1204,46 @@ const HistorySection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.action", "Action")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.score", "Score")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.ip", "IP")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.subject", "Subject")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.action", "Action")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.score", "Score")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.ip", "IP")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.subject", "Subject")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.id ?? i} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]">{r.action ?? "—"}</td>
+              <tr
+                key={r.id ?? i}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td className="px-2 py-1 text-[var(--color-text)]">
+                  {r.action ?? "—"}
+                </td>
                 <td className="px-2 py-1 text-[var(--color-textSecondary)]">
                   {r.score != null ? r.score.toFixed(2) : "—"}
                 </td>
-                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">{r.ip ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{r.subject ?? "—"}</td>
+                <td className="px-2 py-1 font-mono text-[var(--color-textSecondary)]">
+                  {r.ip ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {r.subject ?? "—"}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end">
-                    <button className={btn} onClick={() => r.id && void view(r.id)} disabled={!r.id}>
+                    <button
+                      className={btn}
+                      onClick={() => r.id && void view(r.id)}
+                      disabled={!r.id}
+                    >
                       {t("integrations.mail.rspamd.view", "View")}
                     </button>
                   </div>
@@ -1073,7 +1252,10 @@ const HistorySection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={5}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={5}
+                >
                   {t("integrations.mail.rspamd.noHistory", "No history")}
                 </td>
               </tr>
@@ -1153,9 +1335,15 @@ const WorkersSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.workerId", "Worker")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.type", "Type")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.pid", "PID")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.workerId", "Worker")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.type", "Type")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.pid", "PID")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -1163,8 +1351,12 @@ const WorkersSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             {workers.map((w) => (
               <tr key={w.id} className="border-t border-[var(--color-border)]">
                 <td className="px-2 py-1 text-[var(--color-text)]">{w.id}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{w.worker_type ?? "—"}</td>
-                <td className="px-2 py-1 text-[var(--color-textSecondary)]">{w.pid ?? "—"}</td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {w.worker_type ?? "—"}
+                </td>
+                <td className="px-2 py-1 text-[var(--color-textSecondary)]">
+                  {w.pid ?? "—"}
+                </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end">
                     <button className={btn} onClick={() => viewWorker(w.id)}>
@@ -1176,7 +1368,10 @@ const WorkersSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {workers.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={4}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={4}
+                >
                   {t("integrations.mail.rspamd.noWorkers", "No workers")}
                 </td>
               </tr>
@@ -1228,7 +1423,14 @@ const ConfigSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
   );
 
   const reload = useCallback(async () => {
-    if (!window.confirm(t("integrations.mail.rspamd.reloadConfirm", "Reload Rspamd configuration?")))
+    if (
+      !window.confirm(
+        t(
+          "integrations.mail.rspamd.reloadConfirm",
+          "Reload Rspamd configuration?",
+        ),
+      )
+    )
       return;
     try {
       await mgr.run(() => mgr.api.reloadConfig(cid));
@@ -1254,19 +1456,35 @@ const ConfigSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
         <table className="w-full text-left text-xs">
           <thead className="text-[var(--color-textMuted)]">
             <tr>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.plugin", "Plugin")}</th>
-              <th className="px-2 py-1">{t("integrations.mail.rspamd.enabled", "Enabled")}</th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.plugin", "Plugin")}
+              </th>
+              <th className="px-2 py-1">
+                {t("integrations.mail.rspamd.enabled", "Enabled")}
+              </th>
               <th className="px-2 py-1" />
             </tr>
           </thead>
           <tbody>
             {plugins.map((p) => (
-              <tr key={p.name} className="border-t border-[var(--color-border)]">
-                <td className="px-2 py-1 text-[var(--color-text)]" title={p.description ?? undefined}>
+              <tr
+                key={p.name}
+                className="border-t border-[var(--color-border)]"
+              >
+                <td
+                  className="px-2 py-1 text-[var(--color-text)]"
+                  title={p.description ?? undefined}
+                >
                   {p.name}
                 </td>
                 <td className="px-2 py-1">
-                  <span className={p.enabled ? "text-green-500" : "text-[var(--color-textMuted)]"}>
+                  <span
+                    className={
+                      p.enabled
+                        ? "text-green-500"
+                        : "text-[var(--color-textMuted)]"
+                    }
+                  >
                     {p.enabled
                       ? t("integrations.mail.rspamd.yes", "Yes")
                       : t("integrations.mail.rspamd.no", "No")}
@@ -1274,7 +1492,11 @@ const ConfigSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
                 </td>
                 <td className="px-2 py-1">
                   <div className="flex justify-end">
-                    <button className={btn} onClick={() => toggle(p)} disabled={mgr.isLoading}>
+                    <button
+                      className={btn}
+                      onClick={() => toggle(p)}
+                      disabled={mgr.isLoading}
+                    >
                       {p.enabled
                         ? t("integrations.mail.rspamd.disable", "Disable")
                         : t("integrations.mail.rspamd.enable", "Enable")}
@@ -1285,7 +1507,10 @@ const ConfigSection: React.FC<{ mgr: RspamdManager; cid: string }> = ({
             ))}
             {plugins.length === 0 && (
               <tr>
-                <td className="px-2 py-3 text-[var(--color-textMuted)]" colSpan={3}>
+                <td
+                  className="px-2 py-3 text-[var(--color-textMuted)]"
+                  colSpan={3}
+                >
                   {t("integrations.mail.rspamd.noPlugins", "No plugins")}
                 </td>
               </tr>
@@ -1316,19 +1541,59 @@ const SECTIONS: {
   labelKey: string;
   fallback: string;
 }[] = [
-  { key: "scan", icon: ScanLine, labelKey: "integrations.mail.rspamd.tabScan", fallback: "Scan & learn" },
-  { key: "stats", icon: BarChart3, labelKey: "integrations.mail.rspamd.tabStats", fallback: "Statistics" },
-  { key: "symbols", icon: Tags, labelKey: "integrations.mail.rspamd.tabSymbols", fallback: "Symbols" },
-  { key: "actions", icon: Shield, labelKey: "integrations.mail.rspamd.tabActions", fallback: "Actions" },
-  { key: "maps", icon: MapIcon, labelKey: "integrations.mail.rspamd.tabMaps", fallback: "Maps" },
-  { key: "history", icon: HistoryIcon, labelKey: "integrations.mail.rspamd.tabHistory", fallback: "History" },
-  { key: "workers", icon: Cpu, labelKey: "integrations.mail.rspamd.tabWorkers", fallback: "Workers" },
-  { key: "config", icon: Puzzle, labelKey: "integrations.mail.rspamd.tabConfig", fallback: "Config & plugins" },
+  {
+    key: "scan",
+    icon: ScanLine,
+    labelKey: "integrations.mail.rspamd.tabScan",
+    fallback: "Scan & learn",
+  },
+  {
+    key: "stats",
+    icon: BarChart3,
+    labelKey: "integrations.mail.rspamd.tabStats",
+    fallback: "Statistics",
+  },
+  {
+    key: "symbols",
+    icon: Tags,
+    labelKey: "integrations.mail.rspamd.tabSymbols",
+    fallback: "Symbols",
+  },
+  {
+    key: "actions",
+    icon: Shield,
+    labelKey: "integrations.mail.rspamd.tabActions",
+    fallback: "Actions",
+  },
+  {
+    key: "maps",
+    icon: MapIcon,
+    labelKey: "integrations.mail.rspamd.tabMaps",
+    fallback: "Maps",
+  },
+  {
+    key: "history",
+    icon: HistoryIcon,
+    labelKey: "integrations.mail.rspamd.tabHistory",
+    fallback: "History",
+  },
+  {
+    key: "workers",
+    icon: Cpu,
+    labelKey: "integrations.mail.rspamd.tabWorkers",
+    fallback: "Workers",
+  },
+  {
+    key: "config",
+    icon: Puzzle,
+    labelKey: "integrations.mail.rspamd.tabConfig",
+    fallback: "Config & plugins",
+  },
 ];
 
 // ─── Sub-tab root ────────────────────────────────────────────────────────────
 
-const RspamdSubTab: React.FC<MailSubTabProps> = () => {
+const RspamdSubTab: React.FC<MailSubTabProps> = ({ instanceId }) => {
   const { t } = useTranslation();
   const mgr = useRspamd();
   const [cid, setCid] = useState<string | null>(null);
@@ -1352,7 +1617,7 @@ const RspamdSubTab: React.FC<MailSubTabProps> = () => {
             "Connect to the Rspamd HTTP controller to scan messages, train the classifier, and manage symbols, actions, maps and plugins.",
           )}
         </p>
-        <ConnectForm mgr={mgr} onConnected={setCid} />
+        <ConnectForm mgr={mgr} instanceId={instanceId} onConnected={setCid} />
       </div>
     );
   }
@@ -1376,7 +1641,11 @@ const RspamdSubTab: React.FC<MailSubTabProps> = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button className={btn} onClick={() => void mgr.ping()} disabled={mgr.isLoading}>
+          <button
+            className={btn}
+            onClick={() => void mgr.ping()}
+            disabled={mgr.isLoading}
+          >
             <Activity size={12} />
             {t("integrations.mail.rspamd.ping", "Ping")}
           </button>
@@ -1394,7 +1663,9 @@ const RspamdSubTab: React.FC<MailSubTabProps> = () => {
             <button
               key={s.key}
               className={`${btn} ${
-                section === s.key ? "bg-[var(--color-surface)] text-[var(--color-text)]" : ""
+                section === s.key
+                  ? "bg-[var(--color-surface)] text-[var(--color-text)]"
+                  : ""
               }`}
               onClick={() => setSection(s.key)}
             >

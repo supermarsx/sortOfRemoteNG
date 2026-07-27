@@ -7,22 +7,61 @@ use crate::types::ClamavConnectionConfig;
 use crate::types::SshOutput;
 use log::debug;
 use reqwest::Client as HttpClient;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+use std::sync::Arc;
 use std::time::Duration;
+
+#[async_trait::async_trait]
+pub(crate) trait SshTransport: Send + Sync {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String>;
+    async fn disconnect(&self) -> Result<(), String>;
+}
+#[async_trait::async_trait]
+impl SshTransport for IntegrationSshSession {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
+        IntegrationSshSession::execute(self, command, timeout_ms).await
+    }
+    async fn disconnect(&self) -> Result<(), String> {
+        IntegrationSshSession::disconnect(self).await
+    }
+}
 
 /// ClamAV management client – connects via SSH to manage ClamAV remotely.
 pub struct ClamavClient {
     pub config: ClamavConnectionConfig,
     #[allow(dead_code)]
     http: HttpClient,
+    ssh: Arc<dyn SshTransport>,
 }
 
 impl ClamavClient {
     pub fn new(config: ClamavConnectionConfig) -> ClamavResult<Self> {
+        let ssh = Arc::new(IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        }));
+        Self::with_transport(config, ssh)
+    }
+    fn with_transport(
+        config: ClamavConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> ClamavResult<Self> {
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .build()
             .map_err(|e| ClamavError::connection_failed(format!("http client build: {e}")))?;
-        Ok(Self { config, http })
+        Ok(Self { config, http, ssh })
+    }
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(
+        config: ClamavConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> ClamavResult<Self> {
+        Self::with_transport(config, ssh)
     }
 
     // ── Path helpers ─────────────────────────────────────────────────
@@ -83,63 +122,23 @@ impl ClamavClient {
 
     pub async fn exec_ssh(&self, command: &str) -> ClamavResult<SshOutput> {
         debug!("CLAMAV SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=yes".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| ClamavError::ssh(format!("Failed to execute ssh: {}", e)))?;
-
+            .map_err(ClamavError::ssh)?;
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn disconnect(&self) -> ClamavResult<()> {
+        self.ssh.disconnect().await.map_err(ClamavError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> ClamavResult<String> {
@@ -164,6 +163,16 @@ impl ClamavClient {
         let out = self
             .exec_ssh(&format!(
                 "test -f {} && echo yes || echo no",
+                shell_escape(path)
+            ))
+            .await?;
+        Ok(out.stdout.trim() == "yes")
+    }
+
+    pub async fn socket_exists(&self, path: &str) -> ClamavResult<bool> {
+        let out = self
+            .exec_ssh(&format!(
+                "test -S {} && echo yes || echo no",
                 shell_escape(path)
             ))
             .await?;
@@ -210,4 +219,61 @@ impl ClamavClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    struct FakeSshTransport {
+        outcomes: Mutex<VecDeque<Result<String, String>>>,
+    }
+    #[async_trait::async_trait]
+    impl SshTransport for FakeSshTransport {
+        async fn execute(&self, _: &str, _: Option<u64>) -> Result<String, String> {
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("fake SSH outcome exhausted")
+        }
+        async fn disconnect(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn config() -> ClamavConnectionConfig {
+        ClamavConnectionConfig {
+            host: "mail.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            clamscan_bin: None,
+            clamdscan_bin: None,
+            clamd_bin: None,
+            freshclam_bin: None,
+            clamd_conf: None,
+            freshclam_conf: None,
+            clamd_socket: None,
+            timeout_secs: Some(5),
+        }
+    }
+
+    #[tokio::test]
+    async fn mandatory_config_write_preserves_remote_failure() {
+        let fake = Arc::new(FakeSshTransport {
+            outcomes: Mutex::new(
+                vec![Err("Command failed with exit code 1: disk full".into())].into(),
+            ),
+        });
+        let client = ClamavClient::with_test_transport(config(), fake).unwrap();
+        let error = client
+            .write_remote_file("/etc/clamav/clamd.conf", "LogTime yes")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("disk full"));
+    }
 }

@@ -11,14 +11,14 @@ impl KeyManager {
     /// Scans domain subdirectories for private key files.
     pub async fn list(client: &OpendkimClient) -> OpendkimResult<Vec<DkimKey>> {
         let key_dir = client.key_dir();
-        let domains = client.list_remote_dir(key_dir).await?;
+        let domains = client
+            .list_remote_dir_optional(key_dir)
+            .await?
+            .unwrap_or_default();
         let mut keys = Vec::new();
         for domain in &domains {
             let domain_dir = format!("{}/{}", key_dir, domain);
-            let files = client
-                .list_remote_dir(&domain_dir)
-                .await
-                .unwrap_or_default();
+            let files = client.list_remote_dir(&domain_dir).await?;
             for file in &files {
                 if !file.ends_with(".private") {
                     continue;
@@ -26,23 +26,22 @@ impl KeyManager {
                 let selector = file.trim_end_matches(".private");
                 let private_key_path = format!("{}/{}", domain_dir, file);
                 let public_key_path = format!("{}/{}.txt", domain_dir, selector);
-                let pub_exists = client.file_exists(&public_key_path).await.unwrap_or(false);
-                let dns_record = if pub_exists {
-                    client
-                        .read_remote_file(&public_key_path)
-                        .await
-                        .ok()
-                        .map(|c| c.trim().to_string())
-                } else {
-                    None
-                };
+                let public_key = client.read_remote_file_optional(&public_key_path).await?;
+                let dns_record = public_key
+                    .as_ref()
+                    .map(|content| content.trim().to_string());
                 // Determine key type by inspecting the private key header
                 let key_header = client
                     .exec_ssh(&format!("head -1 {}", shell_escape(&private_key_path)))
-                    .await
-                    .ok()
-                    .map(|o| o.stdout.trim().to_string())
-                    .unwrap_or_default();
+                    .await?
+                    .stdout
+                    .trim()
+                    .to_string();
+                if key_header.is_empty() {
+                    return Err(OpendkimError::parse(format!(
+                        "Private key header is empty: {private_key_path}"
+                    )));
+                }
                 let key_type = if key_header.contains("ED25519") {
                     "ed25519".to_string()
                 } else {
@@ -50,18 +49,27 @@ impl KeyManager {
                 };
                 // Determine RSA key bits
                 let bits = if key_type == "rsa" {
-                    client
+                    let output = client
                         .exec_ssh(&format!(
-                            "openssl rsa -in {} -text -noout 2>/dev/null | head -1",
+                            "openssl rsa -in {} -text -noout",
                             shell_escape(&private_key_path)
                         ))
-                        .await
-                        .ok()
-                        .and_then(|o| {
-                            o.stdout
-                                .split_whitespace()
-                                .find_map(|w| w.trim_end_matches('-').parse::<u32>().ok())
-                        })
+                        .await?;
+                    Some(
+                        output
+                            .stdout
+                            .split_whitespace()
+                            .find_map(|word| {
+                                word.trim_matches(|character: char| !character.is_ascii_digit())
+                                    .parse::<u32>()
+                                    .ok()
+                            })
+                            .ok_or_else(|| {
+                                OpendkimError::parse(format!(
+                                    "Could not determine RSA key size for {private_key_path}"
+                                ))
+                            })?,
+                    )
                 } else {
                     None
                 };
@@ -71,11 +79,7 @@ impl KeyManager {
                     key_type,
                     bits,
                     private_key_path,
-                    public_key_path: if pub_exists {
-                        Some(public_key_path)
-                    } else {
-                        None
-                    },
+                    public_key_path: public_key.map(|_| public_key_path),
                     dns_record,
                     created_at: None,
                     expires_at: None,
@@ -160,7 +164,7 @@ impl KeyManager {
         let private_path = format!("{}/{}.private", domain_dir, selector);
         let txt_path = format!("{}/{}.txt", domain_dir, selector);
         client.remove_file(&private_path).await?;
-        let _ = client.remove_file(&txt_path).await;
+        client.remove_file(&txt_path).await?;
         Ok(())
     }
 
@@ -172,9 +176,9 @@ impl KeyManager {
     ) -> OpendkimResult<DnsRecord> {
         let txt_path = format!("{}/{}/{}.txt", client.key_dir(), domain, selector);
         let content = client
-            .read_remote_file(&txt_path)
-            .await
-            .map_err(|_| OpendkimError::key_not_found(selector, domain))?;
+            .read_remote_file_optional(&txt_path)
+            .await?
+            .ok_or_else(|| OpendkimError::key_not_found(selector, domain))?;
         // opendkim-genkey produces a file like:
         //   selector._domainkey IN TXT ( "v=DKIM1; k=rsa; p=MIG..." )
         let value = content
@@ -218,9 +222,9 @@ impl KeyManager {
     ) -> OpendkimResult<String> {
         let txt_path = format!("{}/{}/{}.txt", client.key_dir(), domain, selector);
         let content = client
-            .read_remote_file(&txt_path)
-            .await
-            .map_err(|_| OpendkimError::key_not_found(selector, domain))?;
+            .read_remote_file_optional(&txt_path)
+            .await?
+            .ok_or_else(|| OpendkimError::key_not_found(selector, domain))?;
         // Extract the p= value from the TXT record content
         let mut p_value = String::new();
         let mut capture = false;

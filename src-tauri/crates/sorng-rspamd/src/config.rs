@@ -1,7 +1,8 @@
 // ── rspamd configuration management ──────────────────────────────────────────
 
+use crate::actions::ActionManager;
 use crate::client::RspamdClient;
-use crate::error::RspamdResult;
+use crate::error::{RspamdError, RspamdResult};
 use crate::types::*;
 use log::debug;
 
@@ -11,8 +12,7 @@ impl RspamdConfigManager {
     /// GET /actions — get all configured actions
     pub async fn get_actions(client: &RspamdClient) -> RspamdResult<Vec<RspamdAction>> {
         debug!("RSPAMD config get_actions");
-        let raw: serde_json::Value = client.get("/actions").await?;
-        Self::parse_actions(&raw)
+        ActionManager::list(client).await
     }
 
     /// GET /plugins — list all configured plugins
@@ -22,112 +22,49 @@ impl RspamdConfigManager {
         Self::parse_plugins(&raw)
     }
 
-    /// POST /plugins — enable a specific plugin
-    pub async fn enable_plugin(client: &RspamdClient, name: &str) -> RspamdResult<()> {
+    /// Standard controller API does not support changing plugin enablement.
+    pub async fn enable_plugin(_client: &RspamdClient, name: &str) -> RspamdResult<()> {
         debug!("RSPAMD enable_plugin: {name}");
-        let body = serde_json::json!({
-            "name": name,
-            "enabled": true,
-        });
-        let _: serde_json::Value = client.post("/plugins", &body).await?;
-        Ok(())
+        Err(RspamdError::api(format!(
+            "Rspamd's controller API cannot enable plugin '{name}'; update the server configuration and restart or reload Rspamd"
+        )))
     }
 
-    /// POST /plugins — disable a specific plugin
-    pub async fn disable_plugin(client: &RspamdClient, name: &str) -> RspamdResult<()> {
+    /// Standard controller API does not support changing plugin enablement.
+    pub async fn disable_plugin(_client: &RspamdClient, name: &str) -> RspamdResult<()> {
         debug!("RSPAMD disable_plugin: {name}");
-        let body = serde_json::json!({
-            "name": name,
-            "enabled": false,
-        });
-        let _: serde_json::Value = client.post("/plugins", &body).await?;
-        Ok(())
+        Err(RspamdError::api(format!(
+            "Rspamd's controller API cannot disable plugin '{name}'; update the server configuration and restart or reload Rspamd"
+        )))
     }
 
-    /// POST /reload — reload rspamd configuration
-    pub async fn reload(client: &RspamdClient) -> RspamdResult<()> {
+    /// Standard controller API does not expose a reload operation.
+    pub async fn reload(_client: &RspamdClient) -> RspamdResult<()> {
         debug!("RSPAMD reload_config");
-        client.post_no_body("/reload").await
+        Err(RspamdError::api(
+            "Rspamd's controller API does not expose a configuration reload endpoint",
+        ))
     }
 
     /// POST /saveactions — save a complete set of actions
     pub async fn save_actions(client: &RspamdClient, actions: &[RspamdAction]) -> RspamdResult<()> {
         debug!("RSPAMD save_actions");
-        let thresholds: Vec<serde_json::Value> = actions
-            .iter()
-            .filter(|a| a.enabled)
-            .filter_map(|a| {
-                a.threshold.map(|t| {
-                    serde_json::json!({
-                        "action": a.name,
-                        "value": t,
-                    })
-                })
-            })
-            .collect();
-        let _: serde_json::Value = client.post("/saveactions", &thresholds).await?;
-        Ok(())
+        ActionManager::save(client, actions).await
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
-
-    fn parse_actions(raw: &serde_json::Value) -> RspamdResult<Vec<RspamdAction>> {
-        let mut actions = Vec::new();
-        if let Some(arr) = raw.as_array() {
-            for item in arr {
-                let name = item
-                    .get("action")
-                    .or_else(|| item.get("name"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let threshold = item
-                    .get("value")
-                    .or_else(|| item.get("threshold"))
-                    .and_then(|v| v.as_f64());
-                let enabled = item
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                actions.push(RspamdAction {
-                    name,
-                    threshold,
-                    enabled,
-                });
-            }
-        } else if let Some(obj) = raw.as_object() {
-            for (name, info) in obj {
-                let threshold = if info.is_number() {
-                    info.as_f64()
-                } else {
-                    info.get("value")
-                        .or_else(|| info.get("threshold"))
-                        .and_then(|v| v.as_f64())
-                };
-                let enabled = info
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
-                actions.push(RspamdAction {
-                    name: name.clone(),
-                    threshold,
-                    enabled,
-                });
-            }
-        }
-        Ok(actions)
-    }
 
     fn parse_plugins(raw: &serde_json::Value) -> RspamdResult<Vec<RspamdPlugin>> {
         let mut plugins = Vec::new();
         if let Some(arr) = raw.as_array() {
             for item in arr {
+                let name = item
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .filter(|name| !name.trim().is_empty())
+                    .ok_or_else(|| RspamdError::parse("Rspamd plugin entry is missing its name"))?;
                 plugins.push(RspamdPlugin {
-                    name: item
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                    name: name.to_string(),
                     enabled: item
                         .get("enabled")
                         .and_then(|v| v.as_bool())
@@ -140,6 +77,9 @@ impl RspamdConfigManager {
             }
         } else if let Some(obj) = raw.as_object() {
             for (name, info) in obj {
+                if name.trim().is_empty() {
+                    return Err(RspamdError::parse("Rspamd plugin entry has an empty name"));
+                }
                 plugins.push(RspamdPlugin {
                     name: name.clone(),
                     enabled: info
@@ -152,6 +92,10 @@ impl RspamdConfigManager {
                         .map(String::from),
                 });
             }
+        } else {
+            return Err(RspamdError::parse(
+                "Rspamd /plugins response must be an array or object",
+            ));
         }
         Ok(plugins)
     }
