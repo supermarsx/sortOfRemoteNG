@@ -190,8 +190,18 @@ pub async fn create_vm(
         .create_disk(&vmdk_path, disk_size, req.disk_type.as_deref(), None)
         .await?;
 
-    // Generate and write VMX
-    let settings = vmx::generate_vmx(&req);
+    // Attach the exact VMDK that was successfully created. The VMX generator
+    // does not synthesize a placeholder disk reference.
+    let primary_disk_filename = std::path::Path::new(&vmdk_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            VmwError::new(
+                VmwErrorKind::InvalidConfig,
+                "created VMDK path does not have a valid UTF-8 file name",
+            )
+        })?;
+    let settings = vmx::generate_vmx(&req, Some(primary_disk_filename));
     vmx::write_vmx(&vmx_path, &settings)?;
 
     // Register with vmrest if available

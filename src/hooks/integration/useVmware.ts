@@ -7,6 +7,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxyArgs } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   ClusterSummary,
   ConsoleSession,
@@ -174,10 +175,12 @@ function errMsg(e: unknown): string {
  * so this hook mirrors that single-session model.
  */
 export function useVmware() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [isConnected, setIsConnected] = useState(false);
   const [config, setConfig] = useState<VsphereConfigSafe | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ownedConnectionRef = useRef(false);
   // Guards against overlapping in-flight ops flipping isLoading incorrectly.
   const inflight = useRef(0);
 
@@ -196,29 +199,49 @@ export function useVmware() {
     }
   }, []);
 
-  const connect = useCallback(
-    async (args: VmwareConnectArgs): Promise<string> => {
-      const sessionId = await run(() =>
-        vmwareApi.connect(withGlobalHttpProxyArgs(args)),
-      );
-      setIsConnected(true);
-      try {
-        setConfig(await vmwareApi.getConfig());
-      } catch {
-        // Non-fatal: session is up even if the safe-config echo fails.
-      }
-      return sessionId;
-    },
-    [run],
-  );
-
-  const disconnect = useCallback(async (): Promise<void> => {
+  const disconnectOperation = useCallback(async (): Promise<void> => {
+    if (!ownedConnectionRef.current) return;
     await run(() => vmwareApi.disconnect());
+    ownedConnectionRef.current = false;
     setIsConnected(false);
     setConfig(null);
   }, [run]);
 
+  const connect = useCallback(
+    async (args: VmwareConnectArgs): Promise<string> => {
+      return trackConnect(
+        "vmware:global",
+        async () => {
+          const sessionId = await run(() =>
+            vmwareApi.connect(withGlobalHttpProxyArgs(args)),
+          );
+          ownedConnectionRef.current = true;
+          setIsConnected(true);
+          try {
+            setConfig(await vmwareApi.getConfig());
+          } catch {
+            // Non-fatal: session is up even if the safe-config echo fails.
+          }
+          return sessionId;
+        },
+        disconnectOperation,
+      );
+    },
+    [disconnectOperation, run, trackConnect],
+  );
+
+  const disconnect = useCallback(async (): Promise<void> => {
+    await trackDisconnect("vmware:global", disconnectOperation);
+  }, [disconnectOperation, trackDisconnect]);
+
   const refreshConnection = useCallback(async (): Promise<boolean> => {
+    // The native service is process-global. A cold panel has no authority to
+    // observe and later disconnect a handle established by another session.
+    if (!ownedConnectionRef.current) {
+      setIsConnected(false);
+      setConfig(null);
+      return false;
+    }
     const connected = await run(() => vmwareApi.isConnected());
     setIsConnected(connected);
     if (connected) {

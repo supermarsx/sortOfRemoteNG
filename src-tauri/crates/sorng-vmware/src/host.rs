@@ -1,6 +1,6 @@
 //! ESXi host management via the vSphere REST API.
 
-use crate::error::VmwareResult;
+use crate::error::{VmwareError, VmwareResult};
 use crate::types::*;
 use crate::vsphere::VsphereClient;
 
@@ -86,27 +86,23 @@ impl<'a> HostManager<'a> {
 
     /// Enter maintenance mode.
     ///
-    /// Note: The vSphere REST API does not have a dedicated maintenance-mode
-    /// toggle. This is provided as a placeholder that maps to the
-    /// host-specific action when available in newer API versions. For now
-    /// it returns an error indicating the operation must be done via the
-    /// SOAP/MOB API or PowerCLI.
+    /// The vSphere Automation REST Host API exposes inventory and connection
+    /// lifecycle operations, but not host maintenance mode. Return a typed
+    /// capability error without issuing a speculative HTTP request.
     pub async fn enter_maintenance_mode(&self, _host_id: &str) -> VmwareResult<()> {
-        // vSphere REST API v7 does not have /host/{id}?action=enter_maintenance
-        // This would need the SOAP API or PowerCLI. Providing a stub.
-        Err(crate::error::VmwareError::new(
-            crate::error::VmwareErrorKind::Other,
-            "Enter maintenance mode is not available via the vSphere REST API. \
-             Use PowerCLI: Set-VMHost -VMHost <host> -State Maintenance",
+        Err(VmwareError::unsupported(
+            "Entering maintenance mode is not exposed by the vSphere Automation REST Host API. \
+             Use the vSphere SOAP API or PowerCLI: \
+             Set-VMHost -VMHost <host> -State Maintenance",
         ))
     }
 
     /// Exit maintenance mode.
     pub async fn exit_maintenance_mode(&self, _host_id: &str) -> VmwareResult<()> {
-        Err(crate::error::VmwareError::new(
-            crate::error::VmwareErrorKind::Other,
-            "Exit maintenance mode is not available via the vSphere REST API. \
-             Use PowerCLI: Set-VMHost -VMHost <host> -State Connected",
+        Err(VmwareError::unsupported(
+            "Exiting maintenance mode is not exposed by the vSphere Automation REST Host API. \
+             Use the vSphere SOAP API or PowerCLI: \
+             Set-VMHost -VMHost <host> -State Connected",
         ))
     }
 
@@ -162,5 +158,47 @@ impl<'a> HostManager<'a> {
         self.client
             .get::<Vec<ResourcePoolSummary>>("/api/vcenter/resource-pool")
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::VmwareErrorKind;
+
+    fn client() -> VsphereClient {
+        VsphereClient::new(&VsphereConfig {
+            host: "vcenter.invalid".to_string(),
+            ..VsphereConfig::default()
+        })
+        .expect("test client should build without network access")
+    }
+
+    #[tokio::test]
+    async fn enter_maintenance_reports_unsupported_without_http_request() {
+        let client = client();
+        let manager = HostManager::new(&client);
+        let error = manager
+            .enter_maintenance_mode("host-42")
+            .await
+            .expect_err("REST-only maintenance mode must not report success");
+
+        assert_eq!(error.kind, VmwareErrorKind::Unsupported);
+        assert!(error.message.contains("SOAP API or PowerCLI"));
+        assert!(error.message.contains("-State Maintenance"));
+    }
+
+    #[tokio::test]
+    async fn exit_maintenance_reports_unsupported_without_http_request() {
+        let client = client();
+        let manager = HostManager::new(&client);
+        let error = manager
+            .exit_maintenance_mode("host-42")
+            .await
+            .expect_err("REST-only maintenance mode must not report success");
+
+        assert_eq!(error.kind, VmwareErrorKind::Unsupported);
+        assert!(error.message.contains("SOAP API or PowerCLI"));
+        assert!(error.message.contains("-State Connected"));
     }
 }

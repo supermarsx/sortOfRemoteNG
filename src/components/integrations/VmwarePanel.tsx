@@ -1020,6 +1020,31 @@ const InfraTab: React.FC<{ mgr: VmwareManager }> = ({ mgr }) => {
                 </button>
                 <button
                   className={btn}
+                  disabled
+                  data-testid={`vmware-enter-maintenance-${h.host}`}
+                  title={t(
+                    "integrations.vmware.maintenanceUnsupported",
+                    "Unavailable: vSphere Automation REST does not expose host maintenance mode; use SOAP or PowerCLI.",
+                  )}
+                >
+                  {t(
+                    "integrations.vmware.enterMaintenance",
+                    "Enter maintenance",
+                  )}
+                </button>
+                <button
+                  className={btn}
+                  disabled
+                  data-testid={`vmware-exit-maintenance-${h.host}`}
+                  title={t(
+                    "integrations.vmware.maintenanceUnsupported",
+                    "Unavailable: vSphere Automation REST does not expose host maintenance mode; use SOAP or PowerCLI.",
+                  )}
+                >
+                  {t("integrations.vmware.exitMaintenance", "Exit maintenance")}
+                </button>
+                <button
+                  className={btn}
                   title={t(
                     "integrations.vmware.disconnectHost",
                     "Disconnect host",

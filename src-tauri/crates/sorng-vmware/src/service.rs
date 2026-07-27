@@ -76,7 +76,9 @@ impl VmwareService {
     /// Disconnect from vSphere.
     pub async fn disconnect(&mut self) -> VmwareResult<()> {
         if let Some(ref mut client) = self.client {
-            let _ = client.logout().await;
+            // Keep the client/config intact when logout fails so lifecycle
+            // cleanup can be retried instead of reporting a false success.
+            client.logout().await?;
         }
         self.client = None;
         self.config = None;

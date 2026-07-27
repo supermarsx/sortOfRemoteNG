@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -16,7 +23,7 @@ vi.mock("react-i18next", () => ({
 
 import VmwarePanel from "./VmwarePanel";
 import { vmwareDescriptor } from "./descriptors";
-import { vmwareApi } from "../../hooks/integration/useVmware";
+import { useVmware, vmwareApi } from "../../hooks/integration/useVmware";
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -105,6 +112,23 @@ describe("VmwarePanel", () => {
     expect(vmwareDescriptor.key).toBe("vmware");
     expect(vmwareDescriptor.category).toBe("virtualization");
     expect(typeof vmwareDescriptor.importPanel).toBe("function");
+  });
+
+  it("does not adopt or inspect another session's global handle on cold refresh", async () => {
+    const { result } = renderHook(() => useVmware());
+
+    await act(async () => {
+      await expect(result.current.refreshConnection()).resolves.toBe(false);
+    });
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "vmware_is_connected",
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "vmware_get_config",
+      expect.anything(),
+    );
   });
 
   it("api wrappers map to the correct command names", () => {

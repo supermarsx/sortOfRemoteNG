@@ -7,9 +7,10 @@
 // Category slices (`vms`, `host`) ship their own `<x>Api` slices; this file owns
 // only connect/disconnect/status.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxyArgs } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   VmwConnectionSummary,
   VmwHostInfo,
@@ -61,58 +62,95 @@ export const vmwDesktopConnectionApi = {
  * from the shell via `VmwDesktopTabProps`.
  */
 export function useVmwDesktopConnection() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connected, setConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<VmwConnectionSummary | null>(null);
   const [hostInfo, setHostInfo] = useState<VmwHostInfo | null>(null);
+  const ownedConnectionRef = useRef(false);
 
-  const connect = useCallback(async (args: VmwDesktopConnectArgs) => {
-    setIsConnecting(true);
-    setError(null);
-    try {
-      const result = await vmwDesktopConnectionApi.connect(
-        withGlobalHttpProxyArgs(args),
-      );
-      setSummary(result);
-      setConnected(true);
-      // Host detection is best-effort; a failure here must not fail connect.
-      try {
-        setHostInfo(await vmwDesktopConnectionApi.hostInfo());
-      } catch {
-        setHostInfo(null);
-      }
-      return result;
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
-      setConnected(false);
-      throw e;
-    } finally {
-      setIsConnecting(false);
-    }
-  }, []);
-
-  const disconnect = useCallback(async () => {
-    setError(null);
+  const disconnectOperation = useCallback(async () => {
+    if (!ownedConnectionRef.current) return;
     try {
       await vmwDesktopConnectionApi.disconnect();
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
-    } finally {
+      ownedConnectionRef.current = false;
       setConnected(false);
       setSummary(null);
       setHostInfo(null);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message;
+      setError(msg);
+      throw e;
     }
   }, []);
 
+  const connect = useCallback(
+    async (args: VmwDesktopConnectArgs) =>
+      trackConnect(
+        "vmwareDesktop:global",
+        async () => {
+          setIsConnecting(true);
+          setError(null);
+          try {
+            const result = await vmwDesktopConnectionApi.connect(
+              withGlobalHttpProxyArgs(args),
+            );
+            ownedConnectionRef.current = true;
+            setSummary(result);
+            setConnected(true);
+            try {
+              setHostInfo(await vmwDesktopConnectionApi.hostInfo());
+            } catch {
+              setHostInfo(null);
+            }
+            return result;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setConnected(false);
+            setSummary(null);
+            setHostInfo(null);
+            throw e;
+          } finally {
+            setIsConnecting(false);
+          }
+        },
+        disconnectOperation,
+      ),
+    [disconnectOperation, trackConnect],
+  );
+
+  const disconnect = useCallback(async () => {
+    setError(null);
+    if (!ownedConnectionRef.current) {
+      setConnected(false);
+      setSummary(null);
+      setHostInfo(null);
+      return;
+    }
+    try {
+      await trackDisconnect("vmwareDesktop:global", disconnectOperation);
+    } catch {
+      // disconnectOperation already synchronizes the local error and state.
+    }
+  }, [disconnectOperation, trackDisconnect]);
+
   const refreshStatus = useCallback(async () => {
+    if (!ownedConnectionRef.current) {
+      setConnected(false);
+      setSummary(null);
+      setHostInfo(null);
+      return;
+    }
     try {
       const isConn = await vmwDesktopConnectionApi.isConnected();
       setConnected(isConn);
       if (isConn) {
         setSummary(await vmwDesktopConnectionApi.connectionSummary());
+      } else {
+        setSummary(null);
+        setHostInfo(null);
       }
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message;

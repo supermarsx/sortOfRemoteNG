@@ -421,7 +421,14 @@ fn parse_display(s: &HashMap<String, String>) -> Option<VmDisplay> {
 }
 
 /// Generate a minimal VMX file for a new VM.
-pub fn generate_vmx(req: &CreateVmRequest) -> HashMap<String, String> {
+///
+/// `primary_disk_filename` is supplied by the lifecycle layer only after the
+/// corresponding VMDK has been created successfully. Omitting it produces a
+/// truthful diskless VMX instead of referencing a file that may not exist.
+pub fn generate_vmx(
+    req: &CreateVmRequest,
+    primary_disk_filename: Option<&str>,
+) -> HashMap<String, String> {
     let mut m = HashMap::new();
     let hw = req.hardware_version.unwrap_or(21);
     m.insert(".encoding".to_string(), "UTF-8".to_string());
@@ -472,9 +479,11 @@ pub fn generate_vmx(req: &CreateVmRequest) -> HashMap<String, String> {
     m.insert("scsi0.present".to_string(), "TRUE".to_string());
     m.insert("scsi0.virtualdev".to_string(), "lsilogic".to_string());
 
-    // Primary disk placeholder (actual VMDK must be created separately)
-    m.insert("scsi0:0.present".to_string(), "TRUE".to_string());
-    m.insert("scsi0:0.filename".to_string(), format!("{}.vmdk", req.name));
+    // Attach only the VMDK that the lifecycle layer actually created.
+    if let Some(filename) = primary_disk_filename {
+        m.insert("scsi0:0.present".to_string(), "TRUE".to_string());
+        m.insert("scsi0:0.filename".to_string(), filename.to_string());
+    }
 
     // CDROM
     m.insert("sata0.present".to_string(), "TRUE".to_string());
@@ -529,4 +538,51 @@ fn discover_vmx_recursive(dir: &Path, results: &mut Vec<String>) -> VmwResult<()
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(name: &str) -> CreateVmRequest {
+        CreateVmRequest {
+            name: name.to_string(),
+            guest_os: "other-64".to_string(),
+            num_cpus: None,
+            cores_per_socket: None,
+            memory_mb: None,
+            disk_size_mb: None,
+            disk_type: None,
+            network_type: None,
+            firmware: None,
+            hardware_version: None,
+            target_dir: None,
+            iso_path: None,
+            auto_install: None,
+            annotation: None,
+        }
+    }
+
+    #[test]
+    fn generated_vmx_attaches_the_explicitly_created_primary_disk() {
+        let settings = generate_vmx(&request("display-name"), Some("actual-primary.vmdk"));
+
+        assert_eq!(
+            settings.get("scsi0:0.filename").map(String::as_str),
+            Some("actual-primary.vmdk")
+        );
+        assert_eq!(
+            settings.get("scsi0:0.present").map(String::as_str),
+            Some("TRUE")
+        );
+        assert!(!settings.values().any(|value| value == "display-name.vmdk"));
+    }
+
+    #[test]
+    fn generated_vmx_does_not_claim_an_uncreated_primary_disk() {
+        let settings = generate_vmx(&request("diskless"), None);
+
+        assert!(!settings.contains_key("scsi0:0.filename"));
+        assert!(!settings.contains_key("scsi0:0.present"));
+    }
 }

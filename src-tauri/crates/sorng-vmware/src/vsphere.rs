@@ -108,12 +108,13 @@ impl VsphereClient {
     pub async fn logout(&mut self) -> VmwareResult<()> {
         if let Some(ref sid) = self.session_id {
             let url = format!("{}/api/session", self.base_url);
-            let _ = self
+            let response = self
                 .client
                 .delete(&url)
                 .header("vmware-api-session-id", sid.as_str())
                 .send()
-                .await;
+                .await?;
+            Self::check_status(response).await?;
         }
         self.session_id = None;
         Ok(())
@@ -314,5 +315,33 @@ impl VsphereClient {
                 &text[..text.len().min(500)]
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn logout_failure_keeps_session_id_for_cleanup_retry() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let config = VsphereConfig {
+            host: "127.0.0.1".into(),
+            port,
+            username: "user".into(),
+            password: "password".into(),
+            insecure: true,
+            timeout_secs: 1,
+            proxy_url: None,
+        };
+        let mut client = VsphereClient::new(&config).unwrap();
+        client.session_id = Some("session-for-retry".into());
+
+        assert!(client.logout().await.is_err());
+        assert_eq!(client.session_id(), Some("session-for-retry"));
     }
 }

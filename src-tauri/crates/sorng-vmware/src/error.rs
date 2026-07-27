@@ -3,7 +3,7 @@
 use std::fmt;
 
 /// Categorised error kinds.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VmwareErrorKind {
     /// vSphere REST API unreachable or session expired
     ConnectionError,
@@ -37,6 +37,8 @@ pub enum VmwareErrorKind {
     MigrationError,
     /// Metrics / performance counter error
     MetricsError,
+    /// Operation is not exposed by the selected vSphere API surface
+    Unsupported,
     /// Generic
     Other,
 }
@@ -90,6 +92,10 @@ impl VmwareError {
 
     pub fn host(msg: impl Into<String>) -> Self {
         Self::new(VmwareErrorKind::HostError, msg)
+    }
+
+    pub fn unsupported(msg: impl Into<String>) -> Self {
+        Self::new(VmwareErrorKind::Unsupported, msg)
     }
 }
 
