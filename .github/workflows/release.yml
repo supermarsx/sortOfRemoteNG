@@ -87,7 +87,7 @@ env:
   FLATPAK_RUNTIME_VERSION: "50"
   FLATPAK_SDK_ID: org.gnome.Sdk
   FLATHUB_REPOSITORY: https://dl.flathub.org/repo/flathub.flatpakrepo
-  LINUX_PACKAGE_MAIN_BINARY: app
+  LINUX_PACKAGE_MAIN_BINARY: com.sortofremote.ng
   LINUX_PACKAGE_PRODUCT_NAME: sortOfRemoteNG
   LINUX_STANDARD_RUNNER_DISK_GIB: "14"
 
@@ -633,7 +633,16 @@ jobs:
           const bundle = {
             createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
           };
+          const releaseConfig = { bundle };
           if (process.env.PLATFORM === "linux") {
+            // Tauri renames the Linux executable to mainBinaryName and uses
+            // that same value as its generated desktop icon key.
+            const mainBinaryName = process.env.FLATPAK_APP_ID;
+            if (mainBinaryName !== "com.sortofremote.ng") {
+              throw new Error(
+                "Linux main binary name must match the canonical Flatpak app ID.",
+              );
+            }
             const desktopTemplate = path.resolve(
               process.env.GITHUB_WORKSPACE,
               "src-tauri/packaging/linux.desktop",
@@ -655,6 +664,8 @@ jobs:
             console.log(
               `Configured Linux RPM desktop template: ${desktopTemplate}`,
             );
+            console.log(`Configured Linux main binary name: ${mainBinaryName}`);
+            releaseConfig.mainBinaryName = mainBinaryName;
             bundle.linux = {
               rpm: {
                 desktopTemplate,
@@ -674,7 +685,7 @@ jobs:
           }
           fs.writeFileSync(
             "src-tauri/tauri.release.conf.json",
-            JSON.stringify({ bundle }),
+            JSON.stringify(releaseConfig),
           );
           NODE
 
@@ -887,7 +898,7 @@ jobs:
 
           target_root=$(realpath -m "$GITHUB_WORKSPACE/src-tauri/target")
           release_root="$target_root/$RUST_TARGET/release"
-          executable="$release_root/app"
+          executable="$release_root/$LINUX_PACKAGE_MAIN_BINARY"
           bundle="$release_root/bundle"
           payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
           preserved_bundles="$GITHUB_WORKSPACE/.ci/linux-native-bundles"

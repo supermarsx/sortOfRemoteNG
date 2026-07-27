@@ -1177,7 +1177,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     ["FLATPAK_RUNTIME_ID", "org.gnome.Platform"],
     ["FLATPAK_RUNTIME_VERSION", '"50"'],
     ["FLATPAK_SDK_ID", "org.gnome.Sdk"],
-    ["LINUX_PACKAGE_MAIN_BINARY", "app"],
+    ["LINUX_PACKAGE_MAIN_BINARY", "com.sortofremote.ng"],
     ["LINUX_PACKAGE_PRODUCT_NAME", "sortOfRemoteNG"],
   ]) {
     assert.match(
@@ -1262,6 +1262,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     process: {
       env: {
         GITHUB_WORKSPACE: process.cwd(),
+        FLATPAK_APP_ID: "com.sortofremote.ng",
         PLATFORM: "linux",
         UPDATER_ENABLED: "false",
         WINDOWS_CERT_THUMBPRINT: "",
@@ -1289,6 +1290,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     linuxReleaseConfig.bundle.linux.rpm.desktopTemplate,
     resolve(process.cwd(), "src-tauri/packaging/linux.desktop"),
   );
+  assert.equal(linuxReleaseConfig.mainBinaryName, "com.sortofremote.ng");
   assert.equal(linuxReleaseConfig.bundle.createUpdaterArtifacts, false);
 
   assert.match(
@@ -1371,7 +1373,7 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
 
   assert.match(
     preserveLinux,
-    /executable="\$release_root\/app"[\s\S]*?install -m 0755 "\$executable" "\$payload\/sortOfRemoteNG"/,
+    /executable="\$release_root\/\$LINUX_PACKAGE_MAIN_BINARY"[\s\S]*?install -m 0755 "\$executable" "\$payload\/sortOfRemoteNG"/,
   );
   assert.match(
     preserveLinux,
