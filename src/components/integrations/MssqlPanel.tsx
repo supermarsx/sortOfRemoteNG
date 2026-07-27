@@ -248,6 +248,7 @@ const ConnectForm: React.FC<{
     setForm((f) => ({ ...f, [k]: v }));
 
   const needsCreds = form.authKind !== "WindowsAuth";
+  const usesUnsupportedAuth = form.authKind !== "SqlAuth";
 
   const doConnect = useCallback(async () => {
     try {
@@ -316,11 +317,17 @@ const ConnectForm: React.FC<{
             <option value="SqlAuth">
               {t("integrations.mssql.sqlAuth", "SQL Server login")}
             </option>
-            <option value="WindowsAuth">
-              {t("integrations.mssql.windowsAuth", "Windows (integrated)")}
+            <option value="WindowsAuth" disabled>
+              {t(
+                "integrations.mssql.windowsAuth",
+                "Windows (integrated) — unavailable",
+              )}
             </option>
-            <option value="AzureAd">
-              {t("integrations.mssql.azureAd", "Azure AD password")}
+            <option value="AzureAd" disabled>
+              {t(
+                "integrations.mssql.azureAd",
+                "Azure AD password — unavailable",
+              )}
             </option>
           </select>
         </Labeled>
@@ -394,6 +401,16 @@ const ConnectForm: React.FC<{
         </Labeled>
       </div>
 
+      <div
+        className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+        role="status"
+      >
+        {t(
+          "integrations.mssql.capabilityNotice",
+          "SQL Server login is the only supported authentication method. Windows integrated authentication, Azure AD password authentication, and SSH tunnelling are unavailable until their native transports are implemented.",
+        )}
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-4">
         <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <input
@@ -418,9 +435,17 @@ const ConnectForm: React.FC<{
           <input
             type="checkbox"
             checked={form.useSshTunnel}
-            onChange={(e) => set("useSshTunnel", e.target.checked)}
+            onChange={() => undefined}
+            disabled
+            title={t(
+              "integrations.mssql.sshTunnelUnavailable",
+              "Unavailable: no native SSH forwarder is implemented for SQL Server.",
+            )}
           />
-          {t("integrations.mssql.useSshTunnel", "Connect through SSH tunnel")}
+          {t(
+            "integrations.mssql.useSshTunnel",
+            "Connect through SSH tunnel — unavailable",
+          )}
         </label>
       </div>
 
@@ -474,7 +499,11 @@ const ConnectForm: React.FC<{
           className={btn}
           onClick={doConnect}
           disabled={
-            mgr.isLoading || !form.host || (needsCreds && !form.username)
+            mgr.isLoading ||
+            usesUnsupportedAuth ||
+            form.useSshTunnel ||
+            !form.host ||
+            (needsCreds && !form.username)
           }
         >
           {mgr.isLoading ? (

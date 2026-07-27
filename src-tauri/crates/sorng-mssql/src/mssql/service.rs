@@ -4,9 +4,9 @@ use crate::mssql::types::*;
 use chrono::Utc;
 use log::info;
 use std::collections::HashMap;
-use std::net::TcpListener;
 use std::sync::Arc;
-use tiberius::{AuthMethod, Client, ColumnData, Config};
+use std::time::Duration;
+use tiberius::{AuthMethod, Client, ColumnData, Config, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -20,10 +20,6 @@ struct MssqlSession {
     #[allow(dead_code)]
     config: MssqlConnectionConfig,
     info: SessionInfo,
-    #[allow(dead_code)]
-    ssh_session: Option<ssh2::Session>,
-    #[allow(dead_code)]
-    local_port: Option<u16>,
 }
 
 // ── Service ─────────────────────────────────────────────────────────
@@ -77,13 +73,22 @@ impl MssqlService {
 
     fn validate_where_clause(clause: &str) -> Result<(), MssqlError> {
         if clause.is_empty() {
-            return Err(MssqlError::new(MssqlErrorKind::QueryFailed, "WHERE clause cannot be empty"));
+            return Err(MssqlError::new(
+                MssqlErrorKind::QueryFailed,
+                "WHERE clause cannot be empty",
+            ));
         }
         if clause.contains(';') {
-            return Err(MssqlError::new(MssqlErrorKind::QueryFailed, "WHERE clause must not contain semicolons"));
+            return Err(MssqlError::new(
+                MssqlErrorKind::QueryFailed,
+                "WHERE clause must not contain semicolons",
+            ));
         }
         if clause.contains("--") || clause.contains("/*") {
-            return Err(MssqlError::new(MssqlErrorKind::QueryFailed, "WHERE clause must not contain SQL comments"));
+            return Err(MssqlError::new(
+                MssqlErrorKind::QueryFailed,
+                "WHERE clause must not contain SQL comments",
+            ));
         }
         let upper = clause.to_uppercase();
         for kw in ["UNION", "DROP", "ALTER", "CREATE", "INSERT", "EXEC", "XP_"] {
@@ -95,70 +100,6 @@ impl MssqlService {
             }
         }
         Ok(())
-    }
-
-    fn free_port() -> Result<u16, MssqlError> {
-        TcpListener::bind("127.0.0.1:0")
-            .and_then(|l| l.local_addr())
-            .map(|a| a.port())
-            .map_err(|e| {
-                MssqlError::new(
-                    MssqlErrorKind::SshTunnelFailed,
-                    format!("No free port: {e}"),
-                )
-            })
-    }
-
-    fn setup_ssh_tunnel(
-        cfg: &SshTunnelConfig,
-        remote_host: &str,
-        remote_port: u16,
-    ) -> Result<(ssh2::Session, u16), MssqlError> {
-        use std::net::TcpStream as StdTcp;
-        let local_port = Self::free_port()?;
-        let tcp = StdTcp::connect(format!("{}:{}", cfg.host, cfg.port)).map_err(|e| {
-            MssqlError::new(MssqlErrorKind::SshTunnelFailed, format!("SSH TCP: {e}"))
-        })?;
-        let mut sess = ssh2::Session::new().map_err(|e| {
-            MssqlError::new(MssqlErrorKind::SshTunnelFailed, format!("SSH session: {e}"))
-        })?;
-        sess.set_tcp_stream(tcp);
-        sess.handshake().map_err(|e| {
-            MssqlError::new(
-                MssqlErrorKind::SshTunnelFailed,
-                format!("SSH handshake: {e}"),
-            )
-        })?;
-        if let Some(ref key_path) = cfg.private_key_path {
-            sess.userauth_pubkey_file(
-                &cfg.username,
-                None,
-                std::path::Path::new(key_path),
-                cfg.passphrase.as_deref(),
-            )
-            .map_err(|e| {
-                MssqlError::new(
-                    MssqlErrorKind::SshTunnelFailed,
-                    format!("SSH key auth: {e}"),
-                )
-            })?;
-        } else if let Some(ref pw) = cfg.password {
-            sess.userauth_password(&cfg.username, pw).map_err(|e| {
-                MssqlError::new(MssqlErrorKind::SshTunnelFailed, format!("SSH pw auth: {e}"))
-            })?;
-        } else {
-            return Err(MssqlError::new(
-                MssqlErrorKind::SshTunnelFailed,
-                "No SSH credentials",
-            ));
-        }
-        let _channel = sess
-            .channel_direct_tcpip(remote_host, remote_port, None)
-            .map_err(|e| {
-                MssqlError::new(MssqlErrorKind::SshTunnelFailed, format!("SSH tunnel: {e}"))
-            })?;
-        info!("SSH tunnel on local :{local_port} → {remote_host}:{remote_port}");
-        Ok((sess, local_port))
     }
 
     fn column_data_to_json(col: &ColumnData<'_>) -> serde_json::Value {
@@ -178,80 +119,146 @@ impl MssqlService {
     // ── connect / disconnect ────────────────────────────────────
 
     pub async fn connect(&mut self, conn_cfg: MssqlConnectionConfig) -> Result<String, MssqlError> {
-        let session_id = uuid::Uuid::new_v4().to_string();
+        if conn_cfg.host.trim().is_empty() {
+            return Err(MssqlError::new(
+                MssqlErrorKind::InvalidInput,
+                "SQL Server host is required",
+            ));
+        }
+        if conn_cfg.port == 0 {
+            return Err(MssqlError::new(
+                MssqlErrorKind::InvalidInput,
+                "SQL Server port must be greater than zero",
+            ));
+        }
+        let timeout_secs = conn_cfg.connection_timeout_secs.unwrap_or(15);
+        if timeout_secs == 0 {
+            return Err(MssqlError::new(
+                MssqlErrorKind::InvalidInput,
+                "Connection timeout must be greater than zero",
+            ));
+        }
+        if conn_cfg.ssh_tunnel.is_some() {
+            return Err(MssqlError::new(
+                MssqlErrorKind::SshTunnelFailed,
+                "MSSQL SSH tunnelling is not implemented; no session was created",
+            ));
+        }
+        if !matches!(conn_cfg.auth, MssqlAuthMethod::SqlAuth { .. }) {
+            return Err(MssqlError::new(
+                MssqlErrorKind::AuthenticationFailed,
+                "Only SQL Server authentication is currently supported by this backend",
+            ));
+        }
 
-        let (ssh_session, local_port) = if let Some(ref ssh_cfg) = conn_cfg.ssh_tunnel {
-            let (s, p) = Self::setup_ssh_tunnel(ssh_cfg, &conn_cfg.host, conn_cfg.port)?;
-            (Some(s), Some(p))
-        } else {
-            (None, None)
-        };
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let timeout_duration = Duration::from_secs(timeout_secs);
 
         let mut config = Config::new();
-        let connect_host = if local_port.is_some() {
-            "127.0.0.1"
-        } else {
-            &conn_cfg.host
-        };
-        let connect_port = local_port.unwrap_or(conn_cfg.port);
-        config.host(connect_host);
-        config.port(connect_port);
+        config.host(conn_cfg.host.trim());
+        config.port(conn_cfg.port);
 
         match &conn_cfg.auth {
             MssqlAuthMethod::SqlAuth { username, password } => {
                 config.authentication(AuthMethod::sql_server(username, password));
             }
-            MssqlAuthMethod::WindowsAuth => {
-                config.authentication(AuthMethod::sql_server("", ""));
-            }
-            MssqlAuthMethod::AzureAd { username, password } => {
-                config.authentication(AuthMethod::sql_server(username, password));
-            }
+            MssqlAuthMethod::WindowsAuth | MssqlAuthMethod::AzureAd { .. } => unreachable!(),
         }
         if let Some(ref db) = conn_cfg.database {
             config.database(db);
         }
+        if let Some(ref instance) = conn_cfg.instance_name {
+            config.instance_name(instance);
+        }
+        if let Some(ref application_name) = conn_cfg.application_name {
+            config.application_name(application_name);
+        }
+        config.encryption(if conn_cfg.encrypt.unwrap_or(true) {
+            EncryptionLevel::Required
+        } else {
+            EncryptionLevel::Off
+        });
         if let Some(ref tls) = conn_cfg.tls {
             if tls.trust_server_certificate {
+                if tls.ca_cert_path.is_some() {
+                    return Err(MssqlError::new(
+                        MssqlErrorKind::InvalidInput,
+                        "trust_server_certificate and ca_cert_path are mutually exclusive",
+                    ));
+                }
                 config.trust_cert();
+            } else if let Some(ref ca_cert_path) = tls.ca_cert_path {
+                if !std::path::Path::new(ca_cert_path).is_file() {
+                    return Err(MssqlError::new(
+                        MssqlErrorKind::TlsError,
+                        format!("CA certificate file not found: {ca_cert_path}"),
+                    ));
+                }
+                config.trust_cert_ca(ca_cert_path);
             }
         }
 
-        let tcp = TcpStream::connect(config.get_addr()).await.map_err(|e| {
-            MssqlError::new(
-                MssqlErrorKind::ConnectionFailed,
-                format!("TCP connect: {e}"),
-            )
-        })?;
-        tcp.set_nodelay(true).ok();
-
-        let mut client = Client::connect(config, tcp.compat_write())
+        let tcp = tokio::time::timeout(timeout_duration, TcpStream::connect(config.get_addr()))
             .await
+            .map_err(|_| {
+                MssqlError::new(
+                    MssqlErrorKind::Timeout,
+                    format!("TCP connection exceeded {timeout_secs} seconds"),
+                )
+            })?
             .map_err(|e| {
                 MssqlError::new(
                     MssqlErrorKind::ConnectionFailed,
-                    format!("TDS connect: {e}"),
+                    format!("TCP connect: {e}"),
                 )
             })?;
+        tcp.set_nodelay(true).ok();
 
-        // Detect version
-        let version = match client.simple_query("SELECT @@VERSION AS ver").await {
-            Ok(stream) => {
-                let row = stream
-                    .into_first_result()
-                    .await
-                    .ok()
-                    .and_then(|rows| rows.into_iter().next());
-                row.and_then(|r| {
-                    r.try_get::<&str, _>(0)
-                        .ok()
-                        .flatten()
-                        .map(|s| s.to_string())
-                })
-                .unwrap_or_else(|| "unknown".to_string())
-            }
-            Err(_) => "unknown".to_string(),
-        };
+        let mut client = tokio::time::timeout(
+            timeout_duration,
+            Client::connect(config, tcp.compat_write()),
+        )
+        .await
+        .map_err(|_| {
+            MssqlError::new(
+                MssqlErrorKind::Timeout,
+                format!("TDS login exceeded {timeout_secs} seconds"),
+            )
+        })?
+        .map_err(|e| Self::tds_connection_error("TDS connect", e))?;
+
+        let stream = tokio::time::timeout(
+            timeout_duration,
+            client.simple_query("SELECT @@VERSION AS ver"),
+        )
+        .await
+        .map_err(|_| {
+            MssqlError::new(
+                MssqlErrorKind::Timeout,
+                format!("Version probe exceeded {timeout_secs} seconds"),
+            )
+        })?
+        .map_err(|e| Self::tds_connection_error("Version probe", e))?;
+        let rows = tokio::time::timeout(timeout_duration, stream.into_first_result())
+            .await
+            .map_err(|_| {
+                MssqlError::new(
+                    MssqlErrorKind::Timeout,
+                    format!("Version response exceeded {timeout_secs} seconds"),
+                )
+            })?
+            .map_err(|e| Self::tds_connection_error("Version response", e))?;
+        let version = rows
+            .into_iter()
+            .next()
+            .and_then(|row| row.try_get::<&str, _>(0).ok().flatten().map(str::to_string))
+            .filter(|version| !version.trim().is_empty())
+            .ok_or_else(|| {
+                MssqlError::new(
+                    MssqlErrorKind::ConnectionFailed,
+                    "Mandatory version probe returned no server version",
+                )
+            })?;
 
         let info = SessionInfo {
             id: session_id.clone(),
@@ -264,7 +271,7 @@ impl MssqlService {
             connected_at: Some(Utc::now().to_rfc3339()),
             queries_executed: 0,
             total_rows_fetched: 0,
-            via_ssh_tunnel: ssh_session.is_some(),
+            via_ssh_tunnel: false,
         };
 
         self.sessions.insert(
@@ -273,8 +280,6 @@ impl MssqlService {
                 client,
                 config: conn_cfg,
                 info,
-                ssh_session,
-                local_port,
             },
         );
         info!("SQL Server session {session_id} connected");
@@ -282,16 +287,45 @@ impl MssqlService {
     }
 
     pub async fn disconnect(&mut self, id: &str) -> Result<(), MssqlError> {
-        let _sess = self
+        let sess = self
             .sessions
             .remove(id)
             .ok_or_else(|| MssqlError::session_not_found(id))?;
+        sess.client.close().await.map_err(|e| {
+            MssqlError::new(
+                MssqlErrorKind::ConnectionFailed,
+                format!("TDS close failed: {e}"),
+            )
+        })?;
         info!("SQL Server session {id} disconnected");
         Ok(())
     }
 
-    pub async fn disconnect_all(&mut self) {
-        self.sessions.clear();
+    pub async fn disconnect_all(&mut self) -> Result<(), MssqlError> {
+        let sessions: Vec<MssqlSession> =
+            self.sessions.drain().map(|(_, session)| session).collect();
+        let mut first_error = None;
+        for session in sessions {
+            if let Err(error) = session.client.close().await {
+                first_error.get_or_insert_with(|| {
+                    MssqlError::new(
+                        MssqlErrorKind::ConnectionFailed,
+                        format!("TDS close failed: {error}"),
+                    )
+                });
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    fn tds_connection_error(context: &str, error: tiberius::error::Error) -> MssqlError {
+        let message = error.to_string();
+        let kind = if message.to_ascii_lowercase().contains("login failed") {
+            MssqlErrorKind::AuthenticationFailed
+        } else {
+            MssqlErrorKind::ConnectionFailed
+        };
+        MssqlError::new(kind, format!("{context}: {message}"))
     }
 
     pub fn list_sessions(&self) -> Vec<SessionInfo> {
@@ -1358,14 +1392,72 @@ mod tests {
     #[tokio::test]
     async fn disconnect_all_empty() {
         let mut svc = MssqlService::new();
-        svc.disconnect_all().await;
+        svc.disconnect_all().await.unwrap();
         assert!(svc.list_sessions().is_empty());
     }
 
-    #[test]
-    fn free_port_works() {
-        let port = MssqlService::free_port().unwrap();
-        assert!(port > 0);
+    #[tokio::test]
+    async fn refused_endpoint_fails_without_session_insertion() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let mut config = MssqlConnectionConfig::sql_auth("127.0.0.1", port, "sa", "secret");
+        config.connection_timeout_secs = Some(1);
+        config.encrypt = Some(false);
+        let mut svc = MssqlService::new();
+
+        let error = svc.connect(config).await.unwrap_err();
+        assert!(
+            matches!(
+                error.kind,
+                MssqlErrorKind::ConnectionFailed | MssqlErrorKind::Timeout
+            ),
+            "unexpected invalid-endpoint error: {error}"
+        );
+        assert!(svc.list_sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stalled_tds_login_times_out_without_session_insertion() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+        let mut config =
+            MssqlConnectionConfig::sql_auth("127.0.0.1", address.port(), "sa", "secret");
+        config.connection_timeout_secs = Some(1);
+        config.encrypt = Some(false);
+        let mut svc = MssqlService::new();
+
+        let error = svc.connect(config).await.unwrap_err();
+        assert!(matches!(error.kind, MssqlErrorKind::Timeout));
+        assert!(svc.list_sessions().is_empty());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn unsupported_auth_and_tunnel_fail_before_session_insertion() {
+        let mut svc = MssqlService::new();
+        let mut windows = MssqlConnectionConfig::sql_auth("127.0.0.1", 1433, "ignored", "ignored");
+        windows.auth = MssqlAuthMethod::WindowsAuth;
+        let error = svc.connect(windows).await.unwrap_err();
+        assert!(matches!(error.kind, MssqlErrorKind::AuthenticationFailed));
+        assert!(svc.list_sessions().is_empty());
+
+        let mut tunnel = MssqlConnectionConfig::sql_auth("127.0.0.1", 1433, "sa", "secret");
+        tunnel.ssh_tunnel = Some(SshTunnelConfig {
+            host: "127.0.0.1".into(),
+            port: 22,
+            username: "user".into(),
+            password: Some("secret".into()),
+            private_key_path: None,
+            passphrase: None,
+        });
+        let error = svc.connect(tunnel).await.unwrap_err();
+        assert!(matches!(error.kind, MssqlErrorKind::SshTunnelFailed));
+        assert!(svc.list_sessions().is_empty());
     }
 
     #[test]

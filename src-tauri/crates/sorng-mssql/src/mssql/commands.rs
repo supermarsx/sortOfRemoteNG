@@ -28,8 +28,7 @@ pub async fn mssql_disconnect_all(
     state: tauri::State<'_, MssqlServiceState>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.disconnect_all().await;
-    Ok(())
+    svc.disconnect_all().await.map_err(|e| e.message)
 }
 
 #[tauri::command]

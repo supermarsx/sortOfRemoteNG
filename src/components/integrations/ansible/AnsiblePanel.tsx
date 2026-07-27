@@ -6,7 +6,13 @@
 // per-category tab modules, which register themselves in `./registry.ts`; this
 // shell never changes per-category.
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Loader2, Plug, PlugZap, RefreshCw, ServerCog } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -30,6 +36,9 @@ const emptyForm = {
   workingDirectory: "",
   configPath: "",
   defaultInventory: "",
+  privateKeyPath: "",
+  vaultPasswordFile: "",
+  commandTimeoutSecs: "300",
 };
 
 type FormState = typeof emptyForm;
@@ -71,6 +80,9 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
       workingDirectory: fields.workingDirectory ?? "",
       configPath: fields.configPath ?? "",
       defaultInventory: fields.defaultInventory ?? "",
+      privateKeyPath: fields.privateKeyPath ?? "",
+      vaultPasswordFile: fields.vaultPasswordFile ?? "",
+      commandTimeoutSecs: fields.commandTimeoutSecs ?? "300",
     });
   }, [instanceId, storeLoading, instancesFor]);
 
@@ -95,10 +107,11 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
         config_path: orNull(form.configPath),
         default_inventory: orNull(form.defaultInventory),
         remote_user: null,
-        private_key_path: null,
+        private_key_path: orNull(form.privateKeyPath),
         ssh_common_args: null,
         env_vars: {},
-        vault_password_file: null,
+        command_timeout_secs: Number(form.commandTimeoutSecs),
+        vault_password_file: orNull(form.vaultPasswordFile),
         ask_vault_pass: false,
         verbosity: 0,
         created_at: now,
@@ -119,6 +132,9 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
       workingDirectory: form.workingDirectory.trim(),
       configPath: form.configPath.trim(),
       defaultInventory: form.defaultInventory.trim(),
+      privateKeyPath: form.privateKeyPath.trim(),
+      vaultPasswordFile: form.vaultPasswordFile.trim(),
+      commandTimeoutSecs: form.commandTimeoutSecs.trim(),
     };
 
     // Persist config (no secret — Ansible auth is SSH keys/agent, not a stored
@@ -155,6 +171,14 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
   if (!isOpen) return null;
 
   const connected = Boolean(connectionId);
+  const commandTimeout = Number(form.commandTimeoutSecs);
+  const commandTimeoutError =
+    !Number.isSafeInteger(commandTimeout) || commandTimeout <= 0
+      ? t(
+          "integrations.ansible.errors.commandTimeout",
+          "Command timeout must be a finite whole number greater than zero.",
+        )
+      : null;
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
@@ -180,9 +204,13 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
         )}
       </div>
 
-      {error && (
-        <div className="border-b border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-4 py-2 text-xs text-[var(--color-danger,#f87171)]">
-          {error}
+      {(error || commandTimeoutError) && (
+        <div
+          className="border-b border-[var(--color-border)] bg-[var(--color-dangerBg,#3a1a1a)] px-4 py-2 text-xs text-[var(--color-danger,#f87171)]"
+          role="alert"
+          data-testid="ansible-connection-error"
+        >
+          {error || commandTimeoutError}
         </div>
       )}
 
@@ -207,7 +235,10 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
             </label>
 
             <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
-              {t("integrations.ansible.fields.ansibleBinPath", "ansible binary path")}
+              {t(
+                "integrations.ansible.fields.ansibleBinPath",
+                "ansible binary path",
+              )}
               <input
                 className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-sm text-[var(--color-text)]"
                 value={form.ansibleBinPath}
@@ -298,9 +329,57 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
               />
             </label>
 
+            <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
+              {t(
+                "integrations.ansible.fields.privateKeyPath",
+                "Default SSH private key path",
+              )}
+              <input
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-sm text-[var(--color-text)]"
+                value={form.privateKeyPath}
+                onChange={(e) => setField("privateKeyPath", e.target.value)}
+                placeholder="~/.ssh/id_ed25519"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
+              {t(
+                "integrations.ansible.fields.vaultPasswordFile",
+                "Vault password file path",
+              )}
+              <input
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-sm text-[var(--color-text)]"
+                value={form.vaultPasswordFile}
+                onChange={(e) => setField("vaultPasswordFile", e.target.value)}
+                placeholder="/etc/ansible/.vault-password"
+              />
+              <span className="text-[10px] text-[var(--color-textMuted)]">
+                {t(
+                  "integrations.ansible.fields.vaultPasswordFileHint",
+                  "Interactive vault password prompts are unavailable in the headless backend; use a readable password file.",
+                )}
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs text-[var(--color-textSecondary)]">
+              {t(
+                "integrations.ansible.fields.commandTimeout",
+                "Command timeout (seconds)",
+              )}
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surfaceHover)] px-2 py-1 text-sm text-[var(--color-text)]"
+                value={form.commandTimeoutSecs}
+                onChange={(e) => setField("commandTimeoutSecs", e.target.value)}
+                aria-invalid={Boolean(commandTimeoutError)}
+              />
+            </label>
+
             <button
               onClick={handleConnect}
-              disabled={connecting}
+              disabled={connecting || Boolean(commandTimeoutError)}
               className="mt-2 flex items-center justify-center gap-2 rounded bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {connecting ? (
@@ -327,7 +406,10 @@ const AnsiblePanel: React.FC<AnsiblePanelProps> = ({ isOpen, instanceId }) => {
                         : "text-[var(--color-textSecondary)]"
                     }`}
                   >
-                    {t(`integrations.ansible.tabs.${tab.categoryKey}`, tab.label)}
+                    {t(
+                      `integrations.ansible.tabs.${tab.categoryKey}`,
+                      tab.label,
+                    )}
                   </button>
                 ))}
               </div>

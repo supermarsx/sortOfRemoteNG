@@ -388,10 +388,8 @@ impl KeePassService {
                         has_username = true;
                     }
                 }
-                AutoTypeToken::Key(key) => {
-                    if key == "ENTER" {
-                        has_enter = true;
-                    }
+                AutoTypeToken::Key(key) if key == "ENTER" => {
+                    has_enter = true;
                 }
                 AutoTypeToken::Literal(text) if text.contains('{') && !text.contains('}') => {
                     warnings.push(format!("Possible malformed placeholder: {}", text));

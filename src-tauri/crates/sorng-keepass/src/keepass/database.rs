@@ -6,9 +6,9 @@
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use uuid::Uuid;
+use std::io::Read;
 
-use super::service::{CompositeKeyInternal, DatabaseInstance, KeePassService};
+use super::service::{CompositeKeyInternal, KeePassService};
 use super::types::*;
 
 impl KeePassService {
@@ -32,116 +32,10 @@ impl KeePassService {
             return Err(format!("Database already open: {}", req.file_path));
         }
 
-        let now = Utc::now().to_rfc3339();
-        let db_id = Uuid::new_v4().to_string();
-        let root_group_id = Uuid::new_v4().to_string();
-        let recycle_bin_id = if req.enable_recycle_bin.unwrap_or(true) {
-            Some(Uuid::new_v4().to_string())
-        } else {
-            None
-        };
-
-        let cipher = req.cipher.unwrap_or_default();
-        let kdf = req.kdf.unwrap_or_default();
-        let compression = req.compression.unwrap_or_default();
-
-        let db_info = KeePassDatabase {
-            id: db_id.clone(),
-            file_path: req.file_path.clone(),
-            name: req.name.clone(),
-            description: req.description.unwrap_or_default(),
-            default_username: req.default_username.unwrap_or_default(),
-            locked: false,
-            modified: true,
-            format_version: "4.1".to_string(),
-            cipher,
-            kdf,
-            compression,
-            root_group_id: root_group_id.clone(),
-            recycle_bin_id: recycle_bin_id.clone(),
-            recycle_bin_enabled: recycle_bin_id.is_some(),
-            color: None,
-            master_seed: Some(hex::encode(Uuid::new_v4().as_bytes())),
-            entry_count: 0,
-            group_count: 1, // root group
-            created_at: now.clone(),
-            modified_at: now.clone(),
-            last_opened_at: now.clone(),
-            custom_icon_count: 0,
-            custom_data: HashMap::new(),
-        };
-
-        // Build composite key hash
-        let composite_key =
-            Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
-
-        // Create root group
-        let root_group = KeePassGroup {
-            uuid: root_group_id.clone(),
-            name: req.name.clone(),
-            notes: String::new(),
-            icon_id: 49, // folder icon
-            custom_icon_uuid: None,
-            parent_uuid: None,
-            is_expanded: true,
-            default_auto_type_sequence: None,
-            enable_auto_type: None,
-            enable_searching: None,
-            last_top_visible_entry: None,
-            is_recycle_bin: false,
-            entry_count: 0,
-            child_group_count: if recycle_bin_id.is_some() { 1 } else { 0 },
-            total_entry_count: 0,
-            times: KeePassTimes::default(),
-            tags: Vec::new(),
-            custom_data: HashMap::new(),
-        };
-
-        let mut groups = HashMap::new();
-        groups.insert(root_group_id.clone(), root_group);
-
-        // Create recycle bin group if enabled
-        if let Some(ref rb_id) = recycle_bin_id {
-            let recycle_group = KeePassGroup {
-                uuid: rb_id.clone(),
-                name: "Recycle Bin".to_string(),
-                notes: String::new(),
-                icon_id: 43, // recycle bin icon
-                custom_icon_uuid: None,
-                parent_uuid: Some(root_group_id.clone()),
-                is_expanded: false,
-                default_auto_type_sequence: None,
-                enable_auto_type: Some(false),
-                enable_searching: Some(false),
-                last_top_visible_entry: None,
-                is_recycle_bin: true,
-                entry_count: 0,
-                child_group_count: 0,
-                total_entry_count: 0,
-                times: KeePassTimes::default(),
-                tags: Vec::new(),
-                custom_data: HashMap::new(),
-            };
-            groups.insert(rb_id.clone(), recycle_group);
-        }
-
-        let mut instance = DatabaseInstance::new_empty(db_info.clone());
-        instance.groups = groups;
-        instance.composite_key = Some(composite_key);
-        instance.rebuild_tree();
-
-        self.register_database(instance);
-        self.add_recent_database(&req.file_path, &req.name);
-
-        self.log_change(
-            ChangeAction::Create,
-            ChangeTargetType::Database,
-            &db_id,
-            &req.name,
-            &format!("Created database: {}", req.file_path),
-        );
-
-        Ok(db_info)
+        Err(
+            "Creating KDBX files is not implemented by this backend; no file was written and no database was registered"
+                .to_string(),
+        )
     }
 
     // ─── Open Database ────────────────────────────────────────────────
@@ -163,116 +57,53 @@ impl KeePassService {
             return Err(format!("File not found: {}", req.file_path));
         }
 
-        let file_size = std::fs::metadata(&req.file_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
-
         // Build composite key
-        let composite_key =
-            Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
+        Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
 
-        let now = Utc::now().to_rfc3339();
-        let db_id = Uuid::new_v4().to_string();
-        let root_group_id = Uuid::new_v4().to_string();
+        const KDBX_SIGNATURE: [u8; 8] = [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5];
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to read KeePass database: {e}"))?;
+        let mut header = [0_u8; KDBX_SIGNATURE.len()];
+        let header_len = file
+            .read(&mut header)
+            .map_err(|e| format!("Failed to read KeePass database header: {e}"))?;
+        if header_len != KDBX_SIGNATURE.len() || header != KDBX_SIGNATURE {
+            return Err("Invalid KeePass KDBX file signature".to_string());
+        }
 
-        // Extract database name from file path
-        let name = path
-            .file_stem()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Untitled".to_string());
-
-        let db_info = KeePassDatabase {
-            id: db_id.clone(),
-            file_path: req.file_path.clone(),
-            name: name.clone(),
-            description: String::new(),
-            default_username: String::new(),
-            locked: false,
-            modified: false,
-            format_version: "4.1".to_string(),
-            cipher: KeePassCipher::Aes256,
-            kdf: KdfSettings::default(),
-            compression: KeePassCompression::GZip,
-            root_group_id: root_group_id.clone(),
-            recycle_bin_id: None,
-            recycle_bin_enabled: true,
-            color: None,
-            master_seed: None,
-            entry_count: 0,
-            group_count: 1,
-            created_at: now.clone(),
-            modified_at: now.clone(),
-            last_opened_at: now.clone(),
-            custom_icon_count: 0,
-            custom_data: HashMap::new(),
-        };
-
-        // Create a default root group for the opened database
-        let root_group = KeePassGroup {
-            uuid: root_group_id.clone(),
-            name: name.clone(),
-            notes: String::new(),
-            icon_id: 49,
-            custom_icon_uuid: None,
-            parent_uuid: None,
-            is_expanded: true,
-            default_auto_type_sequence: None,
-            enable_auto_type: None,
-            enable_searching: None,
-            last_top_visible_entry: None,
-            is_recycle_bin: false,
-            entry_count: 0,
-            child_group_count: 0,
-            total_entry_count: 0,
-            times: KeePassTimes::default(),
-            tags: Vec::new(),
-            custom_data: HashMap::new(),
-        };
-
-        let mut groups = HashMap::new();
-        groups.insert(root_group_id.clone(), root_group);
-
-        let mut instance = DatabaseInstance::new_empty(db_info.clone());
-        instance.groups = groups;
-        instance.composite_key = Some(composite_key);
-        instance.read_only = req.read_only.unwrap_or(false);
-        instance.rebuild_tree();
-
-        let _ = file_size; // Would be used in actual KDBX parsing
-
-        self.register_database(instance);
-        self.add_recent_database(&req.file_path, &name);
-
-        Ok(db_info)
+        Err(
+            "Opening KDBX files is not implemented by this backend; no database was registered"
+                .to_string(),
+        )
     }
 
     // ─── Close Database ───────────────────────────────────────────────
 
     /// Close an open database, optionally saving first.
     pub fn close_database(&mut self, db_id: &str, save_first: bool) -> Result<(), String> {
-        {
+        let requires_save = {
             let db = self.get_database(db_id)?;
-            if save_first && db.info.modified && !db.read_only {
-                // In a real implementation, we'd save here
-                log::info!("Saving database before close: {}", db.info.file_path);
-            }
+            save_first && db.info.modified && !db.read_only
+        };
+        if requires_save {
+            self.save_database(db_id, None)?;
         }
 
-        let db = self.unregister_database(db_id)?;
+        let mut db = self.unregister_database(db_id)?;
+        db.clear_sensitive();
         log::info!("Closed database: {} ({})", db.info.name, db.info.file_path);
         Ok(())
     }
 
     /// Close all open databases.
-    pub fn close_all_databases(&mut self, save_first: bool) -> Vec<String> {
+    pub fn close_all_databases(&mut self, save_first: bool) -> Result<Vec<String>, String> {
         let db_ids: Vec<String> = self.list_databases().iter().map(|d| d.id.clone()).collect();
         let mut closed = Vec::new();
         for db_id in &db_ids {
-            if self.close_database(db_id, save_first).is_ok() {
-                closed.push(db_id.clone());
-            }
+            self.close_database(db_id, save_first)?;
+            closed.push(db_id.clone());
         }
-        closed
+        Ok(closed)
     }
 
     // ─── Save Database ────────────────────────────────────────────────
@@ -281,40 +112,17 @@ impl KeePassService {
     pub fn save_database(
         &mut self,
         db_id: &str,
-        options: Option<SaveDatabaseOptions>,
+        _options: Option<SaveDatabaseOptions>,
     ) -> Result<String, String> {
-        let db = self.get_database_mut(db_id)?;
+        let db = self.get_database(db_id)?;
 
         if db.read_only {
             return Err("Database is open as read-only".to_string());
         }
-
-        let file_path = if let Some(ref opts) = options {
-            opts.file_path
-                .clone()
-                .unwrap_or_else(|| db.info.file_path.clone())
-        } else {
-            db.info.file_path.clone()
-        };
-
-        // Update cipher/kdf if requested (rekey)
-        if let Some(ref opts) = options {
-            if let Some(ref new_cipher) = opts.new_cipher {
-                db.info.cipher = new_cipher.clone();
-            }
-            if let Some(ref new_kdf) = opts.new_kdf {
-                db.info.kdf = new_kdf.clone();
-            }
-        }
-
-        // In a real implementation, this would serialize to KDBX format
-        log::info!("Saving database to: {}", file_path);
-
-        db.info.modified = false;
-        db.info.modified_at = Utc::now().to_rfc3339();
-        db.info.file_path = file_path.clone();
-
-        Ok(file_path)
+        Err(
+            "Saving KDBX files is not implemented by this backend; in-memory changes remain unsaved"
+                .to_string(),
+        )
     }
 
     // ─── Lock / Unlock ────────────────────────────────────────────────
@@ -374,46 +182,12 @@ impl KeePassService {
 
     /// Create a backup of a database file.
     pub fn backup_database(&self, db_id: &str, backup_dir: Option<&str>) -> Result<String, String> {
-        let db = self.get_database(db_id)?;
-        let source = &db.info.file_path;
-
-        let source_path = std::path::Path::new(source);
-        if !source_path.exists() {
-            return Err(format!("Source file not found: {}", source));
-        }
-
-        let backup_directory = if let Some(dir) = backup_dir {
-            std::path::PathBuf::from(dir)
-        } else {
-            source_path
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .join("backups")
-        };
-
-        // Ensure backup directory exists
-        if !backup_directory.exists() {
-            std::fs::create_dir_all(&backup_directory)
-                .map_err(|e| format!("Failed to create backup directory: {}", e))?;
-        }
-
-        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-        let stem = source_path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "database".to_string());
-        let extension = source_path
-            .extension()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "kdbx".to_string());
-
-        let backup_name = format!("{}_{}.{}", stem, timestamp, extension);
-        let backup_path = backup_directory.join(&backup_name);
-
-        std::fs::copy(source, &backup_path).map_err(|e| format!("Backup failed: {}", e))?;
-
-        log::info!("Database backed up to: {}", backup_path.display());
-        Ok(backup_path.to_string_lossy().to_string())
+        self.get_database(db_id)?;
+        let _ = backup_dir;
+        Err(
+            "Backing up KDBX databases is not implemented by this backend; no backup was written"
+                .to_string(),
+        )
     }
 
     /// List backup files for a database.
@@ -477,36 +251,12 @@ impl KeePassService {
         new_password: Option<&str>,
         new_key_file: Option<&str>,
     ) -> Result<(), String> {
-        // Verify old key
-        let old_composite = Self::build_composite_key(old_password, old_key_file)?;
-        let new_composite = Self::build_composite_key(new_password, new_key_file)?;
-
-        let db = self.get_database_mut(db_id)?;
-
-        if db.read_only {
-            return Err("Database is read-only".to_string());
-        }
-
-        // Verify old key matches
-        if let Some(ref stored) = db.composite_key {
-            if stored.combined_hash != old_composite.combined_hash {
-                return Err("Old master key is incorrect".to_string());
-            }
-        }
-
-        db.composite_key = Some(new_composite);
-        db.mark_modified();
-
-        self.log_change(
-            ChangeAction::Update,
-            ChangeTargetType::Database,
-            db_id,
-            "Master Key",
-            "Changed database master key",
-        );
-
-        log::info!("Master key changed for database: {}", db_id);
-        Ok(())
+        self.get_database(db_id)?;
+        let _ = (old_password, old_key_file, new_password, new_key_file);
+        Err(
+            "Changing a KDBX master key is not implemented by this backend; the key was not changed"
+                .to_string(),
+        )
     }
 
     // ─── Database Info ────────────────────────────────────────────────
@@ -672,41 +422,12 @@ impl KeePassService {
         db_id: &str,
         config: MergeConfig,
     ) -> Result<MergeResult, String> {
-        let _db = self.get_database(db_id)?;
-
-        // In a real implementation, this would:
-        // 1. Open the remote database with the provided credentials
-        // 2. Compare entries by UUID and modification time
-        // 3. Apply conflict resolution strategy
-        // 4. Merge groups, entries, attachments, custom icons
-        // 5. Handle deleted objects
-        // 6. Update the local database
-
-        log::info!("Merging database from: {}", config.remote_path);
-
-        let result = MergeResult {
-            entries_added: 0,
-            entries_updated: 0,
-            entries_deleted: 0,
-            groups_added: 0,
-            groups_updated: 0,
-            groups_deleted: 0,
-            conflicts: Vec::new(),
-            duration_ms: 0,
-        };
-
-        let db = self.get_database_mut(db_id)?;
-        db.mark_modified();
-
-        self.log_change(
-            ChangeAction::Merge,
-            ChangeTargetType::Database,
-            db_id,
-            &config.remote_path,
-            "Merged remote database",
-        );
-
-        Ok(result)
+        self.get_database(db_id)?;
+        let _ = config;
+        Err(
+            "Merging KDBX databases is not implemented by this backend; no data was changed"
+                .to_string(),
+        )
     }
 
     // ─── Update Metadata ──────────────────────────────────────────────

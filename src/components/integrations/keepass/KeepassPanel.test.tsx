@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 // Hoisted so the module-mock factory can see it.
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
@@ -45,16 +45,9 @@ describe("keepassDescriptor", () => {
 });
 
 describe("KeepassPanel shell", () => {
-  it("maps Open to keepass_open_database with the composite key", async () => {
+  it("clearly blocks KDBX open until a real codec is implemented", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "read_app_data") return Promise.resolve(null);
-      if (cmd === "keepass_open_database")
-        return Promise.resolve({
-          id: "db-1",
-          filePath: "/vault.kdbx",
-          name: "vault",
-          entryCount: 3,
-        });
       return Promise.resolve(undefined);
     });
 
@@ -66,18 +59,13 @@ describe("KeepassPanel shell", () => {
     fireEvent.change(screen.getByTestId("keepass-master-password"), {
       target: { value: "hunter2" },
     });
-    fireEvent.click(screen.getByTestId("keepass-open"));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("keepass_open_database", {
-        req: expect.objectContaining({
-          filePath: "/vault.kdbx",
-          password: "hunter2",
-        }),
-      }),
+    expect(screen.getByTestId("keepass-codec-unavailable")).toHaveTextContent(
+      /KDBX open\/save is unavailable.*real KDBX codec/i,
     );
-
-    // Header for the open database renders (entry count from the mock).
-    expect(await screen.findByText("vault")).toBeInTheDocument();
+    expect(screen.getByTestId("keepass-open")).toBeDisabled();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "keepass_open_database",
+      expect.anything(),
+    );
   });
 });

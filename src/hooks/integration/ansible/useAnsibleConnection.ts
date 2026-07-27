@@ -11,8 +11,12 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
-import type { AnsibleConnectionConfig, AnsibleInfo } from "../../../types/ansible";
+import type {
+  AnsibleConnectionConfig,
+  AnsibleInfo,
+} from "../../../types/ansible";
 
 /** Thin 1:1 wrappers over the connection-lifecycle commands. */
 export const ansibleConnectionApi = {
@@ -38,42 +42,64 @@ export interface UseAnsibleConnection {
 /** React hook wrapping the Ansible control-node connection lifecycle. Mirrors the
  *  isLoading/error idiom used across the integration hooks. */
 export function useAnsibleConnection(): UseAnsibleConnection {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [info, setInfo] = useState<AnsibleInfo | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await ansibleConnectionApi.disconnect(id);
+    } finally {
+      setConnectionId(null);
+      setInfo(null);
+    }
+  }, []);
+
   const connect = useCallback(
     async (id: string, config: AnsibleConnectionConfig): Promise<boolean> => {
-      setConnecting(true);
-      setError(null);
       try {
-        const result = await ansibleConnectionApi.connect(id, config);
-        setConnectionId(id);
-        setInfo(result);
+        await trackConnect(
+          `ansible:${id}`,
+          async () => {
+            setConnecting(true);
+            setError(null);
+            try {
+              const result = await ansibleConnectionApi.connect(id, config);
+              setConnectionId(id);
+              setInfo(result);
+              return result;
+            } catch (e) {
+              const msg = typeof e === "string" ? e : (e as Error).message;
+              setError(msg);
+              setConnectionId(null);
+              setInfo(null);
+              throw e;
+            } finally {
+              setConnecting(false);
+            }
+          },
+          () => disconnectById(id),
+        );
         return true;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
+      } catch {
         return false;
-      } finally {
-        setConnecting(false);
       }
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await ansibleConnectionApi.disconnect(connectionId);
+      await trackDisconnect(`ansible:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
-    } finally {
-      setConnectionId(null);
-      setInfo(null);
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const clearError = useCallback(() => setError(null), []);
 

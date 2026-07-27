@@ -242,14 +242,18 @@ impl KeePassService {
                 if !db.groups.contains_key(new_parent) {
                     return Err(format!("New parent group not found: {}", new_parent));
                 }
-                let group = db.groups.get_mut(group_uuid)
+                let group = db
+                    .groups
+                    .get_mut(group_uuid)
                     .ok_or_else(|| format!("Group not found: {}", group_uuid))?;
                 group.parent_uuid = Some(new_parent.clone());
                 group.times.location_changed = Some(Utc::now().to_rfc3339());
             }
         }
 
-        let group = db.groups.get_mut(group_uuid)
+        let group = db
+            .groups
+            .get_mut(group_uuid)
             .ok_or_else(|| format!("Group not found: {}", group_uuid))?;
         group.times.last_modified = Utc::now().to_rfc3339();
         let updated = group.clone();

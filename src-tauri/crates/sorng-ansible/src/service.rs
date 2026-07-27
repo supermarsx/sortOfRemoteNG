@@ -51,6 +51,11 @@ impl AnsibleService {
         id: String,
         config: AnsibleConnectionConfig,
     ) -> AnsibleResult<AnsibleInfo> {
+        if self.connections.contains_key(&id) {
+            return Err(AnsibleError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = AnsibleClient::from_config(&config).await?;
         let info = client.detect_info().await?;
         self.connections.insert(id, client);

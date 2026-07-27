@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::Duration;
 
 use log::debug;
 use regex::Regex;
@@ -49,6 +50,8 @@ pub struct AnsibleClient {
     pub private_key: Option<String>,
     /// SSH common args.
     pub ssh_common_args: Option<String>,
+    /// Maximum wall-clock time for a CLI process.
+    pub command_timeout_secs: u64,
 }
 
 /// Result of running any CLI command.
@@ -64,6 +67,43 @@ impl AnsibleClient {
 
     /// Build a client from the connection config.
     pub async fn from_config(config: &AnsibleConnectionConfig) -> AnsibleResult<Self> {
+        if config.command_timeout_secs == 0 {
+            return Err(AnsibleError::validation(
+                "Command timeout must be greater than zero",
+            ));
+        }
+        if config.verbosity > 4 {
+            return Err(AnsibleError::validation(
+                "Verbosity must be between 0 and 4",
+            ));
+        }
+        if config.ask_vault_pass {
+            return Err(AnsibleError::validation(
+                "Interactive vault password prompts are unsupported in the headless backend",
+            ));
+        }
+        if let Some(directory) = config.working_directory.as_deref() {
+            let path = std::path::Path::new(directory);
+            if !path.is_dir() {
+                return Err(AnsibleError::validation(format!(
+                    "Working directory does not exist or is not a directory: {directory}"
+                )));
+            }
+        }
+        for (label, path) in [
+            ("Ansible config", config.config_path.as_deref()),
+            ("private key", config.private_key_path.as_deref()),
+            ("vault password file", config.vault_password_file.as_deref()),
+        ] {
+            if let Some(path) = path {
+                if !std::path::Path::new(path).is_file() {
+                    return Err(AnsibleError::validation(format!(
+                        "{label} does not exist or is not a file: {path}"
+                    )));
+                }
+            }
+        }
+
         let ansible_bin = Self::resolve_bin(config.ansible_bin_path.as_deref(), "ansible").await?;
 
         let playbook_bin = Self::resolve_bin(
@@ -91,6 +131,11 @@ impl AnsibleClient {
             .await
             .unwrap_or_else(|_| "ansible-doc".to_string());
 
+        let mut env_vars = config.env_vars.clone();
+        if let Some(config_path) = config.config_path.as_deref() {
+            env_vars.insert("ANSIBLE_CONFIG".to_string(), config_path.to_string());
+        }
+
         Ok(Self {
             ansible_bin,
             playbook_bin,
@@ -100,13 +145,14 @@ impl AnsibleClient {
             inventory_bin,
             doc_bin,
             working_dir: config.working_directory.clone(),
-            env_vars: config.env_vars.clone(),
+            env_vars,
             verbosity: config.verbosity,
             default_inventory: config.default_inventory.clone(),
             vault_password_file: config.vault_password_file.clone(),
             remote_user: config.remote_user.clone(),
             private_key: config.private_key_path.clone(),
             ssh_common_args: config.ssh_common_args.clone(),
+            command_timeout_secs: config.command_timeout_secs,
         })
     }
 
@@ -162,6 +208,16 @@ impl AnsibleClient {
     /// Detect Ansible version and environment info.
     pub async fn detect_info(&self) -> AnsibleResult<AnsibleInfo> {
         let output = self.run_raw(&self.ansible_bin, &["--version"]).await?;
+        if output.exit_code != 0 {
+            return Err(AnsibleError::with_details(
+                crate::error::AnsibleErrorKind::ProcessError,
+                format!(
+                    "Ansible version probe failed with exit code {}",
+                    output.exit_code
+                ),
+                output.stderr,
+            ));
+        }
 
         let version = Self::parse_version(&output.stdout)?;
         let python_version = Self::parse_python_version(&output.stdout);
@@ -183,7 +239,8 @@ impl AnsibleClient {
     pub async fn is_available(&self) -> bool {
         self.run_raw(&self.ansible_bin, &["--version"])
             .await
-            .is_ok()
+            .map(|output| output.exit_code == 0)
+            .unwrap_or(false)
     }
 
     // ── Command execution ────────────────────────────────────────────
@@ -193,7 +250,10 @@ impl AnsibleClient {
         debug!("Running: {} {}", bin, args.join(" "));
 
         let mut cmd = Command::new(bin);
-        cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
 
         if let Some(ref dir) = self.working_dir {
             cmd.current_dir(dir);
@@ -207,10 +267,18 @@ impl AnsibleClient {
             .spawn()
             .map_err(|e| AnsibleError::process(format!("Failed to spawn '{}': {}", bin, e)))?;
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| AnsibleError::process(format!("Failed to wait on '{}': {}", bin, e)))?;
+        let output = tokio::time::timeout(
+            Duration::from_secs(self.command_timeout_secs),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| {
+            AnsibleError::timeout(format!(
+                "'{}' exceeded the {} second command timeout",
+                bin, self.command_timeout_secs
+            ))
+        })?
+        .map_err(|e| AnsibleError::process(format!("Failed to wait on '{}': {}", bin, e)))?;
 
         let exit_code = output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -310,7 +378,8 @@ impl AnsibleClient {
 
     fn parse_version(output: &str) -> AnsibleResult<String> {
         // First line: "ansible [core 2.16.3]" or "ansible 2.9.27"
-        let re = Regex::new(r"ansible\s+\[?(?:core\s+)?(\d+\.\d+[\.\d]*)").expect("valid regex literal");
+        let re =
+            Regex::new(r"ansible\s+\[?(?:core\s+)?(\d+\.\d+[\.\d]*)").expect("valid regex literal");
         if let Some(caps) = re.captures(output) {
             return Ok(caps[1].to_string());
         }
@@ -336,7 +405,8 @@ impl AnsibleClient {
     }
 
     fn parse_module_path(output: &str) -> Option<String> {
-        let re = Regex::new(r"configured\s+module\s+search\s+path\s*=\s*(.+)").expect("valid regex literal");
+        let re = Regex::new(r"configured\s+module\s+search\s+path\s*=\s*(.+)")
+            .expect("valid regex literal");
         re.captures(output).map(|c| c[1].trim().to_string())
     }
 }

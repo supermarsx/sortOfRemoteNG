@@ -36,6 +36,9 @@ pub struct AnsibleConnectionConfig {
     pub ssh_common_args: Option<String>,
     /// Extra environment variables to inject.
     pub env_vars: HashMap<String, String>,
+    /// Maximum wall-clock time for one Ansible CLI process.
+    #[serde(default = "default_command_timeout_secs")]
+    pub command_timeout_secs: u64,
     /// Vault password file path.
     pub vault_password_file: Option<String>,
     /// Whether to ask for the vault password interactively (not used in headless mode).
@@ -48,6 +51,10 @@ pub struct AnsibleConnectionConfig {
     pub updated_at: DateTime<Utc>,
     /// Arbitrary labels for UI grouping.
     pub labels: HashMap<String, String>,
+}
+
+fn default_command_timeout_secs() -> u64 {
+    300
 }
 
 /// Information returned after connecting / detecting Ansible.

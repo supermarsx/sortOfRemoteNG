@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use super::types::*;
 
@@ -368,7 +369,9 @@ impl KeePassService {
     /// Close all open databases and clean up.
     pub fn shutdown(&mut self) -> Vec<String> {
         let db_ids: Vec<String> = self.databases.keys().cloned().collect();
-        self.databases.clear();
+        for (_, mut database) in self.databases.drain() {
+            database.clear_sensitive();
+        }
         db_ids
     }
 
@@ -496,6 +499,37 @@ impl DatabaseInstance {
     pub fn mark_modified(&mut self) {
         self.info.modified = true;
         self.info.modified_at = Utc::now().to_rfc3339();
+    }
+
+    /// Best-effort zeroization before an in-memory database is dropped.
+    pub(crate) fn clear_sensitive(&mut self) {
+        for entry in self.entries.values_mut() {
+            entry.password.zeroize();
+            for field in entry.custom_fields.values_mut() {
+                if field.is_protected {
+                    field.value.zeroize();
+                }
+            }
+        }
+        for history in self.history.values_mut() {
+            for item in history {
+                item.entry.password.zeroize();
+                for field in item.entry.custom_fields.values_mut() {
+                    if field.is_protected {
+                        field.value.zeroize();
+                    }
+                }
+            }
+        }
+        for attachment in self.attachment_pool.values_mut() {
+            attachment.data.zeroize();
+        }
+        if let Some(composite_key) = self.composite_key.as_mut() {
+            composite_key.password_hash.zeroize();
+            composite_key.key_file_hash.zeroize();
+            composite_key.combined_hash.zeroize();
+        }
+        self.composite_key = None;
     }
 
     /// Get the next available binary pool ref ID.

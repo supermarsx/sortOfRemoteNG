@@ -42,8 +42,7 @@ pub async fn keepass_close_all_databases(
     save_first: bool,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.close_all_databases(save_first);
-    Ok(())
+    svc.close_all_databases(save_first).map(|_| ())
 }
 
 #[tauri::command]

@@ -404,8 +404,8 @@ impl PlaybookManager {
 
         // Match "TASK [name]" section followed by host-level results.
         let task_re = Regex::new(r"^TASK\s+\[(.+)\]").expect("valid regex literal");
-        let result_re =
-            Regex::new(r"^(ok|changed|fatal|skipping|unreachable):\s+\[(.+?)\]").expect("valid regex literal");
+        let result_re = Regex::new(r"^(ok|changed|fatal|skipping|unreachable):\s+\[(.+?)\]")
+            .expect("valid regex literal");
 
         let mut current_task: Option<String> = None;
 

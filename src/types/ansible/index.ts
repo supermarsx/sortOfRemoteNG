@@ -56,6 +56,8 @@ export interface AnsibleConnectionConfig {
   ssh_common_args: string | null;
   /** Extra environment variables to inject. */
   env_vars: Record<string, string>;
+  /** Maximum wall-clock time for one Ansible CLI process. */
+  command_timeout_secs: number;
   /** Vault password file path. */
   vault_password_file: string | null;
   /** Whether to prompt for the vault password interactively (unused headless). */

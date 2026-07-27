@@ -144,7 +144,8 @@ impl FactManager {
 
         // Fallback: parse line-based output
         // Host-level JSON blocks like:  hostname | SUCCESS => { "ansible_facts": {...} }
-        let host_re = regex::Regex::new(r"^(\S+)\s*\|\s*SUCCESS\s*=>\s*$").expect("valid regex literal");
+        let host_re =
+            regex::Regex::new(r"^(\S+)\s*\|\s*SUCCESS\s*=>\s*$").expect("valid regex literal");
         let mut current_host: Option<String> = None;
         let mut json_buf = String::new();
         let mut brace_depth = 0;

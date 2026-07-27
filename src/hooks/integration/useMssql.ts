@@ -14,6 +14,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   ColumnDef,
   DatabaseInfo,
@@ -200,71 +201,103 @@ function errMsg(e: unknown): string {
  * whole command surface shares one loading/error convention (matching useVmware).
  */
 export function useMssql() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inflight = useRef(0);
-
-  const run = useCallback(
-    async <T>(op: () => Promise<T>): Promise<T> => {
-      inflight.current += 1;
-      setIsLoading(true);
-      setError(null);
-      try {
-        return await op();
-      } catch (e) {
-        setError(errMsg(e));
-        throw e;
-      } finally {
-        inflight.current -= 1;
-        if (inflight.current === 0) setIsLoading(false);
-      }
-    },
-    [],
+  // MSSQL is genuinely multi-session. Each mounted panel owns only the native
+  // handle returned by its own connect call; never share a lifecycle key that
+  // could make one panel disconnect or adopt another panel's session.
+  const lifecycleKeyRef = useRef(
+    `mssql:${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`,
   );
 
-  const refreshSession = useCallback(
-    async (id: string) => {
-      try {
-        setSession(await mssqlApi.getSession(id));
-      } catch {
-        // Non-fatal — the session is live even if the info echo fails.
-      }
-    },
-    [],
-  );
+  const run = useCallback(async <T>(op: () => Promise<T>): Promise<T> => {
+    inflight.current += 1;
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await op();
+    } catch (e) {
+      setError(errMsg(e));
+      throw e;
+    } finally {
+      inflight.current -= 1;
+      if (inflight.current === 0) setIsLoading(false);
+    }
+  }, []);
+
+  const refreshSession = useCallback(async (id: string) => {
+    try {
+      setSession(await mssqlApi.getSession(id));
+    } catch {
+      // Non-fatal — the session is live even if the info echo fails.
+    }
+  }, []);
 
   const connect = useCallback(
     async (config: MssqlConnectionConfig): Promise<string> => {
-      const id = await run(() => mssqlApi.connect(config));
-      setSessionId(id);
-      await refreshSession(id);
-      return id;
+      let activeId: string | null = null;
+      const disconnectOperation = async (): Promise<void> => {
+        try {
+          if (activeId) {
+            await run(() => mssqlApi.disconnect(activeId as string));
+          }
+        } finally {
+          activeId = null;
+          setSessionId(null);
+          setSession(null);
+        }
+      };
+      return trackConnect(
+        lifecycleKeyRef.current,
+        async () => {
+          try {
+            const id = await run(() => mssqlApi.connect(config));
+            activeId = id;
+            setSessionId(id);
+            await refreshSession(id);
+            return id;
+          } catch (error) {
+            setSessionId(null);
+            setSession(null);
+            throw error;
+          }
+        },
+        disconnectOperation,
+      );
     },
-    [run, refreshSession],
+    [refreshSession, run, trackConnect],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!sessionId) return;
-    await run(() => mssqlApi.disconnect(sessionId));
-    setSessionId(null);
-    setSession(null);
-  }, [run, sessionId]);
+    await trackDisconnect(lifecycleKeyRef.current, async () => {
+      try {
+        await run(() => mssqlApi.disconnect(sessionId));
+      } finally {
+        setSessionId(null);
+        setSession(null);
+      }
+    });
+  }, [run, sessionId, trackDisconnect]);
 
-  /** Adopt an already-open backend session if one exists (e.g. on remount). */
+  /** Refresh only the exact backend handle this hook opened. A raw service-wide
+   *  session list is not ownership evidence and must never be adopted. */
   const refreshConnection = useCallback(async (): Promise<boolean> => {
-    const sessions = await run(() => mssqlApi.listSessions());
-    const live = sessions.find(
-      (s) => s.status === "Connected" || typeof s.status === "object",
-    );
-    if (live) {
-      setSessionId(live.id);
-      setSession(live);
+    if (!sessionId) return false;
+    try {
+      const owned = await run(() => mssqlApi.getSession(sessionId));
+      setSession(owned);
       return true;
+    } catch {
+      setSessionId(null);
+      setSession(null);
+      return false;
     }
-    return false;
-  }, [run]);
+  }, [run, sessionId]);
 
   return {
     // state

@@ -36,10 +36,12 @@ import type {
   OpenDatabaseRequest,
 } from "../../../types/keepass";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useIntegrationConnectionLifecycle } from "../../../hooks/integrations/IntegrationSessionLifecycle";
 import { FeatureErrorBoundary } from "../../app/FeatureErrorBoundary";
 import { keepassTabs, type KeepassTabDescriptor } from "./registry";
 
 const INTEGRATION_KEY = "keepass";
+const KDBX_CODEC_AVAILABLE = false;
 
 /** Cache one lazy component per registered sub-tab, keyed by categoryKey, so the
  *  identity is stable across renders (React.lazy requirement). */
@@ -61,6 +63,7 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
   onClose,
   instanceId,
 }) => {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const { t } = useTranslation();
   const { instancesFor, createInstance, updateInstance, readSecret } =
     useIntegrationConfigStore();
@@ -155,8 +158,21 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
       setError(t("integrations.keepass.errorNoPath", "Select a .kdbx file"));
       return;
     }
-    setIsConnecting(true);
-    setError(null);
+    const lifecycleKey = `keepass:${instanceId ?? kdbxPath}`;
+    let openedDatabaseId: string | null = null;
+    const disconnectOperation = async (): Promise<void> => {
+      try {
+        if (openedDatabaseId) {
+          await invoke("keepass_close_database", {
+            dbId: openedDatabaseId,
+            saveFirst: false,
+          });
+        }
+      } finally {
+        openedDatabaseId = null;
+        setDatabase(null);
+      }
+    };
     try {
       const req: OpenDatabaseRequest = {
         filePath: kdbxPath,
@@ -164,32 +180,62 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
         keyFilePath: keyFilePath || undefined,
         readOnly,
       };
-      const db = await invoke<KeePassDatabase>("keepass_open_database", {
-        req,
-      });
-      setDatabase(db);
-      setActiveTab(keepassTabs[0]?.categoryKey ?? null);
+      await trackConnect(
+        lifecycleKey,
+        async () => {
+          setIsConnecting(true);
+          setError(null);
+          try {
+            const db = await invoke<KeePassDatabase>("keepass_open_database", {
+              req,
+            });
+            openedDatabaseId = db.id;
+            setDatabase(db);
+            setActiveTab(keepassTabs[0]?.categoryKey ?? null);
+            return db;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setDatabase(null);
+            throw e;
+          } finally {
+            setIsConnecting(false);
+          }
+        },
+        disconnectOperation,
+      );
       await persistInstance();
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
-    } finally {
-      setIsConnecting(false);
+    } catch {
+      // The complete tracked operation owns local error/state synchronization.
     }
-  }, [kdbxPath, password, keyFilePath, readOnly, persistInstance, t]);
+  }, [
+    instanceId,
+    kdbxPath,
+    password,
+    keyFilePath,
+    readOnly,
+    persistInstance,
+    t,
+    trackConnect,
+  ]);
 
   const handleClose = useCallback(async () => {
     if (!database) return;
     try {
-      await invoke("keepass_close_database", {
-        dbId: database.id,
-        saveFirst: false,
+      await trackDisconnect(`keepass:${instanceId ?? kdbxPath}`, async () => {
+        try {
+          await invoke("keepass_close_database", {
+            dbId: database.id,
+            saveFirst: false,
+          });
+        } finally {
+          setDatabase(null);
+        }
       });
     } catch {
       // Non-fatal — drop the in-memory session regardless.
     }
-    setDatabase(null);
-  }, [database]);
+  }, [database, instanceId, kdbxPath, trackDisconnect]);
 
   const ActiveTab = useMemo(() => {
     if (!activeTab) return null;
@@ -212,6 +258,18 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
               "Open a local .kdbx file with its master password.",
             )}
           </p>
+          {!KDBX_CODEC_AVAILABLE && (
+            <div
+              className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+              role="alert"
+              data-testid="keepass-codec-unavailable"
+            >
+              {t(
+                "integrations.keepass.codecUnavailable",
+                "KeePass KDBX open/save is unavailable in this build because a real KDBX codec is not implemented yet. The app will not attempt to parse or modify the selected file.",
+              )}
+            </div>
+          )}
 
           <label className="mb-1 block text-xs font-medium text-[var(--color-textSecondary)]">
             {t("integrations.keepass.databaseFile", "Database file (.kdbx)")}
@@ -299,7 +357,15 @@ export const KeepassPanel: React.FC<IntegrationPanelProps> = ({
             <button
               type="button"
               onClick={handleOpen}
-              disabled={isConnecting || !kdbxPath}
+              disabled={!KDBX_CODEC_AVAILABLE || isConnecting || !kdbxPath}
+              title={
+                KDBX_CODEC_AVAILABLE
+                  ? undefined
+                  : t(
+                      "integrations.keepass.codecUnavailableShort",
+                      "Unavailable until a real KDBX codec is implemented.",
+                    )
+              }
               className="flex items-center gap-1.5 rounded bg-primary px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
               data-testid="keepass-open"
             >

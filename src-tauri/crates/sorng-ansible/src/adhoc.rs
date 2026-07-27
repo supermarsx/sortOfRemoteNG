@@ -327,7 +327,8 @@ impl AdHocManager {
         let mut failed = 0u32;
         let mut unreachable = 0u32;
 
-        let re = regex::Regex::new(r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)").expect("valid regex literal");
+        let re = regex::Regex::new(r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)")
+            .expect("valid regex literal");
         for line in output.lines() {
             if let Some(caps) = re.captures(line) {
                 match &caps[2] {
@@ -358,8 +359,8 @@ impl AdHocManager {
             r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)\s*(?:\|\s*rc=(\d+))?\s*>>\s*$",
         )
         .expect("valid regex literal");
-        let simple_re =
-            regex::Regex::new(r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)").expect("valid regex literal");
+        let simple_re = regex::Regex::new(r"^(.+?)\s*\|\s*(SUCCESS|CHANGED|FAILED|UNREACHABLE)")
+            .expect("valid regex literal");
 
         for line in output.lines() {
             let (host, status_str) = if let Some(caps) = re.captures(line) {
