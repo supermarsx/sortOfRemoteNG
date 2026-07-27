@@ -1568,6 +1568,18 @@ describe("ConnectionEditor", () => {
     });
 
     it("should populate generic integration fields for integration-backed connections", async () => {
+      let resolveConfigLoad!: (value: string | null) => void;
+      const configLoad = new Promise<string | null>((resolve) => {
+        resolveConfigLoad = resolve;
+      });
+      const invokeMock = vi.mocked(invoke);
+      const defaultInvoke = invokeMock.getMockImplementation();
+      if (!defaultInvoke) {
+        throw new Error("Expected the default Tauri invoke mock");
+      }
+      invokeMock.mockImplementation((command, args) =>
+        command === "read_app_data" ? configLoad : defaultInvoke(command, args),
+      );
       const integrationConnection: Connection = {
         ...mockConnection,
         protocol: "integration:grafana",
@@ -1601,9 +1613,20 @@ describe("ConnectionEditor", () => {
           /Grafana/,
         );
       });
-      expect(screen.getByTestId("editor-integration-instance-id")).toHaveValue(
-        "grafana-prod",
+      const instanceSelector = screen.getByTestId(
+        "editor-integration-instance-id",
       );
+      expect(instanceSelector).toBeDisabled();
+      expect(instanceSelector).toHaveValue("grafana-prod");
+      expect(
+        screen.getByRole("option", {
+          name: "Production Grafana (loading…)",
+        }),
+      ).toBeInTheDocument();
+
+      resolveConfigLoad(null);
+      await waitFor(() => expect(instanceSelector).not.toBeDisabled());
+      expect(instanceSelector).toHaveValue("grafana-prod");
       expect(
         screen.getByTestId("editor-integration-instance-name"),
       ).toHaveValue("Production Grafana");

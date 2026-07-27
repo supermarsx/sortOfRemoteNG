@@ -748,8 +748,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   const selectedInstance = savedInstances.find(
     (instance) => instance.id === integration.instanceId,
   );
-  const hasUnavailableSelection =
-    !!integration.instanceId && !selectedInstance && !configStore.isLoading;
+  const hasUnresolvedSelection = !!integration.instanceId && !selectedInstance;
 
   const selectInstance = (id: string) => {
     if (!id) {
@@ -808,9 +807,11 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             ? "Loading saved instances…"
             : "New / panel-managed instance"}
         </option>
-        {hasUnavailableSelection && (
+        {hasUnresolvedSelection && (
           <option value={integration.instanceId}>
-            Unavailable instance ({integration.instanceId})
+            {configStore.isLoading
+              ? `${integration.instanceName || integration.instanceId} (loading…)`
+              : `Unavailable instance (${integration.instanceId})`}
           </option>
         )}
         {savedInstances.map((instance) => (
