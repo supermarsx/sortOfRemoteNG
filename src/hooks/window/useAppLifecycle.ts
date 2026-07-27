@@ -13,7 +13,7 @@ import {
 import i18n, { loadLanguage, resolveSupportedLanguage } from "../../i18n";
 import { IndexedDbService } from "../../utils/storage/indexedDbService";
 import {
-  isRealConnectionSession,
+  isRestorableConnectionSession,
   realConnectionCount,
 } from "../../utils/session/sessionClassification";
 import {
@@ -501,13 +501,13 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
-    // Only real connections are worth restoring across a reload.
-    // Tool tabs (`tool:*`) and Windows management panels
+    // Remote connections and integration panels are worth restoring across a
+    // reload. Tool tabs (`tool:*`) and Windows management panels
     // (`winmgmt:*`) are stateless app surfaces — re-opening them
     // recreates them from scratch, so persisting their state would
     // just bloat sessionStorage with garbage that the next launch
     // would discard anyway.
-    const restorable = state.sessions.filter(isRealConnectionSession);
+    const restorable = state.sessions.filter(isRestorableConnectionSession);
     if (settings.reconnectOnReload && restorable.length > 0) {
       try {
         const sessionData = restorable.map(serializePersistedConnectionSession);

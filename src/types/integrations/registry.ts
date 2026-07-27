@@ -15,7 +15,7 @@
 
 import type { ComponentType } from "react";
 import type { LucideIcon } from "lucide-react";
-import type { IntegrationConnectionSettings } from "../connection/connection";
+import type { IntegrationConnectionLaunchSettings } from "../connection/connection";
 
 import { infraIntegrations } from "./registry.infra";
 import { webIntegrations } from "./registry.web";
@@ -61,7 +61,7 @@ export interface IntegrationPanelProps {
   onClose: () => void;
   instanceId?: string;
   /** Non-secret settings from the connection that launched this integration tab. */
-  integrationSettings?: IntegrationConnectionSettings;
+  integrationSettings?: IntegrationConnectionLaunchSettings;
 }
 
 /** A single integration's registration record. One per crate/surface. */

@@ -11,6 +11,7 @@ import { isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
 import { getDirectSessionUnavailableMessage } from "../../utils/session/protocolAvailability";
+import type { IntegrationSessionStateEvent } from "../../hooks/integrations/IntegrationSessionLifecycle";
 
 const ToolTabViewer = dynamic(
   () => import("../app/ToolPanel").then((module) => module.ToolTabViewer),
@@ -142,6 +143,10 @@ interface SessionViewerProps {
     password?: string,
   ) => Promise<void> | void;
   onDatabaseClose?: () => Promise<void> | void;
+  onIntegrationStateChange?: (
+    sessionId: string,
+    event: IntegrationSessionStateEvent,
+  ) => void;
 }
 
 /** Generic themed error view for non-RDP protocols. */
@@ -194,6 +199,7 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
   onEditConnection,
   onDatabaseSelect,
   onDatabaseClose,
+  onIntegrationStateChange,
 }) => {
   const renderContent = () => {
     // Tool tabs render their own component
@@ -229,10 +235,14 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
       );
       return (
         <IntegrationPanelHost
+          sessionId={session.id}
           descriptorKey={descriptorKey}
           protocol={session.protocol}
           instanceId={session.backendSessionId}
           integrationSettings={session.integration}
+          onStateChange={(event) =>
+            onIntegrationStateChange?.(session.id, event)
+          }
           onClose={() => onCloseSession?.(session.id)}
         />
       );

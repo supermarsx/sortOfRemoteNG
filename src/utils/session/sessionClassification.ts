@@ -82,6 +82,18 @@ export function isIntegrationTabSession(session: {
   return classifyTabKind(session) === "integration";
 }
 
+/**
+ * Sessions worth reconstructing after an application reload. Integration tabs
+ * are not counted as live remote transports, but their selected instance and
+ * panel state must be restored so the user can explicitly reconnect.
+ */
+export function isRestorableConnectionSession(session: {
+  protocol?: string;
+}): boolean {
+  const kind = classifyTabKind(session);
+  return kind === "connection" || kind === "integration";
+}
+
 export interface PartitionedSessions<
   S extends { protocol?: string } = ConnectionSession,
 > {

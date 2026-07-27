@@ -21,6 +21,7 @@ import {
   isIntegrationConnectionProtocol,
   type Connection,
   type IntegrationConnectionProtocol,
+  type IntegrationConnectionLaunchSettings,
   type IntegrationConnectionSettings,
 } from "../../types/connection/connection";
 import {
@@ -45,7 +46,13 @@ import {
   normalizeExchangeConnectionFields,
   toExchangeProviderFields,
 } from "../../utils/integrations/exchangeConnectionFields";
+import { sanitizeIntegrationProviderFields } from "../../utils/integrations/providerFieldSanitizer";
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
+import {
+  useIntegrationConfigStore,
+  type IntegrationInstance,
+  type IntegrationInstanceInput,
+} from "../integrations/useIntegrationConfigStore";
 
 /* ═══════════════════════════════════════════════════════════════
    Static data
@@ -130,12 +137,7 @@ const findIntegrationDescriptorForProtocol = (
     : undefined;
 };
 
-type IntegrationConnectionFormSettings = IntegrationConnectionSettings & {
-  authToken?: string;
-  apiKey?: string;
-  password?: string;
-  providerSecrets?: Record<string, string>;
-};
+type IntegrationConnectionFormSettings = IntegrationConnectionLaunchSettings;
 
 // Only protocols with a registered direct-session route belong here.
 // `BUILT_IN_MANAGEMENT_PROTOCOLS` (utils/session/protocolAvailability.ts) —
@@ -437,6 +439,7 @@ const buildIntegrationSettings = (
     instanceId: current?.instanceId ?? "",
     instanceName: current?.instanceName ?? "",
     credentialRefId: current?.credentialRefId,
+    credentialRefIds: current?.credentialRefIds,
     host:
       current?.host ||
       source?.hostname ||
@@ -492,7 +495,7 @@ const normalizeIntegrationFields = (
   };
 };
 
-const toPersistableIntegrationSettings = (
+export const toPersistableIntegrationSettings = (
   integration?: IntegrationConnectionFormSettings,
 ): IntegrationConnectionSettings | undefined => {
   if (!integration) {
@@ -506,7 +509,16 @@ const toPersistableIntegrationSettings = (
     providerSecrets: _providerSecrets,
     ...persistable
   } = integration;
-  return persistable;
+  return {
+    ...persistable,
+    ...(persistable.providerFields
+      ? {
+          providerFields: sanitizeIntegrationProviderFields(
+            persistable.providerFields,
+          ),
+        }
+      : {}),
+  };
 };
 
 const stripIntegrationSecretsForPersistence = (
@@ -523,6 +535,72 @@ const stripIntegrationSecretsForPersistence = (
       data.integration as IntegrationConnectionFormSettings | undefined,
     ),
   };
+};
+
+const integrationInstanceFields = (
+  integration: IntegrationConnectionLaunchSettings,
+): Record<string, string> => {
+  const fields: Record<string, string> = {};
+  for (const [key, value] of Object.entries(
+    sanitizeIntegrationProviderFields(integration.providerFields),
+  )) {
+    if (value !== null) fields[key] = String(value);
+  }
+  if (integration.baseUrl) {
+    fields.baseUrl = integration.baseUrl;
+    fields.url ??= integration.baseUrl;
+  }
+  if (integration.username) fields.username = integration.username;
+  if (integration.authToken) {
+    fields.authMode = "bearer";
+  } else if (integration.apiKey) {
+    fields.authMode = "apiKey";
+  } else if (integration.password) {
+    fields.authMode = integration.username ? "basic" : "password";
+  }
+  if (integration.tlsVerify !== undefined) {
+    fields.tlsVerify = String(integration.tlsVerify);
+    fields.skipTlsVerify = String(!integration.tlsVerify);
+    fields.tlsSkipVerify = String(!integration.tlsVerify);
+    fields.acceptInvalidCerts = String(!integration.tlsVerify);
+  }
+  if (integration.timeout !== undefined) {
+    fields.timeout = String(integration.timeout);
+    fields.timeoutSecs ??= String(integration.timeout);
+    fields.timeoutSeconds ??= String(integration.timeout);
+  }
+  return fields;
+};
+
+const integrationSecretInput = (
+  integration: IntegrationConnectionLaunchSettings,
+): Pick<IntegrationInstanceInput, "secret" | "secrets"> => {
+  const secrets: Record<string, string> = {
+    ...(integration.providerSecrets ?? {}),
+  };
+  if (integration.authToken) secrets.authToken = integration.authToken;
+  if (integration.apiKey) secrets.apiKey = integration.apiKey;
+  if (integration.password) secrets.password = integration.password;
+
+  const secret =
+    integration.authToken ||
+    integration.apiKey ||
+    integration.password ||
+    Object.values(integration.providerSecrets ?? {}).find(Boolean);
+  return {
+    ...(secret ? { secret } : {}),
+    ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
+  };
+};
+
+const integrationPersistenceError = (error: unknown): string => {
+  const detail =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  return `Integration settings were not saved. Unlock or configure the OS credential vault, or select an existing saved integration instance, then retry. ${detail}`;
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -586,6 +664,11 @@ export function useConnectionEditor(
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
+  const {
+    instances: integrationInstances,
+    createInstance: createIntegrationInstance,
+    updateInstance: updateIntegrationInstance,
+  } = useIntegrationConfigStore();
 
   const [formData, setFormData] = useState<Partial<Connection>>(DEFAULT_FORM);
   const [expandedSections, setExpandedSections] = useState({
@@ -889,33 +972,186 @@ export function useConnectionEditor(
     };
   }, [clearManagedSshSecrets]);
 
-  const buildConnectionData = useCallback((): Connection => {
-    const now = new Date().toISOString();
-    const effectiveFormData = normalizeAdvancedProtocolConnection(
-      stripIntegrationSecretsForPersistence(
-        normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
-      ),
-    );
+  const buildConnectionData = useCallback(
+    (includeIntegrationSecrets = false): Connection => {
+      const now = new Date().toISOString();
+      const normalizedFormData = normalizeIntegrationFields(
+        mergeManagedSshSecrets(formData),
+      );
+      const effectiveFormData = normalizeAdvancedProtocolConnection(
+        includeIntegrationSecrets
+          ? normalizedFormData
+          : stripIntegrationSecretsForPersistence(normalizedFormData),
+      );
 
-    // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
-    // persisted without having to enumerate them individually.
-    return {
-      ...(connection || {}),
-      ...effectiveFormData,
-      id: connection?.id || generateId(),
-      name: effectiveFormData.name || "New Connection",
-      protocol: effectiveFormData.protocol as Connection["protocol"],
-      hostname: effectiveFormData.hostname || "",
-      port:
-        effectiveFormData.port ||
-        getDefaultConnectionPort(effectiveFormData.protocol as string),
-      isGroup: effectiveFormData.isGroup || false,
-      tags: effectiveFormData.tags || [],
-      order: connection?.order ?? Date.now(),
-      createdAt: connection?.createdAt || now,
-      updatedAt: now,
-    } as Connection;
-  }, [formData, connection, mergeManagedSshSecrets]);
+      // enableWinrmTools, sshConnectionConfigOverride, etc.) are always
+      // persisted without having to enumerate them individually.
+      return {
+        ...(connection || {}),
+        ...effectiveFormData,
+        id: connection?.id || generateId(),
+        name: effectiveFormData.name || "New Connection",
+        protocol: effectiveFormData.protocol as Connection["protocol"],
+        hostname: effectiveFormData.hostname || "",
+        port:
+          effectiveFormData.port ||
+          getDefaultConnectionPort(effectiveFormData.protocol as string),
+        isGroup: effectiveFormData.isGroup || false,
+        tags: effectiveFormData.tags || [],
+        order: connection?.order ?? Date.now(),
+        createdAt: connection?.createdAt || now,
+        updatedAt: now,
+      } as Connection;
+    },
+    [formData, connection, mergeManagedSshSecrets],
+  );
+
+  const prepareConnectionForPersistence = useCallback(
+    async (
+      runtimeConnection: Connection,
+    ): Promise<{
+      persistentConnection: Connection;
+      runtimeConnection: Connection;
+      instance?: IntegrationInstance;
+    }> => {
+      if (!isIntegrationConnectionProtocol(runtimeConnection.protocol)) {
+        return {
+          persistentConnection: runtimeConnection,
+          runtimeConnection,
+        };
+      }
+
+      const integration = runtimeConnection.integration as
+        | IntegrationConnectionLaunchSettings
+        | undefined;
+      if (!integration?.descriptorKey) {
+        throw new Error(
+          "Choose a registered integration type before saving this connection.",
+        );
+      }
+
+      const existing = integration.instanceId
+        ? integrationInstances.find(
+            (candidate) => candidate.id === integration.instanceId,
+          )
+        : undefined;
+      if (
+        integration.descriptorKey === "mail" &&
+        (!existing || !existing.integrationKey.startsWith("mail."))
+      ) {
+        throw new Error(
+          "Select a saved Mail service instance (Postfix, Dovecot, Rspamd, ClamAV, Amavis, OpenDKIM, Procmail, Cyrus SASL, or Roundcube) before saving. A generic Mail instance cannot be connected.",
+        );
+      }
+      const input: IntegrationInstanceInput = {
+        integrationKey: existing?.integrationKey ?? integration.descriptorKey,
+        name:
+          integration.instanceName?.trim() ||
+          existing?.name ||
+          runtimeConnection.name,
+        host: integration.host || runtimeConnection.hostname || existing?.host,
+        fields: {
+          ...(existing?.fields ?? {}),
+          ...integrationInstanceFields(integration),
+        },
+        ...integrationSecretInput(integration),
+      };
+
+      let instance: IntegrationInstance;
+      if (integration.instanceId) {
+        try {
+          instance = await updateIntegrationInstance(
+            integration.instanceId,
+            input,
+          );
+        } catch (error) {
+          if (
+            !String(error instanceof Error ? error.message : error).includes(
+              "no longer exists",
+            )
+          ) {
+            throw error;
+          }
+          instance = await createIntegrationInstance({
+            ...input,
+            id: integration.instanceId,
+          });
+        }
+      } else {
+        instance = await createIntegrationInstance(input);
+      }
+
+      const persistentIntegration: IntegrationConnectionSettings = {
+        ...toPersistableIntegrationSettings(integration)!,
+        instanceId: instance.id,
+        instanceName: instance.name,
+        credentialRefId: instance.credentialRefId,
+        credentialRefIds: instance.credentialRefIds,
+        host: instance.host ?? integration.host,
+      };
+      const launchIntegration: IntegrationConnectionLaunchSettings = {
+        ...integration,
+        instanceId: instance.id,
+        instanceName: instance.name,
+        credentialRefId: instance.credentialRefId,
+        credentialRefIds: instance.credentialRefIds,
+        host: instance.host ?? integration.host,
+      };
+
+      return {
+        instance,
+        persistentConnection: {
+          ...runtimeConnection,
+          password: "",
+          integration: persistentIntegration,
+        },
+        runtimeConnection: {
+          ...runtimeConnection,
+          integration: launchIntegration,
+        },
+      };
+    },
+    [
+      createIntegrationInstance,
+      integrationInstances,
+      updateIntegrationInstance,
+    ],
+  );
+
+  const syncPersistedIntegrationForm = useCallback(
+    (persistentConnection: Connection): void => {
+      if (!isIntegrationConnectionProtocol(persistentConnection.protocol)) {
+        return;
+      }
+      setFormData((current) => {
+        const currentIntegration = current.integration as
+          | IntegrationConnectionLaunchSettings
+          | undefined;
+        const hasRuntimeSecrets = Boolean(
+          currentIntegration?.authToken ||
+          currentIntegration?.apiKey ||
+          currentIntegration?.password ||
+          Object.values(currentIntegration?.providerSecrets ?? {}).some(
+            Boolean,
+          ),
+        );
+        const alreadySynchronized =
+          current.password === "" &&
+          !hasRuntimeSecrets &&
+          JSON.stringify(
+            toPersistableIntegrationSettings(currentIntegration),
+          ) === JSON.stringify(persistentConnection.integration);
+        if (alreadySynchronized) return current;
+        return {
+          ...current,
+          hostname: persistentConnection.hostname,
+          password: "",
+          integration: persistentConnection.integration,
+        };
+      });
+    },
+    [],
+  );
 
   // Auto-save effect
   useEffect(() => {
@@ -926,10 +1162,23 @@ export function useConnectionEditor(
     setAutoSaveStatus("pending");
 
     autoSaveTimerRef.current = window.setTimeout(() => {
-      const connectionData = buildConnectionData();
-      dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
-      setAutoSaveStatus("saved");
-      setTimeout(() => setAutoSaveStatus("idle"), 2000);
+      void (async () => {
+        try {
+          const prepared = await prepareConnectionForPersistence(
+            buildConnectionData(true),
+          );
+          dispatch({
+            type: "UPDATE_CONNECTION",
+            payload: prepared.persistentConnection,
+          });
+          syncPersistedIntegrationForm(prepared.persistentConnection);
+          setAutoSaveStatus("saved");
+          setTimeout(() => setAutoSaveStatus("idle"), 2000);
+        } catch (error) {
+          setAutoSaveStatus("idle");
+          toast.error(integrationPersistenceError(error));
+        }
+      })();
     }, 1000);
 
     return () => {
@@ -941,34 +1190,53 @@ export function useConnectionEditor(
     settings.autoSaveEnabled,
     buildConnectionData,
     dispatch,
+    prepareConnectionForPersistence,
     sshSecretRevision,
+    syncPersistedIntegrationForm,
+    toast,
   ]);
 
   // ── Handlers ──────────────────────────────────────────────────
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
       // Detect whether anything actually changed
       const hasChanges =
         buildEditorSnapshot(formData) !== originalDataRef.current;
+      const needsIntegrationInstance =
+        isIntegrationConnectionProtocol(formData.protocol) &&
+        !(formData.integration as IntegrationConnectionSettings | undefined)
+          ?.instanceId;
 
       if (connection) {
-        if (!hasChanges) {
+        if (!hasChanges && !needsIntegrationInstance) {
           toast.info("No changes to save");
           return;
         }
-        const connectionData = buildConnectionData();
-        dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
-        toast.success(`"${connectionData.name}" saved`);
-        // Update the baseline so subsequent saves detect new changes correctly
-        originalDataRef.current = buildEditorSnapshot(formData);
-      } else {
-        const connectionData = buildConnectionData();
-        dispatch({ type: "ADD_CONNECTION", payload: connectionData });
-        toast.success(`"${connectionData.name}" created`);
-        onClose();
+      }
+
+      try {
+        const prepared = await prepareConnectionForPersistence(
+          buildConnectionData(true),
+        );
+        dispatch({
+          type: connection ? "UPDATE_CONNECTION" : "ADD_CONNECTION",
+          payload: prepared.persistentConnection,
+        });
+        syncPersistedIntegrationForm(prepared.persistentConnection);
+        originalDataRef.current = buildEditorSnapshot(
+          prepared.persistentConnection,
+        );
+        toast.success(
+          `"${prepared.persistentConnection.name}" ${
+            connection ? "saved" : "created"
+          }`,
+        );
+        if (!connection) onClose();
+      } catch (error) {
+        toast.error(integrationPersistenceError(error));
       }
     },
     [
@@ -978,6 +1246,8 @@ export function useConnectionEditor(
       dispatch,
       onClose,
       formData,
+      prepareConnectionForPersistence,
+      syncPersistedIntegrationForm,
       toast,
     ],
   );
@@ -988,23 +1258,59 @@ export function useConnectionEditor(
    * after this, the dispatch has not flushed. Returns null for an unsaved
    * (new) connection.
    */
-  const saveNow = useCallback((): Connection | null => {
+  const saveNow = useCallback(():
+    | Connection
+    | Promise<Connection | null>
+    | null => {
     if (!connection) return null;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    const connectionData = buildConnectionData();
-    const hasChanges =
-      buildEditorSnapshot(formData) !== originalDataRef.current;
-    if (hasChanges) {
-      dispatch({ type: "UPDATE_CONNECTION", payload: connectionData });
-      originalDataRef.current = buildEditorSnapshot(formData);
+    const runtimeConnection = buildConnectionData(true);
+    if (!isIntegrationConnectionProtocol(runtimeConnection.protocol)) {
+      const hasChanges =
+        buildEditorSnapshot(formData) !== originalDataRef.current;
+      if (hasChanges) {
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: runtimeConnection,
+        });
+        originalDataRef.current = buildEditorSnapshot(formData);
+      }
+      return runtimeConnection;
     }
-    return connectionData;
+
+    return (async (): Promise<Connection | null> => {
+      try {
+        const prepared =
+          await prepareConnectionForPersistence(runtimeConnection);
+        const hasChanges =
+          buildEditorSnapshot(formData) !== originalDataRef.current ||
+          prepared.persistentConnection.integration?.instanceId !==
+            connection.integration?.instanceId;
+        if (hasChanges) {
+          dispatch({
+            type: "UPDATE_CONNECTION",
+            payload: prepared.persistentConnection,
+          });
+          syncPersistedIntegrationForm(prepared.persistentConnection);
+          originalDataRef.current = buildEditorSnapshot(
+            prepared.persistentConnection,
+          );
+        }
+        return prepared.runtimeConnection;
+      } catch (error) {
+        toast.error(integrationPersistenceError(error));
+        return null;
+      }
+    })();
   }, [
     buildConnectionData,
     buildEditorSnapshot,
     connection,
     dispatch,
     formData,
+    prepareConnectionForPersistence,
+    syncPersistedIntegrationForm,
+    toast,
   ]);
 
   const handleTagsChange = useCallback(

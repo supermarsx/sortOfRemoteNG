@@ -51,7 +51,8 @@ describe("useConnectionEditor SSH secret handling", () => {
     port: 22,
     username: "root",
     password: "stored-password",
-    privateKey: "-----BEGIN PRIVATE KEY-----\noriginal\n-----END PRIVATE KEY-----",
+    privateKey:
+      "-----BEGIN PRIVATE KEY-----\noriginal\n-----END PRIVATE KEY-----",
     passphrase: "stored-passphrase",
     totpSecret: "stored-totp-secret",
     sshConnectionConfigOverride: {
@@ -106,8 +107,8 @@ describe("useConnectionEditor SSH secret handling", () => {
     expect(result.current.formData.passphrase).toBe("");
     expect(result.current.formData.privateKey).toBe("");
 
-    act(() => {
-      result.current.handleSubmit({
+    await act(async () => {
+      await result.current.handleSubmit({
         preventDefault: vi.fn(),
       } as unknown as React.FormEvent);
     });

@@ -400,4 +400,83 @@ describe("useAppLifecycle", () => {
       }),
     );
   });
+
+  it("persists integration tabs without plaintext launch secrets and skips app-only tabs", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      reconnectOnReload: true,
+    });
+    lifecycleMocks.state.sessions = [
+      {
+        id: "integration-session",
+        connectionId: "integration-connection",
+        name: "Grafana",
+        protocol: "integration:grafana",
+        hostname: "grafana.example",
+        status: "connected",
+        startTime: new Date("2026-07-19T08:00:00.000Z"),
+        integration: {
+          descriptorKey: "grafana",
+          instanceId: "grafana-instance",
+          credentialRefId: "vault-ref",
+          authToken: "plaintext-auth-token",
+          apiKey: "plaintext-api-key",
+          password: "plaintext-password",
+          providerSecrets: {
+            clientSecret: "plaintext-client-secret",
+          },
+        },
+      },
+      {
+        id: "tool-session",
+        connectionId: "tool-connection",
+        name: "Settings",
+        protocol: "tool:settings",
+        hostname: "",
+        status: "connected",
+        startTime: new Date("2026-07-19T08:00:00.000Z"),
+      },
+      {
+        id: "winmgmt-session",
+        connectionId: "winmgmt-connection",
+        name: "Services",
+        protocol: "winmgmt:services",
+        hostname: "",
+        status: "connected",
+        startTime: new Date("2026-07-19T08:00:00.000Z"),
+      },
+    ];
+
+    renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem("mremote-active-sessions")).not.toBeNull();
+    });
+    const json = sessionStorage.getItem("mremote-active-sessions")!;
+    const saved = JSON.parse(json);
+
+    expect(json).not.toContain("plaintext-");
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toEqual(
+      expect.objectContaining({
+        id: "integration-session",
+        protocol: "integration:grafana",
+        integration: {
+          descriptorKey: "grafana",
+          instanceId: "grafana-instance",
+          credentialRefId: "vault-ref",
+        },
+      }),
+    );
+  });
 });

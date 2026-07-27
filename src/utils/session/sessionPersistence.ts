@@ -1,11 +1,16 @@
 import {
+  INTEGRATION_PROTOCOL_PREFIX,
   MAX_SESSION_VPN_LEASE_BINDINGS,
+  isIntegrationConnectionProtocol,
   type ConnectionSession,
+  type IntegrationConnectionSettings,
+  type IntegrationProviderFields,
   type SessionVpnLeaseBinding,
   type SessionVpnLeaseCleanupProof,
   type SessionVpnLeaseCleanupQuarantine,
   type SessionVpnLeaseReleaseTombstone,
 } from "../../types/connection/connection";
+import { sanitizeIntegrationProviderFields } from "../integrations/providerFieldSanitizer";
 
 const SESSION_STATUSES = new Set<ConnectionSession["status"]>([
   "connecting",
@@ -22,6 +27,7 @@ export interface PersistedConnectionSession {
   protocol: string;
   hostname: string;
   status: ConnectionSession["status"];
+  integration?: IntegrationConnectionSettings;
   backendSessionId?: string;
   shellId?: string;
   vpnLeaseOwnerId?: string;
@@ -45,6 +51,111 @@ export type PersistedSessionParseResult =
 
 const nonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+
+const parseStringRecord = (
+  value: unknown,
+): Record<string, string> | undefined => {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value);
+  if (!entries.every(([key, entry]) => key && typeof entry === "string")) {
+    return undefined;
+  }
+  return Object.fromEntries(entries);
+};
+
+const parseProviderFields = (
+  value: unknown,
+): IntegrationProviderFields | undefined => {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value);
+  if (
+    !entries.every(
+      ([key, entry]) =>
+        key &&
+        (entry === null ||
+          typeof entry === "string" ||
+          typeof entry === "number" ||
+          typeof entry === "boolean"),
+    )
+  ) {
+    return undefined;
+  }
+  // Provider metadata is intentionally extensible, but it is still persisted
+  // in sessionStorage. Strip structurally injected secret-shaped keys at this
+  // final serialization/parser boundary, including case/separator variants.
+  return sanitizeIntegrationProviderFields(
+    Object.fromEntries(entries) as IntegrationProviderFields,
+  );
+};
+
+const parseIntegrationSettings = (
+  value: unknown,
+  protocol: string,
+): IntegrationConnectionSettings | null | undefined => {
+  if (value === undefined) return undefined;
+  if (!isIntegrationConnectionProtocol(protocol)) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const expectedKey = protocol.slice(INTEGRATION_PROTOCOL_PREFIX.length);
+  if (!nonEmptyString(raw.descriptorKey) || raw.descriptorKey !== expectedKey) {
+    return null;
+  }
+  const optionalStrings = [
+    "descriptorLabel",
+    "category",
+    "instanceId",
+    "instanceName",
+    "credentialRefId",
+    "host",
+    "baseUrl",
+    "username",
+  ] as const;
+  if (
+    optionalStrings.some(
+      (key) => raw[key] !== undefined && typeof raw[key] !== "string",
+    ) ||
+    (raw.tlsVerify !== undefined && typeof raw.tlsVerify !== "boolean") ||
+    (raw.timeout !== undefined &&
+      (typeof raw.timeout !== "number" ||
+        !Number.isFinite(raw.timeout) ||
+        raw.timeout <= 0))
+  ) {
+    return null;
+  }
+  const credentialRefIds = parseStringRecord(raw.credentialRefIds);
+  const providerFields = parseProviderFields(raw.providerFields);
+  if (!credentialRefIds || !providerFields) return null;
+
+  return {
+    descriptorKey: raw.descriptorKey,
+    ...(typeof raw.descriptorLabel === "string"
+      ? { descriptorLabel: raw.descriptorLabel }
+      : {}),
+    ...(typeof raw.category === "string" ? { category: raw.category } : {}),
+    ...(typeof raw.instanceId === "string"
+      ? { instanceId: raw.instanceId }
+      : {}),
+    ...(typeof raw.instanceName === "string"
+      ? { instanceName: raw.instanceName }
+      : {}),
+    ...(typeof raw.credentialRefId === "string"
+      ? { credentialRefId: raw.credentialRefId }
+      : {}),
+    ...(Object.keys(credentialRefIds).length > 0 ? { credentialRefIds } : {}),
+    ...(typeof raw.host === "string" ? { host: raw.host } : {}),
+    ...(typeof raw.baseUrl === "string" ? { baseUrl: raw.baseUrl } : {}),
+    ...(typeof raw.username === "string" ? { username: raw.username } : {}),
+    ...(typeof raw.tlsVerify === "boolean" ? { tlsVerify: raw.tlsVerify } : {}),
+    ...(typeof raw.timeout === "number" ? { timeout: raw.timeout } : {}),
+    ...(Object.keys(providerFields).length > 0 ? { providerFields } : {}),
+  };
+};
 
 const parseOwnerIds = (value: unknown): string[] | undefined => {
   if (value === undefined) return [];
@@ -195,6 +306,13 @@ export const parsePersistedConnectionSession = (
     !SESSION_STATUSES.has(raw.status as ConnectionSession["status"])
   ) {
     return { valid: false, reason: "Saved session identity is invalid." };
+  }
+  const integration = parseIntegrationSettings(raw.integration, raw.protocol);
+  if (integration === null) {
+    return {
+      valid: false,
+      reason: "Saved integration session settings are invalid.",
+    };
   }
   if (
     raw.backendSessionId !== undefined &&
@@ -391,6 +509,7 @@ export const parsePersistedConnectionSession = (
       protocol: raw.protocol,
       hostname: raw.hostname as string,
       status: raw.status as ConnectionSession["status"],
+      ...(integration ? { integration } : {}),
       ...(nonEmptyString(raw.backendSessionId)
         ? { backendSessionId: raw.backendSessionId }
         : {}),
@@ -436,6 +555,16 @@ export const parsePersistedConnectionSession = (
 export const serializePersistedConnectionSession = (
   session: ConnectionSession,
 ): PersistedConnectionSession => {
+  // Explicitly reduce launch-time settings to the persisted allow-list before
+  // constructing anything that a caller may JSON-stringify. Structural typing
+  // does not remove authToken/apiKey/password/providerSecrets at runtime.
+  const integration = parseIntegrationSettings(
+    session.integration,
+    session.protocol,
+  );
+  if (integration === null) {
+    throw new Error("Session integration settings are invalid.");
+  }
   const parsed = parsePersistedConnectionSession({
     id: session.id,
     connectionId: session.connectionId,
@@ -443,6 +572,7 @@ export const serializePersistedConnectionSession = (
     protocol: session.protocol,
     hostname: session.hostname,
     status: session.status,
+    integration,
     backendSessionId: session.backendSessionId,
     shellId: session.shellId,
     vpnLeaseOwnerId: session.vpnLeaseOwnerId,

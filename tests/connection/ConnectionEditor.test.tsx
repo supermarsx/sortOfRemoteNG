@@ -8,11 +8,21 @@ import {
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useEffect } from "react";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
+import { toPersistableIntegrationSettings } from "../../src/hooks/connection/useConnectionEditor";
 import { ToolTabViewer } from "../../src/components/app/ToolPanel";
 import { scrollConnectionEditorSearchTargetIntoView } from "../../src/components/connection/editor/useConnectionEditorSearch";
 import { Connection } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
+import { invoke } from "@tauri-apps/api/core";
+import { resetIntegrationConfigStoreForTests } from "../../src/hooks/integrations/useIntegrationConfigStore";
+
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  info: vi.fn(),
+}));
 
 vi.mock("../../src/types/integrations/registry", () => ({
   integrationRegistry: [
@@ -37,18 +47,20 @@ vi.mock("../../src/types/integrations/registry", () => ({
       icon: () => null,
       importPanel: async () => ({ default: () => null }),
     },
+    {
+      key: "mail",
+      label: "Mail Server",
+      category: "mail-server",
+      icon: () => null,
+      importPanel: async () => ({ default: () => null }),
+    },
   ],
 }));
 
 // Mock ToastContext (useConnectionEditor depends on it)
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
-    toast: {
-      success: vi.fn(),
-      error: vi.fn(),
-      warning: vi.fn(),
-      info: vi.fn(),
-    },
+    toast: toastMocks,
   }),
 }));
 
@@ -205,8 +217,52 @@ const renderWithProviders = (
 };
 
 describe("ConnectionEditor", () => {
+  it("never keeps nested secret-shaped provider fields in saved integration settings", () => {
+    const saved = toPersistableIntegrationSettings({
+      descriptorKey: "exchange",
+      providerFields: {
+        environment: "hybrid",
+        tenantId: "tenant-1",
+        Password: "must-not-persist",
+        client_secret: "must-not-persist",
+        "api-key": "must-not-persist",
+        authToken: "must-not-persist",
+        token: "must-not-persist",
+        tokenType: "Bearer",
+        tokenEndpoint: "https://login.example.test/token",
+      },
+    });
+
+    expect(saved?.providerFields).toEqual({
+      environment: "hybrid",
+      tenantId: "tenant-1",
+      tokenType: "Bearer",
+      tokenEndpoint: "https://login.example.test/token",
+    });
+    expect(JSON.stringify(saved)).not.toContain("must-not-persist");
+  });
+  let integrationConfigRaw: string | null = null;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    integrationConfigRaw = null;
+    resetIntegrationConfigStoreForTests();
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockImplementation(async (command: string, args?: any) => {
+      if (command === "read_app_data") return integrationConfigRaw;
+      if (command === "compare_and_swap_app_data") {
+        const expected = (args?.expected ?? null) as string | null;
+        if (expected !== integrationConfigRaw) return false;
+        integrationConfigRaw = args?.replacement as string;
+        return true;
+      }
+      return undefined;
+    });
+    (
+      globalThis as unknown as {
+        __TAURI__?: { core: { invoke: typeof invokeMock } };
+      }
+    ).__TAURI__ = { core: { invoke: invokeMock } };
   });
 
   describe("Modal Display", () => {
@@ -1569,6 +1625,49 @@ describe("ConnectionEditor", () => {
       expect(screen.getByTestId("editor-integration-timeout")).toHaveValue(45);
     });
 
+    it("offers only concrete mail service instances, never legacy generic mail records", async () => {
+      integrationConfigRaw = JSON.stringify([
+        {
+          id: "legacy-generic-mail",
+          integrationKey: "mail",
+          name: "Legacy generic mail",
+          createdAt: "2026-07-27T00:00:00.000Z",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+        },
+        {
+          id: "postfix-prod",
+          integrationKey: "mail.postfix",
+          name: "Postfix production",
+          host: "postfix.example.test",
+          createdAt: "2026-07-27T00:00:00.000Z",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+        },
+      ]);
+      const mailConnection: Connection = {
+        ...mockConnection,
+        protocol: "integration:mail",
+        integration: {
+          descriptorKey: "mail",
+        },
+      };
+
+      renderWithProviders({
+        connection: mailConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      const selector = screen.getByTestId("editor-integration-instance-id");
+      await waitFor(() => expect(selector).not.toBeDisabled());
+
+      expect(
+        screen.getByRole("option", { name: /Postfix production/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("option", { name: /Legacy generic mail/i }),
+      ).not.toBeInTheDocument();
+    });
+
     it("should expose tailored Exchange fields for integration-backed Exchange connections", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
@@ -2159,6 +2258,147 @@ describe("ConnectionEditor", () => {
       // ...and it persisted the edited value.
       expect(seen[seen.length - 1][0].hostname).toBe("10.0.0.5");
       expect(onConnect).toHaveBeenCalledTimes(1);
+    });
+
+    it("hands integration plaintext only to the immediate runtime callback while persisting vault refs", async () => {
+      const onConnect = vi.fn();
+      let latestConnections: Connection[] = [];
+      integrationConfigRaw = JSON.stringify([
+        {
+          id: "netbox-prod",
+          integrationKey: "netbox",
+          name: "NetBox production",
+          host: "netbox.example.test",
+          createdAt: "2026-07-27T00:00:00.000Z",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+        },
+      ]);
+      const connection: Connection = {
+        ...mockConnection,
+        id: "netbox-connection",
+        name: "NetBox production",
+        protocol: "integration:netbox",
+        hostname: "netbox.example.test",
+        port: 443,
+        password: "",
+        integration: {
+          descriptorKey: "netbox",
+          instanceId: "netbox-prod",
+          instanceName: "NetBox production",
+          host: "netbox.example.test",
+        },
+      };
+      renderWithProviders(
+        {
+          connection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        (connections) => {
+          latestConnections = connections;
+        },
+        [connection],
+      );
+
+      fireEvent.change(screen.getByTestId("editor-integration-auth-token"), {
+        target: { value: "runtime-only-token" },
+      });
+      fireEvent.click(screen.getByTestId("editor-connect"));
+
+      await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
+      const runtime = onConnect.mock.calls[0][0] as Connection;
+      expect(runtime.integration).toEqual(
+        expect.objectContaining({
+          authToken: "runtime-only-token",
+          credentialRefId: expect.any(String),
+          credentialRefIds: expect.objectContaining({
+            authToken: expect.any(String),
+          }),
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          latestConnections.find((candidate) => candidate.id === connection.id)
+            ?.integration?.credentialRefId,
+        ).toEqual(expect.any(String)),
+      );
+      const persisted = latestConnections.find(
+        (candidate) => candidate.id === connection.id,
+      )!;
+      expect(JSON.stringify(persisted)).not.toContain("runtime-only-token");
+      expect(persisted.integration).not.toHaveProperty("authToken");
+      expect(persisted.integration).toEqual(
+        expect.objectContaining({
+          credentialRefId: expect.any(String),
+          credentialRefIds: expect.objectContaining({
+            authToken: expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it("blocks integration Connect when vault persistence fails", async () => {
+      const onConnect = vi.fn();
+      integrationConfigRaw = JSON.stringify([
+        {
+          id: "netbox-prod",
+          integrationKey: "netbox",
+          name: "NetBox production",
+          createdAt: "2026-07-27T00:00:00.000Z",
+          updatedAt: "2026-07-27T00:00:00.000Z",
+        },
+      ]);
+      vi.mocked(invoke).mockImplementation(
+        async (command: string, args?: any) => {
+          if (command === "read_app_data") return integrationConfigRaw;
+          if (command === "vault_store_secret") {
+            throw new Error("credential vault is locked");
+          }
+          if (command === "compare_and_swap_app_data") {
+            const expected = (args?.expected ?? null) as string | null;
+            if (expected !== integrationConfigRaw) return false;
+            integrationConfigRaw = args?.replacement as string;
+            return true;
+          }
+          return undefined;
+        },
+      );
+      const connection: Connection = {
+        ...mockConnection,
+        id: "netbox-connection",
+        protocol: "integration:netbox",
+        password: "",
+        integration: {
+          descriptorKey: "netbox",
+          instanceId: "netbox-prod",
+        },
+      };
+      renderWithProviders(
+        {
+          connection,
+          isOpen: true,
+          onClose: vi.fn(),
+          onConnect,
+        },
+        undefined,
+        [connection],
+      );
+
+      fireEvent.change(screen.getByTestId("editor-integration-auth-token"), {
+        target: { value: "must-not-connect" },
+      });
+      fireEvent.click(screen.getByTestId("editor-connect"));
+
+      await waitFor(() =>
+        expect(toastMocks.error).toHaveBeenCalledWith(
+          expect.stringMatching(
+            /integration settings were not saved.*credential vault.*locked/i,
+          ),
+        ),
+      );
+      expect(onConnect).not.toHaveBeenCalled();
+      expect(integrationConfigRaw).not.toContain("must-not-connect");
     });
 
     it("still connects after an autosave has fired (autosave dirty-baseline guard)", async () => {

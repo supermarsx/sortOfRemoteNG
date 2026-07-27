@@ -18,7 +18,7 @@ import {
 import {
   isIntegrationConnectionProtocol,
   type Connection,
-  type IntegrationConnectionSettings,
+  type IntegrationConnectionLaunchSettings,
 } from "../../types/connection/connection";
 import {
   useConnectionEditor,
@@ -45,6 +45,7 @@ import {
 } from "../../utils/integrations/exchangeConnectionFields";
 import { Checkbox, NumberInput, PasswordInput } from "../ui/forms";
 import { InfoTooltip } from "../ui/InfoTooltip";
+import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
 import { BehaviorSection } from "./editor/BehaviorSection";
 import {
   getConnectionEditorSearchDescriptors,
@@ -144,7 +145,13 @@ const EditorHeader: React.FC<{
               data-testid="editor-connect"
               onClick={() => {
                 const target = mgr.saveNow();
-                if (target) onConnect(target);
+                if (target instanceof Promise) {
+                  void target.then((resolved) => {
+                    if (resolved) onConnect(resolved);
+                  });
+                } else if (target) {
+                  onConnect(target);
+                }
               }}
               className="h-9 px-3 rounded-lg font-medium transition-all flex items-center gap-2 border border-success/40 bg-success/10 hover:bg-success/20 text-success"
               title={t(
@@ -697,12 +704,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   mgr,
 }) => {
   const protocol = mgr.formData.protocol as string | undefined;
-  type IntegrationConnectionFormSettings = IntegrationConnectionSettings & {
-    authToken?: string;
-    apiKey?: string;
-    password?: string;
-    providerSecrets?: Record<string, string>;
-  };
+  type IntegrationConnectionFormSettings = IntegrationConnectionLaunchSettings;
   const integration: IntegrationConnectionFormSettings = {
     descriptorKey:
       mgr.formData.integration?.descriptorKey ||
@@ -737,6 +739,97 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
 
   const descriptorKey =
     integration.descriptorKey || getIntegrationKeyFromProtocol(protocol) || "";
+  const configStore = useIntegrationConfigStore();
+  const savedInstances = configStore.instances.filter((instance) =>
+    descriptorKey === "mail"
+      ? instance.integrationKey.startsWith("mail.")
+      : instance.integrationKey === descriptorKey,
+  );
+  const selectedInstance = savedInstances.find(
+    (instance) => instance.id === integration.instanceId,
+  );
+  const hasUnavailableSelection =
+    !!integration.instanceId && !selectedInstance && !configStore.isLoading;
+
+  const selectInstance = (id: string) => {
+    if (!id) {
+      updateIntegration({
+        instanceId: "",
+        instanceName: "",
+        credentialRefId: undefined,
+        credentialRefIds: undefined,
+      });
+      return;
+    }
+    const instance = savedInstances.find((candidate) => candidate.id === id);
+    if (!instance) return;
+    const fields = instance.fields ?? {};
+    const patch: Partial<IntegrationConnectionFormSettings> = {
+      instanceId: instance.id,
+      instanceName: instance.name,
+      credentialRefId: instance.credentialRefId,
+      credentialRefIds: instance.credentialRefIds,
+      host: instance.host ?? integration.host,
+      baseUrl: fields.baseUrl ?? integration.baseUrl,
+      username: fields.username ?? integration.username,
+      tlsVerify:
+        fields.tlsVerify === undefined
+          ? integration.tlsVerify
+          : fields.tlsVerify === "true",
+      timeout: fields.timeoutSecs
+        ? Number(fields.timeoutSecs)
+        : integration.timeout,
+    };
+    if (descriptorKey === EXCHANGE_INTEGRATION_KEY) {
+      patch.providerFields = toExchangeProviderFields(
+        normalizeExchangeConnectionFields(fields, {
+          host: instance.host,
+          timeout: integration.timeout,
+        }),
+      );
+    }
+    updateIntegration(patch);
+  };
+
+  const instanceSelector = (
+    <div>
+      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+        Saved Instance
+      </label>
+      <select
+        data-testid="editor-integration-instance-id"
+        value={integration.instanceId || ""}
+        onChange={(event) => selectInstance(event.target.value)}
+        className="sor-form-input text-sm"
+        disabled={configStore.isLoading}
+      >
+        <option value="">
+          {configStore.isLoading
+            ? "Loading saved instances…"
+            : "New / panel-managed instance"}
+        </option>
+        {hasUnavailableSelection && (
+          <option value={integration.instanceId}>
+            Unavailable instance ({integration.instanceId})
+          </option>
+        )}
+        {savedInstances.map((instance) => (
+          <option key={instance.id} value={instance.id}>
+            {instance.name}
+            {instance.host ? ` — ${instance.host}` : ""}
+          </option>
+        ))}
+      </select>
+      {configStore.error && (
+        <p
+          className="mt-1 text-xs text-error"
+          data-testid="editor-integration-store-error"
+        >
+          {configStore.error}
+        </p>
+      )}
+    </div>
+  );
   const isExchange = descriptorKey === EXCHANGE_INTEGRATION_KEY;
   const exchangeFields = normalizeExchangeConnectionFields(
     integration.providerFields,
@@ -785,21 +878,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     return (
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              Instance ID
-            </label>
-            <input
-              type="text"
-              data-testid="editor-integration-instance-id"
-              value={integration.instanceId || ""}
-              onChange={(e) =>
-                updateIntegration({ instanceId: e.target.value })
-              }
-              className="sor-form-input text-sm font-mono"
-              placeholder="optional saved instance id"
-            />
-          </div>
+          <div>{instanceSelector}</div>
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
               Instance Name
@@ -1072,19 +1151,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Instance ID
-          </label>
-          <input
-            type="text"
-            data-testid="editor-integration-instance-id"
-            value={integration.instanceId || ""}
-            onChange={(e) => updateIntegration({ instanceId: e.target.value })}
-            className="sor-form-input text-sm font-mono"
-            placeholder="optional saved instance id"
-          />
-        </div>
+        <div>{instanceSelector}</div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
             Instance Name

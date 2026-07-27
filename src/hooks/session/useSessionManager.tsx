@@ -50,6 +50,11 @@ import {
   hasSessionVpnCleanupQuarantine,
   VPN_CLEANUP_QUARANTINE_ERROR,
 } from "../../utils/session/sessionLifecycle";
+import {
+  reconnectIntegrationSession,
+  releaseIntegrationSession,
+  type IntegrationSessionStateEvent,
+} from "../integrations/IntegrationSessionLifecycle";
 
 export function usesGenericSessionTimer(protocol: string): boolean {
   return usesLegacyGenericTimer(protocol);
@@ -59,6 +64,51 @@ export function getUnsupportedDirectSessionMessage(
   protocol: string,
 ): string | null {
   return getDirectSessionUnavailableMessage(protocol);
+}
+
+const SINGLETON_INTEGRATION_PROTOCOL_LABELS: Readonly<Record<string, string>> =
+  {
+    "integration:exchange": "Exchange",
+    "integration:gdrive": "Google Drive",
+    "integration:lxd": "LXD / Incus",
+    "integration:vmware": "VMware vSphere",
+    "integration:vmwareDesktop": "VMware Desktop",
+  };
+
+export function isSingletonIntegrationProtocol(protocol: string): boolean {
+  return protocol in SINGLETON_INTEGRATION_PROTOCOL_LABELS;
+}
+
+function ownsSingletonIntegrationBackend(session: ConnectionSession): boolean {
+  return (
+    session.status === "connecting" ||
+    session.status === "connected" ||
+    session.status === "error" ||
+    session.status === "reconnecting"
+  );
+}
+
+function findSingletonIntegrationConflict(
+  sessions: ConnectionSession[],
+  protocol: string,
+  sessionId?: string,
+): ConnectionSession | undefined {
+  if (!isSingletonIntegrationProtocol(protocol)) return undefined;
+  return sessions.find(
+    (candidate) =>
+      candidate.id !== sessionId &&
+      candidate.protocol === protocol &&
+      ownsSingletonIntegrationBackend(candidate),
+  );
+}
+
+function singletonIntegrationConflictMessage(
+  protocol: string,
+  action: "open" | "reconnect",
+): string {
+  const label =
+    SINGLETON_INTEGRATION_PROTOCOL_LABELS[protocol] ?? "This integration";
+  return `${label} uses one process-wide native session at a time. Disconnect or close the active ${label} session before you ${action} a different saved instance.`;
 }
 
 /**
@@ -85,9 +135,12 @@ export const useSessionManager = () => {
   const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
     null,
   );
-  const handleSessionCloseRef = useRef<(sessionId: string) => Promise<boolean>>(
-    async () => false,
-  );
+  const handleSessionCloseRef = useRef<
+    (
+      sessionId: string,
+      authoritativeSession?: ConnectionSession,
+    ) => Promise<boolean>
+  >(async () => false);
   const [dialogState, setDialogState] = useState<{
     message: string;
     showCancel: boolean;
@@ -353,13 +406,22 @@ export const useSessionManager = () => {
     if (shouldReuseSession) {
       const existingSession = state.sessions.find(
         (session) =>
-          session.connectionId === connection.id &&
           session.protocol === connection.protocol &&
-          session.status !== "disconnected" &&
-          session.status !== "error",
+          session.connectionId === connection.id &&
+          ownsSingletonIntegrationBackend(session),
       );
       if (existingSession) {
         setActiveSessionId(existingSession.id);
+        return;
+      }
+      const singletonConflict = findSingletonIntegrationConflict(
+        state.sessions,
+        connection.protocol,
+      );
+      if (singletonConflict) {
+        await showAlert(
+          singletonIntegrationConflictMessage(connection.protocol, "open"),
+        );
         return;
       }
     }
@@ -370,7 +432,13 @@ export const useSessionManager = () => {
     // not connections — counting them against these limits would
     // be misleading (and lock the user out of opening a session
     // because they have a Settings tab open).
-    const realSessions = state.sessions.filter(isRealConnectionSession);
+    const realSessions = state.sessions.filter(
+      (session) =>
+        isRealConnectionSession(session) ||
+        (isIntegrationConnectionProtocol(session.protocol) &&
+          session.status !== "disconnected"),
+    );
+    let remainingRealSessionCount = realSessions.length;
 
     if (settings.singleConnectionMode && realSessions.length > 0) {
       const proceed = await showConfirm(
@@ -379,15 +447,23 @@ export const useSessionManager = () => {
       if (!proceed) {
         return;
       }
-      // Only close real connections; leave tool tabs in place so
-      // the user doesn't lose unsaved tool state when "switching".
-      realSessions.forEach((session) => {
-        dispatch({ type: "REMOVE_SESSION", payload: session.id });
-        releaseRuntimeConnection(session.connectionId);
-      });
+      // Only close real connections; leave tool tabs in place so the user
+      // doesn't lose unsaved tool state when "switching". Use the normal,
+      // awaited close path so integration controllers, native transports and
+      // VPN ownership are released before the replacement session is opened.
+      for (const session of realSessions) {
+        const closed = await handleSessionCloseRef.current(session.id, session);
+        if (!closed) {
+          await showAlert(
+            `Could not close "${session.name}". The new connection was not opened so cleanup can be retried safely.`,
+          );
+          return;
+        }
+      }
+      remainingRealSessionCount = 0;
     }
 
-    if (realSessions.length >= settings.maxConcurrentConnections) {
+    if (remainingRealSessionCount >= settings.maxConcurrentConnections) {
       await showAlert(
         `Maximum concurrent connections (${settings.maxConcurrentConnections}) reached.`,
       );
@@ -404,7 +480,9 @@ export const useSessionManager = () => {
         settings.hostnameOverride && connection.hostname
           ? connection.hostname
           : connection.name,
-      status: isIntegrationSession ? "connected" : "connecting",
+      // Integration panels own their backend connection. Do not claim a live
+      // transport until their connection hook reports a successful command.
+      status: isIntegrationSession ? "disconnected" : "connecting",
       startTime: new Date(),
       protocol: connection.protocol,
       hostname: connection.integration?.host || connection.hostname,
@@ -462,6 +540,64 @@ export const useSessionManager = () => {
           errorMessage: VPN_CLEANUP_QUARANTINE_ERROR,
         },
       });
+      return;
+    }
+    if (isIntegrationConnectionProtocol(session.protocol)) {
+      const singletonConflict = findSingletonIntegrationConflict(
+        stateRef.current.sessions,
+        session.protocol,
+        session.id,
+      );
+      if (singletonConflict) {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...session,
+            status: "disconnected",
+            errorMessage: singletonIntegrationConflictMessage(
+              session.protocol,
+              "reconnect",
+            ),
+          },
+        });
+        return;
+      }
+      const updatedSession: ConnectionSession = {
+        ...session,
+        status: "reconnecting",
+        errorMessage: undefined,
+        reconnectAttempts: (session.reconnectAttempts ?? 0) + 1,
+        startTime: new Date(),
+      };
+      dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
+      try {
+        const started = await reconnectIntegrationSession(session.id);
+        if (!started) {
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: {
+              ...updatedSession,
+              status: "disconnected",
+              errorMessage:
+                "No live integration connection is available to reconnect. Open the panel and connect again.",
+            },
+          });
+        }
+      } catch (error) {
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...updatedSession,
+            status: "error",
+            errorMessage:
+              typeof error === "string"
+                ? error
+                : error instanceof Error
+                  ? error.message
+                  : String(error),
+          },
+        });
+      }
       return;
     }
     const updatedSession: ConnectionSession = {
@@ -562,6 +698,17 @@ export const useSessionManager = () => {
       (c) => c.id === session.connectionId,
     );
     if (!connection) return;
+    const singletonConflict = findSingletonIntegrationConflict(
+      state.sessions,
+      session.protocol,
+      session.id,
+    );
+    if (singletonConflict) {
+      await showAlert(
+        singletonIntegrationConflictMessage(session.protocol, "reconnect"),
+      );
+      return;
+    }
 
     await requestReconnect({
       session,
@@ -681,11 +828,33 @@ export const useSessionManager = () => {
           true ||
         session.errorMessage?.includes("VPN ownership") === true);
 
-    // Integration tabs have no transport cleanup or legacy disconnect script,
-    // but still own a real per-connection lifecycle.
+    // Integration providers register their exact backend cleanup with the
+    // mounted host. Await it before removing the owning session; host unmount
+    // remains an idempotent fallback.
     if (isIntegrationConnectionProtocol(session.protocol)) {
+      try {
+        await releaseIntegrationSession(sessionId);
+      } catch (error) {
+        const detail =
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...session,
+            status: "error",
+            errorMessage: `Integration cleanup failed and the session was kept open so cleanup can be retried. Retry Close after resolving the provider error. ${detail}`,
+            lastActivity: new Date(),
+          },
+        });
+        return false;
+      }
       lifecycle.beginEnding(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+      releaseRuntimeConnection(session.connectionId);
       if (connection) {
         statusChecker.stopChecking(connection.id);
         settingsManager.logAction(
@@ -709,6 +878,7 @@ export const useSessionManager = () => {
     // applies to any connected session regardless of protocol.
     if (
       settings.confirmCloseActiveTab &&
+      !authoritativeSession &&
       session.id === activeSessionId &&
       session.status === "connected"
     ) {
@@ -721,7 +891,11 @@ export const useSessionManager = () => {
     // RDP sessions use their own close policy instead of the generic warnOnClose.
     // Per-connection override takes precedence over the global setting.
     if (session.protocol === "rdp") {
-      if (retryingVpnCleanup) {
+      if (authoritativeSession) {
+        // singleConnectionMode already obtained confirmation to close the old
+        // connection. A detach would leave it running and violate that mode.
+        disconnectRdpBackend = true;
+      } else if (retryingVpnCleanup) {
         // A panel already closed the native backend. Retry only its retained
         // owners, regardless of the normal tab close/detach preference.
         disconnectRdpBackend = true;
@@ -762,7 +936,7 @@ export const useSessionManager = () => {
         connection?.warnOnClose,
         settings.warnOnClose,
       );
-      if (shouldWarn) {
+      if (shouldWarn && !authoritativeSession) {
         const confirmed = await showConfirm(t("dialogs.confirmClose"));
         if (!confirmed) return false;
       }
@@ -1203,6 +1377,28 @@ export const useSessionManager = () => {
 
   const activeSession = state.sessions.find((s) => s.id === activeSessionId);
 
+  const handleIntegrationSessionState = useCallback(
+    (sessionId: string, event: IntegrationSessionStateEvent): void => {
+      const current = stateRef.current.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (!current || !isIntegrationConnectionProtocol(current.protocol)) {
+        return;
+      }
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...current,
+          status: event.status,
+          errorMessage:
+            event.status === "error" ? event.errorMessage : undefined,
+          lastActivity: new Date(),
+        },
+      });
+    },
+    [dispatch],
+  );
+
   /**
    * Restores a session from persisted data without creating a new one.
    * Used to restore sessions on page reload.
@@ -1235,7 +1431,7 @@ export const useSessionManager = () => {
       id: sessionData.id,
       connectionId: sessionData.connectionId,
       name: sessionData.name || connection.name,
-      status: cleanupQuarantined ? "error" : "reconnecting",
+      status: cleanupQuarantined ? "error" : "disconnected",
       startTime: sessionData.startTime
         ? new Date(sessionData.startTime)
         : new Date(),
@@ -1247,6 +1443,9 @@ export const useSessionManager = () => {
         settings.retryAttempts,
       ),
       backendSessionId: sessionData.backendSessionId,
+      integration: isIntegrationConnectionProtocol(sessionData.protocol)
+        ? (sessionData.integration ?? connection.integration)
+        : undefined,
       shellId: sessionData.shellId,
       vpnLeaseOwnerId: sessionData.vpnLeaseOwnerId,
       vpnLeaseOwnerIds: sessionData.vpnLeaseOwnerIds,
@@ -1279,8 +1478,13 @@ export const useSessionManager = () => {
       reason: "restore",
     });
 
-    // For protocols that need backend reconnection, attempt to re-establish
-    await connectSession(restoredSession, connection);
+    // Integration providers cannot recreate an opaque live client from a
+    // backend handle after process reload. Their persisted instance reference
+    // is restored above and the panel remains truthfully disconnected until
+    // its real connection hook succeeds.
+    if (!isIntegrationConnectionProtocol(restoredSession.protocol)) {
+      await connectSession(restoredSession, connection);
+    }
   };
 
   const confirmDialog = dialogState ? (
@@ -1311,6 +1515,7 @@ export const useSessionManager = () => {
     handleQuickConnect,
     handleSessionClose,
     restoreSession,
+    handleIntegrationSessionState,
     emitWindowSignal: lifecycle.emitWindowSignal,
     confirmDialog,
   };

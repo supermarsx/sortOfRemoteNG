@@ -34,7 +34,163 @@ const makeSession = (): ConnectionSession => ({
   lifecycleWriterId: "detached-session-1",
 });
 
+const makeIntegrationSession = (): ConnectionSession => ({
+  id: "integration-session-1",
+  connectionId: "integration-connection-1",
+  name: "Grafana",
+  protocol: "integration:grafana",
+  hostname: "grafana.example",
+  status: "disconnected",
+  startTime: new Date("2026-07-19T08:00:00.000Z"),
+  integration: {
+    descriptorKey: "grafana",
+    descriptorLabel: "Grafana",
+    category: "Monitoring",
+    instanceId: "grafana-instance-1",
+    instanceName: "Production",
+    credentialRefId: "vault-primary",
+    credentialRefIds: {
+      apiKey: "vault-api-key",
+      password: "vault-password",
+    },
+    host: "grafana.example",
+    baseUrl: "https://grafana.example",
+    username: "operator",
+    tlsVerify: true,
+    timeout: 30,
+    providerFields: {
+      organizationId: 42,
+      useServiceAccount: true,
+    },
+    authToken: "do-not-persist-auth-token",
+    apiKey: "do-not-persist-api-key",
+    password: "do-not-persist-password",
+    providerSecrets: {
+      clientSecret: "do-not-persist-client-secret",
+    },
+  },
+});
+
 describe("session reload persistence", () => {
+  it("round-trips only allow-listed integration metadata and vault references", () => {
+    const serialized = serializePersistedConnectionSession(
+      makeIntegrationSession(),
+    );
+    const json = JSON.stringify(serialized);
+    const parsed = parsePersistedConnectionSession(JSON.parse(json));
+
+    expect(json).not.toContain("do-not-persist");
+    expect(serialized.integration).toEqual({
+      descriptorKey: "grafana",
+      descriptorLabel: "Grafana",
+      category: "Monitoring",
+      instanceId: "grafana-instance-1",
+      instanceName: "Production",
+      credentialRefId: "vault-primary",
+      credentialRefIds: {
+        apiKey: "vault-api-key",
+        password: "vault-password",
+      },
+      host: "grafana.example",
+      baseUrl: "https://grafana.example",
+      username: "operator",
+      tlsVerify: true,
+      timeout: 30,
+      providerFields: {
+        organizationId: 42,
+        useServiceAccount: true,
+      },
+    });
+    expect(parsed).toEqual({
+      valid: true,
+      session: expect.objectContaining({
+        status: "disconnected",
+        integration: serialized.integration,
+      }),
+    });
+  });
+
+  it("strips nested provider-field secrets while preserving legitimate Exchange metadata", () => {
+    const exchange: ConnectionSession = {
+      ...makeIntegrationSession(),
+      protocol: "integration:exchange",
+      integration: {
+        descriptorKey: "exchange",
+        instanceId: "exchange-instance",
+        credentialRefIds: {
+          clientSecret: "vault-client-secret",
+          password: "vault-password",
+        },
+        providerFields: {
+          environment: "hybrid",
+          tenantId: "tenant-1",
+          clientId: "client-1",
+          onlineUsername: "admin@example.test",
+          organization: "example.test",
+          server: "exchange.example.test",
+          onPremUsername: "EXAMPLE\\admin",
+          port: "443",
+          useSsl: true,
+          authMethod: "oauth",
+          skipCertCheck: false,
+          timeoutSecs: "30",
+          Password: "nested-password",
+          client_secret: "nested-client-secret",
+          "api-key": "nested-api-key",
+          authToken: "nested-auth-token",
+        },
+      },
+    };
+
+    const serialized = serializePersistedConnectionSession(exchange);
+    const json = JSON.stringify(serialized);
+
+    expect(json).not.toContain("nested-");
+    expect(serialized.integration?.providerFields).toEqual({
+      environment: "hybrid",
+      tenantId: "tenant-1",
+      clientId: "client-1",
+      onlineUsername: "admin@example.test",
+      organization: "example.test",
+      server: "exchange.example.test",
+      onPremUsername: "EXAMPLE\\admin",
+      port: "443",
+      useSsl: true,
+      authMethod: "oauth",
+      skipCertCheck: false,
+      timeoutSecs: "30",
+    });
+  });
+
+  it("rejects integration settings whose descriptor does not match the protocol", () => {
+    const serialized = serializePersistedConnectionSession(
+      makeIntegrationSession(),
+    );
+
+    expect(
+      parsePersistedConnectionSession({
+        ...serialized,
+        integration: {
+          ...serialized.integration,
+          descriptorKey: "netbox",
+        },
+      }),
+    ).toEqual({
+      valid: false,
+      reason: expect.stringMatching(/integration session settings/i),
+    });
+
+    expect(() =>
+      serializePersistedConnectionSession({
+        ...makeIntegrationSession(),
+        integration: {
+          ...makeIntegrationSession().integration!,
+          descriptorKey: "netbox",
+        },
+      }),
+    ).toThrow(/integration settings are invalid/i);
+  });
+
   it("round-trips exact VPN ownership and lifecycle revision", () => {
     const serialized = serializePersistedConnectionSession(makeSession());
     const parsed = parsePersistedConnectionSession(

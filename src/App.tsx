@@ -187,6 +187,7 @@ const AppContent: React.FC = () => {
     handleQuickConnect,
     handleSessionClose,
     restoreSession,
+    handleIntegrationSessionState,
     confirmDialog,
     emitWindowSignal,
   } = useSessionManager();
@@ -1688,6 +1689,7 @@ const AppContent: React.FC = () => {
                     onEditConnection={handleEditConnection}
                     onDatabaseSelect={handleDatabaseSelect}
                     onDatabaseClose={handleDatabaseClose}
+                    onIntegrationStateChange={handleIntegrationSessionState}
                   />
                 )}
                 middleClickCloseTab={appSettings.middleClickCloseTab}

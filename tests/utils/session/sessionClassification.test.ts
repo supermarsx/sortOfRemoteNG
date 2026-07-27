@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyTabKind,
   isRealConnectionSession,
+  isRestorableConnectionSession,
   isIntegrationTabSession,
   isToolTabSession,
   isWinmgmtTabSession,
@@ -89,6 +90,13 @@ describe("predicates", () => {
     expect(isIntegrationTabSession(s("tool:settings"))).toBe(false);
     expect(isIntegrationTabSession(s("winmgmt:services"))).toBe(false);
     expect(isIntegrationTabSession(s("integration:netbox"))).toBe(true);
+  });
+
+  it("restores real connections and integration panels, but not app-only tabs", () => {
+    expect(isRestorableConnectionSession(s("ssh"))).toBe(true);
+    expect(isRestorableConnectionSession(s("integration:netbox"))).toBe(true);
+    expect(isRestorableConnectionSession(s("tool:settings"))).toBe(false);
+    expect(isRestorableConnectionSession(s("winmgmt:services"))).toBe(false);
   });
 });
 

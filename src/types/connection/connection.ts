@@ -117,6 +117,8 @@ export interface IntegrationConnectionSettings {
   instanceId?: string;
   instanceName?: string;
   credentialRefId?: string;
+  /** Named OS-vault references for integrations with multiple credentials. */
+  credentialRefIds?: Record<string, string>;
   host?: string;
   baseUrl?: string;
   username?: string;
@@ -124,6 +126,18 @@ export interface IntegrationConnectionSettings {
   timeout?: number;
   /** Integration-specific non-secret metadata, such as Exchange tenant/server fields. */
   providerFields?: IntegrationProviderFields;
+}
+
+/**
+ * Ephemeral values carried only from the editor to a newly mounted integration
+ * panel. Persistence serializers must always reduce this to
+ * {@link IntegrationConnectionSettings}; plaintext members never go to disk.
+ */
+export interface IntegrationConnectionLaunchSettings extends IntegrationConnectionSettings {
+  authToken?: string;
+  apiKey?: string;
+  password?: string;
+  providerSecrets?: Record<string, string>;
 }
 
 export interface Connection
@@ -1502,7 +1516,7 @@ export interface ConnectionSession {
   errorMessage?: string;
 
   // Integration-backed tabs can carry their source connection settings into the panel.
-  integration?: IntegrationConnectionSettings;
+  integration?: IntegrationConnectionLaunchSettings;
 }
 
 export interface TabGroup {

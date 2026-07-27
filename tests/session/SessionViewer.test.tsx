@@ -295,6 +295,7 @@ describe("SessionViewer", () => {
 
   it("routes integration protocol sessions to the integration panel host", async () => {
     const onCloseSession = vi.fn();
+    const onIntegrationStateChange = vi.fn();
 
     render(
       <SessionViewer
@@ -313,6 +314,7 @@ describe("SessionViewer", () => {
           },
         })}
         onCloseSession={onCloseSession}
+        onIntegrationStateChange={onIntegrationStateChange}
       />,
     );
 
@@ -332,6 +334,18 @@ describe("SessionViewer", () => {
         }),
       }),
     );
+    const hostProps =
+      mockState.integrationPanelHostProps.mock.calls[
+        mockState.integrationPanelHostProps.mock.calls.length - 1
+      ][0];
+    hostProps.onStateChange({
+      status: "error",
+      errorMessage: "provider failed",
+    });
+    expect(onIntegrationStateChange).toHaveBeenCalledWith("session-1", {
+      status: "error",
+      errorMessage: "provider failed",
+    });
     expect(onCloseSession).toHaveBeenCalledWith("session-1");
   });
 
