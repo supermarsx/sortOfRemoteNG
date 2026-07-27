@@ -143,6 +143,7 @@ pub fn is_command(command: &str) -> bool {
             | "azure_search_resources"
             | "exchange_set_config"
             | "exchange_connect"
+            | "exchange_connect_with_config"
             | "exchange_disconnect"
             | "exchange_is_connected"
             | "exchange_connection_summary"
@@ -719,6 +720,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         // Exchange commands (sorng-exchange)
         exchange_commands::exchange_set_config,
         exchange_commands::exchange_connect,
+        exchange_commands::exchange_connect_with_config,
         exchange_commands::exchange_disconnect,
         exchange_commands::exchange_is_connected,
         exchange_commands::exchange_connection_summary,
@@ -1161,4 +1163,16 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         oracle_cloud_commands::oci_query_metrics,
         oracle_cloud_commands::oci_list_audit_events,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_exchange_connect_is_recognized_and_registered() {
+        assert!(is_command("exchange_connect_with_config"));
+        assert!(include_str!("cloud_handler.rs")
+            .contains("exchange_commands::exchange_connect_with_config,"));
+    }
 }

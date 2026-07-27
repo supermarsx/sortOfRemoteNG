@@ -16,7 +16,8 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::psrp_wsman::{
-    canonical_wsman_endpoint, WsmanPsrpLimits, WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
+    canonical_exchange_wsman_endpoint, canonical_wsman_endpoint, WsmanPsrpLimits,
+    WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
 };
 use crate::strict_ssh::{
     SshHostKeyPolicy, StrictSshAuth, StrictSshPsrpConfig, StrictSshPsrpTransport,
@@ -35,8 +36,8 @@ use super::{
     PowerShellSessionEvent, PowerShellSessionOptions, PowerShellSessionPhase,
     PowerShellSessionStats, PowerShellSessionTransport, PowerShellSshAuth,
     PowerShellSshHostKeyPolicy, PowerShellSshSessionOptions, PowerShellStreamKind,
-    PowerShellWsmanAuth, PowerShellWsmanSessionOptions, MAX_ACTIVE_POWERSHELL_SESSIONS,
-    MAX_INPUT_TEXT_BYTES, MAX_SCRIPT_BYTES,
+    PowerShellWsmanAuth, PowerShellWsmanEndpointProfile, PowerShellWsmanSessionOptions,
+    MAX_ACTIVE_POWERSHELL_SESSIONS, MAX_INPUT_TEXT_BYTES, MAX_SCRIPT_BYTES,
 };
 
 const MAX_COMPLETED_SESSIONS: usize = 128;
@@ -208,13 +209,28 @@ impl PowerShellSessionService {
             }
             PowerShellSessionOptions::Wsman(options) => {
                 let config = wsman_config(&options)?;
-                let canonical_endpoint = canonical_wsman_endpoint(&config)
-                    .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
+                let canonical_endpoint = match options.endpoint_profile {
+                    PowerShellWsmanEndpointProfile::Standard => canonical_wsman_endpoint(&config),
+                    PowerShellWsmanEndpointProfile::Exchange => {
+                        canonical_exchange_wsman_endpoint(&config)
+                    }
+                }
+                .map_err(|_| PowerShellSessionError::invalid("endpoint"))?;
                 let registration = wsman_registration(&options, &canonical_endpoint)?;
                 let limits = wsman_limits(&options);
-                let transport = match &self.wsman_test_trust {
-                    Some(trust) => WsmanPsrpTransport::new_with_test_trust(&config, limits, trust),
-                    None => WsmanPsrpTransport::new(&config, limits),
+                let transport = match (options.endpoint_profile, &self.wsman_test_trust) {
+                    (PowerShellWsmanEndpointProfile::Standard, Some(trust)) => {
+                        WsmanPsrpTransport::new_with_test_trust(&config, limits, trust)
+                    }
+                    (PowerShellWsmanEndpointProfile::Standard, None) => {
+                        WsmanPsrpTransport::new(&config, limits)
+                    }
+                    (PowerShellWsmanEndpointProfile::Exchange, Some(trust)) => {
+                        WsmanPsrpTransport::new_exchange_with_test_trust(&config, limits, trust)
+                    }
+                    (PowerShellWsmanEndpointProfile::Exchange, None) => {
+                        WsmanPsrpTransport::new_exchange(&config, limits)
+                    }
                 }
                 .map_err(|_| PowerShellSessionError::invalid("wsman"))?;
                 let pool = RunspacePool::open_with_transport(transport)
@@ -1052,7 +1068,11 @@ fn wsman_config(
         skip_cn_check: false,
         skip_revocation_check: false,
         use_ssl: endpoint.scheme() == "https",
-        uri_path: "/wsman".to_owned(),
+        uri_path: match options.endpoint_profile {
+            PowerShellWsmanEndpointProfile::Standard => "/wsman",
+            PowerShellWsmanEndpointProfile::Exchange => "/PowerShell/",
+        }
+        .to_owned(),
         connection_uri: Some(options.endpoint.clone()),
         session_option: PsSessionOption {
             operation_timeout_sec: millis_to_seconds(options.request_timeout_ms),
@@ -1065,7 +1085,11 @@ fn wsman_config(
             ..PsSessionOption::default()
         },
         configuration_name: options.configuration_name.clone(),
-        application_name: "wsman".to_owned(),
+        application_name: match options.endpoint_profile {
+            PowerShellWsmanEndpointProfile::Standard => "wsman",
+            PowerShellWsmanEndpointProfile::Exchange => "PowerShell",
+        }
+        .to_owned(),
         enable_reconnect: false,
         proxy: None,
         custom_headers: HashMap::new(),
@@ -1396,6 +1420,7 @@ mod tests {
             password: "also-do-not-print".into(),
             domain: Some("LAB".into()),
             authentication: PowerShellWsmanAuth::Basic,
+            endpoint_profile: PowerShellWsmanEndpointProfile::Standard,
             tls_trust: PowerShellWsmanTrustPolicy::TrustCenter,
             network_path: PowerShellSessionNetworkPath::Direct,
             connection_id: None,
@@ -1471,6 +1496,30 @@ mod tests {
         assert_eq!(
             options.validate(),
             Err(PowerShellSessionError::NetworkPathUnsupported)
+        );
+
+        let mut exchange = test_wsman_options();
+        exchange.endpoint = "https://exchange.example/PowerShell/".into();
+        exchange.endpoint_profile = PowerShellWsmanEndpointProfile::Exchange;
+        exchange.configuration_name = "Microsoft.Exchange".into();
+        exchange.authentication = PowerShellWsmanAuth::Ntlm;
+        assert_eq!(exchange.validate(), Ok(()));
+
+        exchange.endpoint = "https://exchange.example/custom/".into();
+        assert_eq!(
+            exchange.validate(),
+            Err(PowerShellSessionError::InvalidConfiguration {
+                field: "exchangeEndpoint".into()
+            })
+        );
+
+        let mut standard = test_wsman_options();
+        standard.configuration_name = "Microsoft.Exchange".into();
+        assert_eq!(
+            standard.validate(),
+            Err(PowerShellSessionError::InvalidConfiguration {
+                field: "endpointProfile".into()
+            })
         );
     }
 

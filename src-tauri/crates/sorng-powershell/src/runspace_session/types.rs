@@ -181,6 +181,18 @@ impl PowerShellWsmanAuth {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum PowerShellWsmanEndpointProfile {
+    /// Standard WinRM endpoint. Any caller-supplied path is canonicalized to
+    /// the root `/wsman` endpoint.
+    #[default]
+    Standard,
+    /// Microsoft Exchange remote PowerShell endpoint. This profile is limited
+    /// to `/PowerShell/` and the `Microsoft.Exchange` configuration.
+    Exchange,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PowerShellWsmanTrustPolicy {
     #[default]
     TrustCenter,
@@ -206,6 +218,8 @@ pub struct PowerShellWsmanSessionOptions {
     #[serde(default)]
     pub domain: Option<String>,
     pub authentication: PowerShellWsmanAuth,
+    #[serde(default)]
+    pub endpoint_profile: PowerShellWsmanEndpointProfile,
     #[serde(default)]
     pub tls_trust: PowerShellWsmanTrustPolicy,
     #[serde(default)]
@@ -247,6 +261,7 @@ impl fmt::Debug for PowerShellWsmanSessionOptions {
             .field("password", &"[REDACTED]")
             .field("domain", &self.domain)
             .field("authentication", &self.authentication)
+            .field("endpoint_profile", &self.endpoint_profile)
             .field("tls_trust", &self.tls_trust)
             .field("network_path", &self.network_path)
             .field("connection_id", &self.connection_id)
@@ -279,6 +294,17 @@ impl PowerShellWsmanSessionOptions {
             || self.endpoint.len() > 2_048
         {
             return Err(PowerShellSessionError::invalid("endpoint"));
+        }
+        if self.endpoint_profile == PowerShellWsmanEndpointProfile::Exchange
+            && (endpoint.path() != "/PowerShell/"
+                || self.configuration_name != "Microsoft.Exchange")
+        {
+            return Err(PowerShellSessionError::invalid("exchangeEndpoint"));
+        }
+        if self.endpoint_profile == PowerShellWsmanEndpointProfile::Standard
+            && self.configuration_name == "Microsoft.Exchange"
+        {
+            return Err(PowerShellSessionError::invalid("endpointProfile"));
         }
         if self.username.trim().is_empty() || self.username.len() > 256 {
             return Err(PowerShellSessionError::invalid("username"));

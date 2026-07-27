@@ -16,8 +16,7 @@ pub async fn exchange_set_config(
     state: State<'_, ExchangeServiceState>,
     config: ExchangeConnectionConfig,
 ) -> Result<(), String> {
-    state.lock().await.set_config(config);
-    Ok(())
+    state.lock().await.set_config(config).map_err(err_str)
 }
 
 #[tauri::command]
@@ -25,6 +24,27 @@ pub async fn exchange_connect(
     state: State<'_, ExchangeServiceState>,
 ) -> Result<ExchangeConnectionSummary, String> {
     state.lock().await.connect().await.map_err(err_str)
+}
+
+async fn connect_with_config_state(
+    state: &ExchangeServiceState,
+    config: ExchangeConnectionConfig,
+) -> Result<ExchangeConnectionSummary, String> {
+    state
+        .lock()
+        .await
+        .connect_with_config(config)
+        .await
+        .map_err(err_str)
+}
+
+/// Configure and establish an Exchange connection under one service lock.
+#[tauri::command]
+pub async fn exchange_connect_with_config(
+    state: State<'_, ExchangeServiceState>,
+    config: ExchangeConnectionConfig,
+) -> Result<ExchangeConnectionSummary, String> {
+    connect_with_config_state(&state, config).await
 }
 
 #[tauri::command]

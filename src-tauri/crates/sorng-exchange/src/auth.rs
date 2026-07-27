@@ -5,7 +5,7 @@
 
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info};
+use log::debug;
 use reqwest::Client;
 use std::collections::HashMap;
 
@@ -121,53 +121,13 @@ async fn token_from_response(resp: reqwest::Response) -> ExchangeResult<Exchange
 /// Build the PowerShell connection URI for an on-prem Exchange server.
 pub fn build_ps_connection_uri(creds: &ExchangeOnPremCredentials) -> String {
     let scheme = if creds.use_ssl { "https" } else { "http" };
-    format!("{}://{}:{}/PowerShell/", scheme, creds.server, creds.port)
-}
-
-/// Generate the PowerShell script that establishes a remote EMS session.
-///
-/// This produces a script string suitable for execution via the `sorng-powershell`
-/// crate's session / execution engine.
-pub fn build_ems_connect_script(creds: &ExchangeOnPremCredentials) -> String {
-    let uri = build_ps_connection_uri(creds);
-    let auth = match creds.auth_method {
-        OnPremAuthMethod::Kerberos => "Kerberos",
-        OnPremAuthMethod::Negotiate => "Negotiate",
-        OnPremAuthMethod::Basic => "Basic",
-        OnPremAuthMethod::Ntlm => "NegotiateWithImplicitCredential",
-    };
-
-    let skip = if creds.skip_cert_check {
-        "\n$PSSessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck"
+    let server = creds.server.trim();
+    let authority = if server.parse::<std::net::Ipv6Addr>().is_ok() {
+        format!("[{server}]")
     } else {
-        ""
+        server.to_string()
     };
-
-    let session_opt = if creds.skip_cert_check {
-        " -SessionOption $PSSessionOption"
-    } else {
-        ""
-    };
-
-    info!("Building EMS connection script for {}", creds.server);
-
-    format!(
-        r#"$cred = New-Object System.Management.Automation.PSCredential('{user}', (ConvertTo-SecureString '{pass}' -AsPlainText -Force)){skip}
-$ExSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri '{uri}' -Authentication {auth} -Credential $cred{session_opt}
-Import-PSSession $ExSession -DisableNameChecking -AllowClobber | Out-Null
-Write-Output 'EMS_CONNECTED'"#,
-        user = creds.username.replace('\'', "''"),
-        pass = creds.password.replace('\'', "''"),
-        uri = uri,
-        auth = auth,
-        skip = skip,
-        session_opt = session_opt,
-    )
-}
-
-/// Generate a script to cleanly disconnect an EMS session.
-pub fn build_ems_disconnect_script() -> &'static str {
-    "Get-PSSession | Where-Object { $_.ConfigurationName -eq 'Microsoft.Exchange' } | Remove-PSSession"
+    format!("{scheme}://{authority}:{}/PowerShell/", creds.port)
 }
 
 /// Wrap an Exchange PowerShell command so it outputs JSON.

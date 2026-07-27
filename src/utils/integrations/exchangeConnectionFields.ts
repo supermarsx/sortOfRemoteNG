@@ -250,19 +250,28 @@ export function exchangeFormProviderFields(
 
 export function exchangeSecretsForVault(
   form: ExchangeConnectionFormState,
-): Record<string, string> {
-  const secrets: Record<string, string> = {};
+): Record<string, string | undefined> {
+  const secrets: Record<string, string | undefined> = {};
   if (
     (form.environment === "online" || form.environment === "hybrid") &&
     form.clientSecret
   ) {
     secrets[EXCHANGE_CLIENT_SECRET_KEY] = form.clientSecret;
   }
+  if (form.environment === "onPremises") {
+    // Deliberately retire an online-only credential when the saved
+    // environment no longer has an online leg.
+    secrets[EXCHANGE_CLIENT_SECRET_KEY] = undefined;
+  }
   if (
     (form.environment === "onPremises" || form.environment === "hybrid") &&
     form.password
   ) {
     secrets[EXCHANGE_ON_PREM_PASSWORD_KEY] = form.password;
+  }
+  if (form.environment === "online") {
+    // Deliberately retire an on-prem-only credential when switching online.
+    secrets[EXCHANGE_ON_PREM_PASSWORD_KEY] = undefined;
   }
   return secrets;
 }

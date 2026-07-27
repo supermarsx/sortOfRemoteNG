@@ -43,6 +43,7 @@ const MAX_XML_DEPTH: usize = 64;
 
 /// Capabilities that are deliberately not claimed by this milestone.
 pub const PSRP_WSMAN_LIMITATIONS: &[&str] = &[
+    "custom WSMan application paths are rejected except for the explicit Microsoft Exchange /PowerShell/ profile",
     "Negotiate/SPNEGO is not supported; select NTLM explicitly",
     "NTLM challenge state is wired through the existing provider, but live Windows acceptance is not yet claimed",
     "NTLM over HTTP does not add WSMan message sealing in this milestone; use HTTPS for confidentiality",
@@ -147,7 +148,18 @@ impl WsmanPsrpTransport {
     /// Construct a transport without opening the remote shell. The PSRP core
     /// opens it when it sends SessionCapability + InitRunspacePool.
     pub fn new(config: &PsRemotingConfig, limits: WsmanPsrpLimits) -> Result<Self, PsrpError> {
-        Self::new_inner(config, limits, None)
+        Self::new_inner(config, limits, None, WsmanEndpointProfile::Standard)
+    }
+
+    /// Construct a transport for the narrowly-scoped Microsoft Exchange
+    /// remote PowerShell endpoint. Unlike [`Self::new`], this preserves the
+    /// required `/PowerShell/` application path and rejects every other path
+    /// or session configuration.
+    pub fn new_exchange(
+        config: &PsRemotingConfig,
+        limits: WsmanPsrpLimits,
+    ) -> Result<Self, PsrpError> {
+        Self::new_inner(config, limits, None, WsmanEndpointProfile::Exchange)
     }
 
     /// Construct a transport using an isolated, explicitly pre-pinned test
@@ -158,16 +170,30 @@ impl WsmanPsrpTransport {
         limits: WsmanPsrpLimits,
         trust: &WinRmTestTrust,
     ) -> Result<Self, PsrpError> {
-        Self::new_inner(config, limits, Some(trust))
+        Self::new_inner(config, limits, Some(trust), WsmanEndpointProfile::Standard)
+    }
+
+    /// Exchange-profile variant of [`Self::new_with_test_trust`].
+    #[doc(hidden)]
+    pub fn new_exchange_with_test_trust(
+        config: &PsRemotingConfig,
+        limits: WsmanPsrpLimits,
+        trust: &WinRmTestTrust,
+    ) -> Result<Self, PsrpError> {
+        Self::new_inner(config, limits, Some(trust), WsmanEndpointProfile::Exchange)
     }
 
     fn new_inner(
         config: &PsRemotingConfig,
         limits: WsmanPsrpLimits,
         test_trust: Option<&WinRmTestTrust>,
+        endpoint_profile: WsmanEndpointProfile,
     ) -> Result<Self, PsrpError> {
         let limits = limits.validate()?;
-        let endpoint = canonical_wsman_endpoint(config)?;
+        let endpoint = match endpoint_profile {
+            WsmanEndpointProfile::Standard => canonical_wsman_endpoint(config)?,
+            WsmanEndpointProfile::Exchange => canonical_exchange_wsman_endpoint(config)?,
+        };
         let auth_kind = validate_auth_and_trust(config)?;
         let resource_uri = powershell_resource_uri(&config.configuration_name)?;
         let custom_headers = validate_custom_headers(&config.custom_headers)?;
@@ -230,6 +256,12 @@ impl WsmanPsrpTransport {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WsmanEndpointProfile {
+    Standard,
+    Exchange,
+}
+
 fn trust_config_for_endpoint(
     config: &PsRemotingConfig,
     endpoint: &str,
@@ -253,8 +285,38 @@ fn trust_config_for_endpoint(
 
 /// Resolve every HTTP(S) configuration to exactly one root `/wsman` path.
 pub fn canonical_wsman_endpoint(config: &PsRemotingConfig) -> Result<String, PsrpError> {
+    let mut parsed = validated_endpoint(config)?;
+    parsed.set_path("/wsman");
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    Ok(parsed.to_string().trim_end_matches('/').to_string())
+}
+
+/// Validate and preserve the Microsoft Exchange remote PowerShell application
+/// endpoint. This is intentionally separate from the default `/wsman`
+/// canonicalizer so arbitrary callers cannot opt into custom WSMan paths.
+pub fn canonical_exchange_wsman_endpoint(config: &PsRemotingConfig) -> Result<String, PsrpError> {
+    let mut parsed = validated_endpoint(config)?;
+    if config.configuration_name != "Microsoft.Exchange" {
+        return Err(protocol(
+            "Exchange WSMan requires the Microsoft.Exchange configuration",
+        ));
+    }
+    if parsed.path().trim_end_matches('/') != "/PowerShell"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(protocol(
+            "Exchange WSMan requires the exact /PowerShell/ endpoint path without query or fragment",
+        ));
+    }
+    parsed.set_path("/PowerShell/");
+    Ok(parsed.to_string())
+}
+
+fn validated_endpoint(config: &PsRemotingConfig) -> Result<Url, PsrpError> {
     let endpoint = config.try_endpoint_uri().map_err(protocol)?;
-    let mut parsed = Url::parse(&endpoint)
+    let parsed = Url::parse(&endpoint)
         .map_err(|error| protocol(format!("invalid WSMan endpoint: {error}")))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(protocol(
@@ -264,10 +326,7 @@ pub fn canonical_wsman_endpoint(config: &PsRemotingConfig) -> Result<String, Psr
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err(protocol("WSMan endpoint must not embed credentials"));
     }
-    parsed.set_path("/wsman");
-    parsed.set_query(None);
-    parsed.set_fragment(None);
-    Ok(parsed.to_string().trim_end_matches('/').to_string())
+    Ok(parsed)
 }
 
 fn validate_auth_and_trust(config: &PsRemotingConfig) -> Result<SupportedAuth, PsrpError> {

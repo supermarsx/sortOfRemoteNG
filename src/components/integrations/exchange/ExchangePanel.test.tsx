@@ -43,25 +43,23 @@ beforeEach(() => {
 });
 
 describe("exchangeConnectionApi", () => {
-  it("maps setConfig/connect to their singleton commands (no id)", async () => {
+  it("maps atomic configure-and-connect to one singleton command", async () => {
     invokeMock.mockResolvedValue(undefined);
     const config = {
       environment: "online" as const,
       online: { tenantId: "t", clientId: "c" },
     };
-    await exchangeConnectionApi.setConfig(config);
-    await exchangeConnectionApi.connect();
-    expect(invokeMock).toHaveBeenCalledWith("exchange_set_config", { config });
-    expect(invokeMock).toHaveBeenCalledWith("exchange_connect", undefined);
+    await exchangeConnectionApi.connectWithConfig(config);
+    expect(invokeMock).toHaveBeenCalledWith("exchange_connect_with_config", {
+      config,
+    });
   });
 });
 
 describe("useExchangeConnection", () => {
-  it("set_config THEN connect, then exposes the summary", async () => {
+  it("connects atomically, owns the handle, then exposes the summary", async () => {
     invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "exchange_is_connected") return Promise.resolve(false);
-      if (cmd === "exchange_set_config") return Promise.resolve(undefined);
-      if (cmd === "exchange_connect")
+      if (cmd === "exchange_connect_with_config")
         return Promise.resolve({
           connected: true,
           environment: "online",
@@ -77,13 +75,37 @@ describe("useExchangeConnection", () => {
       });
       expect(ok).toBe(true);
     });
-    // set_config precedes connect
-    const order = invokeMock.mock.calls.map((c) => c[0]);
-    expect(order.indexOf("exchange_set_config")).toBeLessThan(
-      order.indexOf("exchange_connect"),
+    expect(invokeMock).toHaveBeenCalledWith(
+      "exchange_connect_with_config",
+      expect.objectContaining({
+        config: expect.objectContaining({ environment: "online" }),
+      }),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_set_config",
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_connect",
+      expect.anything(),
     );
     expect(result.current.isConnected).toBe(true);
     expect(result.current.summary?.exchangeVersion).toBe("15.2");
+    await act(async () => {
+      await result.current.disconnect();
+    });
+  });
+
+  it("does not inspect or adopt a process-global connection on cold mount", () => {
+    renderHook(() => useExchangeConnection());
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_is_connected",
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_connection_summary",
+      expect.anything(),
+    );
   });
 });
 
@@ -112,11 +134,10 @@ describe("exchangeDescriptor", () => {
 });
 
 describe("ExchangePanel shell", () => {
-  it("online connect form drives exchange_set_config then exchange_connect", async () => {
+  it("online connect form drives one atomic configure-and-connect command", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "read_app_data") return Promise.resolve(null);
-      if (cmd === "exchange_is_connected") return Promise.resolve(false);
-      if (cmd === "exchange_connect")
+      if (cmd === "exchange_connect_with_config")
         return Promise.resolve({ connected: true, environment: "online" });
       return Promise.resolve(undefined);
     });
@@ -136,7 +157,7 @@ describe("ExchangePanel shell", () => {
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
-        "exchange_set_config",
+        "exchange_connect_with_config",
         expect.objectContaining({
           config: expect.objectContaining({
             environment: "online",
@@ -148,16 +169,16 @@ describe("ExchangePanel shell", () => {
         }),
       ),
     );
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("exchange_connect", undefined),
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "exchange_set_config",
+      expect.anything(),
     );
   });
 
   it("prefills from connection metadata and connects with a hybrid config", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "read_app_data") return Promise.resolve(null);
-      if (cmd === "exchange_is_connected") return Promise.resolve(false);
-      if (cmd === "exchange_connect")
+      if (cmd === "exchange_connect_with_config")
         return Promise.resolve({ connected: true, environment: "hybrid" });
       return Promise.resolve(undefined);
     });
@@ -214,7 +235,7 @@ describe("ExchangePanel shell", () => {
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
-        "exchange_set_config",
+        "exchange_connect_with_config",
         expect.objectContaining({
           config: expect.objectContaining({
             environment: "hybrid",
@@ -243,15 +264,22 @@ describe("ExchangePanel shell", () => {
 
   it("saves hybrid Exchange secrets as named vault entries only", async () => {
     const writes: { key: string; value: string }[] = [];
+    let persisted: string | null = null;
     invokeMock.mockImplementation(
       (cmd: string, args?: Record<string, unknown>) => {
-        if (cmd === "read_app_data") return Promise.resolve(null);
-        if (cmd === "write_app_data") {
-          writes.push(args as { key: string; value: string });
-          return Promise.resolve(undefined);
+        if (cmd === "read_app_data") return Promise.resolve(persisted);
+        if (cmd === "compare_and_swap_app_data") {
+          const request = args as {
+            key: string;
+            expected: string | null;
+            replacement: string;
+          };
+          if (request.expected !== persisted) return Promise.resolve(false);
+          persisted = request.replacement;
+          writes.push({ key: request.key, value: request.replacement });
+          return Promise.resolve(true);
         }
         if (cmd === "vault_store_secret") return Promise.resolve(undefined);
-        if (cmd === "exchange_is_connected") return Promise.resolve(false);
         return Promise.resolve(undefined);
       },
     );

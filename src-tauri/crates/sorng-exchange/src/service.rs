@@ -5,7 +5,7 @@
 
 use crate::types::*;
 use crate::{
-    address_policy, archive, auth, calendars, certificates, client::ExchangeClient, compliance,
+    address_policy, archive, calendars, certificates, client::ExchangeClient, compliance,
     connectors, contacts, distribution_groups, health, hygiene, inbox_rules, journal_rules,
     mail_flow, mailbox, migration, mobile_devices, org_config, policies, public_folders,
     rbac_audit, remote_domains, shared_mailbox, transport,
@@ -35,56 +35,122 @@ impl ExchangeService {
     // Connection management
     // ═══════════════════════════════════════════════════════════════════════
 
-    /// Configure connection parameters.
-    pub fn set_config(&mut self, config: ExchangeConnectionConfig) {
+    /// Configure connection parameters for the legacy two-step connection flow.
+    ///
+    /// A live connection owns its configuration. Replacing it in place would
+    /// make existing callers operate against a different Exchange environment.
+    pub fn set_config(&mut self, config: ExchangeConnectionConfig) -> ExchangeResult<()> {
+        self.ensure_connection_slot_available()?;
         self.config = Some(config);
-        self.client = None;
-        self.connected = false;
+        Ok(())
     }
 
-    /// Connect / authenticate based on environment.
+    /// Connect using configuration previously staged by [`Self::set_config`].
+    ///
+    /// New callers should prefer [`Self::connect_with_config`], which keeps
+    /// configuration and authentication under one service lock.
     pub async fn connect(&mut self) -> ExchangeResult<ExchangeConnectionSummary> {
         let config = self
             .config
             .clone()
             .ok_or_else(|| ExchangeError::validation("connection config not set"))?;
+        self.connect_with_config(config).await
+    }
 
+    /// Atomically configure and connect without exposing staged mutable state.
+    ///
+    /// The new configuration is committed only after authentication succeeds,
+    /// so a failed attempt leaves any prior disconnected configuration intact.
+    pub async fn connect_with_config(
+        &mut self,
+        config: ExchangeConnectionConfig,
+    ) -> ExchangeResult<ExchangeConnectionSummary> {
+        self.connect_with_config_using(config, Self::establish_client)
+            .await
+    }
+
+    async fn connect_with_config_using<F, Fut>(
+        &mut self,
+        config: ExchangeConnectionConfig,
+        establish: F,
+    ) -> ExchangeResult<ExchangeConnectionSummary>
+    where
+        F: FnOnce(ExchangeConnectionConfig) -> Fut,
+        Fut: std::future::Future<Output = ExchangeResult<ExchangeClient>>,
+    {
+        self.ensure_connection_slot_available()?;
+        let client = establish(config.clone()).await?;
+
+        self.config = Some(config);
+        self.client = Some(client);
+        self.connected = true;
+        Ok(self.connection_summary())
+    }
+
+    async fn establish_client(config: ExchangeConnectionConfig) -> ExchangeResult<ExchangeClient> {
         let mut c = ExchangeClient::new(config.clone())?;
 
         match config.environment {
-            ExchangeEnvironment::Online | ExchangeEnvironment::Hybrid => {
+            ExchangeEnvironment::Online => {
                 info!("Authenticating to Exchange Online");
                 c.ensure_graph_token().await?;
                 c.ensure_exo_token().await?;
             }
             ExchangeEnvironment::OnPremises => {
-                let creds = config
-                    .on_prem
-                    .as_ref()
-                    .ok_or_else(|| ExchangeError::validation("on-prem credentials required"))?;
-                let script = auth::build_ems_connect_script(creds);
-                let out = c.run_ps(&script).await?;
-                if !out.contains("EMS_CONNECTED") {
-                    return Err(ExchangeError::connection(format!(
-                        "EMS session failed: {out}"
-                    )));
-                }
-                c.ps_connected = true;
+                c.validate_ps_capability()?;
+                info!("Connecting to on-premises Exchange Management Shell");
+                c.connect_power_shell().await?;
+            }
+            ExchangeEnvironment::Hybrid => {
+                // Validate the on-premises path before any network request so a
+                // hybrid profile can never look partially connected.
+                c.validate_ps_capability()?;
+                info!("Authenticating to Exchange Online for hybrid management");
+                c.ensure_graph_token().await?;
+                c.ensure_exo_token().await?;
+                info!("Connecting to on-premises Exchange Management Shell");
+                c.connect_power_shell().await?;
             }
         }
 
-        self.connected = true;
-        self.client = Some(c);
-        Ok(self.connection_summary())
+        Ok(c)
+    }
+
+    fn ensure_connection_slot_available(&self) -> ExchangeResult<()> {
+        if self.connected || self.client.is_some() {
+            return Err(ExchangeError::new(
+                ExchangeErrorKind::Conflict,
+                "an Exchange connection is already active; disconnect it before changing configuration or connecting again",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    async fn connect_without_auth_for_test(
+        &mut self,
+        config: ExchangeConnectionConfig,
+    ) -> ExchangeResult<ExchangeConnectionSummary> {
+        self.connect_with_config_using(config, |config| async move { ExchangeClient::new(config) })
+            .await
     }
 
     /// Disconnect and clean up sessions.
     pub async fn disconnect(&mut self) -> ExchangeResult<()> {
-        if let Some(ref c) = self.client {
+        let disconnect_result = if let Some(ref mut c) = self.client {
             if c.ps_connected {
-                let _ = c.run_ps(auth::build_ems_disconnect_script()).await;
+                c.disconnect_power_shell().await
+            } else {
+                Ok(())
             }
-        }
+        } else {
+            Ok(())
+        };
+        self.finish_disconnect(disconnect_result)
+    }
+
+    fn finish_disconnect(&mut self, disconnect_result: ExchangeResult<()>) -> ExchangeResult<()> {
+        disconnect_result?;
         self.client = None;
         self.connected = false;
         Ok(())
@@ -1710,5 +1776,180 @@ impl ExchangeService {
     ) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         hygiene::ps_remove_mailbox_export_request(self.client()?, identity).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    fn on_prem_config(auth_method: OnPremAuthMethod) -> ExchangeConnectionConfig {
+        ExchangeConnectionConfig {
+            environment: ExchangeEnvironment::OnPremises,
+            online: None,
+            on_prem: Some(ExchangeOnPremCredentials {
+                server: "mail01.contoso.test".to_string(),
+                port: 443,
+                username: "CONTOSO\\admin".to_string(),
+                password: "secret".to_string(),
+                use_ssl: true,
+                auth_method,
+                skip_cert_check: false,
+            }),
+            timeout_secs: 30,
+            proxy_url: None,
+        }
+    }
+
+    fn online_config(client_id: &str, organization: &str) -> ExchangeConnectionConfig {
+        ExchangeConnectionConfig {
+            environment: ExchangeEnvironment::Online,
+            online: Some(ExchangeOnlineCredentials {
+                tenant_id: format!("{client_id}-tenant"),
+                client_id: client_id.to_string(),
+                client_secret: Some("secret".to_string()),
+                username: None,
+                password: None,
+                organization: Some(organization.to_string()),
+            }),
+            on_prem: None,
+            timeout_secs: 30,
+            proxy_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_on_prem_auth_never_marks_service_connected() {
+        let state = ExchangeService::new();
+        let mut service = state.lock().await;
+        service
+            .set_config(on_prem_config(OnPremAuthMethod::Kerberos))
+            .unwrap();
+
+        let error = service
+            .connect()
+            .await
+            .expect_err("unsupported auth must fail before network I/O");
+
+        assert_eq!(error.kind, ExchangeErrorKind::PowerShell);
+        assert!(!service.is_connected());
+        assert!(!service.connection_summary().connected);
+        assert!(service.client.is_none());
+    }
+
+    #[tokio::test]
+    async fn unsupported_hybrid_auth_fails_before_online_authentication() {
+        let mut config = on_prem_config(OnPremAuthMethod::Negotiate);
+        config.environment = ExchangeEnvironment::Hybrid;
+        config.online = Some(ExchangeOnlineCredentials {
+            tenant_id: "tenant".to_string(),
+            client_id: "client".to_string(),
+            client_secret: Some("secret".to_string()),
+            username: None,
+            password: None,
+            organization: Some("contoso.test".to_string()),
+        });
+
+        let state = ExchangeService::new();
+        let mut service = state.lock().await;
+        service.set_config(config).unwrap();
+        let error = service
+            .connect()
+            .await
+            .expect_err("hybrid capability validation must run before token acquisition");
+
+        assert_eq!(error.kind, ExchangeErrorKind::PowerShell);
+        assert!(!service.is_connected());
+        assert!(service.client.is_none());
+    }
+
+    #[tokio::test]
+    async fn atomic_b_failure_cannot_overwrite_staged_a_config() {
+        let state = ExchangeService::new();
+        let mut service = state.lock().await;
+        service
+            .set_config(on_prem_config(OnPremAuthMethod::Kerberos))
+            .unwrap();
+
+        let mut replacement = on_prem_config(OnPremAuthMethod::Negotiate);
+        replacement.on_prem.as_mut().expect("on-prem config").server =
+            "mail02.contoso.test".to_string();
+        let error = service
+            .connect_with_config(replacement)
+            .await
+            .expect_err("replacement must fail before network I/O");
+
+        assert_eq!(error.kind, ExchangeErrorKind::PowerShell);
+        assert!(!service.is_connected());
+        assert!(service.client.is_none());
+        assert_eq!(
+            service.connection_summary().server.as_deref(),
+            Some("mail01.contoso.test")
+        );
+    }
+
+    #[tokio::test]
+    async fn live_connection_rejects_reconfiguration_and_replacement() {
+        let state = ExchangeService::new();
+        let mut service = state.lock().await;
+        service
+            .connect_without_auth_for_test(online_config("client-a", "a.test"))
+            .await
+            .unwrap();
+
+        let set_error = service
+            .set_config(online_config("client-b", "b.test"))
+            .expect_err("legacy set_config must not replace a live connection");
+        assert_eq!(set_error.kind, ExchangeErrorKind::Conflict);
+
+        let connector_called = Arc::new(AtomicBool::new(false));
+        let called = Arc::clone(&connector_called);
+        let connect_error = service
+            .connect_with_config_using(online_config("client-b", "b.test"), move |config| {
+                called.store(true, Ordering::SeqCst);
+                async move { ExchangeClient::new(config) }
+            })
+            .await
+            .expect_err("atomic connect must not replace a live connection");
+
+        assert_eq!(connect_error.kind, ExchangeErrorKind::Conflict);
+        assert!(!connector_called.load(Ordering::SeqCst));
+        let summary = service.connection_summary();
+        assert!(summary.connected);
+        assert_eq!(summary.connected_as.as_deref(), Some("client-a"));
+        assert_eq!(summary.organization.as_deref(), Some("a.test"));
+    }
+
+    #[tokio::test]
+    async fn failed_disconnect_retains_client_and_connected_state_for_retry() {
+        let state = ExchangeService::new();
+        let mut service = state.lock().await;
+        service
+            .connect_without_auth_for_test(online_config("client-a", "a.test"))
+            .await
+            .unwrap();
+
+        let error = service
+            .finish_disconnect(Err(ExchangeError::powershell(
+                "deterministic close failure",
+            )))
+            .expect_err("failed teardown must retain ownership");
+        assert_eq!(error.kind, ExchangeErrorKind::PowerShell);
+        assert!(service.is_connected());
+        assert!(service.client.is_some());
+        assert_eq!(
+            service.connection_summary().connected_as.as_deref(),
+            Some("client-a")
+        );
+
+        service
+            .finish_disconnect(Ok(()))
+            .expect("a successful retry should release the client");
+        assert!(!service.is_connected());
+        assert!(service.client.is_none());
     }
 }

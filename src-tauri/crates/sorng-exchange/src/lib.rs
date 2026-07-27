@@ -6,7 +6,10 @@
 //!
 //! ## Features
 //!
-//! - **Authentication** – Kerberos/NTLM for on-prem EMS, OAuth2 for Exchange Online & Graph API
+//! - **Authentication** – Basic or explicit NTLM over HTTPS for on-prem EMS,
+//!   with strict Trust Center certificate verification; OAuth2 for Exchange
+//!   Online and Graph API. Kerberos/Negotiate are rejected until supported by
+//!   the verified WSMan adapter.
 //! - **Mailboxes** – list, get, create, remove, set quotas, enable/disable, permissions, forwarding, OOF, statistics
 //! - **Distribution Groups** – CRUD, membership management, dynamic groups, M365 groups
 //! - **Transport Rules** – list, create, update, remove, enable/disable mail flow rules

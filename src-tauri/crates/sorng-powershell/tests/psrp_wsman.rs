@@ -27,13 +27,14 @@ use tokio_rustls::TlsAcceptor;
 use tokio_util::sync::CancellationToken;
 
 use sorng_powershell::psrp_wsman::{
-    canonical_wsman_endpoint, WsmanPsrpLimits, WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
+    canonical_exchange_wsman_endpoint, canonical_wsman_endpoint, WsmanPsrpLimits,
+    WsmanPsrpTransport, PSRP_WSMAN_LIMITATIONS,
 };
 use sorng_powershell::runspace_session::{
     PowerShellEventEnvelope, PowerShellSessionNetworkPath, PowerShellSessionOptions,
     PowerShellSessionPhase, PowerShellSessionService, PowerShellSessionSink, PowerShellSinkError,
-    PowerShellStreamKind, PowerShellWsmanAuth, PowerShellWsmanSessionOptions,
-    PowerShellWsmanTrustPolicy,
+    PowerShellStreamKind, PowerShellWsmanAuth, PowerShellWsmanEndpointProfile,
+    PowerShellWsmanSessionOptions, PowerShellWsmanTrustPolicy,
 };
 use sorng_powershell::test_support::WinRmTestTrust;
 use sorng_powershell::types::{PsAuthMethod, PsRemotingConfig, PsTransportProtocol};
@@ -608,10 +609,39 @@ fn service_options(endpoint: String) -> PowerShellSessionOptions {
         password: "do-not-log".into(),
         domain: Some("LAB".into()),
         authentication: PowerShellWsmanAuth::Ntlm,
+        endpoint_profile: PowerShellWsmanEndpointProfile::Standard,
         tls_trust: PowerShellWsmanTrustPolicy::TrustCenter,
         network_path: PowerShellSessionNetworkPath::Direct,
         connection_id: Some("fixture-connection".into()),
         configuration_name: "Microsoft.PowerShell".into(),
+        culture: "en-US".into(),
+        connect_timeout_ms: 2_000,
+        request_timeout_ms: 5_000,
+        idle_timeout_sec: 60,
+        max_envelope_bytes: 512 * 1024,
+        max_response_bytes: 8 * 1024 * 1024,
+        max_auth_rounds: 3,
+        max_empty_receives: 32,
+        event_capacity: 128,
+        command_queue_capacity: 16,
+        queue_wait_timeout_ms: 500,
+    })
+}
+
+fn exchange_service_options(endpoint: String) -> PowerShellSessionOptions {
+    let mut endpoint = url::Url::parse(&endpoint).expect("fixture endpoint should be a URL");
+    endpoint.set_path("/PowerShell/");
+    PowerShellSessionOptions::Wsman(PowerShellWsmanSessionOptions {
+        endpoint: endpoint.to_string(),
+        username: "alice".into(),
+        password: "do-not-log".into(),
+        domain: Some("LAB".into()),
+        authentication: PowerShellWsmanAuth::Ntlm,
+        endpoint_profile: PowerShellWsmanEndpointProfile::Exchange,
+        tls_trust: PowerShellWsmanTrustPolicy::TrustCenter,
+        network_path: PowerShellSessionNetworkPath::Direct,
+        connection_id: Some("exchange-fixture-connection".into()),
+        configuration_name: "Microsoft.Exchange".into(),
         culture: "en-US".into(),
         connect_timeout_ms: 2_000,
         request_timeout_ms: 5_000,
@@ -697,6 +727,62 @@ async fn live_session_service_registers_wsman_actor_replay_and_diagnostics() {
 }
 
 #[tokio::test]
+async fn exchange_profile_preserves_only_the_exchange_path_and_replays_pipeline_streams() {
+    let fixture = SoapFixture::start(FixtureMode::Flow).await;
+    let service = PowerShellSessionService::new_with_test_trust(fixture.trust().clone());
+    let session_id = service
+        .open_session(
+            exchange_service_options(fixture.endpoint.clone()),
+            Arc::new(RecordingSink::default()),
+        )
+        .await
+        .expect("Exchange-profile fixture session should open");
+
+    let started = service
+        .start_pipeline(&session_id, "Get-Mailbox".into(), false)
+        .await
+        .expect("Exchange-profile pipeline should start");
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let current = service.session(&session_id).await.unwrap();
+            if current.phase == PowerShellSessionPhase::Ready
+                && current.stats.pipelines_completed == 1
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("Exchange-profile fixture pipeline should complete");
+
+    let replay = service.replay(&session_id, None).await.unwrap();
+    let pipeline_events = replay
+        .events
+        .iter()
+        .filter(|event| event.pipeline_id.as_deref() == Some(&started.pipeline_id))
+        .collect::<Vec<_>>();
+    assert!(pipeline_events
+        .iter()
+        .any(|event| event.kind == PowerShellStreamKind::Output && event.text == "output-1"));
+    assert!(pipeline_events
+        .iter()
+        .any(|event| event.kind == PowerShellStreamKind::Error && event.text == "error-1"));
+    assert!(pipeline_events.iter().any(|event| {
+        event.kind == PowerShellStreamKind::PipelineState
+            && event.pipeline_state.as_deref() == Some("completed")
+    }));
+
+    service.close_session(&session_id).await.unwrap();
+    let snapshot = fixture.snapshot();
+    assert!(snapshot
+        .request_paths
+        .iter()
+        .all(|path| path == "/PowerShell/"));
+    fixture.stop().await;
+}
+
+#[tokio::test]
 async fn persistent_wsman_runspace_carries_all_streams_cancels_and_reuses() {
     let fixture = SoapFixture::start(FixtureMode::Flow).await;
     let config = remoting_config(fixture.endpoint.clone(), PsAuthMethod::Ntlm);
@@ -776,6 +862,26 @@ fn canonical_endpoint_and_security_policy_fail_closed() {
         .unwrap_err()
         .to_string()
         .contains("strict WSMan TLS trust"));
+
+    let mut exchange = remoting_config(
+        "https://exchange.example/PowerShell/".into(),
+        PsAuthMethod::Ntlm,
+    );
+    exchange.configuration_name = "Microsoft.Exchange".into();
+    assert_eq!(
+        canonical_exchange_wsman_endpoint(&exchange).unwrap(),
+        "https://exchange.example/PowerShell/"
+    );
+    assert_eq!(
+        canonical_wsman_endpoint(&exchange).unwrap(),
+        "https://exchange.example/wsman"
+    );
+
+    exchange.connection_uri = Some("https://exchange.example/not-exchange/".into());
+    let error = WsmanPsrpTransport::new_exchange(&exchange, test_limits())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("exact /PowerShell/"));
 }
 
 #[test]
