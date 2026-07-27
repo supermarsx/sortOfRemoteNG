@@ -629,9 +629,38 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require("node:fs");
+          const path = require("node:path");
           const bundle = {
             createUpdaterArtifacts: process.env.UPDATER_ENABLED === "true",
           };
+          if (process.env.PLATFORM === "linux") {
+            const desktopTemplate = path.resolve(
+              process.env.GITHUB_WORKSPACE,
+              "src-tauri/packaging/linux.desktop",
+            );
+            if (!fs.statSync(desktopTemplate).isFile()) {
+              throw new Error(
+                `Linux RPM desktop template is not a file: ${desktopTemplate}`,
+              );
+            }
+            const desktopTemplateSource = fs.readFileSync(
+              desktopTemplate,
+              "utf8",
+            );
+            if (!/^Icon=com\.sortofremote\.ng$/m.test(desktopTemplateSource)) {
+              throw new Error(
+                "Linux RPM desktop template must use Icon=com.sortofremote.ng.",
+              );
+            }
+            console.log(
+              `Configured Linux RPM desktop template: ${desktopTemplate}`,
+            );
+            bundle.linux = {
+              rpm: {
+                desktopTemplate,
+              },
+            };
+          }
           if (
             process.env.PLATFORM === "windows" &&
             process.env.WINDOWS_CERT_THUMBPRINT

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 
@@ -1099,6 +1100,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     buildJob.indexOf("- name: Build and verify native Flatpak bundle"),
     buildJob.indexOf("- name: Notarize and staple macOS disk image"),
   );
+  const releaseConfigStep = buildJob.slice(
+    buildJob.indexOf("- name: Configure updater and OS signing"),
+    buildJob.indexOf("- name: Export enabled macOS signing environment"),
+  );
   const stageStep = buildJob.slice(
     buildJob.indexOf("- name: Stage architecture-specific release assets"),
   );
@@ -1211,6 +1216,43 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(linuxDesktopTemplate, /^Name=\{\{name\}\}$/m);
   assert.match(linuxDesktopTemplate, /^Terminal=false$/m);
   assert.match(linuxDesktopTemplate, /^Type=Application$/m);
+
+  const releaseConfigProgram = extractNodeHeredoc(
+    extractLiteralRunScript(releaseConfigStep),
+  );
+  let releaseConfigWrite;
+  runInNewContext(releaseConfigProgram, {
+    process: {
+      env: {
+        GITHUB_WORKSPACE: process.cwd(),
+        PLATFORM: "linux",
+        UPDATER_ENABLED: "false",
+        WINDOWS_CERT_THUMBPRINT: "",
+      },
+    },
+    require(specifier) {
+      if (specifier === "node:fs") {
+        return {
+          readFileSync,
+          statSync,
+          writeFileSync(path, contents) {
+            releaseConfigWrite = { path, contents };
+          },
+        };
+      }
+      if (specifier === "node:path") {
+        return { resolve };
+      }
+      throw new Error(`Unexpected module request: ${specifier}`);
+    },
+  });
+  assert.equal(releaseConfigWrite?.path, "src-tauri/tauri.release.conf.json");
+  const linuxReleaseConfig = JSON.parse(releaseConfigWrite.contents);
+  assert.equal(
+    linuxReleaseConfig.bundle.linux.rpm.desktopTemplate,
+    resolve(process.cwd(), "src-tauri/packaging/linux.desktop"),
+  );
+  assert.equal(linuxReleaseConfig.bundle.createUpdaterArtifacts, false);
 
   assert.match(
     buildJob,
