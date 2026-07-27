@@ -27,6 +27,10 @@ sortOfRemoteNG is a cross-platform desktop workspace for organizing remote syste
     <strong>Check protocol status</strong>
     <span>See which paths are integrated, partial, or still scaffolding.</span>
   </a>
+  <a class="link-card" href="{{ '/integrations/' | relative_url }}">
+    <strong>Audit integrations</strong>
+    <span>Compare lifecycle, authentication, verification, and live-provider boundaries.</span>
+  </a>
   <a class="link-card" href="{{ '/network-paths/' | relative_url }}">
     <strong>Route through layers</strong>
     <span>Compose VPN, proxy, tunnel, and SSH-hop sources deterministically.</span>

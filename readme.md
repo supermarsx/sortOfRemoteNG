@@ -127,7 +127,7 @@ The release workflow builds Windows x64 and ARM64 installers plus an architectur
 ## Documentation
 
 - [Documentation home](docs/index.md) and [getting started](docs/getting-started.md)
-- [Connections and editor](docs/connections-editor.md), [protocol status](docs/protocols.md), [Apple Screen Sharing and portable ARD](docs/apple-screen-sharing.md), [network paths](docs/network-paths.md), [behaviors](docs/behaviors.md), and [import, export, and clone](docs/import-export-clone.md)
+- [Connections and editor](docs/connections-editor.md), [protocol status](docs/protocols.md), [integration support](docs/integrations.md), [Apple Screen Sharing and portable ARD](docs/apple-screen-sharing.md), [network paths](docs/network-paths.md), [behaviors](docs/behaviors.md), and [import, export, and clone](docs/import-export-clone.md)
 - [Architecture](docs/architecture.md), [security](docs/security-overview.md), [testing](docs/testing.md), [releases](docs/releases.md), and [contributing](docs/contributing.md)
 - [Vulnerability reporting policy](security.md), [encryption-at-rest design](docs/security.md), and [license](license.md)
 
