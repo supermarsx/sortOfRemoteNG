@@ -264,7 +264,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libdbus-1-dev pkg-config
+          sudo apt-get install --yes libdbus-1-dev libudev-dev pkg-config
       - name: cargo fmt (provider crates)
         if: matrix.format_packages != ''
         shell: bash
