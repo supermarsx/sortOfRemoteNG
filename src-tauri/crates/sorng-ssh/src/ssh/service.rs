@@ -263,7 +263,7 @@ fn read_known_hosts_if_present(
     path: &Path,
 ) -> Result<(), String> {
     match std::fs::metadata(path) {
-        Ok(_) => known_hosts
+        Ok(metadata) if metadata.is_file() => known_hosts
             .read_file(path, ssh2::KnownHostFileKind::OpenSSH)
             .map(|_| ())
             .map_err(|error| {
@@ -272,6 +272,10 @@ fn read_known_hosts_if_present(
                     path.display()
                 )
             }),
+        Ok(_) => Err(format!(
+            "Failed to read known_hosts file {}: path is not a regular file",
+            path.display()
+        )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!(
             "Failed to inspect known_hosts file {}: {error}",
@@ -4533,8 +4537,15 @@ mod tests {
         let missing = temp.path().join("missing-known-hosts");
         read_known_hosts_if_present(&mut known_hosts, &missing).unwrap();
 
-        let error = read_known_hosts_if_present(&mut known_hosts, temp.path()).unwrap_err();
-        assert!(error.contains("Failed to read known_hosts file"));
+        let directory = temp.path();
+        let error = read_known_hosts_if_present(&mut known_hosts, directory).unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "Failed to read known_hosts file {}: path is not a regular file",
+                directory.display()
+            )
+        );
     }
 
     #[test]
