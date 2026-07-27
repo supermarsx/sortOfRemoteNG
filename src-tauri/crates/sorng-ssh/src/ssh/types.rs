@@ -280,6 +280,10 @@ pub struct SshConnectionConfig {
     pub connect_timeout: Option<u64>,
     pub keep_alive_interval: Option<u64>,
     pub strict_host_key_checking: bool,
+    /// Trust and persist a first-seen host key, while still rejecting a known
+    /// host whose key changes. This mirrors OpenSSH's `accept-new` policy.
+    #[serde(default)]
+    pub accept_new_host_keys: bool,
     pub known_hosts_path: Option<String>,
     // TOTP/MFA support for keyboard-interactive auth
     #[serde(skip_serializing, default)]
@@ -1348,6 +1352,7 @@ mod tests {
             connect_timeout: None,
             keep_alive_interval: None,
             strict_host_key_checking: true,
+            accept_new_host_keys: false,
             known_hosts_path: None,
             totp_secret: None,
             keyboard_interactive_responses: vec![],
@@ -1415,6 +1420,7 @@ mod tests {
             connect_timeout: Some(30),
             keep_alive_interval: Some(60),
             strict_host_key_checking: false,
+            accept_new_host_keys: false,
             known_hosts_path: None,
             totp_secret: None,
             keyboard_interactive_responses: vec![],
@@ -1665,6 +1671,7 @@ mod tests {
             connect_timeout: Some(10),
             keep_alive_interval: Some(30),
             strict_host_key_checking: true,
+            accept_new_host_keys: false,
             known_hosts_path: None,
             totp_secret: Some(secret("JBSWY3DPEHPK3PXP")),
             keyboard_interactive_responses: vec![secret("654321")],

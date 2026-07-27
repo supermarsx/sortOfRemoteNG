@@ -32,6 +32,19 @@ const MAX_TCP_KEEPALIVE_PROBES: u32 = 255;
 const LIBSSH2_ERROR_EAGAIN: i32 = -37;
 const SHELL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
+lazy_static::lazy_static! {
+    /// `ssh2::KnownHosts::write_file` rewrites the complete file rather than
+    /// merging with concurrent writers. Serialize every read/check and
+    /// read-modify-write sequence across all retained integration services.
+    static ref KNOWN_HOSTS_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+}
+
+fn lock_known_hosts_file() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    KNOWN_HOSTS_FILE_LOCK
+        .lock()
+        .map_err(|_| "Failed to lock known_hosts file access".to_string())
+}
+
 fn normalized_keepalive_interval(interval_secs: Option<u64>) -> Duration {
     Duration::from_secs(
         interval_secs
@@ -243,6 +256,28 @@ fn known_host_cleanup_names(host: &str, port: u16) -> Vec<String> {
 
 pub(crate) fn known_host_key_format(host_key_type: ssh2::HostKeyType) -> ssh2::KnownHostKeyFormat {
     host_key_type.into()
+}
+
+fn read_known_hosts_if_present(
+    known_hosts: &mut ssh2::KnownHosts,
+    path: &Path,
+) -> Result<(), String> {
+    match std::fs::metadata(path) {
+        Ok(_) => known_hosts
+            .read_file(path, ssh2::KnownHostFileKind::OpenSSH)
+            .map(|_| ())
+            .map_err(|error| {
+                format!(
+                    "Failed to read known_hosts file {}: {error}",
+                    path.display()
+                )
+            }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Failed to inspect known_hosts file {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 /// Generate a TOTP code from a secret
@@ -1752,27 +1787,30 @@ impl SshService {
         session: &mut Session,
         config: &SshConnectionConfig,
     ) -> Result<(), String> {
-        let known_hosts_path = config.known_hosts_path.clone().unwrap_or_else(|| {
-            dirs::home_dir()
-                .map(|p| p.join(".ssh").join("known_hosts"))
-                .unwrap_or_else(|| Path::new("/dev/null").to_path_buf())
+        let known_hosts_path = match config.known_hosts_path.clone() {
+            Some(path) => path,
+            None => dirs::home_dir()
+                .ok_or_else(|| {
+                    "Host key verification failed: unable to determine the home directory for known_hosts"
+                        .to_string()
+                })?
+                .join(".ssh")
+                .join("known_hosts")
                 .to_string_lossy()
-                .to_string()
-        });
+                .to_string(),
+        };
 
         let (host_key, key_type) = session.host_key().ok_or("No host key available")?;
         let host_key = host_key.to_vec();
         let host_key_info = build_host_key_info(&host_key, key_type);
 
         let check_result = {
+            let _known_hosts_guard = lock_known_hosts_file()?;
             let mut known_hosts = session
                 .known_hosts()
                 .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
 
-            let _ = known_hosts.read_file(
-                Path::new(&known_hosts_path),
-                ssh2::KnownHostFileKind::OpenSSH,
-            );
+            read_known_hosts_if_present(&mut known_hosts, Path::new(&known_hosts_path))?;
 
             known_hosts.check_port(&config.host, config.port, &host_key)
         };
@@ -1783,14 +1821,18 @@ impl SshService {
                 Ok(())
             }
             ssh2::CheckResult::NotFound => {
-                let decision = self
-                    .prompt_for_host_key_decision(
-                        session_id,
-                        config,
-                        &host_key_info,
-                        SshHostKeyPromptStatus::FirstUse,
-                    )
-                    .await?;
+                let decision =
+                    if Self::should_accept_new_host_key(config, ssh2::CheckResult::NotFound) {
+                        SshHostKeyPromptDecision::AcceptAndSave
+                    } else {
+                        self.prompt_for_host_key_decision(
+                            session_id,
+                            config,
+                            &host_key_info,
+                            SshHostKeyPromptStatus::FirstUse,
+                        )
+                        .await?
+                    };
                 let persistence = HostKeyPersistenceContext {
                     config,
                     known_hosts_path: &known_hosts_path,
@@ -1801,6 +1843,9 @@ impl SshService {
                 self.apply_host_key_decision(session, &persistence, decision)
             }
             ssh2::CheckResult::Mismatch => {
+                if config.accept_new_host_keys {
+                    return Err(Self::accept_new_mismatch_error(config));
+                }
                 let decision = self
                     .prompt_for_host_key_decision(
                         session_id,
@@ -1823,6 +1868,22 @@ impl SshService {
                 config.host
             )),
         }
+    }
+
+    fn should_accept_new_host_key(
+        config: &SshConnectionConfig,
+        check_result: ssh2::CheckResult,
+    ) -> bool {
+        config.strict_host_key_checking
+            && config.accept_new_host_keys
+            && matches!(check_result, ssh2::CheckResult::NotFound)
+    }
+
+    fn accept_new_mismatch_error(config: &SshConnectionConfig) -> String {
+        format!(
+            "Host key verification failed for {}: known host key changed; refusing to overwrite accept-new trust",
+            config.host
+        )
     }
 
     async fn prompt_for_host_key_decision(
@@ -1925,14 +1986,33 @@ impl SshService {
         session: &mut Session,
         persistence: &HostKeyPersistenceContext<'_>,
     ) -> Result<(), String> {
+        let _known_hosts_guard = lock_known_hosts_file()?;
         let mut known_hosts = session
             .known_hosts()
             .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
 
-        let _ = known_hosts.read_file(
-            Path::new(persistence.known_hosts_path),
-            ssh2::KnownHostFileKind::OpenSSH,
-        );
+        read_known_hosts_if_present(&mut known_hosts, Path::new(persistence.known_hosts_path))?;
+
+        match known_hosts.check_port(
+            &persistence.config.host,
+            persistence.config.port,
+            persistence.host_key,
+        ) {
+            ssh2::CheckResult::Match => return Ok(()),
+            ssh2::CheckResult::Mismatch if !persistence.replace_existing => {
+                return Err(format!(
+                    "Host key verification failed for {}: known_hosts changed before first-use persistence; refusing to overwrite",
+                    persistence.config.host
+                ));
+            }
+            ssh2::CheckResult::Failure => {
+                return Err(format!(
+                    "Host key verification failed for {}: internal error rechecking known_hosts before persistence",
+                    persistence.config.host
+                ));
+            }
+            ssh2::CheckResult::NotFound | ssh2::CheckResult::Mismatch => {}
+        }
 
         if persistence.replace_existing {
             let cleanup_names =
@@ -2322,16 +2402,29 @@ impl SshService {
 
             let exit_status = channel.exit_status().unwrap_or(-1);
 
-            if exit_status != 0 && output.is_empty() {
+            if exit_status != 0 {
                 let stderr_str = String::from_utf8_lossy(&stderr_output);
                 if !stderr_str.is_empty() {
                     return Err(format!(
-                        "Command failed with exit code {}: {}",
+                        "Command failed with exit code {}: {}{}",
                         exit_status,
-                        stderr_str.trim()
+                        stderr_str.trim(),
+                        if output.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (stdout: {})", String::from_utf8_lossy(&output).trim())
+                        }
                     ));
                 }
-                return Err(format!("Command failed with exit code {}", exit_status));
+                return Err(format!(
+                    "Command failed with exit code {}{}",
+                    exit_status,
+                    if output.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (stdout: {})", String::from_utf8_lossy(&output).trim())
+                    }
+                ));
             }
 
             String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 output: {}", e))
@@ -4383,6 +4476,113 @@ mod tests {
             "keyboard_interactive_responses": []
         }))
         .expect("valid SSH test config")
+    }
+
+    #[test]
+    fn accept_new_trusts_only_first_seen_host_keys() {
+        let mut config = tcp_test_config();
+        config.strict_host_key_checking = true;
+        config.accept_new_host_keys = true;
+
+        assert!(SshService::should_accept_new_host_key(
+            &config,
+            ssh2::CheckResult::NotFound
+        ));
+        assert!(!SshService::should_accept_new_host_key(
+            &config,
+            ssh2::CheckResult::Mismatch
+        ));
+    }
+
+    #[test]
+    fn accept_new_persists_first_key_and_refuses_mismatch_without_overwrite() {
+        let temp = tempfile::tempdir().unwrap();
+        let known_hosts_path = temp.path().join("known_hosts");
+        let known_hosts_path = known_hosts_path.to_string_lossy().to_string();
+        let mut config = tcp_test_config();
+        config.strict_host_key_checking = true;
+        config.accept_new_host_keys = true;
+        config.known_hosts_path = Some(known_hosts_path.clone());
+        let first_key = b"first-fixture-host-key";
+        let mut session = Session::new().unwrap();
+        let service = empty_test_service();
+        let persistence = HostKeyPersistenceContext {
+            config: &config,
+            known_hosts_path: &known_hosts_path,
+            host_key: first_key,
+            key_type: ssh2::HostKeyType::Ed25519,
+            replace_existing: false,
+        };
+
+        service
+            .persist_host_key(&mut session, &persistence)
+            .unwrap();
+        let before = std::fs::read(&known_hosts_path).unwrap();
+        assert!(!before.is_empty());
+
+        assert!(SshService::accept_new_mismatch_error(&config).contains("refusing to overwrite"));
+        assert_eq!(std::fs::read(&known_hosts_path).unwrap(), before);
+    }
+
+    #[test]
+    fn accept_new_does_not_treat_known_hosts_read_failures_as_first_use() {
+        let temp = tempfile::tempdir().unwrap();
+        let session = Session::new().unwrap();
+        let mut known_hosts = session.known_hosts().unwrap();
+
+        let missing = temp.path().join("missing-known-hosts");
+        read_known_hosts_if_present(&mut known_hosts, &missing).unwrap();
+
+        let error = read_known_hosts_if_present(&mut known_hosts, temp.path()).unwrap_err();
+        assert!(error.contains("Failed to read known_hosts file"));
+    }
+
+    #[test]
+    fn concurrent_first_use_persistence_preserves_both_hosts() {
+        let temp = tempfile::tempdir().unwrap();
+        let known_hosts_path = temp
+            .path()
+            .join("known_hosts")
+            .to_string_lossy()
+            .to_string();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+        let handles: Vec<_> = [
+            ("alpha.example.test", b"alpha-fixture-key".as_slice()),
+            ("beta.example.test", b"beta-fixture-key".as_slice()),
+        ]
+        .into_iter()
+        .map(|(host, key)| {
+            let barrier = barrier.clone();
+            let known_hosts_path = known_hosts_path.clone();
+            std::thread::spawn(move || {
+                let mut config = tcp_test_config();
+                config.host = host.to_string();
+                config.port = 22;
+                config.known_hosts_path = Some(known_hosts_path.clone());
+                let mut session = Session::new().unwrap();
+                let service = empty_test_service();
+                let persistence = HostKeyPersistenceContext {
+                    config: &config,
+                    known_hosts_path: &known_hosts_path,
+                    host_key: key,
+                    key_type: ssh2::HostKeyType::Ed25519,
+                    replace_existing: false,
+                };
+
+                barrier.wait();
+                service.persist_host_key(&mut session, &persistence)
+            })
+        })
+        .collect();
+
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        let persisted = std::fs::read_to_string(known_hosts_path).unwrap();
+        assert!(persisted.contains("alpha.example.test"));
+        assert!(persisted.contains("beta.example.test"));
     }
 
     // ── Sentinel parsing ────────────────────────────────────────

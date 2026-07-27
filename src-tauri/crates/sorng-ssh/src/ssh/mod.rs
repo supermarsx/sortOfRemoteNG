@@ -6,6 +6,7 @@ pub mod automation;
 pub mod diagnostics;
 pub mod fido2;
 pub mod highlighting;
+pub mod integration;
 pub mod proxy_command;
 pub mod recording;
 pub mod service;

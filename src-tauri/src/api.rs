@@ -1078,6 +1078,7 @@ async fn connect_ssh(
         connect_timeout: None,
         keep_alive_interval: None,
         strict_host_key_checking: true,
+        accept_new_host_keys: false,
         known_hosts_path: None,
         totp_secret: None,
         keyboard_interactive_responses: vec![],
