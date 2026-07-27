@@ -48,6 +48,8 @@ describe("NginxPanel", () => {
     expect(
       screen.getByRole("button", { name: /^Connect$/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText("SSH private key path")).toBeInTheDocument();
+    expect(screen.queryByText(/path or PEM/i)).not.toBeInTheDocument();
   });
 
   it("connect maps to ngx_connect with a snake_case wire-shape config", async () => {

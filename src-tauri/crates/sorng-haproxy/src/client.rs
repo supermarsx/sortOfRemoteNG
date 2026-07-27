@@ -8,15 +8,50 @@ use log::debug;
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+use std::sync::Arc;
 use std::time::Duration;
+
+#[async_trait::async_trait]
+pub(crate) trait SshTransport: Send + Sync {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String>;
+    async fn disconnect(&self) -> Result<(), String>;
+}
+
+#[async_trait::async_trait]
+impl SshTransport for IntegrationSshSession {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
+        IntegrationSshSession::execute(self, command, timeout_ms).await
+    }
+
+    async fn disconnect(&self) -> Result<(), String> {
+        IntegrationSshSession::disconnect(self).await
+    }
+}
 
 pub struct HaproxyClient {
     pub config: HaproxyConnectionConfig,
     http: HttpClient,
+    ssh: Arc<dyn SshTransport>,
 }
 
 impl HaproxyClient {
     pub fn new(config: HaproxyConnectionConfig) -> HaproxyResult<Self> {
+        let ssh = Arc::new(IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        }));
+        Self::with_transport(config, ssh)
+    }
+
+    fn with_transport(
+        config: HaproxyConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> HaproxyResult<Self> {
         let mut builder =
             HttpClient::builder().timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)));
         if let Some(proxy_url) = config
@@ -32,7 +67,15 @@ impl HaproxyClient {
         let http = builder
             .build()
             .map_err(|e| HaproxyError::connection(format!("http client build: {e}")))?;
-        Ok(Self { config, http })
+        Ok(Self { config, http, ssh })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(
+        config: HaproxyConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> HaproxyResult<Self> {
+        Self::with_transport(config, ssh)
     }
 
     // ── Stats socket helpers (stub – would go through SSH) ───────────
@@ -46,75 +89,45 @@ impl HaproxyClient {
 
     /// Execute a command on the HAProxy stats socket via SSH.
     pub async fn socket_cmd(&self, cmd: &str) -> HaproxyResult<String> {
+        if cmd
+            .bytes()
+            .any(|byte| matches!(byte, b'\r' | b'\n' | b'\0'))
+        {
+            return Err(HaproxyError::socket(
+                "HAProxy runtime commands must not contain CR, LF, or NUL",
+            ));
+        }
         debug!("HAPROXY socket [{}]: {}", self.config.host, cmd);
         let remote_cmd = format!(
             "echo '{}' | sudo socat stdio {}",
             cmd.replace('\'', "'\\''"),
-            self.stats_socket()
+            shell_escape(self.stats_socket())
         );
         let out = self.exec_ssh(&remote_cmd).await?;
+        validate_runtime_response(cmd, &out.stdout)?;
         Ok(out.stdout)
     }
 
     pub async fn exec_ssh(&self, command: &str) -> HaproxyResult<SshOutput> {
         debug!("HAPROXY SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| HaproxyError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(HaproxyError::ssh)?;
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn disconnect(&self) -> HaproxyResult<()> {
+        self.ssh.disconnect().await.map_err(HaproxyError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> HaproxyResult<String> {
@@ -219,7 +232,10 @@ impl HaproxyClient {
             .map_err(|e| HaproxyError::http(format!("DP PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
+            let body = resp
+                .text()
+                .await
+                .map_err(|error| HaproxyError::http(format!("DP PUT error body: {error}")))?;
             return Err(self.map_dp_error(status.as_u16(), &body));
         }
         Ok(())
@@ -235,7 +251,10 @@ impl HaproxyClient {
             .map_err(|e| HaproxyError::http(format!("DP DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
+            let body = resp
+                .text()
+                .await
+                .map_err(|error| HaproxyError::http(format!("DP DELETE error body: {error}")))?;
             return Err(self.map_dp_error(status.as_u16(), &body));
         }
         Ok(())
@@ -286,7 +305,13 @@ impl HaproxyClient {
 
     pub async fn version(&self) -> HaproxyResult<String> {
         let out = self.exec_ssh("haproxy -v 2>&1").await?;
-        Ok(out.stdout.lines().next().unwrap_or("").trim().to_string())
+        let version = out.stdout.lines().next().unwrap_or("").trim();
+        if version.is_empty() {
+            return Err(HaproxyError::parse(
+                "HAProxy version command returned empty output",
+            ));
+        }
+        Ok(version.to_string())
     }
 
     pub async fn check_config(&self) -> HaproxyResult<ConfigValidationResult> {
@@ -296,7 +321,7 @@ impl HaproxyClient {
             .as_deref()
             .unwrap_or("/etc/haproxy/haproxy.cfg");
         let out = self
-            .exec_ssh(&format!("sudo haproxy -c -f {} 2>&1", path))
+            .exec_ssh(&format!("sudo haproxy -c -f {} 2>&1", shell_escape(path)))
             .await;
         match out {
             Ok(o) => Ok(ConfigValidationResult {
@@ -309,12 +334,13 @@ impl HaproxyClient {
                     vec![]
                 },
             }),
-            Err(_) => Ok(ConfigValidationResult {
+            Err(error) if is_remote_command_failure(&error) => Ok(ConfigValidationResult {
                 valid: false,
                 output: String::new(),
                 warnings: vec![],
-                errors: vec!["Failed to execute haproxy -c".into()],
+                errors: vec![error.message],
             }),
+            Err(error) => Err(error),
         }
     }
 
@@ -437,4 +463,182 @@ pub struct SshOutput {
     pub stdout: String,
     pub stderr: String,
     pub exit_code: i32,
+}
+
+fn shell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn is_remote_command_failure(error: &HaproxyError) -> bool {
+    error.message.contains("Command failed with exit code")
+}
+
+fn validate_runtime_response(command: &str, response: &str) -> HaproxyResult<()> {
+    let response = response.trim();
+    let lower = response.to_ascii_lowercase();
+    let failed = [
+        "unknown command",
+        "can't find",
+        "cannot ",
+        "error:",
+        "failure:",
+        "permission denied",
+        "no such ",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix));
+    if failed {
+        return Err(HaproxyError::socket(format!(
+            "HAProxy runtime command `{command}` failed: {response}"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    struct FakeSshTransport {
+        outcomes: Mutex<VecDeque<Result<String, String>>>,
+        commands: Mutex<Vec<String>>,
+    }
+
+    impl FakeSshTransport {
+        fn new(outcomes: Vec<Result<String, String>>) -> Self {
+            Self {
+                outcomes: Mutex::new(outcomes.into()),
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn commands(&self) -> Vec<String> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SshTransport for FakeSshTransport {
+        async fn execute(&self, command: &str, _: Option<u64>) -> Result<String, String> {
+            self.commands.lock().unwrap().push(command.to_string());
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("fake SSH outcome exhausted")
+        }
+
+        async fn disconnect(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn config() -> HaproxyConnectionConfig {
+        HaproxyConnectionConfig {
+            host: "haproxy.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            stats_socket: Some("/run/haproxy/admin.sock".into()),
+            stats_url: None,
+            stats_user: None,
+            stats_password: None,
+            dataplane_url: None,
+            dataplane_user: None,
+            dataplane_password: None,
+            config_path: None,
+            timeout_secs: Some(5),
+            proxy_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn mandatory_file_write_preserves_nonzero_remote_failure() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Err(
+            "Command failed with exit code 1: Permission denied".into(),
+        )]));
+        let client = HaproxyClient::with_test_transport(config(), fake).unwrap();
+
+        let error = client
+            .write_remote_file("/etc/haproxy/haproxy.cfg", "global")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("Permission denied"));
+    }
+
+    #[tokio::test]
+    async fn runtime_protocol_error_is_not_reported_as_success() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Ok(
+            "Can't find map referenced by id #42".into(),
+        )]));
+        let client = HaproxyClient::with_test_transport(config(), fake).unwrap();
+
+        let error = client.socket_cmd("clear map #42").await.unwrap_err();
+        assert!(error.message.contains("clear map #42"));
+        assert!(error.message.contains("Can't find map"));
+    }
+
+    #[tokio::test]
+    async fn runtime_command_rejects_line_delimiters_before_ssh() {
+        for command in [
+            "show info\nshutdown sessions",
+            "show info\r\nshow stat",
+            "show\0info",
+        ] {
+            let fake = Arc::new(FakeSshTransport::new(vec![]));
+            let client = HaproxyClient::with_test_transport(config(), fake.clone()).unwrap();
+
+            let error = client.socket_cmd(command).await.unwrap_err();
+
+            assert!(error.message.contains("CR, LF, or NUL"));
+            assert!(fake.commands().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn config_check_shell_escapes_configured_path() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Ok(
+            "Configuration file is valid".into(),
+        )]));
+        let mut config = config();
+        config.config_path = Some("/etc/haproxy/haproxy.cfg; touch /tmp/pwned".into());
+        let client = HaproxyClient::with_test_transport(config, fake.clone()).unwrap();
+
+        assert!(client.check_config().await.unwrap().valid);
+        assert_eq!(
+            fake.commands(),
+            vec![
+                "sudo haproxy -c -f '/etc/haproxy/haproxy.cfg; touch /tmp/pwned' 2>&1".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_version_output_is_not_fabricated_success() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Ok(" \r\n".into())]));
+        let client = HaproxyClient::with_test_transport(config(), fake).unwrap();
+
+        let error = client.version().await.unwrap_err();
+
+        assert!(error.message.contains("empty output"));
+    }
+
+    #[tokio::test]
+    async fn config_check_keeps_application_detail_and_propagates_transport_failure() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Err("Command failed with exit code 1: parsing [/etc/haproxy.cfg:7]".into()),
+            Err("broken pipe".into()),
+        ]));
+        let client = HaproxyClient::with_test_transport(config(), fake).unwrap();
+
+        let invalid = client.check_config().await.unwrap();
+        assert!(!invalid.valid);
+        assert!(invalid.errors[0].contains("haproxy.cfg:7"));
+
+        let transport_error = client.check_config().await.unwrap_err();
+        assert!(transport_error.message.contains("broken pipe"));
+    }
 }

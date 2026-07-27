@@ -28,6 +28,48 @@ pub struct HaproxyService {
     connections: HashMap<String, HaproxyClient>,
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::error::HaproxyErrorKind;
+
+    fn config() -> HaproxyConnectionConfig {
+        HaproxyConnectionConfig {
+            host: "haproxy.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            stats_socket: Some("/run/haproxy/admin.sock".into()),
+            stats_url: None,
+            stats_user: None,
+            stats_password: None,
+            dataplane_url: None,
+            dataplane_user: None,
+            dataplane_password: None,
+            config_path: None,
+            timeout_secs: Some(5),
+            proxy_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_connection_id_is_rejected_before_remote_probe() {
+        let mut service = HaproxyService::new();
+        service
+            .connections
+            .insert("duplicate".into(), HaproxyClient::new(config()).unwrap());
+
+        let error = service
+            .connect("duplicate".into(), config())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error.kind, HaproxyErrorKind::AlreadyConnected));
+    }
+}
+
 impl Default for HaproxyService {
     fn default() -> Self {
         Self::new()
@@ -48,17 +90,28 @@ impl HaproxyService {
         id: String,
         config: HaproxyConnectionConfig,
     ) -> HaproxyResult<HaproxyConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(HaproxyError::already_connected(&id));
+        }
         let client = HaproxyClient::new(config)?;
-        let summary = client.ping().await?;
+        client.exec_ssh("true").await?;
+        let mut summary = client.ping().await?;
+        let ssh_version = client.version().await?;
+        if summary.version.is_none() {
+            summary.version = Some(ssh_version);
+        }
         self.connections.insert(id, client);
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> HaproxyResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| HaproxyError::not_connected(format!("No connection '{}'", id)))
+    pub async fn disconnect(&mut self, id: &str) -> HaproxyResult<()> {
+        let client = self
+            .connections
+            .get(id)
+            .ok_or_else(|| HaproxyError::not_connected(format!("No connection '{}'", id)))?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

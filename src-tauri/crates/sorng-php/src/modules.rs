@@ -13,7 +13,7 @@ impl ModuleManager {
     /// List all PHP modules by running `php{version} -m` and categorising
     /// each as core, dynamic, or Zend.
     pub async fn list_modules(client: &PhpClient, version: &str) -> PhpResult<Vec<PhpModule>> {
-        let cmd = format!("{} -m", client.versioned_php_bin(version));
+        let cmd = format!("{} -m", client.versioned_php_bin(version)?);
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
             return Err(PhpError::command_failed(format!(

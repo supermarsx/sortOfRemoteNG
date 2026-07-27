@@ -12,7 +12,7 @@ pub struct FpmManager;
 impl FpmManager {
     /// List all FPM pools for a PHP version by reading its `pool.d` directory.
     pub async fn list_pools(client: &PhpClient, version: &str) -> PhpResult<Vec<PhpFpmPool>> {
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
         let files = client.list_dir(&pool_dir).await?;
 
         let mut pools = Vec::new();
@@ -33,7 +33,7 @@ impl FpmManager {
 
     /// Get a specific FPM pool by name.
     pub async fn get_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<PhpFpmPool> {
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
 
         // Try enabled first, then disabled
         let conf_path = format!("{}/{}.conf", pool_dir, name);
@@ -57,7 +57,7 @@ impl FpmManager {
         client: &PhpClient,
         req: &CreateFpmPoolRequest,
     ) -> PhpResult<PhpFpmPool> {
-        let pool_dir = client.fpm_pool_dir(&req.version);
+        let pool_dir = client.fpm_pool_dir(&req.version)?;
         let conf_path = format!("{}/{}.conf", pool_dir, req.name);
 
         if client.file_exists(&conf_path).await? {
@@ -146,7 +146,7 @@ impl FpmManager {
 
     /// Delete an FPM pool config file.
     pub async fn delete_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
 
@@ -162,7 +162,7 @@ impl FpmManager {
 
     /// Enable a disabled pool by renaming `.conf.disabled` → `.conf`.
     pub async fn enable_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
 
@@ -191,7 +191,7 @@ impl FpmManager {
 
     /// Disable a pool without deleting it (rename `.conf` → `.conf.disabled`).
     pub async fn disable_pool(client: &PhpClient, version: &str, name: &str) -> PhpResult<()> {
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
         let conf_path = format!("{}/{}.conf", pool_dir, name);
         let disabled_path = format!("{}/{}.conf.disabled", pool_dir, name);
 

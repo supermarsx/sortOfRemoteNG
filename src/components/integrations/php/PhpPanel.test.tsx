@@ -24,7 +24,8 @@ beforeEach(() => {
     switch (cmd) {
       case "read_app_data":
         return Promise.resolve(null);
-      case "write_app_data":
+      case "compare_and_swap_app_data":
+        return Promise.resolve(true);
       case "vault_store_secret":
         return Promise.resolve(null);
       case "php_connect":
@@ -119,9 +120,9 @@ describe("PhpPanel", () => {
       ),
     );
     const configWrite = invokeMock.mock.calls.find(
-      (c) => c[0] === "write_app_data",
+      (c) => c[0] === "compare_and_swap_app_data",
     );
-    expect(configWrite?.[1]?.value).not.toContain("hunter2");
+    expect(configWrite?.[1]?.replacement).not.toContain("hunter2");
   });
 
   it("exposes a well-formed web descriptor", () => {

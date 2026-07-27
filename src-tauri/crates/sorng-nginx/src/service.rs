@@ -26,6 +26,46 @@ pub struct NginxService {
     connections: HashMap<String, NginxClient>,
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::error::NginxErrorKind;
+
+    fn config() -> NginxConnectionConfig {
+        NginxConnectionConfig {
+            host: "nginx.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            nginx_bin: None,
+            config_path: None,
+            sites_available_dir: None,
+            sites_enabled_dir: None,
+            conf_d_dir: None,
+            status_url: None,
+            timeout_secs: Some(5),
+            proxy_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_connection_id_is_rejected_before_remote_probe() {
+        let mut service = NginxService::new();
+        service
+            .connections
+            .insert("duplicate".into(), NginxClient::new(config()).unwrap());
+
+        let error = service
+            .connect("duplicate".into(), config())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error.kind, NginxErrorKind::AlreadyConnected));
+    }
+}
+
 impl Default for NginxService {
     fn default() -> Self {
         Self::new()
@@ -46,8 +86,12 @@ impl NginxService {
         id: String,
         config: NginxConnectionConfig,
     ) -> NginxResult<NginxConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(NginxError::already_connected(&id));
+        }
         let client = NginxClient::new(config)?;
-        let ver = client.version().await.ok();
+        client.exec_ssh("true").await?;
+        let ver = Some(client.version().await?);
         let summary = NginxConnectionSummary {
             host: client.config.host.clone(),
             version: ver,
@@ -58,11 +102,14 @@ impl NginxService {
         Ok(summary)
     }
 
-    pub fn disconnect(&mut self, id: &str) -> NginxResult<()> {
-        self.connections
-            .remove(id)
-            .map(|_| ())
-            .ok_or_else(|| NginxError::not_connected(format!("No connection '{}'", id)))
+    pub async fn disconnect(&mut self, id: &str) -> NginxResult<()> {
+        let client = self
+            .connections
+            .get(id)
+            .ok_or_else(|| NginxError::not_connected(format!("No connection '{}'", id)))?;
+        client.disconnect().await?;
+        self.connections.remove(id);
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Vec<String> {

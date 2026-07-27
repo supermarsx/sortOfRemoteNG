@@ -11,7 +11,7 @@ pub struct SessionManager;
 impl SessionManager {
     /// Get session configuration from php.ini `session.*` directives.
     pub async fn get_config(client: &PhpClient, version: &str) -> PhpResult<PhpSessionConfig> {
-        let php = client.versioned_php_bin(version);
+        let php = client.versioned_php_bin(version)?;
         let cmd = format!(
             "{php} -r \"echo json_encode([\
                 'save_handler' => ini_get('session.save_handler'),\
@@ -52,7 +52,7 @@ impl SessionManager {
         req: &UpdateSessionConfigRequest,
     ) -> PhpResult<()> {
         let ini_path = format!("{}/{}/cli/php.ini", client.config_dir(), req.version);
-        let mut content = client.read_remote_file(&ini_path).await.unwrap_or_default();
+        let mut content = client.read_remote_file(&ini_path).await?;
 
         fn set_directive(content: &mut String, key: &str, value: &str) {
             let directive = format!("session.{key}");
@@ -116,18 +116,24 @@ impl SessionManager {
         let handler = {
             let cmd = format!(
                 "{} -r \"echo ini_get('session.save_handler');\"",
-                client.versioned_php_bin(version)
+                client.versioned_php_bin(version)?
             );
             let out = client.exec_ssh(&cmd).await?;
             out.stdout.trim().to_string()
         };
 
         let cmd = format!(
-            "find {} -maxdepth 1 -name 'sess_*' -printf '%T@ %s\\n' 2>/dev/null | sort -n",
+            "find {} -maxdepth 1 -name 'sess_*' -printf '%T@ %s\\n'",
             shell_escape(&save_path)
         );
         let out = client.exec_ssh(&cmd).await?;
-        let lines: Vec<&str> = out.stdout.lines().filter(|l| !l.is_empty()).collect();
+        let mut lines: Vec<&str> = out.stdout.lines().filter(|l| !l.is_empty()).collect();
+        lines.sort_unstable_by(|left, right| {
+            left.split_whitespace()
+                .next()
+                .partial_cmp(&right.split_whitespace().next())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut total_size: u64 = 0;
         let mut oldest: Option<String> = None;
@@ -135,8 +141,17 @@ impl SessionManager {
 
         for (i, line) in lines.iter().enumerate() {
             let mut parts = line.splitn(2, ' ');
-            let ts = parts.next().unwrap_or("0");
-            let size: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+            let ts = parts.next().ok_or_else(|| {
+                PhpError::parse(format!("Malformed session statistics line: {line:?}"))
+            })?;
+            let size_text = parts.next().ok_or_else(|| {
+                PhpError::parse(format!("Malformed session statistics line: {line:?}"))
+            })?;
+            let size: u64 = size_text.parse().map_err(|error| {
+                PhpError::parse(format!(
+                    "Invalid session size {size_text:?} in line {line:?}: {error}"
+                ))
+            })?;
             total_size += size;
 
             let epoch = ts.split('.').next().unwrap_or("0");
@@ -170,7 +185,7 @@ impl SessionManager {
             1440
         });
         let cmd = format!(
-            "find {} -maxdepth 1 -name 'sess_*' -mmin +{} -delete -print | wc -l",
+            "find {} -maxdepth 1 -name 'sess_*' -mmin +{} -delete -print",
             shell_escape(&save_path),
             max_age / 60
         );
@@ -181,7 +196,7 @@ impl SessionManager {
                 out.stderr
             )));
         }
-        let count: u64 = out.stdout.trim().parse().unwrap_or(0);
+        let count = out.stdout.lines().filter(|line| !line.is_empty()).count() as u64;
         Ok(count)
     }
 
@@ -189,7 +204,7 @@ impl SessionManager {
     pub async fn list_session_files(client: &PhpClient, version: &str) -> PhpResult<Vec<String>> {
         let save_path = Self::get_save_path(client, version).await?;
         let cmd = format!(
-            "find {} -maxdepth 1 -name 'sess_*' -printf '%f\\n' 2>/dev/null",
+            "find {} -maxdepth 1 -name 'sess_*' -printf '%f\\n'",
             shell_escape(&save_path)
         );
         let out = client.exec_ssh(&cmd).await?;
@@ -205,7 +220,7 @@ impl SessionManager {
     pub async fn get_save_path(client: &PhpClient, version: &str) -> PhpResult<String> {
         let cmd = format!(
             "{} -r \"echo ini_get('session.save_path');\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -220,5 +235,55 @@ impl SessionManager {
         } else {
             Ok(path)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::test_support::FakeSshTransport;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn session_update_stops_when_existing_ini_cannot_be_read() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Err(
+            "Command failed with exit code 1: read-only filesystem".into(),
+        )]));
+        let client = PhpClient::with_test_transport(
+            PhpConnectionConfig {
+                host: "php.example.test".into(),
+                port: Some(22),
+                ssh_user: Some("admin".into()),
+                ssh_password: None,
+                ssh_key: None,
+                php_bin: None,
+                fpm_bin: None,
+                composer_bin: None,
+                config_dir: Some("/etc/php".into()),
+                fpm_pool_dir: None,
+                timeout_secs: Some(5),
+            },
+            fake.clone(),
+        );
+        let request = UpdateSessionConfigRequest {
+            version: "8.3".into(),
+            save_handler: Some("files".into()),
+            save_path: None,
+            gc_maxlifetime: None,
+            gc_probability: None,
+            gc_divisor: None,
+            cookie_lifetime: None,
+            cookie_secure: None,
+            cookie_httponly: None,
+            cookie_samesite: None,
+            use_strict_mode: None,
+            sid_length: None,
+        };
+
+        let error = SessionManager::update_config(&client, &request)
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("read-only filesystem"));
+        assert_eq!(fake.commands().len(), 1);
     }
 }

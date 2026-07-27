@@ -167,28 +167,30 @@ impl ComposerManager {
 
         // Try reading composer.lock for installed packages
         let lock_path = format!("{}/composer.lock", project_path);
-        let lock_content = client.read_remote_file(&lock_path).await.ok();
+        let lock_content = client.read_remote_file_if_exists(&lock_path).await?;
 
         let mut packages = Vec::new();
         let mut dev_packages = Vec::new();
         let mut lock_hash = None;
 
         if let Some(lock_str) = &lock_content {
-            if let Ok(lock_val) = serde_json::from_str::<serde_json::Value>(lock_str) {
-                lock_hash = lock_val
-                    .get("content-hash")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+            let lock_val =
+                serde_json::from_str::<serde_json::Value>(lock_str).map_err(|error| {
+                    PhpError::parse(format!("Failed to parse composer.lock: {error}"))
+                })?;
+            lock_hash = lock_val
+                .get("content-hash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
-                if let Some(pkgs) = lock_val.get("packages").and_then(|v| v.as_array()) {
-                    for pkg in pkgs {
-                        packages.push(parse_composer_package(pkg));
-                    }
+            if let Some(pkgs) = lock_val.get("packages").and_then(|v| v.as_array()) {
+                for pkg in pkgs {
+                    packages.push(parse_composer_package(pkg));
                 }
-                if let Some(pkgs) = lock_val.get("packages-dev").and_then(|v| v.as_array()) {
-                    for pkg in pkgs {
-                        dev_packages.push(parse_composer_package(pkg));
-                    }
+            }
+            if let Some(pkgs) = lock_val.get("packages-dev").and_then(|v| v.as_array()) {
+                for pkg in pkgs {
+                    dev_packages.push(parse_composer_package(pkg));
                 }
             }
         }

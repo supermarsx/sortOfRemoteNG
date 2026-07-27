@@ -6,16 +6,54 @@ use crate::error::{NginxError, NginxResult};
 use crate::types::*;
 use log::debug;
 use reqwest::Client as HttpClient;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+use std::sync::Arc;
 use std::time::Duration;
+
+#[async_trait::async_trait]
+pub(crate) trait SshTransport: Send + Sync {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String>;
+    async fn disconnect(&self) -> Result<(), String>;
+}
+
+#[async_trait::async_trait]
+impl SshTransport for IntegrationSshSession {
+    async fn execute(&self, command: &str, timeout_ms: Option<u64>) -> Result<String, String> {
+        IntegrationSshSession::execute(self, command, timeout_ms).await
+    }
+
+    async fn disconnect(&self) -> Result<(), String> {
+        IntegrationSshSession::disconnect(self).await
+    }
+}
 
 /// Nginx management client – connects via SSH to manage nginx remotely.
 pub struct NginxClient {
     pub config: NginxConnectionConfig,
     http: HttpClient,
+    ssh: Arc<dyn SshTransport>,
 }
 
 impl NginxClient {
     pub fn new(config: NginxConnectionConfig) -> NginxResult<Self> {
+        let ssh = Arc::new(IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30),
+        }));
+        Self::with_transport(config, ssh)
+    }
+
+    fn with_transport(
+        config: NginxConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> NginxResult<Self> {
+        if let Some(binary) = config.nginx_bin.as_deref() {
+            validate_executable(binary, "nginx_bin")?;
+        }
         let mut builder =
             HttpClient::builder().timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)));
         if let Some(proxy_url) = config
@@ -31,7 +69,15 @@ impl NginxClient {
         let http = builder
             .build()
             .map_err(|e| NginxError::connection(format!("http client build: {e}")))?;
-        Ok(Self { config, http })
+        Ok(Self { config, http, ssh })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_transport(
+        config: NginxConnectionConfig,
+        ssh: Arc<dyn SshTransport>,
+    ) -> NginxResult<Self> {
+        Self::with_transport(config, ssh)
     }
 
     // ── Paths ────────────────────────────────────────────────────────
@@ -68,7 +114,7 @@ impl NginxClient {
             .unwrap_or("/etc/nginx/conf.d")
     }
 
-    fn status_url(&self) -> Option<&str> {
+    pub(crate) fn status_url(&self) -> Option<&str> {
         self.config.status_url.as_deref()
     }
 
@@ -79,63 +125,24 @@ impl NginxClient {
 
     pub async fn exec_ssh(&self, command: &str) -> NginxResult<SshOutput> {
         debug!("NGX SSH [{}]: {}", self.config.host, command);
-
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(self.config.timeout_secs.unwrap_or(30) * 1_000),
+            )
             .await
-            .map_err(|e| NginxError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(NginxError::ssh)?;
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    pub async fn disconnect(&self) -> NginxResult<()> {
+        self.ssh.disconnect().await.map_err(NginxError::ssh)
     }
 
     pub async fn read_remote_file(&self, path: &str) -> NginxResult<String> {
@@ -178,6 +185,29 @@ impl NginxClient {
             .collect())
     }
 
+    /// List a directory that is allowed to be absent, while preserving all
+    /// transport, permission, and wrong-file-type errors.
+    pub async fn list_remote_dir_if_exists(&self, path: &str) -> NginxResult<Option<Vec<String>>> {
+        const MISSING: &str = "__SORNG_DIRECTORY_NOT_FOUND__";
+        let escaped = shell_escape(path);
+        let out = self
+            .exec_ssh(&format!(
+                "if [ -d {escaped} ]; then ls -1 -- {escaped}; elif [ ! -e {escaped} ]; then printf '%s' '{MISSING}'; else echo 'Path is not a directory: {escaped}' >&2; exit 1; fi"
+            ))
+            .await?;
+        if out.stdout == MISSING {
+            Ok(None)
+        } else {
+            Ok(Some(
+                out.stdout
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(String::from)
+                    .collect(),
+            ))
+        }
+    }
+
     pub async fn create_symlink(&self, src: &str, dst: &str) -> NginxResult<()> {
         self.exec_ssh(&format!(
             "sudo ln -sf {} {}",
@@ -211,12 +241,13 @@ impl NginxClient {
                 },
                 warnings: vec![],
             }),
-            Err(_) => Ok(ConfigTestResult {
+            Err(error) if is_remote_command_failure(&error) => Ok(ConfigTestResult {
                 success: false,
                 output: String::new(),
-                errors: vec!["Failed to execute nginx -t".into()],
+                errors: vec![error.message],
                 warnings: vec![],
             }),
+            Err(error) => Err(error),
         }
     }
 
@@ -293,15 +324,21 @@ impl NginxClient {
     }
 
     pub async fn status(&self) -> NginxResult<NginxProcess> {
-        let out = self.exec_ssh("systemctl is-active nginx 2>&1").await?;
+        let out = self
+            .exec_ssh("systemctl show nginx --property=ActiveState --value")
+            .await?;
         let active = out.stdout.trim() == "active";
         let pid_out = self
-            .exec_ssh("cat /run/nginx.pid 2>/dev/null || echo 0")
-            .await;
-        let pid = pid_out
-            .ok()
-            .and_then(|o| o.stdout.trim().parse().ok())
-            .unwrap_or(0);
+            .exec_ssh(
+                "if [ -f /run/nginx.pid ]; then cat /run/nginx.pid; elif [ ! -e /run/nginx.pid ]; then echo 0; else echo 'nginx PID path is not a regular file' >&2; exit 1; fi",
+            )
+            .await?;
+        let pid = pid_out.stdout.trim().parse().map_err(|error| {
+            NginxError::parse(format!(
+                "Invalid nginx PID {:?}: {error}",
+                pid_out.stdout.trim()
+            ))
+        })?;
         Ok(NginxProcess {
             pid,
             ppid: None,
@@ -352,6 +389,35 @@ fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+fn validate_executable(value: &str, field: &str) -> NginxResult<()> {
+    let is_absolute = value.starts_with('/');
+    let is_identifier = !value.contains('/');
+    let has_safe_characters = value.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'+' | b'/')
+    });
+    let starts_safely = value
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'/');
+
+    if value.is_empty()
+        || value.trim() != value
+        || (!is_absolute && !is_identifier)
+        || !has_safe_characters
+        || !starts_safely
+        || value.split('/').any(|segment| segment == "..")
+    {
+        return Err(NginxError::parse(format!(
+            "{field} must be a command identifier or absolute path containing only safe characters"
+        )));
+    }
+    Ok(())
+}
+
+fn is_remote_command_failure(error: &NginxError) -> bool {
+    error.message.contains("Command failed with exit code")
+}
+
 fn parse_stub_status(body: &str) -> NginxResult<NginxStubStatus> {
     // Active connections: 291
     // server accepts handled requests
@@ -399,4 +465,142 @@ fn parse_stub_status(body: &str) -> NginxResult<NginxStubStatus> {
         writing,
         waiting,
     })
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::SshTransport;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    pub(crate) struct FakeSshTransport {
+        outcomes: Mutex<VecDeque<Result<String, String>>>,
+        commands: Mutex<Vec<String>>,
+    }
+
+    impl FakeSshTransport {
+        pub(crate) fn new(outcomes: Vec<Result<String, String>>) -> Self {
+            Self {
+                outcomes: Mutex::new(outcomes.into()),
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+
+        pub(crate) fn commands(&self) -> Vec<String> {
+            self.commands.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SshTransport for FakeSshTransport {
+        async fn execute(&self, command: &str, _: Option<u64>) -> Result<String, String> {
+            self.commands.lock().unwrap().push(command.to_string());
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("fake SSH outcome exhausted")
+        }
+
+        async fn disconnect(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::FakeSshTransport;
+    use super::*;
+
+    fn config() -> NginxConnectionConfig {
+        NginxConnectionConfig {
+            host: "nginx.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            nginx_bin: None,
+            config_path: None,
+            sites_available_dir: None,
+            sites_enabled_dir: None,
+            conf_d_dir: None,
+            status_url: None,
+            timeout_secs: Some(5),
+            proxy_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn mandatory_remote_read_and_write_preserve_ssh_failures() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Err("Command failed with exit code 1: Permission denied".into()),
+            Err("Command failed with exit code 1: disk full".into()),
+        ]));
+        let client = NginxClient::with_test_transport(config(), fake.clone()).unwrap();
+
+        let read_error = client
+            .read_remote_file("/etc/nginx/nginx.conf")
+            .await
+            .unwrap_err();
+        assert!(read_error.message.contains("Permission denied"));
+
+        let write_error = client
+            .write_remote_file("/etc/nginx/nginx.conf", "events {}")
+            .await
+            .unwrap_err();
+        assert!(write_error.message.contains("disk full"));
+        assert_eq!(fake.commands().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn optional_directory_distinguishes_absence_from_remote_failure() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Ok("__SORNG_DIRECTORY_NOT_FOUND__".into()),
+            Err("Command failed with exit code 2: Permission denied".into()),
+        ]));
+        let client = NginxClient::with_test_transport(config(), fake).unwrap();
+
+        assert!(client
+            .list_remote_dir_if_exists("/etc/nginx/sites-enabled")
+            .await
+            .unwrap()
+            .is_none());
+        let error = client
+            .list_remote_dir_if_exists("/root/private")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("Permission denied"));
+    }
+
+    #[tokio::test]
+    async fn config_test_reports_application_error_but_propagates_transport_error() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Err("Command failed with exit code 1: nginx: invalid directive".into()),
+            Err("connection reset by peer".into()),
+        ]));
+        let client = NginxClient::with_test_transport(config(), fake).unwrap();
+
+        let invalid = client.test_config().await.unwrap();
+        assert!(!invalid.success);
+        assert!(invalid.errors[0].contains("invalid directive"));
+
+        let transport_error = client.test_config().await.unwrap_err();
+        assert!(transport_error.message.contains("connection reset"));
+    }
+
+    #[test]
+    fn rejects_injectable_nginx_executable_before_any_ssh_command() {
+        let fake = Arc::new(FakeSshTransport::new(vec![]));
+        let mut config = config();
+        config.nginx_bin = Some("nginx; touch /tmp/pwned".into());
+
+        let error = match NginxClient::with_test_transport(config, fake.clone()) {
+            Ok(_) => panic!("injectable nginx_bin must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.message.contains("nginx_bin"));
+        assert!(fake.commands().is_empty());
+    }
 }

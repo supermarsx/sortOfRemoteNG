@@ -59,6 +59,12 @@ impl PhpError {
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::NotConnected, msg)
     }
+    pub fn already_connected(id: &str) -> Self {
+        Self::new(
+            PhpErrorKind::AlreadyConnected,
+            format!("Connection already exists: {id}"),
+        )
+    }
     pub fn connection(msg: impl Into<String>) -> Self {
         Self::new(PhpErrorKind::ConnectionFailed, msg)
     }

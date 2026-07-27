@@ -14,6 +14,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   AccessLogEntry,
   ConfigTestResult,
@@ -141,6 +142,7 @@ function errMsg(e: unknown): string {
  * `run` wrapper funnels arbitrary ops through the same loading/error handling.
  */
 export function useNginx() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<NginxConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -169,9 +171,26 @@ export function useNginx() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await nginxApi.connect(id, withGlobalHttpProxy(config));
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `nginx:${id}`,
+          async () => {
+            const result = await nginxApi.connect(
+              id,
+              withGlobalHttpProxy(config),
+            );
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await nginxApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -180,20 +199,20 @@ export function useNginx() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await nginxApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`nginx:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   const clearError = useCallback(() => setError(null), []);
 

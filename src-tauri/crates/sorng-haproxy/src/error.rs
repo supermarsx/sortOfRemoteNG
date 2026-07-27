@@ -49,6 +49,12 @@ impl HaproxyError {
     pub fn not_connected(msg: impl Into<String>) -> Self {
         Self::new(HaproxyErrorKind::NotConnected, msg)
     }
+    pub fn already_connected(id: &str) -> Self {
+        Self::new(
+            HaproxyErrorKind::AlreadyConnected,
+            format!("Connection already exists: {id}"),
+        )
+    }
     pub fn connection(msg: impl Into<String>) -> Self {
         Self::new(HaproxyErrorKind::ConnectionFailed, msg)
     }

@@ -47,7 +47,7 @@ impl LogManager {
 
     /// Get error logging configuration from php.ini directives.
     pub async fn get_log_config(client: &PhpClient, version: &str) -> PhpResult<PhpLogConfig> {
-        let php = client.versioned_php_bin(version);
+        let php = client.versioned_php_bin(version)?;
         let cmd = format!(
             "{php} -r \"echo json_encode([\
                 'error_log' => ini_get('error_log') ?: null,\
@@ -106,7 +106,7 @@ impl LogManager {
     pub async fn get_log_path(client: &PhpClient, version: &str) -> PhpResult<String> {
         let cmd = format!(
             "{} -r \"echo ini_get('error_log');\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {

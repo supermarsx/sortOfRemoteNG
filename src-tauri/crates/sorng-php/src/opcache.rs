@@ -13,7 +13,7 @@ impl OpcacheManager {
     pub async fn get_status(client: &PhpClient, version: &str) -> PhpResult<OpcacheStatus> {
         let cmd = format!(
             "{} -r \"echo json_encode(opcache_get_status());\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -34,7 +34,7 @@ impl OpcacheManager {
     pub async fn get_config(client: &PhpClient, version: &str) -> PhpResult<OpcacheConfig> {
         let cmd = format!(
             "{} -r \"echo json_encode(opcache_get_configuration());\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -55,7 +55,7 @@ impl OpcacheManager {
     pub async fn reset(client: &PhpClient, version: &str) -> PhpResult<()> {
         let cmd = format!(
             "{} -r \"opcache_reset();\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -74,7 +74,7 @@ impl OpcacheManager {
     ) -> PhpResult<Vec<CachedScript>> {
         let cmd = format!(
             "{} -r \"\\$s = opcache_get_status(true); echo json_encode(\\$s['scripts'] ?? []);\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -109,7 +109,7 @@ impl OpcacheManager {
         let escaped_path = path.replace('\'', "\\'");
         let cmd = format!(
             "{} -r \"opcache_invalidate('{}', true);\"",
-            client.versioned_php_bin(version),
+            client.versioned_php_bin(version)?,
             escaped_path
         );
         let out = client.exec_ssh(&cmd).await?;
@@ -126,7 +126,7 @@ impl OpcacheManager {
     pub async fn is_enabled(client: &PhpClient, version: &str) -> PhpResult<bool> {
         let cmd = format!(
             "{} -r \"echo opcache_get_status() === false ? 'no' : 'yes';\"",
-            client.versioned_php_bin(version)
+            client.versioned_php_bin(version)?
         );
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {

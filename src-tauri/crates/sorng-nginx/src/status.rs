@@ -17,12 +17,12 @@ impl StatusManager {
 
     pub async fn health_check(client: &NginxClient) -> NginxResult<NginxHealthCheck> {
         let proc = client.status().await?;
-        let stub = client.stub_status().await.ok();
-        let config_ok = client
-            .test_config()
-            .await
-            .map(|r| r.success)
-            .unwrap_or(false);
+        let stub = if client.status_url().is_some() {
+            Some(client.stub_status().await?)
+        } else {
+            None
+        };
+        let config_ok = client.test_config().await?.success;
         Ok(NginxHealthCheck {
             running: proc.process_type != "inactive",
             pid: Some(proc.pid),

@@ -240,12 +240,7 @@ const ConnectForm: React.FC<{ mgr: NginxManager; instanceId?: string }> = ({
             onChange={(e) => set("sshPassword", e.target.value)}
           />
         </Labeled>
-        <Labeled
-          label={t(
-            "integrations.nginx.sshKey",
-            "SSH private key (path or PEM)",
-          )}
-        >
+        <Labeled label={t("integrations.nginx.sshKey", "SSH private key path")}>
           <input
             className={field}
             value={form.sshKey}

@@ -29,7 +29,7 @@ pub async fn php_connect(
 
 #[tauri::command]
 pub async fn php_disconnect(state: State<'_, PhpServiceState>, id: String) -> CmdResult<()> {
-    state.lock().await.disconnect(&id).map_err(map_err)
+    state.lock().await.disconnect(&id).await.map_err(map_err)
 }
 
 #[tauri::command]

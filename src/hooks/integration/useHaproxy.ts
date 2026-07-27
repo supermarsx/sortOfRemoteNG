@@ -12,6 +12,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   AclEntry,
   ConfigValidationResult,
@@ -149,6 +150,7 @@ function errMsg(e: unknown): string {
  * (matching useGrafana).
  */
 export function useHaproxy() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<HaproxyConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -177,9 +179,26 @@ export function useHaproxy() {
       setIsConnecting(true);
       setError(null);
       try {
-        const s = await haproxyApi.connect(id, withGlobalHttpProxy(config));
-        setConnectionId(id);
-        setSummary(s);
+        const s = await lifecycle.trackConnect(
+          `haproxy:${id}`,
+          async () => {
+            const result = await haproxyApi.connect(
+              id,
+              withGlobalHttpProxy(config),
+            );
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await haproxyApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return true;
       } catch (e) {
         setError(errMsg(e));
@@ -188,20 +207,20 @@ export function useHaproxy() {
         setIsConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await haproxyApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`haproxy:${connectionId}`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   /** Re-ping the live connection to refresh the summary header. */
   const refreshSummary = useCallback(async (): Promise<void> => {

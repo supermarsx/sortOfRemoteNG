@@ -11,6 +11,7 @@
 
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
 import type {
   PhpConnectionConfig,
@@ -29,6 +30,7 @@ export const phpConnectionApi = {
  *  credentials is handled separately by `useIntegrationConfigStore`; this hook
  *  only owns the live backend session identified by `connectionId`. */
 export function usePhpConnection() {
+  const lifecycle = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<PhpConnectionSummary | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -42,9 +44,23 @@ export function usePhpConnection() {
       setConnecting(true);
       setError(null);
       try {
-        const result = await phpConnectionApi.connect(id, config);
-        setConnectionId(id);
-        setSummary(result);
+        const result = await lifecycle.trackConnect(
+          `php:${id}`,
+          async () => {
+            const result = await phpConnectionApi.connect(id, config);
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          },
+          async () => {
+            try {
+              await phpConnectionApi.disconnect(id);
+            } finally {
+              setConnectionId(null);
+              setSummary(null);
+            }
+          },
+        );
         return result;
       } catch (e) {
         const msg = typeof e === "string" ? e : (e as Error).message;
@@ -54,20 +70,20 @@ export function usePhpConnection() {
         setConnecting(false);
       }
     },
-    [],
+    [lifecycle],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await phpConnectionApi.disconnect(connectionId);
+      await lifecycle.trackDisconnect(`php:${connectionId}`);
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
     } finally {
       setConnectionId(null);
       setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, lifecycle]);
 
   return {
     connectionId,

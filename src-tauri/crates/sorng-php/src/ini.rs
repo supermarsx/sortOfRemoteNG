@@ -17,9 +17,9 @@ impl IniManager {
     ) -> PhpResult<PhpIniFile> {
         let path = ini_path(client.config_dir(), version, sapi);
         let raw_content = client
-            .read_remote_file(&path)
-            .await
-            .map_err(|_| PhpError::config_not_found(&path))?;
+            .read_remote_file_if_exists(&path)
+            .await?
+            .ok_or_else(|| PhpError::config_not_found(&path))?;
         let directives = parse_ini_content(&raw_content);
         Ok(PhpIniFile {
             path,
@@ -41,7 +41,7 @@ impl IniManager {
     ) -> PhpResult<Vec<PhpIniDirective>> {
         let cmd = format!(
             "{} -r {}",
-            client.versioned_php_bin(version),
+            client.versioned_php_bin(version)?,
             shell_escape("phpinfo(INFO_ALL);")
         );
         match client.exec_ssh(&cmd).await {
@@ -79,7 +79,7 @@ impl IniManager {
             .clone()
             .unwrap_or_else(|| ini_path(client.config_dir(), &req.version, &req.sapi));
 
-        let content = client.read_remote_file(&path).await.unwrap_or_default();
+        let content = client.read_remote_file(&path).await?;
         let new_line = format!("{} = {}", req.key, req.value);
         let mut found = false;
         let updated: Vec<String> = content
@@ -149,7 +149,10 @@ impl IniManager {
         sapi: &str,
     ) -> PhpResult<PhpIniScanDir> {
         let scan_path = format!("{}/{}/{}/conf.d", client.config_dir(), version, sapi);
-        let files = client.list_dir(&scan_path).await.unwrap_or_default();
+        let files = client
+            .list_dir_if_exists(&scan_path)
+            .await?
+            .unwrap_or_default();
         Ok(PhpIniScanDir {
             path: scan_path,
             version: version.to_string(),
@@ -163,7 +166,7 @@ impl IniManager {
         client: &PhpClient,
         version: &str,
     ) -> PhpResult<Vec<String>> {
-        let cmd = format!("{} --ini", client.versioned_php_bin(version));
+        let cmd = format!("{} --ini", client.versioned_php_bin(version)?);
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
             return Err(PhpError::command_failed(format!(
@@ -227,7 +230,7 @@ impl IniManager {
     /// Validate PHP configuration by running `php{version} -t` and checking
     /// for errors.
     pub async fn validate_ini(client: &PhpClient, version: &str) -> PhpResult<bool> {
-        let cmd = format!("{} -t 2>&1", client.versioned_php_bin(version));
+        let cmd = format!("{} -t 2>&1", client.versioned_php_bin(version)?);
         let out = client.exec_ssh(&cmd).await?;
         Ok(out.exit_code == 0 && !out.stdout.to_lowercase().contains("error"))
     }
@@ -287,4 +290,71 @@ fn parse_phpinfo_directives(output: &str) -> Vec<PhpIniDirective> {
         }
     }
     directives
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::test_support::FakeSshTransport;
+    use std::sync::Arc;
+
+    fn config() -> PhpConnectionConfig {
+        PhpConnectionConfig {
+            host: "php.example.test".into(),
+            port: Some(22),
+            ssh_user: Some("admin".into()),
+            ssh_password: None,
+            ssh_key: None,
+            php_bin: None,
+            fpm_bin: None,
+            composer_bin: None,
+            config_dir: Some("/etc/php".into()),
+            fpm_pool_dir: None,
+            timeout_secs: Some(5),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_directive_never_replaces_failed_read_with_empty_file() {
+        let fake = Arc::new(FakeSshTransport::new(vec![Err(
+            "Command failed with exit code 1: Permission denied".into(),
+        )]));
+        let client = PhpClient::with_test_transport(config(), fake.clone());
+        let request = SetIniDirectiveRequest {
+            version: "8.3".into(),
+            sapi: "cli".into(),
+            key: "memory_limit".into(),
+            value: "256M".into(),
+            file_path: None,
+        };
+
+        let error = IniManager::set_directive(&client, &request)
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("Permission denied"));
+        assert_eq!(
+            fake.commands().len(),
+            1,
+            "failed mandatory read must prevent the write"
+        );
+    }
+
+    #[tokio::test]
+    async fn optional_scan_directory_distinguishes_absence_from_failure() {
+        let fake = Arc::new(FakeSshTransport::new(vec![
+            Ok("__SORNG_DIRECTORY_NOT_FOUND__".into()),
+            Err("connection reset by peer".into()),
+        ]));
+        let client = PhpClient::with_test_transport(config(), fake);
+
+        let missing = IniManager::get_scan_dir(&client, "8.3", "cli")
+            .await
+            .unwrap();
+        assert!(missing.files.is_empty());
+
+        let error = IniManager::get_scan_dir(&client, "8.3", "cli")
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("connection reset"));
+    }
 }

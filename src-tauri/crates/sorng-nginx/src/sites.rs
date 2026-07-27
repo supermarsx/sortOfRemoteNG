@@ -10,13 +10,13 @@ impl SiteManager {
     pub async fn list(client: &NginxClient) -> NginxResult<Vec<NginxSite>> {
         let available = client.list_remote_dir(client.sites_available_dir()).await?;
         let enabled_files = client
-            .list_remote_dir(client.sites_enabled_dir())
-            .await
+            .list_remote_dir_if_exists(client.sites_enabled_dir())
+            .await?
             .unwrap_or_default();
         let mut sites = Vec::new();
         for filename in &available {
             let path = format!("{}/{}", client.sites_available_dir(), filename);
-            let raw_content = client.read_remote_file(&path).await.unwrap_or_default();
+            let raw_content = client.read_remote_file(&path).await?;
             let enabled = enabled_files.contains(filename);
             let site = parse_site(filename, &raw_content, enabled);
             sites.push(site);
@@ -28,7 +28,7 @@ impl SiteManager {
         let path = format!("{}/{}", client.sites_available_dir(), name);
         let raw_content = client.read_remote_file(&path).await?;
         let enabled_path = format!("{}/{}", client.sites_enabled_dir(), name);
-        let enabled = client.file_exists(&enabled_path).await.unwrap_or(false);
+        let enabled = client.file_exists(&enabled_path).await?;
         Ok(parse_site(name, &raw_content, enabled))
     }
 
@@ -56,7 +56,7 @@ impl SiteManager {
 
     pub async fn delete(client: &NginxClient, name: &str) -> NginxResult<()> {
         let link = format!("{}/{}", client.sites_enabled_dir(), name);
-        let _ = client.remove_file(&link).await;
+        client.remove_file(&link).await?;
         let file = format!("{}/{}", client.sites_available_dir(), name);
         client.remove_file(&file).await
     }

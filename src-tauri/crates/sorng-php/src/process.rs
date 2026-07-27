@@ -1,6 +1,6 @@
 // ── sorng-php – PHP-FPM process/service control ─────────────────────────────
 
-use crate::client::{shell_escape, PhpClient};
+use crate::client::{shell_escape, validate_php_version, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -12,7 +12,7 @@ impl ProcessManager {
         client: &PhpClient,
         version: &str,
     ) -> PhpResult<PhpFpmServiceStatus> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!(
             "systemctl show {} --no-pager --property=ActiveState,SubState,MainPID,MemoryCurrent,CPUUsageNSec,TasksCurrent,UnitFileState,ExecMainStartTimestampMonotonic 2>&1",
             shell_escape(&svc),
@@ -65,28 +65,6 @@ impl ProcessManager {
             None // Populated below if we can get it
         });
 
-        // Attempt to get uptime from systemctl (fallback)
-        let uptime_secs = if running {
-            let ts_out = client
-                .exec_ssh(&format!(
-                    "systemctl show {} --property=ActiveEnterTimestamp --value 2>/dev/null",
-                    shell_escape(&svc),
-                ))
-                .await
-                .ok();
-            ts_out.and_then(|o| {
-                let ts = o.stdout.trim().to_string();
-                if ts.is_empty() {
-                    return None;
-                }
-                // Parse timestamp and compute delta — simplified, return None
-                // if we can't parse. The frontend can compute from timestamp.
-                None
-            })
-        } else {
-            uptime_secs
-        };
-
         Ok(PhpFpmServiceStatus {
             version: version.to_string(),
             service_name: svc,
@@ -106,7 +84,7 @@ impl ProcessManager {
 
     /// Start PHP-FPM service.
     pub async fn start(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl start {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -120,7 +98,7 @@ impl ProcessManager {
 
     /// Stop PHP-FPM service.
     pub async fn stop(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl stop {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -134,7 +112,7 @@ impl ProcessManager {
 
     /// Restart PHP-FPM service.
     pub async fn restart(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl restart {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -148,7 +126,7 @@ impl ProcessManager {
 
     /// Graceful reload via systemctl.
     pub async fn reload(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl reload {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -162,7 +140,7 @@ impl ProcessManager {
 
     /// Enable PHP-FPM service at boot.
     pub async fn enable(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl enable {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -176,7 +154,7 @@ impl ProcessManager {
 
     /// Disable PHP-FPM service at boot.
     pub async fn disable(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let cmd = format!("sudo systemctl disable {}", shell_escape(&svc));
         let out = client.exec_ssh(&cmd).await?;
         if out.exit_code != 0 {
@@ -190,6 +168,7 @@ impl ProcessManager {
 
     /// Test FPM configuration via `php-fpm{version} -t`.
     pub async fn test_config(client: &PhpClient, version: &str) -> PhpResult<ConfigTestResult> {
+        validate_php_version(version)?;
         let cmd = format!("php-fpm{} -t 2>&1", version);
         let out = client.exec_ssh(&cmd).await?;
 
@@ -216,7 +195,7 @@ impl ProcessManager {
         client: &PhpClient,
         version: &str,
     ) -> PhpResult<PhpFpmMasterProcess> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
 
         // Get master PID from systemctl
         let pid_out = client
@@ -270,7 +249,7 @@ impl ProcessManager {
         let worker_count: u32 = workers_out.stdout.trim().parse().unwrap_or(0);
 
         // Count pools by looking at pool.d directory
-        let pool_dir = client.fpm_pool_dir(version);
+        let pool_dir = client.fpm_pool_dir(version)?;
         let pools_out = client
             .exec_ssh(&format!(
                 "ls -1 {} 2>/dev/null | grep '\\.conf$' | wc -l",
@@ -298,7 +277,7 @@ impl ProcessManager {
 
     /// List all FPM worker PIDs for a given version.
     pub async fn list_worker_pids(client: &PhpClient, version: &str) -> PhpResult<Vec<u32>> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
 
         // Get master PID
         let pid_out = client
@@ -332,7 +311,7 @@ impl ProcessManager {
 
     /// Send USR2 signal to master process for graceful restart.
     pub async fn graceful_restart(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let pid_out = client
             .exec_ssh(&format!(
                 "systemctl show {} --property=MainPID --value 2>/dev/null",
@@ -360,7 +339,7 @@ impl ProcessManager {
 
     /// Send USR1 signal to master process to reopen log files.
     pub async fn reopen_logs(client: &PhpClient, version: &str) -> PhpResult<()> {
-        let svc = client.fpm_service_name(version);
+        let svc = client.fpm_service_name(version)?;
         let pid_out = client
             .exec_ssh(&format!(
                 "systemctl show {} --property=MainPID --value 2>/dev/null",

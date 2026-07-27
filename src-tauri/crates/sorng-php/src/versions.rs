@@ -1,7 +1,7 @@
 // ── sorng-php – PHP version management ───────────────────────────────────────
 //! Manages PHP version discovery, inspection, and switching on remote servers.
 
-use crate::client::PhpClient;
+use crate::client::{shell_escape, validate_php_version, PhpClient};
 use crate::error::{PhpError, PhpResult};
 use crate::types::*;
 
@@ -11,38 +11,53 @@ impl VersionManager {
     /// List all installed PHP versions by scanning `/usr/bin/php*` and parsing
     /// each binary's version output.
     pub async fn list(client: &PhpClient) -> PhpResult<Vec<PhpVersion>> {
-        let cmd = "ls -1 /usr/bin/php[0-9]* 2>/dev/null | sort -V";
+        let cmd = "find /usr/bin -maxdepth 1 -name 'php[0-9]*' -print";
         let out = client.exec_ssh(cmd).await?;
 
-        let default_version = Self::get_default(client).await.ok();
+        let default_version = if client.command_exists(client.php_bin()).await? {
+            Some(Self::get_default(client).await?)
+        } else {
+            None
+        };
 
         let mut versions = Vec::new();
-        for line in out.stdout.lines() {
+        let mut binaries: Vec<&str> = out.stdout.lines().collect();
+        binaries.sort_unstable();
+        for line in binaries {
             let binary = line.trim();
             if binary.is_empty() {
                 continue;
             }
 
-            let ver_cmd = format!("{} -v 2>/dev/null", binary);
-            let ver_out = match client.exec_ssh(&ver_cmd).await {
-                Ok(o) => o,
-                Err(_) => continue,
-            };
+            let ver_cmd = format!("{} -v 2>/dev/null", shell_escape(binary));
+            let ver_out = client.exec_ssh(&ver_cmd).await?;
 
-            if let Some(pv) = parse_version_output(&ver_out.stdout, binary) {
-                let is_default = default_version
-                    .as_ref()
-                    .map(|d| d.version == pv.version)
-                    .unwrap_or(false);
+            let pv = parse_version_output(&ver_out.stdout, binary).ok_or_else(|| {
+                PhpError::parse(format!(
+                    "Failed to parse PHP version output from {binary:?}: {:?}",
+                    ver_out.stdout.trim()
+                ))
+            })?;
+            let is_default = default_version
+                .as_ref()
+                .map(|default| default.version == pv.version)
+                .unwrap_or(false);
 
-                let short = format!("{}.{}", pv.major, pv.minor);
-                let sapis = Self::discover_sapis(client, &short).await;
+            let short = format!("{}.{}", pv.major, pv.minor);
+            let sapis = Self::discover_sapis(client, &short).await?;
 
-                versions.push(PhpVersion {
-                    is_default,
-                    sapis,
-                    ..pv
-                });
+            versions.push(PhpVersion {
+                is_default,
+                sapis,
+                ..pv
+            });
+        }
+        if let Some(default) = default_version {
+            if !versions
+                .iter()
+                .any(|version| version.version == default.version)
+            {
+                versions.push(default);
             }
         }
 
@@ -61,7 +76,7 @@ impl VersionManager {
             )));
         }
 
-        let real_path_cmd = format!("readlink -f $(which {}) 2>/dev/null || which {}", bin, bin);
+        let real_path_cmd = format!("readlink -f -- \"$(command -v {})\"", bin);
         let path_out = client.exec_ssh(&real_path_cmd).await?;
         let binary_path = path_out.stdout.trim().to_string();
 
@@ -70,13 +85,14 @@ impl VersionManager {
         pv.is_default = true;
 
         let short = format!("{}.{}", pv.major, pv.minor);
-        pv.sapis = Self::discover_sapis(client, &short).await;
+        pv.sapis = Self::discover_sapis(client, &short).await?;
 
         Ok(pv)
     }
 
     /// Get detailed phpinfo for a specific PHP version.
     pub async fn get_detail(client: &PhpClient, version: &str) -> PhpResult<PhpVersionDetail> {
+        validate_php_version(version)?;
         Self::ensure_installed(client, version).await?;
 
         let cmd = format!("php{} -i 2>/dev/null", version);
@@ -145,6 +161,7 @@ impl VersionManager {
 
     /// Set the default system PHP version via `update-alternatives`.
     pub async fn set_default(client: &PhpClient, version: &str) -> PhpResult<()> {
+        validate_php_version(version)?;
         Self::ensure_installed(client, version).await?;
 
         let cmd = format!("sudo update-alternatives --set php /usr/bin/php{}", version);
@@ -160,6 +177,7 @@ impl VersionManager {
 
     /// List available SAPIs for a specific PHP version.
     pub async fn list_sapis(client: &PhpClient, version: &str) -> PhpResult<Vec<PhpSapi>> {
+        validate_php_version(version)?;
         Self::ensure_installed(client, version).await?;
 
         let sapi_names = ["cli", "fpm", "cgi", "apache2"];
@@ -194,7 +212,12 @@ impl VersionManager {
 
             let check = client.exec_ssh(&check_cmd).await?;
             if check.stdout.trim() == "yes" {
-                let config_file = Self::get_config_path(client, version, sapi_name).await.ok();
+                let config_path =
+                    format!("{}/{}/{}/php.ini", client.config_dir(), version, sapi_name);
+                let config_file = client
+                    .file_exists(&config_path)
+                    .await?
+                    .then_some(config_path);
                 sapis.push(PhpSapi {
                     name: sapi_name.to_string(),
                     version: version.to_string(),
@@ -213,6 +236,7 @@ impl VersionManager {
         version: &str,
         sapi: &str,
     ) -> PhpResult<String> {
+        validate_php_version(version)?;
         let path = format!("{}/{}/{}/php.ini", client.config_dir(), version, sapi);
         let exists = client.file_exists(&path).await?;
         if exists {
@@ -224,6 +248,7 @@ impl VersionManager {
 
     /// Get the extension directory path for a PHP version.
     pub async fn get_extension_dir(client: &PhpClient, version: &str) -> PhpResult<String> {
+        validate_php_version(version)?;
         Self::ensure_installed(client, version).await?;
 
         let cmd = format!(
@@ -243,6 +268,7 @@ impl VersionManager {
 
     /// Check whether a specific PHP version is installed.
     pub async fn check_version_installed(client: &PhpClient, version: &str) -> PhpResult<bool> {
+        validate_php_version(version)?;
         let cmd = format!("test -f /usr/bin/php{} && echo yes || echo no", version);
         let out = client.exec_ssh(&cmd).await?;
         Ok(out.stdout.trim() == "yes")
@@ -257,7 +283,8 @@ impl VersionManager {
         Ok(())
     }
 
-    async fn discover_sapis(client: &PhpClient, version: &str) -> Vec<String> {
+    async fn discover_sapis(client: &PhpClient, version: &str) -> PhpResult<Vec<String>> {
+        validate_php_version(version)?;
         let mut sapis = Vec::new();
         let checks = [
             ("cli", format!("/usr/bin/php{}", version)),
@@ -269,14 +296,11 @@ impl VersionManager {
             ),
         ];
         for (name, path) in &checks {
-            let cmd = format!("test -f {} && echo yes || echo no", path);
-            if let Ok(out) = client.exec_ssh(&cmd).await {
-                if out.stdout.trim() == "yes" {
-                    sapis.push(name.to_string());
-                }
+            if client.file_exists(path).await? {
+                sapis.push(name.to_string());
             }
         }
-        sapis
+        Ok(sapis)
     }
 }
 
