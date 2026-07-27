@@ -138,8 +138,8 @@ const emptyConnect: ConnectState = {
   name: "",
 };
 
-/** Legacy bundled shape. New saves vault only the password; privateKey is a
- * filesystem path persisted in the non-secret fields. */
+/** Legacy bundled shape. New saves vault only the password; the private-key
+ * filesystem path is persisted as non-secret `privateKeyPath` metadata. */
 interface AmavisSecrets {
   password?: string;
   privateKey?: string;
@@ -179,7 +179,7 @@ const ConnectForm: React.FC<{
       host: inst.host ?? "",
       port: inst.fields?.port ?? "22",
       username: inst.fields?.username ?? "",
-      privateKey: inst.fields?.privateKey ?? "",
+      privateKey: inst.fields?.privateKeyPath ?? "",
       timeoutSecs: inst.fields?.timeoutSecs ?? "30",
     });
     void readSecret(inst).then((raw) => {
@@ -190,7 +190,7 @@ const ConnectForm: React.FC<{
         setForm((f) => ({
           ...f,
           password: s.password ?? "",
-          privateKey: inst.fields?.privateKey ?? s.privateKey ?? "",
+          privateKey: inst.fields?.privateKeyPath ?? s.privateKey ?? "",
         }));
       } catch {
         // Legacy / non-JSON secret — treat as the SSH password.
@@ -221,7 +221,7 @@ const ConnectForm: React.FC<{
     const fields: Record<string, string> = {
       port: form.port,
       username: form.username,
-      privateKey: form.privateKey,
+      privateKeyPath: form.privateKey,
       timeoutSecs: form.timeoutSecs,
     };
     const secret = form.password || undefined;

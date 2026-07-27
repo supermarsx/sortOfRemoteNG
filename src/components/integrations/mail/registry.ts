@@ -2,7 +2,7 @@
 // the intra-panel analogue of the top-level integrations registry).
 //
 // Unlike the cpanel/php shells (one shared connection → tabs consume a
-// `connectionId`), the 8 mail-chain crates are INDEPENDENT daemons: each sub-tab
+// `connectionId`), the 9 mail-service crates are INDEPENDENT: each sub-tab
 // is a self-contained mini-panel that owns its own connect form + connection
 // lifecycle + management views. The shell (`MailServerPanel.tsx`) only renders
 // the sub-tab bar and Suspense-mounts the active tab from this array.

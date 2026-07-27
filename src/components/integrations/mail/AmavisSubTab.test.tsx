@@ -106,7 +106,7 @@ describe("AmavisSubTab", () => {
         fields: {
           port: "2222",
           username: "selected-user",
-          privateKey: "~/.ssh/amavis_ed25519",
+          privateKeyPath: "~/.ssh/amavis_ed25519",
           timeoutSecs: "45",
         },
         createdAt: "2026-07-27T00:00:00.000Z",
@@ -178,6 +178,69 @@ describe("AmavisSubTab", () => {
     );
   });
 
+  it("hydrates a legacy vault-only private-key path and passes it to connect", async () => {
+    const persisted = JSON.stringify([
+      {
+        id: "amavis-legacy",
+        integrationKey: "mail.amavis",
+        name: "Legacy Amavis",
+        host: "legacy.example.test",
+        credentialRefId: "legacy-ref",
+        fields: {
+          port: "22",
+          username: "legacy-user",
+          timeoutSecs: "30",
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+        updatedAt: "2026-07-27T00:00:00.000Z",
+      },
+    ]);
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "read_app_data") return Promise.resolve(persisted);
+        if (cmd === "vault_read_secret") {
+          expect(args).toEqual(
+            expect.objectContaining({ account: "legacy-ref" }),
+          );
+          return Promise.resolve(
+            JSON.stringify({
+              password: "legacy-password",
+              privateKey: "~/.ssh/legacy_amavis",
+            }),
+          );
+        }
+        if (cmd === "amavis_connect") {
+          return Promise.resolve({
+            host: "legacy.example.test",
+            version: "2.13.0",
+            running: true,
+            uptime_secs: 42,
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+
+    render(<AmavisSubTab active instanceId="amavis-legacy" />);
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("~/.ssh/legacy_amavis")).toBeVisible(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("amavis_connect", {
+        id: "amavis-legacy",
+        config: expect.objectContaining({
+          host: "legacy.example.test",
+          username: "legacy-user",
+          password: "legacy-password",
+          private_key: "~/.ssh/legacy_amavis",
+        }),
+      }),
+    );
+  });
+
   it("api wrappers map to the correct command names + camelCase args", () => {
     amavisApi.getBannedRule("c1", "b1");
     amavisApi.listEntries("c1", "sender_whitelist");
@@ -200,6 +263,47 @@ describe("AmavisSubTab", () => {
       name: "pb1",
       req: { description: "x" },
     });
+  });
+
+  it("persists the private-key path as non-secret metadata", async () => {
+    let stored: string | null = null;
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "read_app_data") return Promise.resolve(stored);
+        if (cmd === "compare_and_swap_app_data") {
+          if (args?.expected !== stored) return Promise.resolve(false);
+          stored = String(args?.replacement ?? "");
+          return Promise.resolve(true);
+        }
+        return Promise.resolve(null);
+      },
+    );
+
+    render(<AmavisSubTab active />);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("mail.lab.local")).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("mail.lab.local"), {
+      target: { value: "amavis.lab.local" },
+    });
+    fireEvent.change(
+      screen.getByText("SSH username").parentElement!.querySelector("input")!,
+      { target: { value: "root" } },
+    );
+    fireEvent.change(screen.getByPlaceholderText("~/.ssh/id_ed25519"), {
+      target: { value: "~/.ssh/amavis_ed25519" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save instance/i }));
+
+    await waitFor(() => expect(stored).not.toBeNull());
+    const [saved] = JSON.parse(stored!) as Array<{
+      fields?: Record<string, string>;
+    }>;
+    expect(saved.fields).toMatchObject({
+      privateKeyPath: "~/.ssh/amavis_ed25519",
+    });
+    expect(saved.fields).not.toHaveProperty("privateKey");
   });
 
   it("binds the full 52-command amavis surface", () => {
