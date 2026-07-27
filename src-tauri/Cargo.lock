@@ -9385,11 +9385,13 @@ dependencies = [
 name = "sorng-amavis"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -9984,11 +9986,13 @@ dependencies = [
 name = "sorng-clamav"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -10402,11 +10406,13 @@ dependencies = [
 name = "sorng-cyrus-sasl"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -10550,11 +10556,13 @@ dependencies = [
 name = "sorng-dovecot"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -10625,6 +10633,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-powershell",
  "tokio",
  "url",
  "uuid",
@@ -10841,11 +10850,13 @@ dependencies = [
 name = "sorng-haproxy"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -11058,6 +11069,7 @@ dependencies = [
  "sorng-core",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -11432,11 +11444,13 @@ dependencies = [
 name = "sorng-nginx"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -11519,6 +11533,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -11696,11 +11711,13 @@ dependencies = [
 name = "sorng-php"
 version = "26.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -11743,6 +11760,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
@@ -11852,6 +11870,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]
