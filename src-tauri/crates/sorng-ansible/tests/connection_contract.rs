@@ -105,6 +105,7 @@ async fn connect_and_info_require_successful_version_process_and_cleanup_map() {
 #[tokio::test]
 async fn nonzero_version_probe_fails_without_map_insertion() {
     let fixture = FixtureDir::new();
+    #[cfg(windows)]
     let program = fixture.program(
         "ansible-failure",
         "echo ansible [core 2.16.3]\necho version probe failed 1>&2\nexit /b 7",
