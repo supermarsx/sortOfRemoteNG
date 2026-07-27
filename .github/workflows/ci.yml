@@ -73,6 +73,16 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run lint
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
   test:
     runs-on: ubuntu-latest
     steps:
@@ -99,6 +109,219 @@ jobs:
       - name: Report coverage
         run: >-
           node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync('coverage/coverage-final.json','utf8'));let total=0,covered=0;for(const f of Object.values(data)){total+=Object.keys(f.statementMap).length;for(const k in f.s){if(f.s[k])covered++;}}const pct=(covered/total*100).toFixed(2);console.log('Coverage: '+pct+'%');"
+
+  # Deterministic contracts added for the integration sweep. This cohort uses
+  # local processes and loopback HTTP fixtures only; live-provider and Docker
+  # tests remain in the dedicated e2e workflows.
+  rust-integration-contracts:
+    name: rust-integration-contracts (${{ matrix.cohort }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cohort: http-local
+            test_packages: >-
+              sorng-ansible
+              sorng-budibase
+              sorng-caddy
+              sorng-cpanel
+              sorng-gdrive
+              sorng-grafana
+              sorng-jira
+              sorng-keepass
+              sorng-lxd
+              sorng-mailcow
+              sorng-netbox
+              sorng-osticket
+              sorng-pfsense
+              sorng-prometheus
+              sorng-roundcube
+              sorng-rspamd
+              sorng-traefik
+            format_packages: >-
+              sorng-ansible
+              sorng-budibase
+              sorng-caddy
+              sorng-cpanel
+              sorng-gdrive
+              sorng-grafana
+              sorng-jira
+              sorng-keepass
+              sorng-lxd
+              sorng-mailcow
+              sorng-netbox
+              sorng-osticket
+              sorng-pfsense
+              sorng-prometheus
+              sorng-roundcube
+              sorng-rspamd
+              sorng-traefik
+            clippy_packages: >-
+              sorng-ansible
+              sorng-budibase
+              sorng-caddy
+              sorng-cpanel
+              sorng-gdrive
+              sorng-grafana
+              sorng-jira
+              sorng-keepass
+              sorng-lxd
+              sorng-mailcow
+              sorng-netbox
+              sorng-osticket
+              sorng-pfsense
+              sorng-prometheus
+              sorng-roundcube
+              sorng-rspamd
+              sorng-traefik
+            clippy_no_deps: false
+          - cohort: retained-ssh
+            test_packages: >-
+              sorng-ssh
+              sorng-nginx
+              sorng-haproxy
+              sorng-php
+              sorng-amavis
+              sorng-clamav
+              sorng-cyrus-sasl
+              sorng-dovecot
+              sorng-opendkim
+              sorng-postfix
+              sorng-procmail
+            format_packages: >-
+              sorng-nginx
+              sorng-haproxy
+              sorng-php
+              sorng-amavis
+              sorng-clamav
+              sorng-cyrus-sasl
+              sorng-dovecot
+              sorng-opendkim
+              sorng-postfix
+              sorng-procmail
+            clippy_packages: >-
+              sorng-ssh
+              sorng-nginx
+              sorng-haproxy
+              sorng-php
+              sorng-amavis
+              sorng-clamav
+              sorng-cyrus-sasl
+              sorng-dovecot
+              sorng-opendkim
+              sorng-postfix
+              sorng-procmail
+            clippy_no_deps: false
+          - cohort: native-and-cloud
+            test_packages: >-
+              sorng-exchange
+              sorng-powershell
+              sorng-commands-cloud
+              sorng-mssql
+              sorng-vmware
+              sorng-vmware-desktop
+            format_packages: >-
+              sorng-exchange
+              sorng-mssql
+              sorng-vmware
+              sorng-vmware-desktop
+            clippy_packages: >-
+              sorng-exchange
+              sorng-powershell
+              sorng-mssql
+              sorng-vmware
+              sorng-vmware-desktop
+            clippy_no_deps: false
+          - cohort: config-backend
+            test_packages: >-
+              sorng-storage
+              sorng-commands-core
+            format_packages: ""
+            clippy_packages: >-
+              sorng-storage
+              sorng-commands-core
+            clippy_no_deps: true
+    defaults:
+      run:
+        working-directory: src-tauri
+    env:
+      TEST_PACKAGES: ${{ matrix.test_packages }}
+      FORMAT_PACKAGES: ${{ matrix.format_packages }}
+      CLIPPY_PACKAGES: ${{ matrix.clippy_packages }}
+      CLIPPY_NO_DEPS: ${{ matrix.clippy_no_deps }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: integration-contracts-${{ matrix.cohort }}
+      - name: cargo fmt (provider crates)
+        if: matrix.format_packages != ''
+        shell: bash
+        run: cargo fmt --check --package ${FORMAT_PACKAGES}
+      - name: rustfmt (changed retained-SSH files)
+        if: matrix.cohort == 'retained-ssh'
+        shell: bash
+        run: >-
+          rustfmt --check --edition 2021 --config skip_children=true
+          --color always --
+          crates/sorng-ssh/src/script.rs
+          crates/sorng-ssh/src/ssh/integration.rs
+          crates/sorng-ssh/src/ssh/mod.rs
+          crates/sorng-ssh/src/ssh/service.rs
+          crates/sorng-ssh/src/ssh/types.rs
+          crates/sorng-ssh/tests/golden_path.rs
+      - name: rustfmt (changed PowerShell and command-router files)
+        if: matrix.cohort == 'native-and-cloud'
+        shell: bash
+        run: >-
+          rustfmt --check --edition 2021 --config skip_children=true
+          --color always --
+          crates/sorng-powershell/src/psrp_wsman.rs
+          crates/sorng-powershell/src/runspace_session/service.rs
+          crates/sorng-powershell/src/runspace_session/types.rs
+          crates/sorng-powershell/tests/psrp_wsman.rs
+          crates/sorng-commands-cloud/src/cloud_handler.rs
+      - name: rustfmt (changed command registration)
+        if: matrix.cohort == 'config-backend'
+        shell: bash
+        run: >-
+          rustfmt --check --edition 2021 --config skip_children=true
+          --color always --
+          crates/sorng-commands-core/src/core_handler.rs
+      - name: cargo test (deterministic integration contracts)
+        shell: bash
+        run: |
+          read -ra crates <<< "${TEST_PACKAGES}"
+          package_args=()
+          for crate in "${crates[@]}"; do
+            package_args+=(--package "${crate}")
+          done
+          cargo test --locked "${package_args[@]}" --tests
+      - name: cargo clippy (integration crates and contract tests)
+        shell: bash
+        run: |
+          read -ra crates <<< "${CLIPPY_PACKAGES}"
+          package_args=()
+          for crate in "${crates[@]}"; do
+            package_args+=(--package "${crate}")
+          done
+          dependency_args=()
+          if [[ "${CLIPPY_NO_DEPS}" == "true" ]]; then
+            dependency_args+=(--no-deps)
+          fi
+          cargo clippy --locked "${package_args[@]}" "${dependency_args[@]}" \
+            --all-targets -- -D warnings
+      - name: cargo clippy (commands-cloud router, excluding dependency lint debt)
+        if: matrix.cohort == 'native-and-cloud'
+        shell: bash
+        run: >-
+          cargo clippy --locked --package sorng-commands-cloud
+          --all-targets --no-deps -- -D warnings
 
   # ── Rust workspace check ───────────────────────────────────────────
   # Kafka is off by default. On Windows we exclude `sorng-kafka` entirely
@@ -367,8 +590,10 @@ jobs:
       - version
       - format
       - lint
+      - typecheck
       - test
       - coverage
+      - rust-integration-contracts
       - updater-signature-verifier
       - rust-check-linux
       - rust-check-windows
