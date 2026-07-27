@@ -397,6 +397,35 @@ impl SecureStorage {
         // SORNG_ENC: write path was retired.
         self.save_data(data, false).await
     }
+
+    /// Atomically replace one app-data value when it still matches the caller's
+    /// expected snapshot. The command layer holds the surrounding
+    /// `SecureStorageState` mutex for this entire read/compare/write operation,
+    /// preventing detached windows from overwriting each other's updates.
+    pub async fn compare_and_swap_app_data(
+        &self,
+        key: &str,
+        expected: Option<&str>,
+        replacement: &str,
+    ) -> Result<bool, String> {
+        let mut data = self.load_data().await?.unwrap_or_else(|| StorageData {
+            connections: Vec::new(),
+            settings: std::collections::HashMap::new(),
+            timestamp: 0,
+            app_data: std::collections::HashMap::new(),
+        });
+        if data.app_data.get(key).map(String::as_str) != expected {
+            return Ok(false);
+        }
+        data.app_data
+            .insert(key.to_string(), replacement.to_string());
+        data.timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        self.save_data(data, false).await?;
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -429,6 +458,33 @@ mod connections_dispatch_tests {
             store_path: path,
             encryption_state: None,
         }
+    }
+
+    #[tokio::test]
+    async fn app_data_compare_and_swap_rejects_stale_writers() {
+        let dir = tempdir().unwrap();
+        let storage = build_storage(dir.path().join("cas.json").to_string_lossy().into());
+
+        assert!(storage
+            .compare_and_swap_app_data("instances", None, "[1]")
+            .await
+            .unwrap());
+        assert!(!storage
+            .compare_and_swap_app_data("instances", None, "[2]")
+            .await
+            .unwrap());
+        assert!(!storage
+            .compare_and_swap_app_data("instances", Some("[0]"), "[2]")
+            .await
+            .unwrap());
+        assert!(storage
+            .compare_and_swap_app_data("instances", Some("[1]"), "[2]")
+            .await
+            .unwrap());
+        assert_eq!(
+            storage.read_app_data("instances").await.unwrap().as_deref(),
+            Some("[2]")
+        );
     }
 
     fn plant_sorng_enc_fixture(path: &str, payload: &StorageData, password: &str) {

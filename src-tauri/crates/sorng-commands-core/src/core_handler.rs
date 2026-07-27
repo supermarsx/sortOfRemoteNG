@@ -30,6 +30,7 @@ pub fn is_command(command: &str) -> bool {
             | "clear_storage"
             | "read_app_data"
             | "write_app_data"
+            | "compare_and_swap_app_data"
             | "read_app_settings"
             | "write_app_settings"
             | "databases_list"
@@ -1331,6 +1332,7 @@ define_command_group!(
         storage_commands::clear_storage,
         storage_commands::read_app_data,
         storage_commands::write_app_data,
+        storage_commands::compare_and_swap_app_data,
         app_settings_commands::read_app_settings,
         app_settings_commands::write_app_settings,
         backup_commands::backup_update_config,
@@ -2795,6 +2797,13 @@ mod tests {
         GROUP_G_COMMANDS, GROUP_H_COMMANDS, GROUP_I_COMMANDS, GROUP_J_COMMANDS,
     };
     use std::collections::HashSet;
+
+    #[test]
+    fn app_data_compare_and_swap_is_recognized_and_registered() {
+        assert!(is_command("compare_and_swap_app_data"));
+        assert!(include_str!("core_handler.rs")
+            .contains("storage_commands::compare_and_swap_app_data,"));
+    }
 
     #[test]
     fn generated_command_groups_are_unique_recognized_and_exactly_routed() {

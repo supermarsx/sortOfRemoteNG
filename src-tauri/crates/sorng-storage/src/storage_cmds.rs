@@ -125,3 +125,19 @@ pub async fn write_app_data(
     storage.write_app_data(&key, &value).await
 }
 
+/// Atomically replace an app-data value if it still equals `expected`.
+///
+/// Returning `false` is a normal compare mismatch, not an I/O error. Callers
+/// should reload, rebase their mutation, and retry.
+#[tauri::command]
+pub async fn compare_and_swap_app_data(
+    key: String,
+    expected: Option<String>,
+    replacement: String,
+    state: tauri::State<'_, SecureStorageState>,
+) -> Result<bool, String> {
+    let storage = state.lock().await;
+    storage
+        .compare_and_swap_app_data(&key, expected.as_deref(), &replacement)
+        .await
+}
