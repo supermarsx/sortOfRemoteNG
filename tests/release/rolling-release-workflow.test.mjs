@@ -513,6 +513,39 @@ test("release builds force the npm Tauri runner instead of lockfile autodetectio
   assert.doesNotMatch(tauriBuild, /tauriScript:\s+(?:bun|pnpm|yarn)\b/);
 });
 
+test("release Tauri builds give the inherited Next build a 4 GiB Node heap", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const nativeBuildStart = buildJob.indexOf(
+    "- name: Build native bundles with static Kafka",
+  );
+  const nextStepStart = buildJob.indexOf(
+    "- name: Preserve native Linux outputs and prune build intermediates",
+    nativeBuildStart,
+  );
+  const tauriBuild = buildJob.slice(nativeBuildStart, nextStepStart);
+
+  assert.ok(nativeBuildStart >= 0);
+  assert.ok(nextStepStart > nativeBuildStart);
+  assert.match(
+    tauriBuild,
+    /uses: tauri-apps\/tauri-action@[0-9a-f]{40}[\s\S]*?env:\r?\n(?:\s+#.*\r?\n)*\s+NODE_OPTIONS: --max-old-space-size=4096[\s\S]*?tauriScript: npm run tauri/,
+    "NODE_OPTIONS must be on the Tauri action so its beforeBuildCommand inherits the larger heap",
+  );
+  assert.equal(
+    (buildJob.match(/^\s+NODE_OPTIONS: --max-old-space-size=4096$/gm) ?? [])
+      .length,
+    1,
+    "the heap override must remain scoped to the native release-build step",
+  );
+  assert.equal(
+    tauriConfig.build.beforeBuildCommand,
+    "npm run build && npm run stage:opkssh-vendor -- --release --enable",
+  );
+});
+
 test("Windows ARM64 QuickJS builds map alloca to the MSVC intrinsic", () => {
   const buildJob = releaseWorkflow.slice(
     releaseWorkflow.indexOf("  build:"),
@@ -852,6 +885,10 @@ test("resource controls preserve release features and signing inputs", () => {
     signingEnvironment.trimEnd(),
     [
       "        env:",
+      "          # Next's TypeScript worker can exceed Node's default heap on the",
+      "          # macOS Intel runner. Scope the larger heap to Tauri and its",
+      "          # beforeBuildCommand instead of widening every release step.",
+      "          NODE_OPTIONS: --max-old-space-size=4096",
       "          TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}",
       "          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}",
     ].join("\n"),

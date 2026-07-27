@@ -845,6 +845,10 @@ jobs:
       - name: Build native bundles with static Kafka
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
+          # Next's TypeScript worker can exceed Node's default heap on the
+          # macOS Intel runner. Scope the larger heap to Tauri and its
+          # beforeBuildCommand instead of widening every release step.
+          NODE_OPTIONS: --max-old-space-size=4096
           TAURI_SIGNING_PRIVATE_KEY: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ needs.metadata.outputs.updater_enabled == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         with:
