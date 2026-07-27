@@ -49,6 +49,11 @@ impl GrafanaService {
         id: String,
         config: GrafanaConnectionConfig,
     ) -> GrafanaResult<GrafanaConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(GrafanaError::conflict(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = GrafanaClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

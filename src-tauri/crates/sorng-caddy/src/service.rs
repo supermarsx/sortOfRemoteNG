@@ -44,6 +44,11 @@ impl CaddyService {
         id: String,
         config: CaddyConnectionConfig,
     ) -> CaddyResult<CaddyConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(CaddyError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = CaddyClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

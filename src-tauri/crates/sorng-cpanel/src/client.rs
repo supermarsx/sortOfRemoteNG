@@ -19,6 +19,37 @@ pub struct CpanelClient {
 
 impl CpanelClient {
     pub fn new(config: CpanelConnectionConfig) -> CpanelResult<Self> {
+        if config.host.trim().is_empty() {
+            return Err(CpanelError::invalid_request("host must not be empty"));
+        }
+        if config.username.trim().is_empty() {
+            return Err(CpanelError::auth("username must not be empty"));
+        }
+        if config.timeout_secs == Some(0) {
+            return Err(CpanelError::invalid_request(
+                "request timeout must be greater than zero",
+            ));
+        }
+        let credential_missing = match &config.auth_mode {
+            CpanelAuthMode::Password => config
+                .password
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_none(),
+            CpanelAuthMode::ApiToken | CpanelAuthMode::UserApiToken => config
+                .api_token
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_none(),
+        };
+        if credential_missing {
+            return Err(CpanelError::auth(
+                "the selected authentication credential must not be empty",
+            ));
+        }
+
         let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
@@ -50,12 +81,26 @@ impl CpanelClient {
     }
 
     fn whm_base(&self) -> String {
-        let port = self.config.whm_port.unwrap_or(2087);
+        let port = self
+            .config
+            .whm_port
+            .unwrap_or(if self.config.use_tls.unwrap_or(true) {
+                2087
+            } else {
+                2086
+            });
         format!("{}://{}:{}", self.scheme(), self.config.host, port)
     }
 
     fn cpanel_base(&self) -> String {
-        let port = self.config.cpanel_port.unwrap_or(2083);
+        let port = self
+            .config
+            .cpanel_port
+            .unwrap_or(if self.config.use_tls.unwrap_or(true) {
+                2083
+            } else {
+                2082
+            });
         format!("{}://{}:{}", self.scheme(), self.config.host, port)
     }
 
@@ -119,7 +164,7 @@ impl CpanelClient {
             .apply_auth(self.http.get(url))
             .send()
             .await
-            .map_err(|e| CpanelError::http(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -146,7 +191,7 @@ impl CpanelClient {
             .apply_auth(self.http.post(url).form(params))
             .send()
             .await
-            .map_err(|e| CpanelError::http(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("POST {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -168,7 +213,7 @@ impl CpanelClient {
             .apply_auth(self.http.post(url).json(body))
             .send()
             .await
-            .map_err(|e| CpanelError::http(format!("POST JSON {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("POST JSON {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -198,7 +243,10 @@ impl CpanelClient {
                 .join("&");
             format!("{base}?api.version=1&{qs}")
         };
-        self.get_json(&url).await
+        let raw: serde_json::Value = self.get_json(&url).await?;
+        Self::ensure_whm_success(&raw)?;
+        serde_json::from_value(raw)
+            .map_err(|e| CpanelError::parse(format!("WHM {function} parse: {e}")))
     }
 
     /// Call a WHM API function and return raw JSON.
@@ -230,7 +278,10 @@ impl CpanelClient {
                 .join("&");
             format!("{base}?{qs}")
         };
-        self.get_json(&url).await
+        let raw: serde_json::Value = self.get_json(&url).await?;
+        Self::ensure_uapi_success(&raw)?;
+        serde_json::from_value(raw)
+            .map_err(|e| CpanelError::parse(format!("UAPI {module}::{function} parse: {e}")))
     }
 
     /// Call a UAPI function via WHM (impersonating a user).
@@ -269,29 +320,113 @@ impl CpanelClient {
 
     /// Verify the connection and return a summary.
     pub async fn ping(&self) -> CpanelResult<CpanelConnectionSummary> {
+        if matches!(self.config.auth_mode, CpanelAuthMode::UserApiToken) {
+            return self.ping_user_api().await;
+        }
+
         let raw: serde_json::Value = self.whm_api("version", &[]).await?;
         let version = raw
             .get("version")
+            .or_else(|| raw.get("data").and_then(|data| data.get("version")))
             .and_then(|v| v.as_str())
-            .map(String::from);
+            .map(String::from)
+            .ok_or_else(|| CpanelError::parse("WHM version response omitted data.version"))?;
 
-        let info: serde_json::Value = self
-            .whm_api_raw("gethostname", &[])
-            .await
-            .unwrap_or_default();
+        let info: serde_json::Value = self.whm_api_raw("gethostname", &[]).await?;
         let hostname = info
             .get("data")
             .and_then(|d| d.get("hostname"))
             .and_then(|h| h.as_str())
-            .map(String::from);
+            .map(String::from)
+            .ok_or_else(|| CpanelError::parse("WHM gethostname response omitted data.hostname"))?;
 
         Ok(CpanelConnectionSummary {
             host: self.config.host.clone(),
-            hostname,
-            version,
+            hostname: Some(hostname),
+            version: Some(version),
             theme: None,
             server_type: Some("cPanel/WHM".into()),
             license_id: None,
         })
+    }
+
+    async fn ping_user_api(&self) -> CpanelResult<CpanelConnectionSummary> {
+        let raw: serde_json::Value = self
+            .uapi("Variables", "get_server_information", &[])
+            .await?;
+        let data = raw
+            .get("result")
+            .and_then(|result| result.get("data"))
+            .ok_or_else(|| {
+                CpanelError::parse("Variables::get_server_information response omitted result.data")
+            })?;
+        let hostname = data
+            .get("hostname")
+            .and_then(|value| value.as_str())
+            .map(String::from)
+            .ok_or_else(|| {
+                CpanelError::parse("Variables::get_server_information response omitted hostname")
+            })?;
+        let version = data
+            .get("version")
+            .and_then(|value| value.as_str())
+            .map(String::from);
+
+        Ok(CpanelConnectionSummary {
+            host: self.config.host.clone(),
+            hostname: Some(hostname),
+            version,
+            theme: None,
+            server_type: Some("cPanel".into()),
+            license_id: None,
+        })
+    }
+
+    fn ensure_whm_success(raw: &serde_json::Value) -> CpanelResult<()> {
+        let result = raw
+            .get("metadata")
+            .and_then(|metadata| metadata.get("result"))
+            .or_else(|| raw.get("status"));
+        if result.and_then(|value| value.as_u64()) == Some(0) {
+            let reason = raw
+                .get("metadata")
+                .and_then(|metadata| metadata.get("reason"))
+                .or_else(|| raw.get("statusmsg"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("WHM API call failed");
+            return Err(CpanelError::api(reason));
+        }
+        Ok(())
+    }
+
+    fn ensure_uapi_success(raw: &serde_json::Value) -> CpanelResult<()> {
+        let result = raw.get("result");
+        let status = result
+            .and_then(|value| value.get("status"))
+            .and_then(|value| value.as_u64());
+        match status {
+            Some(0) => {
+                let reason = result
+                    .and_then(|value| value.get("errors"))
+                    .and_then(|value| value.as_array())
+                    .and_then(|errors| errors.first())
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("cPanel UAPI call failed");
+                Err(CpanelError::api(reason))
+            }
+            Some(_) => Ok(()),
+            None => Err(CpanelError::parse(
+                "cPanel UAPI response omitted result.status",
+            )),
+        }
+    }
+
+    fn request_error(context: String, error: reqwest::Error) -> CpanelError {
+        let message = format!("{context}: {error}");
+        if error.is_timeout() {
+            CpanelError::timeout(message)
+        } else {
+            CpanelError::http(message)
+        }
     }
 }

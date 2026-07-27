@@ -51,6 +51,11 @@ impl CpanelService {
         id: String,
         config: CpanelConnectionConfig,
     ) -> CpanelResult<CpanelConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(CpanelError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = CpanelClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

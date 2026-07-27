@@ -10,6 +10,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   AppPublishResponse,
   AutomationLogSearchRequest,
@@ -247,6 +248,7 @@ function errMsg(e: unknown): string {
  * `run` wrapper funnels arbitrary ops through the same loading/error handling.
  */
 export function useBudibase() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [status, setStatus] = useState<BudibaseConnectionStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -270,39 +272,63 @@ export function useBudibase() {
     }
   }, []);
 
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await budibaseApi.disconnect(id);
+    } catch (e) {
+      setError(errMsg(e));
+      throw e;
+    } finally {
+      setConnectionId(null);
+      setStatus(null);
+    }
+  }, []);
+
   const connect = useCallback(
     async (id: string, config: BudibaseConnectionConfig): Promise<boolean> => {
-      setIsConnecting(true);
-      setError(null);
       try {
-        const s = await budibaseApi.connect(
-          id,
-          withGlobalHttpProxy(config, "camel"),
+        await trackConnect(
+          `budibase:${id}`,
+          async () => {
+            setIsConnecting(true);
+            setError(null);
+            try {
+              const status = await budibaseApi.connect(
+                id,
+                withGlobalHttpProxy(config, "camel"),
+              );
+              setConnectionId(id);
+              setStatus(status);
+              return status;
+            } catch (e) {
+              setConnectionId(null);
+              setStatus(null);
+              setError(errMsg(e));
+              throw e;
+            } finally {
+              setIsConnecting(false);
+            }
+          },
+          () => disconnectById(id),
         );
-        setConnectionId(id);
-        setStatus(s);
         return true;
-      } catch (e) {
-        setError(errMsg(e));
+      } catch {
         return false;
-      } finally {
-        setIsConnecting(false);
       }
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await budibaseApi.disconnect(connectionId);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setConnectionId(null);
-      setStatus(null);
+      await trackDisconnect(`budibase:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
+    } catch {
+      // disconnectById already synchronizes the local error and state.
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const clearError = useCallback(() => setError(null), []);
 

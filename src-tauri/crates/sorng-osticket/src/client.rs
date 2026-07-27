@@ -10,7 +10,7 @@ use crate::types::OsticketConnectionConfig;
 pub struct OsticketClient {
     pub(crate) http: Client,
     pub(crate) base_url: String,
-    pub(crate) api_key: String,
+    pub(crate) api_key: header::HeaderValue,
 }
 
 #[allow(dead_code)]
@@ -35,21 +35,19 @@ impl OsticketClient {
             .map_err(|e| OsticketError::new(OsticketErrorKind::ConnectionFailed, e.to_string()))?;
 
         let base = cfg.host.trim_end_matches('/').to_string();
+        let api_key = header::HeaderValue::from_str(&cfg.api_key)
+            .map_err(|e| OsticketError::validation(format!("Invalid API key: {e}")))?;
 
         Ok(Self {
             http,
             base_url: base,
-            api_key: cfg.api_key.clone(),
+            api_key,
         })
     }
 
     fn default_headers(&self) -> header::HeaderMap {
         let mut h = header::HeaderMap::new();
-        h.insert(
-            "X-API-Key",
-            header::HeaderValue::from_str(&self.api_key)
-                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
-        );
+        h.insert("X-API-Key", self.api_key.clone());
         h.insert(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
@@ -199,29 +197,18 @@ impl OsticketClient {
 
     pub async fn ping(&self) -> OsticketResult<crate::types::OsticketConnectionStatus> {
         // Attempt a lightweight GET; any 200-level means connected
-        match self
+        let resp = self
             .http
             .get(self.url("/tickets"))
             .headers(self.default_headers())
             .query(&[("limit", "1")])
             .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => Ok(crate::types::OsticketConnectionStatus {
-                connected: true,
-                version: None,
-                message: Some("Connected".into()),
-            }),
-            Ok(resp) => Ok(crate::types::OsticketConnectionStatus {
-                connected: false,
-                version: None,
-                message: Some(format!("HTTP {}", resp.status())),
-            }),
-            Err(e) => Ok(crate::types::OsticketConnectionStatus {
-                connected: false,
-                version: None,
-                message: Some(e.to_string()),
-            }),
-        }
+            .await?;
+        self.handle_empty(resp).await?;
+        Ok(crate::types::OsticketConnectionStatus {
+            connected: true,
+            version: None,
+            message: Some("Connected".into()),
+        })
     }
 }

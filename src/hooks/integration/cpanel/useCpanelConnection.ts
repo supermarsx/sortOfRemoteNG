@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
 import type {
   CpanelConnectionConfig,
@@ -28,48 +29,65 @@ export const cpanelConnectionApi = {
  *  credentials is handled separately by `useIntegrationConfigStore`; this hook
  *  only owns the live backend session identified by `connectionId`. */
 export function useCpanelConnection() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<CpanelConnectionSummary | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await cpanelConnectionApi.disconnect(id);
+    } finally {
+      setConnectionId(null);
+      setSummary(null);
+    }
+  }, []);
 
   const connect = useCallback(
     async (
       id: string,
       config: CpanelConnectionConfig,
     ): Promise<CpanelConnectionSummary> => {
-      setConnecting(true);
-      setError(null);
-      try {
-        const result = await cpanelConnectionApi.connect(
-          id,
-          withGlobalHttpProxy(config),
-        );
-        setConnectionId(id);
-        setSummary(result);
-        return result;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setConnecting(false);
-      }
+      return trackConnect(
+        `cpanel:${id}`,
+        async () => {
+          setConnecting(true);
+          setError(null);
+          try {
+            const result = await cpanelConnectionApi.connect(
+              id,
+              withGlobalHttpProxy(config),
+            );
+            setConnectionId(id);
+            setSummary(result);
+            return result;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setConnectionId(null);
+            setSummary(null);
+            throw e;
+          } finally {
+            setConnecting(false);
+          }
+        },
+        () => disconnectById(id),
+      );
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await cpanelConnectionApi.disconnect(connectionId);
+      await trackDisconnect(`cpanel:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
-    } finally {
-      setConnectionId(null);
-      setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const ping = useCallback(async () => {
     if (!connectionId) return;

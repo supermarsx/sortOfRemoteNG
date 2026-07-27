@@ -49,6 +49,11 @@ impl NetboxService {
         id: String,
         config: NetboxConnectionConfig,
     ) -> NetboxResult<String> {
+        if self.connections.contains_key(&id) {
+            return Err(NetboxError::conflict(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = NetboxClient::new(config)?;
         let _summary = client.ping().await?;
         self.connections.insert(id.clone(), client);

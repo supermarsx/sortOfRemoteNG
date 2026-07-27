@@ -140,8 +140,10 @@ mod tests {
 
     #[test]
     fn requires_export_google_types() {
-        let mut f = DriveFile::default();
-        f.mime_type = mime_types::DOCUMENT.into();
+        let mut f = DriveFile {
+            mime_type: mime_types::DOCUMENT.into(),
+            ..Default::default()
+        };
         assert!(requires_export(&f));
 
         f.mime_type = mime_types::SPREADSHEET.into();
@@ -153,8 +155,10 @@ mod tests {
 
     #[test]
     fn requires_export_regular_types() {
-        let mut f = DriveFile::default();
-        f.mime_type = "application/pdf".into();
+        let mut f = DriveFile {
+            mime_type: "application/pdf".into(),
+            ..Default::default()
+        };
         assert!(!requires_export(&f));
 
         f.mime_type = "image/png".into();

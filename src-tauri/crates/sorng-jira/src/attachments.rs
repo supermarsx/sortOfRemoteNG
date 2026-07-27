@@ -57,11 +57,7 @@ impl AttachmentManager {
         let form = reqwest::multipart::Form::new().part("file", part);
 
         let mut headers = header::HeaderMap::new();
-        headers.insert(
-            header::AUTHORIZATION,
-            header::HeaderValue::from_str(&client.auth_header)
-                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
-        );
+        headers.insert(header::AUTHORIZATION, client.auth_header.clone());
         headers.insert(
             "X-Atlassian-Token",
             header::HeaderValue::from_static("no-check"),
@@ -79,13 +75,21 @@ impl AttachmentManager {
             .send()
             .await?;
 
-        if resp.status().is_success() {
+        let status = resp.status();
+        if status.is_success() {
             let text = resp.text().await?;
             Ok(serde_json::from_str(&text)?)
         } else {
             let body = resp.text().await.unwrap_or_default();
             Err(crate::error::JiraError::new(
-                crate::error::JiraErrorKind::ApiError(400),
+                match status.as_u16() {
+                    401 => crate::error::JiraErrorKind::AuthError,
+                    403 => crate::error::JiraErrorKind::Forbidden,
+                    404 => crate::error::JiraErrorKind::NotFound,
+                    409 => crate::error::JiraErrorKind::Conflict,
+                    429 => crate::error::JiraErrorKind::RateLimited,
+                    code => crate::error::JiraErrorKind::ApiError(code),
+                },
                 format!("Failed to add attachment: {}", body),
             ))
         }

@@ -75,6 +75,9 @@ impl CpanelError {
     pub fn parse(msg: impl Into<String>) -> Self {
         Self::new(CpanelErrorKind::ParseError, msg)
     }
+    pub fn timeout(msg: impl Into<String>) -> Self {
+        Self::new(CpanelErrorKind::Timeout, msg)
+    }
     pub fn not_found(kind: CpanelErrorKind, name: &str) -> Self {
         Self::new(kind, format!("Not found: {name}"))
     }

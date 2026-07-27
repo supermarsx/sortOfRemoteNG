@@ -9,6 +9,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
 import type {
   OsticketConnectionConfig,
@@ -29,48 +30,65 @@ export const osticketConnectionApi = {
  *  API key is handled separately by `useIntegrationConfigStore`; this hook only
  *  owns the live backend session identified by `connectionId`. */
 export function useOsticketConnection() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [status, setStatus] = useState<OsticketConnectionStatus | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await osticketConnectionApi.disconnect(id);
+    } finally {
+      setConnectionId(null);
+      setStatus(null);
+    }
+  }, []);
 
   const connect = useCallback(
     async (
       id: string,
       config: OsticketConnectionConfig,
     ): Promise<OsticketConnectionStatus> => {
-      setConnecting(true);
-      setError(null);
-      try {
-        const result = await osticketConnectionApi.connect(
-          id,
-          withGlobalHttpProxy(config),
-        );
-        setConnectionId(id);
-        setStatus(result);
-        return result;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setConnecting(false);
-      }
+      return trackConnect(
+        `osticket:${id}`,
+        async () => {
+          setConnecting(true);
+          setError(null);
+          try {
+            const result = await osticketConnectionApi.connect(
+              id,
+              withGlobalHttpProxy(config),
+            );
+            setConnectionId(id);
+            setStatus(result);
+            return result;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setConnectionId(null);
+            setStatus(null);
+            throw e;
+          } finally {
+            setConnecting(false);
+          }
+        },
+        () => disconnectById(id),
+      );
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await osticketConnectionApi.disconnect(connectionId);
+      await trackDisconnect(`osticket:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
-    } finally {
-      setConnectionId(null);
-      setStatus(null);
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const ping = useCallback(async () => {
     if (!connectionId) return;

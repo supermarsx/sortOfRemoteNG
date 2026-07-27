@@ -50,6 +50,11 @@ impl TraefikService {
         id: String,
         config: TraefikConnectionConfig,
     ) -> TraefikResult<TraefikConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(TraefikError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = TraefikClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

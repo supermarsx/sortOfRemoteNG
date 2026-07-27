@@ -101,7 +101,7 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
         clientKeyPem: secret.clientKeyPem,
         trustPassword: secret.trustPassword,
         oidcToken: secret.oidcToken,
-        skipTlsVerify: fields.skipTlsVerify !== "false",
+        skipTlsVerify: fields.skipTlsVerify === "true",
         project: fields.project || "default",
         timeoutSecs: Number(fields.timeoutSecs) || 30,
       });
@@ -366,6 +366,12 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
                     set("trustPassword", e.target.value || undefined)
                   }
                 />
+                <p className="mt-1 text-[11px] text-amber-500">
+                  {t(
+                    "integrations.lxd.form.trustPasswordUnsupported",
+                    "Trust-password enrollment is not implemented yet. Use an already trusted client certificate/key or OIDC token.",
+                  )}
+                </p>
               </div>
             </div>
           ) : (
@@ -420,6 +426,14 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
               </label>
             </div>
           </div>
+          {config.skipTlsVerify && (
+            <p role="alert" className="mt-2 text-xs text-amber-500">
+              {t(
+                "integrations.lxd.form.skipTlsVerifyWarning",
+                "Warning: TLS certificate verification is disabled. Use this only for a temporary trusted test endpoint.",
+              )}
+            </p>
+          )}
 
           {(formError || conn.error) && (
             <p className="mt-3 text-xs text-red-500">

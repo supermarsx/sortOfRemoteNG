@@ -27,9 +27,44 @@ import {
   mailcowConnectionApi,
   useMailcowConnection,
 } from "../../../hooks/integration/mailcow";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
+
+let persisted: string | null;
 
 beforeEach(() => {
+  persisted = null;
   invokeMock.mockReset();
+  resetIntegrationConfigStoreForTests();
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(persisted);
+        case "compare_and_swap_app_data": {
+          const request = args as {
+            expected: string | null;
+            replacement: string;
+          };
+          if (request.expected !== persisted) return Promise.resolve(false);
+          persisted = request.replacement;
+          return Promise.resolve(true);
+        }
+        case "vault_store_secret":
+        case "vault_delete_secret":
+        case "mailcow_ping":
+        case "mailcow_disconnect":
+          return Promise.resolve(undefined);
+        case "mailcow_connect":
+          return Promise.resolve({
+            host: "mail.example.com",
+            version: "2024-01",
+            containers_count: 20,
+          });
+        default:
+          return Promise.resolve(undefined);
+      }
+    },
+  );
   (
     globalThis as unknown as {
       __TAURI__?: { core: { invoke: typeof invokeMock } };
@@ -44,7 +79,6 @@ beforeEach(() => {
 
 describe("mailcowConnectionApi", () => {
   it("maps connect/ping/disconnect to their id-keyed commands", async () => {
-    invokeMock.mockResolvedValue({ host: "mail.example.com", containers_count: 0 });
     const config = { base_url: "https://mail.example.com", api_key: "k" };
     await mailcowConnectionApi.connect("inst-1", config);
     await mailcowConnectionApi.ping("inst-1");
@@ -62,11 +96,6 @@ describe("mailcowConnectionApi", () => {
 
 describe("useMailcowConnection", () => {
   it("connect stores the summary and connection id", async () => {
-    invokeMock.mockResolvedValue({
-      host: "mail.example.com",
-      version: "2024-01",
-      containers_count: 20,
-    });
     const { result } = renderHook(() => useMailcowConnection());
     await act(async () => {
       await result.current.connect("inst-1", {
@@ -101,22 +130,11 @@ describe("mailcowDescriptor", () => {
 
 describe("MailcowPanel shell", () => {
   it("connect form persists creds then drives mailcow_connect with snake_case config", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "read_app_data") return Promise.resolve(null);
-      if (cmd === "mailcow_connect")
-        return Promise.resolve({
-          host: "mail.example.com",
-          containers_count: 20,
-        });
-      return Promise.resolve(undefined);
-    });
-
     render(<MailcowPanel isOpen onClose={() => {}} />);
 
-    fireEvent.change(
-      screen.getByPlaceholderText("https://mail.example.com"),
-      { target: { value: "https://mail.example.com" } },
-    );
+    fireEvent.change(screen.getByPlaceholderText("https://mail.example.com"), {
+      target: { value: "https://mail.example.com" },
+    });
     // API key is the only password-type input in the connect form.
     const apiKey = document.querySelector(
       'input[type="password"]',
@@ -142,5 +160,13 @@ describe("MailcowPanel shell", () => {
         }),
       ),
     );
+    expect(persisted).not.toBeNull();
+    expect(persisted).not.toContain("secret-key");
+    expect(JSON.parse(persisted!)).toEqual([
+      expect.objectContaining({
+        integrationKey: "mailcow",
+        credentialRefId: expect.any(String),
+      }),
+    ]);
   });
 });

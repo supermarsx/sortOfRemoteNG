@@ -49,6 +49,11 @@ impl MailcowService {
         id: String,
         config: MailcowConnectionConfig,
     ) -> MailcowResult<MailcowConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(MailcowError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = MailcowClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

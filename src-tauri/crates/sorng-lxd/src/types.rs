@@ -84,6 +84,9 @@ impl LxdError {
     pub fn connection(msg: impl Into<String>) -> Self {
         Self::new(LxdErrorKind::Connection, msg)
     }
+    pub fn timeout(msg: impl Into<String>) -> Self {
+        Self::new(LxdErrorKind::Timeout, msg)
+    }
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self::new(LxdErrorKind::NotFound, msg)
     }
@@ -156,7 +159,7 @@ impl Default for LxdConnectionConfig {
             client_key_pem: None,
             trust_password: None,
             oidc_token: None,
-            skip_tls_verify: true,
+            skip_tls_verify: false,
             project: default_project(),
             timeout_secs: default_timeout(),
             proxy_url: None,
@@ -190,7 +193,6 @@ pub struct LxdSyncResponse<T> {
     pub response_type: String,
     pub status: String,
     pub status_code: u16,
-    #[serde(default)]
     pub metadata: T,
 }
 

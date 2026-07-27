@@ -21,6 +21,7 @@ import type {
 } from "../../../types/pfsense";
 import { withGlobalHttpProxy } from "../../../hooks/integration/httpProxy";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useIntegrationConnectionLifecycle } from "../../../hooks/integrations/IntegrationSessionLifecycle";
 import { pfsenseCategoryTabs } from "./registry";
 
 // ── Connection-lifecycle invoke wrappers (the shell's 4 commands) ────────────
@@ -63,6 +64,7 @@ const emptyForm = {
 type FormState = typeof emptyForm;
 
 const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const { t } = useTranslation();
   const {
     isLoading: storeLoading,
@@ -135,6 +137,15 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
     };
   }, [form]);
 
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await pfsenseConnectionApi.disconnect(id);
+    } finally {
+      setConnectionId(null);
+      setSummary(null);
+    }
+  }, []);
+
   const handleConnect = useCallback(async () => {
     setConnecting(true);
     setError(null);
@@ -173,32 +184,58 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
         id = created.id;
       }
 
-      const result = await pfsenseConnectionApi.connect(
-        id,
-        withGlobalHttpProxy(config, "camel"),
+      if (!id) throw new Error("Unable to allocate a pfSense instance");
+      await trackConnect(
+        `pfsense:${id}`,
+        async () => {
+          setConnecting(true);
+          setError(null);
+          try {
+            const result = await pfsenseConnectionApi.connect(
+              id,
+              withGlobalHttpProxy(config, "camel"),
+            );
+            setConnectionId(id);
+            setSummary(result);
+            setActiveTab(pfsenseCategoryTabs[0]?.categoryKey ?? null);
+            return result;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setConnectionId(null);
+            setSummary(null);
+            throw e;
+          } finally {
+            setConnecting(false);
+          }
+        },
+        () => disconnectById(id),
       );
-      setConnectionId(id);
-      setSummary(result);
-      setActiveTab(pfsenseCategoryTabs[0]?.categoryKey ?? null);
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message;
       setError(msg);
-    } finally {
       setConnecting(false);
     }
-  }, [buildConfig, form, instanceId, createInstance, updateInstance]);
+  }, [
+    buildConfig,
+    createInstance,
+    disconnectById,
+    form,
+    instanceId,
+    trackConnect,
+    updateInstance,
+  ]);
 
   const handleDisconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await pfsenseConnectionApi.disconnect(connectionId);
+      await trackDisconnect(`pfsense:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
-    } finally {
-      setConnectionId(null);
-      setSummary(null);
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const ActiveTab = useMemo(() => {
     if (!connectionId || !activeTab) return null;

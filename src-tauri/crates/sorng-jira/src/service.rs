@@ -45,6 +45,11 @@ impl JiraService {
         id: String,
         config: JiraConnectionConfig,
     ) -> JiraResult<JiraConnectionStatus> {
+        if self.connections.contains_key(&id) {
+            return Err(JiraError::session(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = JiraClient::from_config(&config)?;
         let status = client.ping().await?;
         self.connections.insert(id, client);

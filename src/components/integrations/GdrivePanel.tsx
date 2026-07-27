@@ -169,8 +169,7 @@ const ConnectFlow: React.FC<{
             refreshToken: secret.refreshToken,
             tokenType: "Bearer",
           };
-          const restored = await mgr.restoreToken(token);
-          if (restored) await mgr.refreshToken();
+          await mgr.restoreToken(token);
         }
       }
     });
@@ -1374,9 +1373,16 @@ const GdrivePanel: React.FC<IntegrationPanelProps> = ({
               : t("integrations.gdrive.disconnected", "Not connected")}
           </span>
           {mgr.isAuthenticated && (
-            <button className={btn} onClick={() => void mgr.revoke()}>
+            <button
+              className={btn}
+              onClick={() => void mgr.revoke()}
+              title={t(
+                "integrations.gdrive.revokeTitle",
+                "Revoke this app's Google Drive access. Closing or disconnecting the session keeps the grant for reconnecting.",
+              )}
+            >
               <LogOut size={12} />
-              {t("integrations.gdrive.revoke", "Disconnect")}
+              {t("integrations.gdrive.revoke", "Revoke access")}
             </button>
           )}
         </div>

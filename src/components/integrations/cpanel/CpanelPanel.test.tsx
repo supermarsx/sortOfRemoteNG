@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -22,26 +17,42 @@ vi.mock("react-i18next", () => ({
 import CpanelPanel from "./CpanelPanel";
 import { cpanelDescriptor } from "./descriptor";
 import { cpanelConnectionApi } from "../../../hooks/integration/cpanel/useCpanelConnection";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
+
+let persisted: string | null;
 
 beforeEach(() => {
+  persisted = null;
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
-    switch (cmd) {
-      case "read_app_data":
-        return Promise.resolve(null);
-      case "write_app_data":
-      case "vault_store_secret":
-        return Promise.resolve(null);
-      case "cpanel_connect":
-        return Promise.resolve({
-          host: "server.example.com",
-          hostname: "server.example.com",
-          version: "118.0",
-        });
-      default:
-        return Promise.resolve(null);
-    }
-  });
+  resetIntegrationConfigStoreForTests();
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(persisted);
+        case "compare_and_swap_app_data": {
+          const request = args as {
+            expected: string | null;
+            replacement: string;
+          };
+          if (request.expected !== persisted) return Promise.resolve(false);
+          persisted = request.replacement;
+          return Promise.resolve(true);
+        }
+        case "vault_store_secret":
+        case "vault_delete_secret":
+          return Promise.resolve(undefined);
+        case "cpanel_connect":
+          return Promise.resolve({
+            host: "server.example.com",
+            hostname: "server.example.com",
+            version: "118.0",
+          });
+        default:
+          return Promise.resolve(null);
+      }
+    },
+  );
 });
 
 describe("CpanelPanel", () => {
@@ -124,10 +135,27 @@ describe("CpanelPanel", () => {
         expect.objectContaining({ secret: expect.stringContaining("hunter2") }),
       ),
     );
-    const configWrite = invokeMock.mock.calls.find(
-      (c) => c[0] === "write_app_data",
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "compare_and_swap_app_data",
+        expect.objectContaining({
+          expected: null,
+          replacement: expect.any(String),
+        }),
+      ),
     );
-    expect(configWrite?.[1]?.value).not.toContain("hunter2");
+    expect(persisted).not.toBeNull();
+    expect(persisted).not.toContain("hunter2");
+    expect(JSON.parse(persisted!)).toEqual([
+      expect.objectContaining({
+        integrationKey: "cpanel",
+        credentialRefId: expect.any(String),
+      }),
+    ]);
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "write_app_data",
+      expect.anything(),
+    );
   });
 
   it("exposes a well-formed infra descriptor", () => {
@@ -144,6 +172,9 @@ describe("CpanelPanel", () => {
       id: "inst-1",
     });
     expect(invokeMock).toHaveBeenCalledWith("cpanel_ping", { id: "inst-1" });
-    expect(invokeMock).toHaveBeenCalledWith("cpanel_list_connections", undefined);
+    expect(invokeMock).toHaveBeenCalledWith(
+      "cpanel_list_connections",
+      undefined,
+    );
   });
 });

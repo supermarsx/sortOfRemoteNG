@@ -10,6 +10,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 
 import type {
   JiraConnectionConfig,
@@ -29,48 +30,65 @@ export const jiraConnectionApi = {
  *  credentials is handled separately by `useIntegrationConfigStore`; this hook
  *  only owns the live backend session identified by `connectionId`. */
 export function useJiraConnection() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [status, setStatus] = useState<JiraConnectionStatus | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await jiraConnectionApi.disconnect(id);
+    } finally {
+      setConnectionId(null);
+      setStatus(null);
+    }
+  }, []);
 
   const connect = useCallback(
     async (
       id: string,
       config: JiraConnectionConfig,
     ): Promise<JiraConnectionStatus> => {
-      setConnecting(true);
-      setError(null);
-      try {
-        const result = await jiraConnectionApi.connect(
-          id,
-          withGlobalHttpProxy(config),
-        );
-        setConnectionId(id);
-        setStatus(result);
-        return result;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setConnecting(false);
-      }
+      return trackConnect(
+        `jira:${id}`,
+        async () => {
+          setConnecting(true);
+          setError(null);
+          try {
+            const result = await jiraConnectionApi.connect(
+              id,
+              withGlobalHttpProxy(config),
+            );
+            setConnectionId(id);
+            setStatus(result);
+            return result;
+          } catch (e) {
+            const msg = typeof e === "string" ? e : (e as Error).message;
+            setError(msg);
+            setConnectionId(null);
+            setStatus(null);
+            throw e;
+          } finally {
+            setConnecting(false);
+          }
+        },
+        () => disconnectById(id),
+      );
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async () => {
     if (!connectionId) return;
     try {
-      await jiraConnectionApi.disconnect(connectionId);
+      await trackDisconnect(`jira:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
     } catch {
       // Best-effort: drop local state even if the backend session is already gone.
-    } finally {
-      setConnectionId(null);
-      setStatus(null);
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const ping = useCallback(async () => {
     if (!connectionId) return;

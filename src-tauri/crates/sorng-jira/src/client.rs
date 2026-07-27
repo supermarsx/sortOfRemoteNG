@@ -11,7 +11,7 @@ pub struct JiraClient {
     pub(crate) http: Client,
     pub(crate) base_url: String,
     pub(crate) api_version: String,
-    pub(crate) auth_header: String,
+    pub(crate) auth_header: header::HeaderValue,
 }
 
 #[allow(dead_code)]
@@ -54,6 +54,9 @@ impl JiraClient {
             JiraAuthMethod::Bearer { token } => format!("Bearer {}", token),
             JiraAuthMethod::Pat { token } => format!("Bearer {}", token),
         };
+        let auth_header = header::HeaderValue::from_str(&auth_header).map_err(|e| {
+            JiraError::validation(format!("Invalid authorization credentials: {e}"))
+        })?;
 
         Ok(Self {
             http,
@@ -65,11 +68,7 @@ impl JiraClient {
 
     fn default_headers(&self) -> header::HeaderMap {
         let mut h = header::HeaderMap::new();
-        h.insert(
-            header::AUTHORIZATION,
-            header::HeaderValue::from_str(&self.auth_header)
-                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
-        );
+        h.insert(header::AUTHORIZATION, self.auth_header.clone());
         h.insert(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("application/json"),
@@ -239,46 +238,28 @@ impl JiraClient {
 
     pub async fn ping(&self) -> JiraResult<crate::types::JiraConnectionStatus> {
         let url = format!("{}/rest/api/{}/serverInfo", self.base_url, self.api_version);
-        match self
+        let resp = self
             .http
             .get(&url)
             .headers(self.default_headers())
             .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                Ok(crate::types::JiraConnectionStatus {
-                    connected: true,
-                    server_title: body
-                        .get("serverTitle")
-                        .and_then(|v| v.as_str())
-                        .map(String::from),
-                    version: body
-                        .get("version")
-                        .and_then(|v| v.as_str())
-                        .map(String::from),
-                    deployment_type: body
-                        .get("deploymentType")
-                        .and_then(|v| v.as_str())
-                        .map(String::from),
-                    message: Some("Connected".into()),
-                })
-            }
-            Ok(resp) => Ok(crate::types::JiraConnectionStatus {
-                connected: false,
-                server_title: None,
-                version: None,
-                deployment_type: None,
-                message: Some(format!("HTTP {}", resp.status())),
-            }),
-            Err(e) => Ok(crate::types::JiraConnectionStatus {
-                connected: false,
-                server_title: None,
-                version: None,
-                deployment_type: None,
-                message: Some(e.to_string()),
-            }),
-        }
+            .await?;
+        let body: serde_json::Value = self.handle_response(resp).await?;
+        Ok(crate::types::JiraConnectionStatus {
+            connected: true,
+            server_title: body
+                .get("serverTitle")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            version: body
+                .get("version")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            deployment_type: body
+                .get("deploymentType")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            message: Some("Connected".into()),
+        })
     }
 }

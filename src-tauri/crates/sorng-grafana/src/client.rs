@@ -209,12 +209,9 @@ impl GrafanaClient {
 
     pub async fn ping(&self) -> GrafanaResult<GrafanaConnectionSummary> {
         let health: HealthResponse = self.health().await?;
-        let org: serde_json::Value = self.api_get("org").await.unwrap_or_default();
-        let search: Vec<serde_json::Value> = self
-            .api_get("search?type=dash-db")
-            .await
-            .unwrap_or_default();
-        let users: Vec<serde_json::Value> = self.api_get("org/users").await.unwrap_or_default();
+        let org: serde_json::Value = self.api_get("org").await?;
+        let search: Vec<serde_json::Value> = self.api_get("search?type=dash-db").await?;
+        let users: Vec<serde_json::Value> = self.api_get("org/users").await?;
         Ok(GrafanaConnectionSummary {
             host: self.config.host.clone(),
             version: health.version.unwrap_or_else(|| "unknown".into()),

@@ -1,4 +1,3 @@
-#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
 //! # SortOfRemote NG – Google Drive Integration
 //!
 //! Comprehensive Google Drive API v3 integration for cloud file management,

@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 
@@ -22,22 +17,38 @@ vi.mock("react-i18next", () => ({
 import OsticketPanel from "./OsticketPanel";
 import { osticketDescriptor } from "./descriptor";
 import { osticketConnectionApi } from "../../../hooks/integration/osticket/useOsticketConnection";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
+
+let persisted: string | null;
 
 beforeEach(() => {
+  persisted = null;
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
-    switch (cmd) {
-      case "read_app_data":
-        return Promise.resolve(null);
-      case "write_app_data":
-      case "vault_store_secret":
-        return Promise.resolve(null);
-      case "osticket_connect":
-        return Promise.resolve({ connected: true, version: "1.18.1" });
-      default:
-        return Promise.resolve(null);
-    }
-  });
+  resetIntegrationConfigStoreForTests();
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(persisted);
+        case "compare_and_swap_app_data": {
+          const request = args as {
+            expected: string | null;
+            replacement: string;
+          };
+          if (request.expected !== persisted) return Promise.resolve(false);
+          persisted = request.replacement;
+          return Promise.resolve(true);
+        }
+        case "vault_store_secret":
+        case "vault_delete_secret":
+          return Promise.resolve(undefined);
+        case "osticket_connect":
+          return Promise.resolve({ connected: true, version: "1.18.1" });
+        default:
+          return Promise.resolve(null);
+      }
+    },
+  );
 });
 
 describe("OsticketPanel", () => {
@@ -115,10 +126,27 @@ describe("OsticketPanel", () => {
         }),
       ),
     );
-    const configWrite = invokeMock.mock.calls.find(
-      (c) => c[0] === "write_app_data",
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "compare_and_swap_app_data",
+        expect.objectContaining({
+          expected: null,
+          replacement: expect.any(String),
+        }),
+      ),
     );
-    expect(configWrite?.[1]?.value).not.toContain("SECRET_KEY");
+    expect(persisted).not.toBeNull();
+    expect(persisted).not.toContain("SECRET_KEY");
+    expect(JSON.parse(persisted!)).toEqual([
+      expect.objectContaining({
+        integrationKey: "osticket",
+        credentialRefId: expect.any(String),
+      }),
+    ]);
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "write_app_data",
+      expect.anything(),
+    );
   });
 
   it("exposes a well-formed app-service descriptor", () => {

@@ -31,6 +31,24 @@ pub struct LxdClient {
 
 impl LxdClient {
     pub fn new(config: LxdConnectionConfig) -> LxdResult<Self> {
+        let parsed_url = url::Url::parse(config.url.trim())
+            .map_err(|e| LxdError::validation(format!("invalid server URL: {e}")))?;
+        if !matches!(parsed_url.scheme(), "http" | "https") {
+            return Err(LxdError::validation(
+                "server URL must use the http or https scheme",
+            ));
+        }
+        if config.timeout_secs == 0 {
+            return Err(LxdError::validation(
+                "request timeout must be greater than zero",
+            ));
+        }
+        if config.client_cert_pem.is_some() != config.client_key_pem.is_some() {
+            return Err(LxdError::validation(
+                "client certificate and private key must be provided together",
+            ));
+        }
+
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .danger_accept_invalid_certs(config.skip_tls_verify);
@@ -102,7 +120,7 @@ impl LxdClient {
 
     // ─── Typed REST helpers ──────────────────────────────────────────────
 
-    pub async fn get<T: DeserializeOwned + Default>(&self, path: &str) -> LxdResult<T> {
+    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> LxdResult<T> {
         let url = self.url_with_project(path);
         debug!("LXD GET {url}");
 
@@ -110,7 +128,7 @@ impl LxdClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error("GET", &url, e))?;
 
         self.handle_sync_response(resp).await
     }
@@ -123,7 +141,7 @@ impl LxdClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error("GET", &url, e))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -143,7 +161,7 @@ impl LxdClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("LIST {url}: {e}")))?;
+            .map_err(|e| Self::request_error("LIST", &url, e))?;
 
         let sync: LxdSyncResponse<Vec<String>> = self.parse_response(resp).await?;
         // LXD returns full URL paths; extract the name (last segment)
@@ -169,13 +187,13 @@ impl LxdClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("LIST {url}: {e}")))?;
+            .map_err(|e| Self::request_error("LIST", &url, e))?;
 
         let sync: LxdSyncResponse<Vec<T>> = self.parse_response(resp).await?;
         Ok(sync.metadata)
     }
 
-    pub async fn post_sync<B: Serialize, T: DeserializeOwned + Default>(
+    pub async fn post_sync<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
         body: &B,
@@ -187,7 +205,7 @@ impl LxdClient {
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::request_error("POST", &url, e))?;
 
         self.handle_sync_response(resp).await
     }
@@ -200,7 +218,7 @@ impl LxdClient {
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::request_error("POST", &url, e))?;
 
         self.handle_async_response(resp).await
     }
@@ -213,7 +231,7 @@ impl LxdClient {
             .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("PUT {url}: {e}")))?;
+            .map_err(|e| Self::request_error("PUT", &url, e))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -231,7 +249,7 @@ impl LxdClient {
             .apply_auth(self.http.patch(&url).json(body))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("PATCH {url}: {e}")))?;
+            .map_err(|e| Self::request_error("PATCH", &url, e))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -249,7 +267,7 @@ impl LxdClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::request_error("DELETE", &url, e))?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -267,7 +285,7 @@ impl LxdClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::request_error("DELETE", &url, e))?;
 
         self.handle_async_response(resp).await
     }
@@ -292,7 +310,7 @@ impl LxdClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| LxdError::connection(format!("wait op: {e}")))?;
+            .map_err(|e| Self::request_error("GET", &url, e))?;
 
         self.handle_sync_response(resp).await
     }
@@ -310,7 +328,7 @@ impl LxdClient {
             .map_err(|e| LxdError::api(format!("json parse error: {e}")))
     }
 
-    async fn handle_sync_response<T: DeserializeOwned + Default>(
+    async fn handle_sync_response<T: DeserializeOwned>(
         &self,
         resp: reqwest::Response,
     ) -> LxdResult<T> {
@@ -324,12 +342,14 @@ impl LxdClient {
             return Err(self.map_status_error(status.as_u16(), &body_text));
         }
 
-        // Try parsing as sync response
-        if let Ok(sync) = serde_json::from_str::<LxdSyncResponse<T>>(&body_text) {
+        let value: serde_json::Value = serde_json::from_str(&body_text)
+            .map_err(|e| LxdError::api(format!("parse sync response: {e}")))?;
+        if value.get("type").is_some() || value.get("status_code").is_some() {
+            let sync: LxdSyncResponse<T> = serde_json::from_value(value)
+                .map_err(|e| LxdError::api(format!("parse sync envelope: {e}")))?;
             return Ok(sync.metadata);
         }
-        // Fallback: direct parse
-        serde_json::from_str(&body_text)
+        serde_json::from_value(value)
             .map_err(|e| LxdError::api(format!("parse sync response: {e}\nBody: {body_text}")))
     }
 
@@ -380,6 +400,15 @@ impl LxdClient {
             message: msg,
             status_code: Some(status),
             code: None,
+        }
+    }
+
+    fn request_error(method: &str, url: &str, error: reqwest::Error) -> LxdError {
+        let message = format!("{method} {url}: {error}");
+        if error.is_timeout() {
+            LxdError::timeout(message)
+        } else {
+            LxdError::connection(message)
         }
     }
 }

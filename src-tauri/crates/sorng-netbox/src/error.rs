@@ -78,6 +78,9 @@ impl NetboxError {
     pub fn parse(msg: impl Into<String>) -> Self {
         Self::new(NetboxErrorKind::ParseError, msg)
     }
+    pub fn timeout(msg: impl Into<String>) -> Self {
+        Self::new(NetboxErrorKind::Timeout, msg)
+    }
     pub fn invalid_request(msg: impl Into<String>) -> Self {
         Self::new(NetboxErrorKind::InvalidRequest, msg)
     }

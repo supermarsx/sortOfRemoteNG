@@ -48,6 +48,11 @@ impl PrometheusService {
         id: String,
         config: PrometheusConnectionConfig,
     ) -> PrometheusResult<PrometheusConnectionSummary> {
+        if self.connections.contains_key(&id) {
+            return Err(PrometheusError::connection(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = PrometheusClient::new(config)?;
         let summary = client.ping().await?;
         self.connections.insert(id, client);

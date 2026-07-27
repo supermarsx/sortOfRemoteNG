@@ -20,24 +20,35 @@ import { gdriveApi } from "../../hooks/integration/useGdrive";
 
 beforeEach(() => {
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
-    switch (cmd) {
-      case "read_app_data":
-        return Promise.resolve(null);
-      case "gdrive_is_authenticated":
-        return Promise.resolve(false);
-      case "gdrive_get_auth_url":
-        return Promise.resolve("https://accounts.google.com/o/oauth2/auth?x=1");
-      case "gdrive_get_token":
-        return Promise.resolve({
-          accessToken: "ya29.abc",
-          refreshToken: "1//refresh",
-          tokenType: "Bearer",
-        });
-      default:
-        return Promise.resolve(undefined);
-    }
-  });
+  let storedInstances: string | null = null;
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(storedInstances);
+        case "compare_and_swap_app_data": {
+          const expected = args?.expected as string | null;
+          if (expected !== storedInstances) return Promise.resolve(false);
+          storedInstances = String(args?.replacement ?? "");
+          return Promise.resolve(true);
+        }
+        case "gdrive_is_authenticated":
+          return Promise.resolve(false);
+        case "gdrive_get_auth_url":
+          return Promise.resolve(
+            "https://accounts.google.com/o/oauth2/auth?x=1",
+          );
+        case "gdrive_get_token":
+          return Promise.resolve({
+            accessToken: "ya29.abc",
+            refreshToken: "1//refresh",
+            tokenType: "Bearer",
+          });
+        default:
+          return Promise.resolve(undefined);
+      }
+    },
+  );
 });
 
 describe("GdrivePanel", () => {

@@ -15,6 +15,20 @@ pub struct PfsenseClient {
 
 impl PfsenseClient {
     pub fn new(config: PfsenseConnectionConfig) -> PfsenseResult<Self> {
+        if config.host.trim().is_empty() {
+            return Err(PfsenseError::invalid_request("host must not be empty"));
+        }
+        if config.timeout_secs == 0 {
+            return Err(PfsenseError::invalid_request(
+                "request timeout must be greater than zero",
+            ));
+        }
+        if config.api_key.trim().is_empty() || config.api_secret.trim().is_empty() {
+            return Err(PfsenseError::auth(
+                "API key and API secret must both be provided",
+            ));
+        }
+
         let mut builder = HttpClient::builder()
             .danger_accept_invalid_certs(config.accept_invalid_certs)
             .timeout(Duration::from_secs(config.timeout_secs));
@@ -90,7 +104,7 @@ impl PfsenseClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -116,7 +130,7 @@ impl PfsenseClient {
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("POST {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -138,7 +152,7 @@ impl PfsenseClient {
             .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("PUT {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("PUT {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -156,7 +170,7 @@ impl PfsenseClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("DELETE {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -174,7 +188,7 @@ impl PfsenseClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("DELETE {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -190,7 +204,7 @@ impl PfsenseClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| PfsenseError::http(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -204,26 +218,41 @@ impl PfsenseClient {
 
     /// Verify connectivity by fetching system info.
     pub async fn ping(&self) -> PfsenseResult<crate::types::PfsenseConnectionSummary> {
-        let raw: serde_json::Value = self.api_get("status/system").await?;
-        let data = raw.get("data").cloned().unwrap_or(raw.clone());
+        #[derive(serde::Deserialize)]
+        struct ProbeData {
+            hostname: String,
+            #[serde(alias = "system_version")]
+            version: String,
+            #[serde(default = "default_platform")]
+            platform: String,
+        }
+
+        fn default_platform() -> String {
+            "pfSense".to_string()
+        }
+
+        let response: crate::types::ApiResponse<ProbeData> = self.api_get("status/system").await?;
+        if !(200..300).contains(&response.code) || response.return_code != 0 {
+            return Err(PfsenseError::api(format!(
+                "pfSense API probe failed (code {}, return {}): {}",
+                response.code, response.return_code, response.message
+            )));
+        }
+        let data = response.data;
         Ok(crate::types::PfsenseConnectionSummary {
             host: self.config.host.clone(),
-            version: data
-                .get("system_version")
-                .or_else(|| data.get("version"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            hostname: data
-                .get("hostname")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown")
-                .to_string(),
-            platform: data
-                .get("platform")
-                .and_then(|v| v.as_str())
-                .unwrap_or("pfSense")
-                .to_string(),
+            version: data.version,
+            hostname: data.hostname,
+            platform: data.platform,
         })
+    }
+
+    fn request_error(context: String, error: reqwest::Error) -> PfsenseError {
+        let message = format!("{context}: {error}");
+        if error.is_timeout() {
+            PfsenseError::timeout(message)
+        } else {
+            PfsenseError::http(message)
+        }
     }
 }

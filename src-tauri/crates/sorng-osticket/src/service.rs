@@ -43,6 +43,11 @@ impl OsticketService {
         id: String,
         config: OsticketConnectionConfig,
     ) -> OsticketResult<OsticketConnectionStatus> {
+        if self.connections.contains_key(&id) {
+            return Err(OsticketError::session(format!(
+                "Connection id '{id}' already exists; disconnect it before reconnecting"
+            )));
+        }
         let client = OsticketClient::from_config(&config)?;
         let status = client.ping().await?;
         self.connections.insert(id, client);

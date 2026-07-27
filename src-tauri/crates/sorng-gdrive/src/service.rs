@@ -165,8 +165,9 @@ impl GDriveService {
             let t = token.access_token.clone();
             auth::revoke_token(&self.client, &t).await?;
         }
-        self.client.set_token(OAuthToken::default());
+        self.client.clear_token();
         self.cached_about = None;
+        self.change_page_token = None;
         Ok(())
     }
 

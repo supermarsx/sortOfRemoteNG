@@ -80,6 +80,11 @@ impl GDriveClient {
         self.token = Some(token);
     }
 
+    /// Clear the active OAuth2 token.
+    pub fn clear_token(&mut self) {
+        self.token = None;
+    }
+
     /// Get a reference to the current token, if any.
     pub fn token(&self) -> Option<&OAuthToken> {
         self.token.as_ref()
@@ -404,6 +409,27 @@ impl GDriveClient {
         url: &str,
         params: &[(&str, &str)],
     ) -> GDriveResult<T> {
+        let resp = self.post_form_response(url, params).await?;
+        resp.json::<T>()
+            .await
+            .map_err(|e| GDriveError::network(format!("Token response parse error: {e}")))
+    }
+
+    /// POST an unauthenticated form where a successful empty response is valid.
+    pub async fn post_form_unauthenticated_unit(
+        &self,
+        url: &str,
+        params: &[(&str, &str)],
+    ) -> GDriveResult<()> {
+        self.post_form_response(url, params).await?;
+        Ok(())
+    }
+
+    async fn post_form_response(
+        &self,
+        url: &str,
+        params: &[(&str, &str)],
+    ) -> GDriveResult<Response> {
         self.rate_limit().await;
         let resp = self
             .inner
@@ -418,9 +444,7 @@ impl GDriveClient {
             let body = resp.text().await.unwrap_or_default();
             return Err(GDriveError::from_status(status, &body));
         }
-        resp.json::<T>()
-            .await
-            .map_err(|e| GDriveError::network(format!("Token response parse error: {e}")))
+        Ok(resp)
     }
 
     /// Build a full API URL: `{API_BASE}/{path}`.

@@ -29,6 +29,8 @@ impl LxdService {
     // ─── Connection management ───────────────────────────────────────────
 
     pub async fn connect(&self, config: LxdConnectionConfig) -> LxdResult<LxdConnectionSummary> {
+        self.ensure_connection_slot_available().await?;
+
         let c = LxdClient::new(config.clone())?;
         // Verify connectivity by fetching server info
         let info = crate::server::get_server(&c).await?;
@@ -49,8 +51,30 @@ impl LxdService {
             auth_user_name: info.auth_user_name.clone(),
             cluster_enabled: info.environment.as_ref().and_then(|e| e.server_clustered),
         };
-        *self.client.lock().await = Some(c);
+        self.install_client_if_disconnected(c).await?;
         Ok(summary)
+    }
+
+    async fn ensure_connection_slot_available(&self) -> LxdResult<()> {
+        if self.client.lock().await.is_some() {
+            return Err(Self::already_connected_error());
+        }
+        Ok(())
+    }
+
+    async fn install_client_if_disconnected(&self, client: LxdClient) -> LxdResult<()> {
+        let mut current = self.client.lock().await;
+        if current.is_some() {
+            return Err(Self::already_connected_error());
+        }
+        *current = Some(client);
+        Ok(())
+    }
+
+    fn already_connected_error() -> LxdError {
+        LxdError::conflict(
+            "an LXD connection is already active; disconnect it before connecting again",
+        )
     }
 
     pub async fn disconnect(&self) {
@@ -943,5 +967,37 @@ impl LxdService {
             properties.as_ref(),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(url: &str) -> LxdConnectionConfig {
+        LxdConnectionConfig {
+            url: url.to_string(),
+            ..LxdConnectionConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn second_client_install_is_rejected_without_replacing_the_original() {
+        let service = LxdService::new();
+        let original = LxdClient::new(config("http://lxd-a.example.test")).unwrap();
+        let replacement = LxdClient::new(config("http://lxd-b.example.test")).unwrap();
+
+        service
+            .install_client_if_disconnected(original)
+            .await
+            .unwrap();
+        let error = service
+            .install_client_if_disconnected(replacement)
+            .await
+            .expect_err("a second client must fail closed");
+
+        assert_eq!(error.kind, LxdErrorKind::Conflict);
+        let active = service.client().await.unwrap();
+        assert_eq!(active.config.url, "http://lxd-a.example.test");
     }
 }

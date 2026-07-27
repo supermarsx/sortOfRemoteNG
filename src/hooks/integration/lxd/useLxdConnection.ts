@@ -10,6 +10,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   LxdConnectionConfig,
   LxdConnectionSummary,
@@ -27,11 +28,13 @@ export const lxdConnectionApi = {
 // ─── React hook ───────────────────────────────────────────────────────────────
 
 export function useLxdConnection() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [summary, setSummary] = useState<LxdConnectionSummary | null>(null);
   const [connected, setConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const ownedConnectionRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -40,11 +43,32 @@ export function useLxdConnection() {
     };
   }, []);
 
-  /** Reconcile local state with the backend's actual connection status. */
+  const disconnectOperation = useCallback(async (): Promise<void> => {
+    if (!ownedConnectionRef.current) return;
+    await lxdConnectionApi.disconnect();
+    ownedConnectionRef.current = false;
+    if (mounted.current) {
+      setConnected(false);
+      setSummary(null);
+      setIsLoading(false);
+    }
+  }, []);
+
+  /** Reconcile only the backend connection owned by this mounted session. */
   const refreshStatus = useCallback(async () => {
+    if (!ownedConnectionRef.current) {
+      if (mounted.current) {
+        setConnected(false);
+        setSummary(null);
+      }
+      return false;
+    }
     try {
       const isConn = await lxdConnectionApi.isConnected();
-      if (mounted.current) setConnected(isConn);
+      if (mounted.current) {
+        setConnected(isConn);
+        if (!isConn) setSummary(null);
+      }
       return isConn;
     } catch {
       if (mounted.current) setConnected(false);
@@ -56,46 +80,64 @@ export function useLxdConnection() {
     async (
       config: LxdConnectionConfig,
     ): Promise<LxdConnectionSummary | null> => {
-      setIsLoading(true);
-      setError(null);
       try {
-        const result = await lxdConnectionApi.connect(
-          withGlobalHttpProxy(config, "camel"),
+        return await trackConnect(
+          "lxd:global",
+          async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+              const result = await lxdConnectionApi.connect(
+                withGlobalHttpProxy(config, "camel"),
+              );
+              if (!result.connected) {
+                throw new Error("LXD backend did not establish a connection");
+              }
+              ownedConnectionRef.current = true;
+              if (mounted.current) {
+                setSummary(result);
+                setConnected(true);
+              }
+              return result;
+            } catch (e) {
+              const msg = typeof e === "string" ? e : (e as Error).message;
+              if (mounted.current) {
+                setError(msg);
+                setConnected(false);
+                setSummary(null);
+              }
+              throw e;
+            } finally {
+              if (mounted.current) setIsLoading(false);
+            }
+          },
+          disconnectOperation,
         );
-        if (mounted.current) {
-          setSummary(result);
-          setConnected(result.connected);
-        }
-        return result;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        if (mounted.current) {
-          setError(msg);
-          setConnected(false);
-        }
+      } catch {
         return null;
-      } finally {
-        if (mounted.current) setIsLoading(false);
       }
     },
-    [],
+    [disconnectOperation, trackConnect],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
+    if (!ownedConnectionRef.current) {
+      if (mounted.current) {
+        setConnected(false);
+        setSummary(null);
+      }
+      return;
+    }
     setIsLoading(true);
     try {
-      await lxdConnectionApi.disconnect();
+      await trackDisconnect("lxd:global", disconnectOperation);
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message;
       if (mounted.current) setError(msg);
     } finally {
-      if (mounted.current) {
-        setConnected(false);
-        setSummary(null);
-        setIsLoading(false);
-      }
+      if (mounted.current) setIsLoading(false);
     }
-  }, []);
+  }, [disconnectOperation, trackDisconnect]);
 
   return {
     summary,

@@ -23,15 +23,13 @@ impl StatusManager {
 
     /// Get aggregated system status (containers + disk + solr).
     pub async fn get_system_status(client: &MailcowClient) -> MailcowResult<MailcowSystemStatus> {
-        let containers: Vec<MailcowContainerStatus> = client
-            .get("/get/status/containers")
-            .await
-            .unwrap_or_default();
-        let solr: Option<String> = client
-            .get::<serde_json::Value>("/get/status/solr")
-            .await
-            .ok()
-            .map(|v| v.to_string());
+        let containers: Vec<MailcowContainerStatus> = client.get("/get/status/containers").await?;
+        let solr = Some(
+            client
+                .get::<serde_json::Value>("/get/status/solr")
+                .await?
+                .to_string(),
+        );
         Ok(MailcowSystemStatus {
             containers,
             disk_usage: None,

@@ -1271,15 +1271,19 @@ mod tests {
 
     #[test]
     fn oauth_token_expired() {
-        let mut t = OAuthToken::default();
-        t.expires_at = Some(Utc::now() - chrono::Duration::hours(1));
+        let t = OAuthToken {
+            expires_at: Some(Utc::now() - chrono::Duration::hours(1)),
+            ..Default::default()
+        };
         assert!(t.is_expired());
     }
 
     #[test]
     fn oauth_token_not_expired_future() {
-        let mut t = OAuthToken::default();
-        t.expires_at = Some(Utc::now() + chrono::Duration::hours(1));
+        let t = OAuthToken {
+            expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            ..Default::default()
+        };
         assert!(!t.is_expired());
     }
 

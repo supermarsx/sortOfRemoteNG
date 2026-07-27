@@ -313,16 +313,13 @@ impl PrometheusClient {
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let runtime: serde_json::Value = self
-            .api_get("status/runtimeinfo", &[])
-            .await
-            .unwrap_or_default();
+        let runtime: serde_json::Value = self.api_get("status/runtimeinfo", &[]).await?;
         let uptime = runtime
             .get("storageRetention")
             .and_then(|v| v.as_str())
             .map(String::from);
 
-        let tsdb: serde_json::Value = self.api_get("status/tsdb", &[]).await.unwrap_or_default();
+        let tsdb: serde_json::Value = self.api_get("status/tsdb", &[]).await?;
         let series_count = tsdb
             .get("headStats")
             .and_then(|h| h.get("numSeries"))

@@ -19,6 +19,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxyArgs } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   BatchResult,
   DriveAbout,
@@ -224,6 +225,20 @@ function errMsg(e: unknown): string {
   return typeof e === "string" ? e : (e as Error).message;
 }
 
+const ownershipError = (): Error =>
+  new Error(
+    "This Google Drive panel does not own the process-global account session. Connect this saved account before accessing Drive.",
+  );
+
+type GdriveOwnershipPhase = "none" | "reserved" | "authenticated";
+
+const accountAccessError = (phase: GdriveOwnershipPhase): Error =>
+  phase === "none"
+    ? ownershipError()
+    : new Error(
+        "This Google Drive panel owns the OAuth setup slot, but its account is not authenticated yet.",
+      );
+
 /** Credentials the OAuth flow starts from. */
 export interface GdriveCredentialsInput {
   clientId: string;
@@ -239,6 +254,8 @@ export interface GdriveCredentialsInput {
  * funnels arbitrary ops through shared `isLoading`/`error` handling.
  */
 export function useGdrive() {
+  const { reserveConnection, trackConnect, releaseConnection } =
+    useIntegrationConnectionLifecycle();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [summary, setSummary] = useState<GDriveConnectionSummary | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -246,8 +263,20 @@ export function useGdrive() {
   const [error, setError] = useState<string | null>(null);
   // Guards against overlapping in-flight ops flipping isLoading incorrectly.
   const inflight = useRef(0);
+  // The native Google Drive service is process-global. Keep the credentials
+  // and token owned by this mounted session in memory so a reconnect can
+  // restore its own account instead of refreshing whichever account another
+  // Drive tab most recently installed in the singleton backend.
+  const credentialsRef = useRef<GdriveCredentialsInput | null>(null);
+  const ownedTokenRef = useRef<OAuthToken | null>(null);
+  const ownershipPhaseRef = useRef<GdriveOwnershipPhase>("none");
 
   const run = useCallback(async <T>(op: () => Promise<T>): Promise<T> => {
+    if (ownershipPhaseRef.current !== "authenticated") {
+      const error = accountAccessError(ownershipPhaseRef.current);
+      setError(error.message);
+      throw error;
+    }
     inflight.current += 1;
     setIsLoading(true);
     setError(null);
@@ -262,8 +291,22 @@ export function useGdrive() {
     }
   }, []);
 
+  const disconnectOperation = useCallback(async (): Promise<void> => {
+    // A session/tab disconnect relinquishes UI ownership only. Revoking here
+    // would destroy the OAuth grant and make the registered refresh-token
+    // reconnect recipe impossible.
+    ownershipPhaseRef.current = "none";
+    setIsAuthenticated(false);
+    setSummary(null);
+  }, []);
+
   /** Refresh auth state + summary from the backend. */
   const refreshAuthState = useCallback(async (): Promise<boolean> => {
+    if (ownershipPhaseRef.current !== "authenticated") {
+      setIsAuthenticated(false);
+      setSummary(null);
+      return false;
+    }
     try {
       const authed = await gdriveApi.isAuthenticated();
       setIsAuthenticated(authed);
@@ -274,10 +317,12 @@ export function useGdrive() {
           /* summary is best-effort */
         }
       } else {
+        ownershipPhaseRef.current = "reserved";
         setSummary(null);
       }
       return authed;
     } catch (e) {
+      ownershipPhaseRef.current = "reserved";
       setError(errMsg(e));
       return false;
     }
@@ -288,27 +333,88 @@ export function useGdrive() {
     async (input: GdriveCredentialsInput): Promise<boolean> => {
       setIsBusy(true);
       setError(null);
+      let reserved = false;
       try {
+        // Claim the process-global slot before the first native mutation. A
+        // second panel therefore fails before it can overwrite active OAuth
+        // client credentials.
+        await reserveConnection("gdrive:global", disconnectOperation);
+        ownershipPhaseRef.current = "reserved";
+        reserved = true;
         await gdriveApi.setCredentials(
           input.clientId,
           input.clientSecret,
           input.redirectUri,
           input.scopes,
         );
+        credentialsRef.current = {
+          ...input,
+          scopes: [...input.scopes],
+        };
         return true;
       } catch (e) {
+        if (reserved) {
+          await releaseConnection("gdrive:global", disconnectOperation).catch(
+            () => undefined,
+          );
+        }
         setError(errMsg(e));
         return false;
       } finally {
         setIsBusy(false);
       }
     },
-    [],
+    [disconnectOperation, releaseConnection, reserveConnection],
   );
+
+  /**
+   * Re-install this hook's own credentials and refresh token into the global
+   * native service before renewing it. This is deliberately memory-only: the
+   * panel persists refresh tokens through the OS vault, never app data.
+   */
+  const restoreOwnedSession = useCallback(async (): Promise<void> => {
+    if (ownershipPhaseRef.current === "none") throw ownershipError();
+    ownershipPhaseRef.current = "reserved";
+    const credentials = credentialsRef.current;
+    const token = ownedTokenRef.current;
+    if (!credentials) {
+      throw new Error(
+        "Google Drive credentials are unavailable; open the panel and connect again",
+      );
+    }
+    if (!token?.refreshToken) {
+      throw new Error(
+        "Google Drive refresh token is unavailable; authorize the account again",
+      );
+    }
+
+    await gdriveApi.setCredentials(
+      credentials.clientId,
+      credentials.clientSecret,
+      credentials.redirectUri,
+      credentials.scopes,
+    );
+    await gdriveApi.setToken(token);
+    await gdriveApi.refreshToken();
+
+    const refreshedToken = await gdriveApi.getToken();
+    if (refreshedToken?.refreshToken) {
+      ownedTokenRef.current = refreshedToken;
+    }
+    ownershipPhaseRef.current = "authenticated";
+    if (!(await refreshAuthState())) {
+      ownershipPhaseRef.current = "reserved";
+      throw new Error("Google Drive did not report an authenticated session");
+    }
+  }, [refreshAuthState]);
 
   /** Step 2: build the authorization URL to open in the browser. */
   const getAuthUrl = useCallback(async (): Promise<string | null> => {
     setError(null);
+    if (ownershipPhaseRef.current === "none") {
+      setError(ownershipError().message);
+      return null;
+    }
     try {
       return await gdriveApi.getAuthUrl();
     } catch (e) {
@@ -320,52 +426,115 @@ export function useGdrive() {
   /** Step 3: exchange the authorization code for tokens. */
   const exchangeCode = useCallback(
     async (code: string): Promise<boolean> => {
-      setIsBusy(true);
-      setError(null);
-      try {
-        await gdriveApi.exchangeCode(code.trim());
-        await refreshAuthState();
-        return true;
-      } catch (e) {
-        setError(errMsg(e));
+      if (ownershipPhaseRef.current === "none") {
+        setError(ownershipError().message);
         return false;
-      } finally {
-        setIsBusy(false);
+      }
+      let initialExchange = true;
+      try {
+        await trackConnect(
+          "gdrive:global",
+          async () => {
+            // The lifecycle invokes this closure only after ownership is
+            // claimed (including reconnect after a prior disconnect).
+            ownershipPhaseRef.current = "reserved";
+            setIsBusy(true);
+            setError(null);
+            try {
+              if (initialExchange) {
+                initialExchange = false;
+                await gdriveApi.exchangeCode(code.trim());
+                ownershipPhaseRef.current = "authenticated";
+                if (!(await refreshAuthState())) {
+                  ownershipPhaseRef.current = "reserved";
+                  throw new Error(
+                    "Google Drive did not report an authenticated session",
+                  );
+                }
+                ownedTokenRef.current = await gdriveApi.getToken();
+              } else {
+                // OAuth authorization codes are one-shot. Reinstall this
+                // session's own token before refreshing the global backend.
+                await restoreOwnedSession();
+              }
+              return true;
+            } catch (e) {
+              setError(errMsg(e));
+              setIsAuthenticated(false);
+              setSummary(null);
+              throw e;
+            } finally {
+              setIsBusy(false);
+            }
+          },
+          disconnectOperation,
+        );
+        return true;
+      } catch {
+        return false;
       }
     },
-    [refreshAuthState],
+    [disconnectOperation, refreshAuthState, restoreOwnedSession, trackConnect],
   );
 
   /** Renew the access token using the stored refresh token. */
   const refreshToken = useCallback(async (): Promise<boolean> => {
     setError(null);
+    if (ownershipPhaseRef.current !== "authenticated") {
+      setError(accountAccessError(ownershipPhaseRef.current).message);
+      return false;
+    }
     try {
-      await gdriveApi.refreshToken();
-      await refreshAuthState();
+      await restoreOwnedSession();
       return true;
     } catch (e) {
       setError(errMsg(e));
       return false;
     }
-  }, [refreshAuthState]);
+  }, [restoreOwnedSession]);
 
   /** Restore a persisted token (skips the browser flow when still valid). */
   const restoreToken = useCallback(
     async (token: OAuthToken): Promise<boolean> => {
-      setError(null);
+      if (ownershipPhaseRef.current === "none") {
+        setError(ownershipError().message);
+        return false;
+      }
+      ownedTokenRef.current = { ...token };
       try {
-        await gdriveApi.setToken(token);
-        return await refreshAuthState();
-      } catch (e) {
-        setError(errMsg(e));
+        await trackConnect(
+          "gdrive:global",
+          async () => {
+            ownershipPhaseRef.current = "reserved";
+            setError(null);
+            try {
+              // A persisted token commonly has an empty/expired access token.
+              // Refresh it before asking the backend whether it is authenticated.
+              await restoreOwnedSession();
+              return true;
+            } catch (e) {
+              setError(errMsg(e));
+              setIsAuthenticated(false);
+              setSummary(null);
+              throw e;
+            }
+          },
+          disconnectOperation,
+        );
+        return true;
+      } catch {
         return false;
       }
     },
-    [refreshAuthState],
+    [disconnectOperation, restoreOwnedSession, trackConnect],
   );
 
   /** Read the current token back (for persistence). */
   const getToken = useCallback(async (): Promise<OAuthToken | null> => {
+    if (ownershipPhaseRef.current !== "authenticated") {
+      setError(accountAccessError(ownershipPhaseRef.current).message);
+      return null;
+    }
     try {
       return await gdriveApi.getToken();
     } catch (e) {
@@ -376,15 +545,18 @@ export function useGdrive() {
 
   /** Revoke the token and clear local auth state. */
   const revoke = useCallback(async (): Promise<void> => {
+    if (ownershipPhaseRef.current !== "authenticated") {
+      setError(accountAccessError(ownershipPhaseRef.current).message);
+      return;
+    }
     try {
       await gdriveApi.revoke();
+      ownedTokenRef.current = null;
+      await releaseConnection("gdrive:global", disconnectOperation);
     } catch (e) {
       setError(errMsg(e));
-    } finally {
-      setIsAuthenticated(false);
-      setSummary(null);
     }
-  }, []);
+  }, [disconnectOperation, releaseConnection]);
 
   const clearError = useCallback(() => setError(null), []);
 

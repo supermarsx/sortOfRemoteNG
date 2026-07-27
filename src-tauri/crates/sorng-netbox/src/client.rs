@@ -15,6 +15,18 @@ pub struct NetboxClient {
 
 impl NetboxClient {
     pub fn new(config: NetboxConnectionConfig) -> NetboxResult<Self> {
+        if config.host.trim().is_empty() {
+            return Err(NetboxError::invalid_request("host must not be empty"));
+        }
+        if config.api_token.trim().is_empty() {
+            return Err(NetboxError::auth("API token must not be empty"));
+        }
+        if config.timeout_secs == Some(0) {
+            return Err(NetboxError::invalid_request(
+                "request timeout must be greater than zero",
+            ));
+        }
+
         let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
@@ -102,7 +114,7 @@ impl NetboxClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -124,7 +136,7 @@ impl NetboxClient {
             .apply_auth(self.http.get(&url).query(params))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -154,7 +166,7 @@ impl NetboxClient {
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("POST {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -176,7 +188,7 @@ impl NetboxClient {
             .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("PUT {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("PUT {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -198,7 +210,7 @@ impl NetboxClient {
             .apply_auth(self.http.patch(&url).json(body))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("PATCH {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("PATCH {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -216,7 +228,7 @@ impl NetboxClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| NetboxError::http(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::request_error(format!("DELETE {url}"), e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -251,5 +263,14 @@ impl NetboxClient {
             device_count: Some(devices.count),
             prefix_count: Some(prefixes.count),
         })
+    }
+
+    fn request_error(context: String, error: reqwest::Error) -> NetboxError {
+        let message = format!("{context}: {error}");
+        if error.is_timeout() {
+            NetboxError::timeout(message)
+        } else {
+            NetboxError::http(message)
+        }
     }
 }

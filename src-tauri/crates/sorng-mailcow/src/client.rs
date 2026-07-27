@@ -5,6 +5,7 @@
 use crate::error::{MailcowError, MailcowErrorKind, MailcowResult};
 use crate::types::*;
 use log::debug;
+use reqwest::header::HeaderValue;
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -14,6 +15,7 @@ use std::time::Duration;
 pub struct MailcowClient {
     pub config: MailcowConnectionConfig,
     http: HttpClient,
+    api_key: HeaderValue,
 }
 
 impl MailcowClient {
@@ -35,7 +37,13 @@ impl MailcowClient {
         let http = builder
             .build()
             .map_err(|e| MailcowError::connection(format!("http client build: {e}")))?;
-        Ok(Self { config, http })
+        let api_key = HeaderValue::from_str(&config.api_key)
+            .map_err(|e| MailcowError::auth(format!("invalid API key: {e}")))?;
+        Ok(Self {
+            config,
+            http,
+            api_key,
+        })
     }
 
     // ── URL helpers ──────────────────────────────────────────────────
@@ -51,7 +59,7 @@ impl MailcowClient {
     // ── Auth ─────────────────────────────────────────────────────────
 
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        req.header("X-API-Key", &self.config.api_key)
+        req.header("X-API-Key", self.api_key.clone())
     }
 
     // ── Typed REST helpers ───────────────────────────────────────────
@@ -63,7 +71,7 @@ impl MailcowClient {
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| self.request_error("GET", &url, e))?;
         self.handle_response(resp).await
     }
 
@@ -78,7 +86,7 @@ impl MailcowClient {
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| self.request_error("POST", &url, e))?;
         self.handle_response(resp).await
     }
 
@@ -93,7 +101,7 @@ impl MailcowClient {
             .apply_auth(self.http.put(&url).json(body))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("PUT {url}: {e}")))?;
+            .map_err(|e| self.request_error("PUT", &url, e))?;
         self.handle_response(resp).await
     }
 
@@ -104,7 +112,7 @@ impl MailcowClient {
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| self.request_error("DELETE", &url, e))?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -120,7 +128,7 @@ impl MailcowClient {
             .apply_auth(self.http.post(&url).json(&serde_json::json!({})))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| self.request_error("POST", &url, e))?;
         self.handle_response(resp).await
     }
 
@@ -135,7 +143,7 @@ impl MailcowClient {
             .apply_auth(self.http.delete(&url).json(body))
             .send()
             .await
-            .map_err(|e| MailcowError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| self.request_error("DELETE", &url, e))?;
         self.handle_response(resp).await
     }
 
@@ -143,8 +151,7 @@ impl MailcowClient {
 
     /// Verify connectivity by fetching container status.
     pub async fn ping(&self) -> MailcowResult<MailcowConnectionSummary> {
-        let containers: Vec<MailcowContainerStatus> =
-            self.get("/get/status/containers").await.unwrap_or_default();
+        let containers: Vec<MailcowContainerStatus> = self.get("/get/status/containers").await?;
         let host = self.config.base_url.clone();
         let hostname = containers.first().map(|c| c.container.clone());
         Ok(MailcowConnectionSummary {
@@ -169,8 +176,46 @@ impl MailcowClient {
         if !status.is_success() {
             return Err(self.map_status_error(status.as_u16(), &body_text));
         }
+        if let Some(error) = self.application_error(&body_text) {
+            return Err(error);
+        }
         serde_json::from_str(&body_text)
             .map_err(|e| MailcowError::parse(format!("json: {e}\nBody: {body_text}")))
+    }
+
+    fn request_error(&self, method: &str, url: &str, error: reqwest::Error) -> MailcowError {
+        let message = format!("{method} {url}: {error}");
+        if error.is_timeout() {
+            MailcowError::timeout(message)
+        } else {
+            MailcowError::connection(message)
+        }
+    }
+
+    fn application_error(&self, body: &str) -> Option<MailcowError> {
+        fn error_message(value: &serde_json::Value) -> Option<String> {
+            let kind = value.get("type")?.as_str()?;
+            if !matches!(kind.to_ascii_lowercase().as_str(), "danger" | "error") {
+                return None;
+            }
+            let message = value
+                .get("msg")
+                .or_else(|| value.get("message"))
+                .map(|value| match value {
+                    serde_json::Value::String(message) => message.clone(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_else(|| "Mailcow API reported an application error".to_string());
+            Some(message)
+        }
+
+        let value: serde_json::Value = serde_json::from_str(body).ok()?;
+        let message = match &value {
+            serde_json::Value::Array(items) => items.iter().find_map(error_message),
+            serde_json::Value::Object(_) => error_message(&value),
+            _ => None,
+        }?;
+        Some(MailcowError::api(message))
     }
 
     fn map_status_error(&self, status: u16, body: &str) -> MailcowError {

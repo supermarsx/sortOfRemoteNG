@@ -17,27 +17,43 @@ vi.mock("react-i18next", () => ({
 import JiraPanel from "./JiraPanel";
 import { jiraDescriptor } from "./descriptor";
 import { jiraConnectionApi } from "../../../hooks/integration/jira/useJiraConnection";
+import { resetIntegrationConfigStoreForTests } from "../../../hooks/integrations/useIntegrationConfigStore";
+
+let persisted: string | null;
 
 beforeEach(() => {
+  persisted = null;
   invokeMock.mockReset();
-  invokeMock.mockImplementation((cmd: string) => {
-    switch (cmd) {
-      case "read_app_data":
-        return Promise.resolve(null);
-      case "write_app_data":
-      case "vault_store_secret":
-        return Promise.resolve(null);
-      case "jira_connect":
-        return Promise.resolve({
-          connected: true,
-          server_title: "Acme Jira",
-          version: "9.12.0",
-          deployment_type: "Server",
-        });
-      default:
-        return Promise.resolve(null);
-    }
-  });
+  resetIntegrationConfigStoreForTests();
+  invokeMock.mockImplementation(
+    (cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "read_app_data":
+          return Promise.resolve(persisted);
+        case "compare_and_swap_app_data": {
+          const request = args as {
+            expected: string | null;
+            replacement: string;
+          };
+          if (request.expected !== persisted) return Promise.resolve(false);
+          persisted = request.replacement;
+          return Promise.resolve(true);
+        }
+        case "vault_store_secret":
+        case "vault_delete_secret":
+          return Promise.resolve(undefined);
+        case "jira_connect":
+          return Promise.resolve({
+            connected: true,
+            server_title: "Acme Jira",
+            version: "9.12.0",
+            deployment_type: "Server",
+          });
+        default:
+          return Promise.resolve(null);
+      }
+    },
+  );
 });
 
 async function fillCloudForm() {
@@ -46,10 +62,9 @@ async function fillCloudForm() {
       screen.getByPlaceholderText("https://acme.atlassian.net"),
     ).toBeInTheDocument(),
   );
-  fireEvent.change(
-    screen.getByPlaceholderText("https://acme.atlassian.net"),
-    { target: { value: "https://acme.atlassian.net" } },
-  );
+  fireEvent.change(screen.getByPlaceholderText("https://acme.atlassian.net"), {
+    target: { value: "https://acme.atlassian.net" },
+  });
   fireEvent.change(screen.getByPlaceholderText("jsmith@acme.com"), {
     target: { value: "jsmith@acme.com" },
   });
@@ -114,10 +129,27 @@ describe("JiraPanel", () => {
         }),
       ),
     );
-    const configWrite = invokeMock.mock.calls.find(
-      (c) => c[0] === "write_app_data",
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "compare_and_swap_app_data",
+        expect.objectContaining({
+          expected: null,
+          replacement: expect.any(String),
+        }),
+      ),
     );
-    expect(configWrite?.[1]?.value).not.toContain("api-tok-123");
+    expect(persisted).not.toBeNull();
+    expect(persisted).not.toContain("api-tok-123");
+    expect(JSON.parse(persisted!)).toEqual([
+      expect.objectContaining({
+        integrationKey: "jira",
+        credentialRefId: expect.any(String),
+      }),
+    ]);
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "write_app_data",
+      expect.anything(),
+    );
   });
 
   it("exposes a well-formed app-service descriptor", () => {

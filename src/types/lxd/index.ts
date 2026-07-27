@@ -104,7 +104,7 @@ export function defaultLxdConnectionConfig(): LxdConnectionConfig {
     clientKeyPem: undefined,
     trustPassword: undefined,
     oidcToken: undefined,
-    skipTlsVerify: true,
+    skipTlsVerify: false,
     project: "default",
     timeoutSecs: 30,
   };

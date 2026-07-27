@@ -12,6 +12,7 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "../httpProxy";
+import { useIntegrationConnectionLifecycle } from "../../integrations/IntegrationSessionLifecycle";
 import type {
   NetboxConnectionConfig,
   NetboxConnectionSummary,
@@ -48,51 +49,75 @@ export interface UseNetboxConnection {
  * summary and exposes the live `connectionId` that category tabs consume.
  */
 export function useNetboxConnection(): UseNetboxConnection {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<NetboxConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await netboxConnectionApi.disconnect(id);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message;
+      setError(msg);
+      throw e;
+    } finally {
+      setConnectionId(null);
+      setSummary(null);
+    }
+  }, []);
+
   const connect = useCallback(
     async (id: string, config: NetboxConnectionConfig): Promise<boolean> => {
-      setIsConnecting(true);
-      setError(null);
       try {
-        await netboxConnectionApi.connect(
-          id,
-          withGlobalHttpProxy(config, "camel"),
+        await trackConnect(
+          `netbox:${id}`,
+          async () => {
+            setIsConnecting(true);
+            setError(null);
+            try {
+              await netboxConnectionApi.connect(
+                id,
+                withGlobalHttpProxy(config, "camel"),
+              );
+              setConnectionId(id);
+              try {
+                setSummary(await netboxConnectionApi.ping(id));
+              } catch {
+                setSummary(null);
+              }
+              return true;
+            } catch (e) {
+              const msg = typeof e === "string" ? e : (e as Error).message;
+              setError(msg);
+              setConnectionId(null);
+              setSummary(null);
+              throw e;
+            } finally {
+              setIsConnecting(false);
+            }
+          },
+          () => disconnectById(id),
         );
-        setConnectionId(id);
-        // Best-effort summary; a failed ping should not undo a live connection.
-        try {
-          setSummary(await netboxConnectionApi.ping(id));
-        } catch {
-          setSummary(null);
-        }
         return true;
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
+      } catch {
         return false;
-      } finally {
-        setIsConnecting(false);
       }
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await netboxConnectionApi.disconnect(connectionId);
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
-    } finally {
-      setConnectionId(null);
-      setSummary(null);
+      await trackDisconnect(`netbox:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
+    } catch {
+      // disconnectById already synchronizes the local error and state.
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!connectionId) return;

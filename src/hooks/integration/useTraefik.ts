@@ -13,6 +13,7 @@
 import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { withGlobalHttpProxy } from "./httpProxy";
+import { useIntegrationConnectionLifecycle } from "../integrations/IntegrationSessionLifecycle";
 import type {
   TraefikConnectionConfig,
   TraefikConnectionSummary,
@@ -116,6 +117,7 @@ function errMsg(e: unknown): string {
  * `run` wrapper funnels arbitrary ops through the same loading/error handling.
  */
 export function useTraefik() {
+  const { trackConnect, trackDisconnect } = useIntegrationConnectionLifecycle();
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [summary, setSummary] = useState<TraefikConnectionSummary | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -139,36 +141,63 @@ export function useTraefik() {
     }
   }, []);
 
+  const disconnectById = useCallback(async (id: string): Promise<void> => {
+    try {
+      await traefikApi.disconnect(id);
+    } catch (e) {
+      setError(errMsg(e));
+      throw e;
+    } finally {
+      setConnectionId(null);
+      setSummary(null);
+    }
+  }, []);
+
   const connect = useCallback(
     async (id: string, config: TraefikConnectionConfig): Promise<boolean> => {
-      setIsConnecting(true);
-      setError(null);
       try {
-        const s = await traefikApi.connect(id, withGlobalHttpProxy(config));
-        setConnectionId(id);
-        setSummary(s);
+        await trackConnect(
+          `traefik:${id}`,
+          async () => {
+            setIsConnecting(true);
+            setError(null);
+            try {
+              const summary = await traefikApi.connect(
+                id,
+                withGlobalHttpProxy(config),
+              );
+              setConnectionId(id);
+              setSummary(summary);
+              return summary;
+            } catch (e) {
+              setConnectionId(null);
+              setSummary(null);
+              setError(errMsg(e));
+              throw e;
+            } finally {
+              setIsConnecting(false);
+            }
+          },
+          () => disconnectById(id),
+        );
         return true;
-      } catch (e) {
-        setError(errMsg(e));
+      } catch {
         return false;
-      } finally {
-        setIsConnecting(false);
       }
     },
-    [],
+    [disconnectById, trackConnect],
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (!connectionId) return;
     try {
-      await traefikApi.disconnect(connectionId);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setConnectionId(null);
-      setSummary(null);
+      await trackDisconnect(`traefik:${connectionId}`, () =>
+        disconnectById(connectionId),
+      );
+    } catch {
+      // disconnectById already synchronizes the local error and state.
     }
-  }, [connectionId]);
+  }, [connectionId, disconnectById, trackDisconnect]);
 
   const clearError = useCallback(() => setError(null), []);
 
