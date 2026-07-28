@@ -18,7 +18,7 @@ jobs:
     name: Documentation links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -28,7 +28,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -44,7 +44,7 @@ jobs:
     name: Updater signature verifier
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Test valid, wrong-key, and tampered updater signatures
         run: >-
@@ -54,7 +54,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v5
@@ -66,7 +66,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -76,7 +76,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -86,7 +86,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -251,7 +251,7 @@ jobs:
       CLIPPY_PACKAGES: ${{ matrix.clippy_packages }}
       CLIPPY_NO_DEPS: ${{ matrix.clippy_no_deps }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -340,7 +340,7 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev are needed by the `kafka-static` cmake
@@ -370,7 +370,7 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Pin MSVC host toolchain (explicit)
         shell: pwsh
         run: rustup set default-host x86_64-pc-windows-msvc
@@ -415,9 +415,9 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check out pinned OPKSSH source (193d79871f3bad3cd27cfb94734c265773a99c9b)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: openpubkey/opkssh
           ref: 193d79871f3bad3cd27cfb94734c265773a99c9b
@@ -488,7 +488,7 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Pin MSVC host toolchain (explicit)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -532,7 +532,7 @@ jobs:
       run:
         working-directory: src-tauri
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install librdkafka build prerequisites
         # libcurl/sasl/zstd/zlib -dev feed the `kafka-static` cmake build of
@@ -565,7 +565,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
