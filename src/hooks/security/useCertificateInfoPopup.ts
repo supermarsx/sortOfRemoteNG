@@ -1,17 +1,7 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { CertIdentity, SshHostKeyIdentity, TrustRecord, TrustRecordType } from '../../utils/auth/trustStore';
 import { isCertificateTrustRecordType, updateTrustRecordNickname } from '../../utils/auth/trustStore';
-
-const TRUST_TYPE_LABELS: Record<
-  TrustRecordType,
-  { informationTitle: string; identityLower: string }
-> = {
-  https: { informationTitle: 'HTTPS Certificate Information', identityLower: 'HTTPS certificate' },
-  certificate: { informationTitle: 'General Certificate Information', identityLower: 'general certificate' },
-  rdp: { informationTitle: 'RDP Certificate Information', identityLower: 'RDP certificate' },
-  ssh: { informationTitle: 'Host Key Information', identityLower: 'host key' },
-  tls: { informationTitle: 'Legacy TLS Certificate Information', identityLower: 'legacy TLS certificate' },
-};
 
 export function useCertificateInfoPopup(
   type: TrustRecordType,
@@ -21,12 +11,61 @@ export function useCertificateInfoPopup(
   trustRecord: TrustRecord | undefined,
   connectionId: string | undefined,
 ) {
+  const { t } = useTranslation();
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState(trustRecord?.nickname ?? '');
   const [savedNick, setSavedNick] = useState(trustRecord?.nickname ?? '');
 
   const isCertificateType = isCertificateTrustRecordType(type);
-  const typeLabels = TRUST_TYPE_LABELS[type];
+  const typeLabels: Record<
+    TrustRecordType,
+    { informationTitle: string; identityLower: string }
+  > = {
+    https: {
+      informationTitle: t('certificateInfo.type.https.informationTitle', {
+        defaultValue: 'HTTPS Certificate Information',
+      }),
+      identityLower: t('certificateInfo.type.https.identityLower', {
+        defaultValue: 'HTTPS certificate',
+      }),
+    },
+    certificate: {
+      informationTitle: t(
+        'certificateInfo.type.certificate.informationTitle',
+        {
+          defaultValue: 'General Certificate Information',
+        },
+      ),
+      identityLower: t('certificateInfo.type.certificate.identityLower', {
+        defaultValue: 'general certificate',
+      }),
+    },
+    rdp: {
+      informationTitle: t('certificateInfo.type.rdp.informationTitle', {
+        defaultValue: 'RDP Certificate Information',
+      }),
+      identityLower: t('certificateInfo.type.rdp.identityLower', {
+        defaultValue: 'RDP certificate',
+      }),
+    },
+    ssh: {
+      informationTitle: t('certificateInfo.type.ssh.informationTitle', {
+        defaultValue: 'Host Key Information',
+      }),
+      identityLower: t('certificateInfo.type.ssh.identityLower', {
+        defaultValue: 'host key',
+      }),
+    },
+    tls: {
+      informationTitle: t('certificateInfo.type.tls.informationTitle', {
+        defaultValue: 'Legacy TLS Certificate Information',
+      }),
+      identityLower: t('certificateInfo.type.tls.identityLower', {
+        defaultValue: 'legacy TLS certificate',
+      }),
+    },
+  };
+  const selectedTypeLabels = typeLabels[type];
   const identity = currentIdentity ?? trustRecord?.identity;
 
   const isCertIdentity = useCallback(
@@ -47,15 +86,39 @@ export function useCertificateInfoPopup(
   }, []);
 
   const getTrustStatus = useCallback(() => {
-    if (!trustRecord) return { label: 'Unknown', color: 'text-[var(--color-textSecondary)]', icon: 'ShieldAlert' as const };
+    if (!trustRecord) return {
+      label: t('certificateInfo.status.unknown', {
+        defaultValue: 'Unknown',
+      }),
+      color: 'text-[var(--color-textSecondary)]',
+      icon: 'ShieldAlert' as const,
+    };
     if (currentIdentity && trustRecord.identity.fingerprint !== currentIdentity.fingerprint) {
-      return { label: 'Changed!', color: 'text-red-400', icon: 'ShieldAlert' as const };
+      return {
+        label: t('certificateInfo.status.changed', {
+          defaultValue: 'Changed!',
+        }),
+        color: 'text-red-400',
+        icon: 'ShieldAlert' as const,
+      };
     }
     if (trustRecord.userApproved) {
-      return { label: 'Trusted', color: 'text-green-400', icon: 'ShieldCheck' as const };
+      return {
+        label: t('certificateInfo.status.trusted', {
+          defaultValue: 'Trusted',
+        }),
+        color: 'text-green-400',
+        icon: 'ShieldCheck' as const,
+      };
     }
-    return { label: 'Remembered', color: 'text-blue-400', icon: 'Shield' as const };
-  }, [trustRecord, currentIdentity]);
+    return {
+      label: t('certificateInfo.status.remembered', {
+        defaultValue: 'Remembered',
+      }),
+      color: 'text-blue-400',
+      icon: 'Shield' as const,
+    };
+  }, [trustRecord, currentIdentity, t]);
 
   const saveNickname = useCallback(
     (nick: string) => {
@@ -82,7 +145,7 @@ export function useCertificateInfoPopup(
     setNickDraft,
     savedNick,
     isCertificateType,
-    typeLabels,
+    typeLabels: selectedTypeLabels,
     identity,
     isCertIdentity,
     isExpiringSoon,

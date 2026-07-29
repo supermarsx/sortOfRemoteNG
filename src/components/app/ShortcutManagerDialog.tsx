@@ -36,7 +36,17 @@ function ShortcutsListTab({ mgr, t, onOpenCreateTab }: { mgr: ReturnType<typeof 
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--color-textSecondary)]">
-          {mgr.shortcuts.length} shortcut{mgr.shortcuts.length !== 1 ? 's' : ''}
+          {mgr.shortcuts.length === 1
+            ? t(
+                "shortcuts.shortcutCount.one",
+                "{{count}} shortcut",
+                { count: mgr.shortcuts.length },
+              )
+            : t(
+                "shortcuts.shortcutCount.other",
+                "{{count}} shortcuts",
+                { count: mgr.shortcuts.length },
+              )}
         </span>
         <div className="flex items-center gap-2">
           {mgr.shortcuts.some((s) => !s.exists) && (
@@ -185,7 +195,9 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   ];
 
   const handleOpenCreateTab = () => {
-    const session = createToolSession('shortcutCreator', { name: 'New Shortcut' });
+    const session = createToolSession('shortcutCreator', {
+      name: t("shortcuts.createShortcut", "New Shortcut"),
+    });
     dispatch({ type: 'ADD_SESSION', payload: session });
   };
 
@@ -214,7 +226,8 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
         </div>
         <div className="mt-auto p-3 border-t border-[var(--color-border)]">
           <button onClick={mgr.refreshShortcuts} disabled={mgr.isLoading} className={`sor-btn sor-btn-secondary sor-btn-xs w-full ${mgr.isLoading ? 'animate-spin' : ''}`}>
-            <RefreshCw size={12} /> Refresh
+            <RefreshCw size={12} />{" "}
+            {t("shortcuts.refreshList", "Refresh")}
           </button>
         </div>
       </div>
@@ -277,7 +290,9 @@ export const ShortcutCreator: React.FC<{ isOpen: boolean; onClose: () => void }>
         </div>
       </div>
       <div className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-3 flex-shrink-0">
-        <button onClick={onClose} className="sor-btn sor-btn-secondary">Cancel</button>
+        <button onClick={onClose} className="sor-btn sor-btn-secondary">
+          {t("common.cancel", "Cancel")}
+        </button>
         <button onClick={mgr.handleCreateShortcut} disabled={mgr.isLoading} className="sor-btn sor-btn-primary">
           <Save size={14} /> {t("shortcuts.createShortcut", "Create Shortcut")}
         </button>

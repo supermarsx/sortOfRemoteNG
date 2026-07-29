@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import type { TFunction } from "i18next";
 import {
   AlertCircle,
   CheckCircle,
@@ -171,7 +172,8 @@ type TemplateKind = "csv" | "json" | "xml" | "ini";
 
 interface TemplateSpec {
   kind: TemplateKind;
-  label: string;
+  labelKey: string;
+  defaultLabel: string;
   filename: string;
   mimeType: string;
   build: () => string;
@@ -180,36 +182,44 @@ interface TemplateSpec {
 const TEMPLATES: TemplateSpec[] = [
   {
     kind: "csv",
-    label: "CSV Template",
+    labelKey: "importTab.templates.csv",
+    defaultLabel: "CSV Template",
     filename: "sortofremoteng-import-template.csv",
     mimeType: "text/csv",
     build: () => CSV_TEMPLATE,
   },
   {
     kind: "json",
-    label: "JSON Template",
+    labelKey: "importTab.templates.json",
+    defaultLabel: "JSON Template",
     filename: "sortofremoteng-import-template.json",
     mimeType: "application/json",
     build: () => JSON.stringify(JSON_TEMPLATE, null, 2),
   },
   {
     kind: "xml",
-    label: "XML Template",
+    labelKey: "importTab.templates.xml",
+    defaultLabel: "XML Template",
     filename: "sortofremoteng-import-template.xml",
     mimeType: "application/xml",
     build: () => XML_TEMPLATE,
   },
   {
     kind: "ini",
-    label: "INI Template",
+    labelKey: "importTab.templates.ini",
+    defaultLabel: "INI Template",
     filename: "sortofremoteng-import-template.ini",
     mimeType: "text/plain",
     build: () => INI_TEMPLATE,
   },
 ];
 
-function formatBytes(bytes: number | undefined): string {
-  if (!bytes || bytes <= 0) return "Unknown size";
+function formatBytes(bytes: number | undefined, t: TFunction): string {
+  if (!bytes || bytes <= 0) {
+    return t("importTab.common.unknownSize", {
+      defaultValue: "Unknown size",
+    });
+  }
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -309,6 +319,7 @@ const SourceHeader: React.FC<{
   importedCount?: number;
   onChangeFile: () => void;
 }> = ({ analysis, detectedFormat, importedCount, onChangeFile }) => {
+  const { t } = useTranslation();
   const [showDetails, setShowDetails] = useState(true);
   const formatLabel = analysis?.formatName ?? detectedFormat;
 
@@ -322,7 +333,10 @@ const SourceHeader: React.FC<{
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                {analysis?.filename ?? "Imported file"}
+                {analysis?.filename ??
+                  t("importTab.source.importedFile", {
+                    defaultValue: "Imported file",
+                  })}
               </span>
               {formatLabel && (
                 <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary">
@@ -332,42 +346,60 @@ const SourceHeader: React.FC<{
               {analysis?.encrypted && (
                 <span className="inline-flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs text-warning">
                   <Shield size={11} />
-                  Encrypted
+                  {t("importTab.source.encrypted", {
+                    defaultValue: "Encrypted",
+                  })}
                 </span>
               )}
               {analysis?.encryption?.defaultMasterPasswordAccepted && (
                 <span
                   className="inline-flex items-center gap-1 rounded border border-error/30 bg-error/10 px-2 py-0.5 text-xs text-error"
-                  title="The file is encrypted with mRemoteNG's default master password (mR3m). That password is public, so the encryption provides no protection. Re-export with a custom master password."
+                  title={t("importTab.source.defaultPasswordWarningTitle", {
+                    defaultValue:
+                      "The file is encrypted with mRemoteNG's default master password (mR3m). That password is public, so the encryption provides no protection. Re-export with a custom master password.",
+                  })}
                 >
                   <Shield size={11} />
-                  Default master password
+                  {t("importTab.source.defaultMasterPassword", {
+                    defaultValue: "Default master password",
+                  })}
                 </span>
               )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-1 text-xs text-[var(--color-textMuted)]">
               <CheckCircle size={11} className="text-success" />
               <span className="text-success font-medium">
-                Import Successful
+                {t("importTab.source.importSuccessful", {
+                  defaultValue: "Import Successful",
+                })}
               </span>
               {importedCount !== undefined && (
                 <>
                   <span aria-hidden>·</span>
                   <span>
-                    Found {importedCount} connections ready to import.
+                    {t("importTab.source.foundConnections", {
+                      defaultValue:
+                        "Found {{count}} connections ready to import.",
+                      count: importedCount,
+                    })}
                   </span>
                 </>
               )}
               {analysis?.sizeBytes !== undefined && (
                 <>
                   <span aria-hidden>·</span>
-                  <span>{formatBytes(analysis.sizeBytes)}</span>
+                  <span>{formatBytes(analysis.sizeBytes, t)}</span>
                 </>
               )}
               {analysis?.confidence && (
                 <>
                   <span aria-hidden>·</span>
-                  <span>Confidence {analysis.confidence}</span>
+                  <span>
+                    {t("importTab.source.confidence", {
+                      defaultValue: "Confidence {{confidence}}",
+                      confidence: analysis.confidence,
+                    })}
+                  </span>
                 </>
               )}
             </div>
@@ -386,7 +418,9 @@ const SourceHeader: React.FC<{
             className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] transition-colors hover:border-primary/50 hover:text-[var(--color-text)]"
           >
             <Upload size={13} />
-            Change file
+            {t("importTab.source.changeFile", {
+              defaultValue: "Change file",
+            })}
           </button>
         </div>
       </div>
@@ -405,11 +439,18 @@ const SourceHeader: React.FC<{
               ) : (
                 <ChevronRight size={13} />
               )}
-              Analysis details
+              {t("importTab.source.analysisDetails", {
+                defaultValue: "Analysis details",
+              })}
             </span>
             <span className="text-[10px] normal-case text-[var(--color-textMuted)]">
-              {analysis.counts.connections} conn · {analysis.counts.folders}{" "}
-              folders · {analysis.counts.conflicts} conflicts
+              {t("importTab.source.analysisSummary", {
+                defaultValue:
+                  "{{connections}} conn · {{folders}} folders · {{conflicts}} conflicts",
+                connections: analysis.counts.connections,
+                folders: analysis.counts.folders,
+                conflicts: analysis.counts.conflicts,
+              })}
             </span>
           </button>
 
@@ -417,28 +458,49 @@ const SourceHeader: React.FC<{
             <div className="space-y-3 px-4 pb-4">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
                 <Stat
-                  label="Connections"
+                  label={t("importTab.source.connections", {
+                    defaultValue: "Connections",
+                  })}
                   value={analysis.counts.connections}
                   accent="text-primary"
                 />
-                <Stat label="Folders" value={analysis.counts.folders} />
                 <Stat
-                  label="Conflicts"
+                  label={t("importTab.source.folders", {
+                    defaultValue: "Folders",
+                  })}
+                  value={analysis.counts.folders}
+                />
+                <Stat
+                  label={t("importTab.source.conflicts", {
+                    defaultValue: "Conflicts",
+                  })}
                   value={analysis.counts.conflicts}
                   accent={
                     analysis.counts.conflicts > 0 ? "text-warning" : undefined
                   }
                 />
                 <Stat
-                  label="Warnings"
+                  label={t("importTab.source.warnings", {
+                    defaultValue: "Warnings",
+                  })}
                   value={analysis.counts.warnings}
                   accent={
                     analysis.counts.warnings > 0 ? "text-warning" : undefined
                   }
                 />
                 <Stat label="VPN" value={analysis.counts.vpnConnections} />
-                <Stat label="Tunnels" value={analysis.counts.tunnelChains} />
-                <Stat label="SSH tunnels" value={analysis.counts.sshTunnels} />
+                <Stat
+                  label={t("importTab.source.tunnels", {
+                    defaultValue: "Tunnels",
+                  })}
+                  value={analysis.counts.tunnelChains}
+                />
+                <Stat
+                  label={t("importTab.source.sshTunnels", {
+                    defaultValue: "SSH tunnels",
+                  })}
+                  value={analysis.counts.sshTunnels}
+                />
               </div>
 
               {(analysis.encryption ||
@@ -448,29 +510,58 @@ const SourceHeader: React.FC<{
                 <div className="grid gap-1 text-xs text-[var(--color-textSecondary)] md:grid-cols-2">
                   {analysis.encryption && (
                     <div>
-                      Encryption: protected=
-                      {String(analysis.encryption.protected)}, full-file=
-                      {String(analysis.encryption.fullFileEncryption)}, password
-                      required=
-                      {String(analysis.encryption.requiresPassword)}
+                      {t("importTab.source.encryptionDetails", {
+                        defaultValue:
+                          "Encryption: protected={{protected}}, full-file={{fullFile}}, password required={{passwordRequired}}",
+                        protected: String(analysis.encryption.protected),
+                        fullFile: String(
+                          analysis.encryption.fullFileEncryption,
+                        ),
+                        passwordRequired: String(
+                          analysis.encryption.requiresPassword,
+                        ),
+                      })}
                     </div>
                   )}
                   {analysis.csv && (
                     <div>
-                      CSV: {analysis.csv.dataRows} data row(s), headers{" "}
-                      {analysis.csv.headers.join(", ") || "none"}
+                      {t("importTab.source.csvDetails", {
+                        defaultValue:
+                          "CSV: {{rows}} data row(s), headers {{headers}}",
+                        rows: analysis.csv.dataRows,
+                        headers:
+                          analysis.csv.headers.join(", ") ||
+                          t("importTab.common.none", {
+                            defaultValue: "none",
+                          }),
+                      })}
                     </div>
                   )}
                   {analysis.json && (
                     <div>
-                      JSON: {analysis.json.shape}, keys{" "}
-                      {analysis.json.topLevelKeys.join(", ") || "none"}
+                      {t("importTab.source.jsonDetails", {
+                        defaultValue: "JSON: {{shape}}, keys {{keys}}",
+                        shape: analysis.json.shape,
+                        keys:
+                          analysis.json.topLevelKeys.join(", ") ||
+                          t("importTab.common.none", {
+                            defaultValue: "none",
+                          }),
+                      })}
                     </div>
                   )}
                   {analysis.xml && (
                     <div>
-                      XML: {analysis.xml.rootElement || "unknown root"},{" "}
-                      {analysis.xml.nodeCount} source node(s)
+                      {t("importTab.source.xmlDetails", {
+                        defaultValue:
+                          "XML: {{root}}, {{count}} source node(s)",
+                        root:
+                          analysis.xml.rootElement ||
+                          t("importTab.source.unknownRoot", {
+                            defaultValue: "unknown root",
+                          }),
+                        count: analysis.xml.nodeCount,
+                      })}
                     </div>
                   )}
                 </div>
@@ -526,6 +617,7 @@ const TargetDatabaseSection: React.FC<{
   onSelect,
   onUnlockDatabase,
 }) => {
+  const { t } = useTranslation();
   const exportableOptions = options.filter((option) => option.isExportable);
   const currentOption = exportableOptions.find((option) => option.isCurrent);
   const selectedOption = options.find(
@@ -545,22 +637,38 @@ const TargetDatabaseSection: React.FC<{
   }> = [
     {
       value: "current",
-      label: "Current database",
+      label: t("importTab.target.current.label", {
+        defaultValue: "Current database",
+      }),
       description: currentOption
-        ? `Merge into ${currentOption.name}.`
-        : "Use the open database when one is available.",
+        ? t("importTab.target.current.mergeDescription", {
+            defaultValue: "Merge into {{name}}.",
+            name: currentOption.name,
+          })
+        : t("importTab.target.current.fallbackDescription", {
+            defaultValue: "Use the open database when one is available.",
+          }),
       disabled: !currentOption,
     },
     {
       value: "selected",
-      label: "Choose database",
-      description: "Pick one unlocked database below.",
+      label: t("importTab.target.selected.label", {
+        defaultValue: "Choose database",
+      }),
+      description: t("importTab.target.selected.description", {
+        defaultValue: "Pick one unlocked database below.",
+      }),
       disabled: exportableOptions.length === 0,
     },
     {
       value: "all",
-      label: "All unlocked",
-      description: `Import into ${exportableOptions.length} unlocked database(s).`,
+      label: t("importTab.target.all.label", {
+        defaultValue: "All unlocked",
+      }),
+      description: t("importTab.target.all.description", {
+        defaultValue: "Import into {{count}} unlocked database(s).",
+        count: exportableOptions.length,
+      }),
       disabled: exportableOptions.length === 0,
     },
   ];
@@ -578,10 +686,14 @@ const TargetDatabaseSection: React.FC<{
             className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]"
           >
             <Database size={16} className="text-primary" />
-            Target database
+            {t("importTab.target.title", {
+              defaultValue: "Target database",
+            })}
           </h4>
           <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
-            Choose where imported connections will be merged.
+            {t("importTab.target.description", {
+              defaultValue: "Choose where imported connections will be merged.",
+            })}
           </p>
         </div>
         <div
@@ -589,21 +701,30 @@ const TargetDatabaseSection: React.FC<{
           data-testid="import-target-count"
         >
           {targetMode === "all"
-            ? `${exportableOptions.length} target(s)`
-            : selectedNames[0] || "No target"}
+            ? t("importTab.target.count", {
+                defaultValue: "{{count}} target(s)",
+                count: exportableOptions.length,
+              })
+            : selectedNames[0] ||
+              t("importTab.target.none", { defaultValue: "No target" })}
         </div>
       </div>
 
       {options.length === 0 && (
         <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          No open or unlocked database is available for import.
+          {t("importTab.target.unavailable", {
+            defaultValue:
+              "No open or unlocked database is available for import.",
+          })}
         </div>
       )}
 
       <div
         className="grid grid-cols-1 gap-2 sm:grid-cols-3"
         role="group"
-        aria-label="Import target"
+        aria-label={t("importTab.target.ariaLabel", {
+          defaultValue: "Import target",
+        })}
       >
         {targetModes.map((mode) => {
           const active = targetMode === mode.value;
@@ -659,10 +780,18 @@ const TargetDatabaseSection: React.FC<{
                   <span className="block">
                     {database.isExportable
                       ? database.connectionCount !== undefined
-                        ? `${database.connectionCount} existing item(s)`
-                        : "Available for import"
+                        ? t("importTab.target.existingItems", {
+                            defaultValue: "{{count}} existing item(s)",
+                            count: database.connectionCount,
+                          })
+                        : t("importTab.target.available", {
+                            defaultValue: "Available for import",
+                          })
                       : database.lockedReason ||
-                        "Unlock this database before importing."}
+                        t("importTab.target.unlock", {
+                          defaultValue:
+                            "Unlock this database before importing.",
+                        })}
                   </span>
                   {database.description && (
                     <span className="mt-0.5 block text-[var(--color-textMuted)]">
@@ -695,6 +824,7 @@ const FormatSelectionSection: React.FC<{
   onSelect: (selection: "auto" | ImportFormat) => void | Promise<void>;
   analysis?: ImportSourceMetadata | null;
 }> = ({ selection, onSelect, analysis }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const effectiveFormat = analysis?.format as ImportFormat | undefined;
   const selectedCompatibility =
@@ -707,12 +837,18 @@ const FormatSelectionSection: React.FC<{
   const formatOptions: SelectOption[] = [
     {
       value: "auto",
-      label: "Auto Detect",
-      title: "Detect the parser from file content and extension.",
+      label: t("importTab.format.autoDetect", {
+        defaultValue: "Auto Detect",
+      }),
+      title: t("importTab.format.autoDetectDescription", {
+        defaultValue: "Detect the parser from file content and extension.",
+      }),
     },
     {
       value: "__group_native",
-      label: "── Native sortOfRemoteNG ──",
+      label: t("importTab.format.nativeGroup", {
+        defaultValue: "── Native sortOfRemoteNG ──",
+      }),
       disabled: true,
     },
     ...IMPORT_FORMAT_ORDER.filter(
@@ -724,7 +860,9 @@ const FormatSelectionSection: React.FC<{
     })),
     {
       value: "__group_vendor",
-      label: "── Compatible applications ──",
+      label: t("importTab.format.vendorGroup", {
+        defaultValue: "── Compatible applications ──",
+      }),
       disabled: true,
     },
     ...IMPORT_FORMAT_ORDER.filter(
@@ -739,9 +877,17 @@ const FormatSelectionSection: React.FC<{
   const summary =
     selection === "auto"
       ? analysis?.formatName
-        ? `Auto-detect (matched ${analysis.formatName})`
-        : "Auto-detect from file content"
-      : `Force ${selectedCompatibility?.label ?? selection}`;
+        ? t("importTab.format.autoMatched", {
+            defaultValue: "Auto-detect (matched {{format}})",
+            format: analysis.formatName,
+          })
+        : t("importTab.format.autoFromContent", {
+            defaultValue: "Auto-detect from file content",
+          })
+      : t("importTab.format.force", {
+          defaultValue: "Force {{format}}",
+          format: selectedCompatibility?.label ?? selection,
+        });
 
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)]">
@@ -755,7 +901,7 @@ const FormatSelectionSection: React.FC<{
           <FileCode size={16} className="mt-0.5 shrink-0 text-primary" />
           <div className="min-w-0">
             <div className="text-sm font-medium text-[var(--color-text)]">
-              Format
+              {t("importTab.format.title", { defaultValue: "Format" })}
             </div>
             <div className="text-xs text-[var(--color-textSecondary)] truncate">
               {summary}
@@ -776,12 +922,16 @@ const FormatSelectionSection: React.FC<{
               htmlFor="import-format-select"
               className="block text-xs text-[var(--color-textSecondary)]"
             >
-              Import format
+              {t("importTab.format.importFormat", {
+                defaultValue: "Import format",
+              })}
             </label>
             <Select
               id="import-format-select"
               data-testid="import-format-select"
-              label="Import format"
+              label={t("importTab.format.importFormat", {
+                defaultValue: "Import format",
+              })}
               value={selection}
               onChange={(value) =>
                 void onSelect(value as "auto" | ImportFormat)
@@ -796,17 +946,25 @@ const FormatSelectionSection: React.FC<{
             <div className="flex flex-wrap items-center gap-2 text-[var(--color-text)]">
               <span className="font-medium">
                 {selection === "auto"
-                  ? "Auto Detect"
+                  ? t("importTab.format.autoDetect", {
+                      defaultValue: "Auto Detect",
+                    })
                   : selectedCompatibility?.label}
               </span>
               {analysis?.formatName && (
                 <span className="rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary">
-                  Effective: {analysis.formatName}
+                  {t("importTab.format.effective", {
+                    defaultValue: "Effective: {{format}}",
+                    format: analysis.formatName,
+                  })}
                 </span>
               )}
               {analysis?.detectedFormatName && analysis.formatForced && (
                 <span className="rounded border border-warning/30 bg-warning/10 px-2 py-0.5 text-warning">
-                  Detected: {analysis.detectedFormatName}
+                  {t("importTab.format.detected", {
+                    defaultValue: "Detected: {{format}}",
+                    format: analysis.detectedFormatName,
+                  })}
                 </span>
               )}
             </div>
@@ -814,11 +972,22 @@ const FormatSelectionSection: React.FC<{
               <div className="mt-2 space-y-1">
                 <div>{selectedCompatibility.description}</div>
                 <div>
-                  Extensions: {selectedCompatibility.extensions.join(", ")}
+                  {t("importTab.format.extensions", {
+                    defaultValue: "Extensions: {{extensions}}",
+                    extensions: selectedCompatibility.extensions.join(", "),
+                  })}
                 </div>
-                <div>Data: {selectedCompatibility.dataClasses.join(", ")}</div>
                 <div>
-                  Credentials: {selectedCompatibility.credentialSupport}
+                  {t("importTab.format.data", {
+                    defaultValue: "Data: {{data}}",
+                    data: selectedCompatibility.dataClasses.join(", "),
+                  })}
+                </div>
+                <div>
+                  {t("importTab.format.credentials", {
+                    defaultValue: "Credentials: {{support}}",
+                    support: selectedCompatibility.credentialSupport,
+                  })}
                 </div>
               </div>
             )}
@@ -851,6 +1020,7 @@ const ImportFilters: React.FC<{
   resetFilters: () => void;
   availableProtocols: string[];
 }> = ({ filters, updateFilters, resetFilters, availableProtocols }) => {
+  const { t } = useTranslation();
   const activeCount = countActiveFilters(filters);
   const [open, setOpen] = useState(true);
 
@@ -865,7 +1035,9 @@ const ImportFilters: React.FC<{
           <input
             value={filters.search}
             onChange={(event) => updateFilters({ search: event.target.value })}
-            placeholder="Search name, host, folder, tags, issues"
+            placeholder={t("importTab.filters.searchPlaceholder", {
+              defaultValue: "Search name, host, folder, tags, issues",
+            })}
             className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[var(--color-text)] outline-none placeholder:text-[var(--color-textMuted)]"
           />
           {filters.search && (
@@ -873,7 +1045,9 @@ const ImportFilters: React.FC<{
               type="button"
               onClick={() => updateFilters({ search: "" })}
               className="shrink-0 text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
-              aria-label="Clear search"
+              aria-label={t("importTab.filters.clearSearch", {
+                defaultValue: "Clear search",
+              })}
             >
               <X size={12} />
             </button>
@@ -890,7 +1064,7 @@ const ImportFilters: React.FC<{
           }`}
         >
           <Filter size={12} />
-          Filters
+          {t("importTab.filters.title", { defaultValue: "Filters" })}
           {activeCount > 0 && (
             <span className="rounded-full bg-primary/30 px-1.5 text-[10px] font-semibold text-primary">
               {activeCount}
@@ -903,7 +1077,7 @@ const ImportFilters: React.FC<{
           onClick={resetFilters}
           className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] transition-colors hover:text-[var(--color-text)]"
         >
-          Reset filters
+          {t("importTab.filters.reset", { defaultValue: "Reset filters" })}
         </button>
       </div>
 
@@ -917,9 +1091,15 @@ const ImportFilters: React.FC<{
               })
             }
             className="sor-form-input-xs"
-            aria-label="Protocol filter"
+            aria-label={t("importTab.filters.protocolAria", {
+              defaultValue: "Protocol filter",
+            })}
           >
-            <option value="all">All protocols</option>
+            <option value="all">
+              {t("importTab.filters.allProtocols", {
+                defaultValue: "All protocols",
+              })}
+            </option>
             {availableProtocols.map((protocol) => (
               <option key={protocol} value={protocol}>
                 {formatPortableProtocolLabel({ protocol })}
@@ -935,12 +1115,24 @@ const ImportFilters: React.FC<{
               })
             }
             className="sor-form-input-xs"
-            aria-label="Issue filter"
+            aria-label={t("importTab.filters.issueAria", {
+              defaultValue: "Issue filter",
+            })}
           >
-            <option value="all">All issue states</option>
-            <option value="error">Errors</option>
-            <option value="warning">Warnings</option>
-            <option value="info">Info</option>
+            <option value="all">
+              {t("importTab.filters.allIssueStates", {
+                defaultValue: "All issue states",
+              })}
+            </option>
+            <option value="error">
+              {t("importTab.filters.errors", { defaultValue: "Errors" })}
+            </option>
+            <option value="warning">
+              {t("importTab.filters.warnings", { defaultValue: "Warnings" })}
+            </option>
+            <option value="info">
+              {t("importTab.filters.info", { defaultValue: "Info" })}
+            </option>
           </select>
           <select
             value={filters.itemKind}
@@ -950,14 +1142,34 @@ const ImportFilters: React.FC<{
               })
             }
             className="sor-form-input-xs"
-            aria-label="Item type filter"
+            aria-label={t("importTab.filters.itemTypeAria", {
+              defaultValue: "Item type filter",
+            })}
           >
-            <option value="all">All item types</option>
-            <option value="connection">Connections</option>
-            <option value="folder">Folders</option>
+            <option value="all">
+              {t("importTab.filters.allItemTypes", {
+                defaultValue: "All item types",
+              })}
+            </option>
+            <option value="connection">
+              {t("importTab.filters.connections", {
+                defaultValue: "Connections",
+              })}
+            </option>
+            <option value="folder">
+              {t("importTab.filters.folders", { defaultValue: "Folders" })}
+            </option>
             <option value="vpn">VPN</option>
-            <option value="tunnelChain">Tunnel chains</option>
-            <option value="sshTunnel">SSH tunnels</option>
+            <option value="tunnelChain">
+              {t("importTab.filters.tunnelChains", {
+                defaultValue: "Tunnel chains",
+              })}
+            </option>
+            <option value="sshTunnel">
+              {t("importTab.filters.sshTunnels", {
+                defaultValue: "SSH tunnels",
+              })}
+            </option>
           </select>
           <select
             value={filters.selection}
@@ -967,11 +1179,25 @@ const ImportFilters: React.FC<{
               })
             }
             className="sor-form-input-xs"
-            aria-label="Selection filter"
+            aria-label={t("importTab.filters.selectionAria", {
+              defaultValue: "Selection filter",
+            })}
           >
-            <option value="all">Any selection</option>
-            <option value="selected">Selected only</option>
-            <option value="unselected">Unselected only</option>
+            <option value="all">
+              {t("importTab.filters.anySelection", {
+                defaultValue: "Any selection",
+              })}
+            </option>
+            <option value="selected">
+              {t("importTab.filters.selectedOnly", {
+                defaultValue: "Selected only",
+              })}
+            </option>
+            <option value="unselected">
+              {t("importTab.filters.unselectedOnly", {
+                defaultValue: "Unselected only",
+              })}
+            </option>
           </select>
           <select
             value={filters.conflict}
@@ -981,11 +1207,25 @@ const ImportFilters: React.FC<{
               })
             }
             className="sor-form-input-xs"
-            aria-label="Conflict filter"
+            aria-label={t("importTab.filters.conflictAria", {
+              defaultValue: "Conflict filter",
+            })}
           >
-            <option value="all">All conflicts</option>
-            <option value="conflicts">Conflicts only</option>
-            <option value="clean">Clean only</option>
+            <option value="all">
+              {t("importTab.filters.allConflicts", {
+                defaultValue: "All conflicts",
+              })}
+            </option>
+            <option value="conflicts">
+              {t("importTab.filters.conflictsOnly", {
+                defaultValue: "Conflicts only",
+              })}
+            </option>
+            <option value="clean">
+              {t("importTab.filters.cleanOnly", {
+                defaultValue: "Clean only",
+              })}
+            </option>
           </select>
           <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--color-textSecondary)]">
             <label className="inline-flex items-center gap-2">
@@ -996,7 +1236,9 @@ const ImportFilters: React.FC<{
                   updateFilters({ missingHostnameOnly: event.target.checked })
                 }
               />
-              Missing host
+              {t("importTab.filters.missingHost", {
+                defaultValue: "Missing host",
+              })}
             </label>
             <label className="inline-flex items-center gap-2">
               <input
@@ -1006,7 +1248,9 @@ const ImportFilters: React.FC<{
                   updateFilters({ withCredentialsOnly: event.target.checked })
                 }
               />
-              Has credentials
+              {t("importTab.filters.hasCredentials", {
+                defaultValue: "Has credentials",
+              })}
             </label>
           </div>
         </div>
@@ -1020,12 +1264,19 @@ const ImportFilters: React.FC<{
 const ImportOptionsPanel: React.FC<{
   options: ImportOptions;
   updateOptions: (updates: Partial<ImportOptions>) => void;
-}> = ({ options, updateOptions }) => (
-  <ImportSection
-    title="Import options"
-    description="Tune how imported items are merged into the target database."
-    icon={Filter}
-  >
+}> = ({ options, updateOptions }) => {
+  const { t } = useTranslation();
+  return (
+    <ImportSection
+      title={t("importTab.options.title", {
+        defaultValue: "Import options",
+      })}
+      description={t("importTab.options.description", {
+        defaultValue:
+          "Tune how imported items are merged into the target database.",
+      })}
+      icon={Filter}
+    >
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -1033,7 +1284,9 @@ const ImportOptionsPanel: React.FC<{
             htmlFor="import-options-conflict-policy"
             className="block text-xs text-[var(--color-textSecondary)]"
           >
-            Conflict policy
+            {t("importTab.options.conflictPolicy", {
+              defaultValue: "Conflict policy",
+            })}
           </label>
           <select
             id="import-options-conflict-policy"
@@ -1046,9 +1299,21 @@ const ImportOptionsPanel: React.FC<{
             }
             className="sor-form-input-xs w-full"
           >
-            <option value="duplicate">Import as duplicate</option>
-            <option value="rename">Rename conflicts</option>
-            <option value="skip">Skip conflicts</option>
+            <option value="duplicate">
+              {t("importTab.options.conflict.duplicate", {
+                defaultValue: "Import as duplicate",
+              })}
+            </option>
+            <option value="rename">
+              {t("importTab.options.conflict.rename", {
+                defaultValue: "Rename conflicts",
+              })}
+            </option>
+            <option value="skip">
+              {t("importTab.options.conflict.skip", {
+                defaultValue: "Skip conflicts",
+              })}
+            </option>
           </select>
         </div>
         <div className="space-y-1.5">
@@ -1056,13 +1321,17 @@ const ImportOptionsPanel: React.FC<{
             htmlFor="import-options-add-tags"
             className="block text-xs text-[var(--color-textSecondary)]"
           >
-            Add tags to imported items
+            {t("importTab.options.addTags", {
+              defaultValue: "Add tags to imported items",
+            })}
           </label>
           <input
             id="import-options-add-tags"
             value={options.addTags}
             onChange={(event) => updateOptions({ addTags: event.target.value })}
-            placeholder="comma-separated tags"
+            placeholder={t("importTab.options.tagsPlaceholder", {
+              defaultValue: "comma-separated tags",
+            })}
             className="sor-form-input-xs w-full"
           />
         </div>
@@ -1070,14 +1339,41 @@ const ImportOptionsPanel: React.FC<{
 
       <div className="grid gap-2 text-xs text-[var(--color-textSecondary)] sm:grid-cols-2">
         {[
-          ["preserveFolders", "Preserve folders"],
-          ["includeCredentials", "Include credentials"],
-          ["includeVpnData", "Import VPN data"],
-          ["includeTunnelChains", "Import tunnel chains"],
-          ["includeSshTunnels", "Import SSH tunnels"],
+          [
+            "preserveFolders",
+            t("importTab.options.preserveFolders", {
+              defaultValue: "Preserve folders",
+            }),
+          ],
+          [
+            "includeCredentials",
+            t("importTab.options.includeCredentials", {
+              defaultValue: "Include credentials",
+            }),
+          ],
+          [
+            "includeVpnData",
+            t("importTab.options.includeVpnData", {
+              defaultValue: "Import VPN data",
+            }),
+          ],
+          [
+            "includeTunnelChains",
+            t("importTab.options.includeTunnelChains", {
+              defaultValue: "Import tunnel chains",
+            }),
+          ],
+          [
+            "includeSshTunnels",
+            t("importTab.options.includeSshTunnels", {
+              defaultValue: "Import SSH tunnels",
+            }),
+          ],
           [
             "switchToTargetDatabaseAfterImport",
-            "Switch to target after import",
+            t("importTab.options.switchTarget", {
+              defaultValue: "Switch to target after import",
+            }),
           ],
         ].map(([key, label]) => (
           <label key={key} className="inline-flex items-center gap-2">
@@ -1095,18 +1391,26 @@ const ImportOptionsPanel: React.FC<{
         ))}
       </div>
     </div>
-  </ImportSection>
-);
+    </ImportSection>
+  );
+};
 
 /* ── Preview details (rendered inside expanded row) ────────────── */
 
-const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => (
-  <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-xs">
+const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-xs">
     <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
       <div>
         <div className="font-medium text-[var(--color-text)]">{item.name}</div>
         <div className="mt-1 text-[var(--color-textMuted)]">
-          Source #{item.sourceIndex} | {item.kind} | {item.conflictStatus}
+          {t("importTab.details.sourceSummary", {
+            defaultValue: "Source #{{index}} | {{kind}} | {{status}}",
+            index: item.sourceIndex,
+            kind: item.kind,
+            status: item.conflictStatus,
+          })}
         </div>
       </div>
       <span
@@ -1116,17 +1420,37 @@ const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => (
             : "border-error/30 bg-error/10 text-error"
         }`}
       >
-        {item.importable ? "Importable" : "Blocked"}
+        {item.importable
+          ? t("importTab.details.importable", { defaultValue: "Importable" })
+          : t("importTab.details.blocked", { defaultValue: "Blocked" })}
       </span>
     </div>
 
     <div className="mb-3 grid grid-cols-1 gap-1 text-[var(--color-textSecondary)] sm:grid-cols-2">
-      <div>Path: {item.sourcePath}</div>
-      <div>Parent: {item.parentName || "-"}</div>
-      <div>Host: {item.hostname || "-"}</div>
-      <div>Port: {item.port || "-"}</div>
-      <div>Username: {item.username || "-"}</div>
-      <div>Tags: {item.tags.join(", ") || "-"}</div>
+      <div>
+        {t("importTab.details.path", { defaultValue: "Path:" })}{" "}
+        {item.sourcePath}
+      </div>
+      <div>
+        {t("importTab.details.parent", { defaultValue: "Parent:" })}{" "}
+        {item.parentName || "-"}
+      </div>
+      <div>
+        {t("importTab.details.host", { defaultValue: "Host:" })}{" "}
+        {item.hostname || "-"}
+      </div>
+      <div>
+        {t("importTab.details.port", { defaultValue: "Port:" })}{" "}
+        {item.port || "-"}
+      </div>
+      <div>
+        {t("importTab.details.username", { defaultValue: "Username:" })}{" "}
+        {item.username || "-"}
+      </div>
+      <div>
+        {t("importTab.details.tags", { defaultValue: "Tags:" })}{" "}
+        {item.tags.join(", ") || "-"}
+      </div>
     </div>
 
     {item.issues.length > 0 && (
@@ -1142,12 +1466,17 @@ const PreviewDetails: React.FC<{ item: ImportPreviewItem }> = ({ item }) => (
       </div>
     )}
 
-    <div className="text-[var(--color-textMuted)]">Full parsed record</div>
+    <div className="text-[var(--color-textMuted)]">
+      {t("importTab.details.fullRecord", {
+        defaultValue: "Full parsed record",
+      })}
+    </div>
     <pre className="mt-2 max-h-[320px] overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[11px] leading-relaxed text-[var(--color-textSecondary)]">
       {buildPreviewDetailJson(item)}
     </pre>
-  </div>
-);
+    </div>
+  );
+};
 
 /* ── Preview table with inline-expanded focused row ────────────── */
 
@@ -1157,19 +1486,37 @@ const PreviewTable: React.FC<{
   focusedItemId?: string;
   toggleSelection: (itemId: string) => void;
   onFocusItem: (itemId: string) => void;
-}> = ({ items, selectedIds, focusedItemId, toggleSelection, onFocusItem }) => (
-  <div className="overflow-hidden border-t border-[var(--color-border)]">
+}> = ({ items, selectedIds, focusedItemId, toggleSelection, onFocusItem }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="overflow-hidden border-t border-[var(--color-border)]">
     <div className="max-h-[460px] overflow-auto">
       <table className="w-full min-w-[640px] text-left text-xs">
         <thead className="sticky top-0 z-10 bg-[var(--color-background)] text-[var(--color-textMuted)] shadow-[inset_0_-1px_0_var(--color-border)]">
           <tr>
-            <th className="w-10 px-3 py-2">Use</th>
-            <th className="px-3 py-2">Name</th>
-            <th className="px-3 py-2">Type</th>
-            <th className="px-3 py-2">Host</th>
-            <th className="px-3 py-2">Folder Path</th>
-            <th className="px-3 py-2">Tags</th>
-            <th className="px-3 py-2">Issues</th>
+            <th className="w-10 px-3 py-2">
+              {t("importTab.table.use", { defaultValue: "Use" })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.name", { defaultValue: "Name" })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.type", { defaultValue: "Type" })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.host", { defaultValue: "Host" })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.folderPath", {
+                defaultValue: "Folder Path",
+              })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.tags", { defaultValue: "Tags" })}
+            </th>
+            <th className="px-3 py-2">
+              {t("importTab.table.issues", { defaultValue: "Issues" })}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
@@ -1200,7 +1547,10 @@ const PreviewTable: React.FC<{
                       disabled={!item.importable}
                       onClick={(event) => event.stopPropagation()}
                       onChange={() => toggleSelection(item.id)}
-                      aria-label={`Select ${item.name}`}
+                      aria-label={t("importTab.table.selectItem", {
+                        defaultValue: "Select {{name}}",
+                        name: item.name,
+                      })}
                     />
                   </td>
                   <td className="px-3 py-2 align-top">
@@ -1238,9 +1588,13 @@ const PreviewTable: React.FC<{
                           ? formatPortableProtocolLabel(item.connection)
                           : item.protocol
                         : item.kind === "tunnelChain"
-                          ? "tunnel"
+                          ? t("importTab.table.tunnelKind", {
+                              defaultValue: "tunnel",
+                            })
                           : item.kind === "sshTunnel"
-                            ? "ssh tunnel"
+                            ? t("importTab.table.sshTunnelKind", {
+                                defaultValue: "ssh tunnel",
+                              })
                             : item.kind}
                     </span>
                   </td>
@@ -1270,7 +1624,9 @@ const PreviewTable: React.FC<{
                     <div className="flex flex-wrap gap-1">
                       {item.issues.length === 0 && (
                         <span className="rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-success">
-                          clean
+                          {t("importTab.table.clean", {
+                            defaultValue: "clean",
+                          })}
                         </span>
                       )}
                       {item.issues.slice(0, 3).map((issue) => (
@@ -1300,15 +1656,19 @@ const PreviewTable: React.FC<{
                 colSpan={7}
                 className="px-3 py-8 text-center text-[var(--color-textMuted)]"
               >
-                No preview rows match the current filters.
+                {t("importTab.table.empty", {
+                  defaultValue:
+                    "No preview rows match the current filters.",
+                })}
               </td>
             </tr>
           )}
         </tbody>
       </table>
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 /* ── Root component ───────────────────────────────────────────── */
 
@@ -1418,7 +1778,9 @@ const ImportTab: React.FC<ImportTabProps> = ({
         className="mx-auto mb-4 text-[var(--color-textSecondary)]"
       />
       <p className="mb-4 text-[var(--color-textSecondary)]">
-        Drag a file here or click below to choose one
+        {t("importTab.drop.prompt", {
+          defaultValue: "Drag a file here or click below to choose one",
+        })}
       </p>
       <button
         onClick={handleImport}
@@ -1428,25 +1790,40 @@ const ImportTab: React.FC<ImportTabProps> = ({
         {isProcessing ? (
           <>
             <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-[var(--color-border)]" />
-            <span>Processing...</span>
+            <span>
+              {t("importTab.drop.processing", {
+                defaultValue: "Processing...",
+              })}
+            </span>
           </>
         ) : (
           <>
             <File size={16} />
-            <span>Choose File</span>
+            <span>
+              {t("importTab.drop.chooseFile", {
+                defaultValue: "Choose File",
+              })}
+            </span>
           </>
         )}
       </button>
       <p className="mt-2 text-xs text-[var(--color-textMuted)]">
-        Formats: .json, .xml, .csv, .ini, .reg, .rdg, .rtsz, .rtsx
+        {t("importTab.drop.formats", {
+          defaultValue:
+            "Formats: .json, .xml, .csv, .ini, .reg, .rdg, .rtsz, .rtsx",
+        })}
       </p>
     </div>
   );
 
   const templatesRow = (
     <ImportSection
-      title="Templates"
-      description="Download native templates for hand-authored imports."
+      title={t("importTab.templates.title", {
+        defaultValue: "Templates",
+      })}
+      description={t("importTab.templates.description", {
+        defaultValue: "Download native templates for hand-authored imports.",
+      })}
       icon={Download}
     >
       <div className="flex flex-wrap gap-2">
@@ -1457,7 +1834,9 @@ const ImportTab: React.FC<ImportTabProps> = ({
             className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] transition-colors hover:border-primary/50 hover:text-[var(--color-text)]"
           >
             <Download size={13} />
-            <span>{template.label}</span>
+            <span>
+              {t(template.labelKey, { defaultValue: template.defaultLabel })}
+            </span>
           </button>
         ))}
       </div>
@@ -1468,36 +1847,54 @@ const ImportTab: React.FC<ImportTabProps> = ({
     () => [
       {
         id: "template-target",
-        label: "Template & Target",
-        description:
-          "Download a starter template if useful, then choose the destination database.",
+        label: t("importTab.steps.templateTarget.label", {
+          defaultValue: "Template & Target",
+        }),
+        description: t("importTab.steps.templateTarget.description", {
+          defaultValue:
+            "Download a starter template if useful, then choose the destination database.",
+        }),
       },
       {
         id: "format",
-        label: "Format",
-        description:
-          "Use automatic detection or force the parser for a known source format.",
+        label: t("importTab.format.title", { defaultValue: "Format" }),
+        description: t("importTab.steps.format.description", {
+          defaultValue:
+            "Use automatic detection or force the parser for a known source format.",
+        }),
       },
       {
         id: "source",
-        label: "Source",
-        description:
-          "Choose or drop a file and let it be analysed before continuing.",
+        label: t("importTab.steps.source.label", {
+          defaultValue: "Source",
+        }),
+        description: t("importTab.steps.source.description", {
+          defaultValue:
+            "Choose or drop a file and let it be analysed before continuing.",
+        }),
       },
       {
         id: "selection-options",
-        label: "Selection & Options",
-        description:
-          "Filter analysed rows, choose what to import, and set merge behavior.",
+        label: t("importTab.steps.selectionOptions.label", {
+          defaultValue: "Selection & Options",
+        }),
+        description: t("importTab.steps.selectionOptions.description", {
+          defaultValue:
+            "Filter analysed rows, choose what to import, and set merge behavior.",
+        }),
       },
       {
         id: "review",
-        label: "Preview & Confirm",
-        description:
-          "Review the source, target, options, and selected rows before importing.",
+        label: t("importTab.steps.review.label", {
+          defaultValue: "Preview & Confirm",
+        }),
+        description: t("importTab.steps.review.description", {
+          defaultValue:
+            "Review the source, target, options, and selected rows before importing.",
+        }),
       },
     ],
-    [],
+    [t],
   );
   const exportableImportTargets = importDatabaseOptions.filter(
     (option) => option.isExportable,
@@ -1512,29 +1909,47 @@ const ImportTab: React.FC<ImportTabProps> = ({
     (stepId: string): string | undefined => {
       if (stepId === "template-target") {
         if (importTargetMode === "current" && !currentImportTarget) {
-          return "Open or unlock a current database before continuing.";
+          return t("importTab.validation.currentTarget", {
+            defaultValue:
+              "Open or unlock a current database before continuing.",
+          });
         }
         if (importTargetMode === "selected" && !selectedImportTarget) {
-          return "Choose an unlocked target database before continuing.";
+          return t("importTab.validation.selectedTarget", {
+            defaultValue:
+              "Choose an unlocked target database before continuing.",
+          });
         }
         if (
           importTargetMode === "all" &&
           exportableImportTargets.length === 0
         ) {
-          return "Unlock at least one target database before continuing.";
+          return t("importTab.validation.anyTarget", {
+            defaultValue:
+              "Unlock at least one target database before continuing.",
+          });
         }
       }
       if (stepId === "source" && !importResult?.success) {
         return isProcessing
-          ? "Wait for the selected file to finish processing."
-          : "Choose a supported file that can be analysed successfully.";
+          ? t("importTab.validation.processing", {
+              defaultValue:
+                "Wait for the selected file to finish processing.",
+            })
+          : t("importTab.validation.chooseFile", {
+              defaultValue:
+                "Choose a supported file that can be analysed successfully.",
+            });
       }
       if (
         stepId === "selection-options" &&
         previewItems.length > 0 &&
         selectedRows === 0
       ) {
-        return "Select at least one importable preview row before continuing.";
+        return t("importTab.validation.selectRow", {
+          defaultValue:
+            "Select at least one importable preview row before continuing.",
+        });
       }
       return undefined;
     },
@@ -1547,6 +1962,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
       previewItems.length,
       selectedImportTarget,
       selectedRows,
+      t,
     ],
   );
   const wizard = useWizardNavigation(
@@ -1569,11 +1985,18 @@ const ImportTab: React.FC<ImportTabProps> = ({
         <div>
           <h4 className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
             <FileText size={16} className="text-primary" />
-            Preview selection
+            {t("importTab.preview.title", {
+              defaultValue: "Preview selection",
+            })}
           </h4>
           <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-            {selectedRows} selected | {visibleCount} visible after filters |{" "}
-            {previewItemCount} total preview rows
+            {t("importTab.preview.summary", {
+              defaultValue:
+                "{{selected}} selected | {{visible}} visible after filters | {{total}} total preview rows",
+              selected: selectedRows,
+              visible: visibleCount,
+              total: previewItemCount,
+            })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1582,21 +2005,27 @@ const ImportTab: React.FC<ImportTabProps> = ({
             onClick={selectAllImportablePreviewItems}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
-            Select all importable
+            {t("importTab.preview.selectAll", {
+              defaultValue: "Select all importable",
+            })}
           </button>
           <button
             type="button"
             onClick={selectAllVisiblePreviewItems}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
-            Select visible
+            {t("importTab.preview.selectVisible", {
+              defaultValue: "Select visible",
+            })}
           </button>
           <button
             type="button"
             onClick={deselectAllVisiblePreviewItems}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
-            Clear visible
+            {t("importTab.preview.clearVisible", {
+              defaultValue: "Clear visible",
+            })}
           </button>
         </div>
       </div>
@@ -1641,7 +2070,9 @@ const ImportTab: React.FC<ImportTabProps> = ({
               onClick={changeImportSource}
               className="sor-btn-secondary"
             >
-              Change source
+              {t("importTab.action.changeSource", {
+                defaultValue: "Change source",
+              })}
             </button>
             <button
               type="button"
@@ -1651,11 +2082,13 @@ const ImportTab: React.FC<ImportTabProps> = ({
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-success px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <CheckCircle size={14} />
-              Import{" "}
-              {previewItemCount > 0
-                ? selectedRows
-                : (importResult?.imported ?? 0)}{" "}
-              Selected
+              {t("importTab.action.confirm", {
+                defaultValue: "Import {{count}} Selected",
+                count:
+                  previewItemCount > 0
+                    ? selectedRows
+                    : (importResult?.imported ?? 0),
+              })}
             </button>
           </div>
         }
@@ -1697,7 +2130,9 @@ const ImportTab: React.FC<ImportTabProps> = ({
                 <div className="mb-2 flex items-center gap-2">
                   <AlertCircle size={20} className="text-error" />
                   <span className="font-medium text-error">
-                    Import analysis failed
+                    {t("importTab.failure.title", {
+                      defaultValue: "Import analysis failed",
+                    })}
                   </span>
                   {detectedFormat && (
                     <span className="rounded bg-error/20 px-2 py-0.5 text-xs text-error">
@@ -1717,17 +2152,33 @@ const ImportTab: React.FC<ImportTabProps> = ({
                   onClick={changeImportSource}
                   className="mt-3 rounded-lg border border-error/40 px-3 py-1.5 text-sm text-error transition-colors hover:bg-error/10"
                 >
-                  Try Again
+                  {t("importTab.failure.tryAgain", {
+                    defaultValue: "Try Again",
+                  })}
                 </button>
               </div>
             )}
             {!isSuccess && (
               <ImportSection
-                title={isFailure ? "Try a different file" : "Source file"}
+                title={
+                  isFailure
+                    ? t("importTab.source.tryDifferentTitle", {
+                        defaultValue: "Try a different file",
+                      })
+                    : t("importTab.source.fileTitle", {
+                        defaultValue: "Source file",
+                      })
+                }
                 description={
                   isFailure
-                    ? "Pick another export or drop a file to retry parsing."
-                    : "Choose or drop a supported native or compatible application export."
+                    ? t("importTab.source.retryDescription", {
+                        defaultValue:
+                          "Pick another export or drop a file to retry parsing.",
+                      })
+                    : t("importTab.source.fileDescription", {
+                        defaultValue:
+                          "Choose or drop a supported native or compatible application export.",
+                      })
                 }
                 icon={FolderOpen}
               >
@@ -1739,9 +2190,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
                 className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success"
                 data-testid="import-source-ready"
               >
-                Analysis is ready:{" "}
-                {previewItemCount || importResult?.imported || 0} row(s) can now
-                be selected and configured.
+                {t("importTab.source.ready", {
+                  defaultValue:
+                    "Analysis is ready: {{count}} row(s) can now be selected and configured.",
+                  count: previewItemCount || importResult?.imported || 0,
+                })}
               </div>
             )}
           </div>
@@ -1757,7 +2210,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
             />
             {importResult!.errors.length > 0 && (
               <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
-                <p className="text-sm font-medium text-warning">Warnings:</p>
+                <p className="text-sm font-medium text-warning">
+                  {t("importTab.common.warningsLabel", {
+                    defaultValue: "Warnings:",
+                  })}
+                </p>
                 <ul className="mt-1 text-sm text-warning">
                   {importResult!.errors.map((error, index) => (
                     <li key={`warn-${error.slice(0, 50)}-${index}`}>
@@ -1786,55 +2243,103 @@ const ImportTab: React.FC<ImportTabProps> = ({
             <div className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceElevated)] p-4 text-sm sm:grid-cols-2">
               <div>
                 <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
-                  Target
+                  {t("importTab.review.target", { defaultValue: "Target" })}
                 </div>
                 <div className="mt-1 font-medium text-[var(--color-text)]">
                   {importTargetMode === "all"
-                    ? `${exportableImportTargets.length} unlocked databases`
+                    ? t("importTab.review.unlockedDatabases", {
+                        defaultValue: "{{count}} unlocked databases",
+                        count: exportableImportTargets.length,
+                      })
                     : importTargetMode === "selected"
-                      ? (selectedImportTarget?.name ?? "No target selected")
-                      : (currentImportTarget?.name ?? "No current target")}
+                      ? (selectedImportTarget?.name ??
+                        t("importTab.review.noTarget", {
+                          defaultValue: "No target selected",
+                        }))
+                      : (currentImportTarget?.name ??
+                        t("importTab.review.noCurrentTarget", {
+                          defaultValue: "No current target",
+                        }))}
                 </div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
-                  Selected content
+                  {t("importTab.review.selectedContent", {
+                    defaultValue: "Selected content",
+                  })}
                 </div>
                 <div className="mt-1 font-medium text-[var(--color-text)]">
                   {previewItemCount > 0
-                    ? `${selectedRows} of ${previewItemCount} preview rows`
-                    : `${importResult?.imported ?? 0} parsed connections`}
+                    ? t("importTab.review.previewRows", {
+                        defaultValue: "{{selected}} of {{total}} preview rows",
+                        selected: selectedRows,
+                        total: previewItemCount,
+                      })
+                    : t("importTab.review.parsedConnections", {
+                        defaultValue: "{{count}} parsed connections",
+                        count: importResult?.imported ?? 0,
+                      })}
                 </div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
-                  Merge policy
+                  {t("importTab.review.mergePolicy", {
+                    defaultValue: "Merge policy",
+                  })}
                 </div>
                 <div className="mt-1 font-medium capitalize text-[var(--color-text)]">
-                  {importOptions.conflictPolicy}
+                  {t(
+                    `importTab.review.conflict.${importOptions.conflictPolicy}`,
+                    {
+                      defaultValue: importOptions.conflictPolicy,
+                    },
+                  )}
                 </div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wide text-[var(--color-textMuted)]">
-                  Included data
+                  {t("importTab.review.includedData", {
+                    defaultValue: "Included data",
+                  })}
                 </div>
                 <div className="mt-1 text-[var(--color-textSecondary)]">
                   {[
-                    importOptions.preserveFolders ? "folders" : null,
-                    importOptions.includeCredentials ? "credentials" : null,
+                    importOptions.preserveFolders
+                      ? t("importTab.review.folders", {
+                          defaultValue: "folders",
+                        })
+                      : null,
+                    importOptions.includeCredentials
+                      ? t("importTab.review.credentials", {
+                          defaultValue: "credentials",
+                        })
+                      : null,
                     importOptions.includeVpnData ? "VPN" : null,
-                    importOptions.includeTunnelChains ? "tunnel chains" : null,
-                    importOptions.includeSshTunnels ? "SSH tunnels" : null,
+                    importOptions.includeTunnelChains
+                      ? t("importTab.review.tunnelChains", {
+                          defaultValue: "tunnel chains",
+                        })
+                      : null,
+                    importOptions.includeSshTunnels
+                      ? t("importTab.review.sshTunnels", {
+                          defaultValue: "SSH tunnels",
+                        })
+                      : null,
                   ]
                     .filter(Boolean)
-                    .join(", ") || "connections only"}
+                    .join(", ") ||
+                    t("importTab.review.connectionsOnly", {
+                      defaultValue: "connections only",
+                    })}
                 </div>
               </div>
             </div>
             {previewItemCount > 0 && (
               <ul
                 className="max-h-72 space-y-2 overflow-y-auto"
-                aria-label="Selected import preview"
+                aria-label={t("importTab.review.selectedPreviewAria", {
+                  defaultValue: "Selected import preview",
+                })}
               >
                 {previewItems
                   .filter((item) => selectedPreviewIds.has(item.id))

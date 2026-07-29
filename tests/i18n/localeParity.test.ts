@@ -70,11 +70,6 @@ const enLeafPaths = collectLeafPaths(enUS);
 const enEntries = new Map(collectLeafEntries(enUS));
 const accepted = acceptedIdentical as Record<string, string[]>;
 
-// integrations.* is a self-contained, never-translated namespace deferred to a
-// later programme (t52+). It is intentionally excluded from the ratchet so the
-// gate tracks the surface t51 actually repaired; its rot is tracked separately.
-const DEFERRED_PREFIX = "integrations.";
-
 describe("repo-wide locale parity + translation ratchet", () => {
   it("ships a large, non-empty en-US leaf set (guards against vacuous parity)", () => {
     expect(enLeafPaths.length).toBeGreaterThan(7000);
@@ -117,16 +112,15 @@ describe("repo-wide locale parity + translation ratchet", () => {
 
   // THE RATCHET. Every leaf whose value still equals en-US must be a member of
   // the frozen acceptedIdentical.json baseline for that locale (proper nouns,
-  // acronyms, unit/format strings, CJK Latin passthrough, and keys pending a
-  // later translation wave). A NEW value that regresses to English — one not in
-  // the baseline — fails here. Regenerating the baseline is a deliberate,
-  // reviewable act, never an automatic side effect.
+  // acronyms, unit/format strings, CJK Latin passthrough, and reviewed deliberate
+  // identicals, including integrations.*). A NEW value that regresses to English
+  // — one not in the baseline — fails here. Regenerating the baseline is a
+  // deliberate, reviewable act, never an automatic side effect.
   it("adds no untranslated value beyond the frozen acceptedIdentical baseline", () => {
     for (const [name, locale] of Object.entries(nonEnLocales)) {
       const baseline = new Set(accepted[name] ?? []);
       const offenders: string[] = [];
       for (const [key, value] of collectLeafEntries(locale)) {
-        if (key.startsWith(DEFERRED_PREFIX)) continue;
         if (value === enEntries.get(key) && !baseline.has(key)) {
           offenders.push(key);
         }

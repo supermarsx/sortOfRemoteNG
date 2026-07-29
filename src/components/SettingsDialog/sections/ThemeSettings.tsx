@@ -63,12 +63,20 @@ const AppearanceSection: React.FC<{
           label: formatLabel(theme),
         }))}
         onChange={(v) => updateSettings({ theme: v as Theme })}
-        infoTooltip="Select the base theme that controls the overall look and feel of the application."
+        infoTooltip={mgr.t(
+          "themeSettings.baseThemeTooltip",
+          "Select the base theme that controls the overall look and feel of the application.",
+        )}
       />
       <div className="space-y-2">
         <label className="text-sm text-[var(--color-textSecondary)] flex items-center gap-1">
-          Color Scheme
-          <InfoTooltip text="Choose a preset color scheme that defines the primary accent colors used throughout the UI" />
+          {mgr.t("themeSettings.colorScheme", "Color Scheme")}
+          <InfoTooltip
+            text={mgr.t(
+              "themeSettings.colorSchemeTooltip",
+              "Choose a preset color scheme that defines the primary accent colors used throughout the UI",
+            )}
+          />
         </label>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
           {mgr.schemeOptions.map((option) => (
@@ -93,11 +101,17 @@ const AppearanceSection: React.FC<{
       </div>
       <Toggle
         icon={<Palette size={16} />}
-        label="Custom Accent"
-        description="Replace the preset scheme with any color you pick"
+        label={mgr.t("themeSettings.customAccent", "Custom Accent")}
+        description={mgr.t(
+          "themeSettings.customAccentDescription",
+          "Replace the preset scheme with any color you pick",
+        )}
         checked={settings.useCustomAccent ?? false}
         onChange={(v) => mgr.handleToggleCustomAccent(v)}
-        infoTooltip="Override the color scheme with a custom accent color of your choice"
+        infoTooltip={mgr.t(
+          "themeSettings.customAccentTooltip",
+          "Override the color scheme with a custom accent color of your choice",
+        )}
       />
 
       <div
@@ -109,10 +123,13 @@ const AppearanceSection: React.FC<{
       >
         <SettingsColorRow
           icon={<Droplets size={16} />}
-          label="Accent Color"
+          label={mgr.t("themeSettings.accentColor", "Accent Color")}
           value={settings.primaryAccentColor || "#3b82f6"}
           onChange={(v) => mgr.handleAccentChange(v)}
-          infoTooltip="The custom color used as the primary accent throughout the UI when Custom Accent is enabled."
+          infoTooltip={mgr.t(
+            "themeSettings.accentColorTooltip",
+            "The custom color used as the primary accent throughout the UI when Custom Accent is enabled.",
+          )}
         />
       </div>
     </Card>
@@ -134,10 +151,19 @@ const GlowSection: React.FC<{
         checked={settings.backgroundGlowEnabled}
         onChange={(v) => updateSettings({ backgroundGlowEnabled: v })}
         icon={<Sparkles size={16} />}
-        label="Enable background glow effect"
-        description="Add a soft radial glow behind the main content area"
+        label={mgr.t(
+          "themeSettings.enableBackgroundGlow",
+          "Enable background glow effect",
+        )}
+        description={mgr.t(
+          "themeSettings.enableBackgroundGlowDescription",
+          "Add a soft radial glow behind the main content area",
+        )}
         settingKey="backgroundGlowEnabled"
-        infoTooltip="Add a soft radial glow effect behind the main content area"
+        infoTooltip={mgr.t(
+          "themeSettings.enableBackgroundGlowTooltip",
+          "Add a soft radial glow effect behind the main content area",
+        )}
       />
       <div
         className={
@@ -152,10 +178,19 @@ const GlowSection: React.FC<{
             updateSettings({ backgroundGlowFollowsColorScheme: v })
           }
           icon={<Link2 size={16} />}
-          label="Glow follows color scheme"
-          description="Auto-tint the glow to match the selected color scheme"
+          label={mgr.t(
+            "themeSettings.glowFollowsColorScheme",
+            "Glow follows color scheme",
+          )}
+          description={mgr.t(
+            "themeSettings.glowFollowsColorSchemeDescription",
+            "Auto-tint the glow to match the selected color scheme",
+          )}
           settingKey="backgroundGlowFollowsColorScheme"
-          infoTooltip="Automatically match the glow color to your selected color scheme"
+          infoTooltip={mgr.t(
+            "themeSettings.glowFollowsColorSchemeTooltip",
+            "Automatically match the glow color to your selected color scheme",
+          )}
         />
       </div>
       <div
@@ -172,54 +207,68 @@ const GlowSection: React.FC<{
             icon={<Droplets size={16} />}
             label={
               settings.backgroundGlowFollowsColorScheme
-                ? "Glow Color (auto)"
-                : "Glow Color"
+                ? mgr.t("themeSettings.glowColorAuto", "Glow Color (auto)")
+                : mgr.t("themeSettings.glowColor", "Glow Color")
             }
             value={settings.backgroundGlowColor || "#2563eb"}
             fallbackValue="#2563eb"
             onChange={(v) => updateSettings({ backgroundGlowColor: v })}
-            infoTooltip="The color of the background glow effect. Disabled when 'Glow follows color scheme' is on."
+            infoTooltip={mgr.t(
+              "themeSettings.glowColorTooltip",
+              "The color of the background glow effect. Disabled when 'Glow follows color scheme' is on.",
+            )}
           />
         </div>
 
         <SettingsSliderRow
           icon={<Eye size={16} />}
-          label="Glow Opacity"
+          label={mgr.t("themeSettings.glowOpacity", "Glow Opacity")}
           value={settings.backgroundGlowOpacity}
           min={0}
           max={1}
           step={0.05}
           onChange={(v) => updateSettings({ backgroundGlowOpacity: v })}
-          infoTooltip="How visible the glow effect is (0 = invisible, 1 = fully opaque)."
+          infoTooltip={mgr.t(
+            "themeSettings.glowOpacityTooltip",
+            "How visible the glow effect is (0 = invisible, 1 = fully opaque).",
+          )}
         />
 
         <SettingsSliderRow
           icon={<Maximize2 size={16} />}
-          label="Glow Radius"
+          label={mgr.t("themeSettings.glowRadius", "Glow Radius")}
           value={settings.backgroundGlowRadius}
           min={200}
           max={1200}
           step={10}
           unit="px"
           onChange={(v) => updateSettings({ backgroundGlowRadius: v })}
-          infoTooltip="The size of the glow circle in pixels."
+          infoTooltip={mgr.t(
+            "themeSettings.glowRadiusTooltip",
+            "The size of the glow circle in pixels.",
+          )}
         />
 
         <SettingsSliderRow
           icon={<Brush size={16} />}
-          label="Glow Blur"
+          label={mgr.t("themeSettings.glowBlur", "Glow Blur")}
           value={settings.backgroundGlowBlur}
           min={40}
           max={320}
           step={4}
           unit="px"
           onChange={(v) => updateSettings({ backgroundGlowBlur: v })}
-          infoTooltip="How much the glow is blurred at the edges in pixels."
+          infoTooltip={mgr.t(
+            "themeSettings.glowBlurTooltip",
+            "How much the glow is blurred at the edges in pixels.",
+          )}
         />
       </div>
       <p className="text-xs text-[var(--color-textMuted)]">
-        The glow effect appears centered in the main content area for an
-        exquisite visual experience.
+        {mgr.t(
+          "themeSettings.glowDescription",
+          "The glow effect appears centered in the main content area for an exquisite visual experience.",
+        )}
       </p>
     </Card>
   </div>
@@ -237,25 +286,36 @@ const TransparencySection: React.FC<{
         <>
           {mgr.t("settings.theme.transparency", "Window Transparency")}
           <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-warning/20 text-warning border border-warning/30 rounded">
-            Experimental
+            {mgr.t("themeSettings.experimental", "Experimental")}
           </span>
         </>
       }
     />
     <Card>
       <p className="text-xs text-[var(--color-textMuted)]">
-        Window transparency is experimental and may cause visual artifacts on
-        some platforms or compositors. Disabled by default.
+        {mgr.t(
+          "themeSettings.transparencyWarning",
+          "Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.",
+        )}
       </p>
 
       <Toggle
         checked={settings.windowTransparencyEnabled}
         onChange={(v) => updateSettings({ windowTransparencyEnabled: v })}
         icon={<Wand2 size={16} />}
-        label="Enable window transparency"
-        description="Make the application window semi-transparent so the desktop shows through"
+        label={mgr.t(
+          "themeSettings.enableTransparency",
+          "Enable window transparency",
+        )}
+        description={mgr.t(
+          "themeSettings.enableTransparencyDescription",
+          "Make the application window semi-transparent so the desktop shows through",
+        )}
         settingKey="windowTransparencyEnabled"
-        infoTooltip="Make the application window semi-transparent so the desktop is visible behind it"
+        infoTooltip={mgr.t(
+          "themeSettings.enableTransparencyTooltip",
+          "Make the application window semi-transparent so the desktop is visible behind it",
+        )}
       />
 
       <div
@@ -268,7 +328,7 @@ const TransparencySection: React.FC<{
         <SettingsSliderRow
           settingKey="windowTransparencyOpacity"
           icon={<Layers size={16} />}
-          label="Opacity Level"
+          label={mgr.t("themeSettings.opacityLevel", "Opacity Level")}
           value={mgr.opacityValue}
           min={0}
           max={1}
@@ -276,7 +336,10 @@ const TransparencySection: React.FC<{
           onChange={(v) =>
             updateSettings({ windowTransparencyOpacity: v })
           }
-          infoTooltip="Controls how transparent the window is (0 = fully transparent, 1 = fully opaque)."
+          infoTooltip={mgr.t(
+            "themeSettings.opacityLevelTooltip",
+            "Controls how transparent the window is (0 = fully transparent, 1 = fully opaque).",
+          )}
         />
       </div>
 
@@ -284,10 +347,19 @@ const TransparencySection: React.FC<{
         checked={settings.showTransparencyToggle ?? false}
         onChange={(v) => updateSettings({ showTransparencyToggle: v })}
         icon={<EyeOff size={16} />}
-        label="Show transparency toggle in title bar"
-        description="Add a quick-toggle button to the window title bar"
+        label={mgr.t(
+          "themeSettings.showTransparencyToggle",
+          "Show transparency toggle in title bar",
+        )}
+        description={mgr.t(
+          "themeSettings.showTransparencyToggleDescription",
+          "Add a quick-toggle button to the window title bar",
+        )}
         settingKey="showTransparencyToggle"
-        infoTooltip="Add a button to the title bar for quickly toggling window transparency on and off"
+        infoTooltip={mgr.t(
+          "themeSettings.showTransparencyToggleTooltip",
+          "Add a button to the title bar for quickly toggling window transparency on and off",
+        )}
       />
     </Card>
   </div>
@@ -312,9 +384,15 @@ const AnimationsSection: React.FC<{
           "settings.theme.enableAnimations",
           "Enable animations and transitions",
         )}
-        description="Master switch for every UI animation and transition"
+        description={mgr.t(
+          "themeSettings.animationsDescription",
+          "Master switch for every UI animation and transition",
+        )}
         settingKey="animationsEnabled"
-        infoTooltip="Enable or disable all UI animations and transition effects globally"
+        infoTooltip={mgr.t(
+          "themeSettings.animationsTooltip",
+          "Enable or disable all UI animations and transition effects globally",
+        )}
       />
 
       <div
@@ -332,9 +410,15 @@ const AnimationsSection: React.FC<{
             "settings.theme.reduceMotion",
             "Reduce motion (minimal animations)",
           )}
-          description="Use subtle animations only — better for motion sensitivity"
+          description={mgr.t(
+            "themeSettings.reduceMotionDescription",
+            "Use subtle animations only — better for motion sensitivity",
+          )}
           settingKey="reduceMotion"
-          infoTooltip="Use minimal, subtle animations instead of full motion effects for accessibility"
+          infoTooltip={mgr.t(
+            "themeSettings.reduceMotionTooltip",
+            "Use minimal, subtle animations instead of full motion effects for accessibility",
+          )}
         />
       </div>
 
@@ -353,9 +437,15 @@ const AnimationsSection: React.FC<{
             "settings.theme.tabGroupAnimations",
             "Animate the Tab Group Manager",
           )}
-          description="Fade and slide groups as they are added, removed, or filtered"
+          description={mgr.t(
+            "themeSettings.tabGroupAnimationsDescription",
+            "Fade and slide groups as they are added, removed, or filtered",
+          )}
           settingKey="enableTabGroupAnimations"
-          infoTooltip="Add fade and slide animations when groups are added, removed, searched, or filtered in the Tab Group Manager. Falls back to instant updates when off."
+          infoTooltip={mgr.t(
+            "themeSettings.tabGroupAnimationsTooltip",
+            "Add fade and slide animations when groups are added, removed, searched, or filtered in the Tab Group Manager. Falls back to instant updates when off.",
+          )}
         />
       </div>
 
@@ -378,7 +468,10 @@ const AnimationsSection: React.FC<{
           step={25}
           unit="ms"
           onChange={(v) => updateSettings({ animationDuration: v })}
-          infoTooltip="Base duration for animations in milliseconds; lower values feel snappier."
+          infoTooltip={mgr.t(
+            "themeSettings.animationDurationTooltip",
+            "Base duration for animations in milliseconds; lower values feel snappier.",
+          )}
         />
       </div>
     </Card>
@@ -396,7 +489,12 @@ const CustomCssSection: React.FC<{
       title={
         <>
           {mgr.t("settings.theme.customCss", "Custom CSS")}{" "}
-          <InfoTooltip text="Write custom CSS rules to override any application styles for advanced personalization" />
+          <InfoTooltip
+            text={mgr.t(
+              "themeSettings.customCssTooltip",
+              "Write custom CSS rules to override any application styles for advanced personalization",
+            )}
+          />
         </>
       }
     />
@@ -419,11 +517,17 @@ const CustomCssSection: React.FC<{
           rows={6}
           spellCheck={false}
           className="css-editor-input"
-          placeholder="/* Enter custom CSS rules... */"
+          placeholder={mgr.t(
+            "themeSettings.customCssPlaceholder",
+            "/* Enter custom CSS rules... */",
+          )}
         />
       </div>
       <p className="text-xs text-[var(--color-textMuted)]">
-        Add custom styles to personalize the application appearance.
+        {mgr.t(
+          "themeSettings.customCssDescription",
+          "Add custom styles to personalize the application appearance.",
+        )}
       </p>
     </Card>
   </div>
@@ -441,8 +545,11 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
     <div className="space-y-6">
       <SectionHeading
         icon={<Palette className="w-5 h-5 text-primary" />}
-        title="Theme"
-        description="Color scheme, background glow, window transparency, animations, and custom CSS."
+        title={mgr.t("settings.theme", "Theme")}
+        description={mgr.t(
+          "themeSettings.description",
+          "Color scheme, background glow, window transparency, animations, and custom CSS.",
+        )}
       />
       <AppearanceSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
       <GlowSection mgr={mgr} settings={settings} updateSettings={updateSettings} />

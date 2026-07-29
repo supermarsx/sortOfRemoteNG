@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   RefreshCw, Loader2, AlertCircle, Monitor, Cpu,
   HardDrive, Wifi, MemoryStick, Server,
@@ -19,6 +20,7 @@ interface SystemInfoPanelProps {
 }
 
 const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,12 +61,12 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           onClick={fetchInfo}
           disabled={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
-          title="Refresh"
+          title={t("windows.systemInfo.refresh", "Refresh")}
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
         <span className="text-xs text-[var(--color-textMuted)]">
-          System Information
+          {t("windows.systemInfo.title", "System Information")}
         </span>
       </div>
 
@@ -80,33 +82,33 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {/* Computer System */}
           <Section
             icon={<Server size={14} className="text-blue-400" />}
-            title="Computer System"
+            title={t("windows.systemInfo.sections.computerSystem", "Computer System")}
           >
             <InfoGrid>
-              <InfoItem label="Name" value={info.computerSystem.name} />
+              <InfoItem label={t("windows.systemInfo.fields.name", "Name")} value={info.computerSystem.name} />
               <InfoItem
-                label="Domain"
+                label={t("windows.systemInfo.fields.domain", "Domain")}
                 value={info.computerSystem.domain}
               />
               <InfoItem
-                label="Manufacturer"
+                label={t("windows.systemInfo.fields.manufacturer", "Manufacturer")}
                 value={info.computerSystem.manufacturer}
               />
-              <InfoItem label="Model" value={info.computerSystem.model} />
+              <InfoItem label={t("windows.systemInfo.fields.model", "Model")} value={info.computerSystem.model} />
               <InfoItem
-                label="System Type"
+                label={t("windows.systemInfo.fields.systemType", "System Type")}
                 value={info.computerSystem.systemType}
               />
               <InfoItem
-                label="Total Memory"
+                label={t("windows.systemInfo.fields.totalMemory", "Total Memory")}
                 value={formatBytes(info.computerSystem.totalPhysicalMemory)}
               />
               <InfoItem
-                label="Processors"
-                value={`${info.computerSystem.numberOfProcessors} physical / ${info.computerSystem.numberOfLogicalProcessors} logical`}
+                label={t("windows.systemInfo.fields.processors", "Processors")}
+                value={t("windows.systemInfo.values.physicalLogical", "{{physical}} physical / {{logical}} logical", { physical: info.computerSystem.numberOfProcessors, logical: info.computerSystem.numberOfLogicalProcessors })}
               />
               <InfoItem
-                label="Domain Role"
+                label={t("windows.systemInfo.fields.domainRole", "Domain Role")}
                 value={info.computerSystem.domainRole}
               />
               {info.computerSystem.dnsHostName && (
@@ -117,7 +119,7 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
               )}
               {info.computerSystem.userName && (
                 <InfoItem
-                  label="Current User"
+                  label={t("windows.systemInfo.fields.currentUser", "Current User")}
                   value={info.computerSystem.userName}
                 />
               )}
@@ -127,41 +129,41 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {/* OS */}
           <Section
             icon={<Monitor size={14} className="text-green-400" />}
-            title="Operating System"
+            title={t("windows.systemInfo.sections.operatingSystem", "Operating System")}
           >
             <InfoGrid>
-              <InfoItem label="OS" value={info.operatingSystem.caption} />
+              <InfoItem label={t("windows.systemInfo.fields.os", "OS")} value={info.operatingSystem.caption} />
               <InfoItem
-                label="Version"
-                value={`${info.operatingSystem.version} (Build ${info.operatingSystem.buildNumber})`}
+                label={t("windows.systemInfo.fields.version", "Version")}
+                value={t("windows.systemInfo.values.versionWithBuild", "{{version}} (Build {{build}})", { version: info.operatingSystem.version, build: info.operatingSystem.buildNumber })}
               />
               <InfoItem
-                label="Architecture"
+                label={t("windows.systemInfo.fields.architecture", "Architecture")}
                 value={info.operatingSystem.osArchitecture}
               />
               {info.operatingSystem.installDate && (
                 <InfoItem
-                  label="Installed"
+                  label={t("windows.systemInfo.fields.installed", "Installed")}
                   value={info.operatingSystem.installDate}
                 />
               )}
               {info.operatingSystem.lastBootUpTime && (
                 <InfoItem
-                  label="Last Boot"
+                  label={t("windows.systemInfo.fields.lastBoot", "Last Boot")}
                   value={info.operatingSystem.lastBootUpTime}
                 />
               )}
               <InfoItem
-                label="Windows Dir"
+                label={t("windows.systemInfo.fields.windowsDirectory", "Windows Dir")}
                 value={info.operatingSystem.windowsDirectory}
                 mono
               />
               <InfoItem
-                label="Processes"
+                label={t("windows.systemInfo.fields.processes", "Processes")}
                 value={String(info.operatingSystem.numberOfProcesses)}
               />
               <InfoItem
-                label="Users"
+                label={t("windows.systemInfo.fields.users", "Users")}
                 value={String(info.operatingSystem.numberOfUsers)}
               />
             </InfoGrid>
@@ -174,13 +176,13 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           >
             <InfoGrid>
               <InfoItem
-                label="Manufacturer"
+                label={t("windows.systemInfo.fields.manufacturer", "Manufacturer")}
                 value={info.bios.manufacturer}
               />
-              <InfoItem label="Name" value={info.bios.name} />
-              <InfoItem label="Version" value={info.bios.version} />
+              <InfoItem label={t("windows.systemInfo.fields.name", "Name")} value={info.bios.name} />
+              <InfoItem label={t("windows.systemInfo.fields.version", "Version")} value={info.bios.version} />
               <InfoItem
-                label="Serial Number"
+                label={t("windows.systemInfo.fields.serialNumber", "Serial Number")}
                 value={info.bios.serialNumber}
               />
               {info.bios.smbiosBiosVersion && (
@@ -195,7 +197,7 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {/* Processors */}
           <Section
             icon={<Cpu size={14} className="text-blue-400" />}
-            title={`Processors (${info.processors.length})`}
+            title={t("windows.systemInfo.sections.processorsCount", "Processors ({{count}})", { count: info.processors.length })}
           >
             {info.processors.map((proc, i) => (
               <div
@@ -207,28 +209,28 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
                 </h4>
                 <InfoGrid>
                   <InfoItem
-                    label="Cores"
-                    value={`${proc.numberOfCores} physical / ${proc.numberOfLogicalProcessors} logical`}
+                    label={t("windows.systemInfo.fields.cores", "Cores")}
+                    value={t("windows.systemInfo.values.physicalLogical", "{{physical}} physical / {{logical}} logical", { physical: proc.numberOfCores, logical: proc.numberOfLogicalProcessors })}
                   />
                   <InfoItem
-                    label="Speed"
-                    value={`${proc.currentClockSpeed} MHz (max ${proc.maxClockSpeed} MHz)`}
+                    label={t("windows.systemInfo.fields.speed", "Speed")}
+                    value={t("windows.systemInfo.values.speedWithMaximum", "{{current}} MHz (max {{maximum}} MHz)", { current: proc.currentClockSpeed, maximum: proc.maxClockSpeed })}
                   />
                   {proc.l2CacheSize && (
                     <InfoItem
-                      label="L2 Cache"
+                      label={t("windows.systemInfo.fields.l2Cache", "L2 Cache")}
                       value={`${proc.l2CacheSize} KB`}
                     />
                   )}
                   {proc.l3CacheSize && (
                     <InfoItem
-                      label="L3 Cache"
+                      label={t("windows.systemInfo.fields.l3Cache", "L3 Cache")}
                       value={`${proc.l3CacheSize} KB`}
                     />
                   )}
                   {proc.loadPercentage != null && (
                     <InfoItem
-                      label="Load"
+                      label={t("windows.systemInfo.fields.load", "Load")}
                       value={`${proc.loadPercentage}%`}
                     />
                   )}
@@ -240,17 +242,17 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {/* Disks */}
           <Section
             icon={<HardDrive size={14} className="text-yellow-400" />}
-            title={`Logical Disks (${info.logicalDisks.length})`}
+            title={t("windows.systemInfo.sections.logicalDisksCount", "Logical Disks ({{count}})", { count: info.logicalDisks.length })}
           >
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-[var(--color-textMuted)]">
-                  <th className="pb-1 font-medium">Drive</th>
-                  <th className="pb-1 font-medium">Label</th>
-                  <th className="pb-1 font-medium">FS</th>
-                  <th className="pb-1 font-medium">Size</th>
-                  <th className="pb-1 font-medium">Free</th>
-                  <th className="pb-1 font-medium">Used</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.drive", "Drive")}</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.label", "Label")}</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.fileSystem", "FS")}</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.size", "Size")}</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.free", "Free")}</th>
+                  <th className="pb-1 font-medium">{t("windows.systemInfo.fields.used", "Used")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,7 +300,7 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {/* Network Adapters */}
           <Section
             icon={<Wifi size={14} className="text-cyan-400" />}
-            title={`Network Adapters (${info.networkAdapters.length})`}
+            title={t("windows.systemInfo.sections.networkAdaptersCount", "Network Adapters ({{count}})", { count: info.networkAdapters.length })}
           >
             {info.networkAdapters.map((nic, i) => (
               <div
@@ -321,7 +323,7 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
                   )}
                   {nic.defaultIpGateway.length > 0 && (
                     <InfoItem
-                      label="Gateway"
+                      label={t("windows.systemInfo.fields.gateway", "Gateway")}
                       value={nic.defaultIpGateway.join(", ")}
                       mono
                     />
@@ -335,11 +337,11 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
                   )}
                   <InfoItem
                     label="DHCP"
-                    value={nic.dhcpEnabled ? "Enabled" : "Disabled"}
+                    value={nic.dhcpEnabled ? t("windows.systemInfo.values.enabled", "Enabled") : t("windows.systemInfo.values.disabled", "Disabled")}
                   />
                   {nic.speed != null && (
                     <InfoItem
-                      label="Speed"
+                      label={t("windows.systemInfo.fields.speed", "Speed")}
                       value={`${(nic.speed / 1_000_000).toFixed(0)} Mbps`}
                     />
                   )}
@@ -352,16 +354,16 @@ const SystemInfoPanel: React.FC<SystemInfoPanelProps> = ({ ctx }) => {
           {info.physicalMemory.length > 0 && (
             <Section
               icon={<MemoryStick size={14} className="text-purple-400" />}
-              title={`Memory Modules (${info.physicalMemory.length})`}
+              title={t("windows.systemInfo.sections.memoryModulesCount", "Memory Modules ({{count}})", { count: info.physicalMemory.length })}
             >
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-left text-[var(--color-textMuted)]">
-                    <th className="pb-1 font-medium">Slot</th>
-                    <th className="pb-1 font-medium">Size</th>
-                    <th className="pb-1 font-medium">Type</th>
-                    <th className="pb-1 font-medium">Speed</th>
-                    <th className="pb-1 font-medium">Manufacturer</th>
+                    <th className="pb-1 font-medium">{t("windows.systemInfo.fields.slot", "Slot")}</th>
+                    <th className="pb-1 font-medium">{t("windows.systemInfo.fields.size", "Size")}</th>
+                    <th className="pb-1 font-medium">{t("windows.systemInfo.fields.type", "Type")}</th>
+                    <th className="pb-1 font-medium">{t("windows.systemInfo.fields.speed", "Speed")}</th>
+                    <th className="pb-1 font-medium">{t("windows.systemInfo.fields.manufacturer", "Manufacturer")}</th>
                   </tr>
                 </thead>
                 <tbody>

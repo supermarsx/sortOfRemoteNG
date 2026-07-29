@@ -9,7 +9,13 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
 
   const handleExportCsv = async () => {
-    const header = "Time,Latency (ms),Throughput (KB/s),CPU (%),Memory (%)";
+    const header = [
+      t("performance.table.time", "Time"),
+      `${t("performance.latency", "Latency")} (ms)`,
+      `${t("performance.throughput", "Throughput")} (KB/s)`,
+      `${t("performance.table.cpu", "CPU")} (%)`,
+      `${t("performance.table.memory", "Memory")} (%)`,
+    ].join(",");
     const rows = mgr.recentMetrics.map((m) =>
       [
         new Date(m.timestamp).toISOString(),
@@ -43,31 +49,31 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
                     <Clock size={11} />
-                    <span>Time</span>
+                    <span>{t("performance.table.time", "Time")}</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
                     <Wifi size={11} className="text-primary" />
-                    <span>Latency</span>
+                    <span>{t("performance.latency", "Latency")}</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
                     <Activity size={11} className="text-success" />
-                    <span>Throughput</span>
+                    <span>{t("performance.throughput", "Throughput")}</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
                     <Cpu size={11} className="text-warning" />
-                    <span>CPU</span>
+                    <span>{t("performance.table.cpu", "CPU")}</span>
                   </div>
                 </th>
                 <th className="sor-th-xs">
                   <div className="flex items-center space-x-1.5">
                     <HardDrive size={11} className="text-primary" />
-                    <span>Memory</span>
+                    <span>{t("performance.table.memory", "Memory")}</span>
                   </div>
                 </th>
               </tr>
@@ -153,7 +159,10 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="flex justify-end mt-3">
         <button
           onClick={handleExportCsv}
-          aria-label="Export performance metrics as CSV"
+          aria-label={t(
+            "performance.exportCsvAria",
+            "Export performance metrics as CSV",
+          )}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-xs text-[var(--color-text)]"
         >
           <Download size={12} />

@@ -84,6 +84,61 @@ describe("CertificateInfoPopup", () => {
     expect(screen.getByText(title)).toBeInTheDocument();
   });
 
+  it("renders certificate detail English fallbacks and toggle states", () => {
+    const detailedIdentity: CertIdentity = {
+      ...certIdentity,
+      subjectCn: "example.com",
+      issuerCn: "Example CA",
+      validFrom: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+      validTo: new Date("2036-01-01T00:00:00.000Z").toISOString(),
+      version: 3,
+      keyAlgorithm: "RSA",
+      keySize: 2048,
+      signatureAlgorithm: "SHA256withRSA",
+      serial: "01:23",
+      san: ["example.com"],
+      pem: "-----BEGIN CERTIFICATE-----",
+    };
+
+    renderPopup({
+      type: "https",
+      port: 443,
+      currentIdentity: detailedIdentity,
+    });
+
+    expect(screen.getByText("Fingerprint (SHA-256)")).toBeInTheDocument();
+    expect(screen.getByText("Subject")).toBeInTheDocument();
+    expect(screen.getByText("Issuer")).toBeInTheDocument();
+    expect(screen.getByText("Validity Period")).toBeInTheDocument();
+    expect(screen.getByText("Key & Algorithm")).toBeInTheDocument();
+    expect(screen.getByText("Subject Alternative Names")).toBeInTheDocument();
+    expect(screen.getByText("PEM Certificate")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show PEM Certificate" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Hide PEM Certificate" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders SSH detail English fallbacks and toggle states", () => {
+    renderPopup({
+      currentIdentity: {
+        ...sshIdentity,
+        publicKey: "ssh-ed25519 AAAA-test",
+      },
+    });
+
+    expect(screen.getByText("Key Type")).toBeInTheDocument();
+    expect(screen.getByText("Key Bits")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Public Key" }));
+    expect(
+      screen.getByRole("button", { name: "Hide Public Key" }),
+    ).toBeInTheDocument();
+  });
+
   it("updates nicknames using the general certificate trust record type", () => {
     const trustRecord: TrustRecord = {
       host: "cert.internal:443",

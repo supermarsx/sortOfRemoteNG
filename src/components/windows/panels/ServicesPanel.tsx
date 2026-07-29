@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Search, RefreshCw, Play, Square, RotateCw, Loader2,
   ChevronDown, ChevronRight, AlertCircle,
@@ -36,6 +37,7 @@ interface ServicesPanelProps {
 }
 
 const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
+  const { t } = useTranslation();
   const [services, setServices] = useState<WindowsService[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +116,11 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
   const selectedSvc = selected
     ? services.find((s) => s.name === selected)
     : null;
-  const statusSummary = `Showing ${filtered.length} of ${services.length} services`;
+  const statusSummary = t(
+    "windows.services.summary",
+    "Showing {{filtered}} of {{total}} services",
+    { filtered: filtered.length, total: services.length },
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -129,30 +135,36 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search services…"
-            aria-label="Search services"
+            placeholder={t(
+              "windows.services.searchPlaceholder",
+              "Search services…",
+            )}
+            aria-label={t("windows.services.searchAria", "Search services")}
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value as FilterMode)}
-          aria-label="Filter services"
+          aria-label={t("windows.services.filterAria", "Filter services")}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
-          <option value="all">All</option>
-          <option value="running">Running</option>
-          <option value="stopped">Stopped</option>
-          <option value="auto">Auto Start</option>
-          <option value="disabled">Disabled</option>
+          <option value="all">{t("windows.services.filters.all", "All")}</option>
+          <option value="running">{t("windows.services.filters.running", "Running")}</option>
+          <option value="stopped">{t("windows.services.filters.stopped", "Stopped")}</option>
+          <option value="auto">{t("windows.services.filters.autoStart", "Auto Start")}</option>
+          <option value="disabled">{t("windows.services.filters.disabled", "Disabled")}</option>
         </select>
         <button
           onClick={fetchServices}
           disabled={loading}
-          aria-label="Refresh services"
+          aria-label={t(
+            "windows.services.refreshServices",
+            "Refresh services",
+          )}
           aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
-          title="Refresh"
+          title={t("windows.services.refresh", "Refresh")}
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
@@ -192,20 +204,36 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
           ) : (
             <table
               className="w-full text-xs"
-              aria-label="Windows services list"
+              aria-label={t(
+                "windows.services.tableLabel",
+                "Windows services list",
+              )}
               aria-describedby="services-filter-summary"
             >
               <caption className="sr-only">
-                Windows services and their current state
+                {t(
+                  "windows.services.tableCaption",
+                  "Windows services and their current state",
+                )}
               </caption>
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
                   <th scope="col" className="px-3 py-2 font-medium w-8"></th>
-                  <th scope="col" className="px-3 py-2 font-medium">Name</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Status</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Startup</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Account</th>
-                  <th scope="col" className="px-3 py-2 font-medium w-24">Actions</th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.services.columns.name", "Name")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.services.columns.status", "Status")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.services.columns.startup", "Startup")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.services.columns.account", "Account")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium w-24">
+                    {t("windows.services.columns.actions", "Actions")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -264,9 +292,13 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                               }}
                               disabled={serviceBusy}
                               aria-busy={startBusy}
-                              aria-label={`Start service ${svc.displayName}`}
+                              aria-label={t(
+                                "windows.services.actions.startServiceAria",
+                                "Start service {{service}}",
+                                { service: svc.displayName },
+                              )}
                               className="p-1 rounded hover:bg-green-500/20 text-green-400"
-                              title="Start"
+                              title={t("windows.services.actions.start", "Start")}
                             >
                               {startBusy ? (
                                 <Loader2 size={12} className="animate-spin" />
@@ -284,9 +316,13 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                                 }}
                                 disabled={serviceBusy}
                                 aria-busy={stopBusy}
-                                aria-label={`Stop service ${svc.displayName}`}
+                                aria-label={t(
+                                  "windows.services.actions.stopServiceAria",
+                                  "Stop service {{service}}",
+                                  { service: svc.displayName },
+                                )}
                                 className="p-1 rounded hover:bg-red-500/20 text-red-400"
-                                title="Stop"
+                                title={t("windows.services.actions.stop", "Stop")}
                               >
                                 {stopBusy ? (
                                   <Loader2 size={12} className="animate-spin" />
@@ -301,9 +337,13 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                                 }}
                                 disabled={serviceBusy}
                                 aria-busy={restartBusy}
-                                aria-label={`Restart service ${svc.displayName}`}
+                                aria-label={t(
+                                  "windows.services.actions.restartServiceAria",
+                                  "Restart service {{service}}",
+                                  { service: svc.displayName },
+                                )}
                                 className="p-1 rounded hover:bg-blue-500/20 text-blue-400"
-                                title="Restart"
+                                title={t("windows.services.actions.restart", "Restart")}
                               >
                                 {restartBusy ? (
                                   <Loader2 size={12} className="animate-spin" />
@@ -330,11 +370,20 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
               {selectedSvc.displayName}
             </h3>
             <dl className="text-xs space-y-2">
-              <DetailRow label="Service Name" value={selectedSvc.name} />
-              <DetailRow label="State" value={selectedSvc.state} />
-              <DetailRow label="Start Mode" value={selectedSvc.startMode} />
               <DetailRow
-                label="Account"
+                label={t("windows.services.detail.serviceName", "Service Name")}
+                value={selectedSvc.name}
+              />
+              <DetailRow
+                label={t("windows.services.detail.state", "State")}
+                value={selectedSvc.state}
+              />
+              <DetailRow
+                label={t("windows.services.detail.startMode", "Start Mode")}
+                value={selectedSvc.startMode}
+              />
+              <DetailRow
+                label={t("windows.services.columns.account", "Account")}
                 value={selectedSvc.startName || "N/A"}
               />
               <DetailRow
@@ -346,10 +395,17 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                 }
               />
               {selectedSvc.description && (
-                <DetailRow label="Description" value={selectedSvc.description} />
+                <DetailRow
+                  label={t("windows.services.detail.description", "Description")}
+                  value={selectedSvc.description}
+                />
               )}
               {selectedSvc.pathName && (
-                <DetailRow label="Path" value={selectedSvc.pathName} mono />
+                <DetailRow
+                  label={t("windows.services.detail.path", "Path")}
+                  value={selectedSvc.pathName}
+                  mono
+                />
               )}
             </dl>
 
@@ -364,12 +420,14 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                 ) : (
                   <ChevronRight size={12} />
                 )}
-                Dependencies
+                {t("windows.services.detail.dependencies", "Dependencies")}
               </button>
               {deps !== null && (
                 <ul className="mt-1 ml-4 text-xs text-[var(--color-textSecondary)] space-y-0.5">
                   {deps.length === 0 ? (
-                    <li className="text-[var(--color-textMuted)]">None</li>
+                    <li className="text-[var(--color-textMuted)]">
+                      {t("windows.services.detail.none", "None")}
+                    </li>
                   ) : (
                     deps.map((d) => <li key={d}>{d}</li>)
                   )}

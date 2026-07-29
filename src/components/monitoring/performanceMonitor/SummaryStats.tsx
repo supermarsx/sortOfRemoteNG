@@ -17,7 +17,7 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
-              Avg Latency
+              {t("performance.summaryStats.avgLatency", "Avg Latency")}
             </div>
             <div className="text-sm font-semibold text-[var(--color-text)]">
               {mgr.avgLatency.toFixed(1)}ms
@@ -30,7 +30,10 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
-              Avg Throughput
+              {t(
+                "performance.summaryStats.avgThroughput",
+                "Avg Throughput",
+              )}
             </div>
             <div className="text-sm font-semibold text-[var(--color-text)]">
               {mgr.formatBytes(mgr.avgThroughput * 1024)}/s
@@ -43,7 +46,7 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
-              Avg CPU
+              {t("performance.summaryStats.avgCpu", "Avg CPU")}
             </div>
             <div className="text-sm font-semibold text-[var(--color-text)]">
               {mgr.avgCpuUsage.toFixed(1)}%
@@ -56,7 +59,7 @@ const SummaryStats: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           </div>
           <div>
             <div className="text-[10px] text-[var(--color-textMuted)] uppercase">
-              Avg Memory
+              {t("performance.summaryStats.avgMemory", "Avg Memory")}
             </div>
             <div className="text-sm font-semibold text-[var(--color-text)]">
               {mgr.avgMemoryUsage.toFixed(1)}%

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   recordPerformanceMetric: vi.fn(),
   saveSettings: vi.fn(),
   clearPerformanceMetrics: vi.fn(),
+  translationKeys: [] as string[],
 }));
 
 vi.mock("../../src/utils/settings/settingsManager", () => ({
@@ -26,13 +27,17 @@ vi.mock("../../src/utils/settings/settingsManager", () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key,
+    t: (key: string, fallback?: string) => {
+      mocks.translationKeys.push(key);
+      return fallback || key;
+    },
   }),
 }));
 
 describe("PerformanceMonitor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.translationKeys.length = 0;
 
     mocks.getSettings.mockReturnValue({
       performancePollIntervalMs: 20000,
@@ -100,11 +105,30 @@ describe("PerformanceMonitor", () => {
     expect(await screen.findByText("Export CSV")).toBeInTheDocument();
   });
 
+  it("renders localized table, filter, and summary chrome through fallbacks", async () => {
+    render(<PerformanceMonitor isOpen onClose={() => {}} />);
+
+    expect(await screen.findByText("Time")).toBeInTheDocument();
+    expect(screen.getByText("All Time")).toBeInTheDocument();
+    expect(screen.getByText("All Metrics")).toBeInTheDocument();
+    expect(screen.getByText("Update:")).toBeInTheDocument();
+    expect(screen.getByText("Avg Latency")).toBeInTheDocument();
+    expect(screen.getByText("Avg Throughput")).toBeInTheDocument();
+
+    expect(mocks.translationKeys).toContain("performance.table.time");
+    expect(mocks.translationKeys).toContain("performance.timeRange.lastHour");
+    expect(mocks.translationKeys).toContain("performance.metricFilter.all");
+    expect(mocks.translationKeys).toContain(
+      "performance.summaryStats.avgLatency",
+    );
+  });
+
   it("export button has accessible aria-label", async () => {
     render(<PerformanceMonitor isOpen onClose={() => {}} />);
     const btn = await screen.findByLabelText(
       "Export performance metrics as CSV",
     );
     expect(btn).toBeInTheDocument();
+    expect(mocks.translationKeys).toContain("performance.exportCsvAria");
   });
 });

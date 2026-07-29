@@ -14,11 +14,31 @@ import { createDefaultRawSocketSettings } from "../../src/types/protocols/rawSoc
 
 const toastSuccess = vi.fn();
 
+const i18nMock = vi.hoisted(() => {
+  const translationKeys: string[] = [];
+  return {
+    translationKeys,
+    t: (
+      key: string,
+      options?: string | Record<string, unknown>,
+    ): string => {
+      translationKeys.push(key);
+      const fallback =
+        typeof options === "string"
+          ? options
+          : typeof options?.defaultValue === "string"
+            ? options.defaultValue
+            : key;
+      const interpolation = typeof options === "object" ? options : undefined;
+      return fallback.replace(/\{\{(\w+)\}\}/g, (_match, token: string) =>
+        String(interpolation?.[token] ?? `{{${token}}}`),
+      );
+    },
+  };
+});
+
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
-  }),
+  useTranslation: () => ({ t: i18nMock.t }),
 }));
 
 vi.mock("../../src/contexts/ToastContext", () => ({
@@ -156,6 +176,7 @@ const makeConnection = (overrides: Partial<Connection>): Connection => ({
 
 describe("ImportTab", () => {
   beforeEach(() => {
+    i18nMock.translationKeys.length = 0;
     vi.clearAllMocks();
 
     Object.defineProperty(URL, "createObjectURL", {
@@ -170,6 +191,27 @@ describe("ImportTab", () => {
     });
 
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  });
+
+  it("routes the import wizard copy through translation keys with exact fallbacks", () => {
+    renderImportTab();
+
+    expect(
+      screen.getByRole("heading", { name: "Import" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Import target")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "CSV Template" }),
+    ).toBeInTheDocument();
+    expect(i18nMock.translationKeys).toEqual(
+      expect.arrayContaining([
+        "importTab.templates.csv",
+        "importTab.target.title",
+        "importTab.target.ariaLabel",
+        "importTab.steps.templateTarget.label",
+        "importTab.templates.title",
+      ]),
+    );
   });
 
   it("labels RAW/UDP in protocol filters and imported connection previews", () => {

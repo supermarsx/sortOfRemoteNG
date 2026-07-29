@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   X,
   Shield,
@@ -52,6 +54,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   triggerRef,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const mgr = useCertificateInfoPopup(type, host, port, currentIdentity, trustRecord, connectionId);
 
   const trustStatus = mgr.getTrustStatus();
@@ -124,20 +127,26 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                         mgr.cancelEditing();
                       }
                     }}
-                    placeholder="Add a nickname…"
+                    placeholder={t("certificateInfo.nickname.placeholder", {
+                      defaultValue: "Add a nickname…",
+                    })}
                     className="flex-1 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary text-xs"
                   />
                   <button
                     onClick={() => mgr.saveNickname(mgr.nickDraft.trim())}
                     className="text-success hover:text-success p-0.5"
-                    title="Save"
+                    title={t("certificateInfo.action.save", {
+                      defaultValue: "Save",
+                    })}
                   >
                     <Check size={12} />
                   </button>
                   <button
                     onClick={mgr.cancelEditing}
                     className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
-                    title="Cancel"
+                    title={t("certificateInfo.action.cancel", {
+                      defaultValue: "Cancel",
+                    })}
                   >
                     <X size={12} />
                   </button>
@@ -145,12 +154,17 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
               ) : (
                 <>
                   <span className="text-[var(--color-textMuted)] italic truncate">
-                    {mgr.savedNick || "No nickname"}
+                    {mgr.savedNick ||
+                      t("certificateInfo.nickname.none", {
+                        defaultValue: "No nickname",
+                      })}
                   </span>
                   <button
                     onClick={mgr.startEditing}
                     className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
-                    title="Edit nickname"
+                    title={t("certificateInfo.action.editNickname", {
+                      defaultValue: "Edit nickname",
+                    })}
                   >
                     <Pencil size={10} />
                   </button>
@@ -161,8 +175,11 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
           {!mgr.identity ? (
             <p className="text-sm text-[var(--color-textMuted)] italic">
-              No {mgr.typeLabels.identityLower} information available yet.
-              Connect to the server to retrieve it.
+              {t("certificateInfo.identity.unavailable", {
+                defaultValue:
+                  "No {{identity}} information available yet. Connect to the server to retrieve it.",
+                identity: mgr.typeLabels.identityLower,
+              })}
             </p>
           ) : (
             <>
@@ -170,7 +187,11 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
               <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
                 <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
                   <Fingerprint size={12} />
-                  <span>Fingerprint (SHA-256)</span>
+                  <span>
+                    {t("certificateInfo.fingerprint.sha256", {
+                      defaultValue: "Fingerprint (SHA-256)",
+                    })}
+                  </span>
                 </div>
                 <p className="text-xs text-[var(--color-textSecondary)] font-mono break-all">
                   {formatFingerprint(mgr.identity.fingerprint)}
@@ -179,24 +200,42 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
               {/* Certificate-specific details */}
               {mgr.isCertificateType && (
-                <TlsCertDetails identity={mgr.identity as CertIdentity} isExpired={mgr.isExpired} isExpiringSoon={mgr.isExpiringSoon} />
+                <TlsCertDetails
+                  identity={mgr.identity as CertIdentity}
+                  isExpired={mgr.isExpired}
+                  isExpiringSoon={mgr.isExpiringSoon}
+                  t={t}
+                />
               )}
 
               {/* SSH-specific host key details */}
               {!mgr.isCertificateType && (
-                <SshKeyDetails identity={mgr.identity as SshHostKeyIdentity} />
+                <SshKeyDetails
+                  identity={mgr.identity as SshHostKeyIdentity}
+                  t={t}
+                />
               )}
 
               {/* First / last seen */}
               <div className="text-xs text-[var(--color-textMuted)] space-y-0.5 pt-1 border-t border-[var(--color-border)]">
                 {mgr.identity.firstSeen && (
                   <p>
-                    First seen: {new Date(mgr.identity.firstSeen).toLocaleString()}
+                    {t("certificateInfo.date.firstSeen", {
+                      defaultValue: "First seen: {{date}}",
+                      date: new Date(
+                        mgr.identity.firstSeen,
+                      ).toLocaleString(),
+                    })}
                   </p>
                 )}
                 {mgr.identity.lastSeen && (
                   <p>
-                    Last seen: {new Date(mgr.identity.lastSeen).toLocaleString()}
+                    {t("certificateInfo.date.lastSeen", {
+                      defaultValue: "Last seen: {{date}}",
+                      date: new Date(
+                        mgr.identity.lastSeen,
+                      ).toLocaleString(),
+                    })}
                   </p>
                 )}
               </div>
@@ -207,10 +246,20 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                   <summary className="text-[var(--color-textMuted)] cursor-pointer hover:text-[var(--color-textSecondary)] flex items-center gap-1">
                     <AlertTriangle size={10} />
                     <span>
-                      {trustRecord.history.length} previous{" "}
                       {trustRecord.history.length === 1
-                        ? "identity"
-                        : "identities"}
+                        ? t("certificateInfo.history.previousIdentity.one", {
+                            defaultValue:
+                              "{{historyCount}} previous identity",
+                            historyCount: trustRecord.history.length,
+                          })
+                        : t(
+                            "certificateInfo.history.previousIdentity.other",
+                            {
+                              defaultValue:
+                                "{{historyCount}} previous identities",
+                              historyCount: trustRecord.history.length,
+                            },
+                          )}
                     </span>
                   </summary>
                   <div className="mt-2 space-y-2">
@@ -223,8 +272,16 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                           {formatFingerprint(prev.fingerprint)}
                         </p>
                         <p className="text-[var(--color-textMuted)] mt-1">
-                          Seen: {new Date(prev.firstSeen).toLocaleDateString()}{" "}
-                          — {new Date(prev.lastSeen).toLocaleDateString()}
+                          {t("certificateInfo.date.seen", {
+                            defaultValue:
+                              "Seen: {{firstDate}} — {{lastDate}}",
+                            firstDate: new Date(
+                              prev.firstSeen,
+                            ).toLocaleDateString(),
+                            lastDate: new Date(
+                              prev.lastSeen,
+                            ).toLocaleDateString(),
+                          })}
                         </p>
                       </div>
                     ))}
@@ -274,10 +331,12 @@ function TlsCertDetails({
   identity,
   isExpired,
   isExpiringSoon,
+  t,
 }: {
   identity: CertIdentity;
   isExpired: (id: CertIdentity) => boolean;
   isExpiringSoon: (id: CertIdentity) => boolean;
+  t: TFunction;
 }) {
   const [showPem, setShowPem] = useState(false);
   const [showChain, setShowChain] = useState(false);
@@ -294,7 +353,11 @@ function TlsCertDetails({
       {/* ── Subject section ──────────────────────────────────── */}
       {(hasSubjectDetails || identity.subject) && (
         <>
-          <SectionHeading>Subject</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.subject", {
+              defaultValue: "Subject",
+            })}
+          </SectionHeading>
           {hasSubjectDetails ? (
             <>
               {identity.subjectCn && (
@@ -316,12 +379,24 @@ function TlsCertDetails({
                 <Row icon={<Server size={12} />} label="L" value={identity.subjectLocality} />
               )}
               {identity.subjectEmail && (
-                <Row icon={<Server size={12} />} label="Email" value={identity.subjectEmail} />
+                <Row
+                  icon={<Server size={12} />}
+                  label={t("certificateInfo.label.email", {
+                    defaultValue: "Email",
+                  })}
+                  value={identity.subjectEmail}
+                />
               )}
             </>
           ) : (
             identity.subject && (
-              <Row icon={<Server size={12} />} label="Subject" value={identity.subject} />
+              <Row
+                icon={<Server size={12} />}
+                label={t("certificateInfo.label.subject", {
+                  defaultValue: "Subject",
+                })}
+                value={identity.subject}
+              />
             )
           )}
         </>
@@ -330,7 +405,11 @@ function TlsCertDetails({
       {/* ── Issuer section ───────────────────────────────────── */}
       {(hasIssuerDetails || identity.issuer) && (
         <>
-          <SectionHeading>Issuer</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.issuer", {
+              defaultValue: "Issuer",
+            })}
+          </SectionHeading>
           {hasIssuerDetails ? (
             <>
               {identity.issuerCn && (
@@ -345,7 +424,13 @@ function TlsCertDetails({
             </>
           ) : (
             identity.issuer && (
-              <Row icon={<FileKey size={12} />} label="Issuer" value={identity.issuer} />
+              <Row
+                icon={<FileKey size={12} />}
+                label={t("certificateInfo.label.issuer", {
+                  defaultValue: "Issuer",
+                })}
+                value={identity.issuer}
+              />
             )
           )}
         </>
@@ -354,15 +439,25 @@ function TlsCertDetails({
       {/* ── Validity section ─────────────────────────────────── */}
       {(identity.validFrom || identity.validTo) && (
         <>
-          <SectionHeading>Validity</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.validity", {
+              defaultValue: "Validity",
+            })}
+          </SectionHeading>
           <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
             <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
               <Clock size={12} />
-              <span>Validity Period</span>
+              <span>
+                {t("certificateInfo.validity.period", {
+                  defaultValue: "Validity Period",
+                })}
+              </span>
             </div>
             {identity.validFrom && (
               <p className="text-xs">
-                Not Before:{" "}
+                {t("certificateInfo.validity.notBefore", {
+                  defaultValue: "Not Before:",
+                })}{" "}
                 <span
                   className={
                     isCurrentlyValid
@@ -376,7 +471,9 @@ function TlsCertDetails({
             )}
             {identity.validTo && (
               <p className="text-xs">
-                Not After:{" "}
+                {t("certificateInfo.validity.notAfter", {
+                  defaultValue: "Not After:",
+                })}{" "}
                 <span
                   className={
                     expired
@@ -389,8 +486,22 @@ function TlsCertDetails({
                   }
                 >
                   {new Date(identity.validTo).toLocaleDateString()}
-                  {expired && " (EXPIRED)"}
-                  {expiringSoon && " (expiring soon)"}
+                  {expired && (
+                    <>
+                      {" "}
+                      {t("certificateInfo.validity.expired", {
+                        defaultValue: "(EXPIRED)",
+                      })}
+                    </>
+                  )}
+                  {expiringSoon && (
+                    <>
+                      {" "}
+                      {t("certificateInfo.validity.expiringSoon", {
+                        defaultValue: "(expiring soon)",
+                      })}
+                    </>
+                  )}
                 </span>
               </p>
             )}
@@ -401,21 +512,58 @@ function TlsCertDetails({
       {/* ── Key & Algorithm section ──────────────────────────── */}
       {(identity.version != null || identity.keyAlgorithm || identity.keySize != null || identity.signatureAlgorithm || identity.serial) && (
         <>
-          <SectionHeading>Key & Algorithm</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.keyAndAlgorithm", {
+              defaultValue: "Key & Algorithm",
+            })}
+          </SectionHeading>
           {identity.version != null && (
-            <Row icon={<Shield size={12} />} label="Version" value={`v${identity.version}`} />
+            <Row
+              icon={<Shield size={12} />}
+              label={t("certificateInfo.label.version", {
+                defaultValue: "Version",
+              })}
+              value={`v${identity.version}`}
+            />
           )}
           {identity.keyAlgorithm && (
-            <Row icon={<Key size={12} />} label="Key Algo" value={identity.keyAlgorithm} />
+            <Row
+              icon={<Key size={12} />}
+              label={t("certificateInfo.label.keyAlgorithm", {
+                defaultValue: "Key Algo",
+              })}
+              value={identity.keyAlgorithm}
+            />
           )}
           {identity.keySize != null && (
-            <Row icon={<Key size={12} />} label="Key Size" value={`${identity.keySize} bits`} />
+            <Row
+              icon={<Key size={12} />}
+              label={t("certificateInfo.label.keySize", {
+                defaultValue: "Key Size",
+              })}
+              value={t("certificateInfo.value.bits", {
+                defaultValue: "{{bits}} bits",
+                bits: identity.keySize,
+              })}
+            />
           )}
           {identity.signatureAlgorithm && (
-            <Row icon={<Shield size={12} />} label="Sig Algo" value={identity.signatureAlgorithm} />
+            <Row
+              icon={<Shield size={12} />}
+              label={t("certificateInfo.label.signatureAlgorithm", {
+                defaultValue: "Sig Algo",
+              })}
+              value={identity.signatureAlgorithm}
+            />
           )}
           {identity.serial && (
-            <Row icon={<Key size={12} />} label="Serial" value={identity.serial} />
+            <Row
+              icon={<Key size={12} />}
+              label={t("certificateInfo.label.serial", {
+                defaultValue: "Serial",
+              })}
+              value={identity.serial}
+            />
           )}
         </>
       )}
@@ -423,7 +571,11 @@ function TlsCertDetails({
       {/* ── Subject Alternative Names ────────────────────────── */}
       {identity.san && identity.san.length > 0 && (
         <>
-          <SectionHeading>Subject Alternative Names</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.subjectAlternativeNames", {
+              defaultValue: "Subject Alternative Names",
+            })}
+          </SectionHeading>
           <div className="flex items-start gap-2 text-xs">
             <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
               <Globe size={12} />
@@ -441,11 +593,27 @@ function TlsCertDetails({
       {/* ── Certificate Chain section ────────────────────────── */}
       {identity.chain && identity.chain.length > 0 && (
         <>
-          <SectionHeading>Certificate Chain</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.certificateChain", {
+              defaultValue: "Certificate Chain",
+            })}
+          </SectionHeading>
           <details open={showChain} onToggle={(e) => setShowChain((e.target as HTMLDetailsElement).open)}>
             <summary className="text-xs text-[var(--color-textMuted)] cursor-pointer hover:text-[var(--color-textSecondary)] flex items-center gap-1">
               <FileKey size={10} />
-              <span>{identity.chain.length} certificate{identity.chain.length !== 1 ? "s" : ""} in chain</span>
+              <span>
+                {identity.chain.length === 1
+                  ? t("certificateInfo.chain.certificateCount.one", {
+                      defaultValue:
+                        "{{certificateCount}} certificate in chain",
+                      certificateCount: identity.chain.length,
+                    })
+                  : t("certificateInfo.chain.certificateCount.other", {
+                      defaultValue:
+                        "{{certificateCount}} certificates in chain",
+                      certificateCount: identity.chain.length,
+                    })}
+              </span>
             </summary>
             <div className="mt-2 space-y-2">
               {identity.chain.map((entry: CertChainEntry, i: number) => (
@@ -474,14 +642,26 @@ function TlsCertDetails({
       {/* ── PEM section ──────────────────────────────────────── */}
       {identity.pem && (
         <>
-          <SectionHeading>PEM Certificate</SectionHeading>
+          <SectionHeading>
+            {t("certificateInfo.section.pemCertificate", {
+              defaultValue: "PEM Certificate",
+            })}
+          </SectionHeading>
           <div className="space-y-1">
             <button
               onClick={() => setShowPem((v) => !v)}
               className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
             >
               {showPem ? <EyeOff size={12} /> : <Eye size={12} />}
-              <span>{showPem ? "Hide" : "Show"} PEM Certificate</span>
+              <span>
+                {showPem
+                  ? t("certificateInfo.action.hidePemCertificate", {
+                      defaultValue: "Hide PEM Certificate",
+                    })
+                  : t("certificateInfo.action.showPemCertificate", {
+                      defaultValue: "Show PEM Certificate",
+                    })}
+              </span>
             </button>
             {showPem && (
               <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
@@ -496,16 +676,34 @@ function TlsCertDetails({
 }
 
 /** SSH host key detail fields */
-function SshKeyDetails({ identity }: { identity: SshHostKeyIdentity }) {
+function SshKeyDetails({
+  identity,
+  t,
+}: {
+  identity: SshHostKeyIdentity;
+  t: TFunction;
+}) {
   const [showPublicKey, setShowPublicKey] = useState(false);
 
   return (
     <>
       {identity.keyType && (
-        <Row icon={<Key size={12} />} label="Key Type" value={identity.keyType} />
+        <Row
+          icon={<Key size={12} />}
+          label={t("certificateInfo.label.keyType", {
+            defaultValue: "Key Type",
+          })}
+          value={identity.keyType}
+        />
       )}
       {identity.keyBits != null && (
-        <Row icon={<Shield size={12} />} label="Key Bits" value={String(identity.keyBits)} />
+        <Row
+          icon={<Shield size={12} />}
+          label={t("certificateInfo.label.keyBits", {
+            defaultValue: "Key Bits",
+          })}
+          value={String(identity.keyBits)}
+        />
       )}
 
       {/* Public key show/hide toggle */}
@@ -516,7 +714,15 @@ function SshKeyDetails({ identity }: { identity: SshHostKeyIdentity }) {
             className="flex items-center gap-1.5 text-xs text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] transition-colors"
           >
             {showPublicKey ? <EyeOff size={12} /> : <Eye size={12} />}
-            <span>{showPublicKey ? "Hide" : "Show"} Public Key</span>
+            <span>
+              {showPublicKey
+                ? t("certificateInfo.action.hidePublicKey", {
+                    defaultValue: "Hide Public Key",
+                  })
+                : t("certificateInfo.action.showPublicKey", {
+                    defaultValue: "Show Public Key",
+                  })}
+            </span>
           </button>
           {showPublicKey && (
             <pre className="text-[10px] font-mono text-[var(--color-textSecondary)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">

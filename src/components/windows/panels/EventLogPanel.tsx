@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Search, RefreshCw, Loader2, AlertCircle, AlertTriangle,
   Info, Shield, ShieldAlert, Download,
@@ -20,20 +21,20 @@ const LEVEL_ICONS: Record<EventLogLevel, React.ReactNode> = {
   unknown: <Info size={12} className="text-[var(--color-textMuted)]" />,
 };
 
-const LEVEL_LABELS: Record<EventLogLevel, string> = {
-  error: "Error",
-  warning: "Warning",
-  information: "Information",
-  auditSuccess: "Audit Success",
-  auditFailure: "Audit Failure",
-  unknown: "Unknown",
-};
-
 interface EventLogPanelProps {
   ctx: WinmgmtContext;
 }
 
 const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
+  const { t } = useTranslation();
+  const levelLabels: Record<EventLogLevel, string> = {
+    error: t("windows.eventLog.levels.error", "Error"),
+    warning: t("windows.eventLog.levels.warning", "Warning"),
+    information: t("windows.eventLog.levels.information", "Information"),
+    auditSuccess: t("windows.eventLog.levels.auditSuccess", "Audit Success"),
+    auditFailure: t("windows.eventLog.levels.auditFailure", "Audit Failure"),
+    unknown: t("windows.eventLog.levels.unknown", "Unknown"),
+  };
   const [logs, setLogs] = useState<EventLogInfo[]>([]);
   const [entries, setEntries] = useState<EventLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -125,7 +126,11 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
   const selectedEntryData = selectedEntry != null
     ? entries.find((e) => e.recordNumber === selectedEntry)
     : null;
-  const eventSummary = `${entries.length} events shown`;
+  const eventSummary = t(
+    "windows.eventLog.summary",
+    "{{count}} events shown",
+    { count: entries.length },
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -134,7 +139,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         <select
           value={selectedLog}
           onChange={(e) => setSelectedLog(e.target.value)}
-          aria-label="Select event log"
+          aria-label={t("windows.eventLog.selectLog", "Select event log")}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           {(logs.length > 0
@@ -152,15 +157,18 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
           onChange={(e) =>
             setLevelFilter(e.target.value as EventLogLevel | "all")
           }
-          aria-label="Filter event level"
+          aria-label={t(
+            "windows.eventLog.filterLevel",
+            "Filter event level",
+          )}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
-          <option value="all">All Levels</option>
-          <option value="error">Error</option>
-          <option value="warning">Warning</option>
-          <option value="information">Information</option>
-          <option value="auditSuccess">Audit Success</option>
-          <option value="auditFailure">Audit Failure</option>
+          <option value="all">{t("windows.eventLog.levels.all", "All Levels")}</option>
+          <option value="error">{levelLabels.error}</option>
+          <option value="warning">{levelLabels.warning}</option>
+          <option value="information">{levelLabels.information}</option>
+          <option value="auditSuccess">{levelLabels.auditSuccess}</option>
+          <option value="auditFailure">{levelLabels.auditFailure}</option>
         </select>
 
         <div className="relative flex-1 max-w-xs">
@@ -172,8 +180,14 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter messages…"
-            aria-label="Search event messages"
+            placeholder={t(
+              "windows.eventLog.filterMessages",
+              "Filter messages…",
+            )}
+            aria-label={t(
+              "windows.eventLog.searchMessages",
+              "Search event messages",
+            )}
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
@@ -181,19 +195,22 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
         <button
           onClick={fetchEntries}
           disabled={loading}
-          aria-label="Refresh events"
+          aria-label={t("windows.eventLog.refreshEvents", "Refresh events")}
           aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
-          title="Refresh"
+          title={t("windows.eventLog.refresh", "Refresh")}
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
 
         <button
           onClick={exportCsv}
-          aria-label="Export events to CSV"
+          aria-label={t(
+            "windows.eventLog.exportEventsCsv",
+            "Export events to CSV",
+          )}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
-          title="Export CSV"
+          title={t("windows.eventLog.exportCsv", "Export CSV")}
         >
           <Download size={14} />
         </button>
@@ -212,22 +229,30 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
           type="datetime-local"
           value={startTime}
           onChange={(e) => setStartTime(e.target.value)}
-          aria-label="Start date filter"
+          aria-label={t(
+            "windows.eventLog.startDateFilter",
+            "Start date filter",
+          )}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         />
-        <span className="text-xs text-[var(--color-textMuted)]">to</span>
+        <span className="text-xs text-[var(--color-textMuted)]">
+          {t("windows.eventLog.rangeTo", "to")}
+        </span>
         <input
           type="datetime-local"
           value={endTime}
           onChange={(e) => setEndTime(e.target.value)}
-          aria-label="End date filter"
+          aria-label={t(
+            "windows.eventLog.endDateFilter",
+            "End date filter",
+          )}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         />
         <button
           onClick={fetchEntries}
           className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-accent)] text-[var(--color-text)] hover:bg-[var(--color-accent)]/90"
         >
-          Apply Filters
+          {t("windows.eventLog.applyFilters", "Apply Filters")}
         </button>
         <button
           onClick={() => {
@@ -236,7 +261,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
           }}
           className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
         >
-          Clear
+          {t("windows.eventLog.clear", "Clear")}
         </button>
       </div>
 
@@ -260,19 +285,33 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
           ) : (
             <table
               className="w-full text-xs"
-              aria-label="Windows event log entries"
+              aria-label={t(
+                "windows.eventLog.tableLabel",
+                "Windows event log entries",
+              )}
               aria-describedby="event-log-summary"
             >
               <caption className="sr-only">
-                Event log entries filtered by log name, level, and message search
+                {t(
+                  "windows.eventLog.tableCaption",
+                  "Event log entries filtered by log name, level, and message search",
+                )}
               </caption>
               <thead className="sticky top-0 bg-[var(--color-surface)] z-10">
                 <tr className="text-left text-[var(--color-textSecondary)]">
                   <th scope="col" className="px-3 py-2 font-medium w-6"></th>
-                  <th scope="col" className="px-3 py-2 font-medium">Time</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Source</th>
-                  <th scope="col" className="px-3 py-2 font-medium w-16">Event ID</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Message</th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.eventLog.columns.time", "Time")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.eventLog.columns.source", "Source")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium w-16">
+                    {t("windows.eventLog.columns.eventId", "Event ID")}
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    {t("windows.eventLog.columns.message", "Message")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -318,7 +357,14 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
             className="w-80 border-l border-[var(--color-border)] bg-[var(--color-surface)] overflow-auto p-3 space-y-3"
           >
             <div className="sr-only" role="status" aria-live="assertive">
-              {`Event ${selectedEntryData.eventCode} from ${selectedEntryData.sourceName} selected`}
+              {t(
+                "windows.eventLog.detail.selectedAnnouncement",
+                "Event {{eventId}} from {{source}} selected",
+                {
+                  eventId: selectedEntryData.eventCode,
+                  source: selectedEntryData.sourceName,
+                },
+              )}
             </div>
             <div className="flex items-center gap-2">
               {LEVEL_ICONS[selectedEntryData.eventType]}
@@ -326,32 +372,38 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
                 id="event-log-selected-entry-heading"
                 className="text-sm font-semibold text-[var(--color-text)]"
               >
-                {LEVEL_LABELS[selectedEntryData.eventType]} —{" "}
+                {levelLabels[selectedEntryData.eventType]} —{" "}
                 {selectedEntryData.sourceName}
               </h3>
             </div>
             <dl className="text-xs space-y-2">
-              <DetailRow label="Log" value={selectedEntryData.logFile} />
               <DetailRow
-                label="Event ID"
+                label={t("windows.eventLog.detail.log", "Log")}
+                value={selectedEntryData.logFile}
+              />
+              <DetailRow
+                label={t("windows.eventLog.columns.eventId", "Event ID")}
                 value={String(selectedEntryData.eventCode)}
               />
               <DetailRow
-                label="Time"
+                label={t("windows.eventLog.columns.time", "Time")}
                 value={new Date(
                   selectedEntryData.timeGenerated,
                 ).toLocaleString()}
               />
               <DetailRow
-                label="Computer"
+                label={t("windows.eventLog.detail.computer", "Computer")}
                 value={selectedEntryData.computerName}
               />
               {selectedEntryData.user && (
-                <DetailRow label="User" value={selectedEntryData.user} />
+                <DetailRow
+                  label={t("windows.eventLog.detail.user", "User")}
+                  value={selectedEntryData.user}
+                />
               )}
               {selectedEntryData.categoryString && (
                 <DetailRow
-                  label="Category"
+                  label={t("windows.eventLog.detail.category", "Category")}
                   value={selectedEntryData.categoryString}
                 />
               )}
@@ -359,7 +411,7 @@ const EventLogPanel: React.FC<EventLogPanelProps> = ({ ctx }) => {
             {selectedEntryData.message && (
               <div>
                 <h4 className="text-xs font-medium text-[var(--color-textMuted)] mb-1">
-                  Message
+                  {t("windows.eventLog.columns.message", "Message")}
                 </h4>
                 <pre className="text-xs text-[var(--color-text)] whitespace-pre-wrap font-mono bg-[var(--color-background)] rounded-md p-2 max-h-60 overflow-auto">
                   {selectedEntryData.message}

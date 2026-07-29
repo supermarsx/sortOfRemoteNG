@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   Check,
   ChevronDown,
@@ -57,8 +59,12 @@ const normalizeSearch = (value: string): string =>
 
 const textTagKey = (name: string): string => normalizeSearch(name);
 
-const connectionCountLabel = (count: number): string =>
-  `${count} ${count === 1 ? "connection" : "connections"}`;
+const connectionCountLabel = (count: number, t: TFunction): string =>
+  t("tagManager.count.connections", {
+    count,
+    defaultValue:
+      count === 1 ? "{{count}} connection" : "{{count}} connections",
+  });
 
 const normalizeHex = (raw: string): string | null => {
   const trimmed = raw.trim();
@@ -78,24 +84,43 @@ const connectionSubtitle = (connection: Connection): string => {
   return parts.join(" - ");
 };
 
-const resultFailureMessage = (result: TagActionResult): string => {
-  if (result.ok) return "Done.";
+const resultFailureMessage = (
+  result: TagActionResult,
+  t: TFunction,
+): string => {
+  if (result.ok) {
+    return t("tagManager.status.done", { defaultValue: "Done." });
+  }
 
   switch (result.reason) {
     case "empty-name":
-      return "Name is required.";
+      return t("tagManager.status.nameRequired", {
+        defaultValue: "Name is required.",
+      });
     case "no-target-connections":
-      return "Choose at least one target connection.";
+      return t("tagManager.status.noTargetConnections", {
+        defaultValue: "Choose at least one target connection.",
+      });
     case "no-matching-connections":
-      return "No matching target connections.";
+      return t("tagManager.status.noMatchingConnections", {
+        defaultValue: "No matching target connections.",
+      });
     case "tag-not-found":
-      return "Text tag was not found.";
+      return t("tagManager.status.textTagNotFound", {
+        defaultValue: "Text tag was not found.",
+      });
     case "color-tag-not-found":
-      return "Color tag was not found.";
+      return t("tagManager.status.colorTagNotFound", {
+        defaultValue: "Color tag was not found.",
+      });
     case "already-assigned":
-      return "Selected connections already have this tag.";
+      return t("tagManager.status.alreadyAssigned", {
+        defaultValue: "Selected connections already have this tag.",
+      });
     default:
-      return "No changes made.";
+      return t("tagManager.status.noChanges", {
+        defaultValue: "No changes made.",
+      });
   }
 };
 
@@ -152,8 +177,15 @@ const matchingConnectionsForSearch = (
   return matches.length > 0 ? matches : connections;
 };
 
-const previewConnectionNames = (connections: Connection[]): string => {
-  if (connections.length === 0) return "No connections";
+const previewConnectionNames = (
+  connections: Connection[],
+  t: TFunction,
+): string => {
+  if (connections.length === 0) {
+    return t("tagManager.common.noConnections", {
+      defaultValue: "No connections",
+    });
+  }
   const visibleNames = connections.slice(0, 4).map((connection) => connection.name);
   const remainingCount = connections.length - visibleNames.length;
   return remainingCount > 0
@@ -165,6 +197,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const { state } = useConnections();
   const {
     connections,
@@ -298,42 +331,42 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
     () => [
       {
         id: "selected-tree",
-        label: "Selected",
+        label: t("tagManager.quick.selected", { defaultValue: "Selected" }),
         connectionIds: selectedTreeTargetIds,
       },
       {
         id: "untagged-text",
-        label: "Untagged",
+        label: t("tagManager.quick.untagged", { defaultValue: "Untagged" }),
         connectionIds: textUntaggedTargetIds,
       },
       {
         id: "filtered-manager",
-        label: "Filtered",
+        label: t("tagManager.quick.filtered", { defaultValue: "Filtered" }),
         connectionIds: managerFilteredTargetIds,
       },
     ],
-    [managerFilteredTargetIds, selectedTreeTargetIds, textUntaggedTargetIds],
+    [managerFilteredTargetIds, selectedTreeTargetIds, t, textUntaggedTargetIds],
   );
 
   const colorQuickTargets = useMemo<QuickTarget[]>(
     () => [
       {
         id: "selected-tree",
-        label: "Selected",
+        label: t("tagManager.quick.selected", { defaultValue: "Selected" }),
         connectionIds: selectedTreeTargetIds,
       },
       {
         id: "no-color",
-        label: "No color",
+        label: t("tagManager.quick.noColor", { defaultValue: "No color" }),
         connectionIds: colorUntaggedTargetIds,
       },
       {
         id: "filtered-manager",
-        label: "Filtered",
+        label: t("tagManager.quick.filtered", { defaultValue: "Filtered" }),
         connectionIds: managerFilteredTargetIds,
       },
     ],
-    [colorUntaggedTargetIds, managerFilteredTargetIds, selectedTreeTargetIds],
+    [colorUntaggedTargetIds, managerFilteredTargetIds, selectedTreeTargetIds, t],
   );
 
   const filteredTextTags = useMemo(() => {
@@ -392,9 +425,11 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
   const applyResultMessage = useCallback(
     (result: TagActionResult, successMessage: string) => {
-      setStatusMessage(result.ok ? successMessage : resultFailureMessage(result));
+      setStatusMessage(
+        result.ok ? successMessage : resultFailureMessage(result, t),
+      );
     },
-    [],
+    [t],
   );
 
   const handleCreateTextTag = useCallback(() => {
@@ -403,25 +438,42 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
     const result = createTextTag(normalizedName, targetIds);
     applyResultMessage(
       result,
-      `Applied "${normalizedName}" to ${connectionCountLabel(
-        result.ok ? result.updatedConnections : 0,
-      )}.`,
+      t("tagManager.status.applied", {
+        name: normalizedName,
+        connectionCount: connectionCountLabel(
+          result.ok ? result.updatedConnections : 0,
+          t,
+        ),
+        defaultValue: 'Applied "{{name}}" to {{connectionCount}}.',
+      }),
     );
     if (!result.ok) return;
 
     setTextCreateName("");
     setTextCreateTargetIds(new Set());
     setShowTextCreateForm(false);
-  }, [applyResultMessage, createTextTag, textCreateName, textCreateTargetIds]);
+  }, [
+    applyResultMessage,
+    createTextTag,
+    t,
+    textCreateName,
+    textCreateTargetIds,
+  ]);
 
   const handleCreateColorTag = useCallback(async () => {
     const result = await createColorTag(colorCreateForm);
-    applyResultMessage(result, `Created "${colorCreateForm.name.trim()}".`);
+    applyResultMessage(
+      result,
+      t("tagManager.status.created", {
+        name: colorCreateForm.name.trim(),
+        defaultValue: 'Created "{{name}}".',
+      }),
+    );
     if (!result.ok) return;
 
     setColorCreateForm({ name: "", color: DEFAULT_COLOR, global: true });
     setShowColorCreateForm(false);
-  }, [applyResultMessage, colorCreateForm, createColorTag]);
+  }, [applyResultMessage, colorCreateForm, createColorTag, t]);
 
   const handleStartTextRename = useCallback((record: TextTagRecord) => {
     setEditingTextKey(textTagKey(record.name));
@@ -431,13 +483,19 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
   const handleCommitTextRename = useCallback(
     (record: TextTagRecord) => {
       const result = renameTextTag(record.name, editingTextName);
-      applyResultMessage(result, `Renamed "${record.name}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.renamed", {
+          name: record.name,
+          defaultValue: 'Renamed "{{name}}".',
+        }),
+      );
       if (!result.ok) return;
 
       setEditingTextKey(null);
       setEditingTextName("");
     },
-    [applyResultMessage, editingTextName, renameTextTag],
+    [applyResultMessage, editingTextName, renameTextTag, t],
   );
 
   const handleStartColorEdit = useCallback((record: ColorTagRecord) => {
@@ -452,13 +510,19 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
   const handleCommitColorEdit = useCallback(
     async (record: ColorTagRecord) => {
       const result = await updateColorTag(record.id, editingColorForm);
-      applyResultMessage(result, `Updated "${editingColorForm.name.trim()}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.updated", {
+          name: editingColorForm.name.trim(),
+          defaultValue: 'Updated "{{name}}".',
+        }),
+      );
       if (!result.ok) return;
 
       setEditingColorId(null);
       setEditingColorForm({ name: "", color: DEFAULT_COLOR, global: true });
     },
-    [applyResultMessage, editingColorForm, updateColorTag],
+    [applyResultMessage, editingColorForm, t, updateColorTag],
   );
 
   const handleStartTextAssignment = useCallback((record: TextTagRecord) => {
@@ -486,10 +550,16 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
     applyResultMessage(
       result,
       result.ok && result.updatedConnections === 0
-        ? "No connection changes needed."
-        : `Assigned ${connectionCountLabel(
-            result.ok ? result.updatedConnections : 0,
-          )}.`,
+        ? t("tagManager.status.noConnectionChanges", {
+            defaultValue: "No connection changes needed.",
+          })
+        : t("tagManager.status.assigned", {
+            connectionCount: connectionCountLabel(
+              result.ok ? result.updatedConnections : 0,
+              t,
+            ),
+            defaultValue: "Assigned {{connectionCount}}.",
+          }),
     );
 
     if (!result.ok) return;
@@ -501,6 +571,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
     assignTextTagToConnections,
     assignmentTarget,
     assignmentTargetIds,
+    t,
   ]);
 
   const handleCancelAssignment = useCallback(() => {
@@ -511,17 +582,29 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
   const handleRemoveTextFromConnection = useCallback(
     (record: TextTagRecord, connection: Connection) => {
       const result = removeTextTagFromConnection(record.name, connection.id);
-      applyResultMessage(result, `Removed from "${connection.name}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.removedFrom", {
+          name: connection.name,
+          defaultValue: 'Removed from "{{name}}".',
+        }),
+      );
     },
-    [applyResultMessage, removeTextTagFromConnection],
+    [applyResultMessage, removeTextTagFromConnection, t],
   );
 
   const handleClearColorFromConnection = useCallback(
     (connection: Connection) => {
       const result = clearColorTagFromConnection(connection.id);
-      applyResultMessage(result, `Cleared color from "${connection.name}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.clearedColor", {
+          name: connection.name,
+          defaultValue: 'Cleared color from "{{name}}".',
+        }),
+      );
     },
-    [applyResultMessage, clearColorTagFromConnection],
+    [applyResultMessage, clearColorTagFromConnection, t],
   );
 
   const handleConfirmDelete = useCallback(async () => {
@@ -529,14 +612,32 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
     if (deleteConfirm.kind === "text") {
       const result = deleteTextTag(deleteConfirm.name);
-      applyResultMessage(result, `Removed "${deleteConfirm.name}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.removed", {
+          name: deleteConfirm.name,
+          defaultValue: 'Removed "{{name}}".',
+        }),
+      );
     } else {
       const result = await deleteColorTag(deleteConfirm.id);
-      applyResultMessage(result, `Deleted "${deleteConfirm.name}".`);
+      applyResultMessage(
+        result,
+        t("tagManager.status.deleted", {
+          name: deleteConfirm.name,
+          defaultValue: 'Deleted "{{name}}".',
+        }),
+      );
     }
 
     setDeleteConfirm(null);
-  }, [applyResultMessage, deleteColorTag, deleteConfirm, deleteTextTag]);
+  }, [
+    applyResultMessage,
+    deleteColorTag,
+    deleteConfirm,
+    deleteTextTag,
+    t,
+  ]);
 
   const renderCreateAction = () => {
     const isText = activeView === "text";
@@ -553,7 +654,15 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
         className="sor-btn-primary-sm flex-shrink-0"
       >
         <Plus size={14} />
-        <span>{isText ? "New Text Tag" : "New Color Tag"}</span>
+        <span>
+          {isText
+            ? t("tagManager.create.text.newTitle", {
+                defaultValue: "New Text Tag",
+              })
+            : t("tagManager.create.color.newTitle", {
+                defaultValue: "New Color Tag",
+              })}
+        </span>
       </button>
     );
   };
@@ -569,7 +678,11 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
               <div className="min-w-0">
                 <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2 min-w-0">
                   <Tag className="w-5 h-5 text-primary flex-shrink-0" />
-                  <span className="truncate">Tag Manager</span>
+                  <span className="truncate">
+                    {t("tagManager.header.title", {
+                      defaultValue: "Tag Manager",
+                    })}
+                  </span>
                 </h3>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -578,8 +691,12 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                   type="button"
                   onClick={onClose}
                   className="sor-icon-btn-sm"
-                  title="Close Tag Manager"
-                  aria-label="Close Tag Manager"
+                  title={t("tagManager.action.close", {
+                    defaultValue: "Close Tag Manager",
+                  })}
+                  aria-label={t("tagManager.action.close", {
+                    defaultValue: "Close Tag Manager",
+                  })}
                 >
                   <X size={14} />
                 </button>
@@ -588,28 +705,38 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
             <div className="text-xs text-[var(--color-textSecondary)] space-y-1">
               <p>
-                Label connections with free-form text tags and a curated
-                palette of color tags so you can slice the sidebar by purpose
-                (production, staging, customer-X, on-call rotation) instead
-                of relying on folder structure alone.
+                {t("tagManager.details.intro", {
+                  defaultValue:
+                    "Label connections with free-form text tags and a curated palette of color tags so you can slice the sidebar by purpose (production, staging, customer-X, on-call rotation) instead of relying on folder structure alone.",
+                })}
               </p>
               <p className="text-[var(--color-textMuted)]">
-                Text tags are free-form strings stored on each connection;
-                they appear in the connection editor and feed the sidebar
-                filter chips. Color tags are a shared palette saved with the
-                database — assign one per connection to tint its tab and
-                tree-row dot, and use the filter chips above the connection
-                list to scope by color. Use the Assign action to apply a
-                tag to many connections at once; renames and deletes here
-                update every connection that referenced the tag.
+                {t("tagManager.details.usage", {
+                  defaultValue:
+                    "Text tags are free-form strings stored on each connection; they appear in the connection editor and feed the sidebar filter chips. Color tags are a shared palette saved with the database — assign one per connection to tint its tab and tree-row dot, and use the filter chips above the connection list to scope by color. Use the Assign action to apply a tag to many connections at once; renames and deletes here update every connection that referenced the tag.",
+                })}
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <StatPill label="Text" value={stats.totalTextTags} />
-              <StatPill label="Color" value={stats.totalColorTags} />
-              <StatPill label="Tagged" value={stats.taggedConnectionCount} />
-              <StatPill label="Untagged" value={stats.untaggedConnectionCount} />
+              <StatPill
+                label={t("tagManager.stats.text", { defaultValue: "Text" })}
+                value={stats.totalTextTags}
+              />
+              <StatPill
+                label={t("tagManager.stats.color", { defaultValue: "Color" })}
+                value={stats.totalColorTags}
+              />
+              <StatPill
+                label={t("tagManager.stats.tagged", { defaultValue: "Tagged" })}
+                value={stats.taggedConnectionCount}
+              />
+              <StatPill
+                label={t("tagManager.stats.untagged", {
+                  defaultValue: "Untagged",
+                })}
+                value={stats.untaggedConnectionCount}
+              />
             </div>
           </div>
 
@@ -619,13 +746,17 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                 [
                   {
                     id: "text",
-                    label: "Text Tags",
+                    label: t("tagManager.tabs.text", {
+                      defaultValue: "Text Tags",
+                    }),
                     icon: Tag,
                     count: textTags.length,
                   },
                   {
                     id: "color",
-                    label: "Color Tags",
+                    label: t("tagManager.tabs.color", {
+                      defaultValue: "Color Tags",
+                    }),
                     icon: Palette,
                     count: colorTags.length,
                   },
@@ -671,20 +802,37 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                 value={searchFilter}
                 onChange={(event) => setSearchFilter(event.target.value)}
                 className="sor-form-input-xs sor-form-input-xs-icon-left w-full"
-                placeholder="Search tags or connections..."
+                placeholder={t("tagManager.filters.searchPlaceholder", {
+                  defaultValue: "Search tags or connections...",
+                })}
               />
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
               {(
                 [
-                  { key: "all", label: `All (${usageCounts.all})` },
-                  { key: "used", label: `In use (${usageCounts.used})` },
+                  {
+                    key: "all",
+                    label: t("tagManager.filters.all", {
+                      count: usageCounts.all,
+                      defaultValue: "All ({{count}})",
+                    }),
+                  },
+                  {
+                    key: "used",
+                    label: t("tagManager.filters.inUse", {
+                      count: usageCounts.used,
+                      defaultValue: "In use ({{count}})",
+                    }),
+                  },
                   ...(activeView === "color"
                     ? [
                         {
                           key: "unused" as const,
-                          label: `Unused (${usageCounts.unused})`,
+                          label: t("tagManager.filters.unused", {
+                            count: usageCounts.unused,
+                            defaultValue: "Unused ({{count}})",
+                          }),
                         },
                       ]
                     : []),
@@ -714,7 +862,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                   }}
                   className="ml-auto text-[var(--color-textMuted)] hover:text-[var(--color-text)] underline underline-offset-2"
                 >
-                  Clear
+                  {t("tagManager.common.clear", { defaultValue: "Clear" })}
                 </button>
               )}
             </div>
@@ -727,8 +875,12 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                 type="button"
                 onClick={() => setStatusMessage(null)}
                 className="sor-icon-btn-sm flex-shrink-0"
-                title="Dismiss"
-                aria-label="Dismiss status"
+                title={t("tagManager.action.dismiss", {
+                  defaultValue: "Dismiss",
+                })}
+                aria-label={t("tagManager.action.dismissStatus", {
+                  defaultValue: "Dismiss status",
+                })}
               >
                 <X size={12} />
               </button>
@@ -742,7 +894,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
                       <Plus size={14} className="text-primary" />
-                      New Text Tag
+                      {t("tagManager.create.text.newTitle", {
+                        defaultValue: "New Text Tag",
+                      })}
                     </h4>
                     <button
                       type="button"
@@ -752,8 +906,12 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                         setTextCreateTargetIds(new Set());
                       }}
                       className="sor-icon-btn-sm"
-                      title="Cancel"
-                      aria-label="Cancel new text tag"
+                      title={t("tagManager.common.cancel", {
+                        defaultValue: "Cancel",
+                      })}
+                      aria-label={t("tagManager.action.cancelNewTextTag", {
+                        defaultValue: "Cancel new text tag",
+                      })}
                     >
                       <X size={14} />
                     </button>
@@ -764,7 +922,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                       htmlFor="new-text-tag-name"
                       className="block text-[11px] font-medium text-[var(--color-textSecondary)]"
                     >
-                      Name
+                      {t("tagManager.common.name", { defaultValue: "Name" })}
                     </label>
                     <input
                       id="new-text-tag-name"
@@ -778,7 +936,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                         }
                       }}
                       className="sor-form-input-xs w-full"
-                      placeholder="Tag name"
+                      placeholder={t("tagManager.create.text.namePlaceholder", {
+                        defaultValue: "Tag name",
+                      })}
                     />
                   </div>
 
@@ -793,7 +953,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                     }
                     onClear={() => setTextCreateTargetIds(new Set())}
                     quickTargets={textQuickTargets}
-                    emptyMessage="No connection targets available"
+                    emptyMessage={t("tagManager.create.text.noTargets", {
+                      defaultValue: "No connection targets available",
+                    })}
                   />
 
                   <div className="flex items-center justify-end gap-2">
@@ -803,7 +965,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                       className="sor-btn-secondary-sm"
                       disabled={textCreateTargetIds.size === 0}
                     >
-                      Clear Targets
+                      {t("tagManager.create.text.clearTargets", {
+                        defaultValue: "Clear Targets",
+                      })}
                     </button>
                     <button
                       type="button"
@@ -812,7 +976,11 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                       className="sor-btn-primary-sm"
                     >
                       <Check size={14} />
-                      <span>Create Tag</span>
+                      <span>
+                        {t("tagManager.action.createTag", {
+                          defaultValue: "Create Tag",
+                        })}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -822,16 +990,24 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                 <EmptyState
                   icon={Tag}
                   iconSize={48}
-                  message="No text tags yet"
-                  hint="Choose target connections, then create a tag."
+                  message={t("tagManager.create.text.emptyTitle", {
+                    defaultValue: "No text tags yet",
+                  })}
+                  hint={t("tagManager.create.text.emptyHint", {
+                    defaultValue: "Choose target connections, then create a tag.",
+                  })}
                   className="py-12"
                 />
               ) : filteredTextTags.length === 0 ? (
                 <EmptyState
                   icon={Search}
                   iconSize={40}
-                  message="No text tags match"
-                  hint="Adjust search or filters."
+                  message={t("tagManager.create.text.noMatchTitle", {
+                    defaultValue: "No text tags match",
+                  })}
+                  hint={t("tagManager.common.noMatchHint", {
+                    defaultValue: "Adjust search or filters.",
+                  })}
                   className="py-8"
                 />
               ) : (
@@ -863,10 +1039,26 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                               toggleExpandedKey(setExpandedTextTagKeys, recordKey)
                             }
                             className="sor-icon-btn-sm flex-shrink-0"
-                            title={isExpanded ? "Collapse row" : "Expand row"}
-                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${
-                              record.name
-                            }`}
+                            title={
+                              isExpanded
+                                ? t("tagManager.row.collapse", {
+                                    defaultValue: "Collapse row",
+                                  })
+                                : t("tagManager.row.expand", {
+                                    defaultValue: "Expand row",
+                                  })
+                            }
+                            aria-label={
+                              isExpanded
+                                ? t("tagManager.row.collapseNamed", {
+                                    name: record.name,
+                                    defaultValue: "Collapse {{name}}",
+                                  })
+                                : t("tagManager.row.expandNamed", {
+                                    name: record.name,
+                                    defaultValue: "Expand {{name}}",
+                                  })
+                            }
                           >
                             {isExpanded ? (
                               <ChevronUp size={14} />
@@ -895,7 +1087,10 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                 }
                               }}
                               className="sor-form-input-xs flex-1 min-w-0"
-                              aria-label={`Rename ${record.name}`}
+                              aria-label={t("tagManager.action.renameNamed", {
+                                name: record.name,
+                                defaultValue: "Rename {{name}}",
+                              })}
                               autoFocus
                             />
                           ) : (
@@ -905,7 +1100,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                           )}
 
                           <span className="text-[10px] text-[var(--color-textMuted)] bg-[var(--color-border)]/70 px-1.5 py-0.5 rounded-md flex-shrink-0">
-                            {connectionCountLabel(record.count)}
+                            {connectionCountLabel(record.count, t)}
                           </span>
 
                           <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -915,8 +1110,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => handleCommitTextRename(record)}
                                   className="sor-icon-btn-sm text-success"
-                                  title="Save rename"
-                                  aria-label={`Save ${record.name}`}
+                                  title={t("tagManager.action.saveRename", {
+                                    defaultValue: "Save rename",
+                                  })}
+                                  aria-label={t("tagManager.action.saveNamed", {
+                                    name: record.name,
+                                    defaultValue: "Save {{name}}",
+                                  })}
                                 >
                                   <Check size={13} />
                                 </button>
@@ -927,8 +1127,16 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                     setEditingTextName("");
                                   }}
                                   className="sor-icon-btn-sm"
-                                  title="Cancel rename"
-                                  aria-label={`Cancel rename ${record.name}`}
+                                  title={t("tagManager.action.cancelRename", {
+                                    defaultValue: "Cancel rename",
+                                  })}
+                                  aria-label={t(
+                                    "tagManager.action.cancelRenameNamed",
+                                    {
+                                      name: record.name,
+                                      defaultValue: "Cancel rename {{name}}",
+                                    },
+                                  )}
                                 >
                                   <X size={13} />
                                 </button>
@@ -939,8 +1147,20 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => handleStartTextAssignment(record)}
                                   className="sor-icon-btn-sm"
-                                  title="Assign to connections"
-                                  aria-label={`Assign ${record.name} to connections`}
+                                  title={t(
+                                    "tagManager.action.assignToConnections",
+                                    {
+                                      defaultValue: "Assign to connections",
+                                    },
+                                  )}
+                                  aria-label={t(
+                                    "tagManager.action.assignNamed",
+                                    {
+                                      name: record.name,
+                                      defaultValue:
+                                        "Assign {{name}} to connections",
+                                    },
+                                  )}
                                 >
                                   <Link2 size={13} />
                                 </button>
@@ -948,8 +1168,16 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => handleStartTextRename(record)}
                                   className="sor-icon-btn-sm"
-                                  title="Rename"
-                                  aria-label={`Rename ${record.name}`}
+                                  title={t("tagManager.action.rename", {
+                                    defaultValue: "Rename",
+                                  })}
+                                  aria-label={t(
+                                    "tagManager.action.renameNamed",
+                                    {
+                                      name: record.name,
+                                      defaultValue: "Rename {{name}}",
+                                    },
+                                  )}
                                 >
                                   <Pencil size={13} />
                                 </button>
@@ -963,8 +1191,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                     })
                                   }
                                   className="sor-icon-btn-danger"
-                                  title="Delete from all connections"
-                                  aria-label={`Delete ${record.name}`}
+                                  title={t("tagManager.action.deleteFromAll", {
+                                    defaultValue: "Delete from all connections",
+                                  })}
+                                  aria-label={t("tagManager.action.deleteNamed", {
+                                    name: record.name,
+                                    defaultValue: "Delete {{name}}",
+                                  })}
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -975,7 +1208,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
                         {!isExpanded && record.connections.length > 0 && (
                           <div className="px-3 pb-2 text-[11px] text-[var(--color-textMuted)] truncate">
-                            {previewConnectionNames(record.connections)}
+                            {previewConnectionNames(record.connections, t)}
                           </div>
                         )}
 
@@ -983,8 +1216,15 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                           <div className="border-t border-[var(--color-border)] p-3 space-y-3">
                             <ConnectionMemberList
                               connections={visibleConnections}
-                              emptyMessage="No member connections"
-                              actionLabel="Remove tag"
+                              emptyMessage={t(
+                                "tagManager.row.noMemberConnections",
+                                {
+                                  defaultValue: "No member connections",
+                                },
+                              )}
+                              actionLabel={t("tagManager.action.removeTag", {
+                                defaultValue: "Remove tag",
+                              })}
                               onAction={(connection) =>
                                 handleRemoveTextFromConnection(record, connection)
                               }
@@ -992,7 +1232,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
                             {isAssigning && (
                               <AssignmentPanel
-                                title="Assign to Connections"
+                                title={t("tagManager.assignment.title", {
+                                  defaultValue: "Assign to Connections",
+                                })}
                                 selectedCount={assignmentTargetIds.size}
                                 canSubmit={assignmentTargetIds.size > 0}
                                 onSubmit={handleCommitAssignment}
@@ -1015,7 +1257,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   }
                                   onClear={() => setAssignmentTargetIds(new Set())}
                                   quickTargets={textQuickTargets}
-                                  emptyMessage="Every target already has this tag"
+                                  emptyMessage={t(
+                                    "tagManager.row.everyTargetHasTextTag",
+                                    {
+                                      defaultValue:
+                                        "Every target already has this tag",
+                                    },
+                                  )}
                                 />
                               </AssignmentPanel>
                             )}
@@ -1034,7 +1282,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <h4 className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
                       <Palette size={14} className="text-primary" />
-                      New Color Tag
+                      {t("tagManager.create.color.newTitle", {
+                        defaultValue: "New Color Tag",
+                      })}
                     </h4>
                     <button
                       type="button"
@@ -1047,8 +1297,12 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                         });
                       }}
                       className="sor-icon-btn-sm"
-                      title="Cancel"
-                      aria-label="Cancel new color tag"
+                      title={t("tagManager.common.cancel", {
+                        defaultValue: "Cancel",
+                      })}
+                      aria-label={t("tagManager.action.cancelNewColorTag", {
+                        defaultValue: "Cancel new color tag",
+                      })}
                     >
                       <X size={14} />
                     </button>
@@ -1060,7 +1314,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                         htmlFor="new-color-tag-name"
                         className="block text-[11px] font-medium text-[var(--color-textSecondary)]"
                       >
-                        Name
+                        {t("tagManager.common.name", { defaultValue: "Name" })}
                       </label>
                       <input
                         id="new-color-tag-name"
@@ -1079,7 +1333,12 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                           }
                         }}
                         className="sor-form-input-xs w-full"
-                        placeholder="Color tag name"
+                        placeholder={t(
+                          "tagManager.create.color.namePlaceholder",
+                          {
+                            defaultValue: "Color tag name",
+                          },
+                        )}
                       />
                     </div>
                     <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] cursor-pointer pb-1">
@@ -1094,7 +1353,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                         }
                         className="sor-form-checkbox"
                       />
-                      Global
+                      {t("tagManager.common.global", {
+                        defaultValue: "Global",
+                      })}
                     </label>
                   </div>
 
@@ -1120,7 +1381,9 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                       }
                       className="sor-btn-secondary-sm"
                     >
-                      Reset
+                      {t("tagManager.create.color.reset", {
+                        defaultValue: "Reset",
+                      })}
                     </button>
                     <button
                       type="button"
@@ -1129,7 +1392,11 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                       className="sor-btn-primary-sm"
                     >
                       <Check size={14} />
-                      <span>Create Color</span>
+                      <span>
+                        {t("tagManager.action.createColor", {
+                          defaultValue: "Create Color",
+                        })}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -1139,16 +1406,25 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                 <EmptyState
                   icon={Palette}
                   iconSize={48}
-                  message="No color tags yet"
-                  hint="Create a color tag, then assign it to connections."
+                  message={t("tagManager.create.color.emptyTitle", {
+                    defaultValue: "No color tags yet",
+                  })}
+                  hint={t("tagManager.create.color.emptyHint", {
+                    defaultValue:
+                      "Create a color tag, then assign it to connections.",
+                  })}
                   className="py-12"
                 />
               ) : filteredColorTags.length === 0 ? (
                 <EmptyState
                   icon={Search}
                   iconSize={40}
-                  message="No color tags match"
-                  hint="Adjust search or filters."
+                  message={t("tagManager.create.color.noMatchTitle", {
+                    defaultValue: "No color tags match",
+                  })}
+                  hint={t("tagManager.common.noMatchHint", {
+                    defaultValue: "Adjust search or filters.",
+                  })}
                   className="py-8"
                 />
               ) : (
@@ -1179,10 +1455,26 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                               toggleExpandedKey(setExpandedColorTagIds, record.id)
                             }
                             className="sor-icon-btn-sm flex-shrink-0"
-                            title={isExpanded ? "Collapse row" : "Expand row"}
-                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${
-                              record.name
-                            }`}
+                            title={
+                              isExpanded
+                                ? t("tagManager.row.collapse", {
+                                    defaultValue: "Collapse row",
+                                  })
+                                : t("tagManager.row.expand", {
+                                    defaultValue: "Expand row",
+                                  })
+                            }
+                            aria-label={
+                              isExpanded
+                                ? t("tagManager.row.collapseNamed", {
+                                    name: record.name,
+                                    defaultValue: "Collapse {{name}}",
+                                  })
+                                : t("tagManager.row.expandNamed", {
+                                    name: record.name,
+                                    defaultValue: "Expand {{name}}",
+                                  })
+                            }
                           >
                             {isExpanded ? (
                               <ChevronUp size={14} />
@@ -1216,7 +1508,10 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                 }
                               }}
                               className="sor-form-input-xs flex-1 min-w-0"
-                              aria-label={`Rename ${record.name}`}
+                              aria-label={t("tagManager.action.renameNamed", {
+                                name: record.name,
+                                defaultValue: "Rename {{name}}",
+                              })}
                               autoFocus
                             />
                           ) : (
@@ -1227,11 +1522,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
                           {record.global && !isEditing && (
                             <span className="text-[10px] text-primary bg-primary/15 px-1.5 py-0.5 rounded-md flex-shrink-0 font-medium">
-                              Global
+                              {t("tagManager.common.global", {
+                                defaultValue: "Global",
+                              })}
                             </span>
                           )}
                           <span className="text-[10px] text-[var(--color-textMuted)] bg-[var(--color-border)]/70 px-1.5 py-0.5 rounded-md flex-shrink-0">
-                            {connectionCountLabel(record.count)}
+                            {connectionCountLabel(record.count, t)}
                           </span>
 
                           <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -1241,8 +1538,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => void handleCommitColorEdit(record)}
                                   className="sor-icon-btn-sm text-success"
-                                  title="Save color tag"
-                                  aria-label={`Save ${record.name}`}
+                                  title={t("tagManager.action.saveColorTag", {
+                                    defaultValue: "Save color tag",
+                                  })}
+                                  aria-label={t("tagManager.action.saveNamed", {
+                                    name: record.name,
+                                    defaultValue: "Save {{name}}",
+                                  })}
                                 >
                                   <Check size={13} />
                                 </button>
@@ -1250,8 +1552,16 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => setEditingColorId(null)}
                                   className="sor-icon-btn-sm"
-                                  title="Cancel edit"
-                                  aria-label={`Cancel edit ${record.name}`}
+                                  title={t("tagManager.action.cancelEdit", {
+                                    defaultValue: "Cancel edit",
+                                  })}
+                                  aria-label={t(
+                                    "tagManager.action.cancelEditNamed",
+                                    {
+                                      name: record.name,
+                                      defaultValue: "Cancel edit {{name}}",
+                                    },
+                                  )}
                                 >
                                   <X size={13} />
                                 </button>
@@ -1262,8 +1572,20 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => handleStartColorAssignment(record)}
                                   className="sor-icon-btn-sm"
-                                  title="Assign to connections"
-                                  aria-label={`Assign ${record.name} to connections`}
+                                  title={t(
+                                    "tagManager.action.assignToConnections",
+                                    {
+                                      defaultValue: "Assign to connections",
+                                    },
+                                  )}
+                                  aria-label={t(
+                                    "tagManager.action.assignNamed",
+                                    {
+                                      name: record.name,
+                                      defaultValue:
+                                        "Assign {{name}} to connections",
+                                    },
+                                  )}
                                 >
                                   <Link2 size={13} />
                                 </button>
@@ -1271,8 +1593,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   type="button"
                                   onClick={() => handleStartColorEdit(record)}
                                   className="sor-icon-btn-sm"
-                                  title="Edit"
-                                  aria-label={`Edit ${record.name}`}
+                                  title={t("tagManager.action.edit", {
+                                    defaultValue: "Edit",
+                                  })}
+                                  aria-label={t("tagManager.action.editNamed", {
+                                    name: record.name,
+                                    defaultValue: "Edit {{name}}",
+                                  })}
                                 >
                                   <Pencil size={13} />
                                 </button>
@@ -1287,8 +1614,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                     })
                                   }
                                   className="sor-icon-btn-danger"
-                                  title="Delete color tag"
-                                  aria-label={`Delete ${record.name}`}
+                                  title={t("tagManager.action.deleteColorTag", {
+                                    defaultValue: "Delete color tag",
+                                  })}
+                                  aria-label={t("tagManager.action.deleteNamed", {
+                                    name: record.name,
+                                    defaultValue: "Delete {{name}}",
+                                  })}
                                 >
                                   <Trash2 size={13} />
                                 </button>
@@ -1299,7 +1631,7 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
 
                         {!isExpanded && record.connections.length > 0 && (
                           <div className="px-3 pb-2 text-[11px] text-[var(--color-textMuted)] truncate">
-                            {previewConnectionNames(record.connections)}
+                            {previewConnectionNames(record.connections, t)}
                           </div>
                         )}
 
@@ -1329,21 +1661,32 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                     }
                                     className="sor-form-checkbox"
                                   />
-                                  Global
+                                  {t("tagManager.common.global", {
+                                    defaultValue: "Global",
+                                  })}
                                 </label>
                               </div>
                             )}
 
                             <ConnectionMemberList
                               connections={visibleConnections}
-                              emptyMessage="No assigned connections"
-                              actionLabel="Clear color"
+                              emptyMessage={t(
+                                "tagManager.row.noAssignedConnections",
+                                {
+                                  defaultValue: "No assigned connections",
+                                },
+                              )}
+                              actionLabel={t("tagManager.action.clearColor", {
+                                defaultValue: "Clear color",
+                              })}
                               onAction={handleClearColorFromConnection}
                             />
 
                             {isAssigning && (
                               <AssignmentPanel
-                                title="Assign to Connections"
+                                title={t("tagManager.assignment.title", {
+                                  defaultValue: "Assign to Connections",
+                                })}
                                 selectedCount={assignmentTargetIds.size}
                                 canSubmit={assignmentTargetIds.size > 0}
                                 onSubmit={handleCommitAssignment}
@@ -1366,7 +1709,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
                                   }
                                   onClear={() => setAssignmentTargetIds(new Set())}
                                   quickTargets={colorQuickTargets}
-                                  emptyMessage="Every target already uses this color"
+                                  emptyMessage={t(
+                                    "tagManager.row.everyTargetUsesColor",
+                                    {
+                                      defaultValue:
+                                        "Every target already uses this color",
+                                    },
+                                  )}
                                 />
                               </AssignmentPanel>
                             )}
@@ -1381,8 +1730,13 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
           )}
 
           <div className="pt-3 border-t border-[var(--color-border)] text-xs text-[var(--color-textMuted)]">
-            {stats.totalTextTags} text, {stats.totalColorTags} color, {" "}
-            {stats.colorTaggedConnectionCount} color-tagged
+            {t("tagManager.footer.summary", {
+              textCount: stats.totalTextTags,
+              colorCount: stats.totalColorTags,
+              colorTaggedCount: stats.colorTaggedConnectionCount,
+              defaultValue:
+                "{{textCount}} text, {{colorCount}} color, {{colorTaggedCount}} color-tagged",
+            })}
           </div>
         </div>
       </div>
@@ -1391,21 +1745,31 @@ export const TagManagerDialog: React.FC<TagManagerDialogProps> = ({
         isOpen={deleteConfirm !== null}
         title={
           deleteConfirm?.kind === "color"
-            ? "Delete color tag?"
-            : "Delete text tag?"
+            ? t("tagManager.confirm.deleteColorTitle", {
+                defaultValue: "Delete color tag?",
+              })
+            : t("tagManager.confirm.deleteTextTitle", {
+                defaultValue: "Delete text tag?",
+              })
         }
         variant="danger"
-        confirmText="Delete"
-        cancelText="Keep"
+        confirmText={t("tagManager.action.delete", { defaultValue: "Delete" })}
+        cancelText={t("tagManager.action.keep", { defaultValue: "Keep" })}
         message={
           deleteConfirm?.kind === "text"
-            ? `Remove "${deleteConfirm.name}" from ${connectionCountLabel(
-                deleteConfirm.count,
-              )}?`
+            ? t("tagManager.confirm.deleteTextMessage", {
+                name: deleteConfirm.name,
+                connectionCount: connectionCountLabel(deleteConfirm.count, t),
+                defaultValue:
+                  'Remove "{{name}}" from {{connectionCount}}?',
+              })
             : deleteConfirm?.kind === "color"
-              ? `Delete "${deleteConfirm.name}"? ${connectionCountLabel(
-                  deleteConfirm.count,
-                )} will have this color tag cleared.`
+              ? t("tagManager.confirm.deleteColorMessage", {
+                  name: deleteConfirm.name,
+                  connectionCount: connectionCountLabel(deleteConfirm.count, t),
+                  defaultValue:
+                    'Delete "{{name}}"? {{connectionCount}} will have this color tag cleared.',
+                })
               : ""
         }
         onConfirm={() => void handleConfirmDelete()}
@@ -1441,6 +1805,7 @@ const ConnectionTargetSelector: React.FC<{
   quickTargets,
   emptyMessage,
 }) => {
+  const { t } = useTranslation();
   const candidateIds = useMemo(
     () => new Set(connections.map((connection) => connection.id)),
     [connections],
@@ -1451,7 +1816,7 @@ const ConnectionTargetSelector: React.FC<{
       <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
         <span className="inline-flex items-center gap-1 text-[var(--color-textMuted)]">
           <Users size={12} />
-          Targets
+          {t("tagManager.row.targets", { defaultValue: "Targets" })}
         </span>
         {quickTargets.map((quickTarget) => {
           const usableIds = quickTarget.connectionIds.filter((connectionId) =>
@@ -1475,7 +1840,7 @@ const ConnectionTargetSelector: React.FC<{
             onClick={onClear}
             className="ml-auto text-[var(--color-textMuted)] hover:text-[var(--color-text)] underline underline-offset-2"
           >
-            Clear
+            {t("tagManager.common.clear", { defaultValue: "Clear" })}
           </button>
         )}
       </div>
@@ -1498,7 +1863,10 @@ const ConnectionTargetSelector: React.FC<{
                   checked={checked}
                   onChange={() => onToggle(connection.id)}
                   className="sor-form-checkbox flex-shrink-0"
-                  aria-label={`Select ${connection.name}`}
+                  aria-label={t("tagManager.action.selectConnection", {
+                    name: connection.name,
+                    defaultValue: "Select {{name}}",
+                  })}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs text-[var(--color-text)] truncate">
@@ -1524,34 +1892,43 @@ const AssignmentPanel: React.FC<{
   onSubmit: () => void;
   onCancel: () => void;
   children: React.ReactNode;
-}> = ({ title, selectedCount, canSubmit, onSubmit, onCancel, children }) => (
-  <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-3">
-    <div className="flex items-center justify-between gap-3">
-      <h5 className="text-xs font-medium text-[var(--color-text)] flex items-center gap-1.5">
-        <Link2 size={13} className="text-primary" />
-        {title}
-      </h5>
-      <span className="text-[10px] text-[var(--color-textMuted)]">
-        {selectedCount} selected
-      </span>
+}> = ({ title, selectedCount, canSubmit, onSubmit, onCancel, children }) => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h5 className="text-xs font-medium text-[var(--color-text)] flex items-center gap-1.5">
+          <Link2 size={13} className="text-primary" />
+          {title}
+        </h5>
+        <span className="text-[10px] text-[var(--color-textMuted)]">
+          {t("tagManager.count.selected", {
+            count: selectedCount,
+            defaultValue: "{{count}} selected",
+          })}
+        </span>
+      </div>
+      {children}
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" onClick={onCancel} className="sor-btn-secondary-sm">
+          {t("tagManager.common.cancel", { defaultValue: "Cancel" })}
+        </button>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+          className="sor-btn-primary-sm"
+        >
+          <Check size={14} />
+          <span>
+            {t("tagManager.action.assign", { defaultValue: "Assign" })}
+          </span>
+        </button>
+      </div>
     </div>
-    {children}
-    <div className="flex items-center justify-end gap-2">
-      <button type="button" onClick={onCancel} className="sor-btn-secondary-sm">
-        Cancel
-      </button>
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={!canSubmit}
-        className="sor-btn-primary-sm"
-      >
-        <Check size={14} />
-        <span>Assign</span>
-      </button>
-    </div>
-  </div>
-);
+  );
+};
 
 const ConnectionMemberList: React.FC<{
   connections: Connection[];
@@ -1559,6 +1936,8 @@ const ConnectionMemberList: React.FC<{
   actionLabel: string;
   onAction: (connection: Connection) => void;
 }> = ({ connections, emptyMessage, actionLabel, onAction }) => {
+  const { t } = useTranslation();
+
   if (connections.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-center text-xs text-[var(--color-textMuted)]">
@@ -1587,7 +1966,11 @@ const ConnectionMemberList: React.FC<{
             onClick={() => onAction(connection)}
             className="sor-icon-btn-sm flex-shrink-0"
             title={actionLabel}
-            aria-label={`${actionLabel} from ${connection.name}`}
+            aria-label={t("tagManager.row.memberAction", {
+              action: actionLabel,
+              name: connection.name,
+              defaultValue: "{{action}} from {{name}}",
+            })}
           >
             <Unlink size={12} />
           </button>
@@ -1601,42 +1984,51 @@ const ColorControls: React.FC<{
   color: string;
   onChange: (color: string) => void;
   size?: "sm" | "md";
-}> = ({ color, onChange, size = "md" }) => (
-  <div className="flex items-center gap-3 flex-wrap">
-    <span
-      className={`rounded-md border border-[var(--color-border)] flex-shrink-0 ${
-        size === "sm" ? "w-5 h-5" : "w-7 h-7"
-      }`}
-      style={{ backgroundColor: color }}
-      aria-hidden="true"
-    />
-    <div className="flex gap-1.5 flex-wrap">
-      {PREDEFINED_COLORS.map((colorOption) => {
-        const selected = color.toLocaleLowerCase() === colorOption.toLocaleLowerCase();
-        return (
-          <button
-            key={colorOption}
-            type="button"
-            onClick={() => onChange(colorOption)}
-            className={`rounded-full border-2 transition-transform hover:scale-110 ${
-              selected ? "border-white scale-110" : "border-transparent"
-            } ${size === "sm" ? "w-4 h-4" : "w-5 h-5"}`}
-            style={{ backgroundColor: colorOption }}
-            title={colorOption}
-            aria-label={`Use color ${colorOption}`}
-            aria-pressed={selected}
-          />
-        );
-      })}
+}> = ({ color, onChange, size = "md" }) => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <span
+        className={`rounded-md border border-[var(--color-border)] flex-shrink-0 ${
+          size === "sm" ? "w-5 h-5" : "w-7 h-7"
+        }`}
+        style={{ backgroundColor: color }}
+        aria-hidden="true"
+      />
+      <div className="flex gap-1.5 flex-wrap">
+        {PREDEFINED_COLORS.map((colorOption) => {
+          const selected =
+            color.toLocaleLowerCase() === colorOption.toLocaleLowerCase();
+          return (
+            <button
+              key={colorOption}
+              type="button"
+              onClick={() => onChange(colorOption)}
+              className={`rounded-full border-2 transition-transform hover:scale-110 ${
+                selected ? "border-white scale-110" : "border-transparent"
+              } ${size === "sm" ? "w-4 h-4" : "w-5 h-5"}`}
+              style={{ backgroundColor: colorOption }}
+              title={colorOption}
+              aria-label={t("tagManager.action.useColor", {
+                color: colorOption,
+                defaultValue: "Use color {{color}}",
+              })}
+              aria-pressed={selected}
+            />
+          );
+        })}
+      </div>
+      <CustomColorInput color={color} onChange={onChange} />
     </div>
-    <CustomColorInput color={color} onChange={onChange} />
-  </div>
-);
+  );
+};
 
 const CustomColorInput: React.FC<{
   color: string;
   onChange: (color: string) => void;
 }> = ({ color, onChange }) => {
+  const { t } = useTranslation();
   const [draftColor, setDraftColor] = useState(color);
 
   useEffect(() => {
@@ -1651,7 +2043,9 @@ const CustomColorInput: React.FC<{
 
   return (
     <label className="flex items-center gap-1.5 text-[10px] text-[var(--color-textMuted)] cursor-pointer">
-      <span>Custom</span>
+      <span>
+        {t("tagManager.color.custom", { defaultValue: "Custom" })}
+      </span>
       <span
         className="relative inline-block w-5 h-5 rounded-full border-2 border-white/20 overflow-hidden"
         style={{ backgroundColor: color }}
@@ -1661,7 +2055,9 @@ const CustomColorInput: React.FC<{
           value={HEX_PATTERN.test(color) ? color : DEFAULT_COLOR}
           onChange={(event) => onChange(event.target.value)}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          aria-label="Pick custom color"
+          aria-label={t("tagManager.action.pickCustomColor", {
+            defaultValue: "Pick custom color",
+          })}
         />
       </span>
       <input
@@ -1678,7 +2074,9 @@ const CustomColorInput: React.FC<{
         spellCheck={false}
         className="w-20 bg-[var(--color-bg)] border border-[var(--color-border)] rounded px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-borderActive)]"
         placeholder="#3b82f6"
-        aria-label="Custom hex color"
+        aria-label={t("tagManager.color.customHex", {
+          defaultValue: "Custom hex color",
+        })}
       />
     </label>
   );

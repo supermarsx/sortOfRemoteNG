@@ -73,6 +73,39 @@ interface DdnsManagerProps {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+function Tx({
+  i18nKey,
+  fallback,
+  values,
+}: {
+  i18nKey: string;
+  fallback: string;
+  values?: Record<string, string | number>;
+}) {
+  const { t } = useTranslation();
+  return <>{t(i18nKey, fallback, values)}</>;
+}
+
+const UPDATE_STATUS_COPY: Record<string, { key: string; fallback: string }> = {
+  Success: { key: "ddns.status.success", fallback: "Success" },
+  NoChange: { key: "ddns.status.noChange", fallback: "NoChange" },
+  Failed: { key: "ddns.status.failed", fallback: "Failed" },
+  AuthError: { key: "ddns.status.authError", fallback: "AuthError" },
+  RateLimited: { key: "ddns.status.rateLimited", fallback: "RateLimited" },
+  Disabled: { key: "ddns.status.disabled", fallback: "Disabled" },
+};
+
+const TranslatedUpdateStatus: React.FC<{ status: UpdateStatus }> = ({
+  status,
+}) => {
+  const copy = UPDATE_STATUS_COPY[status];
+  return copy ? (
+    <Tx i18nKey={copy.key} fallback={copy.fallback} />
+  ) : (
+    <>{status}</>
+  );
+};
+
 const DangerConfirm: React.FC<{
   action: string;
   onConfirm: () => void;
@@ -80,18 +113,24 @@ const DangerConfirm: React.FC<{
 }> = ({ action, onConfirm, onCancel }) => (
   <div className="flex items-center gap-3 p-3 rounded bg-error/10 border border-error/30 text-sm">
     <AlertTriangle size={16} className="text-error flex-shrink-0" />
-    <span className="flex-1">Are you sure you want to {action}?</span>
+    <span className="flex-1">
+      <Tx
+        i18nKey="ddns.confirm.prompt"
+        fallback="Are you sure you want to {{action}}?"
+        values={{ action }}
+      />
+    </span>
     <button
       onClick={onConfirm}
       className="px-3 py-1 rounded bg-error hover:bg-error/80 text-[var(--color-text)] text-xs"
     >
-      Confirm
+      <Tx i18nKey="common.confirm" fallback="Confirm" />
     </button>
     <button
       onClick={onCancel}
       className="px-3 py-1 rounded bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-xs"
     >
-      Cancel
+      <Tx i18nKey="common.cancel" fallback="Cancel" />
     </button>
   </div>
 );
@@ -149,7 +188,7 @@ const UpdateStatusBadge: React.FC<{ status: UpdateStatus }> = ({ status }) => {
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${info.cls}`}
     >
       {info.icon}
-      {status}
+      <TranslatedUpdateStatus status={status} />
     </span>
   );
 };
@@ -181,14 +220,34 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   const bulkEnable = async () => {
     const ids = Array.from(selectedIds);
     for (const id of ids) await mgr.enableProfile(id);
-    toast.success(`${ids.length} profile${ids.length === 1 ? "" : "s"} enabled`);
+    toast.success(
+      t(
+        ids.length === 1
+          ? "ddns.profiles.bulkEnabled.one"
+          : "ddns.profiles.bulkEnabled.other",
+        ids.length === 1
+          ? "{{count}} profile enabled"
+          : "{{count}} profiles enabled",
+        { count: ids.length },
+      ),
+    );
     setSelectedIds(new Set());
   };
 
   const bulkDisable = async () => {
     const ids = Array.from(selectedIds);
     for (const id of ids) await mgr.disableProfile(id);
-    toast.success(`${ids.length} profile${ids.length === 1 ? "" : "s"} disabled`);
+    toast.success(
+      t(
+        ids.length === 1
+          ? "ddns.profiles.bulkDisabled.one"
+          : "ddns.profiles.bulkDisabled.other",
+        ids.length === 1
+          ? "{{count}} profile disabled"
+          : "{{count}} profiles disabled",
+        { count: ids.length },
+      ),
+    );
     setSelectedIds(new Set());
   };
 
@@ -233,7 +292,11 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         >
           <input
             type="checkbox"
-            aria-label={`Select ${p.name}`}
+            aria-label={t(
+              "ddns.profiles.selectProfile",
+              "Select {{name}}",
+              { name: p.name },
+            )}
             checked={selectedIds.has(p.id)}
             onChange={() => toggleSelected(p.id)}
             className="accent-primary w-4 h-4 flex-shrink-0"
@@ -242,7 +305,14 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             <div className="flex items-center gap-2 mb-1">
               <span className="font-medium text-sm truncate">{p.name}</span>
               <ProviderBadge provider={p.provider} />
-              <StatusBadge status={p.enabled ? "success" : "error"} label={p.enabled ? "Enabled" : "Disabled"} />
+              <StatusBadge
+                status={p.enabled ? "success" : "error"}
+                label={
+                  p.enabled
+                    ? t("ddns.status.enabled", "Enabled")
+                    : t("ddns.status.disabled", "Disabled")
+                }
+              />
             </div>
             <div className="text-xs text-text-muted truncate">
               {p.hostname && p.hostname !== "@"
@@ -264,13 +334,21 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                 p.enabled ? mgr.disableProfile(p.id) : mgr.enableProfile(p.id)
               }
               className="p-1.5 rounded hover:bg-surfaceHover text-text-muted hover:text-warning"
-              title={p.enabled ? "Disable" : "Enable"}
+              title={
+                p.enabled
+                  ? t("ddns.actions.disable", "Disable")
+                  : t("ddns.actions.enable", "Enable")
+              }
             >
               {p.enabled ? <PowerOff size={14} /> : <Power size={14} />}
             </button>
             {confirmDelete === p.id ? (
               <DangerConfirm
-                action={`delete "${p.name}"`}
+                action={t(
+                  "ddns.confirm.deleteProfileAction",
+                  'delete "{{name}}"',
+                  { name: p.name },
+                )}
                 onConfirm={() => {
                   mgr.deleteProfile(p.id);
                   setConfirmDelete(null);
@@ -373,8 +451,9 @@ const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                 </div>
                 <div className="text-xs text-text-muted truncate">
                   {h.fqdn} ·{" "}
-                  {h.current_ipv4 ?? "no IP"} ·{" "}
-                  {h.success_count} ok / {h.failure_count} fail
+                  {h.current_ipv4 ?? t("ddns.health.noIp", "no IP")} ·{" "}
+                  {h.success_count} {t("ddns.health.ok", "ok")} /{" "}
+                  {h.failure_count} {t("ddns.health.fail", "fail")}
                 </div>
               </div>
               {h.last_error && (
@@ -468,7 +547,14 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             >
               <Globe size={14} />
               <span className="font-mono">{z.name}</span>
-              <StatusBadge status={z.status === "active" ? "success" : "error"} label={z.status} />
+              <StatusBadge
+                status={z.status === "active" ? "success" : "error"}
+                label={
+                  z.status === "active"
+                    ? t("ddns.cloudflare.activeStatus", "active")
+                    : z.status
+                }
+              />
             </button>
           ))}
         </div>
@@ -484,12 +570,22 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-text-secondary border-b border-theme-border">
-                  <th className="text-left py-1 px-2">Type</th>
-                  <th className="text-left py-1 px-2">Name</th>
-                  <th className="text-left py-1 px-2">Content</th>
+                  <th className="text-left py-1 px-2">
+                    {t("ddns.cloudflare.table.type", "Type")}
+                  </th>
+                  <th className="text-left py-1 px-2">
+                    {t("ddns.cloudflare.table.name", "Name")}
+                  </th>
+                  <th className="text-left py-1 px-2">
+                    {t("ddns.cloudflare.table.content", "Content")}
+                  </th>
                   <th className="text-left py-1 px-2">TTL</th>
-                  <th className="text-left py-1 px-2">Proxy</th>
-                  <th className="text-right py-1 px-2">Actions</th>
+                  <th className="text-left py-1 px-2">
+                    {t("ddns.cloudflare.table.proxy", "Proxy")}
+                  </th>
+                  <th className="text-right py-1 px-2">
+                    {t("ddns.cloudflare.table.actions", "Actions")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -502,7 +598,11 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                     <td className="py-1.5 px-2 font-mono truncate max-w-[200px]">
                       {r.content}
                     </td>
-                    <td className="py-1.5 px-2">{r.ttl === 1 ? "Auto" : r.ttl}</td>
+                    <td className="py-1.5 px-2">
+                      {r.ttl === 1
+                        ? t("ddns.cloudflare.autoTtl", "Auto")
+                        : r.ttl}
+                    </td>
                     <td className="py-1.5 px-2">
                       {r.proxied ? (
                         <Cloud size={14} className="text-warning" />
@@ -583,11 +683,15 @@ const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
             </span>
           </div>
           <div>
-            <span className="text-text-secondary">Service:</span>{" "}
+            <span className="text-text-secondary">
+              {t("ddns.ip.serviceLabel", "Service:")}
+            </span>{" "}
             {mgr.ipResult.service_used}
           </div>
           <div>
-            <span className="text-text-secondary">Latency:</span>{" "}
+            <span className="text-text-secondary">
+              {t("ddns.ip.latencyLabel", "Latency:")}
+            </span>{" "}
             {mgr.ipResult.latency_ms}ms
           </div>
         </div>
@@ -661,12 +765,19 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
           <div className="flex items-center gap-3">
             <StatusBadge
               status={mgr.schedulerStatus.running ? "success" : "error"}
-              label={mgr.schedulerStatus.running ? "Running" : "Stopped"}
+              label={
+                mgr.schedulerStatus.running
+                  ? t("ddns.scheduler.running", "Running")
+                  : t("ddns.scheduler.stopped", "Stopped")
+              }
             />
             <span className="text-xs text-text-secondary">
-              {mgr.schedulerStatus.active_entries} active /{" "}
-              {mgr.schedulerStatus.paused_entries} paused /{" "}
-              {mgr.schedulerStatus.total_entries} total
+              {mgr.schedulerStatus.active_entries}{" "}
+              {t("ddns.scheduler.active", "Active")} /{" "}
+              {mgr.schedulerStatus.paused_entries}{" "}
+              {t("ddns.scheduler.paused", "Paused")} /{" "}
+              {mgr.schedulerStatus.total_entries}{" "}
+              {t("ddns.scheduler.total", "total")}
             </span>
           </div>
 
@@ -675,10 +786,18 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-text-secondary border-b border-theme-border">
-                    <th className="text-left py-1 px-2">Profile</th>
-                    <th className="text-left py-1 px-2">Interval</th>
-                    <th className="text-left py-1 px-2">Next run</th>
-                    <th className="text-left py-1 px-2">Status</th>
+                    <th className="text-left py-1 px-2">
+                      {t("ddns.scheduler.profile", "Profile")}
+                    </th>
+                    <th className="text-left py-1 px-2">
+                      {t("ddns.scheduler.interval", "Interval")}
+                    </th>
+                    <th className="text-left py-1 px-2">
+                      {t("ddns.scheduler.nextRun", "Next Run")}
+                    </th>
+                    <th className="text-left py-1 px-2">
+                      {t("ddns.scheduler.status", "Status")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -697,7 +816,11 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                       <td className="py-1.5 px-2">
                         <StatusBadge
                           status={!e.paused ? "success" : "error"}
-                          label={e.paused ? "Paused" : "Active"}
+                          label={
+                            e.paused
+                              ? t("ddns.scheduler.pausedStatus", "Paused")
+                              : t("ddns.scheduler.activeStatus", "Active")
+                          }
                         />
                       </td>
                     </tr>
@@ -811,7 +934,10 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                     </span>
                   )}
                   {p.free_tier && (
-                    <span className="text-warning" title="Free tier">
+                    <span
+                      className="text-warning"
+                      title={t("ddns.config.freeTier", "Free tier")}
+                    >
                       ★
                     </span>
                   )}
@@ -863,7 +989,10 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
         </button>
         {confirmClear ? (
           <DangerConfirm
-            action="clear the audit log"
+            action={t(
+              "ddns.confirm.clearAuditAction",
+              "clear the audit log",
+            )}
             onConfirm={() => {
               mgr.clearAudit();
               setConfirmClear(false);
@@ -909,7 +1038,9 @@ const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
                 </div>
                 <div className="text-text-muted truncate">{e.detail}</div>
                 {e.error && (
-                  <div className="text-error truncate">Error: {e.error}</div>
+                  <div className="text-error truncate">
+                    {t("ddns.audit.errorPrefix", "Error:")} {e.error}
+                  </div>
                 )}
               </div>
             </div>

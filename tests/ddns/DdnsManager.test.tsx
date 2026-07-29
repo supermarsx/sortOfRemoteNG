@@ -4,9 +4,31 @@ import { DdnsManager } from "../../src/components/ddns/DdnsManager";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
+const i18nMock = vi.hoisted(() => ({
+  translationKeys: [] as string[],
+}));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key,
+    t: (
+      key: string,
+      fallbackOrOptions?: string | Record<string, unknown>,
+      values?: Record<string, unknown>,
+    ) => {
+      i18nMock.translationKeys.push(key);
+      const fallback =
+        typeof fallbackOrOptions === "string"
+          ? fallbackOrOptions
+          : typeof fallbackOrOptions?.defaultValue === "string"
+            ? fallbackOrOptions.defaultValue
+            : key;
+      const interpolation =
+        values ??
+        (typeof fallbackOrOptions === "object" ? fallbackOrOptions : undefined);
+      return fallback.replace(/\{\{(\w+)\}\}/g, (_match, token: string) =>
+        String(interpolation?.[token] ?? `{{${token}}}`),
+      );
+    },
   }),
 }));
 
@@ -130,6 +152,7 @@ const renderComponent = (props = {}) =>
 
 describe("DdnsManager", () => {
   beforeEach(() => {
+    i18nMock.translationKeys.length = 0;
     vi.clearAllMocks();
     hookReturn = makeHookReturn();
   });
@@ -279,6 +302,15 @@ describe("DdnsManager", () => {
       renderComponent();
       expect(screen.getByText("Home Cloudflare")).toBeInTheDocument();
       expect(screen.getByText("Cloudflare")).toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: "Select Home Cloudflare" }),
+      ).toBeInTheDocument();
+      expect(screen.getByTitle("Disable")).toBeInTheDocument();
+      expect(i18nMock.translationKeys).toContain(
+        "ddns.profiles.selectProfile",
+      );
+      expect(i18nMock.translationKeys).toContain("ddns.status.enabled");
+      expect(i18nMock.translationKeys).toContain("ddns.actions.disable");
     });
 
     it("should show Enabled badge for enabled profiles", () => {
@@ -461,7 +493,9 @@ describe("DdnsManager", () => {
       renderComponent();
       fireEvent.click(screen.getByText("SCHEDULER"));
       expect(screen.getByText("Running")).toBeInTheDocument();
-      expect(screen.getByText(/2 active/)).toBeInTheDocument();
+      expect(screen.getByText(/2 Active/)).toBeInTheDocument();
+      expect(screen.getByText(/1 Paused/)).toBeInTheDocument();
+      expect(screen.getByText("Next Run")).toBeInTheDocument();
     });
   });
 

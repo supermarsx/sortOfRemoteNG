@@ -16,6 +16,7 @@
 
 import React, { useMemo, useState } from "react";
 import { Copy, Database, Tags, ArrowRight, Server } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type {
   CloneSourceCatalogItem,
   ExportDatabaseOption,
@@ -103,6 +104,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
   onClearResult,
   onUnlockDatabase,
 }) => {
+  const { t } = useTranslation();
   const [openSections, setOpenSections] = useState({
     source: true,
     filter: false,
@@ -291,10 +293,21 @@ const CloneTab: React.FC<CloneTabProps> = ({
         id: chain.id,
         key: `proxy:${chain.id}`,
         name: chain.name,
-        kind: "Proxy chain",
-        description: `${chain.layers?.length ?? 0} ${
-          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
-        }`,
+        kind: t("importExport.clone.sidecars.proxyChainKind", {
+          defaultValue: "Proxy chain",
+        }),
+        description: t(
+          (chain.layers?.length ?? 0) === 1
+            ? "importExport.clone.sidecars.layerCount.one"
+            : "importExport.clone.sidecars.layerCount.other",
+          {
+            defaultValue:
+              (chain.layers?.length ?? 0) === 1
+                ? "{{count}} layer"
+                : "{{count}} layers",
+            count: chain.layers?.length ?? 0,
+          },
+        ),
         searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
           .filter(Boolean)
           .join(" "),
@@ -303,16 +316,27 @@ const CloneTab: React.FC<CloneTabProps> = ({
         id: chain.id,
         key: `tunnel:${chain.id}`,
         name: chain.name,
-        kind: "Tunnel chain",
-        description: `${chain.layers?.length ?? 0} ${
-          (chain.layers?.length ?? 0) === 1 ? "layer" : "layers"
-        }`,
+        kind: t("importExport.clone.sidecars.tunnelChainKind", {
+          defaultValue: "Tunnel chain",
+        }),
+        description: t(
+          (chain.layers?.length ?? 0) === 1
+            ? "importExport.clone.sidecars.layerCount.one"
+            : "importExport.clone.sidecars.layerCount.other",
+          {
+            defaultValue:
+              (chain.layers?.length ?? 0) === 1
+                ? "{{count}} layer"
+                : "{{count}} layers",
+            count: chain.layers?.length ?? 0,
+          },
+        ),
         searchText: [chain.name, chain.description, ...(chain.tags ?? [])]
           .filter(Boolean)
           .join(" "),
       })),
     ],
-    [proxyChains, tunnelChains],
+    [proxyChains, t, tunnelChains],
   );
 
   const vpnConnectionOptions: InclusionListOption[] = useMemo(
@@ -459,11 +483,24 @@ const CloneTab: React.FC<CloneTabProps> = ({
   const previewItemCount = previewCount + folderPreviewCount;
   const previewItemLabel =
     [
-      previewCount > 0 ? `${previewCount} connection(s)` : null,
-      folderPreviewCount > 0 ? `${folderPreviewCount} folder(s)` : null,
+      previewCount > 0
+        ? t("importExport.clone.preview.connectionCount", {
+            defaultValue: "{{count}} connection(s)",
+            count: previewCount,
+          })
+        : null,
+      folderPreviewCount > 0
+        ? t("importExport.clone.preview.folderCount", {
+            defaultValue: "{{count}} folder(s)",
+            count: folderPreviewCount,
+          })
+        : null,
     ]
       .filter(Boolean)
-      .join(", ") || "0 items";
+      .join(", ") ||
+    t("importExport.clone.preview.zeroItems", {
+      defaultValue: "0 items",
+    });
 
   // Validation gates for the action button.
   const targetOverlapsSource = targetDatabaseIds.some((id) =>
@@ -482,79 +519,146 @@ const CloneTab: React.FC<CloneTabProps> = ({
     (previewItemCount > 0 || sidecarPreviewCount > 0);
 
   const buttonLabel = (() => {
-    if (isCloning) return "Cloning…";
-    if (effectiveSourceIds.length === 0) return "Pick a source database";
-    if (targetDatabaseIds.length === 0) return "Pick a target database";
+    if (isCloning) {
+      return t("importExport.clone.action.cloning", {
+        defaultValue: "Cloning…",
+      });
+    }
+    if (effectiveSourceIds.length === 0) {
+      return t("importExport.clone.action.pickSource", {
+        defaultValue: "Pick a source database",
+      });
+    }
+    if (targetDatabaseIds.length === 0) {
+      return t("importExport.clone.action.pickTarget", {
+        defaultValue: "Pick a target database",
+      });
+    }
     if (previewItemCount === 0 && sidecarPreviewCount === 0) {
-      return "Nothing to clone with this filter";
+      return t("importExport.clone.action.nothingToClone", {
+        defaultValue: "Nothing to clone with this filter",
+      });
     }
-    if (targetOverlapsSource) return "Target overlaps with source";
-    if (!hasEnabledTarget) return "Unlock target database to clone";
-    if (targetDatabaseIds.length === 1) {
-      const targetName =
-        targetOptionsById.get(targetDatabaseIds[0])?.name ?? "target";
-      return `Clone ${
-        previewItemCount > 0
-          ? previewItemLabel
-          : `${sidecarPreviewCount} sidecar definition(s)`
-      } to ${targetName}`;
+    if (targetOverlapsSource) {
+      return t("importExport.clone.action.targetOverlap", {
+        defaultValue: "Target overlaps with source",
+      });
     }
-    return `Clone ${
+    if (!hasEnabledTarget) {
+      return t("importExport.clone.action.unlockTarget", {
+        defaultValue: "Unlock target database to clone",
+      });
+    }
+    const items =
       previewItemCount > 0
         ? previewItemLabel
-        : `${sidecarPreviewCount} sidecar definition(s)`
-    } to ${targetDatabaseIds.length} databases`;
+        : t("importExport.clone.action.sidecarDefinitionCount", {
+            defaultValue: "{{count}} sidecar definition(s)",
+            count: sidecarPreviewCount,
+          });
+    if (targetDatabaseIds.length === 1) {
+      const targetName =
+        targetOptionsById.get(targetDatabaseIds[0])?.name ??
+        t("importExport.clone.action.targetFallback", {
+          defaultValue: "target",
+        });
+      return t("importExport.clone.action.cloneToTarget", {
+        defaultValue: "Clone {{items}} to {{target}}",
+        items,
+        target: targetName,
+      });
+    }
+    return t("importExport.clone.action.cloneToDatabases", {
+      defaultValue: "Clone {{items}} to {{count}} databases",
+      items,
+      count: targetDatabaseIds.length,
+    });
   })();
 
   const wizardSteps = useMemo<WizardStep[]>(
     () => [
       {
         id: "template-source",
-        label: "Template & Source",
-        description:
-          "Start from a useful preset, then choose the source database collection.",
+        label: t("importExport.clone.steps.templateSource.label", {
+          defaultValue: "Template & Source",
+        }),
+        description: t(
+          "importExport.clone.steps.templateSource.description",
+          {
+            defaultValue:
+              "Start from a useful preset, then choose the source database collection.",
+          },
+        ),
       },
       {
         id: "target",
-        label: "Target",
-        description: "Choose one or more eligible destination databases.",
+        label: t("importExport.clone.steps.target.label", {
+          defaultValue: "Target",
+        }),
+        description: t("importExport.clone.steps.target.description", {
+          defaultValue: "Choose one or more eligible destination databases.",
+        }),
       },
       {
         id: "scope-content",
-        label: "Scope & Content",
-        description:
-          "Choose the connections, groups, tags, and sidecars to copy.",
+        label: t("importExport.clone.steps.scopeContent.label", {
+          defaultValue: "Scope & Content",
+        }),
+        description: t("importExport.clone.steps.scopeContent.description", {
+          defaultValue:
+            "Choose the connections, groups, tags, and sidecars to copy.",
+        }),
       },
       {
         id: "options",
-        label: "Options",
-        description:
-          "Set conflict handling, credentials, folders, and post-clone behavior.",
+        label: t("importExport.clone.steps.options.label", {
+          defaultValue: "Options",
+        }),
+        description: t("importExport.clone.steps.options.description", {
+          defaultValue:
+            "Set conflict handling, credentials, folders, and post-clone behavior.",
+        }),
       },
       {
         id: "review",
-        label: "Preview & Confirm",
-        description:
-          "Review the exact source, targets, and item counts before cloning.",
+        label: t("importExport.clone.steps.review.label", {
+          defaultValue: "Preview & Confirm",
+        }),
+        description: t("importExport.clone.steps.review.description", {
+          defaultValue:
+            "Review the exact source, targets, and item counts before cloning.",
+        }),
       },
     ],
-    [],
+    [t],
   );
 
   const validateWizardStep = React.useCallback(
     (stepId: string): string | undefined => {
       if (stepId === "template-source" && effectiveSourceIds.length === 0) {
-        return "Choose at least one unlocked source database before continuing.";
+        return t("importExport.clone.validation.sourceRequired", {
+          defaultValue:
+            "Choose at least one unlocked source database before continuing.",
+        });
       }
       if (stepId === "target") {
         if (targetDatabaseIds.length === 0) {
-          return "Choose at least one target database before continuing.";
+          return t("importExport.clone.validation.targetRequired", {
+            defaultValue:
+              "Choose at least one target database before continuing.",
+          });
         }
         if (targetOverlapsSource) {
-          return "A target database cannot also be one of the clone sources.";
+          return t("importExport.clone.validation.targetOverlap", {
+            defaultValue:
+              "A target database cannot also be one of the clone sources.",
+          });
         }
         if (!hasEnabledTarget) {
-          return "Unlock an eligible target database before continuing.";
+          return t("importExport.clone.validation.targetLocked", {
+            defaultValue:
+              "Unlock an eligible target database before continuing.",
+          });
         }
       }
       if (
@@ -563,7 +667,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
         previewItemCount === 0 &&
         sidecarPreviewCount === 0
       ) {
-        return "The current content filters leave nothing to clone.";
+        return t("importExport.clone.validation.contentEmpty", {
+          defaultValue: "The current content filters leave nothing to clone.",
+        });
       }
       return undefined;
     },
@@ -573,6 +679,7 @@ const CloneTab: React.FC<CloneTabProps> = ({
       isSourceCatalogLoading,
       previewItemCount,
       sidecarPreviewCount,
+      t,
       targetDatabaseIds.length,
       targetOverlapsSource,
     ],
@@ -631,14 +738,13 @@ const CloneTab: React.FC<CloneTabProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-          Clone
+          {t("importExport.clone.title", { defaultValue: "Clone" })}
         </h3>
         <p className="text-[var(--color-textSecondary)] mb-4">
-          Copy connections from one or more source databases into another
-          database (or several) in this app. Same filters as Export — but the
-          result lands in another database instead of a file. Proxy, VPN, and
-          tunnel-chain definitions can be copied with the clone and cloned
-          connections will point to the copied definitions.
+          {t("importExport.clone.description", {
+            defaultValue:
+              "Copy connections from one or more source databases into another database (or several) in this app. Same filters as Export — but the result lands in another database instead of a file. Proxy, VPN, and tunnel-chain definitions can be copied with the clone and cloned connections will point to the copied definitions.",
+          })}
         </p>
       </div>
 
@@ -668,33 +774,65 @@ const CloneTab: React.FC<CloneTabProps> = ({
           <div className="space-y-4">
             <div
               className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-              aria-label="Clone templates"
+              aria-label={t("importExport.clone.templates.ariaLabel", {
+                defaultValue: "Clone templates",
+              })}
             >
               <WizardTemplateCard
-                title="Exact copy"
-                description="Carry all connections, folder structure, credentials, VPN, proxy, and tunnel definitions. Duplicate conflicts safely."
+                title={t("importExport.clone.templates.exact.title", {
+                  defaultValue: "Exact copy",
+                })}
+                description={t(
+                  "importExport.clone.templates.exact.description",
+                  {
+                    defaultValue:
+                      "Carry all connections, folder structure, credentials, VPN, proxy, and tunnel definitions. Duplicate conflicts safely.",
+                  },
+                )}
                 onApply={() => applyCloneTemplate("exact")}
                 testId="clone-template-exact"
               />
               <WizardTemplateCard
-                title="Clean migration"
-                description="Copy connections and used folders without credentials or sidecars, rename conflicts, and tag the result as cloned."
+                title={t("importExport.clone.templates.clean.title", {
+                  defaultValue: "Clean migration",
+                })}
+                description={t(
+                  "importExport.clone.templates.clean.description",
+                  {
+                    defaultValue:
+                      "Copy connections and used folders without credentials or sidecars, rename conflicts, and tag the result as cloned.",
+                  },
+                )}
                 onApply={() => applyCloneTemplate("clean")}
                 testId="clone-template-clean"
               />
             </div>
             <AccordionSection
               id="clone-source"
-              title="Source"
-              description="Pick which database(s) to clone connections from."
+              title={t("importExport.clone.source.title", {
+                defaultValue: "Source",
+              })}
+              description={t("importExport.clone.source.description", {
+                defaultValue: "Pick which database(s) to clone connections from.",
+              })}
               icon={Database}
               open={openSections.source}
               onToggle={() => toggle("source")}
               dataTestId="clone-source-section"
               badge={
                 <span className="text-[var(--color-textMuted)]">
-                  {effectiveSourceIds.length}{" "}
-                  {effectiveSourceIds.length === 1 ? "database" : "databases"}
+                  {t(
+                    effectiveSourceIds.length === 1
+                      ? "importExport.clone.source.databaseCount.one"
+                      : "importExport.clone.source.databaseCount.other",
+                    {
+                      defaultValue:
+                        effectiveSourceIds.length === 1
+                          ? "{{count}} database"
+                          : "{{count}} databases",
+                      count: effectiveSourceIds.length,
+                    },
+                  )}
                 </span>
               }
             >
@@ -707,24 +845,51 @@ const CloneTab: React.FC<CloneTabProps> = ({
               <div
                 className="grid grid-cols-1 gap-2 sm:grid-cols-3"
                 role="radiogroup"
-                aria-label="Clone source scope"
+                aria-label={t("importExport.clone.source.scopeAriaLabel", {
+                  defaultValue: "Clone source scope",
+                })}
               >
                 {(
                   [
                     {
                       value: "current",
-                      label: "Current database",
-                      description: "Just the database that's open right now.",
+                      label: t(
+                        "importExport.clone.source.modes.current.label",
+                        { defaultValue: "Current database" },
+                      ),
+                      description: t(
+                        "importExport.clone.source.modes.current.description",
+                        {
+                          defaultValue:
+                            "Just the database that's open right now.",
+                        },
+                      ),
                     },
                     {
                       value: "selected",
-                      label: "Selected databases",
-                      description: "Pick one or more from the list below.",
+                      label: t(
+                        "importExport.clone.source.modes.selected.label",
+                        { defaultValue: "Selected databases" },
+                      ),
+                      description: t(
+                        "importExport.clone.source.modes.selected.description",
+                        {
+                          defaultValue:
+                            "Pick one or more from the list below.",
+                        },
+                      ),
                     },
                     {
                       value: "all",
-                      label: "All databases",
-                      description: "Every unlocked exportable database.",
+                      label: t("importExport.clone.source.modes.all.label", {
+                        defaultValue: "All databases",
+                      }),
+                      description: t(
+                        "importExport.clone.source.modes.all.description",
+                        {
+                          defaultValue: "Every unlocked exportable database.",
+                        },
+                      ),
                     },
                   ] as Array<{
                     value: ExportScopeMode;
@@ -761,7 +926,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                 <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
                   {databaseOptions.length === 0 ? (
                     <p className="text-xs text-[var(--color-textMuted)]">
-                      No databases available.
+                      {t("importExport.clone.source.noDatabases", {
+                        defaultValue: "No databases available.",
+                      })}
                     </p>
                   ) : (
                     databaseOptions.map((option) => (
@@ -807,8 +974,13 @@ const CloneTab: React.FC<CloneTabProps> = ({
         {wizard.currentStepId === "scope-content" && (
           <AccordionSection
             id="clone-filter"
-            title="Filter"
-            description="Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN."
+            title={t("importExport.clone.filter.title", {
+              defaultValue: "Filter",
+            })}
+            description={t("importExport.clone.filter.description", {
+              defaultValue:
+                "Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN.",
+            })}
             icon={Tags}
             open={openSections.filter}
             onToggle={() => toggle("filter")}
@@ -816,7 +988,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
             badge={
               <span className="text-[var(--color-textMuted)]">
                 {isSourceCatalogLoading
-                  ? "loading"
+                  ? t("importExport.clone.filter.loading", {
+                      defaultValue: "loading",
+                    })
                   : `${previewItemCount} of ${sourceCatalog.length}`}
               </span>
             }
@@ -830,7 +1004,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     updateInclusion({ includeFolderItems: e.target.checked })
                   }
                 />
-                Carry folder structure across
+                {t("importExport.clone.filter.carryFolders", {
+                  defaultValue: "Carry folder structure across",
+                })}
               </label>
               <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
                 <input
@@ -841,7 +1017,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     updateInclusion({ includeEmptyFolders: e.target.checked })
                   }
                 />
-                Include empty folders
+                {t("importExport.clone.filter.includeEmptyFolders", {
+                  defaultValue: "Include empty folders",
+                })}
               </label>
               <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
                 <input
@@ -851,7 +1029,10 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     updateInclusion({ includeTunnelChains: e.target.checked })
                   }
                 />
-                Clone proxy profiles, proxy chains, and tunnel chains
+                {t("importExport.clone.filter.includeChains", {
+                  defaultValue:
+                    "Clone proxy profiles, proxy chains, and tunnel chains",
+                })}
               </label>
               <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
                 <input
@@ -861,7 +1042,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     updateInclusion({ includeVpnData: e.target.checked })
                   }
                 />
-                Clone VPN connections
+                {t("importExport.clone.filter.includeVpn", {
+                  defaultValue: "Clone VPN connections",
+                })}
               </label>
               <InclusionProtocolFilter
                 inclusion={inclusion}
@@ -872,7 +1055,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
               />
               {isSourceCatalogLoading && (
                 <p className="text-xs text-[var(--color-textMuted)]">
-                  Loading source database items...
+                  {t("importExport.clone.filter.loadingItems", {
+                    defaultValue: "Loading source database items...",
+                  })}
                 </p>
               )}
               <InclusionItemPickers
@@ -915,8 +1100,20 @@ const CloneTab: React.FC<CloneTabProps> = ({
                   inclusion.includeVpnData ? vpnConnectionOptions : []
                 }
                 testIdPrefix="clone"
-                connectionEmptyLabel="No source connections are available for the selected source scope."
-                folderEmptyLabel="No source folders are available for the selected source scope."
+                connectionEmptyLabel={t(
+                  "importExport.clone.filter.connectionsEmpty",
+                  {
+                    defaultValue:
+                      "No source connections are available for the selected source scope.",
+                  },
+                )}
+                folderEmptyLabel={t(
+                  "importExport.clone.filter.foldersEmpty",
+                  {
+                    defaultValue:
+                      "No source folders are available for the selected source scope.",
+                  },
+                )}
               />
             </div>
           </AccordionSection>
@@ -929,13 +1126,23 @@ const CloneTab: React.FC<CloneTabProps> = ({
             id="clone-destination"
             title={
               wizard.currentStepId === "target"
-                ? "Target databases"
-                : "Clone options"
+                ? t("importExport.clone.destination.targetTitle", {
+                    defaultValue: "Target databases",
+                  })
+                : t("importExport.clone.destination.optionsTitle", {
+                    defaultValue: "Clone options",
+                  })
             }
             description={
               wizard.currentStepId === "target"
-                ? "Pick where the cloned connections should land."
-                : "Choose how collisions, folders, credentials, and navigation are handled."
+                ? t("importExport.clone.destination.targetDescription", {
+                    defaultValue:
+                      "Pick where the cloned connections should land.",
+                  })
+                : t("importExport.clone.destination.optionsDescription", {
+                    defaultValue:
+                      "Choose how collisions, folders, credentials, and navigation are handled.",
+                  })
             }
             icon={ArrowRight}
             open={openSections.destination}
@@ -949,23 +1156,35 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     : "text-warning"
                 }
               >
-                {targetDatabaseIds.length}{" "}
-                {targetDatabaseIds.length === 1
-                  ? "target database"
-                  : "target databases"}
+                {t(
+                  targetDatabaseIds.length === 1
+                    ? "importExport.clone.destination.targetCount.one"
+                    : "importExport.clone.destination.targetCount.other",
+                  {
+                    defaultValue:
+                      targetDatabaseIds.length === 1
+                        ? "{{count}} target database"
+                        : "{{count}} target databases",
+                    count: targetDatabaseIds.length,
+                  },
+                )}
               </span>
             }
           >
             {wizard.currentStepId === "target" && (
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1.5">
-                  Target databases
+                  {t("importExport.clone.destination.targetTitle", {
+                    defaultValue: "Target databases",
+                  })}
                 </label>
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {targetOptions.length === 0 ? (
                     <p className="text-xs text-[var(--color-textMuted)]">
-                      No eligible target databases. Configure another database
-                      first, or pick fewer sources.
+                      {t("importExport.clone.destination.noEligibleTargets", {
+                        defaultValue:
+                          "No eligible target databases. Configure another database first, or pick fewer sources.",
+                      })}
                     </p>
                   ) : (
                     targetOptions.map((option) => (
@@ -1010,7 +1229,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     htmlFor="clone-conflict-policy"
                     className="block text-xs text-[var(--color-textSecondary)]"
                   >
-                    Conflict policy
+                    {t("importExport.clone.options.conflictPolicy", {
+                      defaultValue: "Conflict policy",
+                    })}
                   </label>
                   <Select
                     value={conflictPolicy}
@@ -1022,19 +1243,38 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     options={[
                       {
                         value: "duplicate",
-                        label: "Duplicate — write with fresh ids on collision",
+                        label: t(
+                          "importExport.clone.options.conflict.duplicate",
+                          {
+                            defaultValue:
+                              "Duplicate — write with fresh ids on collision",
+                          },
+                        ),
                       },
                       {
                         value: "rename",
-                        label: "Rename — suffix every conflict, keep both",
+                        label: t(
+                          "importExport.clone.options.conflict.rename",
+                          {
+                            defaultValue:
+                              "Rename — suffix every conflict, keep both",
+                          },
+                        ),
                       },
                       {
                         value: "skip",
-                        label: "Skip — drop colliding connections",
+                        label: t("importExport.clone.options.conflict.skip", {
+                          defaultValue: "Skip — drop colliding connections",
+                        }),
                       },
                     ]}
                     variant="form"
-                    aria-label="Conflict policy"
+                    aria-label={t(
+                      "importExport.clone.options.conflictPolicy",
+                      {
+                        defaultValue: "Conflict policy",
+                      },
+                    )}
                   />
                 </div>
 
@@ -1043,13 +1283,20 @@ const CloneTab: React.FC<CloneTabProps> = ({
                     htmlFor="clone-add-tags"
                     className="block text-xs text-[var(--color-textSecondary)]"
                   >
-                    Add tags to cloned connections
+                    {t("importExport.clone.options.addTags", {
+                      defaultValue: "Add tags to cloned connections",
+                    })}
                   </label>
                   <input
                     id="clone-add-tags"
                     value={addTags}
                     onChange={(e) => setAddTags(e.target.value)}
-                    placeholder="comma-separated tags"
+                    placeholder={t(
+                      "importExport.clone.options.tagsPlaceholder",
+                      {
+                        defaultValue: "comma-separated tags",
+                      },
+                    )}
                     className="sor-form-input-xs w-full"
                   />
                 </div>
@@ -1061,7 +1308,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                       checked={preserveFolders}
                       onChange={(e) => setPreserveFolders(e.target.checked)}
                     />
-                    Preserve folders
+                    {t("importExport.clone.options.preserveFolders", {
+                      defaultValue: "Preserve folders",
+                    })}
                   </label>
                   <label className="inline-flex items-center gap-2">
                     <input
@@ -1069,7 +1318,9 @@ const CloneTab: React.FC<CloneTabProps> = ({
                       checked={includeCredentials}
                       onChange={(e) => setIncludeCredentials(e.target.checked)}
                     />
-                    Include credentials
+                    {t("importExport.clone.options.includeCredentials", {
+                      defaultValue: "Include credentials",
+                    })}
                   </label>
                   <label className="inline-flex items-center gap-2 sm:col-span-2">
                     <input
@@ -1079,15 +1330,18 @@ const CloneTab: React.FC<CloneTabProps> = ({
                         setSwitchToTargetAfterClone(e.target.checked)
                       }
                     />
-                    Switch to the first target database after the clone finishes
+                    {t("importExport.clone.options.switchAfterClone", {
+                      defaultValue:
+                        "Switch to the first target database after the clone finishes",
+                    })}
                   </label>
                 </div>
                 {inclusion.includeVpnData && !includeCredentials && (
                   <p className="text-xs text-warning">
-                    VPN profiles cannot be cloned without their private
-                    material. They will be omitted, affected associations will
-                    be removed, and dependent chains will be skipped with
-                    warnings.
+                    {t("importExport.clone.options.vpnCredentialsWarning", {
+                      defaultValue:
+                        "VPN profiles cannot be cloned without their private material. They will be omitted, affected associations will be removed, and dependent chains will be skipped with warnings.",
+                    })}
                   </p>
                 )}
               </div>
@@ -1099,8 +1353,12 @@ const CloneTab: React.FC<CloneTabProps> = ({
         {wizard.currentStepId === "review" && (
           <AccordionSection
             id="clone-preview"
-            title="Preview"
-            description="What this clone will land on each target."
+            title={t("importExport.clone.preview.title", {
+              defaultValue: "Preview",
+            })}
+            description={t("importExport.clone.preview.description", {
+              defaultValue: "What this clone will land on each target.",
+            })}
             icon={Server}
             open={openSections.preview}
             onToggle={() => toggle("preview")}
@@ -1113,9 +1371,18 @@ const CloneTab: React.FC<CloneTabProps> = ({
           >
             <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs text-[var(--color-textSecondary)] space-y-1">
               <div>
-                <span className="text-[var(--color-text)]">Source</span>:{" "}
+                <span className="text-[var(--color-text)]">
+                  {t("importExport.clone.source.title", {
+                    defaultValue: "Source",
+                  })}
+                </span>
+                :{" "}
                 {effectiveSourceIds.length === 0 ? (
-                  <span className="text-warning">none</span>
+                  <span className="text-warning">
+                    {t("importExport.clone.preview.none", {
+                      defaultValue: "none",
+                    })}
+                  </span>
                 ) : (
                   effectiveSourceIds
                     .map((id) => targetOptionsById.get(id)?.name ?? id)
@@ -1123,9 +1390,18 @@ const CloneTab: React.FC<CloneTabProps> = ({
                 )}
               </div>
               <div>
-                <span className="text-[var(--color-text)]">Target(s)</span>:{" "}
+                <span className="text-[var(--color-text)]">
+                  {t("importExport.clone.preview.targetsLabel", {
+                    defaultValue: "Target(s)",
+                  })}
+                </span>
+                :{" "}
                 {targetDatabaseIds.length === 0 ? (
-                  <span className="text-warning">none</span>
+                  <span className="text-warning">
+                    {t("importExport.clone.preview.none", {
+                      defaultValue: "none",
+                    })}
+                  </span>
                 ) : (
                   targetDatabaseIds
                     .map((id) => targetOptionsById.get(id)?.name ?? id)
@@ -1133,12 +1409,25 @@ const CloneTab: React.FC<CloneTabProps> = ({
                 )}
               </div>
               <div>
-                <span className="text-[var(--color-text)]">Filter result</span>:{" "}
+                <span className="text-[var(--color-text)]">
+                  {t("importExport.clone.preview.filterResultLabel", {
+                    defaultValue: "Filter result",
+                  })}
+                </span>
+                :{" "}
                 {previewItemLabel}
               </div>
               <div>
-                <span className="text-[var(--color-text)]">Sidecars</span>:{" "}
-                {sidecarPreviewCount} definition(s)
+                <span className="text-[var(--color-text)]">
+                  {t("importExport.clone.preview.sidecarsLabel", {
+                    defaultValue: "Sidecars",
+                  })}
+                </span>
+                :{" "}
+                {t("importExport.clone.preview.definitionCount", {
+                  defaultValue: "{{count}} definition(s)",
+                  count: sidecarPreviewCount,
+                })}
               </div>
             </div>
 
@@ -1152,38 +1441,64 @@ const CloneTab: React.FC<CloneTabProps> = ({
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-medium">
-                    {cloneResult.success ? "Clone complete" : "Clone failed"}
+                    {cloneResult.success
+                      ? t("importExport.clone.result.complete", {
+                          defaultValue: "Clone complete",
+                        })
+                      : t("importExport.clone.result.failed", {
+                          defaultValue: "Clone failed",
+                        })}
                   </span>
                   <button
                     type="button"
                     onClick={onClearResult}
                     className="text-[10px] underline opacity-70 hover:opacity-100"
                   >
-                    Dismiss
+                    {t("importExport.clone.result.dismiss", {
+                      defaultValue: "Dismiss",
+                    })}
                   </button>
                 </div>
                 <ul className="space-y-0.5">
                   {cloneResult.perTarget.map((row) => (
                     <li key={row.databaseId}>
-                      {row.databaseName}: {row.cloned} cloned
-                      {row.error ? ` — error: ${row.error}` : ""}
+                      {row.databaseName}:{" "}
+                      {t("importExport.clone.result.clonedCount", {
+                        defaultValue: "{{count}} cloned",
+                        count: row.cloned,
+                      })}
+                      {row.error
+                        ? t("importExport.clone.result.errorSuffix", {
+                            defaultValue: " — error: {{error}}",
+                            error: row.error,
+                          })
+                        : ""}
                     </li>
                   ))}
                 </ul>
                 {(cloneResult.renamed > 0 || cloneResult.skipped > 0) && (
                   <div className="mt-1 text-[10px] opacity-80">
                     {cloneResult.renamed > 0 &&
-                      `${cloneResult.renamed} renamed`}
+                      t("importExport.clone.result.renamedCount", {
+                        defaultValue: "{{count}} renamed",
+                        count: cloneResult.renamed,
+                      })}
                     {cloneResult.renamed > 0 && cloneResult.skipped > 0 && ", "}
                     {cloneResult.skipped > 0 &&
-                      `${cloneResult.skipped} skipped`}
+                      t("importExport.clone.result.skippedCount", {
+                        defaultValue: "{{count}} skipped",
+                        count: cloneResult.skipped,
+                      })}
                   </div>
                 )}
                 {cloneResult.sidecarsCloned &&
                   cloneResult.sidecarsCloned.total > 0 && (
                     <div className="mt-1 text-[10px] opacity-80">
-                      {cloneResult.sidecarsCloned.total} sidecar definition(s)
-                      cloned
+                      {t("importExport.clone.result.sidecarsCloned", {
+                        defaultValue:
+                          "{{count}} sidecar definition(s) cloned",
+                        count: cloneResult.sidecarsCloned.total,
+                      })}
                     </div>
                   )}
                 {cloneResult.warnings && cloneResult.warnings.length > 0 && (

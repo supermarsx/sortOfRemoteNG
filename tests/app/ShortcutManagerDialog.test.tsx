@@ -3,6 +3,10 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ShortcutManagerDialog } from '../../src/components/app/ShortcutManagerDialog';
 import { ConnectionProvider } from '../../src/contexts/ConnectionProvider';
 
+const i18nMock = vi.hoisted(() => ({
+  keys: [] as string[],
+}));
+
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -11,10 +15,25 @@ vi.mock('@tauri-apps/api/core', () => ({
 // Mock i18n
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string | Record<string, unknown>) => {
-      if (typeof fallback === 'string') return fallback;
-      if (typeof fallback === 'object' && fallback.defaultValue) return fallback.defaultValue;
-      return key;
+    t: (
+      key: string,
+      fallback?: string | Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ) => {
+      i18nMock.keys.push(key);
+      const values =
+        typeof fallback === 'object' && fallback !== null
+          ? fallback
+          : options;
+      const value =
+        typeof fallback === 'string'
+          ? fallback
+          : typeof fallback?.defaultValue === 'string'
+            ? fallback.defaultValue
+            : key;
+      return value.replace(/\{\{(\w+)\}\}/g, (token, name: string) =>
+        values?.[name] === undefined ? token : String(values[name]),
+      );
     },
   }),
 }));
@@ -36,6 +55,7 @@ import { invoke } from '@tauri-apps/api/core';
 describe('ShortcutManagerDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    i18nMock.keys.length = 0;
     localStorage.clear();
     
     // Setup default invoke responses
@@ -113,6 +133,7 @@ describe('ShortcutManagerDialog', () => {
     renderWithProvider({ isOpen: true, onClose: () => {} });
     // With no shortcuts, shows "0 shortcuts"
     expect(screen.getByText(/0 shortcuts/i)).toBeInTheDocument();
+    expect(i18nMock.keys).toContain('shortcuts.shortcutCount.other');
   });
 
   it('shows create hint in empty state', () => {
@@ -123,5 +144,6 @@ describe('ShortcutManagerDialog', () => {
   it('has refresh button', () => {
     renderWithProvider({ isOpen: true, onClose: () => {} });
     expect(screen.getByText('Refresh')).toBeInTheDocument();
+    expect(i18nMock.keys).toContain('shortcuts.refreshList');
   });
 });

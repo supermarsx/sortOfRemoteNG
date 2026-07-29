@@ -5,7 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import CloneTab from "../../src/components/ImportExport/CloneTab";
 import type {
@@ -14,11 +14,31 @@ import type {
   ExportInclusionConfig,
 } from "../../src/components/ImportExport/types";
 
+const i18nMock = vi.hoisted(() => {
+  const translationKeys: string[] = [];
+  return {
+    translationKeys,
+    t: (
+      key: string,
+      options?: string | Record<string, unknown>,
+    ): string => {
+      translationKeys.push(key);
+      const fallback =
+        typeof options === "string"
+          ? options
+          : typeof options?.defaultValue === "string"
+            ? options.defaultValue
+            : key;
+      const interpolation = typeof options === "object" ? options : undefined;
+      return fallback.replace(/\{\{(\w+)\}\}/g, (_match, token: string) =>
+        String(interpolation?.[token] ?? `{{${token}}}`),
+      );
+    },
+  };
+});
+
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
-  }),
+  useTranslation: () => ({ t: i18nMock.t }),
 }));
 
 const proxyCollectionMocks = vi.hoisted(() => ({
@@ -243,6 +263,28 @@ function advanceLatestCloneTo(stepId: string) {
 }
 
 describe("CloneTab", () => {
+  beforeEach(() => {
+    i18nMock.translationKeys.length = 0;
+  });
+
+  it("routes the clone wizard copy through translation keys with exact fallbacks", () => {
+    renderCloneTab();
+
+    expect(
+      screen.getByRole("heading", { name: "Clone" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Clone templates")).toBeInTheDocument();
+    expect(i18nMock.translationKeys).toEqual(
+      expect.arrayContaining([
+        "importExport.clone.title",
+        "importExport.clone.templates.ariaLabel",
+        "importExport.clone.templates.exact.title",
+        "importExport.clone.steps.templateSource.label",
+        "importExport.clone.source.scopeAriaLabel",
+      ]),
+    );
+  });
+
   it("uses the transport-aware protocol label in clone previews", () => {
     renderCloneTab({
       sourceCatalog: [

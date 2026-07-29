@@ -5,6 +5,23 @@ import EventLogPanel from "../../src/components/windows/panels/EventLogPanel";
 import type { WinmgmtContext } from "../../src/components/windows/WinmgmtWrapper";
 import type { EventLogEntry, EventLogFilter, EventLogInfo } from "../../src/types/windows/winmgmt";
 
+const { eventLogT } = vi.hoisted(() => ({
+  eventLogT: vi.fn(
+    (
+      _key: string,
+      fallback: string,
+      values?: Record<string, unknown>,
+    ) =>
+      fallback.replace(/{{(\w+)}}/g, (_match, name: string) =>
+        String(values?.[name] ?? `{{${name}}}`),
+      ),
+  ),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: eventLogT }),
+}));
+
 const mockLogs: EventLogInfo[] = [
   {
     name: "Application",
@@ -55,8 +72,8 @@ const mockEntries: EventLogEntry[] = [
     eventIdentifier: 1014,
     eventType: "warning",
     sourceName: "DNS Client Events",
-    category: null,
-    categoryString: null,
+    category: 1,
+    categoryString: "Network",
     timeGenerated: "2026-03-30T11:00:00.000Z",
     timeWritten: "2026-03-30T11:00:00.000Z",
     message: "DNS name resolution for host timed out",
@@ -205,4 +222,56 @@ describe("EventLogPanel", () => {
       expect(filter.endTime).not.toBeNull();
     });
   });
+  it("routes every EventLogPanel manifest candidate through translation fallbacks", async () => {
+    const cmd = createCommandMock();
+    const ctx: WinmgmtContext = {
+      sessionId: "session-1",
+      hostname: "win-host",
+      cmd: cmd as WinmgmtContext["cmd"],
+    };
+
+    render(<EventLogPanel ctx={ctx} />);
+    await screen.findByRole("table", { name: /Windows event log entries/i });
+    fireEvent.click(screen.getByText("DNS Client Events"));
+
+    const expectedCalls = [
+      ["windows.eventLog.selectLog", "Select event log"],
+      ["windows.eventLog.filterLevel", "Filter event level"],
+      ["windows.eventLog.levels.all", "All Levels"],
+      ["windows.eventLog.levels.error", "Error"],
+      ["windows.eventLog.levels.warning", "Warning"],
+      ["windows.eventLog.levels.information", "Information"],
+      ["windows.eventLog.levels.auditSuccess", "Audit Success"],
+      ["windows.eventLog.levels.auditFailure", "Audit Failure"],
+      ["windows.eventLog.filterMessages", "Filter messages…"],
+      ["windows.eventLog.searchMessages", "Search event messages"],
+      ["windows.eventLog.refreshEvents", "Refresh events"],
+      ["windows.eventLog.refresh", "Refresh"],
+      ["windows.eventLog.exportEventsCsv", "Export events to CSV"],
+      ["windows.eventLog.exportCsv", "Export CSV"],
+      ["windows.eventLog.startDateFilter", "Start date filter"],
+      ["windows.eventLog.rangeTo", "to"],
+      ["windows.eventLog.endDateFilter", "End date filter"],
+      ["windows.eventLog.applyFilters", "Apply Filters"],
+      ["windows.eventLog.clear", "Clear"],
+      ["windows.eventLog.tableLabel", "Windows event log entries"],
+      ["windows.eventLog.tableCaption", "Event log entries filtered by log name, level, and message search"],
+      ["windows.eventLog.columns.time", "Time"],
+      ["windows.eventLog.columns.source", "Source"],
+      ["windows.eventLog.columns.eventId", "Event ID"],
+      ["windows.eventLog.columns.message", "Message"],
+      ["windows.eventLog.detail.log", "Log"],
+      ["windows.eventLog.columns.eventId", "Event ID"],
+      ["windows.eventLog.columns.time", "Time"],
+      ["windows.eventLog.detail.computer", "Computer"],
+      ["windows.eventLog.detail.user", "User"],
+      ["windows.eventLog.detail.category", "Category"],
+      ["windows.eventLog.columns.message", "Message"],
+    ] as const;
+    expect(expectedCalls).toHaveLength(32);
+    for (const [key, fallback] of expectedCalls) {
+      expect(eventLogT).toHaveBeenCalledWith(key, fallback);
+    }
+  });
+
 });

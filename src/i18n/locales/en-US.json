@@ -325,6 +325,234 @@
     "connect": {
       "label": "Connect",
       "title": "Save changes and connect to this connection"
+    },
+    "header": {
+      "newTitle": "New Connection",
+      "editTitle": "Edit Connection",
+      "newSubtitle": "Add a new server or service",
+      "editing": "Editing \"{{name}}\"",
+      "unnamedConnection": "connection",
+      "saving": "Saving...",
+      "saved": "Saved",
+      "resetConfirm": "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
+      "resetTitle": "Reset to Defaults",
+      "reset": "Reset",
+      "create": "Create",
+      "save": "Save"
+    },
+    "quickToggles": {
+      "folderGroup": "Folder/Group",
+      "favorite": "Favorite"
+    },
+    "name": {
+      "folderLabel": "Folder Name",
+      "connectionLabel": "Connection Name",
+      "folderPlaceholder": "My Servers",
+      "connectionPlaceholder": "Production Server"
+    },
+    "protocolPicker": {
+      "select": "Select",
+      "savedManagementNoSession": "Saved management identity — no direct session",
+      "unavailableSaved": "Unavailable saved protocol",
+      "label": "Protocol",
+      "selectTitle": "Select protocol",
+      "searchAria": "Search protocols",
+      "searchPlaceholder": "Search protocols and integrations…",
+      "clearSearch": "Clear protocol search",
+      "availableAria": "Available protocols",
+      "emptyTitle": "No protocols found",
+      "emptyHint": "Try a protocol name or description."
+    },
+    "integration": {
+      "savedInstance": "Saved Instance",
+      "loadingSavedInstances": "Loading saved instances…",
+      "newPanelManagedInstance": "New / panel-managed instance",
+      "loadingInstance": "{{name}} (loading…)",
+      "unavailableInstance": "Unavailable instance ({{id}})",
+      "instanceName": "Instance Name",
+      "exchangeNamePlaceholder": "Corporate Exchange",
+      "environment": "Environment",
+      "exchangeOnline": "Exchange Online",
+      "exchangeServer": "Exchange Server",
+      "hybrid": "Hybrid",
+      "timeoutSeconds": "Timeout (s)",
+      "tenantId": "Tenant ID",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "clientSecretPlaceholder": "client secret",
+      "onlineUsername": "Online Username",
+      "organization": "Organization",
+      "server": "Server",
+      "port": "Port",
+      "onPremUsername": "On-prem Username",
+      "password": "Password",
+      "passwordPlaceholder": "password",
+      "authMethod": "Auth Method",
+      "useSsl": "Use SSL",
+      "skipCertificate": "Skip Cert",
+      "instanceNamePlaceholder": "Production",
+      "host": "Host",
+      "baseUrl": "Base URL",
+      "authToken": "Auth Token",
+      "authTokenPlaceholder": "token",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "api key",
+      "username": "Username",
+      "tlsVerify": "TLS Verify"
+    },
+    "connectionFields": {
+      "hostnameOrIp": "Hostname / IP",
+      "port": "Port",
+      "username": "Username",
+      "usernameHelp": {
+        "rdp": "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).",
+        "winrm": "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below.",
+        "vnc": "VNC authentication usually only needs a password, not a username.",
+        "default": "Username for authentication with the remote service."
+      },
+      "optionalPlaceholder": "(optional)",
+      "password": "Password",
+      "passwordHelp": {
+        "rdp": "Windows account password. Sent via CredSSP/NLA during the RDP handshake.",
+        "winrm": "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality.",
+        "vnc": "VNC server password. Most VNC servers only use password authentication.",
+        "default": "Password for authentication with the remote service."
+      }
+    },
+    "footer": {
+      "press": "Press",
+      "toSave": "to save",
+      "toCancel": "to cancel",
+      "autoSaveEnabled": "Auto-save enabled"
+    },
+    "tabs": {
+      "ariaLabel": "Connection editor sections"
+    },
+    "protocolOptions": {
+      "idrac": {
+        "label": "Dell iDRAC",
+        "description": "Dell server out-of-band management"
+      },
+      "ilo": {
+        "label": "HPE iLO",
+        "description": "HPE server out-of-band management"
+      },
+      "lenovo": {
+        "label": "Lenovo XClarity",
+        "description": "Lenovo server BMC management"
+      },
+      "supermicro": {
+        "label": "Supermicro BMC",
+        "description": "Supermicro server BMC management"
+      },
+      "gcp": {
+        "label": "Google Cloud",
+        "description": "Google Cloud project session"
+      },
+      "azure": {
+        "label": "Microsoft Azure",
+        "description": "Azure subscription session"
+      },
+      "ibm-csp": {
+        "label": "IBM Cloud",
+        "description": "IBM Cloud account session"
+      },
+      "digital-ocean": {
+        "label": "DigitalOcean",
+        "description": "DigitalOcean account session"
+      },
+      "heroku": {
+        "label": "Heroku",
+        "description": "Heroku account session"
+      },
+      "scaleway": {
+        "label": "Scaleway",
+        "description": "Scaleway account session"
+      },
+      "linode": {
+        "label": "Linode",
+        "description": "Linode account session"
+      },
+      "ovhcloud": {
+        "label": "OVHcloud",
+        "description": "OVHcloud account session"
+      }
+    },
+    "cloud": {
+      "apiEndpointOverride": {
+        "label": "API Endpoint Override"
+      },
+      "apiKey": {
+        "label": "API Key"
+      },
+      "apiToken": {
+        "label": "API Token"
+      },
+      "appName": {
+        "label": "App Name"
+      },
+      "azure": {
+        "clientId": {
+          "label": "Client ID"
+        },
+        "clientSecret": {
+          "label": "Client Secret"
+        },
+        "defaultRegion": {
+          "label": "Default Region"
+        },
+        "defaultResourceGroup": {
+          "label": "Default Resource Group"
+        },
+        "subscriptionId": {
+          "label": "Subscription ID"
+        },
+        "tenantId": {
+          "label": "Tenant ID"
+        }
+      },
+      "gcp": {
+        "projectId": {
+          "label": "Project ID"
+        },
+        "scopes": {
+          "label": "OAuth Scopes"
+        },
+        "serviceAccountJson": {
+          "label": "Service Account JSON"
+        }
+      },
+      "organizationId": {
+        "label": "Organization ID"
+      },
+      "ovh": {
+        "apiKey": {
+          "label": "OVHcloud API Key"
+        },
+        "appSecret": {
+          "label": "Application Secret"
+        },
+        "consumerKey": {
+          "label": "Consumer Key"
+        },
+        "incomplete": "The OVHcloud credential bundle is incomplete. Enter the API key, application secret, and consumer key before connecting.",
+        "malformed": "The saved OVHcloud credential bundle is malformed. Its raw value remains masked; enter all three credentials to replace it safely."
+      },
+      "projectName": {
+        "label": "Project Name"
+      },
+      "region": {
+        "label": "Region"
+      },
+      "resourceGroup": {
+        "label": "Resource Group"
+      },
+      "serviceId": {
+        "label": "Service ID"
+      },
+      "zone": {
+        "label": "Zone"
+      }
     }
   },
   "session": {
@@ -337,7 +565,60 @@
     "retry": "Retry Connection",
     "close": "Close Session",
     "fullscreen": "Fullscreen",
-    "exitFullscreen": "Exit Fullscreen"
+    "exitFullscreen": "Exit Fullscreen",
+    "tabLayout": {
+      "clickToFocus": "Click to focus",
+      "counters": {
+        "integrationsOne": "{{count}} integration",
+        "integrationsOther": "{{count}} integrations",
+        "panelsOne": "{{count}} panel",
+        "panelsOther": "{{count}} panels",
+        "sessionsOne": "{{count}} session",
+        "sessionsOther": "{{count}} sessions",
+        "toolsOne": "{{count}} tool",
+        "toolsOther": "{{count}} tools"
+      },
+      "customGrid": {
+        "applyLayout": "Apply Layout",
+        "buttonTitle": "Custom grid layout",
+        "columns": "Columns",
+        "filledSuffix": "filled ·",
+        "rows": "Rows",
+        "sessionOne": "session",
+        "sessionOther": "sessions",
+        "tilesSuffix": "tiles ·",
+        "title": "Custom Grid Layout"
+      },
+      "hiddenLabel": "hidden",
+      "hiddenMenuTitle": "Hidden sessions — click to promote",
+      "hiddenTooltip": "{{count}} session(s) not visible in the current tiling — click to promote one into a tile",
+      "modes": {
+        "grid2": "2 side by side (capped)",
+        "grid4": "4 squares (capped)",
+        "grid6": "6 squares (capped)",
+        "miniMosaic": "Mini mosaic (preview grid)",
+        "mosaic": "Auto mosaic (sqrt grid)",
+        "sideBySide": "Side-by-side (2 cols, fill rows)",
+        "splitHorizontal": "Split top/bottom",
+        "splitVertical": "Split left/right",
+        "tabs": "Tabs (single pane)"
+      },
+      "noSessionSelected": "No session selected",
+      "tile": {
+        "actionsAria": "Tile actions",
+        "close": "Close",
+        "closeSession": "Close session",
+        "detach": "Detach",
+        "detachWindow": "Detach to new window",
+        "label": "Tile",
+        "maximize": "Maximize (switch to tabs)",
+        "menu": "Tile menu",
+        "noOtherSessions": "No other sessions",
+        "of": "of",
+        "showInThisTile": "Show in this tile…",
+        "showInThisTileAria": "Show session in this tile"
+      }
+    }
   },
   "security": {
     "title": "Security Settings",
@@ -370,7 +651,30 @@
     "cpuUsage": "CPU Usage",
     "memoryUsage": "Memory Usage",
     "activeConnections": "Active Connections",
-    "totalSessions": "Total Sessions"
+    "totalSessions": "Total Sessions",
+    "table": {
+      "time": "Time",
+      "cpu": "CPU",
+      "memory": "Memory"
+    },
+    "exportCsvAria": "Export performance metrics as CSV",
+    "timeRange": {
+      "all": "All Time",
+      "lastHour": "Last Hour",
+      "last6Hours": "Last 6 Hours",
+      "last24Hours": "Last 24 Hours",
+      "last7Days": "Last 7 Days"
+    },
+    "metricFilter": {
+      "all": "All Metrics"
+    },
+    "updateLabel": "Update:",
+    "summaryStats": {
+      "avgLatency": "Avg Latency",
+      "avgThroughput": "Avg Throughput",
+      "avgCpu": "Avg CPU",
+      "avgMemory": "Avg Memory"
+    }
   },
   "logs": {
     "title": "Action Log",
@@ -2707,7 +3011,16 @@
       "ipVersion": "IP Version",
       "interval": "Update Interval (s)",
       "tags": "Tags",
-      "notes": "Notes"
+      "notes": "Notes",
+      "bulkDisabled": {
+        "one": "{{count}} profile disabled",
+        "other": "{{count}} profiles disabled"
+      },
+      "bulkEnabled": {
+        "one": "{{count}} profile enabled",
+        "other": "{{count}} profiles enabled"
+      },
+      "selectProfile": "Select {{name}}"
     },
     "health": {
       "total": "Total",
@@ -2717,7 +3030,10 @@
       "empty": "No health data",
       "emptyHint": "Run an update to generate health data",
       "ipv4": "IPv4",
-      "ipv6": "IPv6"
+      "ipv6": "IPv6",
+      "fail": "fail",
+      "noIp": "no IP",
+      "ok": "ok"
     },
     "cloudflare": {
       "empty": "No Cloudflare profiles",
@@ -2732,7 +3048,16 @@
       "name": "Name",
       "content": "Content",
       "ttl": "TTL",
-      "proxy": "Proxy"
+      "proxy": "Proxy",
+      "activeStatus": "active",
+      "autoTtl": "Auto",
+      "table": {
+        "actions": "Actions",
+        "content": "Content",
+        "name": "Name",
+        "proxy": "Proxy",
+        "type": "Type"
+      }
     },
     "ip": {
       "detect": "Detect Public IP",
@@ -2740,7 +3065,9 @@
       "detectionResult": "Detection Result",
       "cached_title": "Cached IPs",
       "service": "Service",
-      "latency": "Latency"
+      "latency": "Latency",
+      "latencyLabel": "Latency:",
+      "serviceLabel": "Service:"
     },
     "scheduler": {
       "start": "Start",
@@ -2753,7 +3080,10 @@
       "profile": "Profile",
       "interval": "Interval",
       "nextRun": "Next Run",
-      "status": "Status"
+      "status": "Status",
+      "activeStatus": "Active",
+      "pausedStatus": "Paused",
+      "total": "total"
     },
     "config": {
       "title": "Configuration",
@@ -2766,7 +3096,8 @@
       "autoStart": "Auto-start Scheduler",
       "notifyIp": "Notify IP Change",
       "notifyFail": "Notify on Failure",
-      "providers": "Supported Providers"
+      "providers": "Supported Providers",
+      "freeTier": "Free tier"
     },
     "audit": {
       "title": "Audit Log",
@@ -2774,7 +3105,26 @@
       "export": "Export",
       "clear": "Clear",
       "empty": "No audit entries",
-      "emptyHint": "Actions will be logged here"
+      "emptyHint": "Actions will be logged here",
+      "errorPrefix": "Error:"
+    },
+    "actions": {
+      "disable": "Disable",
+      "enable": "Enable"
+    },
+    "confirm": {
+      "clearAuditAction": "clear the audit log",
+      "deleteProfileAction": "delete \"{{name}}\"",
+      "prompt": "Are you sure you want to {{action}}?"
+    },
+    "status": {
+      "authError": "AuthError",
+      "disabled": "Disabled",
+      "enabled": "Enabled",
+      "failed": "Failed",
+      "noChange": "NoChange",
+      "rateLimited": "RateLimited",
+      "success": "Success"
     }
   },
   "toolbar": {
@@ -2807,7 +3157,233 @@
   },
   "importTab": {
     "title": "Import",
-    "description": "Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import."
+    "description": "Bring connections, tags, VPN profiles and tunnel chains into a database from a native sortOfRemoteNG export or a compatible third-party file (mRemoteNG, RDP files, PuTTY, CSV, JSON, XML). Review the analysis preview and per-item conflicts before committing the import.",
+    "action": {
+      "changeSource": "Change source",
+      "confirm": "Import {{count}} Selected"
+    },
+    "common": {
+      "none": "none",
+      "unknownSize": "Unknown size",
+      "warningsLabel": "Warnings:"
+    },
+    "details": {
+      "blocked": "Blocked",
+      "fullRecord": "Full parsed record",
+      "host": "Host:",
+      "importable": "Importable",
+      "parent": "Parent:",
+      "path": "Path:",
+      "port": "Port:",
+      "sourceSummary": "Source #{{index}} | {{kind}} | {{status}}",
+      "tags": "Tags:",
+      "username": "Username:"
+    },
+    "drop": {
+      "chooseFile": "Choose File",
+      "formats": "Formats: .json, .xml, .csv, .ini, .reg, .rdg, .rtsz, .rtsx",
+      "processing": "Processing...",
+      "prompt": "Drag a file here or click below to choose one"
+    },
+    "failure": {
+      "title": "Import analysis failed",
+      "tryAgain": "Try Again"
+    },
+    "filters": {
+      "allConflicts": "All conflicts",
+      "allIssueStates": "All issue states",
+      "allItemTypes": "All item types",
+      "allProtocols": "All protocols",
+      "anySelection": "Any selection",
+      "cleanOnly": "Clean only",
+      "clearSearch": "Clear search",
+      "conflictAria": "Conflict filter",
+      "conflictsOnly": "Conflicts only",
+      "connections": "Connections",
+      "errors": "Errors",
+      "folders": "Folders",
+      "hasCredentials": "Has credentials",
+      "info": "Info",
+      "issueAria": "Issue filter",
+      "itemTypeAria": "Item type filter",
+      "missingHost": "Missing host",
+      "protocolAria": "Protocol filter",
+      "reset": "Reset filters",
+      "searchPlaceholder": "Search name, host, folder, tags, issues",
+      "selectedOnly": "Selected only",
+      "selectionAria": "Selection filter",
+      "sshTunnels": "SSH tunnels",
+      "title": "Filters",
+      "tunnelChains": "Tunnel chains",
+      "unselectedOnly": "Unselected only",
+      "warnings": "Warnings"
+    },
+    "format": {
+      "autoDetect": "Auto Detect",
+      "autoDetectDescription": "Detect the parser from file content and extension.",
+      "autoFromContent": "Auto-detect from file content",
+      "autoMatched": "Auto-detect (matched {{format}})",
+      "credentials": "Credentials: {{support}}",
+      "data": "Data: {{data}}",
+      "detected": "Detected: {{format}}",
+      "effective": "Effective: {{format}}",
+      "extensions": "Extensions: {{extensions}}",
+      "force": "Force {{format}}",
+      "importFormat": "Import format",
+      "nativeGroup": "── Native sortOfRemoteNG ──",
+      "title": "Format",
+      "vendorGroup": "── Compatible applications ──"
+    },
+    "options": {
+      "addTags": "Add tags to imported items",
+      "conflict": {
+        "duplicate": "Import as duplicate",
+        "rename": "Rename conflicts",
+        "skip": "Skip conflicts"
+      },
+      "conflictPolicy": "Conflict policy",
+      "description": "Tune how imported items are merged into the target database.",
+      "includeCredentials": "Include credentials",
+      "includeSshTunnels": "Import SSH tunnels",
+      "includeTunnelChains": "Import tunnel chains",
+      "includeVpnData": "Import VPN data",
+      "preserveFolders": "Preserve folders",
+      "switchTarget": "Switch to target after import",
+      "tagsPlaceholder": "comma-separated tags",
+      "title": "Import options"
+    },
+    "preview": {
+      "clearVisible": "Clear visible",
+      "selectAll": "Select all importable",
+      "selectVisible": "Select visible",
+      "summary": "{{selected}} selected | {{visible}} visible after filters | {{total}} total preview rows",
+      "title": "Preview selection"
+    },
+    "review": {
+      "conflict": {
+        "duplicate": "duplicate",
+        "rename": "rename",
+        "skip": "skip"
+      },
+      "connectionsOnly": "connections only",
+      "credentials": "credentials",
+      "folders": "folders",
+      "includedData": "Included data",
+      "mergePolicy": "Merge policy",
+      "noCurrentTarget": "No current target",
+      "noTarget": "No target selected",
+      "parsedConnections": "{{count}} parsed connections",
+      "previewRows": "{{selected}} of {{total}} preview rows",
+      "selectedContent": "Selected content",
+      "selectedPreviewAria": "Selected import preview",
+      "sshTunnels": "SSH tunnels",
+      "target": "Target",
+      "tunnelChains": "tunnel chains",
+      "unlockedDatabases": "{{count}} unlocked databases"
+    },
+    "source": {
+      "analysisDetails": "Analysis details",
+      "analysisSummary": "{{connections}} conn · {{folders}} folders · {{conflicts}} conflicts",
+      "changeFile": "Change file",
+      "confidence": "Confidence {{confidence}}",
+      "conflicts": "Conflicts",
+      "connections": "Connections",
+      "csvDetails": "CSV: {{rows}} data row(s), headers {{headers}}",
+      "defaultMasterPassword": "Default master password",
+      "defaultPasswordWarningTitle": "The file is encrypted with mRemoteNG's default master password (mR3m). That password is public, so the encryption provides no protection. Re-export with a custom master password.",
+      "encrypted": "Encrypted",
+      "encryptionDetails": "Encryption: protected={{protected}}, full-file={{fullFile}}, password required={{passwordRequired}}",
+      "fileDescription": "Choose or drop a supported native or compatible application export.",
+      "fileTitle": "Source file",
+      "folders": "Folders",
+      "foundConnections": "Found {{count}} connections ready to import.",
+      "importSuccessful": "Import Successful",
+      "importedFile": "Imported file",
+      "jsonDetails": "JSON: {{shape}}, keys {{keys}}",
+      "ready": "Analysis is ready: {{count}} row(s) can now be selected and configured.",
+      "retryDescription": "Pick another export or drop a file to retry parsing.",
+      "sshTunnels": "SSH tunnels",
+      "tryDifferentTitle": "Try a different file",
+      "tunnels": "Tunnels",
+      "unknownRoot": "unknown root",
+      "warnings": "Warnings",
+      "xmlDetails": "XML: {{root}}, {{count}} source node(s)"
+    },
+    "steps": {
+      "format": {
+        "description": "Use automatic detection or force the parser for a known source format."
+      },
+      "review": {
+        "description": "Review the source, target, options, and selected rows before importing.",
+        "label": "Preview & Confirm"
+      },
+      "selectionOptions": {
+        "description": "Filter analysed rows, choose what to import, and set merge behavior.",
+        "label": "Selection & Options"
+      },
+      "source": {
+        "description": "Choose or drop a file and let it be analysed before continuing.",
+        "label": "Source"
+      },
+      "templateTarget": {
+        "description": "Download a starter template if useful, then choose the destination database.",
+        "label": "Template & Target"
+      }
+    },
+    "table": {
+      "clean": "clean",
+      "empty": "No preview rows match the current filters.",
+      "folderPath": "Folder Path",
+      "host": "Host",
+      "issues": "Issues",
+      "name": "Name",
+      "selectItem": "Select {{name}}",
+      "sshTunnelKind": "ssh tunnel",
+      "tags": "Tags",
+      "tunnelKind": "tunnel",
+      "type": "Type",
+      "use": "Use"
+    },
+    "target": {
+      "all": {
+        "description": "Import into {{count}} unlocked database(s).",
+        "label": "All unlocked"
+      },
+      "ariaLabel": "Import target",
+      "available": "Available for import",
+      "count": "{{count}} target(s)",
+      "current": {
+        "fallbackDescription": "Use the open database when one is available.",
+        "label": "Current database",
+        "mergeDescription": "Merge into {{name}}."
+      },
+      "description": "Choose where imported connections will be merged.",
+      "existingItems": "{{count}} existing item(s)",
+      "none": "No target",
+      "selected": {
+        "description": "Pick one unlocked database below.",
+        "label": "Choose database"
+      },
+      "title": "Target database",
+      "unavailable": "No open or unlocked database is available for import.",
+      "unlock": "Unlock this database before importing."
+    },
+    "templates": {
+      "csv": "CSV Template",
+      "description": "Download native templates for hand-authored imports.",
+      "ini": "INI Template",
+      "json": "JSON Template",
+      "title": "Templates",
+      "xml": "XML Template"
+    },
+    "validation": {
+      "anyTarget": "Unlock at least one target database before continuing.",
+      "chooseFile": "Choose a supported file that can be analysed successfully.",
+      "currentTarget": "Open or unlock a current database before continuing.",
+      "processing": "Wait for the selected file to finish processing.",
+      "selectRow": "Select at least one importable preview row before continuing.",
+      "selectedTarget": "Choose an unlocked target database before continuing."
+    }
   },
   "exportTab": {
     "title": "Export",
@@ -8493,6 +9069,636 @@
       },
       "title": "VPN Connections",
       "wireguardFileFilter": "WireGuard Config"
+    }
+  },
+  "shortcuts": {
+    "shortcutCount": {
+      "one": "{{count}} shortcut",
+      "other": "{{count}} shortcuts"
+    },
+    "refreshList": "Refresh",
+    "description": {
+      "openConnection": "Open connection {{name}}",
+      "launchApp": "Launch sortOfRemoteNG"
+    }
+  },
+  "importExport": {
+    "clone": {
+      "action": {
+        "cloneToDatabases": "Clone {{items}} to {{count}} databases",
+        "cloneToTarget": "Clone {{items}} to {{target}}",
+        "cloning": "Cloning…",
+        "nothingToClone": "Nothing to clone with this filter",
+        "pickSource": "Pick a source database",
+        "pickTarget": "Pick a target database",
+        "sidecarDefinitionCount": "{{count}} sidecar definition(s)",
+        "targetFallback": "target",
+        "targetOverlap": "Target overlaps with source",
+        "unlockTarget": "Unlock target database to clone"
+      },
+      "description": "Copy connections from one or more source databases into another database (or several) in this app. Same filters as Export — but the result lands in another database instead of a file. Proxy, VPN, and tunnel-chain definitions can be copied with the clone and cloned connections will point to the copied definitions.",
+      "destination": {
+        "noEligibleTargets": "No eligible target databases. Configure another database first, or pick fewer sources.",
+        "optionsDescription": "Choose how collisions, folders, credentials, and navigation are handled.",
+        "optionsTitle": "Clone options",
+        "targetCount": {
+          "one": "{{count}} target database",
+          "other": "{{count}} target databases"
+        },
+        "targetDescription": "Pick where the cloned connections should land.",
+        "targetTitle": "Target databases"
+      },
+      "filter": {
+        "carryFolders": "Carry folder structure across",
+        "connectionsEmpty": "No source connections are available for the selected source scope.",
+        "description": "Optionally narrow what gets cloned by protocol, folder, tag, color, proxy, chain, or VPN.",
+        "foldersEmpty": "No source folders are available for the selected source scope.",
+        "includeChains": "Clone proxy profiles, proxy chains, and tunnel chains",
+        "includeEmptyFolders": "Include empty folders",
+        "includeVpn": "Clone VPN connections",
+        "loading": "loading",
+        "loadingItems": "Loading source database items...",
+        "title": "Filter"
+      },
+      "options": {
+        "addTags": "Add tags to cloned connections",
+        "conflict": {
+          "duplicate": "Duplicate — write with fresh ids on collision",
+          "rename": "Rename — suffix every conflict, keep both",
+          "skip": "Skip — drop colliding connections"
+        },
+        "conflictPolicy": "Conflict policy",
+        "includeCredentials": "Include credentials",
+        "preserveFolders": "Preserve folders",
+        "switchAfterClone": "Switch to the first target database after the clone finishes",
+        "tagsPlaceholder": "comma-separated tags",
+        "vpnCredentialsWarning": "VPN profiles cannot be cloned without their private material. They will be omitted, affected associations will be removed, and dependent chains will be skipped with warnings."
+      },
+      "preview": {
+        "connectionCount": "{{count}} connection(s)",
+        "definitionCount": "{{count}} definition(s)",
+        "description": "What this clone will land on each target.",
+        "filterResultLabel": "Filter result",
+        "folderCount": "{{count}} folder(s)",
+        "none": "none",
+        "sidecarsLabel": "Sidecars",
+        "targetsLabel": "Target(s)",
+        "title": "Preview",
+        "zeroItems": "0 items"
+      },
+      "result": {
+        "clonedCount": "{{count}} cloned",
+        "complete": "Clone complete",
+        "dismiss": "Dismiss",
+        "errorSuffix": " — error: {{error}}",
+        "failed": "Clone failed",
+        "renamedCount": "{{count}} renamed",
+        "sidecarsCloned": "{{count}} sidecar definition(s) cloned",
+        "skippedCount": "{{count}} skipped"
+      },
+      "sidecars": {
+        "layerCount": {
+          "one": "{{count}} layer",
+          "other": "{{count}} layers"
+        },
+        "proxyChainKind": "Proxy chain",
+        "tunnelChainKind": "Tunnel chain"
+      },
+      "source": {
+        "databaseCount": {
+          "one": "{{count}} database",
+          "other": "{{count}} databases"
+        },
+        "description": "Pick which database(s) to clone connections from.",
+        "modes": {
+          "all": {
+            "description": "Every unlocked exportable database.",
+            "label": "All databases"
+          },
+          "current": {
+            "description": "Just the database that's open right now.",
+            "label": "Current database"
+          },
+          "selected": {
+            "description": "Pick one or more from the list below.",
+            "label": "Selected databases"
+          }
+        },
+        "noDatabases": "No databases available.",
+        "scopeAriaLabel": "Clone source scope",
+        "title": "Source"
+      },
+      "steps": {
+        "options": {
+          "description": "Set conflict handling, credentials, folders, and post-clone behavior.",
+          "label": "Options"
+        },
+        "review": {
+          "description": "Review the exact source, targets, and item counts before cloning.",
+          "label": "Preview & Confirm"
+        },
+        "scopeContent": {
+          "description": "Choose the connections, groups, tags, and sidecars to copy.",
+          "label": "Scope & Content"
+        },
+        "target": {
+          "description": "Choose one or more eligible destination databases.",
+          "label": "Target"
+        },
+        "templateSource": {
+          "description": "Start from a useful preset, then choose the source database collection.",
+          "label": "Template & Source"
+        }
+      },
+      "templates": {
+        "ariaLabel": "Clone templates",
+        "clean": {
+          "description": "Copy connections and used folders without credentials or sidecars, rename conflicts, and tag the result as cloned.",
+          "title": "Clean migration"
+        },
+        "exact": {
+          "description": "Carry all connections, folder structure, credentials, VPN, proxy, and tunnel definitions. Duplicate conflicts safely.",
+          "title": "Exact copy"
+        }
+      },
+      "title": "Clone",
+      "validation": {
+        "contentEmpty": "The current content filters leave nothing to clone.",
+        "sourceRequired": "Choose at least one unlocked source database before continuing.",
+        "targetLocked": "Unlock an eligible target database before continuing.",
+        "targetOverlap": "A target database cannot also be one of the clone sources.",
+        "targetRequired": "Choose at least one target database before continuing."
+      }
+    }
+  },
+  "tagManager": {
+    "action": {
+      "assign": "Assign",
+      "assignNamed": "Assign {{name}} to connections",
+      "assignToConnections": "Assign to connections",
+      "cancelEdit": "Cancel edit",
+      "cancelEditNamed": "Cancel edit {{name}}",
+      "cancelNewColorTag": "Cancel new color tag",
+      "cancelNewTextTag": "Cancel new text tag",
+      "cancelRename": "Cancel rename",
+      "cancelRenameNamed": "Cancel rename {{name}}",
+      "clearColor": "Clear color",
+      "close": "Close Tag Manager",
+      "createColor": "Create Color",
+      "createTag": "Create Tag",
+      "delete": "Delete",
+      "deleteColorTag": "Delete color tag",
+      "deleteFromAll": "Delete from all connections",
+      "deleteNamed": "Delete {{name}}",
+      "dismiss": "Dismiss",
+      "dismissStatus": "Dismiss status",
+      "edit": "Edit",
+      "editNamed": "Edit {{name}}",
+      "keep": "Keep",
+      "pickCustomColor": "Pick custom color",
+      "removeTag": "Remove tag",
+      "rename": "Rename",
+      "renameNamed": "Rename {{name}}",
+      "saveColorTag": "Save color tag",
+      "saveNamed": "Save {{name}}",
+      "saveRename": "Save rename",
+      "selectConnection": "Select {{name}}",
+      "useColor": "Use color {{color}}"
+    },
+    "assignment": {
+      "title": "Assign to Connections"
+    },
+    "color": {
+      "custom": "Custom",
+      "customHex": "Custom hex color"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "clear": "Clear",
+      "global": "Global",
+      "name": "Name",
+      "noConnections": "No connections",
+      "noMatchHint": "Adjust search or filters."
+    },
+    "confirm": {
+      "deleteColorMessage": "Delete \"{{name}}\"? {{connectionCount}} will have this color tag cleared.",
+      "deleteColorTitle": "Delete color tag?",
+      "deleteTextMessage": "Remove \"{{name}}\" from {{connectionCount}}?",
+      "deleteTextTitle": "Delete text tag?"
+    },
+    "count": {
+      "connections": {
+        "one": "{{count}} connection",
+        "other": "{{count}} connections"
+      },
+      "selected": "{{count}} selected"
+    },
+    "create": {
+      "color": {
+        "emptyHint": "Create a color tag, then assign it to connections.",
+        "emptyTitle": "No color tags yet",
+        "namePlaceholder": "Color tag name",
+        "newTitle": "New Color Tag",
+        "noMatchTitle": "No color tags match",
+        "reset": "Reset"
+      },
+      "text": {
+        "clearTargets": "Clear Targets",
+        "emptyHint": "Choose target connections, then create a tag.",
+        "emptyTitle": "No text tags yet",
+        "namePlaceholder": "Tag name",
+        "newTitle": "New Text Tag",
+        "noMatchTitle": "No text tags match",
+        "noTargets": "No connection targets available"
+      }
+    },
+    "details": {
+      "intro": "Label connections with free-form text tags and a curated palette of color tags so you can slice the sidebar by purpose (production, staging, customer-X, on-call rotation) instead of relying on folder structure alone.",
+      "usage": "Text tags are free-form strings stored on each connection; they appear in the connection editor and feed the sidebar filter chips. Color tags are a shared palette saved with the database — assign one per connection to tint its tab and tree-row dot, and use the filter chips above the connection list to scope by color. Use the Assign action to apply a tag to many connections at once; renames and deletes here update every connection that referenced the tag."
+    },
+    "filters": {
+      "all": "All ({{count}})",
+      "inUse": "In use ({{count}})",
+      "searchPlaceholder": "Search tags or connections...",
+      "unused": "Unused ({{count}})"
+    },
+    "footer": {
+      "summary": "{{textCount}} text, {{colorCount}} color, {{colorTaggedCount}} color-tagged"
+    },
+    "header": {
+      "title": "Tag Manager"
+    },
+    "quick": {
+      "filtered": "Filtered",
+      "noColor": "No color",
+      "selected": "Selected",
+      "untagged": "Untagged"
+    },
+    "row": {
+      "collapse": "Collapse row",
+      "collapseNamed": "Collapse {{name}}",
+      "everyTargetHasTextTag": "Every target already has this tag",
+      "everyTargetUsesColor": "Every target already uses this color",
+      "expand": "Expand row",
+      "expandNamed": "Expand {{name}}",
+      "memberAction": "{{action}} from {{name}}",
+      "noAssignedConnections": "No assigned connections",
+      "noMemberConnections": "No member connections",
+      "targets": "Targets"
+    },
+    "stats": {
+      "color": "Color",
+      "tagged": "Tagged",
+      "text": "Text",
+      "untagged": "Untagged"
+    },
+    "status": {
+      "alreadyAssigned": "Selected connections already have this tag.",
+      "applied": "Applied \"{{name}}\" to {{connectionCount}}.",
+      "assigned": "Assigned {{connectionCount}}.",
+      "clearedColor": "Cleared color from \"{{name}}\".",
+      "colorTagNotFound": "Color tag was not found.",
+      "created": "Created \"{{name}}\".",
+      "deleted": "Deleted \"{{name}}\".",
+      "done": "Done.",
+      "nameRequired": "Name is required.",
+      "noChanges": "No changes made.",
+      "noConnectionChanges": "No connection changes needed.",
+      "noMatchingConnections": "No matching target connections.",
+      "noTargetConnections": "Choose at least one target connection.",
+      "removed": "Removed \"{{name}}\".",
+      "removedFrom": "Removed from \"{{name}}\".",
+      "renamed": "Renamed \"{{name}}\".",
+      "textTagNotFound": "Text tag was not found.",
+      "updated": "Updated \"{{name}}\"."
+    },
+    "tabs": {
+      "color": "Color Tags",
+      "text": "Text Tags"
+    }
+  },
+  "certificateInfo": {
+    "action": {
+      "cancel": "Cancel",
+      "editNickname": "Edit nickname",
+      "hidePemCertificate": "Hide PEM Certificate",
+      "hidePublicKey": "Hide Public Key",
+      "save": "Save",
+      "showPemCertificate": "Show PEM Certificate",
+      "showPublicKey": "Show Public Key"
+    },
+    "chain": {
+      "certificateCount": {
+        "one": "{{certificateCount}} certificate in chain",
+        "other": "{{certificateCount}} certificates in chain"
+      }
+    },
+    "date": {
+      "firstSeen": "First seen: {{date}}",
+      "lastSeen": "Last seen: {{date}}",
+      "seen": "Seen: {{firstDate}} — {{lastDate}}"
+    },
+    "fingerprint": {
+      "sha256": "Fingerprint (SHA-256)"
+    },
+    "history": {
+      "previousIdentity": {
+        "one": "{{historyCount}} previous identity",
+        "other": "{{historyCount}} previous identities"
+      }
+    },
+    "identity": {
+      "unavailable": "No {{identity}} information available yet. Connect to the server to retrieve it."
+    },
+    "label": {
+      "email": "Email",
+      "issuer": "Issuer",
+      "keyAlgorithm": "Key Algo",
+      "keyBits": "Key Bits",
+      "keySize": "Key Size",
+      "keyType": "Key Type",
+      "serial": "Serial",
+      "signatureAlgorithm": "Sig Algo",
+      "subject": "Subject",
+      "version": "Version"
+    },
+    "nickname": {
+      "none": "No nickname",
+      "placeholder": "Add a nickname…"
+    },
+    "section": {
+      "certificateChain": "Certificate Chain",
+      "issuer": "Issuer",
+      "keyAndAlgorithm": "Key & Algorithm",
+      "pemCertificate": "PEM Certificate",
+      "subject": "Subject",
+      "subjectAlternativeNames": "Subject Alternative Names",
+      "validity": "Validity"
+    },
+    "status": {
+      "changed": "Changed!",
+      "remembered": "Remembered",
+      "trusted": "Trusted",
+      "unknown": "Unknown"
+    },
+    "type": {
+      "certificate": {
+        "identityLower": "general certificate",
+        "informationTitle": "General Certificate Information"
+      },
+      "https": {
+        "identityLower": "HTTPS certificate",
+        "informationTitle": "HTTPS Certificate Information"
+      },
+      "rdp": {
+        "identityLower": "RDP certificate",
+        "informationTitle": "RDP Certificate Information"
+      },
+      "ssh": {
+        "identityLower": "host key",
+        "informationTitle": "Host Key Information"
+      },
+      "tls": {
+        "identityLower": "legacy TLS certificate",
+        "informationTitle": "Legacy TLS Certificate Information"
+      }
+    },
+    "validity": {
+      "expired": "(EXPIRED)",
+      "expiringSoon": "(expiring soon)",
+      "notAfter": "Not After:",
+      "notBefore": "Not Before:",
+      "period": "Validity Period"
+    },
+    "value": {
+      "bits": "{{bits}} bits"
+    }
+  },
+  "themeSettings": {
+    "accentColor": "Accent Color",
+    "accentColorTooltip": "The custom color used as the primary accent throughout the UI when Custom Accent is enabled.",
+    "animationDurationTooltip": "Base duration for animations in milliseconds; lower values feel snappier.",
+    "animationsDescription": "Master switch for every UI animation and transition",
+    "animationsTooltip": "Enable or disable all UI animations and transition effects globally",
+    "baseThemeTooltip": "Select the base theme that controls the overall look and feel of the application.",
+    "colorScheme": "Color Scheme",
+    "colorSchemeTooltip": "Choose a preset color scheme that defines the primary accent colors used throughout the UI",
+    "customAccent": "Custom Accent",
+    "customAccentDescription": "Replace the preset scheme with any color you pick",
+    "customAccentTooltip": "Override the color scheme with a custom accent color of your choice",
+    "customCssDescription": "Add custom styles to personalize the application appearance.",
+    "customCssPlaceholder": "/* Enter custom CSS rules... */",
+    "customCssTooltip": "Write custom CSS rules to override any application styles for advanced personalization",
+    "description": "Color scheme, background glow, window transparency, animations, and custom CSS.",
+    "enableBackgroundGlow": "Enable background glow effect",
+    "enableBackgroundGlowDescription": "Add a soft radial glow behind the main content area",
+    "enableBackgroundGlowTooltip": "Add a soft radial glow effect behind the main content area",
+    "enableTransparency": "Enable window transparency",
+    "enableTransparencyDescription": "Make the application window semi-transparent so the desktop shows through",
+    "enableTransparencyTooltip": "Make the application window semi-transparent so the desktop is visible behind it",
+    "experimental": "Experimental",
+    "glowBlur": "Glow Blur",
+    "glowBlurTooltip": "How much the glow is blurred at the edges in pixels.",
+    "glowColor": "Glow Color",
+    "glowColorAuto": "Glow Color (auto)",
+    "glowColorTooltip": "The color of the background glow effect. Disabled when 'Glow follows color scheme' is on.",
+    "glowDescription": "The glow effect appears centered in the main content area for an exquisite visual experience.",
+    "glowFollowsColorScheme": "Glow follows color scheme",
+    "glowFollowsColorSchemeDescription": "Auto-tint the glow to match the selected color scheme",
+    "glowFollowsColorSchemeTooltip": "Automatically match the glow color to your selected color scheme",
+    "glowOpacity": "Glow Opacity",
+    "glowOpacityTooltip": "How visible the glow effect is (0 = invisible, 1 = fully opaque).",
+    "glowRadius": "Glow Radius",
+    "glowRadiusTooltip": "The size of the glow circle in pixels.",
+    "opacityLevel": "Opacity Level",
+    "opacityLevelTooltip": "Controls how transparent the window is (0 = fully transparent, 1 = fully opaque).",
+    "reduceMotionDescription": "Use subtle animations only — better for motion sensitivity",
+    "reduceMotionTooltip": "Use minimal, subtle animations instead of full motion effects for accessibility",
+    "showTransparencyToggle": "Show transparency toggle in title bar",
+    "showTransparencyToggleDescription": "Add a quick-toggle button to the window title bar",
+    "showTransparencyToggleTooltip": "Add a button to the title bar for quickly toggling window transparency on and off",
+    "tabGroupAnimationsDescription": "Fade and slide groups as they are added, removed, or filtered",
+    "tabGroupAnimationsTooltip": "Add fade and slide animations when groups are added, removed, searched, or filtered in the Tab Group Manager. Falls back to instant updates when off.",
+    "transparencyWarning": "Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default."
+  },
+  "windows": {
+    "eventLog": {
+      "applyFilters": "Apply Filters",
+      "clear": "Clear",
+      "columns": {
+        "eventId": "Event ID",
+        "message": "Message",
+        "source": "Source",
+        "time": "Time"
+      },
+      "detail": {
+        "category": "Category",
+        "computer": "Computer",
+        "log": "Log",
+        "selectedAnnouncement": "Event {{eventId}} from {{source}} selected",
+        "user": "User"
+      },
+      "endDateFilter": "End date filter",
+      "exportCsv": "Export CSV",
+      "exportEventsCsv": "Export events to CSV",
+      "filterLevel": "Filter event level",
+      "filterMessages": "Filter messages…",
+      "levels": {
+        "all": "All Levels",
+        "auditFailure": "Audit Failure",
+        "auditSuccess": "Audit Success",
+        "error": "Error",
+        "information": "Information",
+        "unknown": "Unknown",
+        "warning": "Warning"
+      },
+      "rangeTo": "to",
+      "refresh": "Refresh",
+      "refreshEvents": "Refresh events",
+      "searchMessages": "Search event messages",
+      "selectLog": "Select event log",
+      "startDateFilter": "Start date filter",
+      "summary": "{{count}} events shown",
+      "tableCaption": "Event log entries filtered by log name, level, and message search",
+      "tableLabel": "Windows event log entries"
+    },
+    "scheduledTasks": {
+      "actions": {
+        "disable": "Disable",
+        "disableTaskAria": "Disable task {{task}}",
+        "enable": "Enable",
+        "enableTaskAria": "Enable task {{task}}",
+        "run": "Run",
+        "stop": "Stop"
+      },
+      "columns": {
+        "actions": "Actions",
+        "lastRun": "Last Run",
+        "name": "Name",
+        "nextRun": "Next Run",
+        "status": "Status"
+      },
+      "confirmDisableMessage": "Are you sure you want to disable \"{{task}}\"?",
+      "confirmDisableTitle": "Disable Task",
+      "detail": {
+        "author": "Author",
+        "description": "Description",
+        "lastResult": "Last Result",
+        "path": "Path",
+        "repeat": "Repeat:",
+        "runAs": "Run As",
+        "runLevel": "Run Level",
+        "start": "Start:",
+        "state": "State",
+        "triggers": "Triggers"
+      },
+      "filters": {
+        "all": "All"
+      },
+      "refresh": "Refresh",
+      "searchTasks": "Search tasks…",
+      "states": {
+        "disabled": "Disabled",
+        "queued": "Queued",
+        "ready": "Ready",
+        "running": "Running",
+        "unknown": "Unknown"
+      },
+      "tableLabel": "Scheduled tasks list"
+    },
+    "services": {
+      "actions": {
+        "restart": "Restart",
+        "restartServiceAria": "Restart service {{service}}",
+        "start": "Start",
+        "startServiceAria": "Start service {{service}}",
+        "stop": "Stop",
+        "stopServiceAria": "Stop service {{service}}"
+      },
+      "columns": {
+        "account": "Account",
+        "actions": "Actions",
+        "name": "Name",
+        "startup": "Startup",
+        "status": "Status"
+      },
+      "detail": {
+        "dependencies": "Dependencies",
+        "description": "Description",
+        "none": "None",
+        "path": "Path",
+        "serviceName": "Service Name",
+        "startMode": "Start Mode",
+        "state": "State"
+      },
+      "filterAria": "Filter services",
+      "filters": {
+        "all": "All",
+        "autoStart": "Auto Start",
+        "disabled": "Disabled",
+        "running": "Running",
+        "stopped": "Stopped"
+      },
+      "refresh": "Refresh",
+      "refreshServices": "Refresh services",
+      "searchAria": "Search services",
+      "searchPlaceholder": "Search services…",
+      "summary": "Showing {{filtered}} of {{total}} services",
+      "tableCaption": "Windows services and their current state",
+      "tableLabel": "Windows services list"
+    },
+    "systemInfo": {
+      "fields": {
+        "architecture": "Architecture",
+        "cores": "Cores",
+        "currentUser": "Current User",
+        "domain": "Domain",
+        "domainRole": "Domain Role",
+        "drive": "Drive",
+        "fileSystem": "FS",
+        "free": "Free",
+        "gateway": "Gateway",
+        "installed": "Installed",
+        "l2Cache": "L2 Cache",
+        "l3Cache": "L3 Cache",
+        "label": "Label",
+        "lastBoot": "Last Boot",
+        "load": "Load",
+        "manufacturer": "Manufacturer",
+        "model": "Model",
+        "name": "Name",
+        "os": "OS",
+        "processes": "Processes",
+        "processors": "Processors",
+        "serialNumber": "Serial Number",
+        "size": "Size",
+        "slot": "Slot",
+        "speed": "Speed",
+        "systemType": "System Type",
+        "totalMemory": "Total Memory",
+        "type": "Type",
+        "used": "Used",
+        "users": "Users",
+        "version": "Version",
+        "windowsDirectory": "Windows Dir"
+      },
+      "refresh": "Refresh",
+      "sections": {
+        "computerSystem": "Computer System",
+        "logicalDisksCount": "Logical Disks ({{count}})",
+        "memoryModulesCount": "Memory Modules ({{count}})",
+        "networkAdaptersCount": "Network Adapters ({{count}})",
+        "operatingSystem": "Operating System",
+        "processorsCount": "Processors ({{count}})"
+      },
+      "title": "System Information",
+      "values": {
+        "disabled": "Disabled",
+        "enabled": "Enabled",
+        "physicalLogical": "{{physical}} physical / {{logical}} logical",
+        "speedWithMaximum": "{{current}} MHz (max {{maximum}} MHz)",
+        "versionWithBuild": "{{version}} (Build {{build}})"
+      }
     }
   }
 }

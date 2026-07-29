@@ -325,8 +325,15 @@ export function useShortcutManager(isOpen: boolean) {
         collectionId: selectedCollectionId || null,
         connectionId: selectedConnectionId || null,
         description: selectedConnectionId
-          ? `Open connection ${shortcutName.trim()}`
-          : "Launch sortOfRemoteNG",
+          ? t(
+              "shortcuts.description.openConnection",
+              "Open connection {{name}}",
+              { name: shortcutName.trim() },
+            )
+          : t(
+              "shortcuts.description.launchApp",
+              "Launch sortOfRemoteNG",
+            ),
         folderPath,
       });
 
@@ -426,8 +433,15 @@ export function useShortcutManager(isOpen: boolean) {
         collectionId: selectedCollectionId || null,
         connectionId: selectedConnectionId || null,
         description: selectedConnectionId
-          ? `Open connection ${shortcutName.trim()}`
-          : "Launch sortOfRemoteNG",
+          ? t(
+              "shortcuts.description.openConnection",
+              "Open connection {{name}}",
+              { name: shortcutName.trim() },
+            )
+          : t(
+              "shortcuts.description.launchApp",
+              "Launch sortOfRemoteNG",
+            ),
         folderPath,
       });
 

@@ -5,6 +5,23 @@ import ScheduledTasksPanel from "../../src/components/windows/panels/ScheduledTa
 import type { WinmgmtContext } from "../../src/components/windows/WinmgmtWrapper";
 import type { ScheduledTask } from "../../src/types/windows/winmgmt";
 
+const { scheduledTasksT } = vi.hoisted(() => ({
+  scheduledTasksT: vi.fn(
+    (
+      _key: string,
+      fallback: string,
+      values?: Record<string, unknown>,
+    ) =>
+      fallback.replace(/{{(\w+)}}/g, (_match, name: string) =>
+        String(values?.[name] ?? `{{${name}}}`),
+      ),
+  ),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: scheduledTasksT }),
+}));
+
 const makeTask = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
   taskName: "Backup",
   taskPath: "\\Microsoft\\Windows",
@@ -18,8 +35,8 @@ const makeTask = (overrides: Partial<ScheduledTask> = {}): ScheduledTask => ({
   nextRunTime: "2026-03-31T08:00:00.000Z",
   numberOfMissedRuns: 0,
   actions: [{ actionType: "Execute", execute: "backup.exe", arguments: null, workingDirectory: null }],
-  triggers: [{ triggerType: "Daily", enabled: true, startBoundary: null, endBoundary: null, repetitionInterval: null, repetitionDuration: null }],
-  principal: null,
+  triggers: [{ triggerType: "Daily", enabled: true, startBoundary: "2026-03-31T08:00:00.000Z", endBoundary: null, repetitionInterval: "PT1H", repetitionDuration: null }],
+  principal: { userId: "SYSTEM", runLevel: "Highest" } as ScheduledTask["principal"],
   ...overrides,
 });
 
@@ -129,4 +146,47 @@ describe("ScheduledTasksPanel", () => {
     const headerTexts = Array.from(headers).map((h) => h.textContent?.trim());
     expect(headerTexts).toEqual(["Name", "Status", "Last Run", "Next Run", "Actions"]);
   });
+  it("routes every ScheduledTasksPanel manifest candidate through translation fallbacks", async () => {
+    const cmd = createCmd();
+    render(<ScheduledTasksPanel ctx={createCtx(cmd)} />);
+
+    await screen.findByRole("table", { name: /Scheduled tasks list/i });
+    fireEvent.click(screen.getByText("Backup"));
+
+    const expectedCalls = [
+      ["windows.scheduledTasks.searchTasks", "Search tasks…"],
+      ["windows.scheduledTasks.filters.all", "All"],
+      ["windows.scheduledTasks.states.ready", "Ready"],
+      ["windows.scheduledTasks.states.running", "Running"],
+      ["windows.scheduledTasks.states.disabled", "Disabled"],
+      ["windows.scheduledTasks.refresh", "Refresh"],
+      ["windows.scheduledTasks.tableLabel", "Scheduled tasks list"],
+      ["windows.scheduledTasks.columns.name", "Name"],
+      ["windows.scheduledTasks.columns.status", "Status"],
+      ["windows.scheduledTasks.columns.lastRun", "Last Run"],
+      ["windows.scheduledTasks.columns.nextRun", "Next Run"],
+      ["windows.scheduledTasks.columns.actions", "Actions"],
+      ["windows.scheduledTasks.actions.run", "Run"],
+      ["windows.scheduledTasks.actions.stop", "Stop"],
+      ["windows.scheduledTasks.actions.disable", "Disable"],
+      ["windows.scheduledTasks.actions.enable", "Enable"],
+      ["windows.scheduledTasks.detail.path", "Path"],
+      ["windows.scheduledTasks.detail.state", "State"],
+      ["windows.scheduledTasks.detail.author", "Author"],
+      ["windows.scheduledTasks.detail.description", "Description"],
+      ["windows.scheduledTasks.detail.lastResult", "Last Result"],
+      ["windows.scheduledTasks.detail.runAs", "Run As"],
+      ["windows.scheduledTasks.detail.runLevel", "Run Level"],
+      ["windows.scheduledTasks.columns.actions", "Actions"],
+      ["windows.scheduledTasks.detail.triggers", "Triggers"],
+      ["windows.scheduledTasks.detail.start", "Start:"],
+      ["windows.scheduledTasks.detail.repeat", "Repeat:"],
+      ["windows.scheduledTasks.confirmDisableTitle", "Disable Task"],
+    ] as const;
+    expect(expectedCalls).toHaveLength(28);
+    for (const [key, fallback] of expectedCalls) {
+      expect(scheduledTasksT).toHaveBeenCalledWith(key, fallback);
+    }
+  });
+
 });

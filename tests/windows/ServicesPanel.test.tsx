@@ -5,6 +5,23 @@ import ServicesPanel from "../../src/components/windows/panels/ServicesPanel";
 import type { WinmgmtContext } from "../../src/components/windows/WinmgmtWrapper";
 import type { WindowsService } from "../../src/types/windows/winmgmt";
 
+const { servicesT } = vi.hoisted(() => ({
+  servicesT: vi.fn(
+    (
+      _key: string,
+      fallback: string,
+      values?: Record<string, unknown>,
+    ) =>
+      fallback.replace(/{{(\w+)}}/g, (_match, name: string) =>
+        String(values?.[name] ?? `{{${name}}}`),
+      ),
+  ),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: servicesT }),
+}));
+
 const makeService = (overrides: Partial<WindowsService>): WindowsService => ({
   name: "Spooler",
   displayName: "Print Spooler",
@@ -140,4 +157,76 @@ describe("ServicesPanel", () => {
       );
     });
   });
+  it("routes every visible ServicesPanel manifest candidate through translation fallbacks", async () => {
+    const services: WindowsService[] = [
+      makeService({
+        name: "Spooler",
+        displayName: "Print Spooler",
+        description: "Print queue service",
+        state: "stopped",
+        processId: 1200,
+      }),
+      makeService({
+        name: "W32Time",
+        displayName: "Windows Time",
+        state: "running",
+        startMode: "auto",
+        started: true,
+        acceptStop: true,
+      }),
+    ];
+    const cmd = vi.fn(async (command: string) => {
+      if (command === "winmgmt_list_services") return services;
+      if (command === "winmgmt_get_service_dependencies") return [];
+      return 0;
+    });
+    const ctx: WinmgmtContext = {
+      sessionId: "session-1",
+      hostname: "win-host",
+      cmd: cmd as WinmgmtContext["cmd"],
+    };
+
+    render(<ServicesPanel ctx={ctx} />);
+    await screen.findByRole("table", { name: /Windows services list/i });
+    fireEvent.click(screen.getByText("Print Spooler"));
+    fireEvent.click(screen.getByRole("button", { name: /Dependencies/i }));
+    await screen.findByText("None");
+
+    const expectedCalls = [
+      ["windows.services.searchPlaceholder", "Search services…"],
+      ["windows.services.searchAria", "Search services"],
+      ["windows.services.filterAria", "Filter services"],
+      ["windows.services.filters.all", "All"],
+      ["windows.services.filters.running", "Running"],
+      ["windows.services.filters.stopped", "Stopped"],
+      ["windows.services.filters.autoStart", "Auto Start"],
+      ["windows.services.filters.disabled", "Disabled"],
+      ["windows.services.refreshServices", "Refresh services"],
+      ["windows.services.refresh", "Refresh"],
+      ["windows.services.tableLabel", "Windows services list"],
+      ["windows.services.tableCaption", "Windows services and their current state"],
+      ["windows.services.columns.name", "Name"],
+      ["windows.services.columns.status", "Status"],
+      ["windows.services.columns.startup", "Startup"],
+      ["windows.services.columns.account", "Account"],
+      ["windows.services.columns.actions", "Actions"],
+      ["windows.services.actions.start", "Start"],
+      ["windows.services.actions.stop", "Stop"],
+      ["windows.services.actions.restart", "Restart"],
+      ["windows.services.detail.serviceName", "Service Name"],
+      ["windows.services.detail.state", "State"],
+      ["windows.services.detail.startMode", "Start Mode"],
+      ["windows.services.columns.account", "Account"],
+      ["windows.services.detail.description", "Description"],
+      ["windows.services.detail.path", "Path"],
+      ["windows.services.detail.dependencies", "Dependencies"],
+      ["windows.services.detail.none", "None"],
+    ] as const;
+    expect(expectedCalls).toHaveLength(28);
+    for (const [key, fallback] of expectedCalls) {
+      expect(servicesT).toHaveBeenCalledWith(key, fallback);
+    }
+    expect(servicesT).not.toHaveBeenCalledWith(expect.anything(), "PID");
+  });
+
 });

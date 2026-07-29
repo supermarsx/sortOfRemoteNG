@@ -5,6 +5,32 @@ import GeneralSettings from "../../src/components/SettingsDialog/sections/Genera
 import LanguageSettings from "../../src/components/SettingsDialog/sections/LanguageSettings";
 import BackendSettings from "../../src/components/SettingsDialog/sections/BackendSettings";
 import RDPDefaultSettings from "../../src/components/SettingsDialog/sections/RdpDefaultSettings";
+import ThemeSettings from "../../src/components/SettingsDialog/sections/ThemeSettings";
+
+const { themeT } = vi.hoisted(() => ({
+  themeT: vi.fn((key: string, fallback?: string) => fallback ?? key),
+}));
+
+vi.mock("../../src/hooks/settings/useThemeSettings", () => ({
+  formatLabel: (value: string) => value,
+  useThemeSettings: () => ({
+    t: themeT,
+    themes: ["dark"],
+    schemeOptions: [{ value: "blue", label: "Blue", color: "#2563eb" }],
+    handleSchemeChange: vi.fn(),
+    handleToggleCustomAccent: vi.fn(),
+    handleAccentChange: vi.fn(),
+    opacityValue: 0.9,
+    cssHighlightRef: { current: null },
+    highlightedCss: "",
+    handleCssScroll: vi.fn(),
+  }),
+}));
+
+vi.mock(
+  "../../src/components/SettingsDialog/sections/theme/LoadingElementSection",
+  () => ({ LoadingElementSection: () => null }),
+);
 
 const baseSettings = {
   language: "en",
@@ -171,4 +197,66 @@ describe("Core settings section centralization", () => {
     fireEvent.click(thumbnailCheckbox);
     expect(updateSettings).toHaveBeenCalled();
   });
+  it("routes every ThemeSettings manifest candidate through translation fallbacks", () => {
+    themeT.mockClear();
+    const settings = {
+      ...baseSettings,
+      theme: "dark",
+      colorScheme: "blue",
+      useCustomAccent: false,
+      primaryAccentColor: "#2563eb",
+      backgroundGlowEnabled: false,
+      backgroundGlowFollowsColorScheme: true,
+      backgroundGlowColor: "#2563eb",
+      backgroundGlowOpacity: 0.4,
+      backgroundGlowRadius: 640,
+      backgroundGlowBlur: 120,
+      windowTransparencyEnabled: false,
+      windowTransparencyOpacity: 0.9,
+      showTransparencyToggle: false,
+      animationsEnabled: true,
+      reduceMotion: false,
+      enableTabGroupAnimations: true,
+      animationDuration: 200,
+      customCss: "",
+    } as unknown as GlobalSettings;
+
+    render(
+      <ThemeSettings settings={settings} updateSettings={vi.fn()} />,
+    );
+
+    const expectedCalls = [
+      ["themeSettings.colorScheme", "Color Scheme"],
+      ["themeSettings.customAccent", "Custom Accent"],
+      ["themeSettings.customAccentDescription", "Replace the preset scheme with any color you pick"],
+      ["themeSettings.accentColor", "Accent Color"],
+      ["themeSettings.enableBackgroundGlow", "Enable background glow effect"],
+      ["themeSettings.enableBackgroundGlowDescription", "Add a soft radial glow behind the main content area"],
+      ["themeSettings.glowFollowsColorScheme", "Glow follows color scheme"],
+      ["themeSettings.glowFollowsColorSchemeDescription", "Auto-tint the glow to match the selected color scheme"],
+      ["themeSettings.glowOpacity", "Glow Opacity"],
+      ["themeSettings.glowRadius", "Glow Radius"],
+      ["themeSettings.glowBlur", "Glow Blur"],
+      ["themeSettings.glowDescription", "The glow effect appears centered in the main content area for an exquisite visual experience."],
+      ["themeSettings.experimental", "Experimental"],
+      ["themeSettings.transparencyWarning", "Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default."],
+      ["themeSettings.enableTransparency", "Enable window transparency"],
+      ["themeSettings.enableTransparencyDescription", "Make the application window semi-transparent so the desktop shows through"],
+      ["themeSettings.opacityLevel", "Opacity Level"],
+      ["themeSettings.showTransparencyToggle", "Show transparency toggle in title bar"],
+      ["themeSettings.showTransparencyToggleDescription", "Add a quick-toggle button to the window title bar"],
+      ["themeSettings.animationsDescription", "Master switch for every UI animation and transition"],
+      ["themeSettings.reduceMotionDescription", "Use subtle animations only — better for motion sensitivity"],
+      ["themeSettings.tabGroupAnimationsDescription", "Fade and slide groups as they are added, removed, or filtered"],
+      ["themeSettings.customCssPlaceholder", "/* Enter custom CSS rules... */"],
+      ["themeSettings.customCssDescription", "Add custom styles to personalize the application appearance."],
+      ["settings.theme", "Theme"],
+      ["themeSettings.description", "Color scheme, background glow, window transparency, animations, and custom CSS."],
+    ] as const;
+    expect(expectedCalls).toHaveLength(26);
+    for (const [key, fallback] of expectedCalls) {
+      expect(themeT).toHaveBeenCalledWith(key, fallback);
+    }
+  });
+
 });

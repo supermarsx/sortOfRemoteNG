@@ -95,6 +95,17 @@ describe("TagManagerDialog", () => {
     const { container } = renderDialog([]);
 
     expect(await screen.findByText("Tag Manager")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Label connections with free-form text tags and a curated palette of color tags so you can slice the sidebar by purpose (production, staging, customer-X, on-call rotation) instead of relying on folder structure alone.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Search tags or connections..."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Text Tags/i }),
+    ).toBeInTheDocument();
     const dialogRoot = Array.from(container.children).find((element) =>
       element.classList.contains("h-full"),
     );
@@ -130,6 +141,9 @@ describe("TagManagerDialog", () => {
       ]);
       expect(state.find((connection) => connection.id === "beta")?.tags).toEqual([]);
     });
+    expect(
+      await screen.findByText('Applied "Critical" to 1 connection.'),
+    ).toBeInTheDocument();
   });
 
   it("deletes text tags through ConfirmDialog without using global confirm", async () => {
@@ -142,6 +156,10 @@ describe("TagManagerDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete Legacy" }));
 
     expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+    expect(screen.getByText("Delete text tag?")).toBeInTheDocument();
+    expect(
+      screen.getByText('Remove "Legacy" from 2 connections?'),
+    ).toBeInTheDocument();
     expect(globalThis.confirm).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId("confirm-yes"));
@@ -172,6 +190,12 @@ describe("TagManagerDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete Danger" }));
 
     expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+    expect(screen.getByText("Delete color tag?")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Delete "Danger"? 1 connection will have this color tag cleared.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/will have this color tag cleared/i)).toBeInTheDocument();
     expect(globalThis.confirm).not.toHaveBeenCalled();
 

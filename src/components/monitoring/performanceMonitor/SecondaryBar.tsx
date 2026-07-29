@@ -12,19 +12,19 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {/* Time Range Filter */}
         <div className="flex items-center gap-2">
           <Clock size={14} className="text-[var(--color-textSecondary)]" />
-          <Select value={mgr.timeRangeFilter} onChange={(v: string) => mgr.setTimeRangeFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "1h", label: "Last Hour" }, { value: "6h", label: "Last 6 Hours" }, { value: "24h", label: "Last 24 Hours" }, { value: "7d", label: "Last 7 Days" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
+          <Select value={mgr.timeRangeFilter} onChange={(v: string) => mgr.setTimeRangeFilter(v)} options={[{ value: "all", label: t("performance.timeRange.all", "All Time") }, { value: "1h", label: t("performance.timeRange.lastHour", "Last Hour") }, { value: "6h", label: t("performance.timeRange.last6Hours", "Last 6 Hours") }, { value: "24h", label: t("performance.timeRange.last24Hours", "Last 24 Hours") }, { value: "7d", label: t("performance.timeRange.last7Days", "Last 7 Days") }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
         </div>
 
         {/* Metric Type Filter */}
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-[var(--color-textSecondary)]" />
-          <Select value={mgr.metricFilter} onChange={(v: string) => mgr.setMetricFilter(v)} options={[{ value: "all", label: "All Metrics" }, { value: "latency", label: "Latency" }, { value: "throughput", label: "Throughput" }, { value: "cpu", label: "CPU Usage" }, { value: "memory", label: "Memory Usage" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
+          <Select value={mgr.metricFilter} onChange={(v: string) => mgr.setMetricFilter(v)} options={[{ value: "all", label: t("performance.metricFilter.all", "All Metrics") }, { value: "latency", label: t("performance.latency", "Latency") }, { value: "throughput", label: t("performance.throughput", "Throughput") }, { value: "cpu", label: t("performance.cpuUsage", "CPU Usage") }, { value: "memory", label: t("performance.memoryUsage", "Memory Usage") }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-primary" />
         </div>
 
         {/* Update Interval */}
         <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <RefreshCw size={14} />
-          <span>Update:</span>
+          <span>{t("performance.updateLabel", "Update:")}</span>
           <NumberInput value={Math.round(mgr.pollIntervalMs / 1000)} onChange={(v: number) => mgr.handlePollIntervalChange(v)} variant="settings-compact" className="w-12 text-center" min={1} max={120} />
           <span>s</span>
         </div>
@@ -38,7 +38,7 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           title={t("common.export", "Export")}
         >
           <Download size={14} />
-          <span>Export</span>
+          <span>{t("common.export", "Export")}</span>
         </button>
         <button
           onClick={() => mgr.setShowClearConfirm(true)}
@@ -46,7 +46,7 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           title={t("common.clear", "Clear")}
         >
           <Trash2 size={14} />
-          <span>Clear</span>
+          <span>{t("common.clear", "Clear")}</span>
         </button>
       </div>
     </div>

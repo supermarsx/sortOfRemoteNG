@@ -13,6 +13,23 @@ import type {
   TabLayout,
 } from "../../src/types/connection/connection";
 
+const { tabLayoutT } = vi.hoisted(() => ({
+  tabLayoutT: vi.fn(
+    (
+      key: string,
+      fallback: string = key,
+      variables?: Record<string, unknown>,
+    ) =>
+      fallback.replace(/\{\{(\w+)\}\}/g, (_match, token: string) =>
+        String(variables?.[token] ?? `{{${token}}}`),
+      ),
+  ),
+}));
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: tabLayoutT }),
+}));
+
 vi.mock("react-resizable", () => ({
   Resizable: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -46,12 +63,13 @@ const layout: TabLayout = {
 const renderManager = (
   onLayoutChange = vi.fn(),
   sessionList: ConnectionSession[] = sessions,
+  layoutValue: TabLayout = layout,
 ) =>
   render(
     <TabLayoutManager
       sessions={sessionList}
       activeSessionId={sessionList[0]?.id}
-      layout={layout}
+      layout={layoutValue}
       onLayoutChange={onLayoutChange}
       onSessionSelect={vi.fn()}
       onSessionClose={vi.fn()}
@@ -205,5 +223,92 @@ describe("TabLayoutManager", () => {
     renderManager(vi.fn(), [sessions[0], toolSession]);
     const counter = screen.getByTestId("tab-layout-session-counter");
     expect(counter).toHaveAttribute("aria-label", "1 session, 1 tool");
+  });
+  it("routes every owned visible fallback through the translator", () => {
+    tabLayoutT.mockClear();
+    const thirdSession: ConnectionSession = {
+      ...sessions[1],
+      id: "s3",
+      connectionId: "c3",
+      name: "Session Three",
+    };
+    const cappedLayout: TabLayout = {
+      mode: "grid2",
+      sessions: [
+        { sessionId: "s1", position: { x: 0, y: 0, width: 50, height: 100 } },
+        { sessionId: "s2", position: { x: 50, y: 0, width: 50, height: 100 } },
+      ],
+    };
+    const cappedView = renderManager(
+      vi.fn(),
+      [...sessions, thirdSession],
+      cappedLayout,
+    );
+    cappedView.unmount();
+
+    const soloLayout: TabLayout = {
+      mode: "grid2",
+      sessions: [
+        { sessionId: "s1", position: { x: 0, y: 0, width: 100, height: 100 } },
+      ],
+    };
+    const soloView = renderManager(vi.fn(), [sessions[0]], soloLayout);
+    soloView.unmount();
+
+    const miniView = renderManager(vi.fn(), sessions, {
+      mode: "miniMosaic",
+      sessions: [],
+    });
+    miniView.unmount();
+    renderManager(vi.fn(), []);
+
+    const ownedFallbacks: Array<[string, string]> = [
+      ["session.tabLayout.customGrid.buttonTitle","Custom grid layout"],
+      ["session.tabLayout.customGrid.title","Custom Grid Layout"],
+      ["session.tabLayout.customGrid.columns","Columns"],
+      ["session.tabLayout.customGrid.rows","Rows"],
+      ["session.tabLayout.customGrid.tilesSuffix","tiles ·"],
+      ["session.tabLayout.customGrid.filledSuffix","filled ·"],
+      ["session.tabLayout.customGrid.sessionOne","session"],
+      ["session.tabLayout.customGrid.applyLayout","Apply Layout"],
+      ["session.tabLayout.hiddenLabel","hidden"],
+      ["session.tabLayout.hiddenMenuTitle","Hidden sessions — click to promote"],
+      ["session.tabLayout.tile.menu","Tile menu"],
+      ["session.tabLayout.tile.detach","Detach"],
+      ["session.tabLayout.tile.close","Close"],
+      ["session.tabLayout.tile.label","Tile"],
+      ["session.tabLayout.tile.of","of"],
+      ["session.tabLayout.tile.showInThisTile","Show in this tile…"],
+      ["session.tabLayout.tile.showInThisTileAria","Show session in this tile"],
+      ["session.tabLayout.tile.noOtherSessions","No other sessions"],
+      ["session.tabLayout.tile.maximize","Maximize (switch to tabs)"],
+      ["session.tabLayout.tile.detachWindow","Detach to new window"],
+      ["session.tabLayout.tile.closeSession","Close session"],
+      ["session.tabLayout.modes.tabs","Tabs (single pane)"],
+      ["session.tabLayout.modes.splitVertical","Split left/right"],
+      ["session.tabLayout.modes.splitHorizontal","Split top/bottom"],
+      ["session.tabLayout.modes.sideBySide","Side-by-side (2 cols, fill rows)"],
+      ["session.tabLayout.modes.grid2","2 side by side (capped)"],
+      ["session.tabLayout.modes.grid4","4 squares (capped)"],
+      ["session.tabLayout.modes.grid6","6 squares (capped)"],
+      ["session.tabLayout.modes.mosaic","Auto mosaic (sqrt grid)"],
+      ["session.tabLayout.modes.miniMosaic","Mini mosaic (preview grid)"],
+      ["session.tabLayout.clickToFocus","Click to focus"],
+      ["session.tabLayout.noSessionSelected","No session selected"],
+      ["session.tabLayout.tile.actionsAria","Tile actions"],
+    ];
+    for (const [key, fallback] of ownedFallbacks) {
+      expect(tabLayoutT).toHaveBeenCalledWith(key, fallback);
+    }
+    expect(tabLayoutT).toHaveBeenCalledWith(
+      "session.tabLayout.hiddenTooltip",
+      "{{count}} session(s) not visible in the current tiling — click to promote one into a tile",
+      { count: 1 },
+    );
+    expect(tabLayoutT).toHaveBeenCalledWith(
+      "session.tabLayout.counters.sessionsOther",
+      "{{count}} sessions",
+      { count: 3 },
+    );
   });
 });
