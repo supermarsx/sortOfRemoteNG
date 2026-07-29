@@ -31,20 +31,24 @@ pub async fn list_heroku_dynos(
 pub async fn get_heroku_session(
     session_id: String,
     state: tauri::State<'_, HerokuServiceState>,
-) -> Result<HerokuSession, String> {
+) -> Result<HerokuSessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(HerokuSessionStatus::from)
         .ok_or("Heroku session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_heroku_sessions(
     state: tauri::State<'_, HerokuServiceState>,
-) -> Result<Vec<HerokuSession>, String> {
+) -> Result<Vec<HerokuSessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(HerokuSessionStatus::from)
+        .collect())
 }
 

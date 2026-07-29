@@ -6,6 +6,16 @@ mod backup_commands;
 mod bitwarden_commands;
 #[path = "../../../src/digital_ocean_commands.rs"]
 mod digital_ocean_commands;
+#[path = "../../../src/ibm_commands.rs"]
+mod ibm_commands;
+#[path = "../../../src/heroku_commands.rs"]
+mod heroku_commands;
+#[path = "../../../src/scaleway_commands.rs"]
+mod scaleway_commands;
+#[path = "../../../src/linode_commands.rs"]
+mod linode_commands;
+#[path = "../../../src/ovh_commands.rs"]
+mod ovh_commands;
 #[path = "../../../src/keepass_commands.rs"]
 mod keepass_commands;
 #[path = "../../../src/passbolt_commands.rs"]

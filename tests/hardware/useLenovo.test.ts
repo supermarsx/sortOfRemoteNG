@@ -49,13 +49,17 @@ describe("useLenovo", () => {
     });
     expect(invoke).toHaveBeenCalledWith(
       "lenovo_connect",
-      expect.objectContaining({
-        config: expect.objectContaining({
-          host: "10.0.0.5",
-          username: "USERID",
-          password: "PASSW0RD",
-        }),
-      }),
+      {
+        host: "10.0.0.5",
+        port: 443,
+        username: "USERID",
+        password: "PASSW0RD",
+        protocol: undefined,
+        insecure: true,
+        timeoutSecs: 30,
+        ipmiPort: 623,
+        generation: undefined,
+      },
     );
   });
 

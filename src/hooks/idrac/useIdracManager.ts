@@ -76,6 +76,16 @@ export type IdracTab =
 
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
 
+export interface IdracInitialConnection {
+  host: string;
+  port?: number;
+  username: string;
+  password: string;
+  insecure?: boolean;
+  forceProtocol?: string;
+  timeoutSecs?: number;
+}
+
 export interface IdracManagerState {
   // Connection
   connectionState: ConnectionState;
@@ -179,15 +189,20 @@ export interface IdracManagerState {
 
 // ── The hook ─────────────────────────────────────────────────────
 
-export function useIdracManager(isOpen: boolean) {
+export function useIdracManager(
+  isOpen: boolean,
+  initialConnection?: IdracInitialConnection,
+) {
   // ---- Connection form state ----
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState(443);
-  const [username, setUsername] = useState("root");
-  const [password, setPassword] = useState("");
-  const [insecure, setInsecure] = useState(true);
-  const [forceProtocol, setForceProtocol] = useState("");
+  const [host, setHost] = useState(initialConnection?.host ?? "");
+  const [port, setPort] = useState(initialConnection?.port ?? 443);
+  const [username, setUsername] = useState(initialConnection?.username ?? "root");
+  const [password, setPassword] = useState(initialConnection?.password ?? "");
+  const [insecure, setInsecure] = useState(initialConnection?.insecure ?? true);
+  const [forceProtocol, setForceProtocol] = useState(
+    initialConnection?.forceProtocol ?? "",
+  );
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [config, setConfig] = useState<IdracConfigSafe | null>(null);
 
@@ -294,6 +309,9 @@ export function useIdracManager(isOpen: boolean) {
 
   const tryInvoke = useCallback(async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     try {
+      if (args === undefined) {
+        return await invoke<T>(cmd);
+      }
       return await invoke<T>(cmd, args);
     } catch (e) {
       const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
@@ -316,7 +334,7 @@ export function useIdracManager(isOpen: boolean) {
         password,
         insecure,
         forceProtocol: forceProtocol || null,
-        timeoutSecs: 30,
+        timeoutSecs: initialConnection?.timeoutSecs ?? 30,
       });
       const cfg = await tryInvoke<IdracConfigSafe>("idrac_get_config");
       safe(() => {
@@ -329,7 +347,17 @@ export function useIdracManager(isOpen: boolean) {
         setConnectionError((e as Error).message);
       });
     }
-  }, [host, port, username, password, insecure, forceProtocol, tryInvoke, safe]);
+  }, [
+    host,
+    port,
+    username,
+    password,
+    insecure,
+    forceProtocol,
+    initialConnection?.timeoutSecs,
+    tryInvoke,
+    safe,
+  ]);
 
   const disconnect = useCallback(async () => {
     try {

@@ -31,20 +31,24 @@ pub async fn list_scaleway_instances(
 pub async fn get_scaleway_session(
     session_id: String,
     state: tauri::State<'_, ScalewayServiceState>,
-) -> Result<ScalewaySession, String> {
+) -> Result<ScalewaySessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(ScalewaySessionStatus::from)
         .ok_or("Scaleway session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_scaleway_sessions(
     state: tauri::State<'_, ScalewayServiceState>,
-) -> Result<Vec<ScalewaySession>, String> {
+) -> Result<Vec<ScalewaySessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(ScalewaySessionStatus::from)
+        .collect())
 }
 

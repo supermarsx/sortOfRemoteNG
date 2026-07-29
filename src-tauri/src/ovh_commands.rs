@@ -7,3 +7,5 @@ mod inner {
     include!("../crates/sorng-cloud/src/ovh_cmds.rs");
 }
 
+pub(crate) use inner::*;
+

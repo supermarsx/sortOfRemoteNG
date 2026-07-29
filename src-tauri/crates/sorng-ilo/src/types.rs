@@ -123,6 +123,7 @@ pub struct IloConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(skip_serializing)]
     pub password: String,
     pub auth_method: IloAuthMethod,
     /// Accept self-signed / untrusted TLS certificates

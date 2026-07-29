@@ -78,6 +78,7 @@ export type BuiltInConnectionProtocol =
   | "scaleway"
   | "linode"
   | "ovhcloud"
+  | "idrac"
   | "ilo"
   | "lenovo"
   | "supermicro";
@@ -259,7 +260,11 @@ export interface Connection
   shareName?: string;
   workgroup?: string;
 
-  // Cloud Provider specific
+  /**
+   * @deprecated Legacy cloud editor payload. New writes use the provider-
+   * specific non-secret settings below and keep credentials exclusively in
+   * `password`. Retained read-only for saved-record migration.
+   */
   cloudProvider?: {
     provider:
       | "gcp"
@@ -291,6 +296,8 @@ export interface Connection
     organizationId?: string; // Scaleway
     projectName?: string; // Scaleway, OVH
     serviceId?: string; // OVH
+    appSecret?: string; // OVH legacy migration only
+    consumerKey?: string; // OVH legacy migration only
   };
 
   // Integration-backed connection settings. Protocol is `integration:<descriptorKey>`.
@@ -387,6 +394,101 @@ export interface Connection
 
   // WinRM Connection Settings
   winrmSettings?: WinrmConnectionSettings;
+
+  // Dell iDRAC saved-management settings
+  idracSettings?: {
+    /** Accept the self-signed certificate commonly shipped by BMC appliances. */
+    insecure?: boolean;
+    /** Force a management transport; missing means auto-detect. */
+    forceProtocol?: "redfish" | "wsman" | "ipmi";
+    /** Connection timeout passed to the native iDRAC service. */
+    timeoutSecs?: number;
+  };
+
+  /** HPE iLO command settings. Credentials remain on the parent connection. */
+  iloSettings?: {
+    authMethod?: "basic" | "session";
+    protocol?: "redfish" | "ribcl" | "ipmi";
+    insecure?: boolean;
+    timeoutSecs?: number;
+    ipmiPort?: number;
+    generation?: "ilo1" | "ilo2" | "ilo3" | "ilo4" | "ilo5" | "ilo6" | "ilo7";
+  };
+
+  /** Lenovo XClarity settings accepted by the registered Rust command. */
+  lenovoSettings?: {
+    protocol?: "redfish" | "legacyRest" | "ipmi";
+    insecure?: boolean;
+    timeoutSecs?: number;
+    ipmiPort?: number;
+    generation?: "xcc2" | "xcc" | "imm2" | "imm";
+  };
+
+  /** Supermicro BMC command settings. */
+  supermicroSettings?: {
+    useSsl?: boolean;
+    verifyCert?: boolean;
+    platform?: "x13" | "h13" | "x12" | "h12" | "x11" | "x10" | "x9" | "unknown";
+    authMethod?: "basic" | "session";
+    timeoutSecs?: number;
+  };
+
+  /** Non-secret GCP settings. The service-account JSON uses `password`. */
+  gcpSettings?: {
+    projectId: string;
+    region?: string;
+    zone?: string;
+    scopes?: string[];
+    endpointOverride?: string;
+  };
+
+  /** Non-secret Azure service-principal settings. The secret uses `password`. */
+  azureSettings?: {
+    tenantId: string;
+    clientId: string;
+    subscriptionId: string;
+    defaultResourceGroup?: string;
+    defaultRegion?: string;
+  };
+
+  /** Non-secret DigitalOcean settings. The API token uses `password`. */
+  digitalOceanSettings?: {
+    region?: string;
+  };
+
+  /** Non-secret IBM Cloud settings. The API key uses `password`. */
+  ibmCloudSettings?: {
+    region?: string;
+    resourceGroup?: string;
+  };
+
+  /** Non-secret Heroku settings. The API key uses `password`. */
+  herokuSettings?: {
+    appName?: string;
+    region?: string;
+  };
+
+  /** Non-secret Scaleway settings. The API key uses `password`. */
+  scalewaySettings?: {
+    organizationId?: string;
+    projectName?: string;
+    region?: string;
+  };
+
+  /** Non-secret Linode settings. The API key uses `password`. */
+  linodeSettings?: {
+    region?: string;
+  };
+
+  /**
+   * Non-secret OVHcloud settings. `password` is a JSON credential bundle with
+   * `apiKey`, `appSecret`, and `consumerKey`.
+   */
+  ovhCloudSettings?: {
+    serviceId?: string;
+    projectName?: string;
+    region?: string;
+  };
 
   /** Versioned netcat-style TCP/UDP application-payload settings. */
   rawSocketSettings?: RawSocketSettingsV1;

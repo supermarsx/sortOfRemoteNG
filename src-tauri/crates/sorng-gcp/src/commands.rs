@@ -5,7 +5,7 @@
 // delegate to `GcpService` methods.
 
 use super::compute;
-use super::config::{GcpConnectionConfig, GcpSession};
+use super::config::{GcpConnectionConfig, GcpSessionStatus};
 use super::dns;
 use super::functions;
 use super::gke;
@@ -44,7 +44,7 @@ pub async fn disconnect_gcp(
 #[tauri::command]
 pub async fn list_gcp_sessions(
     state: tauri::State<'_, GcpServiceState>,
-) -> Result<Vec<GcpSession>, String> {
+) -> Result<Vec<GcpSessionStatus>, String> {
     let gcp = state.lock().await;
     Ok(gcp.list_gcp_sessions())
 }
@@ -53,7 +53,7 @@ pub async fn list_gcp_sessions(
 pub async fn get_gcp_session(
     state: tauri::State<'_, GcpServiceState>,
     session_id: String,
-) -> Result<GcpSession, String> {
+) -> Result<GcpSessionStatus, String> {
     let gcp = state.lock().await;
     gcp.get_gcp_session(&session_id)
         .ok_or_else(|| format!("GCP session {} not found", session_id))

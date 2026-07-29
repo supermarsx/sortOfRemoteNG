@@ -67,17 +67,23 @@ The native and vendor importers normalize recognized names into saved connection
 
 Recognizing a protocol during import still does not widen its runtime capabilities: imported FTP remains passive/EPSV and direct-route only, imported SCP retains its explicit host-key policy and direct-route boundary, and recognizing VNC does not add a raw-TCP RFB bridge. Imported AnyDesk and RustDesk entries still require their installed native clients. See [Import, Export & Clone]({{ '/import-export-clone/' | relative_url }}) for the review workflow.
 
-## Provider and hardware entries
+## Cloud and Lights-Out management panels
 
-The following persisted values are management identities, not interchangeable terminal or desktop protocols. None currently has a saved-connection panel host, so the active protocol picker does not offer them and a legacy or imported record fails closed with an explicit unavailable message. They never pass through the old timer-based simulated connection path. Provider or hardware command crates and typed hooks are control-plane building blocks, not proof of a reachable application panel.
+The active picker now offers twelve saved management connections in the
+**Cloud Platforms** and **Lights-Out & BMC** groups. Each has a dedicated
+`SessionViewer` panel, native command registration, validation, and teardown.
+They are interactive management panels, not interchangeable terminal or
+desktop transports.
 
-| Entry                                                       | Classification                                                 | Repository surface and routing truth                                                                       |
-| ----------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| GCP, Azure                                                  | Provider command APIs; no saved-connection panel               | `src-tauri/crates/sorng-gcp`, `src-tauri/crates/sorng-azure`; no frontend host is registered               |
-| IBM Cloud, DigitalOcean, Heroku, Scaleway, Linode, OVHcloud | Persisted management identities only                           | No saved-connection panel or direct session runtime is registered                                          |
-| HP iLO                                                      | Hardware command API and typed hook; no saved-connection panel | `src/hooks/hardware/useIlo.ts`, `src-tauri/crates/sorng-ilo`; no frontend host is registered               |
-| Lenovo XCC / IMM                                            | Hardware command API and typed hook; no saved-connection panel | `src/hooks/hardware/useLenovo.ts`, `src-tauri/crates/sorng-lenovo`; no frontend host is registered         |
-| Supermicro BMC                                              | Hardware command API and typed hook; no saved-connection panel | `src/hooks/hardware/useSupermicro.ts`, `src-tauri/crates/sorng-supermicro`; no frontend host is registered |
+| Entries | Classification | Important runtime boundary |
+| --- | --- | --- |
+| Dell iDRAC, HPE iLO, Lenovo XClarity, Supermicro BMC | Interactive management panel | Native connect attempts a device transport and authentication. Final capability still depends on reachable hardware, firmware, credentials, and the selected Redfish/legacy/IPMI path. |
+| Microsoft Azure | Interactive cloud management panel | Connect requests an Azure authentication token, but inventory and permissions still require live resource calls. |
+| Google Cloud, DigitalOcean, IBM Cloud, Heroku, Scaleway, Linode, OVHcloud | Interactive cloud management panel | A successful connect can mean local client/session initialization only. It does not prove live provider authentication, authorization, or inventory access. |
+
+Required fields, protected credential boundaries, legacy migration, lease
+behavior, rollback, and recovery are documented in
+[Cloud & Lights-Out Connections]({{ '/cloud-and-lights-out/' | relative_url }}).
 
 Service integrations use the separate `integration:*` descriptor contract and route through `src/components/integrations/IntegrationPanelHost.tsx`. Their support level belongs to each integration panel and is not inferred from this direct-session matrix.
 

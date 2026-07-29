@@ -29,11 +29,31 @@ pub struct HerokuConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HerokuSession {
     pub id: String,
+    #[serde(skip_serializing)]
     pub config: HerokuConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_connected: bool,
     pub dynos: Vec<HerokuDyno>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HerokuSessionStatus {
+    pub id: String,
+    pub connected_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub is_connected: bool,
+}
+
+impl From<&HerokuSession> for HerokuSessionStatus {
+    fn from(session: &HerokuSession) -> Self {
+        Self {
+            id: session.id.clone(),
+            connected_at: session.connected_at,
+            last_activity: session.last_activity,
+            is_connected: session.is_connected,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,9 +105,7 @@ impl HerokuService {
     }
 
     pub async fn disconnect_heroku(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.is_connected = false;
-            session.last_activity = Utc::now();
+        if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
             Err("Heroku session not found".to_string())

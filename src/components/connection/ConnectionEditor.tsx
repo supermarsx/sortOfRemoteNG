@@ -109,15 +109,31 @@ const EditorHeader: React.FC<{
           </div>
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
-              {mgr.isNewConnection ? "New Connection" : "Edit Connection"}
+              {mgr.isNewConnection
+                ? t("connectionEditor.header.newTitle", "New Connection")
+                : t("connectionEditor.header.editTitle", "Edit Connection")}
               {mgr.isNewConnection && (
                 <Sparkles size={14} className="text-success" />
               )}
             </h2>
             <p className="truncate text-xs text-[var(--color-textSecondary)]">
               {mgr.isNewConnection
-                ? "Add a new server or service"
-                : `Editing "${mgr.formData.name || "connection"}"`}
+                ? t(
+                    "connectionEditor.header.newSubtitle",
+                    "Add a new server or service",
+                  )
+                : t(
+                    "connectionEditor.header.editing",
+                    'Editing "{{name}}"',
+                    {
+                      name:
+                        mgr.formData.name ||
+                        t(
+                          "connectionEditor.header.unnamedConnection",
+                          "connection",
+                        ),
+                    },
+                  )}
             </p>
           </div>
         </div>
@@ -128,13 +144,13 @@ const EditorHeader: React.FC<{
               {mgr.autoSaveStatus === "pending" && (
                 <span className="text-warning flex items-center gap-1 bg-warning/10 px-2 py-1 rounded-full">
                   <span className="w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
-                  Saving...
+                  {t("connectionEditor.header.saving", "Saving...")}
                 </span>
               )}
               {mgr.autoSaveStatus === "saved" && (
                 <span className="text-success flex items-center gap-1 bg-success/10 px-2 py-1 rounded-full">
                   <Check size={12} />
-                  Saved
+                  {t("connectionEditor.header.saved", "Saved")}
                 </span>
               )}
             </div>
@@ -169,17 +185,23 @@ const EditorHeader: React.FC<{
               onClick={() => {
                 if (
                   window.confirm(
-                    "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
+                    t(
+                      "connectionEditor.header.resetConfirm",
+                      "Reset all fields to their default values? This will preserve the connection name and protocol but reset everything else.",
+                    ),
                   )
                 ) {
                   mgr.handleResetToDefaults();
                 }
               }}
               className="px-3 h-9 rounded-lg font-medium transition-all flex items-center gap-2 border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              title="Reset to Defaults"
+              title={t(
+                "connectionEditor.header.resetTitle",
+                "Reset to Defaults",
+              )}
             >
               <RotateCcw size={16} />
-              Reset
+              {t("connectionEditor.header.reset", "Reset")}
             </button>
           )}
           <button
@@ -192,7 +214,9 @@ const EditorHeader: React.FC<{
             }`}
           >
             <Save size={16} />
-            {mgr.isNewConnection ? "Create" : "Save"}
+            {mgr.isNewConnection
+              ? t("connectionEditor.header.create", "Create")
+              : t("connectionEditor.header.save", "Save")}
           </button>
         </div>
       </div>
@@ -204,79 +228,98 @@ const EditorHeader: React.FC<{
    QuickToggles — Group / Favorite toggle chips
    ═══════════════════════════════════════════════════════════════ */
 
-const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div
-    data-editor-search-section="general-basics"
-    className="flex flex-wrap gap-3"
-  >
-    <label
-      data-editor-search-field="isGroup"
-      className={`sor-option-chip ${
-        mgr.formData.isGroup
-          ? "sor-option-chip-active bg-primary/20 border-accent/50 text-primary"
-          : ""
-      }`}
+const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-editor-search-section="general-basics"
+      className="flex flex-wrap gap-3"
     >
-      <Checkbox
-        checked={!!mgr.formData.isGroup}
-        onChange={(v: boolean) =>
-          mgr.setFormData({ ...mgr.formData, isGroup: v })
-        }
-        className="sr-only"
-      />
-      <FolderIcon size={16} />
-      <span className="text-sm font-medium">Folder/Group</span>
-    </label>
-    {!mgr.formData.isGroup && (
       <label
-        data-editor-search-field="favorite"
+        data-editor-search-field="isGroup"
         className={`sor-option-chip ${
-          mgr.formData.favorite
-            ? "sor-option-chip-active bg-warning/20 border-warning/50 text-warning"
+          mgr.formData.isGroup
+            ? "sor-option-chip-active bg-primary/20 border-accent/50 text-primary"
             : ""
         }`}
       >
         <Checkbox
-          checked={!!mgr.formData.favorite}
+          checked={!!mgr.formData.isGroup}
           onChange={(v: boolean) =>
-            mgr.setFormData({ ...mgr.formData, favorite: v })
+            mgr.setFormData({ ...mgr.formData, isGroup: v })
           }
           className="sr-only"
         />
-        <Star
-          size={16}
-          className={mgr.formData.favorite ? "fill-yellow-400" : ""}
-        />
-        <span className="text-sm font-medium">Favorite</span>
+        <FolderIcon size={16} />
+        <span className="text-sm font-medium">
+          {t("connectionEditor.quickToggles.folderGroup", "Folder/Group")}
+        </span>
       </label>
-    )}
-  </div>
-);
+      {!mgr.formData.isGroup && (
+        <label
+          data-editor-search-field="favorite"
+          className={`sor-option-chip ${
+            mgr.formData.favorite
+              ? "sor-option-chip-active bg-warning/20 border-warning/50 text-warning"
+              : ""
+          }`}
+        >
+          <Checkbox
+            checked={!!mgr.formData.favorite}
+            onChange={(v: boolean) =>
+              mgr.setFormData({ ...mgr.formData, favorite: v })
+            }
+            className="sr-only"
+          />
+          <Star
+            size={16}
+            className={mgr.formData.favorite ? "fill-yellow-400" : ""}
+          />
+          <span className="text-sm font-medium">
+            {t("connectionEditor.quickToggles.favorite", "Favorite")}
+          </span>
+        </label>
+      )}
+    </div>
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    NameInput
    ═══════════════════════════════════════════════════════════════ */
 
-const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div data-editor-search-field="name">
-    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-      {mgr.formData.isGroup ? "Folder Name" : "Connection Name"}{" "}
-      <span className="text-error">*</span>
-    </label>
-    <input
-      type="text"
-      required
-      data-testid="editor-name"
-      value={mgr.formData.name || ""}
-      onChange={(e) =>
-        mgr.setFormData({ ...mgr.formData, name: e.target.value })
-      }
-      className="sor-form-input text-sm"
-      placeholder={mgr.formData.isGroup ? "My Servers" : "Production Server"}
-      autoFocus
-    />
-  </div>
-);
+const NameInput: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  return (
+    <div data-editor-search-field="name">
+      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
+        {mgr.formData.isGroup
+          ? t("connectionEditor.name.folderLabel", "Folder Name")
+          : t("connectionEditor.name.connectionLabel", "Connection Name")}{" "}
+        <span className="text-error">*</span>
+      </label>
+      <input
+        type="text"
+        required
+        data-testid="editor-name"
+        value={mgr.formData.name || ""}
+        onChange={(e) =>
+          mgr.setFormData({ ...mgr.formData, name: e.target.value })
+        }
+        className="sor-form-input text-sm"
+        placeholder={
+          mgr.formData.isGroup
+            ? t("connectionEditor.name.folderPlaceholder", "My Servers")
+            : t(
+                "connectionEditor.name.connectionPlaceholder",
+                "Production Server",
+              )
+        }
+        autoFocus
+      />
+    </div>
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    ProtocolSelector — dropdown with icons
@@ -290,9 +333,8 @@ const ALL_PROTOCOL_OPTIONS = [
 type ProtocolPickerOption = (typeof ALL_PROTOCOL_OPTIONS)[number];
 
 /** Display order of the connection-type categories in the picker (t56 C2 —
- *  mirrors `groupByCategory`'s order). `lights-out` and `cloud` are listed for
- *  completeness but currently have no selectable options, so they render no
- *  header (their protocols are management-only; see `PROTOCOL_OPTIONS`). */
+ *  mirrors `groupByCategory`'s order). t57 populates `lights-out` and `cloud`
+ *  only with built-ins that have concrete saved-session routes. */
 const PROTOCOL_CATEGORY_ORDER: ConnectionTypeCategory[] = [
   "remote-desktop",
   "console",
@@ -323,7 +365,7 @@ const PROTOCOL_GROUP_SEARCH_TERMS: Record<ConnectionTypeCategory, string> = {
   "mail-server": "mail server servers email",
   database: "database databases",
   "file-storage": "file transfer storage files",
-  cloud: "cloud platform platforms",
+  cloud: "cloud cloud platform cloud platforms platforms",
   monitoring: "monitoring metrics observability",
   vault: "vault vaults secret secrets",
   management: "management automation",
@@ -333,13 +375,24 @@ const PROTOCOL_GROUP_SEARCH_TERMS: Record<ConnectionTypeCategory, string> = {
 const matchesProtocolSearch = (
   option: ProtocolPickerOption,
   normalizedQuery: string,
+  localizedCategoryLabel: string,
 ) =>
-  `${option.label} ${option.desc} ${option.value} ${PROTOCOL_GROUP_SEARCH_TERMS[option.category]}`
+  `${option.label} ${option.desc} ${option.value} ${localizedCategoryLabel} ${PROTOCOL_GROUP_SEARCH_TERMS[option.category]}`
     .toLowerCase()
     .includes(normalizedQuery);
 
 const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   const { t } = useTranslation();
+  const getProtocolCategoryLabel = React.useCallback(
+    (category: ConnectionTypeCategory) =>
+      String(
+        t(
+          PROTOCOL_CATEGORY_LABEL_KEYS[category],
+          PROTOCOL_CATEGORY_LABELS[category],
+        ),
+      ),
+    [t],
+  );
   const [open, setOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -352,9 +405,13 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
   const visibleOptions = React.useMemo(() => {
     if (!normalizedQuery) return ALL_PROTOCOL_OPTIONS;
     return ALL_PROTOCOL_OPTIONS.filter((option) =>
-      matchesProtocolSearch(option, normalizedQuery),
+      matchesProtocolSearch(
+        option,
+        normalizedQuery,
+        getProtocolCategoryLabel(option.category),
+      ),
     );
-  }, [normalizedQuery]);
+  }, [getProtocolCategoryLabel, normalizedQuery]);
 
   const firstVisibleGroup = PROTOCOL_CATEGORY_ORDER.find((category) =>
     visibleOptions.some((option) => option.category === category),
@@ -407,17 +464,33 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     ? getProtocolAvailability(mgr.formData.protocol)
     : undefined;
   const currentLabel =
-    current?.label ??
+    (current
+      ? current.labelKey
+        ? t(current.labelKey, current.label)
+        : current.label
+      : undefined) ??
     persistedAvailability?.label ??
     mgr.formData.protocol ??
-    "Select";
+    t("connectionEditor.protocolPicker.select", "Select");
   const currentDescription =
-    current?.desc ??
+    (current
+      ? current.descKey
+        ? t(current.descKey, current.desc)
+        : current.desc
+      : undefined) ??
     (persistedAvailability?.classification === "management-only"
-      ? "Saved management identity — no direct session"
+      ? t(
+          "connectionEditor.protocolPicker.savedManagementNoSession",
+          "Saved management identity — no direct session",
+        )
       : mgr.formData.protocol
-        ? "Unavailable saved protocol"
+        ? t(
+            "connectionEditor.protocolPicker.unavailableSaved",
+            "Unavailable saved protocol",
+          )
         : "");
+  const isProtocolUnselected =
+    !current && !persistedAvailability && !mgr.formData.protocol;
   const CurrentIcon = current?.icon ?? Cloud;
 
   const selectProtocol = React.useCallback(
@@ -433,7 +506,11 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     const hasMatches =
       !nextNormalizedQuery ||
       ALL_PROTOCOL_OPTIONS.some((option) =>
-        matchesProtocolSearch(option, nextNormalizedQuery),
+        matchesProtocolSearch(
+          option,
+          nextNormalizedQuery,
+          getProtocolCategoryLabel(option.category),
+        ),
       );
     setSearchQuery(nextQuery);
     setActiveIndex(hasMatches ? 0 : -1);
@@ -478,10 +555,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
     );
     if (options.length === 0) return null;
 
-    const label = t(
-      PROTOCOL_CATEGORY_LABEL_KEYS[category],
-      PROTOCOL_CATEGORY_LABELS[category],
-    );
+    const label = getProtocolCategoryLabel(category);
 
     return (
       <div
@@ -493,12 +567,24 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         <p className="px-3 py-1 text-[10px] font-semibold text-[var(--color-textMuted)] uppercase tracking-wider">
           {label}
         </p>
-        {options.map(({ value, label: optionLabel, desc, icon: Icon }) => {
+        {options.map(
+          ({
+            value,
+            label: optionLabel,
+            desc,
+            labelKey,
+            descKey,
+            icon: Icon,
+          }) => {
           const optionIndex = visibleOptions.findIndex(
             (option) => option.value === value,
           );
           const isSelected = mgr.formData.protocol === value;
           const isHighlighted = activeIndex === optionIndex;
+          const translatedOptionLabel = labelKey
+            ? t(labelKey, optionLabel)
+            : optionLabel;
+          const translatedDescription = descKey ? t(descKey, desc) : desc;
           return (
             <button
               key={value}
@@ -530,13 +616,13 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               />
               <span
                 className="min-w-0 flex-1 truncate"
-                title={`${optionLabel} — ${desc}`}
+                title={`${translatedOptionLabel} — ${translatedDescription}`}
               >
-                <span className="font-medium">{optionLabel}</span>{" "}
+                <span className="font-medium">{translatedOptionLabel}</span>{" "}
                 <span
                   className={`text-xs ${isSelected ? "text-primary/70" : "text-[var(--color-textMuted)]"}`}
                 >
-                  {desc}
+                  {translatedDescription}
                 </span>
               </span>
               {isSelected && (
@@ -547,7 +633,8 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               )}
             </button>
           );
-        })}
+          },
+        )}
       </div>
     );
   };
@@ -569,7 +656,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         id="editor-protocol-label"
         className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1"
       >
-        Protocol
+        {t("connectionEditor.protocolPicker.label", "Protocol")}
       </label>
       <button
         ref={triggerRef}
@@ -596,8 +683,11 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
           id="editor-protocol-value"
           className="min-w-0 flex-1 truncate text-left"
           title={
-            currentLabel === "Select"
-              ? "Select protocol"
+            isProtocolUnselected
+              ? t(
+                  "connectionEditor.protocolPicker.selectTitle",
+                  "Select protocol",
+                )
               : `${currentLabel} — ${currentDescription}`
           }
         >
@@ -629,7 +719,10 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
               onKeyDown={handleSearchKeyDown}
               data-testid="editor-protocol-search"
               role="combobox"
-              aria-label="Search protocols"
+              aria-label={t(
+                "connectionEditor.protocolPicker.searchAria",
+                "Search protocols",
+              )}
               aria-autocomplete="list"
               aria-expanded="true"
               aria-controls="editor-protocol-options"
@@ -639,7 +732,10 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   : undefined
               }
               autoComplete="off"
-              placeholder="Search protocols and integrations…"
+              placeholder={t(
+                "connectionEditor.protocolPicker.searchPlaceholder",
+                "Search protocols and integrations…",
+              )}
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
             />
             {searchQuery && (
@@ -649,7 +745,10 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   updateSearchQuery("");
                   searchInputRef.current?.focus();
                 }}
-                aria-label="Clear protocol search"
+                aria-label={t(
+                  "connectionEditor.protocolPicker.clearSearch",
+                  "Clear protocol search",
+                )}
                 className="rounded p-0.5 text-[var(--color-textMuted)] transition-colors hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
               >
                 <X size={14} />
@@ -661,7 +760,10 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
             <div
               id="editor-protocol-options"
               role="listbox"
-              aria-label="Available protocols"
+              aria-label={t(
+                "connectionEditor.protocolPicker.availableAria",
+                "Available protocols",
+              )}
             >
               {visibleOptions.length > 0 && (
                 <>
@@ -682,10 +784,16 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   className="text-[var(--color-textMuted)]"
                 />
                 <span className="text-sm font-medium text-[var(--color-textSecondary)]">
-                  No protocols found
+                  {t(
+                    "connectionEditor.protocolPicker.emptyTitle",
+                    "No protocols found",
+                  )}
                 </span>
                 <span className="text-xs text-[var(--color-textMuted)]">
-                  Try a protocol name or description.
+                  {t(
+                    "connectionEditor.protocolPicker.emptyHint",
+                    "Try a protocol name or description.",
+                  )}
                 </span>
               </div>
             )}
@@ -703,6 +811,7 @@ const ProtocolGrid: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
 const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   mgr,
 }) => {
+  const { t } = useTranslation();
   const protocol = mgr.formData.protocol as string | undefined;
   type IntegrationConnectionFormSettings = IntegrationConnectionLaunchSettings;
   const integration: IntegrationConnectionFormSettings = {
@@ -793,7 +902,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
   const instanceSelector = (
     <div>
       <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-        Saved Instance
+        {t("connectionEditor.integration.savedInstance", "Saved Instance")}
       </label>
       <select
         data-testid="editor-integration-instance-id"
@@ -804,14 +913,30 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       >
         <option value="">
           {configStore.isLoading
-            ? "Loading saved instances…"
-            : "New / panel-managed instance"}
+            ? t(
+                "connectionEditor.integration.loadingSavedInstances",
+                "Loading saved instances…",
+              )
+            : t(
+                "connectionEditor.integration.newPanelManagedInstance",
+                "New / panel-managed instance",
+              )}
         </option>
         {hasUnresolvedSelection && (
           <option value={integration.instanceId}>
             {configStore.isLoading
-              ? `${integration.instanceName || integration.instanceId} (loading…)`
-              : `Unavailable instance (${integration.instanceId})`}
+              ? t(
+                  "connectionEditor.integration.loadingInstance",
+                  "{{name}} (loading…)",
+                  {
+                    name: integration.instanceName || integration.instanceId,
+                  },
+                )
+              : t(
+                  "connectionEditor.integration.unavailableInstance",
+                  "Unavailable instance ({{id}})",
+                  { id: integration.instanceId },
+                )}
           </option>
         )}
         {savedInstances.map((instance) => (
@@ -882,7 +1007,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
           <div>{instanceSelector}</div>
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              Instance Name
+              {t(
+                "connectionEditor.integration.instanceName",
+                "Instance Name",
+              )}
             </label>
             <input
               type="text"
@@ -892,7 +1020,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                 updateIntegration({ instanceName: e.target.value })
               }
               className="sor-form-input text-sm"
-              placeholder="Corporate Exchange"
+              placeholder={t(
+                "connectionEditor.integration.exchangeNamePlaceholder",
+                "Corporate Exchange",
+              )}
             />
           </div>
         </div>
@@ -900,7 +1031,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              Environment
+              {t("connectionEditor.integration.environment", "Environment")}
             </label>
             <select
               data-testid="editor-exchange-environment"
@@ -916,17 +1047,26 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
               {EXCHANGE_ENVIRONMENTS.map((environment) => (
                 <option key={environment} value={environment}>
                   {environment === "online"
-                    ? "Exchange Online"
+                    ? t(
+                        "connectionEditor.integration.exchangeOnline",
+                        "Exchange Online",
+                      )
                     : environment === "onPremises"
-                      ? "Exchange Server"
-                      : "Hybrid"}
+                      ? t(
+                          "connectionEditor.integration.exchangeServer",
+                          "Exchange Server",
+                        )
+                      : t("connectionEditor.integration.hybrid", "Hybrid")}
                 </option>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-              Timeout (s)
+              {t(
+                "connectionEditor.integration.timeoutSeconds",
+                "Timeout (s)",
+              )}
             </label>
             <input
               type="text"
@@ -947,7 +1087,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Tenant ID
+                  {t("connectionEditor.integration.tenantId", "Tenant ID")}
                 </label>
                 <input
                   type="text"
@@ -962,7 +1102,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
               </div>
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Client ID
+                  {t("connectionEditor.integration.clientId", "Client ID")}
                 </label>
                 <input
                   type="text"
@@ -980,7 +1120,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Client Secret
+                  {t(
+                    "connectionEditor.integration.clientSecret",
+                    "Client Secret",
+                  )}
                 </label>
                 <PasswordInput
                   data-testid="editor-exchange-client-secret"
@@ -990,12 +1133,18 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   }
                   isSaved={false}
                   className="sor-form-input text-sm"
-                  placeholder="client secret"
+                  placeholder={t(
+                    "connectionEditor.integration.clientSecretPlaceholder",
+                    "client secret",
+                  )}
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Online Username
+                  {t(
+                    "connectionEditor.integration.onlineUsername",
+                    "Online Username",
+                  )}
                 </label>
                 <input
                   type="text"
@@ -1012,7 +1161,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
 
             <div>
               <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                Organization
+                {t(
+                  "connectionEditor.integration.organization",
+                  "Organization",
+                )}
               </label>
               <input
                 type="text"
@@ -1033,7 +1185,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             <div className="grid grid-cols-[1fr_100px] gap-2">
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Server
+                  {t("connectionEditor.integration.server", "Server")}
                 </label>
                 <input
                   type="text"
@@ -1048,7 +1200,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
               </div>
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Port
+                  {t("connectionEditor.integration.port", "Port")}
                 </label>
                 <input
                   type="text"
@@ -1067,7 +1219,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  On-prem Username
+                  {t(
+                    "connectionEditor.integration.onPremUsername",
+                    "On-prem Username",
+                  )}
                 </label>
                 <input
                   type="text"
@@ -1082,7 +1237,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
               </div>
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Password
+                  {t("connectionEditor.integration.password", "Password")}
                 </label>
                 <PasswordInput
                   data-testid="editor-exchange-password"
@@ -1092,7 +1247,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   }
                   isSaved={false}
                   className="sor-form-input text-sm"
-                  placeholder="password"
+                  placeholder={t(
+                    "connectionEditor.integration.passwordPlaceholder",
+                    "password",
+                  )}
                 />
               </div>
             </div>
@@ -1100,7 +1258,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-                  Auth Method
+                  {t(
+                    "connectionEditor.integration.authMethod",
+                    "Auth Method",
+                  )}
                 </label>
                 <select
                   data-testid="editor-exchange-auth-method"
@@ -1129,7 +1290,9 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   variant="form"
                   data-testid="editor-exchange-use-ssl"
                 />
-                <span>Use SSL</span>
+                <span>
+                  {t("connectionEditor.integration.useSsl", "Use SSL")}
+                </span>
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-input)] px-3 py-2 text-sm text-[var(--color-text)]">
                 <Checkbox
@@ -1140,7 +1303,12 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
                   variant="form"
                   data-testid="editor-exchange-skip-cert-check"
                 />
-                <span>Skip Cert</span>
+                <span>
+                  {t(
+                    "connectionEditor.integration.skipCertificate",
+                    "Skip Cert",
+                  )}
+                </span>
               </label>
             </div>
           </div>
@@ -1155,7 +1323,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
         <div>{instanceSelector}</div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Instance Name
+            {t("connectionEditor.integration.instanceName", "Instance Name")}
           </label>
           <input
             type="text"
@@ -1165,7 +1333,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
               updateIntegration({ instanceName: e.target.value })
             }
             className="sor-form-input text-sm"
-            placeholder="Production"
+            placeholder={t(
+              "connectionEditor.integration.instanceNamePlaceholder",
+              "Production",
+            )}
           />
         </div>
       </div>
@@ -1173,7 +1344,8 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Host <span className="text-error">*</span>
+            {t("connectionEditor.integration.host", "Host")}{" "}
+            <span className="text-error">*</span>
           </label>
           <input
             type="text"
@@ -1186,7 +1358,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Base URL
+            {t("connectionEditor.integration.baseUrl", "Base URL")}
           </label>
           <input
             type="text"
@@ -1202,7 +1374,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Auth Token
+            {t("connectionEditor.integration.authToken", "Auth Token")}
           </label>
           <PasswordInput
             data-testid="editor-integration-auth-token"
@@ -1210,12 +1382,15 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             onChange={(e) => updateIntegration({ authToken: e.target.value })}
             isSaved={false}
             className="sor-form-input text-sm"
-            placeholder="token"
+            placeholder={t(
+              "connectionEditor.integration.authTokenPlaceholder",
+              "token",
+            )}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            API Key
+            {t("connectionEditor.integration.apiKey", "API Key")}
           </label>
           <PasswordInput
             data-testid="editor-integration-api-key"
@@ -1223,7 +1398,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             onChange={(e) => updateIntegration({ apiKey: e.target.value })}
             isSaved={false}
             className="sor-form-input text-sm"
-            placeholder="api key"
+            placeholder={t(
+              "connectionEditor.integration.apiKeyPlaceholder",
+              "api key",
+            )}
           />
         </div>
       </div>
@@ -1231,7 +1409,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Username
+            {t("connectionEditor.integration.username", "Username")}
           </label>
           <input
             type="text"
@@ -1244,7 +1422,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Password
+            {t("connectionEditor.integration.password", "Password")}
           </label>
           <PasswordInput
             data-testid="editor-password"
@@ -1252,7 +1430,10 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             onChange={(e) => updateIntegration({ password: e.target.value })}
             isSaved={false}
             className="sor-form-input text-sm"
-            placeholder="password"
+            placeholder={t(
+              "connectionEditor.integration.passwordPlaceholder",
+              "password",
+            )}
           />
         </div>
       </div>
@@ -1265,11 +1446,16 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
             variant="form"
             data-testid="editor-integration-tls-verify"
           />
-          <span>TLS Verify</span>
+          <span>
+            {t("connectionEditor.integration.tlsVerify", "TLS Verify")}
+          </span>
         </label>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Timeout (s)
+            {t(
+              "connectionEditor.integration.timeoutSeconds",
+              "Timeout (s)",
+            )}
           </label>
           <NumberInput
             value={integration.timeout ?? 30}
@@ -1286,6 +1472,7 @@ const IntegrationConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({
 };
 
 const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
   const p = mgr.formData.protocol || "";
   if (isIntegrationConnectionProtocol(p)) {
     return <IntegrationConnectionFields mgr={mgr} />;
@@ -1298,7 +1485,8 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       <div className="grid grid-cols-[1fr_100px] gap-2">
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Hostname / IP <span className="text-error">*</span>
+            {t("connectionEditor.connectionFields.hostnameOrIp", "Hostname / IP")}{" "}
+            <span className="text-error">*</span>
           </label>
           <input
             type="text"
@@ -1320,7 +1508,7 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1">
-            Port
+            {t("connectionEditor.connectionFields.port", "Port")}
           </label>
           <NumberInput
             value={mgr.formData.port || 0}
@@ -1354,16 +1542,28 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-              Username
+              {t("connectionEditor.connectionFields.username", "Username")}
               <InfoTooltip
                 text={
                   p === "rdp"
-                    ? "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically)."
+                    ? t(
+                        "connectionEditor.connectionFields.usernameHelp.rdp",
+                        "Windows account name. For domain accounts, set the Domain field below (DOMAIN\\user is built automatically).",
+                      )
                     : p === "winrm"
-                      ? "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below."
+                      ? t(
+                          "connectionEditor.connectionFields.usernameHelp.winrm",
+                          "Legacy process-shell account used by the current PowerShell Remoting adapter. Domain accounts use the Domain field below.",
+                        )
                       : p === "vnc"
-                        ? "VNC authentication usually only needs a password, not a username."
-                        : "Username for authentication with the remote service."
+                        ? t(
+                            "connectionEditor.connectionFields.usernameHelp.vnc",
+                            "VNC authentication usually only needs a password, not a username.",
+                          )
+                        : t(
+                            "connectionEditor.connectionFields.usernameHelp.default",
+                            "Username for authentication with the remote service.",
+                          )
                 }
               />
             </label>
@@ -1381,23 +1581,38 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
                   : p === "winrm"
                     ? "Administrator"
                     : p === "vnc"
-                      ? "(optional)"
+                      ? t(
+                          "connectionEditor.connectionFields.optionalPlaceholder",
+                          "(optional)",
+                        )
                       : "admin"
               }
             />
           </div>
           <div>
             <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-1 flex items-center gap-1">
-              Password
+              {t("connectionEditor.connectionFields.password", "Password")}
               <InfoTooltip
                 text={
                   p === "rdp"
-                    ? "Windows account password. Sent via CredSSP/NLA during the RDP handshake."
+                    ? t(
+                        "connectionEditor.connectionFields.passwordHelp.rdp",
+                        "Windows account password. Sent via CredSSP/NLA during the RDP handshake.",
+                      )
                     : p === "winrm"
-                      ? "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality."
+                      ? t(
+                          "connectionEditor.connectionFields.passwordHelp.winrm",
+                          "Legacy process-shell credential used by the current PowerShell Remoting adapter. Use HTTPS for transport confidentiality.",
+                        )
                       : p === "vnc"
-                        ? "VNC server password. Most VNC servers only use password authentication."
-                        : "Password for authentication with the remote service."
+                        ? t(
+                            "connectionEditor.connectionFields.passwordHelp.vnc",
+                            "VNC server password. Most VNC servers only use password authentication.",
+                          )
+                        : t(
+                            "connectionEditor.connectionFields.passwordHelp.default",
+                            "Password for authentication with the remote service.",
+                          )
                 }
               />
             </label>
@@ -1422,31 +1637,39 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
    EditorFooter
    ═══════════════════════════════════════════════════════════════ */
 
-const EditorFooter: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
-  <div className="min-w-0 max-w-full shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3">
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-textSecondary)]">
-      <div className="flex items-center gap-4">
-        <span className="flex items-center gap-1">
-          <Zap size={12} />
-          Press{" "}
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[var(--color-textSecondary)]">
-            Enter
-          </kbd>{" "}
-          to save
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[var(--color-textSecondary)]">
-            Esc
-          </kbd>{" "}
-          to cancel
-        </span>
+const EditorFooter: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="min-w-0 max-w-full shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-textSecondary)]">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1">
+            <Zap size={12} />
+            {t("connectionEditor.footer.press", "Press")}{" "}
+            <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[var(--color-textSecondary)]">
+              Enter
+            </kbd>{" "}
+            {t("connectionEditor.footer.toSave", "to save")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-[var(--color-surfaceHover)] rounded text-[var(--color-textSecondary)]">
+              Esc
+            </kbd>{" "}
+            {t("connectionEditor.footer.toCancel", "to cancel")}
+          </span>
+        </div>
+        {mgr.connection && mgr.settings.autoSaveEnabled && (
+          <span className="text-[var(--color-textMuted)]">
+            {t(
+              "connectionEditor.footer.autoSaveEnabled",
+              "Auto-save enabled",
+            )}
+          </span>
+        )}
       </div>
-      {mgr.connection && mgr.settings.autoSaveEnabled && (
-        <span className="text-[var(--color-textMuted)]">Auto-save enabled</span>
-      )}
     </div>
-  </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    EditorTabs
@@ -1456,41 +1679,47 @@ const EditorTabs: React.FC<{
   tabs: readonly ConnectionEditorTabDescriptor[];
   activeTab: ConnectionEditorTabId;
   onTabChange: (tab: ConnectionEditorTabId) => void;
-}> = ({ tabs, activeTab, onTabChange }) => (
-  <div className="min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5">
-    <div
-      role="tablist"
-      aria-label="Connection editor sections"
-      className="mx-auto flex w-full min-w-0 max-w-2xl items-center gap-1 overflow-x-auto py-2"
-    >
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = activeTab === tab.id;
+}> = ({ tabs, activeTab, onTabChange }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="min-w-0 max-w-full shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5">
+      <div
+        role="tablist"
+        aria-label={t(
+          "connectionEditor.tabs.ariaLabel",
+          "Connection editor sections",
+        )}
+        className="mx-auto flex w-full min-w-0 max-w-2xl items-center gap-1 overflow-x-auto py-2"
+      >
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
 
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={`connection-editor-tab-${tab.id}`}
-            aria-controls={`connection-editor-panel-${tab.id}`}
-            aria-selected={isActive}
-            data-testid={`connection-editor-tab-${tab.id}`}
-            onClick={() => onTabChange(tab.id)}
-            className={`h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors ${
-              isActive
-                ? "bg-primary/15 text-primary"
-                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
-            }`}
-          >
-            <Icon size={15} />
-            {tab.label}
-          </button>
-        );
-      })}
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`connection-editor-tab-${tab.id}`}
+              aria-controls={`connection-editor-panel-${tab.id}`}
+              aria-selected={isActive}
+              data-testid={`connection-editor-tab-${tab.id}`}
+              onClick={() => onTabChange(tab.id)}
+              className={`h-9 px-3 rounded-lg flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors ${
+                isActive
+                  ? "bg-primary/15 text-primary"
+                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+              }`}
+            >
+              <Icon size={15} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /* ═══════════════════════════════════════════════════════════════
    Root Component

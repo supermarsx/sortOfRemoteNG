@@ -52,12 +52,10 @@ const ALL_CATEGORIES: ConnectionTypeCategory[] = [
   "business-app",
 ];
 
-// The two categories that are deliberately empty in the interim state (t56 §9,
-// user 2026-07-17). Their protocols (ilo/lenovo/supermicro for lights-out; the
-// 8 cloud providers) are management-only — `sessionEntry: "none"`, excluded from
-// the picker — so no selectable option maps to them yet. This is BY DESIGN and
-// DOCUMENTED; t57 will make them openable and MUST update this test when it does.
-const CATEGORIES_EMPTY_BY_DESIGN: ConnectionTypeCategory[] = [
+// The two categories populated by routed t57 built-ins rather than integration
+// descriptors. They must appear in the combined picker while remaining absent
+// from integration-only `groupByCategory()`.
+const T57_BUILT_IN_CATEGORIES: ConnectionTypeCategory[] = [
   "cloud",
   "lights-out",
 ];
@@ -116,12 +114,9 @@ const EXPECTED_DISTRIBUTION: Record<string, string[]> = (() => {
   return map;
 })();
 
-// The 12 categories that ARE populated once built-in protocols are considered:
-// the 10 with integration panels plus `remote-desktop` and `console`, which are
-// filled entirely by built-in `PROTOCOL_OPTIONS`. = all 14 minus the 2 empty.
-const EXPECTED_POPULATED_CATEGORIES = ALL_CATEGORIES.filter(
-  (c) => !CATEGORIES_EMPTY_BY_DESIGN.includes(c),
-);
+// All 14 categories are populated once routed built-ins and integrations are
+// combined in the picker.
+const EXPECTED_POPULATED_CATEGORIES = ALL_CATEGORIES;
 
 const ALL_PICKER_OPTIONS: ProtocolOption[] = [
   ...PROTOCOL_OPTIONS,
@@ -139,8 +134,8 @@ describe("the 14-category taxonomy is intact (t57 depends on it)", () => {
     );
   });
 
-  it("keeps lights-out and cloud in the type so t57 can populate them", () => {
-    for (const category of CATEGORIES_EMPTY_BY_DESIGN) {
+  it("keeps the populated lights-out and cloud categories in the type", () => {
+    for (const category of T57_BUILT_IN_CATEGORIES) {
       expect(ALL_CATEGORIES).toContain(category);
       expect(PROTOCOL_CATEGORY_LABEL_KEYS[category]).toBeTruthy();
     }
@@ -246,18 +241,18 @@ describe("groupByCategory renders every panel — items sum to 23", () => {
 
   it("yields exactly the 10 integration-populated categories", () => {
     // groupByCategory operates on the registry alone, so it surfaces only the
-    // categories that have integration descriptors — 10 of the 12 picker
+    // categories that have integration descriptors — 10 of the 14 picker
     // categories. remote-desktop and console are populated by built-in
-    // protocols (see the picker suite), not by integrations, so they are
-    // correctly absent here.
+    // protocols, and t57's lights-out and cloud categories are also built-in,
+    // so all four are correctly absent here.
     const emitted = groupByCategory()
       .map((g) => g.category)
       .sort();
     expect(emitted).toEqual(Object.keys(EXPECTED_DISTRIBUTION).sort());
     expect(emitted).not.toContain("remote-desktop");
     expect(emitted).not.toContain("console");
-    for (const empty of CATEGORIES_EMPTY_BY_DESIGN) {
-      expect(emitted).not.toContain(empty);
+    for (const builtInCategory of T57_BUILT_IN_CATEGORIES) {
+      expect(emitted).not.toContain(builtInCategory);
     }
   });
 });
@@ -284,32 +279,34 @@ describe("the connection picker surfaces all 23 panels", () => {
   });
 });
 
-describe("12 categories are populated; lights-out and cloud are empty by design", () => {
-  // The picker is the union of built-in and integration options. This is where
-  // the 12-vs-14 split is observable: remote-desktop + console come from
-  // built-ins, the 10 integration categories from descriptors.
+describe("all 14 categories are populated, including t57 lights-out and cloud", () => {
+  // The picker is the union of built-in and integration options. Remote
+  // desktop, console, lights-out, and cloud are populated by built-ins; the
+  // remaining categories are covered by integration descriptors.
   const populated = new Set(ALL_PICKER_OPTIONS.map((o) => o.category));
 
-  it("covers exactly 12 of the 14 categories", () => {
+  it("covers exactly all 14 categories", () => {
     expect(ALL_PICKER_OPTIONS.length).toBeGreaterThan(0);
     expect([...populated].sort()).toEqual(
       [...EXPECTED_POPULATED_CATEGORIES].sort(),
     );
-    expect(populated.size).toBe(12);
+    expect(populated.size).toBe(14);
   });
 
-  it("populates the two built-in-only categories (remote-desktop, console)", () => {
-    // Anti-vacuity: prove the selector matches for the categories that
-    // distinguish 12 from 10 BEFORE asserting the other two are empty.
-    expect(populated.has("remote-desktop")).toBe(true);
-    expect(populated.has("console")).toBe(true);
-    // And a representative integration-only category, to prove that side too.
+  it("populates all four built-in-backed categories", () => {
+    for (const category of [
+      "remote-desktop",
+      "console",
+      ...T57_BUILT_IN_CATEGORIES,
+    ] as ConnectionTypeCategory[]) {
+      expect(populated.has(category), category).toBe(true);
+    }
     expect(populated.has("mail-server")).toBe(true);
   });
 
-  it("pins lights-out and cloud as the ONLY empty categories (flips in t57)", () => {
+  it("leaves no empty picker category", () => {
     const empty = ALL_CATEGORIES.filter((c) => !populated.has(c));
-    expect(empty.sort()).toEqual([...CATEGORIES_EMPTY_BY_DESIGN].sort());
+    expect(empty).toEqual([]);
   });
 });
 

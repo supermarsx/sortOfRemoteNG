@@ -79,6 +79,10 @@ impl AzureClient {
         self.token = None;
     }
 
+    pub fn clear_credentials(&mut self) {
+        self.credentials = None;
+    }
+
     pub fn is_authenticated(&self) -> bool {
         self.token
             .as_ref()
@@ -528,6 +532,23 @@ mod tests {
         assert!(c.is_authenticated());
         c.clear_token();
         assert!(!c.is_authenticated());
+    }
+
+    #[test]
+    fn clear_credentials_removes_secret_bearing_state() {
+        const SENTINEL: &str = "t57-azure-client-secret-sentinel";
+        let mut c = AzureClient::new();
+        c.set_credentials(AzureCredentials {
+            client_secret: SENTINEL.into(),
+            subscription_id: "sub-123".into(),
+            ..Default::default()
+        });
+        assert_eq!(
+            c.credentials().map(|credentials| credentials.client_secret.as_str()),
+            Some(SENTINEL)
+        );
+        c.clear_credentials();
+        assert!(c.credentials().is_none());
     }
 
     #[test]

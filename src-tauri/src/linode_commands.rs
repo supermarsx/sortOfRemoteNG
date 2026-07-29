@@ -7,3 +7,5 @@ mod inner {
     include!("../crates/sorng-cloud/src/linode_cmds.rs");
 }
 
+pub(crate) use inner::*;
+

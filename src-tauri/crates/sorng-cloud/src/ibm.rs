@@ -75,11 +75,31 @@ pub struct IbmConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IbmSession {
     pub id: String,
+    #[serde(skip_serializing)]
     pub config: IbmConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_connected: bool,
     pub virtual_servers: Vec<IbmVirtualServer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IbmSessionStatus {
+    pub id: String,
+    pub connected_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub is_connected: bool,
+}
+
+impl From<&IbmSession> for IbmSessionStatus {
+    fn from(session: &IbmSession) -> Self {
+        Self {
+            id: session.id.clone(),
+            connected_at: session.connected_at,
+            last_activity: session.last_activity,
+            is_connected: session.is_connected,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,9 +169,7 @@ impl IbmService {
     }
 
     pub async fn disconnect_ibm(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.is_connected = false;
-            session.last_activity = Utc::now();
+        if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
             Err("IBM Cloud session not found".to_string())

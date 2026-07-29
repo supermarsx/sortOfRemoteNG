@@ -46,6 +46,7 @@ export const PROTOCOL_ICON_DEFAULTS: Readonly<
   scaleway: "cloud",
   linode: "cloud",
   ovhcloud: "cloud",
+  idrac: "server-cog",
   ilo: "server-cog",
   lenovo: "server-cog",
   supermicro: "server-cog",

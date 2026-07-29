@@ -49,6 +49,12 @@ import {
 import { sanitizeIntegrationProviderFields } from "../../utils/integrations/providerFieldSanitizer";
 import { normalizeAdvancedProtocolConnection } from "../../utils/connection/normalizeAdvancedProtocolConnection";
 import {
+  cloudConnectionNeedsMigration,
+  normalizeCloudConnectionForEditor,
+  normalizeCloudConnectionForPersistence,
+  transitionCloudConnectionProtocol,
+} from "../../utils/connection/cloudConnectionContract";
+import {
   useIntegrationConfigStore,
   type IntegrationInstance,
   type IntegrationInstanceInput,
@@ -62,6 +68,8 @@ export interface ProtocolOption {
   value: string;
   label: string;
   desc: string;
+  labelKey?: string;
+  descKey?: string;
   icon: LucideIcon;
   color: string;
   /** Which connection-type category this option is filed under. Built-in and
@@ -139,11 +147,10 @@ const findIntegrationDescriptorForProtocol = (
 
 type IntegrationConnectionFormSettings = IntegrationConnectionLaunchSettings;
 
-// Only protocols with a registered direct-session route belong here.
-// `BUILT_IN_MANAGEMENT_PROTOCOLS` (utils/session/protocolAvailability.ts) —
-// the cloud providers plus ilo/lenovo/supermicro — are persisted management
-// identities with no session host and must never become selectable, which is
-// why the `cloud` and `lights-out` categories have no entries below.
+// Only protocols with a registered direct-session route belong here. The t57
+// lights-out and cloud entries below are backed by concrete descriptors,
+// SessionViewer routes, and native teardown; unsupported management identities
+// remain excluded by the protocol-availability contract.
 export const PROTOCOL_OPTIONS: ProtocolOption[] = [
   {
     value: "rdp",
@@ -328,6 +335,126 @@ export const PROTOCOL_OPTIONS: ProtocolOption[] = [
     icon: Monitor,
     color: "red",
     category: "remote-desktop",
+  },
+  {
+    value: "idrac",
+    label: "Dell iDRAC",
+    desc: "Dell server out-of-band management",
+    labelKey: "connectionEditor.protocolOptions.idrac.label",
+    descKey: "connectionEditor.protocolOptions.idrac.description",
+    icon: Server,
+    color: "red",
+    category: "lights-out",
+  },
+  {
+    value: "ilo",
+    label: "HPE iLO",
+    desc: "HPE server out-of-band management",
+    labelKey: "connectionEditor.protocolOptions.ilo.label",
+    descKey: "connectionEditor.protocolOptions.ilo.description",
+    icon: Server,
+    color: "green",
+    category: "lights-out",
+  },
+  {
+    value: "lenovo",
+    label: "Lenovo XClarity",
+    desc: "Lenovo server BMC management",
+    labelKey: "connectionEditor.protocolOptions.lenovo.label",
+    descKey: "connectionEditor.protocolOptions.lenovo.description",
+    icon: Server,
+    color: "red",
+    category: "lights-out",
+  },
+  {
+    value: "supermicro",
+    label: "Supermicro BMC",
+    desc: "Supermicro server BMC management",
+    labelKey: "connectionEditor.protocolOptions.supermicro.label",
+    descKey: "connectionEditor.protocolOptions.supermicro.description",
+    icon: Server,
+    color: "blue",
+    category: "lights-out",
+  },
+  {
+    value: "gcp",
+    label: "Google Cloud",
+    desc: "Google Cloud project session",
+    labelKey: "connectionEditor.protocolOptions.gcp.label",
+    descKey: "connectionEditor.protocolOptions.gcp.description",
+    icon: Cloud,
+    color: "blue",
+    category: "cloud",
+  },
+  {
+    value: "azure",
+    label: "Microsoft Azure",
+    desc: "Azure subscription session",
+    labelKey: "connectionEditor.protocolOptions.azure.label",
+    descKey: "connectionEditor.protocolOptions.azure.description",
+    icon: Cloud,
+    color: "blue",
+    category: "cloud",
+  },
+  {
+    value: "ibm-csp",
+    label: "IBM Cloud",
+    desc: "IBM Cloud account session",
+    labelKey: "connectionEditor.protocolOptions.ibm-csp.label",
+    descKey: "connectionEditor.protocolOptions.ibm-csp.description",
+    icon: Cloud,
+    color: "cyan",
+    category: "cloud",
+  },
+  {
+    value: "digital-ocean",
+    label: "DigitalOcean",
+    desc: "DigitalOcean account session",
+    labelKey: "connectionEditor.protocolOptions.digital-ocean.label",
+    descKey: "connectionEditor.protocolOptions.digital-ocean.description",
+    icon: Cloud,
+    color: "blue",
+    category: "cloud",
+  },
+  {
+    value: "heroku",
+    label: "Heroku",
+    desc: "Heroku account session",
+    labelKey: "connectionEditor.protocolOptions.heroku.label",
+    descKey: "connectionEditor.protocolOptions.heroku.description",
+    icon: Cloud,
+    color: "purple",
+    category: "cloud",
+  },
+  {
+    value: "scaleway",
+    label: "Scaleway",
+    desc: "Scaleway account session",
+    labelKey: "connectionEditor.protocolOptions.scaleway.label",
+    descKey: "connectionEditor.protocolOptions.scaleway.description",
+    icon: Cloud,
+    color: "purple",
+    category: "cloud",
+  },
+  {
+    value: "linode",
+    label: "Linode",
+    desc: "Linode account session",
+    labelKey: "connectionEditor.protocolOptions.linode.label",
+    descKey: "connectionEditor.protocolOptions.linode.description",
+    icon: Cloud,
+    color: "green",
+    category: "cloud",
+  },
+  {
+    value: "ovhcloud",
+    label: "OVHcloud",
+    desc: "OVHcloud account session",
+    labelKey: "connectionEditor.protocolOptions.ovhcloud.label",
+    descKey: "connectionEditor.protocolOptions.ovhcloud.description",
+    icon: Cloud,
+    color: "cyan",
+    category: "cloud",
   },
 ];
 
@@ -921,10 +1048,14 @@ export function useConnectionEditor(
           : connection.sshConnectionConfigOverride,
       };
       const normalized = normalizeAdvancedProtocolConnection(
-        normalizeIntegrationFields(resolved),
+        normalizeIntegrationFields(
+          normalizeCloudConnectionForEditor(resolved),
+        ),
       );
       setFormData(normalized);
-      originalDataRef.current = buildEditorSnapshot(normalized);
+      originalDataRef.current = buildEditorSnapshot(
+        cloudConnectionNeedsMigration(resolved) ? resolved : normalized,
+      );
       // Mark as initialized on the *next* effect cycle so the auto-save
       // effect that fires from the setFormData re-render still sees false.
       isInitializedRef.current = false;
@@ -975,8 +1106,8 @@ export function useConnectionEditor(
   const buildConnectionData = useCallback(
     (includeIntegrationSecrets = false): Connection => {
       const now = new Date().toISOString();
-      const normalizedFormData = normalizeIntegrationFields(
-        mergeManagedSshSecrets(formData),
+      const normalizedFormData = normalizeCloudConnectionForPersistence(
+        normalizeIntegrationFields(mergeManagedSshSecrets(formData)),
       );
       const effectiveFormData = normalizeAdvancedProtocolConnection(
         includeIntegrationSecrets
@@ -1337,20 +1468,26 @@ export function useConnectionEditor(
         const carriedPassword = sshPasswordRef.current;
         clearManagedSshSecrets();
         setFormData((prev) =>
-          normalizeAdvancedProtocolConnection({
-            ...prev,
-            protocol: nextProtocol,
-            port: getDefaultConnectionPort(protocol),
-            authType: nextAuthType,
-            password: isNextIntegration ? "" : carriedPassword,
-            integration: buildIntegrationSettings(protocol, undefined, prev),
-            passphrase: "",
-            privateKey: "",
-            totpSecret: "",
-            sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-              prev.sshConnectionConfigOverride,
-            ),
-          }),
+          normalizeAdvancedProtocolConnection(
+            transitionCloudConnectionProtocol(prev, {
+              ...prev,
+              protocol: nextProtocol,
+              port: getDefaultConnectionPort(protocol),
+              authType: nextAuthType,
+              password: isNextIntegration ? "" : carriedPassword,
+              integration: buildIntegrationSettings(
+                protocol,
+                undefined,
+                prev,
+              ),
+              passphrase: "",
+              privateKey: "",
+              totpSecret: "",
+              sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+                prev.sshConnectionConfigOverride,
+              ),
+            }),
+          ),
         );
         return;
       }
@@ -1369,32 +1506,36 @@ export function useConnectionEditor(
         sshProxyCommandPasswordRef.current =
           formData.sshConnectionConfigOverride?.proxyCommandPassword || "";
         setFormData((prev) =>
-          normalizeAdvancedProtocolConnection({
-            ...prev,
-            protocol: nextProtocol,
-            port: getDefaultConnectionPort(protocol),
-            authType: nextAuthType,
-            password: "",
-            passphrase: "",
-            privateKey: "",
-            totpSecret: "",
-            integration: undefined,
-            sshConnectionConfigOverride: sanitizeSshConnectionOverride(
-              prev.sshConnectionConfigOverride,
-            ),
-          }),
+          normalizeAdvancedProtocolConnection(
+            transitionCloudConnectionProtocol(prev, {
+              ...prev,
+              protocol: nextProtocol,
+              port: getDefaultConnectionPort(protocol),
+              authType: nextAuthType,
+              password: "",
+              passphrase: "",
+              privateKey: "",
+              totpSecret: "",
+              integration: undefined,
+              sshConnectionConfigOverride: sanitizeSshConnectionOverride(
+                prev.sshConnectionConfigOverride,
+              ),
+            }),
+          ),
         );
         return;
       }
 
       setFormData((prev) =>
-        normalizeAdvancedProtocolConnection({
-          ...prev,
-          protocol: nextProtocol,
-          port: getDefaultConnectionPort(protocol),
-          authType: nextAuthType,
-          integration: nextIntegration,
-        }),
+        normalizeAdvancedProtocolConnection(
+          transitionCloudConnectionProtocol(prev, {
+            ...prev,
+            protocol: nextProtocol,
+            port: getDefaultConnectionPort(protocol),
+            authType: nextAuthType,
+            integration: nextIntegration,
+          }),
+        ),
       );
     },
     [
@@ -1408,15 +1549,17 @@ export function useConnectionEditor(
   const handleResetToDefaults = useCallback(() => {
     clearManagedSshSecrets();
     setFormData((prev) =>
-      normalizeAdvancedProtocolConnection({
-        ...DEFAULT_FORM,
-        id: prev.id,
-        name: prev.name,
-        createdAt: prev.createdAt,
-        protocol: prev.protocol,
-        port: getDefaultConnectionPort(prev.protocol as string),
-        integration: buildIntegrationSettings(prev.protocol, undefined),
-      }),
+      normalizeAdvancedProtocolConnection(
+        normalizeCloudConnectionForEditor({
+          ...DEFAULT_FORM,
+          id: prev.id,
+          name: prev.name,
+          createdAt: prev.createdAt,
+          protocol: prev.protocol,
+          port: getDefaultConnectionPort(prev.protocol as string),
+          integration: buildIntegrationSettings(prev.protocol, undefined),
+        }),
+      ),
     );
   }, [clearManagedSshSecrets]);
 

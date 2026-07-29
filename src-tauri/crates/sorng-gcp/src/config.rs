@@ -208,6 +208,7 @@ pub struct GcpSession {
     /// Session ID.
     pub id: String,
     /// Original connection config.
+    #[serde(skip_serializing)]
     pub config: GcpConnectionConfig,
     /// Project ID.
     pub project_id: String,
@@ -223,6 +224,34 @@ pub struct GcpSession {
     pub is_connected: bool,
     /// Available services.
     pub services: Vec<GcpServiceInfo>,
+}
+
+/// Public, credential-free GCP session state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GcpSessionStatus {
+    pub id: String,
+    pub project_id: String,
+    pub region: String,
+    pub zone: String,
+    pub connected_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub is_connected: bool,
+    pub services: Vec<GcpServiceInfo>,
+}
+
+impl From<&GcpSession> for GcpSessionStatus {
+    fn from(session: &GcpSession) -> Self {
+        Self {
+            id: session.id.clone(),
+            project_id: session.project_id.clone(),
+            region: session.region.clone(),
+            zone: session.zone.clone(),
+            connected_at: session.connected_at,
+            last_activity: session.last_activity,
+            is_connected: session.is_connected,
+            services: session.services.clone(),
+        }
+    }
 }
 
 // ── Pagination ──────────────────────────────────────────────────────────

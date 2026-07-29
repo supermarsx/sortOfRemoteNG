@@ -17,6 +17,43 @@ import { useConnections } from "../../src/contexts/useConnections";
 import { invoke } from "@tauri-apps/api/core";
 import { resetIntegrationConfigStoreForTests } from "../../src/hooks/integrations/useIntegrationConfigStore";
 
+vi.mock("react-i18next", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-i18next")>();
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (
+        key: string,
+        fallbackOrOptions?: string | Record<string, unknown>,
+        options?: Record<string, unknown>,
+      ) => {
+        const values =
+          typeof fallbackOrOptions === "object" &&
+          fallbackOrOptions !== null
+            ? fallbackOrOptions
+            : options;
+        const template =
+          typeof fallbackOrOptions === "string"
+            ? fallbackOrOptions
+            : typeof fallbackOrOptions?.defaultValue === "string"
+              ? fallbackOrOptions.defaultValue
+              : key;
+
+        return template.replace(
+          /\{\{\s*(\w+)\s*\}\}/g,
+          (token, name: string) =>
+            values?.[name] === undefined ? token : String(values[name]),
+        );
+      },
+      i18n: {
+        language: "en",
+        resolvedLanguage: "en",
+        changeLanguage: vi.fn().mockResolvedValue(undefined),
+      },
+    }),
+  };
+});
+
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
@@ -354,6 +391,78 @@ describe("ConnectionEditor", () => {
     });
   });
 
+  describe("Connection Editor i18n fallbacks (t53)", () => {
+    it("renders translated editor chrome through stable English fallbacks", () => {
+      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+      // These exact values are the defaults for the corresponding
+      // connectionEditor.* keys. Missing resources must never expose raw keys.
+      expect(
+        screen.getByRole("heading", { name: "New Connection" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Add a new server or service"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Create" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("tablist", { name: "Connection editor sections" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Folder/Group")).toBeInTheDocument();
+      expect(screen.getByText("Favorite")).toBeInTheDocument();
+      expect(screen.getByTestId("editor-name")).toHaveAttribute(
+        "placeholder",
+        "Production Server",
+      );
+
+      fireEvent.click(screen.getByTestId("editor-protocol"));
+      const searchInput = screen.getByRole("combobox", {
+        name: "Search protocols",
+      });
+      expect(searchInput).toHaveAttribute(
+        "placeholder",
+        "Search protocols and integrations…",
+      );
+      expect(
+        screen.getByRole("listbox", { name: "Available protocols" }),
+      ).toBeInTheDocument();
+
+      fireEvent.change(searchInput, { target: { value: "no-such-protocol" } });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "No protocols found",
+      );
+      expect(
+        screen.getByText("Try a protocol name or description."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Clear protocol search" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/^connectionEditor\./)).not.toBeInTheDocument();
+    });
+
+    it("renders translated existing-connection actions through fallbacks", () => {
+      renderWithProviders({
+        connection: mockConnection,
+        isOpen: true,
+        onClose: vi.fn(),
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Edit Connection" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('Editing "Test Connection"'),
+      ).toBeInTheDocument();
+      const reset = screen.getByRole("button", { name: "Reset" });
+      expect(reset).toHaveAttribute("title", "Reset to Defaults");
+      expect(
+        screen.getByRole("button", { name: "Save" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/^connectionEditor\./)).not.toBeInTheDocument();
+    });
+  });
+
   describe("New Connection", () => {
     it("should initialize with default values for new connection", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
@@ -470,15 +579,24 @@ describe("ConnectionEditor", () => {
       await waitFor(() => expect(protocolToggle).toHaveFocus());
     });
 
-    it("should filter reachable protocol and integration labels without advertising management identities", () => {
-      renderWithProviders({ isOpen: true, onClose: vi.fn() });
+    it("should filter reachable protocol, cloud runtime, and integration labels", async () => {
+      await act(async () => {
+        renderWithProviders({ isOpen: true, onClose: vi.fn() });
+      });
 
-      fireEvent.click(screen.getByTestId("editor-protocol"));
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("editor-protocol"));
+      });
       const searchInput = screen.getByRole("combobox", {
         name: "Search protocols",
       });
+      const searchFor = async (value: string) => {
+        await act(async () => {
+          fireEvent.change(searchInput, { target: { value } });
+        });
+      };
 
-      fireEvent.change(searchInput, { target: { value: "NetBox" } });
+      await searchFor("NetBox");
       expect(
         screen.getByRole("option", { name: /NetBox/i }),
       ).toBeInTheDocument();
@@ -489,15 +607,17 @@ describe("ConnectionEditor", () => {
         screen.queryByRole("group", { name: "Cloud Platforms" }),
       ).not.toBeInTheDocument();
 
-      fireEvent.change(searchInput, { target: { value: "digital-ocean" } });
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "No protocols found",
-      );
-      expect(screen.queryByRole("option", { name: /^DO/i })).toBeNull();
+      await searchFor("digital-ocean");
+      expect(
+        screen.getByRole("option", { name: /DigitalOcean/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Cloud Platforms" }),
+      ).toBeInTheDocument();
 
       // A category search term surfaces every option filed under it and only
       // renders that category's group.
-      fireEvent.change(searchInput, { target: { value: "networking" } });
+      await searchFor("networking");
       expect(
         screen.getByRole("group", { name: "Networking" }),
       ).toBeInTheDocument();
@@ -505,14 +625,17 @@ describe("ConnectionEditor", () => {
         screen.queryByRole("group", { name: "Databases" }),
       ).not.toBeInTheDocument();
 
-      // The cloud category has no selectable options (its protocols are
-      // management-only identities), so its label matches nothing.
-      fireEvent.change(searchInput, { target: { value: "cloud platforms" } });
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "No protocols found",
-      );
+      // Promoted t57 cloud protocols are selectable and searchable by their
+      // category.
+      await searchFor("cloud platforms");
+      expect(
+        screen.getByRole("group", { name: "Cloud Platforms" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: /Google Cloud/i }),
+      ).toBeInTheDocument();
 
-      fireEvent.change(searchInput, { target: { value: "postgres" } });
+      await searchFor("postgres");
       expect(
         screen.getByRole("option", { name: /^PostgreSQL/i }),
       ).toBeInTheDocument();
@@ -521,7 +644,7 @@ describe("ConnectionEditor", () => {
       ).toBeInTheDocument();
     });
 
-    it("shows an imported management identity without making it selectable", async () => {
+    it("keeps an imported routed cloud identity selectable", async () => {
       renderWithProviders({
         connection: {
           ...mockConnection,
@@ -535,19 +658,18 @@ describe("ConnectionEditor", () => {
 
       const protocolToggle = screen.getByTestId("editor-protocol");
       await waitFor(() =>
-        expect(protocolToggle).toHaveTextContent(
-          /Google Cloud.*no direct session/i,
-        ),
+        expect(protocolToggle).toHaveTextContent(/Google Cloud/i),
       );
+      expect(protocolToggle).not.toHaveTextContent(/no direct session/i);
 
       fireEvent.click(protocolToggle);
       fireEvent.change(
         screen.getByRole("combobox", { name: "Search protocols" }),
         { target: { value: "gcp" } },
       );
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "No protocols found",
-      );
+      expect(
+        screen.getByRole("option", { name: /Google Cloud/i }),
+      ).toBeInTheDocument();
 
       fireEvent.keyDown(
         screen.getByRole("combobox", { name: "Search protocols" }),
@@ -2611,5 +2733,38 @@ describe("ConnectionEditor", () => {
         mockConnection.id,
       );
     });
+  });
+});
+
+// t57 Wave 7: both formerly empty built-in categories are now selectable.
+describe("t57 routed protocol picker groups", () => {
+  it("renders all Lights-Out and Cloud targets under their category headings", () => {
+    renderWithProviders({ isOpen: true, onClose: vi.fn() });
+
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+
+    expect(
+      screen.getByRole("group", { name: "Lights-Out & BMC" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Cloud Platforms" }),
+    ).toBeInTheDocument();
+
+    for (const label of [
+      "Dell iDRAC",
+      "HPE iLO",
+      "Lenovo XClarity",
+      "Supermicro BMC",
+      "Google Cloud",
+      "Microsoft Azure",
+      "IBM Cloud",
+      "DigitalOcean",
+      "Heroku",
+      "Scaleway",
+      "Linode",
+      "OVHcloud",
+    ]) {
+      expect(screen.getByRole("option", { name: new RegExp(label, "i") })).toBeInTheDocument();
+    }
   });
 });

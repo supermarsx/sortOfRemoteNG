@@ -31,20 +31,24 @@ pub async fn list_ibm_virtual_servers(
 pub async fn get_ibm_session(
     session_id: String,
     state: tauri::State<'_, IbmServiceState>,
-) -> Result<IbmSession, String> {
+) -> Result<IbmSessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(IbmSessionStatus::from)
         .ok_or("IBM Cloud session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_ibm_sessions(
     state: tauri::State<'_, IbmServiceState>,
-) -> Result<Vec<IbmSession>, String> {
+) -> Result<Vec<IbmSessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(IbmSessionStatus::from)
+        .collect())
 }
 

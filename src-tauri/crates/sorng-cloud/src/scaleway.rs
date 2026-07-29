@@ -46,11 +46,31 @@ pub struct ScalewayConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalewaySession {
     pub id: String,
+    #[serde(skip_serializing)]
     pub config: ScalewayConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_connected: bool,
     pub instances: Vec<ScalewayInstance>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScalewaySessionStatus {
+    pub id: String,
+    pub connected_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub is_connected: bool,
+}
+
+impl From<&ScalewaySession> for ScalewaySessionStatus {
+    fn from(session: &ScalewaySession) -> Self {
+        Self {
+            id: session.id.clone(),
+            connected_at: session.connected_at,
+            last_activity: session.last_activity,
+            is_connected: session.is_connected,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,9 +123,7 @@ impl ScalewayService {
     }
 
     pub async fn disconnect_scaleway(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.is_connected = false;
-            session.last_activity = Utc::now();
+        if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
             Err("Scaleway session not found".to_string())

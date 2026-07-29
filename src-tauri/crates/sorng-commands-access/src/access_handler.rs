@@ -3,7 +3,32 @@ use crate::*;
 pub fn is_command(command: &str) -> bool {
     matches!(
         command,
-        "connect_digital_ocean"
+        "connect_ibm"
+            | "disconnect_ibm"
+            | "list_ibm_virtual_servers"
+            | "get_ibm_session"
+            | "list_ibm_sessions"
+            | "connect_heroku"
+            | "disconnect_heroku"
+            | "list_heroku_dynos"
+            | "get_heroku_session"
+            | "list_heroku_sessions"
+            | "connect_scaleway"
+            | "disconnect_scaleway"
+            | "list_scaleway_instances"
+            | "get_scaleway_session"
+            | "list_scaleway_sessions"
+            | "connect_linode"
+            | "disconnect_linode"
+            | "list_linode_instances"
+            | "get_linode_session"
+            | "list_linode_sessions"
+            | "connect_ovh"
+            | "disconnect_ovh"
+            | "list_ovh_instances"
+            | "get_ovh_session"
+            | "list_ovh_sessions"
+            | "connect_digital_ocean"
             | "disconnect_digital_ocean"
             | "list_digital_ocean_droplets"
             | "get_digital_ocean_session"
@@ -446,36 +471,36 @@ pub fn is_command(command: &str) -> bool {
 
 pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
-        // ibm_commands::connect_ibm,
-        // ibm_commands::disconnect_ibm,
-        // ibm_commands::list_ibm_virtual_servers,
-        // ibm_commands::get_ibm_session,
-        // ibm_commands::list_ibm_sessions,
+        ibm_commands::connect_ibm,
+        ibm_commands::disconnect_ibm,
+        ibm_commands::list_ibm_virtual_servers,
+        ibm_commands::get_ibm_session,
+        ibm_commands::list_ibm_sessions,
         digital_ocean_commands::connect_digital_ocean,
         digital_ocean_commands::disconnect_digital_ocean,
         digital_ocean_commands::list_digital_ocean_droplets,
         digital_ocean_commands::get_digital_ocean_session,
         digital_ocean_commands::list_digital_ocean_sessions,
-        // heroku_commands::connect_heroku,
-        // heroku_commands::disconnect_heroku,
-        // heroku_commands::list_heroku_dynos,
-        // heroku_commands::get_heroku_session,
-        // heroku_commands::list_heroku_sessions,
-        // scaleway_commands::connect_scaleway,
-        // scaleway_commands::disconnect_scaleway,
-        // scaleway_commands::list_scaleway_instances,
-        // scaleway_commands::get_scaleway_session,
-        // scaleway_commands::list_scaleway_sessions,
-        // linode_commands::connect_linode,
-        // linode_commands::disconnect_linode,
-        // linode_commands::list_linode_instances,
-        // linode_commands::get_linode_session,
-        // linode_commands::list_linode_sessions,
-        // ovh_commands::connect_ovh,
-        // ovh_commands::disconnect_ovh,
-        // ovh_commands::list_ovh_instances,
-        // ovh_commands::get_ovh_session,
-        // ovh_commands::list_ovh_sessions
+        heroku_commands::connect_heroku,
+        heroku_commands::disconnect_heroku,
+        heroku_commands::list_heroku_dynos,
+        heroku_commands::get_heroku_session,
+        heroku_commands::list_heroku_sessions,
+        scaleway_commands::connect_scaleway,
+        scaleway_commands::disconnect_scaleway,
+        scaleway_commands::list_scaleway_instances,
+        scaleway_commands::get_scaleway_session,
+        scaleway_commands::list_scaleway_sessions,
+        linode_commands::connect_linode,
+        linode_commands::disconnect_linode,
+        linode_commands::list_linode_instances,
+        linode_commands::get_linode_session,
+        linode_commands::list_linode_sessions,
+        ovh_commands::connect_ovh,
+        ovh_commands::disconnect_ovh,
+        ovh_commands::list_ovh_instances,
+        ovh_commands::get_ovh_session,
+        ovh_commands::list_ovh_sessions,
         // Backup commands
         backup_commands::backup_update_config,
         backup_commands::backup_get_config,

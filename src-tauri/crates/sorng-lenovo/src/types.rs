@@ -100,6 +100,7 @@ pub struct LenovoConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(skip_serializing)]
     pub password: String,
     pub auth_method: LenovoAuthMethod,
     /// Force a specific protocol (auto-detect if None)

@@ -6,7 +6,9 @@
 
 use crate::client::GcpClient;
 use crate::compute::{self, ComputeClient};
-use crate::config::{GcpConnectionConfig, GcpServiceInfo, GcpSession, ServiceAccountKey};
+use crate::config::{
+    GcpConnectionConfig, GcpServiceInfo, GcpSession, GcpSessionStatus, ServiceAccountKey,
+};
 use crate::dns::DnsClient;
 use crate::error::GcpError;
 use crate::functions::FunctionsClient;
@@ -144,10 +146,9 @@ impl GcpService {
 
     /// Disconnect a session.
     pub async fn disconnect_gcp(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.is_connected = false;
-            session.last_activity = Utc::now();
-            self.clients.remove(session_id);
+        let session_removed = self.sessions.remove(session_id).is_some();
+        self.clients.remove(session_id);
+        if session_removed {
             Ok(())
         } else {
             Err(GcpError::session_not_found(session_id).to_string())
@@ -155,13 +156,16 @@ impl GcpService {
     }
 
     /// List all sessions.
-    pub fn list_gcp_sessions(&self) -> Vec<GcpSession> {
-        self.sessions.values().cloned().collect()
+    pub fn list_gcp_sessions(&self) -> Vec<GcpSessionStatus> {
+        self.sessions
+            .values()
+            .map(GcpSessionStatus::from)
+            .collect()
     }
 
     /// Get a single session by ID.
-    pub fn get_gcp_session(&self, session_id: &str) -> Option<GcpSession> {
-        self.sessions.get(session_id).cloned()
+    pub fn get_gcp_session(&self, session_id: &str) -> Option<GcpSessionStatus> {
+        self.sessions.get(session_id).map(GcpSessionStatus::from)
     }
 
     // ── Private helpers ─────────────────────────────────────────────

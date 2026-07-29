@@ -31,20 +31,24 @@ pub async fn list_digital_ocean_droplets(
 pub async fn get_digital_ocean_session(
     session_id: String,
     state: tauri::State<'_, DigitalOceanServiceState>,
-) -> Result<DigitalOceanSession, String> {
+) -> Result<DigitalOceanSessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(DigitalOceanSessionStatus::from)
         .ok_or("DigitalOcean session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_digital_ocean_sessions(
     state: tauri::State<'_, DigitalOceanServiceState>,
-) -> Result<Vec<DigitalOceanSession>, String> {
+) -> Result<Vec<DigitalOceanSessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(DigitalOceanSessionStatus::from)
+        .collect())
 }
 

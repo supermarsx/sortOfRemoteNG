@@ -1,7 +1,15 @@
 import React from "react";
-import { PasswordInput, Textarea} from '../ui/forms';
-import { InfoTooltip } from '../ui/InfoTooltip';
+import { PasswordInput } from "../ui/forms";
+import { InfoTooltip } from "../ui/InfoTooltip";
 import { Connection } from "../../types/connection/connection";
+import {
+  inspectOvhCloudCredentialBundle,
+  isCloudConnectionProtocol,
+  normalizeCloudConnectionForEditor,
+  serializeOvhCloudCredentialBundle,
+  type CloudConnectionProtocol,
+  type OvhCloudCredentialBundle,
+} from "../../utils/connection/cloudConnectionContract";
 
 interface CloudProviderOptionsProps {
   formData: Partial<Connection>;
@@ -12,370 +20,531 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
   formData,
   setFormData,
 }) => {
-  const updateCloudProvider = (
-    updates: Partial<NonNullable<Connection["cloudProvider"]>>,
+  if (!isCloudConnectionProtocol(formData.protocol)) return null;
+
+  const provider = formData.protocol;
+  const normalized = normalizeCloudConnectionForEditor(formData);
+
+  type CloudSettingsKey =
+    | "gcpSettings"
+    | "azureSettings"
+    | "digitalOceanSettings"
+    | "ibmCloudSettings"
+    | "herokuSettings"
+    | "scalewaySettings"
+    | "linodeSettings"
+    | "ovhCloudSettings";
+
+  const updateSettings = (
+    key: CloudSettingsKey,
+    updates: Record<string, unknown>,
   ) => {
     setFormData((prev) => {
-      const currentCloudProvider = prev.cloudProvider || {};
-      const updatedCloudProvider = {
-        ...currentCloudProvider,
-        ...updates,
-      } as NonNullable<Connection["cloudProvider"]>;
-
-      // Ensure provider is set if not already present
-      if (!updatedCloudProvider.provider && formData.protocol) {
-        updatedCloudProvider.provider = formData.protocol as NonNullable<
-          Connection["cloudProvider"]
-        >["provider"];
-      }
-
+      const current = normalizeCloudConnectionForEditor(prev);
       return {
-        ...prev,
-        cloudProvider: updatedCloudProvider,
+        ...current,
+        cloudProvider: undefined,
+        [key]: {
+          ...((current[key] ?? {}) as Record<string, unknown>),
+          ...updates,
+        },
       };
     });
   };
 
-  if (
-    ![
-      "gcp",
-      "azure",
-      "ibm-csp",
-      "digital-ocean",
-      "heroku",
-      "scaleway",
-      "linode",
-      "ovhcloud",
-    ].includes(formData.protocol || "")
-  ) {
-    return null;
-  }
+  const updatePassword = (password: string) => {
+    setFormData((prev) => ({
+      ...normalizeCloudConnectionForEditor(prev),
+      cloudProvider: undefined,
+      password,
+    }));
+  };
 
-  const provider = formData.protocol;
-  const cloudProvider = (formData.cloudProvider || {}) as Partial<
-    NonNullable<Connection["cloudProvider"]>
-  >;
+  const ovhInspection = inspectOvhCloudCredentialBundle(normalized.password);
+  const updateOvhCredential = (
+    key: keyof OvhCloudCredentialBundle,
+    value: string,
+  ) => {
+    updatePassword(
+      serializeOvhCloudCredentialBundle({
+        ...ovhInspection.credentials,
+        [key]: value,
+      }),
+    );
+  };
 
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-[var(--color-textSecondary)]">
-        {provider === "gcp" && "Google Cloud Platform"}
-        {provider === "azure" && "Microsoft Azure"}
-        {provider === "ibm-csp" && "IBM Cloud"}
-        {provider === "digital-ocean" && "Digital Ocean"}
-        {provider === "heroku" && "Heroku"}
-        {provider === "scaleway" && "Scaleway"}
-        {provider === "linode" && "Linode"}
-        {provider === "ovhcloud" && "OVH Cloud"}
-        {" Configuration"}
+        {CLOUD_PROVIDER_NAMES[provider]} Configuration
       </h3>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {provider === "gcp" && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Project ID <InfoTooltip text="The unique identifier for your Google Cloud Platform project." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.projectId || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ projectId: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="my-gcp-project"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Zone <InfoTooltip text="The GCP zone where your compute instance is located (e.g. us-central1-a)." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.zone || ""}
-                onChange={(e) => updateCloudProvider({ zone: e.target.value })}
-                className="sor-form-input"
-                placeholder="us-central1-a"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Service Account Key (JSON) <InfoTooltip text="The JSON key file contents for a GCP service account used to authenticate API requests." />
-              </label>
-              <Textarea
-                value={cloudProvider.serviceAccountKey || ""}
-                onChange={(v) =>
-                  updateCloudProvider({ serviceAccountKey: v })
-                }
-                
-                rows={4}
-                placeholder="Paste your GCP service account key JSON here"
-              />
-            </div>
+            <CloudField
+              id="cloud-gcp-project-id"
+              label="Project ID"
+              tooltip="The unique identifier for the Google Cloud project."
+              value={normalized.gcpSettings?.projectId ?? ""}
+              onChange={(projectId) =>
+                updateSettings("gcpSettings", { projectId })
+              }
+              placeholder="my-gcp-project"
+            />
+            <CloudField
+              id="cloud-gcp-region"
+              label="Region"
+              tooltip="The default Google Cloud region for resource operations."
+              value={normalized.gcpSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("gcpSettings", { region: region || undefined })
+              }
+              placeholder="europe-west1"
+            />
+            <CloudField
+              id="cloud-gcp-zone"
+              label="Zone"
+              tooltip="The default Google Cloud compute zone."
+              value={normalized.gcpSettings?.zone ?? ""}
+              onChange={(zone) =>
+                updateSettings("gcpSettings", { zone: zone || undefined })
+              }
+              placeholder="europe-west1-b"
+            />
+            <CloudField
+              id="cloud-gcp-scopes"
+              label="OAuth Scopes"
+              tooltip="Comma-separated OAuth scopes. Empty uses the cloud-platform scope."
+              value={normalized.gcpSettings?.scopes?.join(", ") ?? ""}
+              onChange={(value) =>
+                updateSettings("gcpSettings", {
+                  scopes:
+                    value
+                      .split(",")
+                      .map((scope) => scope.trim())
+                      .filter(Boolean) || undefined,
+                })
+              }
+              placeholder="https://www.googleapis.com/auth/cloud-platform"
+            />
+            <CloudField
+              id="cloud-gcp-endpoint"
+              label="API Endpoint Override"
+              tooltip="Optional API endpoint override for controlled or private environments."
+              value={normalized.gcpSettings?.endpointOverride ?? ""}
+              onChange={(endpointOverride) =>
+                updateSettings("gcpSettings", {
+                  endpointOverride: endpointOverride || undefined,
+                })
+              }
+              placeholder="https://compute.googleapis.com"
+            />
+            <CloudField
+              id="cloud-gcp-service-account"
+              label="Service Account JSON"
+              tooltip="The service-account JSON is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Paste service-account JSON"
+              secret
+            />
           </>
         )}
 
         {provider === "azure" && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Subscription ID <InfoTooltip text="The GUID of your Azure subscription that contains the target resources." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.subscriptionId || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ subscriptionId: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Resource Group <InfoTooltip text="The Azure resource group that contains the target virtual machine or resource." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.resourceGroup || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ resourceGroup: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="my-resource-group"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Client ID <InfoTooltip text="The application (client) ID from your Azure AD app registration used for authentication." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.clientId || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ clientId: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Client Secret <InfoTooltip text="The secret key associated with the Azure AD app registration. Treat this like a password." />
-              </label>
-              <PasswordInput
-                value={cloudProvider.clientSecret || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ clientSecret: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="Your client secret"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Tenant ID <InfoTooltip text="The Azure Active Directory tenant ID (directory ID) for your organization." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.tenantId || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ tenantId: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              />
-            </div>
+            <CloudField
+              id="cloud-azure-tenant"
+              label="Tenant ID"
+              tooltip="The Microsoft Entra tenant ID."
+              value={normalized.azureSettings?.tenantId ?? ""}
+              onChange={(tenantId) =>
+                updateSettings("azureSettings", { tenantId })
+              }
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            />
+            <CloudField
+              id="cloud-azure-client"
+              label="Client ID"
+              tooltip="The application client ID used by the service principal."
+              value={normalized.azureSettings?.clientId ?? ""}
+              onChange={(clientId) =>
+                updateSettings("azureSettings", { clientId })
+              }
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            />
+            <CloudField
+              id="cloud-azure-subscription"
+              label="Subscription ID"
+              tooltip="The Azure subscription containing the managed resources."
+              value={normalized.azureSettings?.subscriptionId ?? ""}
+              onChange={(subscriptionId) =>
+                updateSettings("azureSettings", { subscriptionId })
+              }
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            />
+            <CloudField
+              id="cloud-azure-resource-group"
+              label="Default Resource Group"
+              tooltip="Optional default resource group for resource operations."
+              value={normalized.azureSettings?.defaultResourceGroup ?? ""}
+              onChange={(defaultResourceGroup) =>
+                updateSettings("azureSettings", {
+                  defaultResourceGroup: defaultResourceGroup || undefined,
+                })
+              }
+              placeholder="my-resource-group"
+            />
+            <CloudField
+              id="cloud-azure-region"
+              label="Default Region"
+              tooltip="Optional default Azure region."
+              value={normalized.azureSettings?.defaultRegion ?? ""}
+              onChange={(defaultRegion) =>
+                updateSettings("azureSettings", {
+                  defaultRegion: defaultRegion || undefined,
+                })
+              }
+              placeholder="westeurope"
+            />
+            <CloudField
+              id="cloud-azure-secret"
+              label="Client Secret"
+              tooltip="The client secret is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your client secret"
+              secret
+            />
           </>
         )}
 
-        {(provider === "ibm-csp" || provider === "digital-ocean") && (
+        {provider === "digital-ocean" && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key <InfoTooltip text="Your cloud provider API key used to authenticate management requests." />
-              </label>
-              <PasswordInput
-                value={cloudProvider.apiKey || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ apiKey: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="Your API key"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Region <InfoTooltip text="The data center region where your cloud resources are hosted." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.region || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ region: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder={provider === "ibm-csp" ? "us-south" : "nyc1"}
-              />
-            </div>
+            <CloudField
+              id="cloud-do-token"
+              label="API Token"
+              tooltip="The DigitalOcean API token is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your API token"
+              secret
+            />
+            <CloudField
+              id="cloud-do-region"
+              label="Region"
+              tooltip="Optional default DigitalOcean region."
+              value={normalized.digitalOceanSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("digitalOceanSettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="lon1"
+            />
+          </>
+        )}
+
+        {provider === "ibm-csp" && (
+          <>
+            <CloudField
+              id="cloud-ibm-key"
+              label="API Key"
+              tooltip="The IBM Cloud API key is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your IBM Cloud API key"
+              secret
+            />
+            <CloudField
+              id="cloud-ibm-region"
+              label="Region"
+              tooltip="Optional default IBM Cloud region."
+              value={normalized.ibmCloudSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("ibmCloudSettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="eu-gb"
+            />
+            <CloudField
+              id="cloud-ibm-resource-group"
+              label="Resource Group"
+              tooltip="Optional IBM Cloud resource group."
+              value={normalized.ibmCloudSettings?.resourceGroup ?? ""}
+              onChange={(resourceGroup) =>
+                updateSettings("ibmCloudSettings", {
+                  resourceGroup: resourceGroup || undefined,
+                })
+              }
+              placeholder="default"
+            />
           </>
         )}
 
         {provider === "heroku" && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key <InfoTooltip text="Your Heroku API key, found in the Heroku dashboard under Account Settings." />
-              </label>
-              <PasswordInput
-                value={cloudProvider.apiKey || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ apiKey: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="Your Heroku API key"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                App Name <InfoTooltip text="The name of the Heroku application to connect to." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.appName || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ appName: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="my-heroku-app"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Dyno Name (Optional) <InfoTooltip text="A specific Heroku dyno to target. Leave empty to connect to the default web dyno." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.dynoName || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ dynoName: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="web.1"
-              />
-            </div>
+            <CloudField
+              id="cloud-heroku-key"
+              label="API Key"
+              tooltip="The Heroku API key is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your Heroku API key"
+              secret
+            />
+            <CloudField
+              id="cloud-heroku-app"
+              label="App Name"
+              tooltip="Optional Heroku app to use as the default resource context."
+              value={normalized.herokuSettings?.appName ?? ""}
+              onChange={(appName) =>
+                updateSettings("herokuSettings", {
+                  appName: appName || undefined,
+                })
+              }
+              placeholder="my-heroku-app"
+            />
+            <CloudField
+              id="cloud-heroku-region"
+              label="Region"
+              tooltip="Optional default Heroku region."
+              value={normalized.herokuSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("herokuSettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="eu"
+            />
           </>
         )}
 
-        {(provider === "scaleway" ||
-          provider === "linode" ||
-          provider === "ovhcloud") && (
+        {provider === "scaleway" && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                API Key <InfoTooltip text="Your cloud provider API key used to authenticate management requests." />
-              </label>
-              <PasswordInput
-                value={cloudProvider.apiKey || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ apiKey: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder="Your API key"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Region <InfoTooltip text="The data center region where your cloud resources are hosted." />
-              </label>
-              <input
-                type="text"
-                value={cloudProvider.region || ""}
-                onChange={(e) =>
-                  updateCloudProvider({ region: e.target.value })
-                }
-                className="sor-form-input"
-                placeholder={
-                  provider === "scaleway"
-                    ? "fr-par"
-                    : provider === "linode"
-                      ? "us-east"
-                      : "eu-west"
-                }
-              />
-            </div>
-            {provider === "scaleway" && (
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Organization ID <InfoTooltip text="Your Scaleway organization ID, used to scope API requests to the correct account." />
-                </label>
-                <input
-                  type="text"
-                  value={cloudProvider.organizationId || ""}
-                  onChange={(e) =>
-                    updateCloudProvider({ organizationId: e.target.value })
-                  }
-                  className="sor-form-input"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                />
-              </div>
-            )}
-            {(provider === "scaleway" || provider === "ovhcloud") && (
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Project Name <InfoTooltip text="The name of the project within your cloud provider account that contains the target resources." />
-                </label>
-                <input
-                  type="text"
-                  value={cloudProvider.projectName || ""}
-                  onChange={(e) =>
-                    updateCloudProvider({ projectName: e.target.value })
-                  }
-                  className="sor-form-input"
-                  placeholder="my-project"
-                />
-              </div>
-            )}
-            {provider === "ovhcloud" && (
-              <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  Service ID <InfoTooltip text="The OVHcloud service identifier for the target hosting or infrastructure resource." />
-                </label>
-                <input
-                  type="text"
-                  value={cloudProvider.serviceId || ""}
-                  onChange={(e) =>
-                    updateCloudProvider({ serviceId: e.target.value })
-                  }
-                  className="sor-form-input"
-                  placeholder="Service identifier"
-                />
-              </div>
-            )}
+            <CloudField
+              id="cloud-scaleway-key"
+              label="API Key"
+              tooltip="The Scaleway API key is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your Scaleway API key"
+              secret
+            />
+            <CloudField
+              id="cloud-scaleway-organization"
+              label="Organization ID"
+              tooltip="Optional Scaleway organization scope."
+              value={normalized.scalewaySettings?.organizationId ?? ""}
+              onChange={(organizationId) =>
+                updateSettings("scalewaySettings", {
+                  organizationId: organizationId || undefined,
+                })
+              }
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            />
+            <CloudField
+              id="cloud-scaleway-project"
+              label="Project Name"
+              tooltip="Optional Scaleway project scope."
+              value={normalized.scalewaySettings?.projectName ?? ""}
+              onChange={(projectName) =>
+                updateSettings("scalewaySettings", {
+                  projectName: projectName || undefined,
+                })
+              }
+              placeholder="my-project"
+            />
+            <CloudField
+              id="cloud-scaleway-region"
+              label="Region"
+              tooltip="Optional default Scaleway region."
+              value={normalized.scalewaySettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("scalewaySettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="fr-par"
+            />
           </>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            Instance ID/Name <InfoTooltip text="The unique identifier or name of the cloud instance to connect to." />
-          </label>
-          <input
-            type="text"
-            value={cloudProvider.instanceId || cloudProvider.instanceName || ""}
-            onChange={(e) =>
-              updateCloudProvider({
-                instanceId: e.target.value,
-                instanceName: e.target.value,
-              })
-            }
-            className="sor-form-input"
-            placeholder="Instance ID or name"
-          />
-        </div>
+        {provider === "linode" && (
+          <>
+            <CloudField
+              id="cloud-linode-key"
+              label="API Key"
+              tooltip="The Linode API key is stored only in the protected connection credential."
+              value={normalized.password ?? ""}
+              onChange={updatePassword}
+              placeholder="Your Linode API key"
+              secret
+            />
+            <CloudField
+              id="cloud-linode-region"
+              label="Region"
+              tooltip="Optional default Linode region."
+              value={normalized.linodeSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("linodeSettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="eu-west"
+            />
+          </>
+        )}
+
+        {provider === "ovhcloud" && (
+          <>
+            <CloudField
+              id="cloud-ovh-api-key"
+              label="OVHcloud API Key"
+              tooltip="The application key is stored only inside the protected credential bundle."
+              value={ovhInspection.credentials.apiKey}
+              onChange={(apiKey) => updateOvhCredential("apiKey", apiKey)}
+              placeholder="Application key"
+              secret
+            />
+            <CloudField
+              id="cloud-ovh-app-secret"
+              label="Application Secret"
+              tooltip="The application secret is stored only inside the protected credential bundle."
+              value={ovhInspection.credentials.appSecret}
+              onChange={(appSecret) =>
+                updateOvhCredential("appSecret", appSecret)
+              }
+              placeholder="Application secret"
+              secret
+            />
+            <CloudField
+              id="cloud-ovh-consumer-key"
+              label="Consumer Key"
+              tooltip="The consumer key is stored only inside the protected credential bundle."
+              value={ovhInspection.credentials.consumerKey}
+              onChange={(consumerKey) =>
+                updateOvhCredential("consumerKey", consumerKey)
+              }
+              placeholder="Consumer key"
+              secret
+            />
+            <CloudField
+              id="cloud-ovh-service"
+              label="Service ID"
+              tooltip="Optional OVHcloud service identifier."
+              value={normalized.ovhCloudSettings?.serviceId ?? ""}
+              onChange={(serviceId) =>
+                updateSettings("ovhCloudSettings", {
+                  serviceId: serviceId || undefined,
+                })
+              }
+              placeholder="Service identifier"
+            />
+            <CloudField
+              id="cloud-ovh-project"
+              label="Project Name"
+              tooltip="Optional OVHcloud project scope."
+              value={normalized.ovhCloudSettings?.projectName ?? ""}
+              onChange={(projectName) =>
+                updateSettings("ovhCloudSettings", {
+                  projectName: projectName || undefined,
+                })
+              }
+              placeholder="my-project"
+            />
+            <CloudField
+              id="cloud-ovh-region"
+              label="Region"
+              tooltip="Optional default OVHcloud region."
+              value={normalized.ovhCloudSettings?.region ?? ""}
+              onChange={(region) =>
+                updateSettings("ovhCloudSettings", {
+                  region: region || undefined,
+                })
+              }
+              placeholder="GRA11"
+            />
+          </>
+        )}
       </div>
+
+      {provider === "ovhcloud" &&
+        ["malformed", "incomplete"].includes(ovhInspection.status) && (
+          <div
+            role="alert"
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-[var(--color-textSecondary)]"
+          >
+            {ovhInspection.status === "malformed"
+              ? "The saved OVHcloud credential bundle is malformed. Its raw value remains masked; enter all three credentials to replace it safely."
+              : "The OVHcloud credential bundle is incomplete. Enter the API key, application secret, and consumer key before connecting."}
+          </div>
+        )}
     </div>
   );
 };
+
+const CLOUD_PROVIDER_NAMES: Record<CloudConnectionProtocol, string> = {
+  gcp: "Google Cloud",
+  azure: "Microsoft Azure",
+  "digital-ocean": "DigitalOcean",
+  "ibm-csp": "IBM Cloud",
+  heroku: "Heroku",
+  scaleway: "Scaleway",
+  linode: "Linode",
+  ovhcloud: "OVHcloud",
+};
+
+interface CloudFieldProps {
+  id: string;
+  label: string;
+  tooltip: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  secret?: boolean;
+}
+
+const CloudField: React.FC<CloudFieldProps> = ({
+  id,
+  label,
+  tooltip,
+  value,
+  onChange,
+  placeholder,
+  secret = false,
+}) => (
+  <div>
+    <label
+      htmlFor={id}
+      className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+    >
+      {label} <InfoTooltip text={tooltip} />
+    </label>
+    {secret ? (
+      <PasswordInput
+        id={id}
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="sor-form-input"
+        placeholder={placeholder}
+        autoComplete="new-password"
+      />
+    ) : (
+      <input
+        id={id}
+        aria-label={label}
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="sor-form-input"
+        placeholder={placeholder}
+      />
+    )}
+  </div>
+);
 
 export default CloudProviderOptions;

@@ -20,6 +20,7 @@ vi.mock("react-i18next", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import IdracPanel from "../../src/components/idrac/idracPanel/IdracPanel";
+import type { Connection } from "../../src/types/connection/connection";
 
 describe("IdracPanel", () => {
   beforeEach(() => {
@@ -318,6 +319,50 @@ describe("IdracPanel - connection and health flows", () => {
 
     await waitFor(() => {
       expect(screen.getByText("401 Unauthorized: invalid credentials")).toBeInTheDocument();
+    });
+  });
+
+  it("auto-connects with the selected saved connection and disconnects on unmount", async () => {
+    wireConnectedMocks();
+    const connection = {
+      id: "idrac-prod",
+      name: "Production iDRAC",
+      protocol: "idrac",
+      hostname: "10.0.0.42",
+      port: 8443,
+      username: "operator",
+      password: "saved-secret",
+      isGroup: false,
+      tags: [],
+      order: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      idracSettings: {
+        insecure: false,
+        forceProtocol: "redfish",
+        timeoutSecs: 12,
+      },
+    } as Connection;
+
+    const { unmount } = render(
+      <IdracPanel connection={connection} autoConnect />,
+    );
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("idrac_connect", {
+        host: "10.0.0.42",
+        port: 8443,
+        username: "operator",
+        password: "saved-secret",
+        insecure: false,
+        forceProtocol: "redfish",
+        timeoutSecs: 12,
+      });
+    });
+
+    unmount();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("idrac_disconnect");
     });
   });
 });

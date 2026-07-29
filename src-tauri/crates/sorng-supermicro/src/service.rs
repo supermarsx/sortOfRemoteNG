@@ -39,7 +39,13 @@ impl SmcService {
     }
 
     pub async fn disconnect(&mut self) -> SmcResult<()> {
-        self.client.disconnect().await
+        let result = self.client.disconnect().await;
+        // Unlike the other Lights-Out services, SmcService owns a concrete
+        // client rather than an Option. Replace it even when protocol logout
+        // fails so the credential-bearing config cannot remain in runtime
+        // state after teardown.
+        self.client = SmcClient::new(SmcConfig::default());
+        result
     }
 
     pub fn is_connected(&self) -> bool {
@@ -271,5 +277,48 @@ impl SmcService {
     pub async fn activate_license(&self, product_key: &str) -> SmcResult<()> {
         let rf = self.client.require_redfish()?;
         rf.activate_license(product_key).await
+    }
+}
+
+#[cfg(test)]
+mod t57_secret_hardening_tests {
+    use super::*;
+
+    const SENTINEL: &str = "T57_SUPERMICRO_SENTINEL_SECRET";
+
+    #[tokio::test]
+    async fn public_config_omits_secret_and_disconnect_purges_runtime_config() {
+        let config = SmcConfig {
+            host: "supermicro.test".to_string(),
+            port: 443,
+            username: "ADMIN".to_string(),
+            password: SENTINEL.to_string(),
+            use_ssl: true,
+            verify_cert: false,
+            platform: SmcPlatform::X13,
+            auth_method: SmcAuthMethod::Session,
+            timeout_secs: 30,
+        };
+
+        let internal_json = serde_json::to_string(&config).unwrap();
+        assert!(!internal_json.contains(SENTINEL));
+        assert!(!internal_json.contains("\"password\""));
+
+        let mut service = SmcService {
+            client: SmcClient::new(config),
+        };
+        let public_json = serde_json::to_string(&service.get_config()).unwrap();
+        assert!(!public_json.contains(SENTINEL));
+        assert!(!public_json.contains("\"password\""));
+
+        service.disconnect().await.unwrap();
+
+        assert!(!service.is_connected());
+        let reset_config = service.get_config();
+        assert_eq!(reset_config.host, "");
+        assert_eq!(reset_config.username, "ADMIN");
+        let reset_json = serde_json::to_string(&reset_config).unwrap();
+        assert!(!reset_json.contains(SENTINEL));
+        assert!(!reset_json.contains("supermicro.test"));
     }
 }

@@ -31,20 +31,24 @@ pub async fn list_ovh_instances(
 pub async fn get_ovh_session(
     session_id: String,
     state: tauri::State<'_, OvhServiceState>,
-) -> Result<OvhSession, String> {
+) -> Result<OvhSessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(OvhSessionStatus::from)
         .ok_or("OVH session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_ovh_sessions(
     state: tauri::State<'_, OvhServiceState>,
-) -> Result<Vec<OvhSession>, String> {
+) -> Result<Vec<OvhSessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(OvhSessionStatus::from)
+        .collect())
 }
 

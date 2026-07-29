@@ -35,6 +35,14 @@ RDP groups connection identity, authentication, display/input, resources, securi
 
 The dedicated [Network Paths]({{ '/network-paths/' | relative_url }}) page explains why routing is separate from ordinary TCP, gateway, and terminal settings.
 
+Cloud connections use a provider subtab whose visible fields map directly to
+the provider-specific non-secret saved settings. Their service-account JSON,
+client secret, API token, or API key remains in the protected connection
+credential boundary. OVHcloud uses three masked inputs that serialize only
+inside that protected credential. See
+[Cloud & Lights-Out Connections]({{ '/cloud-and-lights-out/' | relative_url }})
+for required fields, legacy-record migration, and reopen behavior.
+
 ## Save and reopen contract
 
 Stable references—not display names—should be persisted for reusable collections such as chains, profiles, VPN connections, and parent folders. The editor keeps an unavailable current ID visible as an orphan so a deleted dependency can be cleared or replaced instead of silently disappearing.

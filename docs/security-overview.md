@@ -34,6 +34,21 @@ Read [Encryption at rest]({{ '/security/encryption-at-rest/' | relative_url }}) 
 - Review credential inclusion before import, export, or database clone operations.
 - Remove sensitive test fixtures after use and keep them outside version control.
 
+## Cloud and Lights-Out credentials
+
+Cloud provider settings contain only non-secret resource context. The provider
+credential uses the protected saved-connection password boundary; OVHcloud's
+application key, application secret, and consumer key are one credential bundle
+inside that boundary. Public cloud status DTOs and Lights-Out safe-config DTOs
+exclude credentials. Internal iDRAC, iLO, Lenovo, and Supermicro configuration
+serialization also skips password material.
+
+Legacy `cloudProvider` records are normalized when opened and saved without
+copying secret fields into provider settings or runtime handles. A malformed
+OVHcloud bundle is never rendered raw: the editor keeps it masked and requires
+all three replacement fields. Operational and rollback details are in
+[Cloud & Lights-Out Connections]({{ '/cloud-and-lights-out/' | relative_url }}).
+
 ## Updates and releases
 
 The public key embedded in the application verifies updater artifacts. The corresponding private key belongs in the release secret store, never in the repository. Key rotation requires a bridge strategy because already-installed clients only trust keys shipped in builds they can verify.

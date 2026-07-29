@@ -24,9 +24,17 @@ pub enum IdracProtocol {
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum IdracAuthMethod {
     /// Username + password (Basic Auth or Redfish session)
-    Basic { username: String, password: String },
+    Basic {
+        username: String,
+        #[serde(skip_serializing)]
+        password: String,
+    },
     /// Redfish X-Auth-Token session auth (auto-created from Basic login)
-    Session { username: String, password: String },
+    Session {
+        username: String,
+        #[serde(skip_serializing)]
+        password: String,
+    },
 }
 
 impl Default for IdracAuthMethod {

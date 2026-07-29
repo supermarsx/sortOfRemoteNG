@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertCircle, X } from "lucide-react";
 import { useIdracManager } from "../../../hooks/idrac/useIdracManager";
+import type { Connection } from "../../../types/connection/connection";
 import ConnectionForm from "./ConnectionForm";
 import IdracHeader from "./IdracHeader";
 import Sidebar from "./Sidebar";
@@ -28,13 +29,92 @@ import {
 
 export interface IdracPanelProps {
   connectionId?: string;
+  connection?: Connection;
+  autoConnect?: boolean;
+  onConnectionStateChange?: (
+    state: IdracPanelConnectionState,
+    errorMessage?: string,
+  ) => void;
+  onRequestTeardown?: () => Promise<void>;
   onClose?: () => void;
 }
 
-const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId, onClose }) => {
+export type IdracPanelConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "error";
+
+const IdracPanel: React.FC<IdracPanelProps> = ({
+  connectionId,
+  connection,
+  autoConnect = false,
+  onConnectionStateChange,
+  onRequestTeardown,
+  onClose,
+}) => {
   const { t } = useTranslation();
-  const mgr = useIdracManager(true);
+  const mgr = useIdracManager(
+    true,
+    connection
+      ? {
+          host: connection.hostname,
+          port: connection.port || 443,
+          username: connection.username || "root",
+          password: connection.password || "",
+          insecure: connection.idracSettings?.insecure ?? true,
+          forceProtocol: connection.idracSettings?.forceProtocol,
+          timeoutSecs: connection.idracSettings?.timeoutSecs,
+        }
+      : undefined,
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const autoConnectStartedRef = useRef(false);
+  const teardownPromiseRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    onConnectionStateChange?.(
+      mgr.connectionState,
+      mgr.connectionError ?? undefined,
+    );
+  }, [
+    mgr.connectionError,
+    mgr.connectionState,
+    onConnectionStateChange,
+  ]);
+
+  useEffect(() => {
+    if (
+      !autoConnect ||
+      autoConnectStartedRef.current ||
+      !mgr.host.trim() ||
+      !mgr.username.trim()
+    ) {
+      return;
+    }
+    autoConnectStartedRef.current = true;
+    void mgr.connect();
+  }, [autoConnect, mgr.connect, mgr.host, mgr.username]);
+
+  const teardown = React.useCallback(() => {
+    if (!teardownPromiseRef.current) {
+      teardownPromiseRef.current = onRequestTeardown
+        ? onRequestTeardown()
+        : mgr.disconnect().catch(() => undefined);
+    }
+    return teardownPromiseRef.current;
+  }, [mgr.disconnect, onRequestTeardown]);
+
+  useEffect(
+    () => () => {
+      if (autoConnectStartedRef.current) void teardown();
+    },
+    [teardown],
+  );
+
+  const handleClose = () => {
+    void teardown().finally(() => onClose?.());
+  };
 
   // Not connected – show connection form
   if (mgr.connectionState !== "connected") {
@@ -90,7 +170,7 @@ const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId, onClose }) => {
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)]" data-testid="idrac-panel">
-      <IdracHeader mgr={mgr} onClose={onClose ?? (() => {})} />
+      <IdracHeader mgr={mgr} onClose={handleClose} />
 
       {/* Error Bar */}
       {mgr.dataError && (

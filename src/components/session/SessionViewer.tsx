@@ -11,6 +11,22 @@ import { isToolProtocol } from "../app/toolSession";
 import { isWinmgmtProtocol } from "../windows/WindowsToolPanel.helpers";
 import { FeatureErrorBoundary } from "../app/FeatureErrorBoundary";
 import { getDirectSessionUnavailableMessage } from "../../utils/session/protocolAvailability";
+import {
+  idracRuntimeDescriptor,
+  iloRuntimeDescriptor,
+  lenovoRuntimeDescriptor,
+  supermicroRuntimeDescriptor,
+} from "../../utils/session/builtInManagementRuntimeRegistry";
+import {
+  azureRuntimeDescriptor,
+  digitalOceanRuntimeDescriptor,
+  gcpRuntimeDescriptor,
+  herokuRuntimeDescriptor,
+  ibmCloudRuntimeDescriptor,
+  linodeRuntimeDescriptor,
+  ovhCloudRuntimeDescriptor,
+  scalewayRuntimeDescriptor,
+} from "../../utils/session/builtInCloudRuntimeRegistry";
 import type { IntegrationSessionStateEvent } from "../../hooks/integrations/IntegrationSessionLifecycle";
 
 const ToolTabViewer = dynamic(
@@ -25,6 +41,82 @@ const IntegrationPanelHost = dynamic(
     import("../integrations/IntegrationPanelHost").then(
       (module) => module.IntegrationPanelHost,
     ),
+  { ssr: false },
+);
+const IdracSessionPanel = dynamic(
+  () =>
+    idracRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const IloSessionPanel = dynamic(
+  () =>
+    iloRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const LenovoSessionPanel = dynamic(
+  () =>
+    lenovoRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const SupermicroSessionPanel = dynamic(
+  () =>
+    supermicroRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const GcpSessionPanel = dynamic(
+  () =>
+    gcpRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const AzureSessionPanel = dynamic(
+  () =>
+    azureRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const DigitalOceanSessionPanel = dynamic(
+  () =>
+    digitalOceanRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const IbmCloudSessionPanel = dynamic(
+  () =>
+    ibmCloudRuntimeDescriptor
+      .importPanel()
+      .then((module) => module.default),
+  { ssr: false },
+);
+const HerokuSessionPanel = dynamic(
+  () =>
+    herokuRuntimeDescriptor.importPanel().then((module) => module.default),
+  { ssr: false },
+);
+const ScalewaySessionPanel = dynamic(
+  () =>
+    scalewayRuntimeDescriptor.importPanel().then((module) => module.default),
+  { ssr: false },
+);
+const LinodeSessionPanel = dynamic(
+  () =>
+    linodeRuntimeDescriptor.importPanel().then((module) => module.default),
+  { ssr: false },
+);
+const OvhCloudSessionPanel = dynamic(
+  () =>
+    ovhCloudRuntimeDescriptor.importPanel().then((module) => module.default),
   { ssr: false },
 );
 const WebTerminal = dynamic(() => import("../ssh/WebTerminal"), { ssr: false });
@@ -243,6 +335,114 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({
           onStateChange={(event) =>
             onIntegrationStateChange?.(session.id, event)
           }
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === gcpRuntimeDescriptor.protocol) {
+      return (
+        <GcpSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === azureRuntimeDescriptor.protocol) {
+      return (
+        <AzureSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === digitalOceanRuntimeDescriptor.protocol) {
+      return (
+        <DigitalOceanSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === ibmCloudRuntimeDescriptor.protocol) {
+      return (
+        <IbmCloudSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === herokuRuntimeDescriptor.protocol) {
+      return (
+        <HerokuSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === scalewayRuntimeDescriptor.protocol) {
+      return (
+        <ScalewaySessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === linodeRuntimeDescriptor.protocol) {
+      return (
+        <LinodeSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === ovhCloudRuntimeDescriptor.protocol) {
+      return (
+        <OvhCloudSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === iloRuntimeDescriptor.protocol) {
+      return (
+        <IloSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === lenovoRuntimeDescriptor.protocol) {
+      return (
+        <LenovoSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === supermicroRuntimeDescriptor.protocol) {
+      return (
+        <SupermicroSessionPanel
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
+    if (session.protocol === idracRuntimeDescriptor.protocol) {
+      return (
+        <IdracSessionPanel
+          session={session}
           onClose={() => onCloseSession?.(session.id)}
         />
       );

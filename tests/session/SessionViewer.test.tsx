@@ -30,6 +30,7 @@ const mockState = vi.hoisted(() => ({
   x2goNativeClientProps: vi.fn(),
   nxNativeClientProps: vi.fn(),
   smbClientProps: vi.fn(),
+  idracSessionPanelProps: vi.fn(),
 }));
 
 vi.mock("../../src/components/app/ToolPanel", () => ({
@@ -215,6 +216,18 @@ vi.mock("../../src/components/protocol/SMBClient", () => ({
   },
 }));
 
+vi.mock("../../src/components/idrac/IdracSessionPanel", () => ({
+  __esModule: true,
+  default: (props: any) => {
+    mockState.idracSessionPanelProps(props);
+    return (
+      <button type="button" onClick={() => props.onClose?.()}>
+        Mock iDRAC Session Panel
+      </button>
+    );
+  },
+}));
+
 vi.mock("../../src/components/rdp/RDPClient", () => ({
   __esModule: true,
   default: (props: any) => {
@@ -346,6 +359,31 @@ describe("SessionViewer", () => {
       status: "error",
       errorMessage: "provider failed",
     });
+    expect(onCloseSession).toHaveBeenCalledWith("session-1");
+  });
+
+  it("routes iDRAC sessions through the saved-connection runtime and wires close", async () => {
+    const onCloseSession = vi.fn();
+    render(
+      <SessionViewer
+        session={createSession({ protocol: "idrac", status: "connecting" })}
+        onCloseSession={onCloseSession}
+      />,
+    );
+
+    const panel = await screen.findByRole("button", {
+      name: /mock idrac session panel/i,
+    });
+    expect(mockState.idracSessionPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session: expect.objectContaining({
+          connectionId: "connection-1",
+          protocol: "idrac",
+        }),
+      }),
+    );
+
+    fireEvent.click(panel);
     expect(onCloseSession).toHaveBeenCalledWith("session-1");
   });
 
@@ -482,16 +520,21 @@ describe("SessionViewer", () => {
     },
   );
 
-  it("does not claim that an unrouted protocol is connected", () => {
+  it("does not claim that an unknown unrouted protocol is connected", () => {
     render(
       <SessionViewer
-        session={createSession({ protocol: "gcp", status: "connected" })}
+        session={createSession({
+          protocol: "unregistered-test-protocol",
+          status: "connected",
+        })}
       />,
     );
 
     expect(screen.getByText("Connection Failed")).toBeInTheDocument();
     expect(
-      screen.getByText(/management-only.*no registered interactive/i),
+      screen.getByText(
+        /UNREGISTERED-TEST-PROTOCOL has no registered frontend session runtime/i,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Connected$/)).not.toBeInTheDocument();
   });

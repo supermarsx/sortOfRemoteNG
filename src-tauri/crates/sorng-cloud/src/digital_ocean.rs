@@ -17,11 +17,31 @@ pub struct DigitalOceanConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DigitalOceanSession {
     pub id: String,
+    #[serde(skip_serializing)]
     pub config: DigitalOceanConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_connected: bool,
     pub droplets: Vec<DigitalOceanDroplet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DigitalOceanSessionStatus {
+    pub id: String,
+    pub connected_at: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub is_connected: bool,
+}
+
+impl From<&DigitalOceanSession> for DigitalOceanSessionStatus {
+    fn from(session: &DigitalOceanSession) -> Self {
+        Self {
+            id: session.id.clone(),
+            connected_at: session.connected_at,
+            last_activity: session.last_activity,
+            is_connected: session.is_connected,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,9 +121,7 @@ impl DigitalOceanService {
     }
 
     pub async fn disconnect_digital_ocean(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(session) = self.sessions.get_mut(session_id) {
-            session.is_connected = false;
-            session.last_activity = Utc::now();
+        if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
             Err("DigitalOcean session not found".to_string())

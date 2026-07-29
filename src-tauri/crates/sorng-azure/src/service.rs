@@ -107,6 +107,8 @@ impl AzureService {
 
     pub fn disconnect(&mut self) {
         self.client.clear_token();
+        self.client.clear_credentials();
+        self.credentials = None;
     }
 
     async fn ensure_auth(&mut self) -> AzureResult<()> {
@@ -754,5 +756,37 @@ mod tests {
         let mut service = state.try_lock().unwrap();
         service.disconnect();
         assert!(!service.is_authenticated());
+    }
+}
+
+#[cfg(test)]
+mod t57_secret_hardening_tests {
+    use super::*;
+
+    const AZURE_SENTINEL: &str = "t57-azure-client-secret-sentinel";
+
+    #[test]
+    fn public_summary_excludes_secret_and_disconnect_clears_all_credentials() {
+        let mut service = AzureService::new();
+        let credentials = AzureCredentials {
+            tenant_id: "tenant-a".into(),
+            client_id: "client-a".into(),
+            client_secret: AZURE_SENTINEL.into(),
+            subscription_id: "subscription-a".into(),
+        };
+        service.client.set_credentials(credentials.clone());
+        service.credentials = Some(credentials);
+
+        let serialized = serde_json::to_string(&service.connection_summary())
+            .expect("Azure public connection summary should serialize");
+        assert!(!serialized.contains(AZURE_SENTINEL));
+
+        service.disconnect();
+        assert!(service.credentials.is_none());
+        assert!(service.client.credentials().is_none());
+        let disconnected = service.connection_summary();
+        assert!(!disconnected.authenticated);
+        assert!(disconnected.subscription_id.is_none());
+        assert!(disconnected.tenant_id.is_none());
     }
 }

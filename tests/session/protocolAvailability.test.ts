@@ -9,6 +9,7 @@ import {
 } from "../../src/types/connection/connection";
 import {
   ADDITIONAL_AUDITED_PROTOCOLS,
+  BUILT_IN_HIDDEN_DIRECT_PROTOCOLS,
   BUILT_IN_MANAGEMENT_PROTOCOLS,
   BUILT_IN_PROTOCOL_AVAILABILITY,
   PROTOCOL_AVAILABILITY,
@@ -48,6 +49,7 @@ const BUILT_IN_PROTOCOLS = [
   "scaleway",
   "linode",
   "ovhcloud",
+  "idrac",
   "ilo",
   "lenovo",
   "supermicro",
@@ -71,10 +73,15 @@ describe("protocol availability contract", () => {
     }
   });
 
-  it("exposes every direct built-in exactly once and no management identity", () => {
+  it("exposes every picker-ready built-in exactly once and no staged or management identity", () => {
     const managementProtocols = new Set<string>(BUILT_IN_MANAGEMENT_PROTOCOLS);
+    const hiddenDirectProtocols = new Set<string>(
+      BUILT_IN_HIDDEN_DIRECT_PROTOCOLS,
+    );
     const expectedDirectProtocols = BUILT_IN_PROTOCOLS.filter(
-      (protocol) => !managementProtocols.has(protocol),
+      (protocol) =>
+        !managementProtocols.has(protocol) &&
+        !hiddenDirectProtocols.has(protocol),
     ).sort();
     const pickerProtocols = PROTOCOL_OPTIONS.map((option) => option.value);
 
@@ -89,6 +96,13 @@ describe("protocol availability contract", () => {
       expect(availability?.detail, protocol).toMatch(
         /no saved-connection panel|no saved-connection management panel/i,
       );
+    }
+
+    for (const protocol of BUILT_IN_HIDDEN_DIRECT_PROTOCOLS) {
+      const availability = getProtocolAvailability(protocol);
+      expect(pickerProtocols, protocol).not.toContain(protocol);
+      expect(availability?.sessionEntry, protocol).toBe("client-owned");
+      expect(availability?.frontendPath, protocol).toMatch(/Panel\.tsx$/);
     }
   });
 
@@ -128,7 +142,7 @@ describe("protocol availability contract", () => {
   });
 
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
-    for (const protocol of ["ilo", "ipmi", "mac", "gcp", "k8s"]) {
+    for (const protocol of ["ipmi", "mac", "k8s"]) {
       expect(getDirectSessionUnavailableMessage(protocol), protocol).toMatch(
         /management-only.*no registered interactive saved-connection route/i,
       );

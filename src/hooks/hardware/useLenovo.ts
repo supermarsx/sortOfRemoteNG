@@ -190,22 +190,23 @@ export function useLenovo(): UseLenovoReturn {
       password: string;
       useSsl?: boolean;
       verifyCert?: boolean;
+      protocol?: "redfish" | "legacyRest" | "ipmi";
+      insecure?: boolean;
+      ipmiPort?: number;
       generation?: XccGeneration;
       timeoutSecs?: number;
     }) =>
       wrap(async () => {
         await invoke("lenovo_connect", {
-          config: {
-            host: params.host,
-            port: params.port ?? 443,
-            username: params.username,
-            password: params.password,
-            useSsl: params.useSsl ?? true,
-            verifyCert: params.verifyCert ?? false,
-            generation: params.generation ?? "unknown",
-            authMethod: "session",
-            timeoutSecs: params.timeoutSecs ?? 30,
-          },
+          host: params.host,
+          port: params.port ?? 443,
+          username: params.username,
+          password: params.password,
+          protocol: params.protocol,
+          insecure: params.insecure ?? !(params.verifyCert ?? false),
+          timeoutSecs: params.timeoutSecs ?? 30,
+          ipmiPort: params.ipmiPort ?? 623,
+          generation: params.generation,
         });
         setConnected(true);
         const cfg = await invoke<LenovoConfigSafe>("lenovo_get_config");

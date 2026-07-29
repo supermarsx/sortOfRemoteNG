@@ -31,20 +31,24 @@ pub async fn list_linode_instances(
 pub async fn get_linode_session(
     session_id: String,
     state: tauri::State<'_, LinodeServiceState>,
-) -> Result<LinodeSession, String> {
+) -> Result<LinodeSessionStatus, String> {
     let service = state.lock().await;
     service
         .get_session(&session_id)
         .await
-        .cloned()
+        .map(LinodeSessionStatus::from)
         .ok_or("Linode session not found".to_string())
 }
 
 #[tauri::command]
 pub async fn list_linode_sessions(
     state: tauri::State<'_, LinodeServiceState>,
-) -> Result<Vec<LinodeSession>, String> {
+) -> Result<Vec<LinodeSessionStatus>, String> {
     let service = state.lock().await;
-    Ok(service.get_sessions().into_iter().cloned().collect())
+    Ok(service
+        .get_sessions()
+        .into_iter()
+        .map(LinodeSessionStatus::from)
+        .collect())
 }
 

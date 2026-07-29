@@ -38,18 +38,15 @@ export interface ProtocolAvailability {
  * commands, but must never appear as selectable direct-session protocols.
  */
 export const BUILT_IN_MANAGEMENT_PROTOCOLS = [
-  "gcp",
-  "azure",
-  "ibm-csp",
-  "digital-ocean",
-  "heroku",
-  "scaleway",
-  "linode",
-  "ovhcloud",
-  "ilo",
-  "lenovo",
-  "supermicro",
+
 ] as const satisfies readonly BuiltInConnectionProtocol[];
+
+/**
+ * Direct runtimes that are intentionally hidden until the shared picker lane
+ * accepts their option. They are routable from imported/legacy connections and
+ * remain covered by the same availability truth table.
+ */
+export const BUILT_IN_HIDDEN_DIRECT_PROTOCOLS = [] as const satisfies readonly BuiltInConnectionProtocol[];
 
 const capability = (value: ProtocolAvailability): ProtocolAvailability => value;
 
@@ -285,113 +282,123 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   gcp: capability({
     label: "Google Cloud",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/GcpSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-gcp",
-    testPath: null,
+    testPath: "tests/cloud/CloudSessionPanel.test.tsx",
     detail:
-      "Provider commands exist in full builds, but no saved-connection management panel or direct session route is registered.",
+      "The saved-connection panel owns a GCP backend session ID and serializes connect, status, disconnect, and close cleanup.",
   }),
   azure: capability({
     label: "Azure",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/AzureSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-azure",
-    testPath: null,
+    testPath: "tests/cloud/CloudSessionPanel.test.tsx",
     detail:
-      "Provider commands exist in full builds, but no saved-connection management panel or direct session route is registered.",
+      "The saved-connection panel owns Azure credential setup, token authentication, status, serialized disconnect, and close cleanup.",
   }),
   "ibm-csp": capability({
     label: "IBM Cloud",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/IbmCloudSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns an IBM Cloud backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
   }),
   "digital-ocean": capability({
     label: "DigitalOcean",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/DigitalOceanSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudSessionPanel.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns a DigitalOcean backend session ID and serializes connect, status, disconnect, and close cleanup.",
   }),
   heroku: capability({
     label: "Heroku",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/HerokuSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns a Heroku backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
   }),
   scaleway: capability({
     label: "Scaleway",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/ScalewaySessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns a Scaleway backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
   }),
   linode: capability({
     label: "Linode",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/LinodeSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns a Linode backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
   }),
   ovhcloud: capability({
     label: "OVHcloud",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: null,
-    backendPath: null,
-    testPath: null,
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/cloud/OvhCloudSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-cloud",
+    testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
     detail:
-      "This is a persisted management identity only; no saved-connection panel or direct session runtime is registered.",
+      "The saved-connection panel owns an OVHcloud backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+  }),
+  idrac: capability({
+    label: "Dell iDRAC",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/idrac/IdracSessionPanel.tsx",
+    backendPath: "src-tauri/crates/sorng-idrac",
+    testPath: "tests/idrac/IdracSessionPanel.test.tsx",
+    detail:
+      "The saved-connection panel owns iDRAC connect, state reporting, management views, disconnect, and close cleanup through the registered native command family.",
   }),
   ilo: capability({
-    label: "HP iLO",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/hardware/useIlo.ts",
+    label: "HPE iLO",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/hardware/IloSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-ilo",
-    testPath: null,
+    testPath: "tests/hardware/BmcSessionPanel.test.tsx",
     detail:
-      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
+      "The saved-connection panel owns iLO connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
   }),
   lenovo: capability({
-    label: "Lenovo XCC/IMM",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/hardware/useLenovo.ts",
+    label: "Lenovo XClarity",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/hardware/LenovoSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-lenovo",
-    testPath: null,
+    testPath: "tests/hardware/BmcSessionPanel.test.tsx",
     detail:
-      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
+      "The saved-connection panel owns XClarity connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
   }),
   supermicro: capability({
     label: "Supermicro BMC",
-    classification: "management-only",
-    sessionEntry: "none",
-    frontendPath: "src/hooks/hardware/useSupermicro.ts",
+    classification: "fully-interactive",
+    sessionEntry: "client-owned",
+    frontendPath: "src/components/hardware/SupermicroSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-supermicro",
-    testPath: null,
+    testPath: "tests/hardware/BmcSessionPanel.test.tsx",
     detail:
-      "Backend commands and a typed hook exist, but no saved-connection panel or direct session route is registered.",
+      "The saved-connection panel owns Supermicro connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
   }),
 } satisfies Record<BuiltInConnectionProtocol, ProtocolAvailability>;
 
