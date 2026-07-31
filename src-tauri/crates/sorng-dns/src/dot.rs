@@ -10,14 +10,19 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
 // ── Connection Pool ──────────────────────────────────────────────────
 
 /// Idle timeout for pooled connections (60 seconds).
 const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+const MAX_DOT_POOL_ENTRIES: usize = 64;
+
+type DotStream = TlsStream<TcpStream>;
 
 struct PooledConnection {
-    stream: TcpStream,
+    stream: DotStream,
     created_at: std::time::Instant,
 }
 
@@ -27,7 +32,7 @@ static DOT_POOL: std::sync::LazyLock<Arc<Mutex<HashMap<String, PooledConnection>
     std::sync::LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// Try to take an idle connection from the pool for the given key.
-async fn pool_take(key: &str) -> Option<TcpStream> {
+async fn pool_take(key: &str) -> Option<DotStream> {
     let mut pool = DOT_POOL.lock().await;
     if let Some(conn) = pool.remove(key) {
         if conn.created_at.elapsed().as_secs() < POOL_IDLE_TIMEOUT_SECS {
@@ -39,10 +44,19 @@ async fn pool_take(key: &str) -> Option<TcpStream> {
 }
 
 /// Return a connection to the pool for reuse.
-async fn pool_return(key: String, stream: TcpStream) {
+async fn pool_return(key: String, stream: DotStream) {
     let mut pool = DOT_POOL.lock().await;
     // Evict stale entries while we're here
     pool.retain(|_, c| c.created_at.elapsed().as_secs() < POOL_IDLE_TIMEOUT_SECS);
+    if pool.len() >= MAX_DOT_POOL_ENTRIES {
+        if let Some(oldest_key) = pool
+            .iter()
+            .min_by_key(|(_, connection)| connection.created_at)
+            .map(|(key, _)| key.clone())
+        {
+            pool.remove(&oldest_key);
+        }
+    }
     pool.insert(
         key,
         PooledConnection {
@@ -50,6 +64,79 @@ async fn pool_return(key: String, stream: TcpStream) {
             created_at: std::time::Instant::now(),
         },
     );
+}
+
+fn build_tls_connector() -> Result<TlsConnector, String> {
+    let mut roots = rustls::RootCertStore::empty();
+    let native = rustls_native_certs::load_native_certs();
+    for cert in native.certs {
+        roots
+            .add(cert)
+            .map_err(|e| format!("DoT native certificate parse failed: {e}"))?;
+    }
+    if roots.is_empty() {
+        return Err(
+            "DoT cannot verify server identity because no native TLS roots are available"
+                .to_string(),
+        );
+    }
+
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(TlsConnector::from(Arc::new(config)))
+}
+
+async fn connect_tls(
+    address: &str,
+    port: u16,
+    tls_hostname: &str,
+    timeout: std::time::Duration,
+) -> Result<DotStream, String> {
+    let server_name = rustls::pki_types::ServerName::try_from(tls_hostname.to_owned())
+        .map_err(|_| format!("Invalid DoT TLS hostname: {tls_hostname}"))?;
+    let tcp_stream = tokio::time::timeout(timeout, TcpStream::connect((address, port)))
+        .await
+        .map_err(|_| format!("DoT connection to {address}:{port} timed out"))?
+        .map_err(|e| format!("DoT TCP connection failed: {e}"))?;
+    let connector = build_tls_connector()?;
+    tokio::time::timeout(timeout, connector.connect(server_name, tcp_stream))
+        .await
+        .map_err(|_| format!("DoT TLS handshake with {tls_hostname} timed out"))?
+        .map_err(|e| format!("DoT TLS handshake failed: {e}"))
+}
+
+fn frame_query(wire_query: &[u8]) -> Result<Vec<u8>, String> {
+    let len = u16::try_from(wire_query.len())
+        .map_err(|_| "DoT query exceeds the 65535-byte DNS-over-TCP limit".to_string())?;
+    let mut framed_query = Vec::with_capacity(2 + wire_query.len());
+    framed_query.extend_from_slice(&len.to_be_bytes());
+    framed_query.extend_from_slice(wire_query);
+    Ok(framed_query)
+}
+
+async fn timed_write_all(
+    stream: &mut DotStream,
+    data: &[u8],
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    tokio::time::timeout(timeout, stream.write_all(data))
+        .await
+        .map_err(|_| "DoT write timed out".to_string())?
+        .map_err(|e| format!("DoT write failed: {e}"))
+}
+
+async fn timed_read_exact(
+    stream: &mut DotStream,
+    data: &mut [u8],
+    timeout: std::time::Duration,
+    operation: &'static str,
+) -> Result<(), String> {
+    tokio::time::timeout(timeout, stream.read_exact(data))
+        .await
+        .map_err(|_| format!("DoT {operation} timed out"))?
+        .map(|_| ())
+        .map_err(|e| format!("DoT {operation} failed: {e}"))
 }
 
 /// Execute a DoT query.
@@ -65,43 +152,19 @@ pub async fn execute_dot_query(
 
     let address = &server.address;
     let port = server.effective_port(DnsProtocol::DoT);
-    let _tls_hostname = server.tls_hostname.as_deref().unwrap_or(address);
-    let timeout = std::time::Duration::from_millis(config.timeout_ms);
+    let tls_hostname = server.tls_hostname.as_deref().unwrap_or(address);
+    let timeout = std::time::Duration::from_millis(config.timeout_ms.clamp(1, 120_000));
 
-    // Build the TCP + TLS connection
-    let tcp_addr = format!("{}:{}", address, port);
-
-    let tcp_stream = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&tcp_addr))
-        .await
-        .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
-        .map_err(|e| format!("DoT TCP connection failed: {}", e))?;
-
-    // The workspace now standardises on rustls for TLS.
-    // This placeholder still simulates DoT with raw TCP + DNS wire messages.
-    // In production, this would wrap the socket with tokio-rustls.
-    //
-    // For now, implement the DNS-over-TCP framing (2-byte length prefix)
-    // and document that TLS wrapping is needed.
-
-    let mut stream = tcp_stream;
+    let mut stream = connect_tls(address, port, tls_hostname, timeout).await?;
 
     // DNS-over-TCP framing: 2-byte length prefix (RFC 1035 §4.2.2)
-    let len = wire_query.len() as u16;
-    let mut framed_query = Vec::with_capacity(2 + wire_query.len());
-    framed_query.extend_from_slice(&len.to_be_bytes());
-    framed_query.extend_from_slice(&wire_query);
+    let framed_query = frame_query(&wire_query)?;
 
-    stream
-        .write_all(&framed_query)
-        .await
-        .map_err(|e| format!("DoT write failed: {}", e))?;
+    timed_write_all(&mut stream, &framed_query, timeout).await?;
 
     // Read response length prefix
     let mut len_buf = [0u8; 2];
-    stream
-        .read_exact(&mut len_buf)
-        .await
-        .map_err(|e| format!("DoT read length failed: {}", e))?;
+    timed_read_exact(&mut stream, &mut len_buf, timeout, "length read").await?;
 
     let resp_len = u16::from_be_bytes(len_buf) as usize;
     if resp_len > 65535 {
@@ -109,10 +172,7 @@ pub async fn execute_dot_query(
     }
 
     let mut resp_buf = vec![0u8; resp_len];
-    stream
-        .read_exact(&mut resp_buf)
-        .await
-        .map_err(|e| format!("DoT read response failed: {}", e))?;
+    timed_read_exact(&mut stream, &mut resp_buf, timeout, "response read").await?;
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -137,36 +197,26 @@ pub async fn execute_dot_query_pooled(
 
     let address = &server.address;
     let port = server.effective_port(DnsProtocol::DoT);
-    let timeout = std::time::Duration::from_millis(config.timeout_ms);
-    let pool_key = format!("{}:{}", address, port);
+    let tls_hostname = server.tls_hostname.as_deref().unwrap_or(address);
+    let timeout = std::time::Duration::from_millis(config.timeout_ms.clamp(1, 120_000));
+    let pool_key = format!("{address}:{port}|{tls_hostname}");
 
     // Try to reuse a pooled connection, fall back to a new one
     let mut stream = if let Some(s) = pool_take(&pool_key).await {
-        log::debug!("DoT pool hit for {}", pool_key);
+        log::debug!("DoT connection pool hit");
         s
     } else {
-        let tcp_addr = format!("{}:{}", address, port);
-        tokio::time::timeout(timeout, TcpStream::connect(&tcp_addr))
-            .await
-            .map_err(|_| format!("DoT connection to {} timed out", tcp_addr))?
-            .map_err(|e| format!("DoT TCP connection failed: {}", e))?
+        connect_tls(address, port, tls_hostname, timeout).await?
     };
 
     // DNS-over-TCP framing: 2-byte length prefix (RFC 1035 §4.2.2)
-    let len = wire_query.len() as u16;
-    let mut framed_query = Vec::with_capacity(2 + wire_query.len());
-    framed_query.extend_from_slice(&len.to_be_bytes());
-    framed_query.extend_from_slice(&wire_query);
+    let framed_query = frame_query(&wire_query)?;
 
-    if let Err(e) = stream.write_all(&framed_query).await {
-        return Err(format!("DoT write failed: {}", e));
-    }
+    timed_write_all(&mut stream, &framed_query, timeout).await?;
 
     // Read response length prefix
     let mut len_buf = [0u8; 2];
-    if let Err(e) = stream.read_exact(&mut len_buf).await {
-        return Err(format!("DoT read length failed: {}", e));
-    }
+    timed_read_exact(&mut stream, &mut len_buf, timeout, "length read").await?;
 
     let resp_len = u16::from_be_bytes(len_buf) as usize;
     if resp_len > 65535 {
@@ -174,9 +224,7 @@ pub async fn execute_dot_query_pooled(
     }
 
     let mut resp_buf = vec![0u8; resp_len];
-    if let Err(e) = stream.read_exact(&mut resp_buf).await {
-        return Err(format!("DoT read response failed: {}", e));
-    }
+    timed_read_exact(&mut stream, &mut resp_buf, timeout, "response read").await?;
 
     // Return connection to pool for reuse
     pool_return(pool_key, stream).await;
@@ -190,7 +238,7 @@ pub async fn execute_dot_query_pooled(
 /// Check if a DoT server is reachable on port 853.
 pub async fn check_dot_reachability(address: &str, timeout_ms: u64) -> Result<bool, String> {
     let addr = format!("{}:853", address);
-    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let timeout = std::time::Duration::from_millis(timeout_ms.clamp(1, 120_000));
 
     match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await {
         Ok(Ok(_)) => Ok(true),
@@ -265,7 +313,9 @@ mod tests {
     fn validate_dot_server_hostname_without_bootstrap() {
         let server = dot_server("dns.example.com", None, None);
         let issues = validate_dot_server(&server);
-        assert!(issues.iter().any(|i| i.contains("hostname") && i.contains("bootstrap")));
+        assert!(issues
+            .iter()
+            .any(|i| i.contains("hostname") && i.contains("bootstrap")));
     }
 
     #[test]
