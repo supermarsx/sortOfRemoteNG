@@ -27,9 +27,13 @@ import {
 import { useTranslation } from "react-i18next";
 import { Connection } from "../../types/connection/connection";
 import { Modal } from "../ui/overlays/Modal";
-import { useConnectionDiagnostics, DiagnosticsMgr } from "../../hooks/connection/useConnectionDiagnostics";
+import {
+  useConnectionDiagnostics,
+  DiagnosticsMgr,
+} from "../../hooks/connection/useConnectionDiagnostics";
 import PingGraph from "./diagnostics/PingGraph";
 import PingStatsGrid from "./diagnostics/PingStatsGrid";
+import { renderDiagnosticsPrintDocument } from "./diagnostics/renderDiagnosticsPrintDocument";
 
 /* ── Types ─────────────────────────────────────────────────────── */
 
@@ -56,7 +60,13 @@ interface CategoryDef {
 
 /* ── Status helpers ────────────────────────────────────────────── */
 
-function StepStatusIcon({ status, size = 14 }: { status: StepStatus; size?: number }) {
+function StepStatusIcon({
+  status,
+  size = 14,
+}: {
+  status: StepStatus;
+  size?: number;
+}) {
   switch (status) {
     case "running":
       return <Loader2 size={size} className="text-primary animate-spin" />;
@@ -69,11 +79,22 @@ function StepStatusIcon({ status, size = 14 }: { status: StepStatus; size?: numb
     case "info":
       return <Info size={size} className="text-primary" />;
     default:
-      return <div className="rounded-full border-2 border-[var(--color-border)]" style={{ width: size, height: size }} />;
+      return (
+        <div
+          className="rounded-full border-2 border-[var(--color-border)]"
+          style={{ width: size, height: size }}
+        />
+      );
   }
 }
 
-function CategoryStatusIcon({ status, size = 16 }: { status: StepStatus; size?: number }) {
+function CategoryStatusIcon({
+  status,
+  size = 16,
+}: {
+  status: StepStatus;
+  size?: number;
+}) {
   switch (status) {
     case "running":
       return <Loader2 size={size} className="text-primary animate-spin" />;
@@ -91,18 +112,22 @@ function CategoryStatusIcon({ status, size = 16 }: { status: StepStatus; size?: 
 /* ── Protocol badge ────────────────────────────────────────────── */
 
 const protocolColors: Record<string, string> = {
-    rdp: "bg-primary/20 text-primary border-primary/30",
-    ssh: "bg-success/20 text-success border-success/30",
-    http: "bg-warning/20 text-warning border-warning/30",
-    https: "bg-warning/20 text-warning border-warning/30",
-    vnc: "bg-primary/20 text-primary border-accent/30",
-    winrm: "bg-info/20 text-info border-info/30",
+  rdp: "bg-primary/20 text-primary border-primary/30",
+  ssh: "bg-success/20 text-success border-success/30",
+  http: "bg-warning/20 text-warning border-warning/30",
+  https: "bg-warning/20 text-warning border-warning/30",
+  vnc: "bg-primary/20 text-primary border-accent/30",
+  winrm: "bg-info/20 text-info border-info/30",
 };
 
 function ProtocolBadge({ protocol }: { protocol: string }) {
-  const color = protocolColors[protocol.toLowerCase()] || "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] border-[var(--color-border)]";
+  const color =
+    protocolColors[protocol.toLowerCase()] ||
+    "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] border-[var(--color-border)]";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${color}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${color}`}
+    >
       {protocol}
     </span>
   );
@@ -142,11 +167,12 @@ function DiagRow({
             {durationMs}ms
           </span>
         )}
-        {hasDetail && (
-          expanded
-            ? <ChevronUp size={12} className="text-[var(--color-textMuted)]" />
-            : <ChevronDown size={12} className="text-[var(--color-textMuted)]" />
-        )}
+        {hasDetail &&
+          (expanded ? (
+            <ChevronUp size={12} className="text-[var(--color-textMuted)]" />
+          ) : (
+            <ChevronDown size={12} className="text-[var(--color-textMuted)]" />
+          ))}
       </button>
       {expanded && (detail || children) && (
         <div className="px-3 pb-3 border-t border-[var(--color-border)]">
@@ -164,7 +190,12 @@ function DiagRow({
 
 /* ── Info card (small metric card) ─────────────────────────────── */
 
-function InfoCard({ label, value, subtext, color }: {
+function InfoCard({
+  label,
+  value,
+  subtext,
+  color,
+}: {
   label: string;
   value: string;
   subtext?: string;
@@ -175,11 +206,16 @@ function InfoCard({ label, value, subtext, color }: {
       <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1">
         {label}
       </div>
-      <div className={`text-sm font-semibold ${color || "text-[var(--color-text)]"}`}>
+      <div
+        className={`text-sm font-semibold ${color || "text-[var(--color-text)]"}`}
+      >
         {value}
       </div>
       {subtext && (
-        <div className="text-[10px] text-[var(--color-textSecondary)] mt-0.5 truncate" title={subtext}>
+        <div
+          className="text-[10px] text-[var(--color-textSecondary)] mt-0.5 truncate"
+          title={subtext}
+        >
           {subtext}
         </div>
       )}
@@ -204,26 +240,33 @@ function useCategoryStatuses(mgr: DiagnosticsMgr, connection: Connection) {
 
     if (isRunning) {
       // Determine which categories are still running vs completed
-      const networkDone = results.internetCheck !== "pending" && results.gatewayCheck !== "pending" && results.subnetCheck !== "pending";
+      const networkDone =
+        results.internetCheck !== "pending" &&
+        results.gatewayCheck !== "pending" &&
+        results.subnetCheck !== "pending";
       const hasDns = results.dnsResult !== null;
       const hasPort = results.portCheck !== null;
 
       if (!networkDone || !hasDns || !hasPort) {
         statuses.network = "running";
       } else {
-        const allNetPass = results.internetCheck === "success" && results.gatewayCheck === "success" && results.subnetCheck === "success";
+        const allNetPass =
+          results.internetCheck === "success" &&
+          results.gatewayCheck === "success" &&
+          results.subnetCheck === "success";
         const dnsPass = results.dnsResult?.success ?? false;
         const portOpen = results.portCheck?.open ?? false;
         if (allNetPass && dnsPass && portOpen) statuses.network = "pass";
-        else if (results.subnetCheck === "failed" && !portOpen) statuses.network = "fail";
+        else if (results.subnetCheck === "failed" && !portOpen)
+          statuses.network = "fail";
         else statuses.network = "warn";
       }
 
       if (protocolDiagRunning) {
         statuses.protocol = "running";
       } else if (protocolReport) {
-        const hasFail = protocolReport.steps.some(s => s.status === "fail");
-        const hasWarn = protocolReport.steps.some(s => s.status === "warn");
+        const hasFail = protocolReport.steps.some((s) => s.status === "fail");
+        const hasWarn = protocolReport.steps.some((s) => s.status === "warn");
         statuses.protocol = hasFail ? "fail" : hasWarn ? "warn" : "pass";
       }
 
@@ -232,24 +275,40 @@ function useCategoryStatuses(mgr: DiagnosticsMgr, connection: Connection) {
         statuses.authentication = "running";
         statuses.certificate = "running";
       } else if (protocolReport) {
-        const authSteps = protocolReport.steps.filter(s =>
-          s.name.toLowerCase().includes("auth") || s.name.toLowerCase().includes("credential") || s.name.toLowerCase().includes("login")
+        const authSteps = protocolReport.steps.filter(
+          (s) =>
+            s.name.toLowerCase().includes("auth") ||
+            s.name.toLowerCase().includes("credential") ||
+            s.name.toLowerCase().includes("login"),
         );
         if (authSteps.length > 0) {
-          statuses.authentication = authSteps.some(s => s.status === "fail") ? "fail" : authSteps.some(s => s.status === "warn") ? "warn" : "pass";
+          statuses.authentication = authSteps.some((s) => s.status === "fail")
+            ? "fail"
+            : authSteps.some((s) => s.status === "warn")
+              ? "warn"
+              : "pass";
         }
-        const certSteps = protocolReport.steps.filter(s =>
-          s.name.toLowerCase().includes("tls") || s.name.toLowerCase().includes("cert") || s.name.toLowerCase().includes("ssl") || s.name.toLowerCase().includes("security")
+        const certSteps = protocolReport.steps.filter(
+          (s) =>
+            s.name.toLowerCase().includes("tls") ||
+            s.name.toLowerCase().includes("cert") ||
+            s.name.toLowerCase().includes("ssl") ||
+            s.name.toLowerCase().includes("security"),
         );
         if (certSteps.length > 0) {
-          statuses.certificate = certSteps.some(s => s.status === "fail") ? "fail" : certSteps.some(s => s.status === "warn") ? "warn" : "pass";
+          statuses.certificate = certSteps.some((s) => s.status === "fail")
+            ? "fail"
+            : certSteps.some((s) => s.status === "warn")
+              ? "warn"
+              : "pass";
         }
       }
 
       // TLS check also affects certificate category
       if (results.tlsCheck) {
         if (!results.tlsCheck.tls_supported) statuses.certificate = "fail";
-        else if (!results.tlsCheck.certificate_valid) statuses.certificate = "warn";
+        else if (!results.tlsCheck.certificate_valid)
+          statuses.certificate = "warn";
         else if (statuses.certificate === "idle") statuses.certificate = "pass";
       }
 
@@ -260,8 +319,15 @@ function useCategoryStatuses(mgr: DiagnosticsMgr, connection: Connection) {
         statuses.performance = "running";
       } else {
         const pingOk = mgr.pingSuccessRate >= 80;
-        const tcpOk = results.tcpTiming ? !results.tcpTiming.slow_connection : true;
-        statuses.performance = (pingOk && tcpOk) ? "pass" : (!pingOk || (results.tcpTiming && !results.tcpTiming.success)) ? "fail" : "warn";
+        const tcpOk = results.tcpTiming
+          ? !results.tcpTiming.slow_connection
+          : true;
+        statuses.performance =
+          pingOk && tcpOk
+            ? "pass"
+            : !pingOk || (results.tcpTiming && !results.tcpTiming.success)
+              ? "fail"
+              : "warn";
       }
 
       // Config is always info once we have basic data
@@ -270,43 +336,70 @@ function useCategoryStatuses(mgr: DiagnosticsMgr, connection: Connection) {
       // Not running -- compute final statuses
       const networkDone = results.internetCheck !== "pending";
       if (networkDone) {
-        const allNetPass = results.internetCheck === "success" && results.gatewayCheck === "success" && results.subnetCheck === "success";
+        const allNetPass =
+          results.internetCheck === "success" &&
+          results.gatewayCheck === "success" &&
+          results.subnetCheck === "success";
         const dnsPass = results.dnsResult?.success ?? false;
         const portOpen = results.portCheck?.open ?? false;
         if (allNetPass && dnsPass && portOpen) statuses.network = "pass";
-        else if (results.subnetCheck === "failed" && !portOpen) statuses.network = "fail";
+        else if (results.subnetCheck === "failed" && !portOpen)
+          statuses.network = "fail";
         else if (results.internetCheck !== "pending") statuses.network = "warn";
       }
 
       if (protocolReport) {
-        const hasFail = protocolReport.steps.some(s => s.status === "fail");
-        const hasWarn = protocolReport.steps.some(s => s.status === "warn");
+        const hasFail = protocolReport.steps.some((s) => s.status === "fail");
+        const hasWarn = protocolReport.steps.some((s) => s.status === "warn");
         statuses.protocol = hasFail ? "fail" : hasWarn ? "warn" : "pass";
 
-        const authSteps = protocolReport.steps.filter(s =>
-          s.name.toLowerCase().includes("auth") || s.name.toLowerCase().includes("credential") || s.name.toLowerCase().includes("login")
+        const authSteps = protocolReport.steps.filter(
+          (s) =>
+            s.name.toLowerCase().includes("auth") ||
+            s.name.toLowerCase().includes("credential") ||
+            s.name.toLowerCase().includes("login"),
         );
         if (authSteps.length > 0) {
-          statuses.authentication = authSteps.some(s => s.status === "fail") ? "fail" : authSteps.some(s => s.status === "warn") ? "warn" : "pass";
+          statuses.authentication = authSteps.some((s) => s.status === "fail")
+            ? "fail"
+            : authSteps.some((s) => s.status === "warn")
+              ? "warn"
+              : "pass";
         }
-        const certSteps = protocolReport.steps.filter(s =>
-          s.name.toLowerCase().includes("tls") || s.name.toLowerCase().includes("cert") || s.name.toLowerCase().includes("ssl") || s.name.toLowerCase().includes("security")
+        const certSteps = protocolReport.steps.filter(
+          (s) =>
+            s.name.toLowerCase().includes("tls") ||
+            s.name.toLowerCase().includes("cert") ||
+            s.name.toLowerCase().includes("ssl") ||
+            s.name.toLowerCase().includes("security"),
         );
         if (certSteps.length > 0) {
-          statuses.certificate = certSteps.some(s => s.status === "fail") ? "fail" : certSteps.some(s => s.status === "warn") ? "warn" : "pass";
+          statuses.certificate = certSteps.some((s) => s.status === "fail")
+            ? "fail"
+            : certSteps.some((s) => s.status === "warn")
+              ? "warn"
+              : "pass";
         }
       }
 
       if (results.tlsCheck) {
         if (!results.tlsCheck.tls_supported) statuses.certificate = "fail";
-        else if (!results.tlsCheck.certificate_valid) statuses.certificate = "warn";
+        else if (!results.tlsCheck.certificate_valid)
+          statuses.certificate = "warn";
         else if (statuses.certificate === "idle") statuses.certificate = "pass";
       }
 
       if (results.pings.length > 0 || results.tcpTiming) {
         const pingOk = mgr.pingSuccessRate >= 80;
-        const tcpOk = results.tcpTiming ? !results.tcpTiming.slow_connection : true;
-        statuses.performance = (pingOk && tcpOk) ? "pass" : (!pingOk || (results.tcpTiming && !results.tcpTiming.success)) ? "fail" : "warn";
+        const tcpOk = results.tcpTiming
+          ? !results.tcpTiming.slow_connection
+          : true;
+        statuses.performance =
+          pingOk && tcpOk
+            ? "pass"
+            : !pingOk || (results.tcpTiming && !results.tcpTiming.success)
+              ? "fail"
+              : "warn";
       }
 
       if (results.dnsResult || results.portCheck) {
@@ -315,12 +408,24 @@ function useCategoryStatuses(mgr: DiagnosticsMgr, connection: Connection) {
     }
 
     return statuses;
-  }, [results, isRunning, protocolReport, protocolDiagRunning, mgr.pingSuccessRate]);
+  }, [
+    results,
+    isRunning,
+    protocolReport,
+    protocolDiagRunning,
+    mgr.pingSuccessRate,
+  ]);
 }
 
 /* ── Network panel ─────────────────────────────────────────────── */
 
-function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Connection }) {
+function NetworkPanel({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) {
   const { t } = useTranslation();
   const { results, isRunning } = mgr;
 
@@ -333,20 +438,36 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
           {t("diagnostics.connectivityChecks", "Connectivity Checks")}
         </h4>
         <div className="grid grid-cols-3 gap-2">
-          {([
-            ["internetCheck", "Internet", "8.8.8.8 reachable"],
-            ["gatewayCheck", "Gateway", "Default gateway"],
-            ["subnetCheck", "Target Host", connection.hostname],
-          ] as const).map(([key, label, desc]) => {
+          {(
+            [
+              ["internetCheck", "Internet", "8.8.8.8 reachable"],
+              ["gatewayCheck", "Gateway", "Default gateway"],
+              ["subnetCheck", "Target Host", connection.hostname],
+            ] as const
+          ).map(([key, label, desc]) => {
             const val = results[key];
-            const status: StepStatus = val === "pending" ? (isRunning ? "running" : "idle") : val === "success" ? "pass" : "fail";
+            const status: StepStatus =
+              val === "pending"
+                ? isRunning
+                  ? "running"
+                  : "idle"
+                : val === "success"
+                  ? "pass"
+                  : "fail";
             return (
-              <div key={key} className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+              <div
+                key={key}
+                className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]"
+              >
                 <div className="flex items-center gap-2 mb-1">
                   <StepStatusIcon status={status} size={12} />
-                  <span className="text-xs font-medium text-[var(--color-text)]">{label}</span>
+                  <span className="text-xs font-medium text-[var(--color-text)]">
+                    {label}
+                  </span>
                 </div>
-                <div className="text-[10px] text-[var(--color-textMuted)]">{desc}</div>
+                <div className="text-[10px] text-[var(--color-textMuted)]">
+                  {desc}
+                </div>
               </div>
             );
           })}
@@ -362,17 +483,35 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
         {results.dnsResult ? (
           <DiagRow
             status={results.dnsResult.success ? "pass" : "fail"}
-            label={results.dnsResult.success
-              ? `Resolved: ${results.dnsResult.resolved_ips.join(", ")}`
-              : `DNS failed: ${results.dnsResult.error || "Unknown error"}`}
+            label={
+              results.dnsResult.success
+                ? `Resolved: ${results.dnsResult.resolved_ips.join(", ")}`
+                : `DNS failed: ${results.dnsResult.error || "Unknown error"}`
+            }
             durationMs={results.dnsResult.resolution_time_ms}
-            detail={[
-              results.dnsResult.reverse_dns ? `Reverse DNS: ${results.dnsResult.reverse_dns}` : null,
-              results.dnsResult.dns_server ? `DNS Server: ${results.dnsResult.dns_server}` : null,
-              results.ipClassification ? `IP Type: ${results.ipClassification.ip_type}${results.ipClassification.ip_class ? ` (${results.ipClassification.ip_class})` : ""}` : null,
-              results.ipClassification?.network_info ? `Network: ${results.ipClassification.network_info}` : null,
-              results.ipClassification?.is_ipv6 ? "Address Family: IPv6" : results.ipClassification ? "Address Family: IPv4" : null,
-            ].filter(Boolean).join("\n") || null}
+            detail={
+              [
+                results.dnsResult.reverse_dns
+                  ? `Reverse DNS: ${results.dnsResult.reverse_dns}`
+                  : null,
+                results.dnsResult.dns_server
+                  ? `DNS Server: ${results.dnsResult.dns_server}`
+                  : null,
+                results.ipClassification
+                  ? `IP Type: ${results.ipClassification.ip_type}${results.ipClassification.ip_class ? ` (${results.ipClassification.ip_class})` : ""}`
+                  : null,
+                results.ipClassification?.network_info
+                  ? `Network: ${results.ipClassification.network_info}`
+                  : null,
+                results.ipClassification?.is_ipv6
+                  ? "Address Family: IPv6"
+                  : results.ipClassification
+                    ? "Address Family: IPv4"
+                    : null,
+              ]
+                .filter(Boolean)
+                .join("\n") || null
+            }
           />
         ) : isRunning ? (
           <div className="flex items-center gap-2 p-3 text-xs text-[var(--color-textSecondary)]">
@@ -392,10 +531,18 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
             status={results.portCheck.open ? "pass" : "fail"}
             label={`Port ${results.portCheck.port} (${connection.protocol.toUpperCase()}) -- ${results.portCheck.open ? "Open" : "Closed/Filtered"}`}
             durationMs={results.portCheck.time_ms}
-            detail={[
-              results.portCheck.service ? `Service: ${results.portCheck.service}` : null,
-              results.portCheck.banner ? `Banner: ${results.portCheck.banner}` : null,
-            ].filter(Boolean).join("\n") || null}
+            detail={
+              [
+                results.portCheck.service
+                  ? `Service: ${results.portCheck.service}`
+                  : null,
+                results.portCheck.banner
+                  ? `Banner: ${results.portCheck.banner}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join("\n") || null
+            }
           />
         ) : isRunning ? (
           <div className="flex items-center gap-2 p-3 text-xs text-[var(--color-textSecondary)]">
@@ -425,12 +572,18 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
                     hop.timeout ? "text-warning/80" : "text-[var(--color-text)]"
                   }`}
                 >
-                  <span className="w-5 text-[var(--color-textMuted)] text-right tabular-nums">{hop.hop}</span>
+                  <span className="w-5 text-[var(--color-textMuted)] text-right tabular-nums">
+                    {hop.hop}
+                  </span>
                   <span className="flex-1 truncate">
-                    {hop.timeout ? "* * *" : hop.hostname || hop.ip || "Unknown"}
+                    {hop.timeout
+                      ? "* * *"
+                      : hop.hostname || hop.ip || "Unknown"}
                   </span>
                   {hop.ip && hop.ip !== hop.hostname && (
-                    <span className="text-[var(--color-textMuted)]">({hop.ip})</span>
+                    <span className="text-[var(--color-textMuted)]">
+                      ({hop.ip})
+                    </span>
                   )}
                   <span className="w-14 text-right text-[var(--color-textSecondary)] tabular-nums">
                     {hop.time_ms ? `${hop.time_ms}ms` : "-"}
@@ -440,7 +593,8 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
             </div>
           ) : (
             <div className="flex items-center gap-2 p-3 text-xs text-[var(--color-textSecondary)]">
-              <Loader2 size={14} className="animate-spin" /> Running traceroute...
+              <Loader2 size={14} className="animate-spin" /> Running
+              traceroute...
             </div>
           )}
         </div>
@@ -449,12 +603,20 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
       {/* ICMP Blockade */}
       {results.icmpBlockade && (
         <DiagRow
-          status={results.icmpBlockade.likely_blocked ? "warn" : results.icmpBlockade.icmp_allowed ? "pass" : "fail"}
-          label={results.icmpBlockade.likely_blocked
-            ? "ICMP likely blocked by firewall"
-            : results.icmpBlockade.icmp_allowed
-              ? "ICMP allowed"
-              : "ICMP and TCP unreachable"}
+          status={
+            results.icmpBlockade.likely_blocked
+              ? "warn"
+              : results.icmpBlockade.icmp_allowed
+                ? "pass"
+                : "fail"
+          }
+          label={
+            results.icmpBlockade.likely_blocked
+              ? "ICMP likely blocked by firewall"
+              : results.icmpBlockade.icmp_allowed
+                ? "ICMP allowed"
+                : "ICMP and TCP unreachable"
+          }
           detail={`Diagnosis: ${results.icmpBlockade.diagnosis}\nICMP: ${results.icmpBlockade.icmp_allowed ? "Allowed" : "Blocked"}\nTCP: ${results.icmpBlockade.tcp_reachable ? "Reachable" : "Unreachable"}`}
         />
       )}
@@ -464,7 +626,11 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
         <DiagRow
           status={results.mtuCheck.fragmentation_needed ? "warn" : "pass"}
           label={`Path MTU: ${results.mtuCheck.path_mtu || "Unknown"} (recommended: ${results.mtuCheck.recommended_mtu})`}
-          detail={results.mtuCheck.fragmentation_needed ? "Fragmentation detected on the path. This may affect performance." : null}
+          detail={
+            results.mtuCheck.fragmentation_needed
+              ? "Fragmentation detected on the path. This may affect performance."
+              : null
+          }
         />
       )}
     </div>
@@ -473,7 +639,13 @@ function NetworkPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Co
 
 /* ── Protocol panel ────────────────────────────────────────────── */
 
-function ProtocolPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Connection }) {
+function ProtocolPanel({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) {
   const { protocolReport, protocolDiagRunning, protocolDiagError } = mgr;
   const proto = connection.protocol.toLowerCase();
 
@@ -530,28 +702,40 @@ function ProtocolPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: C
           label={`Service: ${mgr.results.serviceFingerprint.protocol_detected || mgr.results.serviceFingerprint.service}${mgr.results.serviceFingerprint.version ? ` (${mgr.results.serviceFingerprint.version})` : ""}`}
           detail={[
             `Port: ${mgr.results.serviceFingerprint.port}`,
-            mgr.results.serviceFingerprint.banner ? `Banner: ${mgr.results.serviceFingerprint.banner}` : null,
-            mgr.results.serviceFingerprint.response_preview ? `Response: ${mgr.results.serviceFingerprint.response_preview}` : null,
-          ].filter(Boolean).join("\n")}
+            mgr.results.serviceFingerprint.banner
+              ? `Banner: ${mgr.results.serviceFingerprint.banner}`
+              : null,
+            mgr.results.serviceFingerprint.response_preview
+              ? `Response: ${mgr.results.serviceFingerprint.response_preview}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("\n")}
         />
       )}
 
       {/* Protocol-specific expected tests */}
-      {!protocolReport && !protocolDiagRunning && !protocolDiagError && protocolHints[proto] && (
-        <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-          <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-2">
-            {proto.toUpperCase()} Diagnostics
+      {!protocolReport &&
+        !protocolDiagRunning &&
+        !protocolDiagError &&
+        protocolHints[proto] && (
+          <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+            <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-2">
+              {proto.toUpperCase()} Diagnostics
+            </div>
+            <div className="space-y-1">
+              {protocolHints[proto].map((hint, i) => (
+                <div
+                  key={`hint-${hint.slice(0, 50)}-${i}`}
+                  className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-border)]" />
+                  {hint}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="space-y-1">
-            {protocolHints[proto].map((hint, i) => (
-              <div key={`hint-${hint.slice(0, 50)}-${i}`} className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[var(--color-border)]" />
-                {hint}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Running state */}
       {protocolDiagRunning && (
@@ -577,22 +761,27 @@ function ProtocolPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: C
               status={step.status === "skip" ? "idle" : step.status}
               label={step.name}
               durationMs={step.durationMs}
-              detail={[
-                step.message,
-                step.detail ? `\n${step.detail}` : null,
-              ].filter(Boolean).join("")}
+              detail={[step.message, step.detail ? `\n${step.detail}` : null]
+                .filter(Boolean)
+                .join("")}
             />
           ))}
 
           {/* Summary */}
           <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] space-y-2">
             <p className="text-xs text-[var(--color-text)]">
-              <span className="font-semibold text-[var(--color-textSecondary)]">Summary: </span>
+              <span className="font-semibold text-[var(--color-textSecondary)]">
+                Summary:{" "}
+              </span>
               {protocolReport.summary}
             </p>
             <div className="flex items-center gap-3 text-[10px] text-[var(--color-textSecondary)]">
-              <span>Host: {protocolReport.host}:{protocolReport.port}</span>
-              {protocolReport.resolvedIp && <span>IP: {protocolReport.resolvedIp}</span>}
+              <span>
+                Host: {protocolReport.host}:{protocolReport.port}
+              </span>
+              {protocolReport.resolvedIp && (
+                <span>IP: {protocolReport.resolvedIp}</span>
+              )}
               <span>Duration: {protocolReport.totalDurationMs}ms</span>
             </div>
           </div>
@@ -617,14 +806,28 @@ function ProtocolPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: C
 
 /* ── Authentication panel ──────────────────────────────────────── */
 
-function AuthenticationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Connection }) {
+function AuthenticationPanel({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) {
   const { protocolReport, protocolDiagRunning } = mgr;
   const proto = connection.protocol.toLowerCase();
 
-  const authSteps = protocolReport?.steps.filter(s => {
-    const n = s.name.toLowerCase();
-    return n.includes("auth") || n.includes("credential") || n.includes("login") || n.includes("password") || n.includes("key exchange") || n.includes("negotiate");
-  }) || [];
+  const authSteps =
+    protocolReport?.steps.filter((s) => {
+      const n = s.name.toLowerCase();
+      return (
+        n.includes("auth") ||
+        n.includes("credential") ||
+        n.includes("login") ||
+        n.includes("password") ||
+        n.includes("key exchange") ||
+        n.includes("negotiate")
+      );
+    }) || [];
 
   return (
     <div className="space-y-4">
@@ -636,18 +839,27 @@ function AuthenticationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connect
         <div className="grid grid-cols-2 gap-2">
           <InfoCard
             label="Auth Type"
-            value={connection.authType || (connection.privateKey ? "Key" : "Password")}
+            value={
+              connection.authType ||
+              (connection.privateKey ? "Key" : "Password")
+            }
           />
           <InfoCard
             label="Username"
             value={connection.username || "(not set)"}
-            color={connection.username ? undefined : "text-[var(--color-textMuted)]"}
+            color={
+              connection.username ? undefined : "text-[var(--color-textMuted)]"
+            }
           />
           {proto === "rdp" && connection.domain && (
             <InfoCard label="Domain" value={connection.domain} />
           )}
           {proto === "ssh" && connection.privateKey && (
-            <InfoCard label="Private Key" value="Configured" color="text-success" />
+            <InfoCard
+              label="Private Key"
+              value="Configured"
+              color="text-success"
+            />
           )}
         </div>
       </div>
@@ -677,7 +889,8 @@ function AuthenticationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connect
         </div>
       ) : !protocolDiagRunning && protocolReport ? (
         <div className="text-xs text-[var(--color-textSecondary)] p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-          No specific authentication steps were reported for this protocol diagnostic.
+          No specific authentication steps were reported for this protocol
+          diagnostic.
         </div>
       ) : null}
 
@@ -696,7 +909,10 @@ function AuthenticationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connect
           )}
           {proto === "ssh" && (
             <div className="space-y-1 text-xs text-[var(--color-textSecondary)]">
-              <div>Available auth methods: password, publickey, keyboard-interactive</div>
+              <div>
+                Available auth methods: password, publickey,
+                keyboard-interactive
+              </div>
               <div>Key exchange algorithm negotiation</div>
               <div>Host key verification</div>
             </div>
@@ -721,13 +937,27 @@ function AuthenticationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connect
 
 /* ── Certificate / Security panel ──────────────────────────────── */
 
-function CertificatePanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Connection }) {
+function CertificatePanel({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) {
   const { results, protocolReport, protocolDiagRunning } = mgr;
 
-  const secSteps = protocolReport?.steps.filter(s => {
-    const n = s.name.toLowerCase();
-    return n.includes("tls") || n.includes("cert") || n.includes("ssl") || n.includes("security") || n.includes("handshake") || n.includes("credssp");
-  }) || [];
+  const secSteps =
+    protocolReport?.steps.filter((s) => {
+      const n = s.name.toLowerCase();
+      return (
+        n.includes("tls") ||
+        n.includes("cert") ||
+        n.includes("ssl") ||
+        n.includes("security") ||
+        n.includes("handshake") ||
+        n.includes("credssp")
+      );
+    }) || [];
 
   return (
     <div className="space-y-4">
@@ -741,30 +971,52 @@ function CertificatePanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection
           <div className="space-y-2">
             <DiagRow
               status={results.tlsCheck.tls_supported ? "pass" : "fail"}
-              label={results.tlsCheck.tls_supported
-                ? `TLS ${results.tlsCheck.tls_version || ""} supported`
-                : `TLS not supported${results.tlsCheck.error ? `: ${results.tlsCheck.error}` : ""}`}
+              label={
+                results.tlsCheck.tls_supported
+                  ? `TLS ${results.tlsCheck.tls_version || ""} supported`
+                  : `TLS not supported${results.tlsCheck.error ? `: ${results.tlsCheck.error}` : ""}`
+              }
               durationMs={results.tlsCheck.handshake_time_ms}
-              detail={[
-                results.tlsCheck.certificate_subject ? `Subject: ${results.tlsCheck.certificate_subject}` : null,
-                results.tlsCheck.certificate_issuer ? `Issuer: ${results.tlsCheck.certificate_issuer}` : null,
-                results.tlsCheck.certificate_expiry ? `Expiry: ${new Date(results.tlsCheck.certificate_expiry).toLocaleDateString()}` : null,
-              ].filter(Boolean).join("\n") || null}
+              detail={
+                [
+                  results.tlsCheck.certificate_subject
+                    ? `Subject: ${results.tlsCheck.certificate_subject}`
+                    : null,
+                  results.tlsCheck.certificate_issuer
+                    ? `Issuer: ${results.tlsCheck.certificate_issuer}`
+                    : null,
+                  results.tlsCheck.certificate_expiry
+                    ? `Expiry: ${new Date(results.tlsCheck.certificate_expiry).toLocaleDateString()}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join("\n") || null
+              }
             />
 
             {results.tlsCheck.tls_supported && (
               <div className="grid grid-cols-2 gap-2">
                 <InfoCard
                   label="Certificate"
-                  value={results.tlsCheck.certificate_valid ? "Valid" : "Invalid"}
-                  color={results.tlsCheck.certificate_valid ? "text-success" : "text-error"}
+                  value={
+                    results.tlsCheck.certificate_valid ? "Valid" : "Invalid"
+                  }
+                  color={
+                    results.tlsCheck.certificate_valid
+                      ? "text-success"
+                      : "text-error"
+                  }
                   subtext={results.tlsCheck.certificate_subject}
                 />
                 <InfoCard
                   label="Expiry"
-                  value={results.tlsCheck.certificate_expiry
-                    ? new Date(results.tlsCheck.certificate_expiry).toLocaleDateString()
-                    : "Unknown"}
+                  value={
+                    results.tlsCheck.certificate_expiry
+                      ? new Date(
+                          results.tlsCheck.certificate_expiry,
+                        ).toLocaleDateString()
+                      : "Unknown"
+                  }
                 />
               </div>
             )}
@@ -799,29 +1051,53 @@ function CertificatePanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection
             Proxy / VPN Leak Check
           </h4>
           <DiagRow
-            status={results.leakageDetection.overall_status === "secure" ? "pass" : results.leakageDetection.overall_status === "leak_detected" ? "fail" : "warn"}
-            label={results.leakageDetection.overall_status === "secure"
-              ? "No leaks detected"
-              : results.leakageDetection.overall_status === "leak_detected"
-                ? "Leak detected!"
-                : "Potential leak"}
-            detail={[
-              results.leakageDetection.detected_public_ip ? `Public IP: ${results.leakageDetection.detected_public_ip}` : null,
-              results.leakageDetection.dns_leak_detected ? "DNS Leak: Detected" : null,
-              results.leakageDetection.ip_mismatch_detected ? "IP Mismatch: Detected" : null,
-              results.leakageDetection.dns_servers_detected.length > 0 ? `DNS Servers: ${results.leakageDetection.dns_servers_detected.join(", ")}` : null,
-              ...results.leakageDetection.notes,
-            ].filter(Boolean).join("\n") || null}
+            status={
+              results.leakageDetection.overall_status === "secure"
+                ? "pass"
+                : results.leakageDetection.overall_status === "leak_detected"
+                  ? "fail"
+                  : "warn"
+            }
+            label={
+              results.leakageDetection.overall_status === "secure"
+                ? "No leaks detected"
+                : results.leakageDetection.overall_status === "leak_detected"
+                  ? "Leak detected!"
+                  : "Potential leak"
+            }
+            detail={
+              [
+                results.leakageDetection.detected_public_ip
+                  ? `Public IP: ${results.leakageDetection.detected_public_ip}`
+                  : null,
+                results.leakageDetection.dns_leak_detected
+                  ? "DNS Leak: Detected"
+                  : null,
+                results.leakageDetection.ip_mismatch_detected
+                  ? "IP Mismatch: Detected"
+                  : null,
+                results.leakageDetection.dns_servers_detected.length > 0
+                  ? `DNS Servers: ${results.leakageDetection.dns_servers_detected.join(", ")}`
+                  : null,
+                ...results.leakageDetection.notes,
+              ]
+                .filter(Boolean)
+                .join("\n") || null
+            }
           />
         </div>
       )}
 
       {/* Placeholder when nothing */}
-      {!results.tlsCheck && secSteps.length === 0 && !results.leakageDetection && !protocolDiagRunning && (
-        <div className="text-xs text-[var(--color-textSecondary)] p-4 text-center">
-          No certificate or security data available. TLS checks run automatically for HTTPS and common TLS ports.
-        </div>
-      )}
+      {!results.tlsCheck &&
+        secSteps.length === 0 &&
+        !results.leakageDetection &&
+        !protocolDiagRunning && (
+          <div className="text-xs text-[var(--color-textSecondary)] p-4 text-center">
+            No certificate or security data available. TLS checks run
+            automatically for HTTPS and common TLS ports.
+          </div>
+        )}
 
       {protocolDiagRunning && !results.tlsCheck && secSteps.length === 0 && (
         <div className="flex items-center gap-2 p-3 text-xs text-primary">
@@ -836,7 +1112,15 @@ function CertificatePanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection
 /* ── Performance panel ─────────────────────────────────────────── */
 
 function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
-  const { results, avgPingTime, pingSuccessRate, jitter, maxPing, minPing, isRunning } = mgr;
+  const {
+    results,
+    avgPingTime,
+    pingSuccessRate,
+    jitter,
+    maxPing,
+    minPing,
+    isRunning,
+  } = mgr;
 
   return (
     <div className="space-y-4">
@@ -847,15 +1131,26 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
           Latency (ICMP Ping)
           {results.pings.length > 0 && (
             <span className="ml-auto font-normal normal-case text-[var(--color-textMuted)]">
-              {results.pings.filter(p => p.success).length}/{results.pings.length}
+              {results.pings.filter((p) => p.success).length}/
+              {results.pings.length}
             </span>
           )}
         </h4>
 
         {results.pings.length >= 2 && (
           <>
-            <PingGraph results={results} avgPingTime={avgPingTime} maxPing={maxPing} minPing={minPing} />
-            <PingStatsGrid pingSuccessRate={pingSuccessRate} avgPingTime={avgPingTime} jitter={jitter} results={results} />
+            <PingGraph
+              results={results}
+              avgPingTime={avgPingTime}
+              maxPing={maxPing}
+              minPing={minPing}
+            />
+            <PingStatsGrid
+              pingSuccessRate={pingSuccessRate}
+              avgPingTime={avgPingTime}
+              jitter={jitter}
+              results={results}
+            />
           </>
         )}
 
@@ -872,11 +1167,16 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
               {ping.success && ping.time_ms ? `${ping.time_ms}` : "X"}
             </div>
           ))}
-          {Array(Math.max(0, 10 - results.pings.length)).fill(0).map((_, i) => (
-            <div key={`e-${i}`} className="flex-1 p-1.5 rounded text-center text-[10px] bg-[var(--color-surface)] text-[var(--color-textMuted)] border border-[var(--color-border)]">
-              -
-            </div>
-          ))}
+          {Array(Math.max(0, 10 - results.pings.length))
+            .fill(0)
+            .map((_, i) => (
+              <div
+                key={`e-${i}`}
+                className="flex-1 p-1.5 rounded text-center text-[10px] bg-[var(--color-surface)] text-[var(--color-textMuted)] border border-[var(--color-border)]"
+              >
+                -
+              </div>
+            ))}
         </div>
       </div>
 
@@ -891,10 +1191,17 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
               <InfoCard
                 label="Connect"
                 value={`${results.tcpTiming.connect_time_ms}ms`}
-                color={results.tcpTiming.slow_connection ? "text-warning" : "text-success"}
+                color={
+                  results.tcpTiming.slow_connection
+                    ? "text-warning"
+                    : "text-success"
+                }
               />
               {results.tcpTiming.syn_ack_time_ms !== undefined && (
-                <InfoCard label="SYN-ACK" value={`${results.tcpTiming.syn_ack_time_ms}ms`} />
+                <InfoCard
+                  label="SYN-ACK"
+                  value={`${results.tcpTiming.syn_ack_time_ms}ms`}
+                />
               )}
               <InfoCard
                 label="Total"
@@ -908,7 +1215,8 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
           )}
           {results.tcpTiming?.slow_connection && (
             <div className="mt-2 p-2 bg-warning/10 border border-warning/30 rounded text-xs text-warning">
-              Slow TCP connection detected. This may indicate network congestion or high latency.
+              Slow TCP connection detected. This may indicate network congestion
+              or high latency.
             </div>
           )}
         </div>
@@ -918,25 +1226,49 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
       {avgPingTime > 0 && (
         <div className="grid grid-cols-3 gap-2">
           <InfoCard label="Avg Latency" value={`${avgPingTime.toFixed(1)}ms`} />
-          <InfoCard label="Jitter" value={jitter > 0 ? `+/-${jitter.toFixed(1)}ms` : "-"} color={jitter > 20 ? "text-warning" : undefined} />
-          <InfoCard label="Packet Loss" value={`${(100 - pingSuccessRate).toFixed(0)}%`} color={pingSuccessRate < 80 ? "text-error" : pingSuccessRate < 95 ? "text-warning" : "text-success"} />
+          <InfoCard
+            label="Jitter"
+            value={jitter > 0 ? `+/-${jitter.toFixed(1)}ms` : "-"}
+            color={jitter > 20 ? "text-warning" : undefined}
+          />
+          <InfoCard
+            label="Packet Loss"
+            value={`${(100 - pingSuccessRate).toFixed(0)}%`}
+            color={
+              pingSuccessRate < 80
+                ? "text-error"
+                : pingSuccessRate < 95
+                  ? "text-warning"
+                  : "text-success"
+            }
+          />
         </div>
       )}
 
       {/* Asymmetric routing */}
       {results.asymmetricRouting && (
         <DiagRow
-          status={results.asymmetricRouting.asymmetry_detected ? "warn" : "pass"}
-          label={results.asymmetricRouting.asymmetry_detected
-            ? "Asymmetric routing detected"
-            : "Symmetric routing path"}
+          status={
+            results.asymmetricRouting.asymmetry_detected ? "warn" : "pass"
+          }
+          label={
+            results.asymmetricRouting.asymmetry_detected
+              ? "Asymmetric routing detected"
+              : "Symmetric routing path"
+          }
           detail={[
             `Confidence: ${results.asymmetricRouting.confidence}`,
             `Path Stability: ${results.asymmetricRouting.path_stability}`,
-            results.asymmetricRouting.latency_variance != null ? `Latency Variance: +/-${results.asymmetricRouting.latency_variance.toFixed(2)}ms` : null,
-            results.asymmetricRouting.ttl_analysis.received_ttl ? `TTL: ${results.asymmetricRouting.ttl_analysis.received_ttl}${results.asymmetricRouting.ttl_analysis.estimated_hops ? ` (~${results.asymmetricRouting.ttl_analysis.estimated_hops} hops)` : ""}` : null,
+            results.asymmetricRouting.latency_variance != null
+              ? `Latency Variance: +/-${results.asymmetricRouting.latency_variance.toFixed(2)}ms`
+              : null,
+            results.asymmetricRouting.ttl_analysis.received_ttl
+              ? `TTL: ${results.asymmetricRouting.ttl_analysis.received_ttl}${results.asymmetricRouting.ttl_analysis.estimated_hops ? ` (~${results.asymmetricRouting.ttl_analysis.estimated_hops} hops)` : ""}`
+              : null,
             ...results.asymmetricRouting.notes,
-          ].filter(Boolean).join("\n")}
+          ]
+            .filter(Boolean)
+            .join("\n")}
         />
       )}
     </div>
@@ -945,7 +1277,13 @@ function PerformancePanel({ mgr }: { mgr: DiagnosticsMgr }) {
 
 /* ── Configuration panel ───────────────────────────────────────── */
 
-function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connection: Connection }) {
+function ConfigurationPanel({
+  mgr,
+  connection,
+}: {
+  mgr: DiagnosticsMgr;
+  connection: Connection;
+}) {
   const { results } = mgr;
   const proto = connection.protocol.toLowerCase();
 
@@ -958,12 +1296,25 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
           Effective Connection Settings
         </h4>
         <div className="grid grid-cols-2 gap-2">
-          <InfoCard label="Protocol" value={connection.protocol.toUpperCase()} />
+          <InfoCard
+            label="Protocol"
+            value={connection.protocol.toUpperCase()}
+          />
           <InfoCard label="Hostname" value={connection.hostname} />
           <InfoCard label="Port" value={String(connection.port || "default")} />
-          <InfoCard label="Username" value={connection.username || "(not set)"} color={connection.username ? undefined : "text-[var(--color-textMuted)]"} />
-          {connection.domain && <InfoCard label="Domain" value={connection.domain} />}
-          {connection.timeout && <InfoCard label="Timeout" value={`${connection.timeout}s`} />}
+          <InfoCard
+            label="Username"
+            value={connection.username || "(not set)"}
+            color={
+              connection.username ? undefined : "text-[var(--color-textMuted)]"
+            }
+          />
+          {connection.domain && (
+            <InfoCard label="Domain" value={connection.domain} />
+          )}
+          {connection.timeout && (
+            <InfoCard label="Timeout" value={`${connection.timeout}s`} />
+          )}
         </div>
       </div>
 
@@ -976,27 +1327,70 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
           <div className="grid grid-cols-3 gap-2">
             {connection.rdpSettings.display && (
               <>
-                <InfoCard label="Resolution" value={`${connection.rdpSettings.display.width || "auto"}x${connection.rdpSettings.display.height || "auto"}`} />
-                <InfoCard label="Color Depth" value={`${connection.rdpSettings.display.colorDepth || 32}-bit`} />
+                <InfoCard
+                  label="Resolution"
+                  value={`${connection.rdpSettings.display.width || "auto"}x${connection.rdpSettings.display.height || "auto"}`}
+                />
+                <InfoCard
+                  label="Color Depth"
+                  value={`${connection.rdpSettings.display.colorDepth || 32}-bit`}
+                />
               </>
             )}
             {connection.rdpSettings.security && (
               <>
-                <InfoCard label="NLA" value={connection.rdpSettings.security.enableNla ? "Enabled" : "Disabled"} color={connection.rdpSettings.security.enableNla ? "text-success" : "text-warning"} />
-                <InfoCard label="CredSSP" value={connection.rdpSettings.security.useCredSsp ? "Enabled" : "Disabled"} />
-                <InfoCard label="TLS" value={connection.rdpSettings.security.enableTls ? "Enabled" : "Disabled"} />
+                <InfoCard
+                  label="NLA"
+                  value={
+                    connection.rdpSettings.security.enableNla
+                      ? "Enabled"
+                      : "Disabled"
+                  }
+                  color={
+                    connection.rdpSettings.security.enableNla
+                      ? "text-success"
+                      : "text-warning"
+                  }
+                />
+                <InfoCard
+                  label="CredSSP"
+                  value={
+                    connection.rdpSettings.security.useCredSsp
+                      ? "Enabled"
+                      : "Disabled"
+                  }
+                />
+                <InfoCard
+                  label="TLS"
+                  value={
+                    connection.rdpSettings.security.enableTls
+                      ? "Enabled"
+                      : "Disabled"
+                  }
+                />
               </>
             )}
             {connection.rdpSettings.gateway?.enabled && (
-              <InfoCard label="Gateway" value={connection.rdpSettings.gateway.hostname || "Configured"} />
+              <InfoCard
+                label="Gateway"
+                value={connection.rdpSettings.gateway.hostname || "Configured"}
+              />
             )}
             {connection.rdpSettings.performance?.codecs && (
               <InfoCard
                 label="Codecs"
-                value={[
-                  connection.rdpSettings.performance.codecs.remoteFx ? "RemoteFX" : null,
-                  connection.rdpSettings.performance.codecs.enableGfx ? "H.264" : null,
-                ].filter(Boolean).join(", ") || "None"}
+                value={
+                  [
+                    connection.rdpSettings.performance.codecs.remoteFx
+                      ? "RemoteFX"
+                      : null,
+                    connection.rdpSettings.performance.codecs.enableGfx
+                      ? "H.264"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "None"
+                }
               />
             )}
           </div>
@@ -1009,10 +1403,24 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
             SSH Settings
           </h4>
           <div className="grid grid-cols-2 gap-2">
-            <InfoCard label="Auth Type" value={connection.privateKey ? "Public Key" : "Password"} />
-            <InfoCard label="Keep-Alive" value={connection.sshKeepAliveInterval ? `${connection.sshKeepAliveInterval}s` : "Default"} />
+            <InfoCard
+              label="Auth Type"
+              value={connection.privateKey ? "Public Key" : "Password"}
+            />
+            <InfoCard
+              label="Keep-Alive"
+              value={
+                connection.sshKeepAliveInterval
+                  ? `${connection.sshKeepAliveInterval}s`
+                  : "Default"
+              }
+            />
             {connection.sshConnectionConfigOverride && (
-              <InfoCard label="Config Override" value="Active" color="text-primary" />
+              <InfoCard
+                label="Config Override"
+                value="Active"
+                color="text-primary"
+              />
             )}
           </div>
         </div>
@@ -1024,10 +1432,24 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
             WinRM Settings
           </h4>
           <div className="grid grid-cols-2 gap-2">
-            <InfoCard label="HTTP Port" value={String(connection.winrmSettings.httpPort || 5985)} />
-            <InfoCard label="HTTPS Port" value={String(connection.winrmSettings.httpsPort || 5986)} />
-            <InfoCard label="Auth Method" value={connection.winrmSettings.authMethod || "negotiate"} />
-            <InfoCard label="SSL" value={connection.winrmSettings.preferSsl ? "Preferred" : "Optional"} />
+            <InfoCard
+              label="HTTP Port"
+              value={String(connection.winrmSettings.httpPort || 5985)}
+            />
+            <InfoCard
+              label="HTTPS Port"
+              value={String(connection.winrmSettings.httpsPort || 5986)}
+            />
+            <InfoCard
+              label="Auth Method"
+              value={connection.winrmSettings.authMethod || "negotiate"}
+            />
+            <InfoCard
+              label="SSL"
+              value={
+                connection.winrmSettings.preferSsl ? "Preferred" : "Optional"
+              }
+            />
           </div>
         </div>
       )}
@@ -1043,10 +1465,22 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
             <InfoCard label="IP" value={results.ipGeoInfo.ip} />
             <InfoCard
               label="Location"
-              value={[results.ipGeoInfo.city, results.ipGeoInfo.region, results.ipGeoInfo.country].filter(Boolean).join(", ") || "Unknown"}
+              value={
+                [
+                  results.ipGeoInfo.city,
+                  results.ipGeoInfo.region,
+                  results.ipGeoInfo.country,
+                ]
+                  .filter(Boolean)
+                  .join(", ") || "Unknown"
+              }
             />
             {results.ipGeoInfo.asn && (
-              <InfoCard label="ASN" value={`AS${results.ipGeoInfo.asn}`} subtext={results.ipGeoInfo.asn_org} />
+              <InfoCard
+                label="ASN"
+                value={`AS${results.ipGeoInfo.asn}`}
+                subtext={results.ipGeoInfo.asn_org}
+              />
             )}
             {results.ipGeoInfo.isp && (
               <InfoCard label="ISP" value={results.ipGeoInfo.isp} />
@@ -1066,29 +1500,43 @@ function ConfigurationPanel({ mgr, connection }: { mgr: DiagnosticsMgr; connecti
           status={results.udpProbe.response_received ? "pass" : "warn"}
           label={`UDP port ${results.udpProbe.port}: ${results.udpProbe.response_received ? "Response received" : results.udpProbe.response_type === "icmp_unreachable" ? "Port closed" : "No response (filtered?)"}`}
           durationMs={results.udpProbe.latency_ms}
-          detail={results.udpProbe.response_data ? `Response: ${results.udpProbe.response_data}` : null}
+          detail={
+            results.udpProbe.response_data
+              ? `Response: ${results.udpProbe.response_data}`
+              : null
+          }
         />
       )}
 
       {/* Security chain info */}
-      {connection.security?.tunnelChain && connection.security.tunnelChain.length > 0 && (
-        <div>
-          <h4 className="text-[11px] font-semibold uppercase text-[var(--color-textSecondary)] mb-2">
-            Tunnel Chain
-          </h4>
-          <div className="space-y-1">
-            {connection.security.tunnelChain.map((layer, i) => (
-              <div key={layer.id} className="flex items-center gap-2 p-2 bg-[var(--color-surface)] rounded border border-[var(--color-border)] text-xs">
-                <span className="text-[var(--color-textMuted)] tabular-nums">{i + 1}.</span>
-                <span className="font-medium text-[var(--color-text)]">{layer.name || layer.type}</span>
-                <span className={`ml-auto text-[10px] ${layer.enabled ? "text-success" : "text-[var(--color-textMuted)]"}`}>
-                  {layer.enabled ? "Enabled" : "Disabled"}
-                </span>
-              </div>
-            ))}
+      {connection.security?.tunnelChain &&
+        connection.security.tunnelChain.length > 0 && (
+          <div>
+            <h4 className="text-[11px] font-semibold uppercase text-[var(--color-textSecondary)] mb-2">
+              Tunnel Chain
+            </h4>
+            <div className="space-y-1">
+              {connection.security.tunnelChain.map((layer, i) => (
+                <div
+                  key={layer.id}
+                  className="flex items-center gap-2 p-2 bg-[var(--color-surface)] rounded border border-[var(--color-border)] text-xs"
+                >
+                  <span className="text-[var(--color-textMuted)] tabular-nums">
+                    {i + 1}.
+                  </span>
+                  <span className="font-medium text-[var(--color-text)]">
+                    {layer.name || layer.type}
+                  </span>
+                  <span
+                    className={`ml-auto text-[10px] ${layer.enabled ? "text-success" : "text-[var(--color-textMuted)]"}`}
+                  >
+                    {layer.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }
@@ -1105,12 +1553,36 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const statuses = useCategoryStatuses(mgr, connection);
 
   const categories: CategoryDef[] = [
-    { id: "network", label: t("diagnostics.cat.network", "Network"), icon: <Globe size={14} /> },
-    { id: "protocol", label: t("diagnostics.cat.protocol", "Protocol"), icon: <Microscope size={14} /> },
-    { id: "authentication", label: t("diagnostics.cat.auth", "Authentication"), icon: <Shield size={14} /> },
-    { id: "certificate", label: t("diagnostics.cat.certificate", "Certificate / Security"), icon: <Shield size={14} /> },
-    { id: "performance", label: t("diagnostics.cat.performance", "Performance"), icon: <Gauge size={14} /> },
-    { id: "configuration", label: t("diagnostics.cat.config", "Configuration"), icon: <Settings size={14} /> },
+    {
+      id: "network",
+      label: t("diagnostics.cat.network", "Network"),
+      icon: <Globe size={14} />,
+    },
+    {
+      id: "protocol",
+      label: t("diagnostics.cat.protocol", "Protocol"),
+      icon: <Microscope size={14} />,
+    },
+    {
+      id: "authentication",
+      label: t("diagnostics.cat.auth", "Authentication"),
+      icon: <Shield size={14} />,
+    },
+    {
+      id: "certificate",
+      label: t("diagnostics.cat.certificate", "Certificate / Security"),
+      icon: <Shield size={14} />,
+    },
+    {
+      id: "performance",
+      label: t("diagnostics.cat.performance", "Performance"),
+      icon: <Gauge size={14} />,
+    },
+    {
+      id: "configuration",
+      label: t("diagnostics.cat.config", "Configuration"),
+      icon: <Settings size={14} />,
+    },
   ];
 
   const renderPanel = () => {
@@ -1132,161 +1604,126 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
-        {/* ── Header ────────────────────────────────────────────── */}
-        <div className="shrink-0 border-b border-[var(--color-border)] px-4 py-2 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-[var(--color-text)] truncate">
-                {connection.name}
-              </h2>
-              <ProtocolBadge protocol={connection.protocol} />
-            </div>
-            <p className="text-[11px] text-[var(--color-textSecondary)] truncate">
-              {connection.hostname}:{connection.port || "default"}
-            </p>
+      {/* ── Header ────────────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-[var(--color-border)] px-4 py-2 flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-[var(--color-text)] truncate">
+              {connection.name}
+            </h2>
+            <ProtocolBadge protocol={connection.protocol} />
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {mgr.isRunning && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary rounded-md text-[10px] font-medium mr-1">
-                <Loader2 size={10} className="animate-spin" />
-                <span className="max-w-[140px] truncate">{mgr.currentStep}</span>
-              </div>
-            )}
-            <button
-              onClick={mgr.runDiagnostics}
-              disabled={mgr.isRunning}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
-              title="Run All Diagnostics"
-            >
-              {mgr.isRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-              Run All
-            </button>
-            <button
-              onClick={mgr.copyDiagnosticsToClipboard}
-              className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
-              title="Copy diagnostics"
-            >
-              <Copy size={14} />
-            </button>
-            <button
-              onClick={() => {
-                // Build a standalone HTML document with all diagnostic data
-                // and trigger the browser's Save as PDF via print dialog.
-                const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-                const title = `Diagnostics — ${connection.name} (${connection.hostname})`;
-                const now = new Date().toLocaleString();
-                const sections: string[] = [];
-
-                // Network results
-                const { dnsResult, tcpTiming: tcpResult, pings, tlsCheck: tlsResult } = mgr.results;
-                if (pings.length > 0 || tcpResult || dnsResult) {
-                  let s = '<h2>Network</h2>';
-                  if (dnsResult) s += `<p><b>DNS:</b> ${escapeHtml(typeof dnsResult === 'string' ? dnsResult : JSON.stringify(dnsResult))}</p>`;
-                  if (tcpResult) s += `<p><b>TCP:</b> ${escapeHtml(typeof tcpResult === 'string' ? tcpResult : JSON.stringify(tcpResult))}</p>`;
-                  if (mgr.minPing != null && mgr.avgPingTime != null && mgr.maxPing != null) {
-                    const loss = pings.length > 0 ? ((pings.filter(p => !p.success).length / pings.length) * 100).toFixed(1) : '0';
-                    s += `<p><b>Ping:</b> min=${mgr.minPing}ms avg=${mgr.avgPingTime}ms max=${mgr.maxPing}ms loss=${loss}%</p>`;
-                  }
-                  sections.push(s);
-                }
-
-                // Protocol report
-                if (mgr.protocolReport) {
-                  let s = '<h2>Protocol Diagnostics</h2>';
-                  s += `<p><b>Summary:</b> ${escapeHtml(mgr.protocolReport.summary)}</p>`;
-                  if (mgr.protocolReport.rootCauseHint) s += `<p><b>Root Cause:</b> ${escapeHtml(mgr.protocolReport.rootCauseHint)}</p>`;
-                  s += '<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%"><tr><th>Step</th><th>Status</th><th>Duration</th><th>Message</th></tr>';
-                  for (const step of mgr.protocolReport.steps) {
-                    s += `<tr><td>${escapeHtml(step.name)}</td><td>${escapeHtml(step.status)}</td><td>${step.durationMs}ms</td><td>${escapeHtml(step.message)}</td></tr>`;
-                  }
-                  s += '</table>';
-                  sections.push(s);
-                }
-
-                // Certificate
-                if (tlsResult) {
-                  let s = '<h2>Certificate / Security</h2>';
-                  s += `<p><b>Subject:</b> ${escapeHtml(tlsResult.certificate_subject ?? 'N/A')}</p>`;
-                  s += `<p><b>Issuer:</b> ${escapeHtml(tlsResult.certificate_issuer ?? 'N/A')}</p>`;
-                  s += `<p><b>Expires:</b> ${escapeHtml(tlsResult.certificate_expiry ?? 'N/A')}</p>`;
-                  s += `<p><b>TLS Version:</b> ${escapeHtml(tlsResult.tls_version ?? 'N/A')}</p>`;
-                  sections.push(s);
-                }
-
-                const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
-                  <style>body{font-family:system-ui,sans-serif;font-size:12px;max-width:900px;margin:0 auto;padding:20px}
-                  h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin-top:16px;border-bottom:1px solid #ccc;padding-bottom:4px}
-                  table{font-size:11px}th{background:#f0f0f0;text-align:left}p{margin:4px 0}</style>
-                  </head><body><h1>${escapeHtml(title)}</h1><p style="color:#666">${escapeHtml(now)}</p>
-                  ${sections.length > 0 ? sections.join('') : '<p>No diagnostic results yet. Run diagnostics first.</p>'}
-                  </body></html>`;
-
-                const win = window.open('', '_blank');
-                if (win) {
-                  win.document.write(html);
-                  win.document.close();
-                  setTimeout(() => { win.print(); }, 300);
-                }
-              }}
-              className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
-              title="Save as PDF"
-            >
-              <FileDown size={14} />
-            </button>
-          </div>
+          <p className="text-[11px] text-[var(--color-textSecondary)] truncate">
+            {connection.hostname}:{connection.port || "default"}
+          </p>
         </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {mgr.isRunning && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary rounded-md text-[10px] font-medium mr-1">
+              <Loader2 size={10} className="animate-spin" />
+              <span className="max-w-[140px] truncate">{mgr.currentStep}</span>
+            </div>
+          )}
+          <button
+            onClick={mgr.runDiagnostics}
+            disabled={mgr.isRunning}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
+            title="Run All Diagnostics"
+          >
+            {mgr.isRunning ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} />
+            )}
+            Run All
+          </button>
+          <button
+            onClick={mgr.copyDiagnosticsToClipboard}
+            className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
+            title="Copy diagnostics"
+          >
+            <Copy size={14} />
+          </button>
+          <button
+            onClick={() => {
+              const win = window.open("", "_blank");
+              if (win) {
+                try {
+                  win.opener = null;
+                } catch {
+                  // Some embedded browser implementations expose a read-only opener.
+                }
+                renderDiagnosticsPrintDocument(win.document, connection, mgr);
+                setTimeout(() => {
+                  win.print();
+                }, 300);
+              }
+            }}
+            className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
+            title="Save as PDF"
+          >
+            <FileDown size={14} />
+          </button>
+        </div>
+      </div>
 
-        {/* ── Body: sidebar + content ──────────────────────────── */}
-        <div className="flex flex-1 min-h-0">
-          {/* Sidebar */}
-          <div className="w-[220px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 overflow-y-auto">
-            <nav className="py-2">
-              {categories.map((cat) => {
-                const isActive = activeCategory === cat.id;
-                const status = statuses[cat.id];
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors ${
+      {/* ── Body: sidebar + content ──────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar */}
+        <div className="w-[220px] shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 overflow-y-auto">
+          <nav className="py-2">
+            {categories.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              const status = statuses[cat.id];
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors ${
+                    isActive
+                      ? "bg-primary/10 text-primary border-r-2 border-primary"
+                      : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
+                  }`}
+                >
+                  <span
+                    className={
                       isActive
-                        ? "bg-primary/10 text-primary border-r-2 border-primary"
-                        : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
-                    }`}
+                        ? "text-primary"
+                        : "text-[var(--color-textMuted)]"
+                    }
                   >
-                    <span className={isActive ? "text-primary" : "text-[var(--color-textMuted)]"}>
-                      {cat.icon}
-                    </span>
-                    <span className="flex-1 text-xs font-medium truncate">
-                      {cat.label}
-                    </span>
-                    <CategoryStatusIcon status={status} size={14} />
-                  </button>
-                );
-              })}
-            </nav>
+                    {cat.icon}
+                  </span>
+                  <span className="flex-1 text-xs font-medium truncate">
+                    {cat.label}
+                  </span>
+                  <CategoryStatusIcon status={status} size={14} />
+                </button>
+              );
+            })}
+          </nav>
 
-            {/* Overall summary in sidebar footer */}
-            {mgr.protocolReport && (
-              <div className="mx-3 mt-2 mb-3 p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1">Summary</div>
-                <div className="text-[10px] text-[var(--color-textSecondary)] leading-relaxed line-clamp-3">
-                  {mgr.protocolReport.summary}
-                </div>
-                <div className="text-[10px] text-[var(--color-textMuted)] mt-1 tabular-nums">
-                  {mgr.protocolReport.totalDurationMs}ms total
-                </div>
+          {/* Overall summary in sidebar footer */}
+          {mgr.protocolReport && (
+            <div className="mx-3 mt-2 mb-3 p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+              <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1">
+                Summary
               </div>
-            )}
-          </div>
-
-          {/* Content area */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="max-w-[800px]">
-              {renderPanel()}
+              <div className="text-[10px] text-[var(--color-textSecondary)] leading-relaxed line-clamp-3">
+                {mgr.protocolReport.summary}
+              </div>
+              <div className="text-[10px] text-[var(--color-textMuted)] mt-1 tabular-nums">
+                {mgr.protocolReport.totalDurationMs}ms total
+              </div>
             </div>
-          </div>
+          )}
         </div>
+
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="max-w-[800px]">{renderPanel()}</div>
+        </div>
+      </div>
     </div>
   );
 };
