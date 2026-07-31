@@ -13,9 +13,14 @@ export type AuditedProtocol =
 
 export type ProtocolAvailabilityClass =
   | "fully-interactive"
+  | "read-only-management"
   | "external-native-handoff"
   | "management-only"
   | "genuinely-unsupported";
+
+export type ProtocolVerificationModel =
+  | "not-applicable"
+  | "local-initialized-then-provider-verified";
 
 export type ProtocolSessionEntry =
   | "client-owned"
@@ -29,6 +34,7 @@ export interface ProtocolAvailability {
   frontendPath: string | null;
   backendPath: string | null;
   testPath: string | null;
+  verificationModel: ProtocolVerificationModel;
   detail: string;
 }
 
@@ -37,18 +43,29 @@ export interface ProtocolAvailability {
  * session host. They may back import metadata, typed hooks, or control-plane
  * commands, but must never appear as selectable direct-session protocols.
  */
-export const BUILT_IN_MANAGEMENT_PROTOCOLS = [
-
-] as const satisfies readonly BuiltInConnectionProtocol[];
+export const BUILT_IN_MANAGEMENT_PROTOCOLS =
+  [] as const satisfies readonly BuiltInConnectionProtocol[];
 
 /**
  * Direct runtimes that are intentionally hidden until the shared picker lane
  * accepts their option. They are routable from imported/legacy connections and
  * remain covered by the same availability truth table.
  */
-export const BUILT_IN_HIDDEN_DIRECT_PROTOCOLS = [] as const satisfies readonly BuiltInConnectionProtocol[];
+export const BUILT_IN_HIDDEN_DIRECT_PROTOCOLS =
+  [] as const satisfies readonly BuiltInConnectionProtocol[];
 
-const capability = (value: ProtocolAvailability): ProtocolAvailability => value;
+type ProtocolAvailabilityInput = Omit<
+  ProtocolAvailability,
+  "verificationModel"
+> &
+  Partial<Pick<ProtocolAvailability, "verificationModel">>;
+
+const capability = (
+  value: ProtocolAvailabilityInput,
+): ProtocolAvailability => ({
+  verificationModel: "not-applicable",
+  ...value,
+});
 
 /**
  * Source-backed direct-session matrix. `satisfies` makes additions to the
@@ -282,83 +299,91 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   gcp: capability({
     label: "Google Cloud",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/GcpSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-gcp",
     testPath: "tests/cloud/CloudSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns a GCP backend session ID and serializes connect, status, disconnect, and close cleanup.",
+      "Read-only status and inventory. Connect initializes the local GCP runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   azure: capability({
     label: "Azure",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/AzureSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-azure",
     testPath: "tests/cloud/CloudSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns Azure credential setup, token authentication, status, serialized disconnect, and close cleanup.",
+      "Read-only status and inventory. Connect initializes the local Azure runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   "ibm-csp": capability({
     label: "IBM Cloud",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/IbmCloudSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns an IBM Cloud backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+      "Read-only status and inventory. Connect initializes the local IBM Cloud runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   "digital-ocean": capability({
     label: "DigitalOcean",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/DigitalOceanSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns a DigitalOcean backend session ID and serializes connect, status, disconnect, and close cleanup.",
+      "Read-only status and inventory. Connect initializes the local DigitalOcean runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   heroku: capability({
     label: "Heroku",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/HerokuSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns a Heroku backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+      "Read-only status and inventory. Connect initializes the local Heroku runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   scaleway: capability({
     label: "Scaleway",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/ScalewaySessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns a Scaleway backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+      "Read-only status and inventory. Connect initializes the local Scaleway runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   linode: capability({
     label: "Linode",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/LinodeSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns a Linode backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+      "Read-only status and inventory. Connect initializes the local Linode runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   ovhcloud: capability({
     label: "OVHcloud",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/cloud/OvhCloudSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-cloud",
     testPath: "tests/cloud/CloudProviderSessionPanels.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns an OVHcloud backend session ID and serializes connect, status, disconnect, and close cleanup; resource inventory is not yet surfaced.",
+      "Read-only status and inventory. Connect initializes the local OVHcloud runtime only; provider state remains unverified until an explicit Refresh successfully completes registered provider reads.",
   }),
   idrac: capability({
     label: "Dell iDRAC",
@@ -372,33 +397,36 @@ export const BUILT_IN_PROTOCOL_AVAILABILITY = {
   }),
   ilo: capability({
     label: "HPE iLO",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/hardware/IloSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-ilo",
     testPath: "tests/hardware/BmcSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns iLO connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
+      "Read-only management overview. Native iLO client initialization is local-only; each dashboard, component, thermal, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
   }),
   lenovo: capability({
     label: "Lenovo XClarity",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/hardware/LenovoSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-lenovo",
     testPath: "tests/hardware/BmcSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns XClarity connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
+      "Read-only management overview. Native XClarity client initialization is local-only; each dashboard, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
   }),
   supermicro: capability({
     label: "Supermicro BMC",
-    classification: "fully-interactive",
+    classification: "read-only-management",
     sessionEntry: "client-owned",
     frontendPath: "src/components/hardware/SupermicroSessionPanel.tsx",
     backendPath: "src-tauri/crates/sorng-supermicro",
     testPath: "tests/hardware/BmcSessionPanel.test.tsx",
+    verificationModel: "local-initialized-then-provider-verified",
     detail:
-      "The saved-connection panel owns Supermicro connect, state reporting, serialized disconnect, and close cleanup through the registered native command family.",
+      "Read-only management overview. Native Supermicro client initialization is local-only; each dashboard, storage, or firmware section becomes provider-verified only after its registered read succeeds, with partial failures reported per section.",
   }),
 } satisfies Record<BuiltInConnectionProtocol, ProtocolAvailability>;
 

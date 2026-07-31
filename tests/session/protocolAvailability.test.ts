@@ -55,6 +55,20 @@ const BUILT_IN_PROTOCOLS = [
   "supermicro",
 ] as const satisfies readonly BuiltInConnectionProtocol[];
 
+const READ_ONLY_MANAGEMENT_PROTOCOLS = [
+  "gcp",
+  "azure",
+  "ibm-csp",
+  "digital-ocean",
+  "heroku",
+  "scaleway",
+  "linode",
+  "ovhcloud",
+  "ilo",
+  "lenovo",
+  "supermicro",
+] as const satisfies readonly BuiltInConnectionProtocol[];
+
 describe("protocol availability contract", () => {
   it("accounts for every persisted built-in protocol exactly once", () => {
     expect(Object.keys(BUILT_IN_PROTOCOL_AVAILABILITY).sort()).toEqual(
@@ -139,6 +153,32 @@ describe("protocol availability contract", () => {
           availability.sessionEntry === "legacy-generic-timer",
       ),
     ).toEqual([]);
+  });
+
+  it("labels status and inventory panels as openable read-only management sessions", () => {
+    for (const protocol of READ_ONLY_MANAGEMENT_PROTOCOLS) {
+      const availability = getProtocolAvailability(protocol);
+      expect(availability?.classification, protocol).toBe(
+        "read-only-management",
+      );
+      expect(availability?.sessionEntry, protocol).toBe("client-owned");
+      expect(availability?.verificationModel, protocol).toBe(
+        "local-initialized-then-provider-verified",
+      );
+      expect(availability?.detail, protocol).toMatch(/read-only/i);
+      expect(availability?.detail, protocol).toMatch(/local|initializ/i);
+      expect(availability?.detail, protocol).toMatch(
+        /provider(?:-verified| state remains unverified)/i,
+      );
+      expect(getDirectSessionUnavailableMessage(protocol), protocol).toBeNull();
+    }
+  });
+
+  it("retains iDRAC as the fully interactive t57 management client", () => {
+    const availability = getProtocolAvailability("idrac");
+    expect(availability?.classification).toBe("fully-interactive");
+    expect(availability?.sessionEntry).toBe("client-owned");
+    expect(availability?.verificationModel).toBe("not-applicable");
   });
 
   it("fails closed for unsupported, management-only, and unknown sessions", () => {
