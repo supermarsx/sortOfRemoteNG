@@ -790,6 +790,8 @@ pub struct ComposeRmConfig {
     #[serde(flatten)]
     pub global: ComposeGlobalOptions,
     pub services: Option<Vec<String>>,
+    /// Passing `Some(true)` is the explicit acknowledgement for non-interactive removal.
+    #[serde(default)]
     pub force: Option<bool>,
     pub stop: Option<bool>,
     pub volumes: Option<bool>,
@@ -867,6 +869,8 @@ pub struct ComposeEventsConfig {
     pub global: ComposeGlobalOptions,
     pub services: Option<Vec<String>>,
     pub json: Option<bool>,
+    /// Hard execution deadline for the snapshot process (1..=3600 seconds).
+    pub timeout_seconds: Option<u64>,
 }
 
 /// `docker compose watch` config.
@@ -879,6 +883,8 @@ pub struct ComposeWatchConfig {
     pub no_up: Option<bool>,
     pub quiet: Option<bool>,
     pub prune: Option<bool>,
+    /// Hard execution deadline for this non-streaming watch call (1..=3600 seconds).
+    pub timeout_seconds: Option<u64>,
 }
 
 /// `docker compose alpha` / `docker compose scale` config.

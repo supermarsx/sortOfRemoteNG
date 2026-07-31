@@ -10,7 +10,7 @@ use crate::client::DockerClient;
 use crate::error::{DockerError, DockerResult};
 use crate::types::*;
 
-use crate::compose::ComposeManager;
+pub use crate::compose::ComposeManager;
 use crate::containers::ContainerManager;
 use crate::images::ImageManager;
 use crate::networks::NetworkManager;

@@ -3,7 +3,7 @@
 
 use tauri::State;
 
-use super::service::DockerServiceState;
+use super::service::{ComposeManager, DockerServiceState};
 use super::types::*;
 
 // ── Connection lifecycle ──────────────────────────────────────────────────────
@@ -627,143 +627,174 @@ pub async fn docker_prune_networks(
 
 // ── Compose ───────────────────────────────────────────────────────────────────
 
+const DOCKER_COMPOSE_BLOCKING_TASK_FAILED: &str = "Docker Compose operation could not complete";
+
+async fn run_docker_compose_blocking<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|_| DOCKER_COMPOSE_BLOCKING_TASK_FAILED.to_string())?
+}
+
 #[tauri::command]
 pub async fn docker_compose_is_available(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
 ) -> Result<bool, String> {
-    let svc = state.lock().await;
-    Ok(svc.compose_is_available())
+    run_docker_compose_blocking(|| Ok(ComposeManager::is_available())).await
 }
 
 #[tauri::command]
 pub async fn docker_compose_version(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_version().map_err(|e| e.to_string())
+    run_docker_compose_blocking(|| ComposeManager::version().map_err(|error| error.to_string()))
+        .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_list_projects(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
 ) -> Result<Vec<ComposeProject>, String> {
-    let svc = state.lock().await;
-    svc.compose_list_projects().map_err(|e| e.to_string())
+    run_docker_compose_blocking(|| {
+        ComposeManager::list_projects().map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_up(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     config: ComposeUpConfig,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_up(&config).map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::up(&config).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_down(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     config: ComposeDownConfig,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_down(&config).map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::down(&config).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_ps(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     files: Vec<String>,
     project_name: Option<String>,
 ) -> Result<Vec<ComposePsItem>, String> {
-    let svc = state.lock().await;
-    svc.compose_ps(&files, project_name.as_deref())
-        .map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::ps(&files, project_name.as_deref()).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_logs(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     config: ComposeLogsConfig,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_logs(&config).map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::logs(&config).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_build(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     config: ComposeBuildConfig,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_build(&config).map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::build(&config).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_pull(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     config: ComposePullConfig,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_pull(&config).map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::pull(&config).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_restart(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     files: Vec<String>,
     project_name: Option<String>,
     services: Option<Vec<String>>,
     timeout: Option<i32>,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_restart(
-        &files,
-        project_name.as_deref(),
-        services.as_deref(),
-        timeout,
-    )
-    .map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::restart(
+            &files,
+            project_name.as_deref(),
+            services.as_deref(),
+            timeout,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_stop(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     files: Vec<String>,
     project_name: Option<String>,
     services: Option<Vec<String>>,
     timeout: Option<i32>,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_stop(
-        &files,
-        project_name.as_deref(),
-        services.as_deref(),
-        timeout,
-    )
-    .map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::stop(
+            &files,
+            project_name.as_deref(),
+            services.as_deref(),
+            timeout,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_start(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     files: Vec<String>,
     project_name: Option<String>,
     services: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_start(&files, project_name.as_deref(), services.as_deref())
-        .map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::start(&files, project_name.as_deref(), services.as_deref())
+            .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn docker_compose_config(
-    state: State<'_, DockerServiceState>,
+    _state: State<'_, DockerServiceState>,
     files: Vec<String>,
     project_name: Option<String>,
 ) -> Result<String, String> {
-    let svc = state.lock().await;
-    svc.compose_config(&files, project_name.as_deref())
-        .map_err(|e| e.to_string())
+    run_docker_compose_blocking(move || {
+        ComposeManager::config(&files, project_name.as_deref()).map_err(|error| error.to_string())
+    })
+    .await
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────

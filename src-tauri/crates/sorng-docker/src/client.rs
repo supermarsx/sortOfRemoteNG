@@ -77,6 +77,11 @@ impl DockerClient {
             .timeout(Duration::from_secs(config.timeout_seconds.unwrap_or(30)));
 
         if let Some(ref tls) = config.tls {
+            if !tls.verify {
+                return Err(DockerError::connection(
+                    "TLS certificate verification cannot be disabled: tls.verify=false requires an explicit runtime acknowledgement contract",
+                ));
+            }
             if let Some(ref ca_pem) = tls.ca_cert_pem {
                 let cert = reqwest::Certificate::from_pem(ca_pem.as_bytes())
                     .map_err(|e| DockerError::connection(&format!("Invalid CA cert: {}", e)))?;
@@ -105,10 +110,6 @@ impl DockerClient {
                 let identity = identity_from_pem_parts(&cert_pem, &key_pem)
                     .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
-            }
-
-            if !tls.verify {
-                builder = builder.danger_accept_invalid_certs(true);
             }
         }
 

@@ -18,6 +18,7 @@ use crate::types::*;
 pub type ComposeServiceState = Arc<Mutex<ComposeService>>;
 
 /// Main compose service holding the CLI wrapper.
+#[derive(Clone)]
 pub struct ComposeService {
     cli: Option<ComposeCli>,
 }

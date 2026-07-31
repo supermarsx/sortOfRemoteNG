@@ -29,7 +29,6 @@ export type ComposeRunConfig = Record<string, unknown>;
 export type ComposeExecConfig = Record<string, unknown>;
 export type ComposeCreateConfig = Record<string, unknown>;
 export type ComposeServiceActionConfig = Record<string, unknown>;
-export type ComposeRmConfig = Record<string, unknown>;
 export type ComposeCpConfig = Record<string, unknown>;
 export type ComposeTopConfig = Record<string, unknown>;
 export type ComposePortConfig = Record<string, unknown>;
@@ -38,6 +37,26 @@ export type ComposeEventsConfig = Record<string, unknown>;
 export type ComposeConvertConfig = Record<string, unknown>;
 export type ComposeWatchConfig = Record<string, unknown>;
 export type ComposeScaleConfig = Record<string, unknown>;
+
+export interface ComposeGlobalOptions {
+  files?: string[];
+  projectName?: string | null;
+  projectDirectory?: string | null;
+  profiles?: string[];
+  envFiles?: string[];
+  progress?: string | null;
+  compatibility?: boolean | null;
+  dryRun?: boolean | null;
+  workingDirectory?: string | null;
+}
+
+export interface ComposeRmConfig extends ComposeGlobalOptions {
+  services?: string[] | null;
+  /** Explicit opt-in to non-interactive removal. Omission is non-forced. */
+  force?: boolean | null;
+  stop?: boolean | null;
+  volumes?: boolean | null;
+}
 
 // ── Concrete DTOs (serde rename_all = "camelCase") ───────────────────
 

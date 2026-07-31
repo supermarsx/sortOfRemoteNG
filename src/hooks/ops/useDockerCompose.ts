@@ -89,7 +89,9 @@ export const dockerComposeApi = {
   kill: (config: ComposeServiceActionConfig): Promise<string> =>
     invoke("compose_kill", { config }),
   rm: (config: ComposeRmConfig): Promise<string> =>
-    invoke("compose_rm", { config }),
+    invoke("compose_rm", {
+      config: { ...config, force: config.force === true },
+    }),
   cp: (config: ComposeCpConfig): Promise<string> =>
     invoke("compose_cp", { config }),
   top: (config: ComposeTopConfig): Promise<string> =>
@@ -134,10 +136,7 @@ export const dockerComposeApi = {
   // ── Dependency graph (4) ───────────────────────────────────────
   dependencyGraph: (compose: ComposeFile): Promise<DependencyGraph> =>
     invoke("compose_dependency_graph", { compose }),
-  startupOrder: (
-    compose: ComposeFile,
-    services: string[],
-  ): Promise<string[]> =>
+  startupOrder: (compose: ComposeFile, services: string[]): Promise<string[]> =>
     invoke("compose_startup_order", { compose, services }),
   shutdownOrder: (compose: ComposeFile): Promise<string[]> =>
     invoke("compose_shutdown_order", { compose }),
