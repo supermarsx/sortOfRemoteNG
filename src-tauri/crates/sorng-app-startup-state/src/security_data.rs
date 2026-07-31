@@ -17,7 +17,7 @@ pub(super) fn register(
     let auto_lock_service = AutoLockService::new();
     app.manage(auto_lock_service.clone());
     tauri::async_runtime::spawn(async move {
-        auto_lock_service.lock().await.start_monitoring().await;
+        AutoLockService::start_monitoring(&auto_lock_service).await;
     });
 
     app.manage(GpoService::new());
