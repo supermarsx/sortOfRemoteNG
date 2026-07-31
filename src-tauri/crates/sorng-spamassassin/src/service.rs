@@ -53,7 +53,7 @@ impl SpamAssassinService {
         }
 
         let client = SpamAssassinClient::new(config)?;
-        let ver = client.version().await.ok();
+        let ver = Some(client.version().await?);
 
         // Try to get rules count
         let rules = RuleManager::list(&client).await.ok();
