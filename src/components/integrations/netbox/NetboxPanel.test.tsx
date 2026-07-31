@@ -117,8 +117,7 @@ describe("NetboxPanel shell", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "read_app_data") return Promise.resolve(null);
       if (cmd === "netbox_connect") return Promise.resolve("id");
-      if (cmd === "netbox_ping")
-        return Promise.resolve({ host: "nb.test" });
+      if (cmd === "netbox_ping") return Promise.resolve({ host: "nb.test" });
       return Promise.resolve(undefined);
     });
 
@@ -127,10 +126,9 @@ describe("NetboxPanel shell", () => {
     fireEvent.change(screen.getByPlaceholderText("netbox.example.com"), {
       target: { value: "nb.test" },
     });
-    fireEvent.change(
-      screen.getByPlaceholderText("Your NetBox API token"),
-      { target: { value: "tok" } },
-    );
+    fireEvent.change(screen.getByPlaceholderText("Your NetBox API token"), {
+      target: { value: "tok" },
+    });
     fireEvent.click(screen.getByText("Connect"));
 
     await waitFor(() =>
@@ -138,7 +136,11 @@ describe("NetboxPanel shell", () => {
         "netbox_connect",
         expect.objectContaining({
           id: expect.any(String),
-          config: expect.objectContaining({ host: "nb.test", apiToken: "tok" }),
+          config: expect.objectContaining({
+            host: "nb.test",
+            apiToken: "tok",
+            acknowledge_invalid_cert_risk: false,
+          }),
         }),
       ),
     );

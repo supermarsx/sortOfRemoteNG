@@ -70,6 +70,12 @@ export function useNetboxConnection(): UseNetboxConnection {
 
   const connect = useCallback(
     async (id: string, config: NetboxConnectionConfig): Promise<boolean> => {
+      let acknowledgementAvailable =
+        config.acknowledge_invalid_cert_risk === true;
+      const reconnectConfig = {
+        ...config,
+        acknowledge_invalid_cert_risk: false,
+      };
       try {
         await trackConnect(
           `netbox:${id}`,
@@ -77,9 +83,14 @@ export function useNetboxConnection(): UseNetboxConnection {
             setIsConnecting(true);
             setError(null);
             try {
+              const attemptConfig = {
+                ...reconnectConfig,
+                acknowledge_invalid_cert_risk: acknowledgementAvailable,
+              };
+              acknowledgementAvailable = false;
               await netboxConnectionApi.connect(
                 id,
-                withGlobalHttpProxy(config, "camel"),
+                withGlobalHttpProxy(attemptConfig, "camel"),
               );
               setConnectionId(id);
               try {

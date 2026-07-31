@@ -21,6 +21,8 @@ export interface NetboxConnectionConfig {
   port?: number | null;
   useTls?: boolean | null;
   acceptInvalidCerts?: boolean | null;
+  /** Runtime-only acknowledgement for one insecure connection attempt. */
+  acknowledge_invalid_cert_risk?: boolean;
   apiToken: string;
   timeoutSecs?: number | null;
   proxyUrl?: string | null;

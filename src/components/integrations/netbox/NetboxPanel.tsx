@@ -11,7 +11,9 @@ import type { IntegrationPanelProps } from "../../../types/integrations/registry
 import type { NetboxConnectionConfig } from "../../../types/netbox";
 import { useNetboxConnection } from "../../../hooks/integration/netbox";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
 import { generateId } from "../../../utils/core/id";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { netboxTabs } from "./registry";
 
 const INTEGRATION_KEY = "netbox";
@@ -83,9 +85,19 @@ const NetboxPanel: React.FC<IntegrationPanelProps> = ({
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(
     netboxTabs[0]?.categoryKey ?? null,
   );
+  const effectiveTlsSkip = form.useTls && form.acceptInvalidCerts;
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: instanceId ?? `netbox:${form.host.trim()}:${form.port.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Prefill from a saved instance, including the secret from the vault.
   useEffect(() => {
@@ -130,16 +142,35 @@ const NetboxPanel: React.FC<IntegrationPanelProps> = ({
     return null;
   }, [form.host, form.apiToken, t]);
 
-  const handleConnect = useCallback(async () => {
-    const v = validate();
-    if (v) {
-      setFormError(v);
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      const v = validate();
+      if (v) {
+        setFormError(v);
+        resetTlsAck();
+        return;
+      }
+      setFormError(null);
+      const id = instanceId ?? generateId();
+      try {
+        await connect(id, {
+          ...toConfig(form),
+          acknowledge_invalid_cert_risk: effectiveTlsSkip && acknowledged,
+        });
+      } finally {
+        resetTlsAck();
+      }
+    },
+    [validate, instanceId, connect, form, effectiveTlsSkip, resetTlsAck],
+  );
+
+  const handleConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
       return;
     }
-    setFormError(null);
-    const id = instanceId ?? generateId();
-    await connect(id, toConfig(form));
-  }, [validate, instanceId, connect, form]);
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const handleSave = useCallback(async () => {
     const v = validate();
@@ -191,6 +222,22 @@ const NetboxPanel: React.FC<IntegrationPanelProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={`${form.useTls ? "https" : "http"}://${form.host.trim() || "NetBox endpoint"}${form.port.trim() ? `:${form.port.trim()}` : ""}`}
+        connectionName={form.name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-3">
         <div className="flex items-center gap-2">
@@ -437,10 +484,7 @@ const NetboxPanel: React.FC<IntegrationPanelProps> = ({
                       </div>
                     }
                   >
-                    <ActiveTab
-                      connectionId={connectionId}
-                      summary={summary}
-                    />
+                    <ActiveTab connectionId={connectionId} summary={summary} />
                   </Suspense>
                 ) : null}
               </div>
