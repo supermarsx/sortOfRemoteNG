@@ -6,6 +6,7 @@
 
 use crate::types::*;
 use chrono::Utc;
+use futures::StreamExt;
 use log::{debug, error, trace, warn};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use std::collections::HashMap;
@@ -33,6 +34,8 @@ const ACTION_INVOKE_PREFIX: &str = "http://schemas.dmtf.org/wbem/wscim/1/cim-sch
 
 const DEFAULT_MAX_ENVELOPE: usize = 512_000;
 const DEFAULT_MAX_ELEMENTS: u32 = 100;
+const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_ENUMERATION_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 // ─── Transport ───────────────────────────────────────────────────────
 
@@ -62,6 +65,22 @@ impl std::fmt::Debug for WmiTransport {
 }
 
 impl WmiTransport {
+    fn account_enumeration_response_bytes(
+        total: &mut usize,
+        response_bytes: usize,
+    ) -> Result<(), String> {
+        let next_total = (*total)
+            .checked_add(response_bytes)
+            .ok_or_else(|| "WMI enumeration response byte count overflow".to_string())?;
+        if next_total > MAX_ENUMERATION_RESPONSE_BYTES {
+            return Err(
+                "WMI enumeration responses exceed the aggregate body safety limit".to_string(),
+            );
+        }
+        *total = next_total;
+        Ok(())
+    }
+
     /// Create a new transport from a WMI connection config.
     pub fn new(config: &WmiConnectionConfig) -> Result<Self, String> {
         let endpoint = config.endpoint_uri();
@@ -243,16 +262,21 @@ impl WmiTransport {
     /// Execute a WQL query and return raw XML results.
     pub async fn wql_query(&mut self, wql: &str) -> Result<Vec<HashMap<String, String>>, String> {
         let resource_uri = format!("{}/{}/*", NS_WMI_BASE, self.namespace.replace('\\', "/"));
+        let mut enumeration_response_bytes = 0usize;
 
         // Step 1: Enumerate with WQL filter
-        let enum_ctx = self.enumerate(&resource_uri, Some(wql)).await?;
+        let enum_ctx = self
+            .enumerate(&resource_uri, Some(wql), &mut enumeration_response_bytes)
+            .await?;
 
         // Step 2: Pull all results
         let mut all_items = Vec::new();
         let mut context = enum_ctx;
 
         loop {
-            let (items, next_context, end_of_sequence) = self.pull(&resource_uri, &context).await?;
+            let (items, next_context, end_of_sequence) = self
+                .pull(&resource_uri, &context, &mut enumeration_response_bytes)
+                .await?;
             all_items.extend(items);
 
             if end_of_sequence || next_context.is_empty() {
@@ -522,6 +546,7 @@ impl WmiTransport {
         &mut self,
         resource_uri: &str,
         wql_filter: Option<&str>,
+        aggregate_response_bytes: &mut usize,
     ) -> Result<String, String> {
         let msg_id = Uuid::new_v4().to_string();
 
@@ -571,6 +596,7 @@ impl WmiTransport {
         );
 
         let response = self.send_raw(&body).await?;
+        Self::account_enumeration_response_bytes(aggregate_response_bytes, response.len())?;
         Self::parse_enumeration_context(&response)
     }
 
@@ -579,6 +605,7 @@ impl WmiTransport {
         &mut self,
         resource_uri: &str,
         context: &str,
+        aggregate_response_bytes: &mut usize,
     ) -> Result<(Vec<HashMap<String, String>>, String, bool), String> {
         let msg_id = Uuid::new_v4().to_string();
 
@@ -618,6 +645,7 @@ impl WmiTransport {
         );
 
         let response = self.send_raw(&body).await?;
+        Self::account_enumeration_response_bytes(aggregate_response_bytes, response.len())?;
         Self::parse_pull_response(&response)
     }
 
@@ -659,6 +687,12 @@ impl WmiTransport {
             .map_err(|e| format!("WMI HTTP request failed: {}", e))?;
 
         let status = resp.status();
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        {
+            return Err("WMI response exceeds the body safety limit".to_string());
+        }
 
         // Capture WWW-Authenticate header before consuming the response body.
         // This tells us what auth methods the server actually supports.
@@ -670,10 +704,18 @@ impl WmiTransport {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read WMI response body: {}", e))?;
+        let mut body_bytes = Vec::new();
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|e| format!("Failed to read WMI response body: {}", e))?;
+            if body_bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+                return Err("WMI response exceeds the body safety limit".to_string());
+            }
+            body_bytes.extend_from_slice(&chunk);
+        }
+        let body = String::from_utf8(body_bytes)
+            .map_err(|_| "WMI response is not valid UTF-8".to_string())?;
 
         trace!(
             "WMI response #{}: status={}, body length={}",
@@ -1180,6 +1222,19 @@ mod tests {
         let props = WmiTransport::parse_properties(xml);
         assert_eq!(props.get("Name").unwrap(), "Spooler");
         assert_eq!(props.get("State").unwrap(), "Running");
+    }
+
+    #[test]
+    fn test_enumeration_response_budget_is_aggregate() {
+        let mut consumed = MAX_ENUMERATION_RESPONSE_BYTES - MAX_RESPONSE_BYTES;
+        WmiTransport::account_enumeration_response_bytes(&mut consumed, MAX_RESPONSE_BYTES)
+            .expect("the exact aggregate response budget should be accepted");
+        assert_eq!(consumed, MAX_ENUMERATION_RESPONSE_BYTES);
+
+        let error = WmiTransport::account_enumeration_response_bytes(&mut consumed, 1)
+            .expect_err("a later page must not exceed the aggregate response budget");
+        assert!(error.contains("aggregate body safety limit"));
+        assert_eq!(consumed, MAX_ENUMERATION_RESPONSE_BYTES);
     }
 
     #[test]
