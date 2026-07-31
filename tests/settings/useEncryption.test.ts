@@ -636,10 +636,12 @@ describe("useEncryption cross-window broadcast", () => {
   const subscribers = eventSubscribers;
 
   /** Fire an event to every listener subscribed to `name`. */
-  function emit(name: string, payload: unknown = null) {
+  async function emit(name: string, payload: unknown = null) {
     const set = subscribers.get(name);
     if (!set) return;
-    set.forEach((cb) => cb({ payload }));
+    await act(async () => {
+      set.forEach((cb) => cb({ payload }));
+    });
   }
 
   /** Block until at least `count` listeners are attached to `name`.
@@ -686,7 +688,7 @@ describe("useEncryption cross-window broadcast", () => {
     // Flip the server-side response so the next refresh sees unlocked,
     // then fire the cross-window event.
     unlockedNow = true;
-    emit("encryption:unlocked");
+    await emit("encryption:unlocked");
 
     await waitFor(() => {
       expect(a.result.current.status?.unlocked).toBe(true);
@@ -711,7 +713,7 @@ describe("useEncryption cross-window broadcast", () => {
     await waitForSubscribers("encryption:locked", 2);
 
     serverUnlocked = false;
-    emit("encryption:locked");
+    await emit("encryption:locked");
 
     await waitFor(() => {
       expect(a.result.current.status?.unlocked).toBe(false);
@@ -731,7 +733,7 @@ describe("useEncryption cross-window broadcast", () => {
 
     a.unmount();
     // No throw expected.
-    emit("encryption:unlocked");
-    emit("encryption:locked");
+    await emit("encryption:unlocked");
+    await emit("encryption:locked");
   });
 });

@@ -16,7 +16,13 @@
  *     + flips the "Cancelling…" badge.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -110,13 +116,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 // Shared in-memory pubsub the hook subscribes to. The recordings
 // migration progress events are dispatched into this map by the
 // `emit` helper below.
-const eventSubscribers: Map<string, Set<(e: { payload: unknown }) => void>> =
-  new Map();
+const eventSubscribers: Map<
+  string,
+  Set<(e: { payload: unknown }) => void>
+> = new Map();
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: async (
-    name: string,
-    cb: (e: { payload: unknown }) => void,
-  ) => {
+  listen: async (name: string, cb: (e: { payload: unknown }) => void) => {
     const set = eventSubscribers.get(name) ?? new Set();
     set.add(cb);
     eventSubscribers.set(name, set);
@@ -166,9 +171,7 @@ describe("EncryptionAtRestSection", () => {
     });
     // The mount fetch should also have surfaced the vault backend
     // line, which confirms `status` is populated (not stuck loading).
-    expect(
-      screen.getByText("Windows Credential Manager + DPAPI"),
-    ).toBeTruthy();
+    expect(screen.getByText("Windows Credential Manager + DPAPI")).toBeTruthy();
   });
 
   it("Rotate button calls encryption_rotate_master_key_full, not the legacy command", async () => {
@@ -268,7 +271,7 @@ describe("EncryptionAtRestSection", () => {
       }
       throw new Error(`unexpected ${cmd}`);
     });
-    render(<EncryptionAtRestSection />);
+    const view = render(<EncryptionAtRestSection />);
     // Wait for the recordings button to mount (status must be loaded
     // AND `settingsPlaintextPresent` honoured by the gate).
     const migrateBtn = await screen.findByRole("button", {
@@ -298,8 +301,11 @@ describe("EncryptionAtRestSection", () => {
       skipped: false,
     };
 
-    emit("recording-migrate-progress", openingEvent);
-    emit("recording-migrate-progress", stepEvent);
+    await act(async () => {
+      emit("recording-migrate-progress", openingEvent);
+      emit("recording-migrate-progress", stepEvent);
+      await Promise.resolve();
+    });
 
     // The progress bar appears with the current index/total.
     const progress = await screen.findByTestId("rec-migration-progress");
@@ -308,7 +314,10 @@ describe("EncryptionAtRestSection", () => {
 
     // The cancel button only appears while the migration is busy.
     const cancelBtn = screen.getByTestId("rec-migration-cancel");
-    fireEvent.click(cancelBtn);
+    await act(async () => {
+      fireEvent.click(cancelBtn);
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(cancelCalled).toBe(true);
@@ -324,14 +333,18 @@ describe("EncryptionAtRestSection", () => {
 
     // Let the in-flight migration settle so React doesn't warn about
     // act() on an unmount-during-pending-state.
-    resolveMigration({
-      envelopesMigrated: 5,
-      envelopesSkipped: 0,
-      macrosMigrated: 0,
-      macrosSkipped: 0,
+    await act(async () => {
+      resolveMigration({
+        envelopesMigrated: 5,
+        envelopesSkipped: 0,
+        macrosMigrated: 0,
+        macrosSkipped: 0,
+      });
+      await migrationPromise;
     });
     await waitFor(() => {
       expect(screen.queryByTestId("rec-migration-progress")).toBeNull();
     });
+    act(() => view.unmount());
   });
 });
