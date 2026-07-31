@@ -187,8 +187,8 @@ async fn ovh_public_sessions_exclude_secrets_and_disconnect_removes_state() {
     let session_id = service
         .connect_ovh(OvhConnectionConfig {
             api_key: OVH_API_SENTINEL.to_string(),
-            app_secret: OVH_APP_SENTINEL.to_string(),
-            consumer_key: OVH_CONSUMER_SENTINEL.to_string(),
+            app_secret: Some(OVH_APP_SENTINEL.to_string()),
+            consumer_key: Some(OVH_CONSUMER_SENTINEL.to_string()),
             service_id: Some("service-a".to_string()),
             project_name: Some("project-a".to_string()),
             region: Some("GRA11".to_string()),
