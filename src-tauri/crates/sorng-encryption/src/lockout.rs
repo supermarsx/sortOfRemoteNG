@@ -22,8 +22,12 @@
 //! leaves either the pre- or post-update state intact, never garbage.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const MAX_LOCKOUT_FILE_BYTES: u64 = 4096;
+const CORRUPT_STATE_FAILURES: u32 = 4;
 
 /// Filename inside `<app_data_dir>`.
 pub const LOCKOUT_FILENAME: &str = "lockout.json";
@@ -32,36 +36,74 @@ pub const LOCKOUT_FILENAME: &str = "lockout.json";
 /// `last_failure_unix_ms` is the wall-clock time of the most recent
 /// failure. Both reset to zero on success.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct LockoutState {
     pub failed_attempts: u32,
     pub last_failure_unix_ms: u64,
 }
 
 impl LockoutState {
-    /// Read the lockout file, returning a default-zero state if it
-    /// doesn't exist yet (first-ever attempt) or fails to parse
-    /// (corrupted manual edit — treat as "no recent failures" rather
-    /// than locking the user out).
+    /// Read the lockout file. A missing file is the first-run zero state.
+    /// Existing state that is malformed, oversized, symlinked, or unreadable
+    /// fails closed using the file modification time as a bounded cooldown
+    /// anchor; corruption must never reset password-attempt protection.
     pub fn load(dir: &Path) -> Self {
         let path = dir.join(LOCKOUT_FILENAME);
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(_) => return Self::corrupt_fallback(None),
+        };
+        if metadata.file_type().is_symlink()
+            || !metadata.is_file()
+            || metadata.len() > MAX_LOCKOUT_FILE_BYTES
+        {
+            return Self::corrupt_fallback(Some(&metadata));
+        }
         let s = match std::fs::read_to_string(&path) {
             Ok(s) => s,
-            Err(_) => return Self::default(),
+            Err(_) => return Self::corrupt_fallback(Some(&metadata)),
         };
-        serde_json::from_str(&s).unwrap_or_default()
+        match serde_json::from_str::<Self>(&s) {
+            Ok(state) if state.is_consistent() => state,
+            Ok(_) | Err(_) => Self::corrupt_fallback(Some(&metadata)),
+        }
     }
 
-    /// Persist the lockout file atomically (temp + rename) so a crash
-    /// mid-write never leaves a truncated file behind.
+    fn is_consistent(&self) -> bool {
+        (self.failed_attempts == 0 && self.last_failure_unix_ms == 0)
+            || (self.failed_attempts > 0 && self.last_failure_unix_ms > 0)
+    }
+
+    fn corrupt_fallback(metadata: Option<&std::fs::Metadata>) -> Self {
+        let last_failure_unix_ms = metadata
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_else(now_unix_ms);
+        Self {
+            failed_attempts: CORRUPT_STATE_FAILURES,
+            last_failure_unix_ms,
+        }
+    }
+
+    /// Persist through an fsynced temporary file and atomic replacement.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
         let path = dir.join(LOCKOUT_FILENAME);
-        let tmp = path.with_extension("tmp");
-        let body = serde_json::to_string_pretty(self)
-            .unwrap_or_else(|_| "{}".into());
-        std::fs::write(&tmp, body)?;
-        std::fs::rename(&tmp, &path)
+        let body = serde_json::to_vec_pretty(self)
+            .map_err(|error| std::io::Error::other(format!("serialize lockout: {error}")))?;
+        let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+        tmp.write_all(&body)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(&path).map_err(|error| error.error)?;
+        #[cfg(unix)]
+        {
+            if let Ok(parent) = std::fs::File::open(dir) {
+                let _ = parent.sync_all();
+            }
+        }
+        Ok(())
     }
 
     /// Record one more failed attempt. Stamps `last_failure_unix_ms`
@@ -206,11 +248,12 @@ mod tests {
     }
 
     #[test]
-    fn load_returns_default_for_corrupted_file() {
+    fn load_fails_closed_for_corrupted_file() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join(LOCKOUT_FILENAME), b"not json").unwrap();
         let s = LockoutState::load(dir.path());
-        assert_eq!(s, LockoutState::default());
+        assert_eq!(s.failed_attempts, CORRUPT_STATE_FAILURES);
+        assert!(s.remaining_cooldown_ms() > 0);
     }
 
     #[test]

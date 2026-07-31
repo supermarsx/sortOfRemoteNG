@@ -29,12 +29,10 @@ tokio = { workspace = true }
 # Global logger facade — adapter in log_adapter.rs implements log::Log.
 # `std` is needed for `set_boxed_logger` (atomic Box install).
 log = { workspace = true, features = ["std"] }
+tempfile = "3"
 
 # Vault for master DEK storage + password-wrap envelope
 sorng-vault = { path = "../sorng-vault" }
 
 # Tauri command surface
 tauri = { workspace = true }
-
-[dev-dependencies]
-tempfile = "3"
