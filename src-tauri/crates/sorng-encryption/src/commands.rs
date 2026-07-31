@@ -17,9 +17,10 @@
 //! live in `password_wrap.rs` / `artifacts/settings.rs`.
 
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_fs::FsExt;
 
 use crate::artifacts::settings as artifact_settings;
 use crate::audit::{self, AuditEntry, AuditEvent};
@@ -172,10 +173,47 @@ fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Vec<u8>, Str
     Ok(bytes)
 }
 
+fn require_renderer_scoped_path(app: &AppHandle, path: &Path) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("selected file path must be absolute".to_string());
+    }
+    let scope = app
+        .try_fs_scope()
+        .ok_or_else(|| "filesystem scope is unavailable; refusing path access".to_string())?;
+    if !scope.is_allowed(path) {
+        return Err("file path was not granted by the native file picker".to_string());
+    }
+    Ok(())
+}
+
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "destination has no parent directory".to_string())?;
+    let parent_metadata = std::fs::symlink_metadata(parent)
+        .map_err(|e| format!("inspect destination directory: {e}"))?;
+    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
+        return Err("destination parent must be a regular directory".to_string());
+    }
+    if let Ok(metadata) = std::fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("destination must be a regular, non-symlink file".to_string());
+        }
+    }
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("create temporary file: {e}"))?;
+    tmp.write_all(bytes)
+        .map_err(|e| format!("write temporary file: {e}"))?;
+    tmp.as_file_mut()
+        .sync_all()
+        .map_err(|e| format!("sync temporary file: {e}"))?;
+    tmp.persist(path)
+        .map_err(|e| format!("replace destination: {}", e.error))?;
+    #[cfg(unix)]
+    std::fs::File::open(parent)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|e| format!("sync destination directory: {e}"))?;
     Ok(())
 }
 
@@ -788,9 +826,7 @@ pub async fn encryption_export_portable_dek(
     let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
 
     let dest = std::path::PathBuf::from(&destination_path);
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
-    }
+    require_renderer_scoped_path(&app, &dest)?;
     atomic_write(&dest, &blob)?;
     let bytes = blob.len() as u64;
     if let Ok(dir) = app.path().app_data_dir() {
@@ -818,10 +854,9 @@ pub async fn encryption_import_portable_dek(
     password: String,
 ) -> Result<(), String> {
     let dir = ensure_app_data_dir(&app)?;
-    let blob = read_bounded_regular_file(
-        Path::new(&source_path),
-        password_wrap::FILE_LEN as u64,
-    )?;
+    let source = PathBuf::from(&source_path);
+    require_renderer_scoped_path(&app, &source)?;
+    let blob = read_bounded_regular_file(&source, password_wrap::FILE_LEN as u64)?;
     let dek = password_wrap::unwrap(&password, &blob)
         .map_err(|e| format!("unwrap: {e}"))?;
 

@@ -10620,6 +10620,7 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-vault",
  "tauri",
+ "tauri-plugin-fs",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",

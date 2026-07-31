@@ -36,3 +36,4 @@ sorng-vault = { path = "../sorng-vault" }
 
 # Tauri command surface
 tauri = { workspace = true }
+tauri-plugin-fs = "=2.5.1"
