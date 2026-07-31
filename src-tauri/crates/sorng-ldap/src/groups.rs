@@ -42,19 +42,13 @@ pub async fn add_member(host: &LdapHost, group_dn: &str, uid: &str) -> Result<()
     let ldif = format!("dn: {group_dn}\nchangetype: modify\nadd: memberUid\nmemberUid: {uid}");
     let mut args: Vec<&str> = vec!["-x", "-H", &host.ldap_uri];
     let bind_dn_ref;
-    let bind_pw_ref;
     if let Some(ref dn) = host.bind_dn {
         bind_dn_ref = dn.clone();
         args.push("-D");
         args.push(&bind_dn_ref);
     }
-    if let Some(ref pw) = host.bind_password {
-        bind_pw_ref = pw.clone();
-        args.push("-w");
-        args.push(&bind_pw_ref);
-    }
     let refs: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
-    crate::client::exec_ok_with_stdin(host, "ldapmodify", &refs, ldif.as_bytes()).await?;
+    crate::client::exec_ldap_ok(host, "ldapmodify", &refs, Some(ldif.as_bytes())).await?;
     Ok(())
 }
 

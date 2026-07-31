@@ -4,7 +4,7 @@ use crate::error::LdapError;
 use crate::types::*;
 
 pub async fn import_ldif(host: &LdapHost, ldif_path: &str) -> Result<String, LdapError> {
-    client::exec_ok(
+    client::exec_ldap_ok(
         host,
         "ldapadd",
         &[
@@ -13,25 +13,31 @@ pub async fn import_ldif(host: &LdapHost, ldif_path: &str) -> Result<String, Lda
             &host.ldap_uri,
             "-D",
             host.bind_dn.as_deref().unwrap_or(""),
-            "-w",
-            host.bind_password.as_deref().unwrap_or(""),
             "-f",
             ldif_path,
         ],
+        None,
     )
     .await
 }
 
 pub async fn export_ldif(host: &LdapHost, output_path: &str) -> Result<(), LdapError> {
-    let cmd = format!(
-        "ldapsearch -x -H {} -b '{}' -D '{}' -w '{}' > {}",
-        host.ldap_uri,
-        host.base_dn,
-        host.bind_dn.as_deref().unwrap_or(""),
-        host.bind_password.as_deref().unwrap_or(""),
-        output_path
-    );
-    client::exec_ok(host, "sh", &["-c", &cmd]).await?;
+    let output = client::exec_ldap_ok(
+        host,
+        "ldapsearch",
+        &[
+            "-x",
+            "-H",
+            &host.ldap_uri,
+            "-b",
+            &host.base_dn,
+            "-D",
+            host.bind_dn.as_deref().unwrap_or(""),
+        ],
+        None,
+    )
+    .await?;
+    client::exec_ok_with_stdin(host, "tee", &[output_path], output.as_bytes()).await?;
     Ok(())
 }
 

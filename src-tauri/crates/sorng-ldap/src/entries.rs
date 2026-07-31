@@ -12,23 +12,17 @@ pub async fn search(host: &LdapHost, opts: &LdapSearchOpts) -> Result<LdapSearch
     };
     let mut args = vec!["-x", "-H", &host.ldap_uri, "-b", &opts.base_dn, "-s", scope];
     let bind_dn_ref;
-    let bind_pw_ref;
     if let Some(ref dn) = host.bind_dn {
         bind_dn_ref = dn.clone();
         args.push("-D");
         args.push(&bind_dn_ref);
-    }
-    if let Some(ref pw) = host.bind_password {
-        bind_pw_ref = pw.clone();
-        args.push("-w");
-        args.push(&bind_pw_ref);
     }
     args.push(&opts.filter);
     for a in &opts.attributes {
         args.push(a);
     }
     let refs: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
-    let stdout = client::exec_ok(host, "ldapsearch", &refs).await?;
+    let stdout = client::exec_ldap_ok(host, "ldapsearch", &refs, None).await?;
     Ok(parse_ldif_search(&stdout))
 }
 
@@ -36,39 +30,27 @@ pub async fn add(host: &LdapHost, entry: &LdapEntry) -> Result<(), LdapError> {
     let ldif = entry_to_ldif(entry);
     let mut args = vec!["-x", "-H", &host.ldap_uri];
     let bind_dn_ref;
-    let bind_pw_ref;
     if let Some(ref dn) = host.bind_dn {
         bind_dn_ref = dn.clone();
         args.push("-D");
         args.push(&bind_dn_ref);
     }
-    if let Some(ref pw) = host.bind_password {
-        bind_pw_ref = pw.clone();
-        args.push("-w");
-        args.push(&bind_pw_ref);
-    }
     let refs: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
-    client::exec_ok_with_stdin(host, "ldapadd", &refs, ldif.as_bytes()).await?;
+    client::exec_ldap_ok(host, "ldapadd", &refs, Some(ldif.as_bytes())).await?;
     Ok(())
 }
 
 pub async fn delete(host: &LdapHost, dn: &str) -> Result<(), LdapError> {
     let mut args = vec!["-x", "-H", &host.ldap_uri];
     let bind_dn_ref;
-    let bind_pw_ref;
     if let Some(ref d) = host.bind_dn {
         bind_dn_ref = d.clone();
         args.push("-D");
         args.push(&bind_dn_ref);
     }
-    if let Some(ref p) = host.bind_password {
-        bind_pw_ref = p.clone();
-        args.push("-w");
-        args.push(&bind_pw_ref);
-    }
     args.push(dn);
     let refs: Vec<&str> = args.iter().map(|s| s.as_ref()).collect();
-    client::exec_ok(host, "ldapdelete", &refs).await?;
+    client::exec_ldap_ok(host, "ldapdelete", &refs, None).await?;
     Ok(())
 }
 
