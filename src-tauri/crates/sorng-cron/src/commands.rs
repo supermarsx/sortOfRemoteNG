@@ -15,6 +15,23 @@ use tauri::State;
 
 // ─── Host CRUD ──────────────────────────────────────────────────────
 
+fn build_cron_host(
+    host_id: String,
+    name: String,
+    ssh: Option<SshConfig>,
+    use_sudo: Option<bool>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> CronHost {
+    CronHost {
+        id: host_id,
+        name,
+        ssh,
+        use_sudo: use_sudo.unwrap_or_default(),
+        created_at: now,
+        updated_at: now,
+    }
+}
+
 #[tauri::command]
 pub async fn cron_add_host(
     state: State<'_, CronServiceState>,
@@ -23,17 +40,33 @@ pub async fn cron_add_host(
     ssh: Option<SshConfig>,
     use_sudo: Option<bool>,
 ) -> Result<CronHost, String> {
-    let host = CronHost {
-        id: host_id,
-        name,
-        ssh,
-        use_sudo: use_sudo.unwrap_or(true),
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-    };
+    let host = build_cron_host(host_id, name, ssh, use_sudo, chrono::Utc::now());
     let mut svc = state.lock().await;
     svc.add_host(host.clone()).map_err(|e| e.to_string())?;
     Ok(host)
+}
+
+#[cfg(test)]
+mod cron_add_host_safety_tests {
+    use super::*;
+
+    fn fixed_time() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn omitted_sudo_is_unprivileged() {
+        let host = build_cron_host("id".into(), "name".into(), None, None, fixed_time());
+        assert!(!host.use_sudo);
+    }
+
+    #[test]
+    fn explicit_sudo_is_preserved() {
+        let host = build_cron_host("id".into(), "name".into(), None, Some(true), fixed_time());
+        assert!(host.use_sudo);
+    }
 }
 
 #[tauri::command]

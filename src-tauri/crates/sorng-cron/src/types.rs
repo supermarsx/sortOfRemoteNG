@@ -33,9 +33,40 @@ pub struct CronHost {
     pub id: String,
     pub name: String,
     pub ssh: Option<SshConfig>,
+    #[serde(default)]
     pub use_sudo: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod cron_host_safety_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn host_json() -> serde_json::Value {
+        json!({
+            "id": "host-1",
+            "name": "Host 1",
+            "ssh": null,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        })
+    }
+
+    #[test]
+    fn legacy_host_without_sudo_deserializes_unprivileged() {
+        let host: CronHost = serde_json::from_value(host_json()).unwrap();
+        assert!(!host.use_sudo);
+    }
+
+    #[test]
+    fn explicit_sudo_choice_survives_deserialization() {
+        let mut value = host_json();
+        value["use_sudo"] = json!(true);
+        let host: CronHost = serde_json::from_value(value).unwrap();
+        assert!(host.use_sudo);
+    }
 }
 
 // ─── Cron Schedule ──────────────────────────────────────────────────
