@@ -8,9 +8,135 @@ use base64::Engine;
 use log::debug;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+
+const MAX_CLI_ARG_BYTES: usize = 64 * 1024;
+const MAX_CLI_ARG_COUNT: usize = 128;
+const MAX_CLI_STDOUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CLI_STDERR_BYTES: usize = 256 * 1024;
+const MAX_SECRET_BYTES: usize = 64 * 1024;
+const MAX_ATTACHMENT_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_IMPORT_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_SERVER_URL_BYTES: usize = 2 * 1024;
+
+async fn read_bounded<R>(
+    mut reader: R,
+    limit: usize,
+    stream_name: &'static str,
+) -> Result<Vec<u8>, BitwardenError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::with_capacity(limit.min(16 * 1024));
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = reader.read(&mut chunk).await.map_err(|_| {
+            BitwardenError::io(format!("Failed to read Bitwarden CLI {}", stream_name))
+        })?;
+        if read == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(read) > limit {
+            return Err(BitwardenError::api(format!(
+                "Bitwarden CLI {} exceeded the safety limit",
+                stream_name
+            )));
+        }
+        output.extend_from_slice(&chunk[..read]);
+    }
+}
+
+fn validate_secret(value: &str, label: &'static str) -> Result<(), BitwardenError> {
+    if value.is_empty() || value.len() > MAX_SECRET_BYTES || value.contains('\0') {
+        return Err(BitwardenError::invalid_config(format!(
+            "{} is empty or exceeds the safety limit",
+            label
+        )));
+    }
+    Ok(())
+}
+
+fn validate_existing_file(
+    raw_path: &str,
+    label: &'static str,
+    max_bytes: u64,
+) -> Result<String, BitwardenError> {
+    if raw_path.is_empty() || raw_path.len() > 4096 || raw_path.contains('\0') {
+        return Err(BitwardenError::invalid_config(format!(
+            "Invalid {} path",
+            label
+        )));
+    }
+    let path = Path::new(raw_path);
+    if !path.is_absolute() {
+        return Err(BitwardenError::invalid_config(format!(
+            "{} path must be absolute",
+            label
+        )));
+    }
+    let symlink_metadata = std::fs::symlink_metadata(path)
+        .map_err(|_| BitwardenError::invalid_config(format!("{} file is unavailable", label)))?;
+    if symlink_metadata.file_type().is_symlink() || !symlink_metadata.is_file() {
+        return Err(BitwardenError::invalid_config(format!(
+            "{} path must be a regular, non-symlink file",
+            label
+        )));
+    }
+    if symlink_metadata.len() > max_bytes {
+        return Err(BitwardenError::invalid_config(format!(
+            "{} file exceeds the safety limit",
+            label
+        )));
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| BitwardenError::invalid_config(format!("Invalid {} path", label)))?;
+    canonical
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| BitwardenError::invalid_config(format!("Invalid {} path encoding", label)))
+}
+
+fn validate_server_url(raw_url: &str) -> Result<String, BitwardenError> {
+    if raw_url.is_empty() || raw_url.len() > MAX_SERVER_URL_BYTES || raw_url.contains('\0') {
+        return Err(BitwardenError::invalid_config(
+            "Invalid Bitwarden server URL",
+        ));
+    }
+    let parsed = url::Url::parse(raw_url)
+        .map_err(|_| BitwardenError::invalid_config("Invalid Bitwarden server URL"))?;
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(BitwardenError::invalid_config(
+            "Bitwarden server URL must not contain credentials, a query, or a fragment",
+        ));
+    }
+    let is_loopback_http = parsed.scheme() == "http"
+        && parsed
+            .host_str()
+            .is_some_and(|host| is_loopback_hostname(host));
+    if parsed.scheme() != "https" && !is_loopback_http {
+        return Err(BitwardenError::invalid_config(
+            "Bitwarden server URL must use HTTPS unless it is loopback",
+        ));
+    }
+    Ok(parsed.to_string())
+}
+
+fn is_loopback_hostname(hostname: &str) -> bool {
+    hostname.eq_ignore_ascii_case("localhost")
+        || hostname
+            .trim_matches(|character| character == '[' || character == ']')
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
 
 /// Bitwarden CLI bridge for executing `bw` commands.
 #[derive(Debug, Clone)]
@@ -50,7 +176,7 @@ impl BitwardenCli {
     pub fn from_config(config: &BitwardenConfig) -> Self {
         Self {
             cli_path: config.cli_path.clone(),
-            timeout: Duration::from_secs(config.timeout_secs),
+            timeout: Duration::from_secs(config.timeout_secs.clamp(1, 300)),
             server_url: Some(config.server_url.clone()),
             ..Default::default()
         }
@@ -80,91 +206,192 @@ impl BitwardenCli {
             .insert("BW_CLIENTSECRET".to_string(), client_secret.to_string());
     }
 
-    /// Get the CLI binary path.
-    fn bw_path(&self) -> &str {
-        self.cli_path.as_deref().unwrap_or("bw")
+    fn validated_bw_path(&self) -> Result<PathBuf, BitwardenError> {
+        let Some(configured) = self.cli_path.as_deref() else {
+            return Ok(PathBuf::from("bw"));
+        };
+        if configured.is_empty() || configured.len() > 4096 || configured.contains('\0') {
+            return Err(BitwardenError::invalid_config(
+                "Invalid Bitwarden CLI executable path",
+            ));
+        }
+        let path = Path::new(configured);
+        if !path.is_absolute() {
+            return Err(BitwardenError::invalid_config(
+                "Configured Bitwarden CLI path must be absolute",
+            ));
+        }
+        let metadata = std::fs::metadata(path).map_err(|_| {
+            BitwardenError::cli_not_found("Configured Bitwarden CLI executable is unavailable")
+        })?;
+        if !metadata.is_file() {
+            return Err(BitwardenError::invalid_config(
+                "Configured Bitwarden CLI path is not a file",
+            ));
+        }
+        path.canonicalize()
+            .map_err(|_| BitwardenError::invalid_config("Invalid Bitwarden CLI executable path"))
+    }
+
+    fn validate_args(args: &[&str]) -> Result<(), BitwardenError> {
+        if args.is_empty() || args.len() > MAX_CLI_ARG_COUNT {
+            return Err(BitwardenError::invalid_config(
+                "Invalid Bitwarden CLI argument count",
+            ));
+        }
+        let mut total = 0_usize;
+        for arg in args {
+            if arg.contains('\0') {
+                return Err(BitwardenError::invalid_config(
+                    "Invalid Bitwarden CLI argument",
+                ));
+            }
+            total = total.saturating_add(arg.len());
+            if total > MAX_CLI_ARG_BYTES {
+                return Err(BitwardenError::invalid_config(
+                    "Bitwarden CLI request exceeds the safety limit",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Run a `bw` command and return raw stdout.
     async fn run_command(&self, args: &[&str]) -> Result<String, BitwardenError> {
-        debug!("Running bw command: bw {}", args.join(" "));
+        self.run_command_with_env(args, &[], true).await
+    }
 
-        let mut cmd = Command::new(self.bw_path());
+    async fn run_command_with_env(
+        &self,
+        args: &[&str],
+        extra_env: &[(&str, &str)],
+        include_session: bool,
+    ) -> Result<String, BitwardenError> {
+        Self::validate_args(args)?;
+        for (name, value) in extra_env {
+            if !matches!(
+                *name,
+                "BW_CLIENTID" | "BW_CLIENTSECRET" | "SORNG_BW_PASSWORD"
+            ) {
+                return Err(BitwardenError::invalid_config(
+                    "Unsupported Bitwarden CLI environment channel",
+                ));
+            }
+            validate_secret(value, "Bitwarden CLI secret")?;
+        }
+
+        debug!(
+            "Running bw subcommand '{}' with {} argument(s)",
+            args.first().copied().unwrap_or("<empty>"),
+            args.len().saturating_sub(1)
+        );
+
+        let program = self.validated_bw_path()?;
+        let mut cmd = Command::new(program);
         cmd.args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("BITWARDENCLI_APPDATA_DIR", "")
-            .env("BW_NOINTERACTION", "true");
+            .kill_on_drop(true)
+            .env("BW_NOINTERACTION", "true")
+            .env_remove("BW_SESSION")
+            .env_remove("BW_CLIENTID")
+            .env_remove("BW_CLIENTSECRET")
+            .env_remove("BW_PASSWORD")
+            .env_remove("SORNG_BW_PASSWORD");
 
-        // Always set --response for JSON output
-        if !args.contains(&"--response") && !args.contains(&"--raw") {
-            // Some commands need --raw, others auto-JSON
-        }
-
-        if let Some(ref key) = self.session_key {
-            cmd.env("BW_SESSION", key);
-        }
-
-        for (k, v) in &self.env_vars {
-            cmd.env(k, v);
-        }
-
-        let result = tokio::time::timeout(self.timeout, cmd.output()).await;
-
-        match result {
-            Err(_) => Err(BitwardenError::timeout("CLI command timed out")),
-            Ok(Err(e)) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Err(BitwardenError::cli_not_found(format!(
-                        "Bitwarden CLI not found at '{}'. Install from https://bitwarden.com/help/cli/",
-                        self.bw_path()
-                    )))
-                } else {
-                    Err(BitwardenError::io(format!("Failed to execute bw: {}", e)))
-                }
+        if include_session {
+            if let Some(ref key) = self.session_key {
+                validate_secret(key, "Bitwarden session key")?;
+                cmd.env("BW_SESSION", key);
             }
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        }
 
-                if !output.status.success() {
-                    let code = output.status.code().unwrap_or(-1);
-                    debug!("bw exited with code {}: stderr={}", code, stderr);
+        for (name, value) in extra_env {
+            cmd.env(name, value);
+        }
 
-                    // Parse common error patterns
-                    let combined = format!("{} {}", stdout, stderr);
-                    if combined.contains("You are not logged in") {
-                        return Err(BitwardenError::auth_failed("Not logged in"));
-                    }
-                    if combined.contains("Vault is locked") {
-                        return Err(BitwardenError::vault_locked("Vault is locked"));
-                    }
-                    if combined.contains("Invalid master password") {
-                        return Err(BitwardenError::auth_failed("Invalid master password"));
-                    }
-                    if combined.contains("Two-step login") || combined.contains("two-factor") {
-                        return Err(BitwardenError::two_factor_required(
-                            "Two-factor authentication required",
-                        ));
-                    }
-                    if combined.contains("Rate limit") {
-                        return Err(BitwardenError {
-                            kind: BitwardenErrorKind::RateLimited,
-                            message: "Rate limited by server".into(),
-                        });
-                    }
-
-                    let msg = if !stderr.is_empty() { stderr } else { stdout };
-                    Err(BitwardenError::api(format!(
-                        "bw command failed (exit {}): {}",
-                        code,
-                        msg.trim()
-                    )))
-                } else {
-                    Ok(stdout)
-                }
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                BitwardenError::cli_not_found(
+                    "Bitwarden CLI executable was not found; install or configure it",
+                )
+            } else {
+                BitwardenError::io("Failed to start Bitwarden CLI")
             }
+        })?;
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| BitwardenError::io("Bitwarden CLI stdout was unavailable"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| BitwardenError::io("Bitwarden CLI stderr was unavailable"))?;
+        let stdout_task = tokio::spawn(read_bounded(stdout, MAX_CLI_STDOUT_BYTES, "stdout"));
+        let stderr_task = tokio::spawn(read_bounded(stderr, MAX_CLI_STDERR_BYTES, "stderr"));
+
+        let status = match tokio::time::timeout(self.timeout, child.wait()).await {
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                stdout_task.abort();
+                stderr_task.abort();
+                return Err(BitwardenError::timeout(
+                    "Bitwarden CLI command timed out and was terminated",
+                ));
+            }
+            Ok(Err(_)) => {
+                let _ = child.kill().await;
+                stdout_task.abort();
+                stderr_task.abort();
+                return Err(BitwardenError::io("Failed waiting for Bitwarden CLI"));
+            }
+            Ok(Ok(status)) => status,
+        };
+
+        let stdout = stdout_task
+            .await
+            .map_err(|_| BitwardenError::io("Bitwarden CLI stdout capture failed"))??;
+        let stderr = stderr_task
+            .await
+            .map_err(|_| BitwardenError::io("Bitwarden CLI stderr capture failed"))??;
+        let stdout = String::from_utf8_lossy(&stdout).to_string();
+        let stderr = String::from_utf8_lossy(&stderr).to_string();
+
+        if !status.success() {
+            let code = status.code().unwrap_or(-1);
+            debug!("bw subcommand failed with exit code {}", code);
+
+            let combined = format!("{} {}", stdout, stderr);
+            if combined.contains("You are not logged in") {
+                return Err(BitwardenError::auth_failed("Not logged in"));
+            }
+            if combined.contains("Vault is locked") {
+                return Err(BitwardenError::vault_locked("Vault is locked"));
+            }
+            if combined.contains("Invalid master password") {
+                return Err(BitwardenError::auth_failed("Invalid master password"));
+            }
+            if combined.contains("Two-step login") || combined.contains("two-factor") {
+                return Err(BitwardenError::two_factor_required(
+                    "Two-factor authentication required",
+                ));
+            }
+            if combined.contains("Rate limit") {
+                return Err(BitwardenError {
+                    kind: BitwardenErrorKind::RateLimited,
+                    message: "Rate limited by server".into(),
+                });
+            }
+
+            Err(BitwardenError::api(format!(
+                "Bitwarden CLI command failed with exit code {}",
+                code
+            )))
+        } else {
+            Ok(stdout)
         }
     }
 
@@ -175,11 +402,8 @@ impl BitwardenCli {
     ) -> Result<T, BitwardenError> {
         let output = self.run_command(args).await?;
         serde_json::from_str(&output).map_err(|e| {
-            BitwardenError::parse(format!(
-                "Failed to parse JSON: {} (output: {})",
-                e,
-                &output[..output.len().min(200)]
-            ))
+            let _ = e;
+            BitwardenError::parse("Bitwarden CLI returned invalid JSON")
         })
     }
 
@@ -200,7 +424,8 @@ impl BitwardenCli {
 
     /// Configure the server URL.
     pub async fn config_server(&self, url: &str) -> Result<(), BitwardenError> {
-        self.run_command(&["config", "server", url]).await?;
+        let validated = validate_server_url(url)?;
+        self.run_command(&["config", "server", &validated]).await?;
         Ok(())
     }
 
@@ -211,8 +436,19 @@ impl BitwardenCli {
         email: &str,
         password: &str,
     ) -> Result<String, BitwardenError> {
+        validate_secret(password, "Master password")?;
         let output = self
-            .run_command(&["login", email, password, "--raw"])
+            .run_command_with_env(
+                &[
+                    "login",
+                    email,
+                    "--passwordenv",
+                    "SORNG_BW_PASSWORD",
+                    "--raw",
+                ],
+                &[("SORNG_BW_PASSWORD", password)],
+                false,
+            )
             .await?;
         Ok(output.trim().to_string())
     }
@@ -225,28 +461,32 @@ impl BitwardenCli {
         code: &str,
         method: TwoFactorMethod,
     ) -> Result<String, BitwardenError> {
-        let method_str = (method as u8).to_string();
-        let output = self
-            .run_command(&[
-                "login",
-                email,
-                password,
-                "--method",
-                &method_str,
-                "--code",
-                code,
-                "--raw",
-            ])
-            .await?;
-        Ok(output.trim().to_string())
+        let _ = (email, password, code, method);
+        Err(BitwardenError::invalid_config(
+            "Two-factor CLI login is disabled because the CLI exposes the one-time code in process arguments",
+        ))
     }
 
     /// Login with API key (must set BW_CLIENTID and BW_CLIENTSECRET env vars first).
-    pub async fn login_api_key(&self) -> Result<(), BitwardenError> {
-        if !self.env_vars.contains_key("BW_CLIENTID") {
-            return Err(BitwardenError::invalid_config("BW_CLIENTID not set"));
-        }
-        self.run_command(&["login", "--apikey"]).await?;
+    pub async fn login_api_key(&mut self) -> Result<(), BitwardenError> {
+        let client_id = self.env_vars.remove("BW_CLIENTID");
+        let client_secret = self.env_vars.remove("BW_CLIENTSECRET");
+        let (Some(client_id), Some(client_secret)) = (client_id, client_secret) else {
+            return Err(BitwardenError::invalid_config(
+                "Bitwarden API key credentials are incomplete",
+            ));
+        };
+        validate_secret(&client_id, "Bitwarden client ID")?;
+        validate_secret(&client_secret, "Bitwarden client secret")?;
+        self.run_command_with_env(
+            &["login", "--apikey"],
+            &[
+                ("BW_CLIENTID", client_id.as_str()),
+                ("BW_CLIENTSECRET", client_secret.as_str()),
+            ],
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -259,7 +499,14 @@ impl BitwardenCli {
     /// Unlock the vault with a master password.
     /// Returns a session key.
     pub async fn unlock(&self, password: &str) -> Result<String, BitwardenError> {
-        let output = self.run_command(&["unlock", password, "--raw"]).await?;
+        validate_secret(password, "Master password")?;
+        let output = self
+            .run_command_with_env(
+                &["unlock", "--passwordenv", "SORNG_BW_PASSWORD", "--raw"],
+                &[("SORNG_BW_PASSWORD", password)],
+                false,
+            )
+            .await?;
         Ok(output.trim().to_string())
     }
 
@@ -440,11 +687,10 @@ impl BitwardenCli {
 
     /// Create a new vault item from JSON.
     pub async fn create_item(&self, item: &VaultItem) -> Result<VaultItem, BitwardenError> {
-        let json = serde_json::to_string(item)
-            .map_err(|e| BitwardenError::parse(format!("Serialize error: {}", e)))?;
-
-        let encoded = base64::engine::general_purpose::STANDARD.encode(json.as_bytes());
-        self.run_json(&["create", "item", &encoded]).await
+        let _ = item;
+        Err(BitwardenError::invalid_config(
+            "CLI item creation is disabled because the Bitwarden CLI requires vault item data in process arguments",
+        ))
     }
 
     /// Create a new folder.
@@ -459,10 +705,10 @@ impl BitwardenCli {
 
     /// Edit a vault item.
     pub async fn edit_item(&self, id: &str, item: &VaultItem) -> Result<VaultItem, BitwardenError> {
-        let json = serde_json::to_string(item)
-            .map_err(|e| BitwardenError::parse(format!("Serialize error: {}", e)))?;
-        let encoded = base64::engine::general_purpose::STANDARD.encode(json.as_bytes());
-        self.run_json(&["edit", "item", id, &encoded]).await
+        let _ = (id, item);
+        Err(BitwardenError::invalid_config(
+            "CLI item editing is disabled because the Bitwarden CLI requires vault item data in process arguments",
+        ))
     }
 
     /// Edit a folder.
@@ -508,11 +754,12 @@ impl BitwardenCli {
         item_id: &str,
         file_path: &str,
     ) -> Result<VaultItem, BitwardenError> {
+        let file_path = validate_existing_file(file_path, "attachment", MAX_ATTACHMENT_BYTES)?;
         self.run_json(&[
             "create",
             "attachment",
             "--file",
-            file_path,
+            &file_path,
             "--itemid",
             item_id,
         ])
@@ -537,17 +784,10 @@ impl BitwardenCli {
         item_id: &str,
         output_path: &str,
     ) -> Result<(), BitwardenError> {
-        self.run_command(&[
-            "get",
-            "attachment",
-            attachment_id,
-            "--itemid",
-            item_id,
-            "--output",
-            output_path,
-        ])
-        .await?;
-        Ok(())
+        let _ = (attachment_id, item_id, output_path);
+        Err(BitwardenError::invalid_config(
+            "CLI attachment download is disabled because secure destination-file permissions cannot be guaranteed",
+        ))
     }
 
     // ── Generate ────────────────────────────────────────────────────
@@ -603,20 +843,10 @@ impl BitwardenCli {
         output_path: &str,
         password: Option<&str>,
     ) -> Result<(), BitwardenError> {
-        let mut args = vec!["export"];
-        let fmt = format.as_str();
-        args.push("--format");
-        args.push(fmt);
-        args.push("--output");
-        args.push(output_path);
-
-        if let Some(pw) = password {
-            args.push("--password");
-            args.push(pw);
-        }
-
-        self.run_command(&args).await?;
-        Ok(())
+        let _ = (format, output_path, password);
+        Err(BitwardenError::invalid_config(
+            "CLI vault export is disabled because secret argv and secure output-file guarantees are unavailable",
+        ))
     }
 
     /// Import vault data.
@@ -626,7 +856,8 @@ impl BitwardenCli {
         file_path: &str,
     ) -> Result<(), BitwardenError> {
         let fmt = format.as_str();
-        self.run_command(&["import", fmt, file_path]).await?;
+        let file_path = validate_existing_file(file_path, "import", MAX_IMPORT_BYTES)?;
+        self.run_command(&["import", fmt, &file_path]).await?;
         Ok(())
     }
 
@@ -646,31 +877,10 @@ impl BitwardenCli {
         password: Option<&str>,
         hidden: bool,
     ) -> Result<Send, BitwardenError> {
-        let mut args: Vec<String> = vec![
-            "send".to_string(),
-            "create".to_string(),
-            "--name".to_string(),
-            name.to_string(),
-        ];
-
-        args.push(text.to_string());
-
-        if hidden {
-            args.push("--hidden".to_string());
-        }
-
-        if let Some(max) = max_access {
-            args.push("--maxAccessCount".to_string());
-            args.push(max.to_string());
-        }
-
-        if let Some(pw) = password {
-            args.push("--password".to_string());
-            args.push(pw.to_string());
-        }
-
-        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        self.run_json(&args_ref).await
+        let _ = (name, text, max_access, password, hidden);
+        Err(BitwardenError::invalid_config(
+            "CLI Send creation is disabled because Send contents and passwords would be exposed in process arguments",
+        ))
     }
 
     /// Delete a send.
@@ -685,20 +895,35 @@ impl BitwardenCli {
         url: &str,
         password: Option<&str>,
     ) -> Result<String, BitwardenError> {
-        let mut args = vec!["send", "receive", url];
-        if let Some(pw) = password {
-            args.push("--password");
-            args.push(pw);
+        if password.is_some() {
+            return Err(BitwardenError::invalid_config(
+                "Password-protected Send receipt is disabled because the CLI requires the password in process arguments",
+            ));
         }
-        self.run_command(&args).await
+        self.run_command(&["send", "receive", url]).await
     }
 
     // ── Serve ───────────────────────────────────────────────────────
 
     /// Check if `bw serve` is reachable at the given port.
     pub async fn check_serve_running(hostname: &str, port: u16) -> bool {
-        let url = format!("http://{}:{}/status", hostname, port);
-        match reqwest::get(&url).await {
+        if !is_loopback_hostname(hostname) {
+            return false;
+        }
+        let host = if hostname.contains(':') && !hostname.starts_with('[') {
+            format!("[{}]", hostname)
+        } else {
+            hostname.to_string()
+        };
+        let url = format!("http://{}:{}/status", host, port);
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+        {
+            Ok(client) => client,
+            Err(_) => return false,
+        };
+        match client.get(&url).send().await {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }
@@ -711,23 +936,33 @@ impl BitwardenCli {
         hostname: &str,
         port: u16,
     ) -> Result<tokio::process::Child, BitwardenError> {
+        if !is_loopback_hostname(hostname) {
+            return Err(BitwardenError::invalid_config(
+                "bw serve may only bind to a loopback hostname",
+            ));
+        }
         let port_str = port.to_string();
-        let mut cmd = Command::new(self.bw_path());
+        let program = self.validated_bw_path()?;
+        let mut cmd = Command::new(program);
         cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .env("BW_NOINTERACTION", "true")
+            .env_remove("BW_SESSION")
+            .env_remove("BW_CLIENTID")
+            .env_remove("BW_CLIENTSECRET")
+            .env_remove("BW_PASSWORD")
+            .env_remove("SORNG_BW_PASSWORD");
 
         if let Some(ref key) = self.session_key {
+            validate_secret(key, "Bitwarden session key")?;
             cmd.env("BW_SESSION", key);
         }
 
-        for (k, v) in &self.env_vars {
-            cmd.env(k, v);
-        }
-
         cmd.spawn()
-            .map_err(|e| BitwardenError::io(format!("Failed to start bw serve: {}", e)))
+            .map_err(|_| BitwardenError::io("Failed to start bw serve"))
     }
 }
 
@@ -740,14 +975,14 @@ mod tests {
     #[test]
     fn cli_default() {
         let cli = BitwardenCli::new();
-        assert_eq!(cli.bw_path(), "bw");
+        assert_eq!(cli.cli_path.as_deref().unwrap_or("bw"), "bw");
         assert!(cli.session_key.is_none());
     }
 
     #[test]
     fn cli_with_path() {
         let cli = BitwardenCli::new().with_cli_path("/usr/local/bin/bw");
-        assert_eq!(cli.bw_path(), "/usr/local/bin/bw");
+        assert_eq!(cli.cli_path.as_deref().unwrap_or("bw"), "/usr/local/bin/bw");
     }
 
     #[test]
@@ -758,7 +993,7 @@ mod tests {
             ..Default::default()
         };
         let cli = BitwardenCli::from_config(&config);
-        assert_eq!(cli.bw_path(), "/opt/bw");
+        assert_eq!(cli.cli_path.as_deref().unwrap_or("bw"), "/opt/bw");
         assert_eq!(cli.timeout.as_secs(), 60);
     }
 
