@@ -42,13 +42,10 @@ pub fn is_command(command: &str) -> bool {
             | "backup_restore"
             | "backup_delete"
             | "create_desktop_shortcut"
-            | "scan_shortcuts"
             | "set_autostart"
             | "get_desktop_path"
             | "get_documents_path"
             | "get_appdata_path"
-            | "check_file_exists"
-            | "delete_file"
             | "open_folder"
             | "flash_window"
             | "sftp_connect"
@@ -511,13 +508,10 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         backup_commands::backup_restore,
         backup_commands::backup_delete,
         app_shell_commands::create_desktop_shortcut,
-        app_shell_commands::scan_shortcuts,
         app_shell_commands::set_autostart,
         app_shell_commands::get_desktop_path,
         app_shell_commands::get_documents_path,
         app_shell_commands::get_appdata_path,
-        app_shell_commands::check_file_exists,
-        app_shell_commands::delete_file,
         app_shell_commands::open_folder,
         app_shell_commands::flash_window,
         // SFTP commands
