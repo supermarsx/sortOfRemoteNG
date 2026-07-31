@@ -21,6 +21,8 @@ export interface PfsenseConnectionConfig {
   apiSecret: string;
   useTls: boolean;
   acceptInvalidCerts: boolean;
+  /** Runtime-only acknowledgement for one insecure connection attempt. */
+  acknowledge_invalid_cert_risk?: boolean;
   timeoutSecs: number;
   proxyUrl?: string | null;
 }

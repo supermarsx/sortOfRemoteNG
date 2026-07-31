@@ -22,6 +22,8 @@ import type {
 import { withGlobalHttpProxy } from "../../../hooks/integration/httpProxy";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
 import { useIntegrationConnectionLifecycle } from "../../../hooks/integrations/IntegrationSessionLifecycle";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { pfsenseCategoryTabs } from "./registry";
 
 // ── Connection-lifecycle invoke wrappers (the shell's 4 commands) ────────────
@@ -79,9 +81,19 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
   const [summary, setSummary] = useState<PfsenseConnectionSummary | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(
     pfsenseCategoryTabs[0]?.categoryKey ?? null,
   );
+  const effectiveTlsSkip = form.useTls && form.acceptInvalidCerts;
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: instanceId ?? `pfsense:${form.host.trim()}:${form.port.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Prefill the form from a persisted instance when opened against one.
   useEffect(() => {
@@ -146,85 +158,106 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
     }
   }, []);
 
-  const handleConnect = useCallback(async () => {
-    setConnecting(true);
-    setError(null);
-    try {
-      const config = buildConfig();
-      const secret = JSON.stringify({
-        apiKey: form.apiKey,
-        apiSecret: form.apiSecret,
-      } satisfies PfsenseSecret);
-      const fields = {
-        port: String(config.port),
-        useTls: String(config.useTls),
-        acceptInvalidCerts: String(config.acceptInvalidCerts),
-      };
-      const name = form.name.trim() || form.host.trim() || "pfSense";
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      setConnecting(true);
+      setError(null);
+      try {
+        const config = buildConfig();
+        let acknowledgementAvailable = effectiveTlsSkip && acknowledged;
+        const secret = JSON.stringify({
+          apiKey: form.apiKey,
+          apiSecret: form.apiSecret,
+        } satisfies PfsenseSecret);
+        const fields = {
+          port: String(config.port),
+          useTls: String(config.useTls),
+          acceptInvalidCerts: String(config.acceptInvalidCerts),
+        };
+        const name = form.name.trim() || form.host.trim() || "pfSense";
 
-      // Persist host + creds (encrypted) and use the instance id as the stable
-      // connection id, so reconnecting a saved instance reuses its id.
-      let id = instanceId ?? null;
-      if (id) {
-        await updateInstance(id, {
-          integrationKey: "pfsense",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-      } else {
-        const created = await createInstance({
-          integrationKey: "pfsense",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-        id = created.id;
+        // Persist host + creds (encrypted) and use the instance id as the stable
+        // connection id, so reconnecting a saved instance reuses its id.
+        let id = instanceId ?? null;
+        if (id) {
+          await updateInstance(id, {
+            integrationKey: "pfsense",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+        } else {
+          const created = await createInstance({
+            integrationKey: "pfsense",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+          id = created.id;
+        }
+
+        if (!id) throw new Error("Unable to allocate a pfSense instance");
+        await trackConnect(
+          `pfsense:${id}`,
+          async () => {
+            setConnecting(true);
+            setError(null);
+            try {
+              const attemptConfig = {
+                ...config,
+                acknowledge_invalid_cert_risk: acknowledgementAvailable,
+              };
+              acknowledgementAvailable = false;
+              const result = await pfsenseConnectionApi.connect(
+                id,
+                withGlobalHttpProxy(attemptConfig, "camel"),
+              );
+              setConnectionId(id);
+              setSummary(result);
+              setActiveTab(pfsenseCategoryTabs[0]?.categoryKey ?? null);
+              return result;
+            } catch (e) {
+              const msg = typeof e === "string" ? e : (e as Error).message;
+              setError(msg);
+              setConnectionId(null);
+              setSummary(null);
+              throw e;
+            } finally {
+              setConnecting(false);
+            }
+          },
+          () => disconnectById(id),
+        );
+      } catch (e) {
+        const msg = typeof e === "string" ? e : (e as Error).message;
+        setError(msg);
+        setConnecting(false);
+      } finally {
+        resetTlsAck();
       }
+    },
+    [
+      buildConfig,
+      createInstance,
+      disconnectById,
+      effectiveTlsSkip,
+      form,
+      instanceId,
+      resetTlsAck,
+      trackConnect,
+      updateInstance,
+    ],
+  );
 
-      if (!id) throw new Error("Unable to allocate a pfSense instance");
-      await trackConnect(
-        `pfsense:${id}`,
-        async () => {
-          setConnecting(true);
-          setError(null);
-          try {
-            const result = await pfsenseConnectionApi.connect(
-              id,
-              withGlobalHttpProxy(config, "camel"),
-            );
-            setConnectionId(id);
-            setSummary(result);
-            setActiveTab(pfsenseCategoryTabs[0]?.categoryKey ?? null);
-            return result;
-          } catch (e) {
-            const msg = typeof e === "string" ? e : (e as Error).message;
-            setError(msg);
-            setConnectionId(null);
-            setSummary(null);
-            throw e;
-          } finally {
-            setConnecting(false);
-          }
-        },
-        () => disconnectById(id),
-      );
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
-      setConnecting(false);
+  const handleConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
+      return;
     }
-  }, [
-    buildConfig,
-    createInstance,
-    disconnectById,
-    form,
-    instanceId,
-    trackConnect,
-    updateInstance,
-  ]);
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const handleDisconnect = useCallback(async () => {
     if (!connectionId) return;
@@ -250,6 +283,22 @@ const PfsensePanel: React.FC<PfsensePanelProps> = ({ isOpen, instanceId }) => {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={`${form.useTls ? "https" : "http"}://${form.host.trim() || "pfSense endpoint"}:${form.port.trim() || (form.useTls ? "443" : "80")}`}
+        connectionName={form.name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
           <ShieldCheck className="h-5 w-5 text-primary" />

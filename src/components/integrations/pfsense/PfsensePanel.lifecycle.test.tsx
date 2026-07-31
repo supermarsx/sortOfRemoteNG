@@ -91,6 +91,7 @@ describe("PfsensePanel session lifecycle", () => {
           host: "fw.example.test",
           apiKey: "api-key",
           apiSecret: "api-secret",
+          acknowledge_invalid_cert_risk: false,
         }),
       }),
     );

@@ -105,6 +105,7 @@ describe("PfsensePanel (shell)", () => {
             host: "192.168.1.1",
             apiKey: "api-key",
             apiSecret: "api-secret",
+            acknowledge_invalid_cert_risk: false,
           }),
         }),
       ),
