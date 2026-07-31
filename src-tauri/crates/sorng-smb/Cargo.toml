@@ -3,7 +3,7 @@ publish = false
 name = "sorng-smb"
 version.workspace = true
 edition = "2021"
-description = "SMB/CIFS client — platform-split implementation. Windows uses native UNC paths (\\\\server\\share) with std::fs + `net view` for share enumeration. Unix uses smbclient subprocess. The `pavao` crate was evaluated but rejected because pavao-sys links to libsmbclient (Samba's C library), unavailable on Windows without bundling Samba dev libs."
+description = "SMB/CIFS client — platform-split implementation. Windows uses the native redirector, UNC paths, and NetShareEnum. Unix uses a bounded smbclient subprocess with private credential files."
 
 [dependencies]
 sorng-core = { path = "../sorng-core" }
@@ -18,3 +18,13 @@ lazy_static = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
+tempfile = { workspace = true }
+zeroize = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_NetManagement",
+    "Win32_NetworkManagement_WNet",
+    "Win32_Storage_FileSystem",
+] }

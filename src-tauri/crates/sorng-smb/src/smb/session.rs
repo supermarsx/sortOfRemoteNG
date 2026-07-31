@@ -7,7 +7,6 @@
 use super::types::*;
 use chrono::Utc;
 
-#[derive(Debug, Clone)]
 pub struct SmbSession {
     pub id: String,
     pub config: SmbConnectionConfig,

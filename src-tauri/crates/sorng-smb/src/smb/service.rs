@@ -49,15 +49,40 @@ impl SmbService {
     }
 
     pub async fn disconnect(&mut self, session_id: &str) -> SmbResult<()> {
-        self.sessions
+        let session = self
+            .sessions
             .remove(session_id)
             .ok_or_else(|| SmbError::SessionNotFound(session_id.to_string()))?;
+        let redirector_still_used = self.sessions.values().any(|other| {
+            other.config.host == session.config.host
+                && other.config.share == session.config.share
+                && other.config.port == session.config.port
+        });
+        if redirector_still_used {
+            return Ok(());
+        }
+        if let Err(error) = self.backend.disconnect(&session).await {
+            self.sessions.insert(session_id.to_string(), session);
+            return Err(error);
+        }
         Ok(())
     }
 
     pub async fn disconnect_all(&mut self) -> SmbResult<()> {
-        self.sessions.clear();
-        Ok(())
+        let sessions = std::mem::take(&mut self.sessions);
+        let mut failed = Vec::new();
+        for (session_id, session) in sessions {
+            if self.backend.disconnect(&session).await.is_err() {
+                failed.push((session_id, session));
+            }
+        }
+        if failed.is_empty() {
+            return Ok(());
+        }
+        self.sessions.extend(failed);
+        Err(SmbError::Backend(
+            "one or more native SMB connections could not be released".into(),
+        ))
     }
 
     pub async fn list_sessions(&self) -> Vec<SmbSessionInfo> {
@@ -74,8 +99,8 @@ impl SmbService {
     // ── Share enumeration ──────────────────────────────────────────────
 
     pub async fn list_shares(&mut self, session_id: &str) -> SmbResult<Vec<SmbShareInfo>> {
-        let session = self.session_cloned(session_id)?;
-        let shares = self.backend.list_shares(&session).await?;
+        let session = self.session(session_id)?;
+        let shares = self.backend.list_shares(session).await?;
         self.touch(session_id);
         Ok(shares)
     }
@@ -88,20 +113,15 @@ impl SmbService {
         share: &str,
         path: &str,
     ) -> SmbResult<Vec<SmbDirEntry>> {
-        let session = self.session_cloned(session_id)?;
-        let res = self.backend.list_dir(&session, share, path).await?;
+        let session = self.session(session_id)?;
+        let res = self.backend.list_dir(session, share, path).await?;
         self.touch(session_id);
         Ok(res)
     }
 
-    pub async fn stat(
-        &mut self,
-        session_id: &str,
-        share: &str,
-        path: &str,
-    ) -> SmbResult<SmbStat> {
-        let session = self.session_cloned(session_id)?;
-        let res = self.backend.stat(&session, share, path).await?;
+    pub async fn stat(&mut self, session_id: &str, share: &str, path: &str) -> SmbResult<SmbStat> {
+        let session = self.session(session_id)?;
+        let res = self.backend.stat(session, share, path).await?;
         self.touch(session_id);
         Ok(res)
     }
@@ -113,8 +133,11 @@ impl SmbService {
         path: &str,
         max_bytes: Option<u64>,
     ) -> SmbResult<SmbReadResult> {
-        let session = self.session_cloned(session_id)?;
-        let res = self.backend.read_file(&session, share, path, max_bytes).await?;
+        let session = self.session(session_id)?;
+        let res = self
+            .backend
+            .read_file(session, share, path, max_bytes)
+            .await?;
         self.touch(session_id);
         Ok(res)
     }
@@ -127,10 +150,10 @@ impl SmbService {
         content_b64: &str,
         overwrite: bool,
     ) -> SmbResult<SmbWriteResult> {
-        let session = self.session_cloned(session_id)?;
+        let session = self.session(session_id)?;
         let res = self
             .backend
-            .write_file(&session, share, path, content_b64, overwrite)
+            .write_file(session, share, path, content_b64, overwrite)
             .await?;
         self.touch(session_id);
         Ok(res)
@@ -143,10 +166,10 @@ impl SmbService {
         remote_path: &str,
         local_path: &str,
     ) -> SmbResult<SmbTransferResult> {
-        let session = self.session_cloned(session_id)?;
+        let session = self.session(session_id)?;
         let res = self
             .backend
-            .download_file(&session, share, remote_path, local_path)
+            .download_file(session, share, remote_path, local_path)
             .await?;
         self.touch(session_id);
         Ok(res)
@@ -159,23 +182,18 @@ impl SmbService {
         local_path: &str,
         remote_path: &str,
     ) -> SmbResult<SmbTransferResult> {
-        let session = self.session_cloned(session_id)?;
+        let session = self.session(session_id)?;
         let res = self
             .backend
-            .upload_file(&session, share, local_path, remote_path)
+            .upload_file(session, share, local_path, remote_path)
             .await?;
         self.touch(session_id);
         Ok(res)
     }
 
-    pub async fn mkdir(
-        &mut self,
-        session_id: &str,
-        share: &str,
-        path: &str,
-    ) -> SmbResult<()> {
-        let session = self.session_cloned(session_id)?;
-        self.backend.mkdir(&session, share, path).await?;
+    pub async fn mkdir(&mut self, session_id: &str, share: &str, path: &str) -> SmbResult<()> {
+        let session = self.session(session_id)?;
+        self.backend.mkdir(session, share, path).await?;
         self.touch(session_id);
         Ok(())
     }
@@ -187,8 +205,8 @@ impl SmbService {
         path: &str,
         recursive: bool,
     ) -> SmbResult<()> {
-        let session = self.session_cloned(session_id)?;
-        self.backend.rmdir(&session, share, path, recursive).await?;
+        let session = self.session(session_id)?;
+        self.backend.rmdir(session, share, path, recursive).await?;
         self.touch(session_id);
         Ok(())
     }
@@ -199,8 +217,8 @@ impl SmbService {
         share: &str,
         path: &str,
     ) -> SmbResult<()> {
-        let session = self.session_cloned(session_id)?;
-        self.backend.delete_file(&session, share, path).await?;
+        let session = self.session(session_id)?;
+        self.backend.delete_file(session, share, path).await?;
         self.touch(session_id);
         Ok(())
     }
@@ -212,24 +230,32 @@ impl SmbService {
         from: &str,
         to: &str,
     ) -> SmbResult<()> {
-        let session = self.session_cloned(session_id)?;
-        self.backend.rename(&session, share, from, to).await?;
+        let session = self.session(session_id)?;
+        self.backend.rename(session, share, from, to).await?;
         self.touch(session_id);
         Ok(())
     }
 
     // ── helpers ────────────────────────────────────────────────────────
 
-    fn session_cloned(&self, session_id: &str) -> SmbResult<SmbSession> {
+    fn session(&self, session_id: &str) -> SmbResult<&SmbSession> {
         self.sessions
             .get(session_id)
-            .cloned()
             .ok_or_else(|| SmbError::SessionNotFound(session_id.to_string()))
     }
 
     fn touch(&mut self, session_id: &str) {
         if let Some(s) = self.sessions.get_mut(session_id) {
             s.touch();
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for SmbService {
+    fn drop(&mut self) {
+        for session in self.sessions.values() {
+            let _ = super::file_ops::cleanup_native_session(session);
         }
     }
 }

@@ -6,20 +6,21 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 // ── default helpers ──────────────────────────────────────────────────────────
 
 fn default_smb_port() -> u16 {
     445
 }
-fn default_false() -> bool {
-    false
+fn default_true() -> bool {
+    true
 }
 
 // ── Connection config ────────────────────────────────────────────────────────
 
 /// Configuration for establishing an SMB connection to a server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SmbConnectionConfig {
     pub host: String,
@@ -41,12 +42,35 @@ pub struct SmbConnectionConfig {
     /// Optional display label (UI only).
     #[serde(default)]
     pub label: Option<String>,
-    /// Reject plaintext auth (force at least NTLMv2). Unix only.
-    #[serde(default = "default_false")]
+    /// Require plaintext-auth and legacy-protocol rejection plus SMB
+    /// encryption. Enabled by
+    /// default. Windows fails closed because this process cannot prove the
+    /// machine-wide redirector policy; Unix applies explicit smbclient policy.
+    #[serde(default = "default_true")]
     pub disable_plaintext: bool,
     /// Use Kerberos auth on Unix (passes `-k` to smbclient). No-op on Windows.
-    #[serde(default = "default_false")]
+    #[serde(default)]
     pub use_kerberos: bool,
+}
+
+impl Drop for SmbConnectionConfig {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+#[cfg(test)]
+mod connection_config_tests {
+    use super::*;
+
+    #[test]
+    fn plaintext_and_protocol_downgrade_protection_defaults_on() {
+        let config: SmbConnectionConfig =
+            serde_json::from_value(serde_json::json!({ "host": "files.internal" })).unwrap();
+        assert!(config.disable_plaintext);
+    }
 }
 
 // ── Session info ─────────────────────────────────────────────────────────────
