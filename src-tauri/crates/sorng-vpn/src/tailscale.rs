@@ -6,11 +6,15 @@ use crate::platform;
 use chrono::{DateTime, Utc};
 use sorng_core::events::DynEventEmitter;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
-use tokio::process::Command;
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -112,22 +116,147 @@ trait TailscaleCommandRunner: Send + Sync {
 
 struct SystemTailscaleCommandRunner;
 
+const TAILSCALE_CLI_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+const TAILSCALE_CLI_UP_TIMEOUT: Duration = Duration::from_secs(90);
+const TAILSCALE_CLI_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
+const TAILSCALE_CLI_OUTPUT_LIMIT_BYTES: usize = 2 * 1024 * 1024;
+
+struct BoundedTailscaleOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+impl BoundedTailscaleOutput {
+    fn into_string(self) -> String {
+        let mut text = String::from_utf8_lossy(&self.bytes).into_owned();
+        if self.truncated {
+            text.push_str("\n[Tailscale CLI output truncated]");
+        }
+        text
+    }
+}
+
+fn tailscale_cli_timeout(args: &[String]) -> Duration {
+    if args.first().map(String::as_str) == Some("up") {
+        TAILSCALE_CLI_UP_TIMEOUT
+    } else {
+        TAILSCALE_CLI_DEFAULT_TIMEOUT
+    }
+}
+
+async fn read_bounded_tailscale_output<R>(mut reader: R) -> io::Result<BoundedTailscaleOutput>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut bytes = Vec::with_capacity(TAILSCALE_CLI_OUTPUT_LIMIT_BYTES.min(64 * 1024));
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+
+    loop {
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+
+        let remaining = TAILSCALE_CLI_OUTPUT_LIMIT_BYTES.saturating_sub(bytes.len());
+        let retained = remaining.min(read);
+        bytes.extend_from_slice(&buffer[..retained]);
+        truncated |= retained < read;
+    }
+
+    Ok(BoundedTailscaleOutput { bytes, truncated })
+}
+
+async fn terminate_and_reap_tailscale_child(child: &mut Child) -> bool {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return true;
+    }
+
+    // Ignore a racing "already exited" response and make the reap result the
+    // authority. `kill_on_drop` remains the final guard if reaping itself stalls.
+    let _ = child.start_kill();
+    matches!(
+        timeout(TAILSCALE_CLI_CLEANUP_TIMEOUT, child.wait()).await,
+        Ok(Ok(_))
+    )
+}
+
+/// Execute the Tailscale CLI without a shell. Both streams are drained while
+/// retaining only a bounded prefix so a broken or hostile executable cannot
+/// hang on full pipes or exhaust process memory.
+async fn run_tailscale_cli(args: &[String]) -> Result<TailscaleCommandOutput, String> {
+    let binary = platform::resolve_binary("tailscale").map_err(|_| {
+        "Tailscale CLI is unavailable; install Tailscale and ensure its executable can be resolved"
+            .to_string()
+    })?;
+
+    let mut child = Command::new(binary)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| {
+            "Tailscale CLI could not be started; verify Tailscale is installed and permitted to run"
+                .to_string()
+        })?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
+        let cleaned_up = terminate_and_reap_tailscale_child(&mut child).await;
+        return Err(if cleaned_up {
+            "Tailscale CLI output could not be captured; retry after restarting the Tailscale service"
+                .to_string()
+        } else {
+            "Tailscale CLI could not be stopped cleanly; check for a stuck Tailscale process before retrying"
+                .to_string()
+        });
+    };
+
+    let completion = async {
+        let (status, stdout, stderr) = tokio::try_join!(
+            child.wait(),
+            read_bounded_tailscale_output(stdout),
+            read_bounded_tailscale_output(stderr),
+        )?;
+        Ok::<_, io::Error>((status, stdout, stderr))
+    };
+
+    match timeout(tailscale_cli_timeout(args), completion).await {
+        Ok(Ok((status, stdout, stderr))) => Ok(TailscaleCommandOutput {
+            success: status.success(),
+            stdout: stdout.into_string(),
+            stderr: stderr.into_string(),
+        }),
+        Ok(Err(_)) => {
+            let cleaned_up = terminate_and_reap_tailscale_child(&mut child).await;
+            Err(if cleaned_up {
+                "Tailscale CLI did not complete normally; confirm the Tailscale service is running, then retry"
+                    .to_string()
+            } else {
+                "Tailscale CLI could not be stopped cleanly; check for a stuck Tailscale process before retrying"
+                    .to_string()
+            })
+        }
+        Err(_) => {
+            let cleaned_up = terminate_and_reap_tailscale_child(&mut child).await;
+            Err(if cleaned_up {
+                "Tailscale CLI timed out; confirm the Tailscale service is responsive, then retry"
+                    .to_string()
+            } else {
+                "Tailscale CLI timed out and could not be stopped cleanly; check for a stuck Tailscale process before retrying"
+                    .to_string()
+            })
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl TailscaleCommandRunner for SystemTailscaleCommandRunner {
     async fn run(&self, args: &[String]) -> Result<TailscaleCommandOutput, String> {
-        let binary = platform::resolve_binary("tailscale")
-            .map_err(|error| format!("Failed to find tailscale binary: {error}"))?;
-        let output = Command::new(binary)
-            .args(args)
-            .output()
-            .await
-            .map_err(|error| format!("Failed to execute tailscale: {error}"))?;
-
-        Ok(TailscaleCommandOutput {
-            success: output.status.success(),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        })
+        run_tailscale_cli(args).await
     }
 }
 
@@ -1100,6 +1229,36 @@ mod tests {
 
     fn state_with_runner(runner: Arc<MockTailscaleCommandRunner>) -> TailscaleServiceState {
         TailscaleService::new_with_command_runner(runner)
+    }
+
+    #[test]
+    fn cli_deadlines_are_bounded_and_allow_more_time_for_up() {
+        assert_eq!(
+            tailscale_cli_timeout(&["status".to_string(), "--json".to_string()]),
+            TAILSCALE_CLI_DEFAULT_TIMEOUT
+        );
+        assert_eq!(
+            tailscale_cli_timeout(&["down".to_string()]),
+            TAILSCALE_CLI_DEFAULT_TIMEOUT
+        );
+        assert_eq!(
+            tailscale_cli_timeout(&["up".to_string()]),
+            TAILSCALE_CLI_UP_TIMEOUT
+        );
+    }
+
+    #[tokio::test]
+    async fn cli_output_capture_drains_but_retains_only_the_bounded_prefix() {
+        let input = vec![b'x'; TAILSCALE_CLI_OUTPUT_LIMIT_BYTES + 17];
+        let output = read_bounded_tailscale_output(input.as_slice())
+            .await
+            .unwrap();
+
+        assert_eq!(output.bytes.len(), TAILSCALE_CLI_OUTPUT_LIMIT_BYTES);
+        assert!(output.truncated);
+        assert!(output
+            .into_string()
+            .ends_with("[Tailscale CLI output truncated]"));
     }
 
     fn default_ts_config() -> TailscaleConfig {

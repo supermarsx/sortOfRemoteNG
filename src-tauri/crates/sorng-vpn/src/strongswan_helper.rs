@@ -6,19 +6,33 @@ use crate::validation;
 #[cfg(not(windows))]
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 #[cfg(not(windows))]
-use std::fs::OpenOptions;
+use std::ffi::CString;
 #[cfg(not(windows))]
-use std::io::Write;
+use std::fs::File;
 #[cfg(not(windows))]
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::io::{Read, Write};
+#[cfg(not(windows))]
+use std::os::fd::{AsRawFd, FromRawFd};
+#[cfg(not(windows))]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(not(windows))]
+use std::os::unix::fs::{FileExt, MetadataExt};
+#[cfg(not(windows))]
+use std::os::unix::process::CommandExt as _;
 #[cfg(not(windows))]
 use std::path::{Path, PathBuf};
 #[cfg(not(windows))]
-use tokio::process::Command;
+use std::process::{ExitStatus, Stdio};
+#[cfg(not(windows))]
+use std::time::Duration;
+#[cfg(not(windows))]
+use tokio::io::{AsyncRead, AsyncReadExt};
+#[cfg(not(windows))]
+use tokio::process::{Child, Command};
 #[cfg(not(windows))]
 use uuid::Uuid;
 #[cfg(not(windows))]
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Validated inputs for one managed strongSwan tunnel. Keeping the local and
 /// remote authentication roles named prevents positional call-site mixups.
@@ -46,6 +60,53 @@ const TRUSTED_GREP_BINARIES: &[&str] = &["/usr/bin/grep", "/bin/grep"];
 #[cfg(all(not(windows), target_os = "linux"))]
 const TRUSTED_PKEXEC_BINARIES: &[&str] = &["/usr/bin/pkexec", "/bin/pkexec"];
 #[cfg(not(windows))]
+const PROCESS_OUTPUT_LIMIT: usize = 64 * 1024;
+#[cfg(not(windows))]
+const INCLUDE_LINE_LIMIT: usize = 8 * 1024;
+#[cfg(not(windows))]
+const MANAGED_CONFIG_LIMIT: usize = 512 * 1024;
+#[cfg(not(windows))]
+const IPSEC_FILE_LIMIT: usize = 256 * 1024;
+#[cfg(not(windows))]
+const IPSEC_SECRET_LIMIT: usize = 64 * 1024;
+#[cfg(not(windows))]
+const REMOTE_SUBNET_COUNT_LIMIT: usize = 1024;
+#[cfg(not(windows))]
+const REMOTE_SUBNET_BYTES_LIMIT: usize = 64 * 1024;
+#[cfg(not(windows))]
+const FILE_PROCESS_TIMEOUT: Duration = Duration::from_secs(20);
+#[cfg(not(windows))]
+const PRIVILEGED_FILE_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(not(windows))]
+const PRIVILEGED_INSPECTION_TIMEOUT: Duration = Duration::from_secs(90);
+#[cfg(not(windows))]
+const IPSEC_STATUS_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(not(windows))]
+const IPSEC_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(not(windows))]
+const IPSEC_DOWN_TIMEOUT: Duration = Duration::from_secs(45);
+#[cfg(not(windows))]
+const IPSEC_UP_TIMEOUT: Duration = Duration::from_secs(120);
+#[cfg(not(windows))]
+const ELEVATION_PROMPT_ALLOWANCE: Duration = Duration::from_secs(90);
+#[cfg(not(windows))]
+const PROCESS_REAP_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(target_os = "macos")]
+const TRUSTED_EXEC_PATH: &str =
+    "/opt/homebrew/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin";
+#[cfg(all(not(windows), not(target_os = "macos")))]
+const TRUSTED_EXEC_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+#[cfg(not(windows))]
+struct BoundedOutput {
+    status: ExitStatus,
+    stdout: Zeroizing<Vec<u8>>,
+    stderr: Zeroizing<Vec<u8>>,
+    stdout_truncated: bool,
+    stderr_truncated: bool,
+}
+#[cfg(not(windows))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct IpsecLayout {
     binary: PathBuf,
@@ -59,6 +120,460 @@ struct LayoutCandidate {
     binary: &'static str,
     config_root: &'static str,
     allow_user_owned: bool,
+}
+
+#[cfg(not(windows))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+    length: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+    changed_seconds: i64,
+    changed_nanoseconds: i64,
+}
+
+#[cfg(not(windows))]
+impl FileIdentity {
+    fn from_metadata(metadata: &std::fs::Metadata) -> Self {
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            length: metadata.len(),
+            modified_seconds: metadata.mtime(),
+            modified_nanoseconds: metadata.mtime_nsec(),
+            changed_seconds: metadata.ctime(),
+            changed_nanoseconds: metadata.ctime_nsec(),
+        }
+    }
+}
+
+/// An opened private staging directory and payload. The parent and directory
+/// descriptors keep cleanup attached to the objects that were created rather
+/// than to pathnames that may later be replaced. Drop is the cancellation and
+/// panic backstop; normal completion always calls `cleanup` so failures can be
+/// returned to the caller instead of reporting a false success.
+#[cfg(not(windows))]
+struct PrivateStagingFile {
+    parent: File,
+    directory: File,
+    directory_name: CString,
+    payload_name: CString,
+    payload_path: PathBuf,
+    payload_present: bool,
+    armed: bool,
+}
+
+#[cfg(not(windows))]
+impl PrivateStagingFile {
+    fn create(content: Zeroizing<String>) -> Result<Self, String> {
+        if content.len() > IPSEC_FILE_LIMIT {
+            return Err(format!(
+                "IPsec file content exceeds the {IPSEC_FILE_LIMIT}-byte safety limit"
+            ));
+        }
+
+        let staging_root = std::env::temp_dir();
+        let parent = open_verified_directory(&staging_root).map_err(|error| {
+            format!(
+                "Refusing unsafe IPsec staging directory {}: {error}",
+                staging_root.display()
+            )
+        })?;
+        let (directory_name_text, directory_name) = (0..16)
+            .find_map(|_| {
+                let text = format!("sortofremoteng-ipsec-{}", Uuid::new_v4().simple());
+                let name = CString::new(text.as_bytes()).ok()?;
+                // SAFETY: parent is a verified directory descriptor and name
+                // is a single NUL-free component. mkdirat creates atomically.
+                let result = unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) };
+                if result == 0 {
+                    Some(Ok((text, name)))
+                } else {
+                    let error = std::io::Error::last_os_error();
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        None
+                    } else {
+                        Some(Err(format!(
+                            "Failed to create private IPsec staging directory: {error}"
+                        )))
+                    }
+                }
+            })
+            .transpose()?
+            .ok_or_else(|| "Failed to allocate a unique IPsec staging directory".to_string())?;
+        // SAFETY: the component was created above beneath the held parent and
+        // O_NOFOLLOW prevents replacement with a symlink before this open.
+        let directory_fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                directory_name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if directory_fd < 0 {
+            // SAFETY: remove only the exact entry beneath the held parent.
+            let _ = unsafe {
+                libc::unlinkat(
+                    parent.as_raw_fd(),
+                    directory_name.as_ptr(),
+                    libc::AT_REMOVEDIR,
+                )
+            };
+            return Err(format!(
+                "Failed to open private IPsec staging directory: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        // SAFETY: directory_fd is a newly returned owned descriptor.
+        let directory = unsafe { File::from_raw_fd(directory_fd) };
+        validate_private_directory_descriptor(&directory).map_err(|error| {
+            // The guard is not constructed yet, so remove this empty directory
+            // through the held parent before returning the validation error.
+            // SAFETY: both descriptors/components remain valid here.
+            let _ = unsafe {
+                libc::unlinkat(
+                    parent.as_raw_fd(),
+                    directory_name.as_ptr(),
+                    libc::AT_REMOVEDIR,
+                )
+            };
+            format!("Unsafe IPsec staging directory: {error}")
+        })?;
+
+        let directory_path = staging_root.join(&directory_name_text);
+        let payload_name = CString::new("payload").expect("static payload name has no NUL");
+        let payload_path = directory_path.join("payload");
+        let mut staging = Self {
+            parent,
+            directory,
+            directory_name,
+            payload_name,
+            payload_path,
+            payload_present: false,
+            armed: true,
+        };
+        // SAFETY: directory is private, verified, and held open. O_EXCL and
+        // O_NOFOLLOW make creation immune to final-component replacement.
+        let payload_fd = unsafe {
+            libc::openat(
+                staging.directory.as_raw_fd(),
+                staging.payload_name.as_ptr(),
+                libc::O_WRONLY
+                    | libc::O_CREAT
+                    | libc::O_EXCL
+                    | libc::O_NOFOLLOW
+                    | libc::O_NONBLOCK
+                    | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if payload_fd < 0 {
+            return Err(format!(
+                "Failed to create private IPsec staging file: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        staging.payload_present = true;
+        // SAFETY: payload_fd is a newly returned owned descriptor.
+        let mut payload = unsafe { File::from_raw_fd(payload_fd) };
+        validate_regular_descriptor(&payload, true, IPSEC_FILE_LIMIT)
+            .map_err(|error| format!("Unsafe private IPsec staging file: {error}"))?;
+        payload
+            .write_all(content.as_bytes())
+            .map_err(|error| format!("Failed to write private IPsec staging file: {error}"))?;
+        payload
+            .sync_all()
+            .map_err(|error| format!("Failed to sync private IPsec staging file: {error}"))?;
+        staging
+            .directory
+            .sync_all()
+            .map_err(|error| format!("Failed to sync private IPsec staging directory: {error}"))?;
+        Ok(staging)
+    }
+
+    fn cleanup(mut self) -> Result<(), String> {
+        self.cleanup_inner()
+    }
+
+    fn cleanup_inner(&mut self) -> Result<(), String> {
+        if !self.armed {
+            return Ok(());
+        }
+        let mut errors = Vec::new();
+        if self.payload_present {
+            // SAFETY: unlink the fixed payload beneath the held private
+            // directory descriptor, independent of pathname replacement.
+            if unsafe { libc::unlinkat(self.directory.as_raw_fd(), self.payload_name.as_ptr(), 0) }
+                == 0
+            {
+                self.payload_present = false;
+            } else {
+                errors.push(format!(
+                    "failed to remove private IPsec staging payload: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+        if let Err(error) = self.directory.sync_all() {
+            errors.push(format!(
+                "failed to sync private IPsec staging cleanup: {error}"
+            ));
+        }
+        // SAFETY: remove the exact directory entry beneath the held staging
+        // root. A renamed/replaced entry fails closed instead of deleting it.
+        if unsafe {
+            libc::unlinkat(
+                self.parent.as_raw_fd(),
+                self.directory_name.as_ptr(),
+                libc::AT_REMOVEDIR,
+            )
+        } != 0
+        {
+            errors.push(format!(
+                "failed to remove private IPsec staging directory: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if errors.is_empty() {
+            self.armed = false;
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for PrivateStagingFile {
+    fn drop(&mut self) {
+        let _ = self.cleanup_inner();
+    }
+}
+
+#[cfg(not(windows))]
+fn open_verified_directory(path: &Path) -> std::io::Result<File> {
+    if !path.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "security-sensitive directory path must be absolute",
+        ));
+    }
+    // SAFETY: this opens the static root path and returns a new descriptor.
+    let root_fd = unsafe {
+        libc::open(
+            b"/\0".as_ptr().cast(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
+    if root_fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: root_fd is a newly returned owned descriptor.
+    let mut current = unsafe { File::from_raw_fd(root_fd) };
+    validate_directory_descriptor(&current)?;
+
+    for component in path.components() {
+        let std::path::Component::Normal(component) = component else {
+            if matches!(component, std::path::Component::RootDir) {
+                continue;
+            }
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "directory path must not contain relative components",
+            ));
+        };
+        let component = CString::new(component.as_bytes()).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "directory component contains NUL",
+            )
+        })?;
+        // SAFETY: each component is opened relative to the already verified
+        // parent. O_NOFOLLOW prevents a symlink from entering the chain.
+        let next_fd = unsafe {
+            libc::openat(
+                current.as_raw_fd(),
+                component.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if next_fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: next_fd is a newly returned owned descriptor.
+        let next = unsafe { File::from_raw_fd(next_fd) };
+        validate_directory_descriptor(&next)?;
+        current = next;
+    }
+    Ok(current)
+}
+
+#[cfg(not(windows))]
+fn validate_directory_descriptor(directory: &File) -> std::io::Result<()> {
+    let metadata = directory.metadata()?;
+    if !metadata.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "opened path is not a directory",
+        ));
+    }
+    // SAFETY: geteuid has no preconditions and only returns process state.
+    let current_uid = unsafe { libc::geteuid() };
+    if metadata.uid() != 0 && metadata.uid() != current_uid {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "directory is not owned by root or the current user",
+        ));
+    }
+    let mode = metadata.mode();
+    let trusted_sticky_directory = metadata.uid() == 0 && mode & 0o1000 != 0;
+    if mode & 0o022 != 0 && !trusted_sticky_directory {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "directory is group/world writable without root-owned sticky protection",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn validate_private_directory_descriptor(directory: &File) -> std::io::Result<()> {
+    let metadata = directory.metadata()?;
+    // SAFETY: geteuid has no preconditions and only returns process state.
+    let current_uid = unsafe { libc::geteuid() };
+    if !metadata.is_dir() || metadata.uid() != current_uid || metadata.mode() & 0o077 != 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "private directory must be current-user-owned with mode 0700 or stricter",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn open_regular_file_no_follow(
+    path: &Path,
+    access_flags: libc::c_int,
+    create_mode: Option<libc::mode_t>,
+    require_private: bool,
+    size_limit: usize,
+) -> std::io::Result<Option<File>> {
+    let parent_path = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "file path has no parent directory",
+        )
+    })?;
+    let parent = open_verified_directory(parent_path)?;
+    let file_name = path.file_name().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "file path has no name")
+    })?;
+    let file_name = CString::new(file_name.as_bytes()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "file name contains NUL")
+    })?;
+    let mut flags = access_flags | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC;
+    let mode = if let Some(mode) = create_mode {
+        flags |= libc::O_CREAT;
+        mode
+    } else {
+        0
+    };
+    // SAFETY: parent is a verified directory descriptor and file_name is one
+    // NUL-free component. O_NOFOLLOW and O_NONBLOCK reject link/FIFO hazards.
+    let file_fd = unsafe { libc::openat(parent.as_raw_fd(), file_name.as_ptr(), flags, mode) };
+    if file_fd < 0 {
+        let error = std::io::Error::last_os_error();
+        if create_mode.is_none() && error.kind() == std::io::ErrorKind::NotFound {
+            return Ok(None);
+        }
+        return Err(error);
+    }
+    // SAFETY: file_fd is a newly returned owned descriptor.
+    let file = unsafe { File::from_raw_fd(file_fd) };
+    validate_regular_descriptor(&file, require_private, size_limit)?;
+    Ok(Some(file))
+}
+
+#[cfg(not(windows))]
+fn validate_regular_descriptor(
+    file: &File,
+    require_private: bool,
+    size_limit: usize,
+) -> std::io::Result<std::fs::Metadata> {
+    let metadata = file.metadata()?;
+    // SAFETY: geteuid has no preconditions and only returns process state.
+    let current_uid = unsafe { libc::geteuid() };
+    if !metadata.is_file() || metadata.nlink() != 1 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "opened path is not a single-link regular file",
+        ));
+    }
+    if metadata.uid() != 0 && metadata.uid() != current_uid {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "file is not owned by root or the current user",
+        ));
+    }
+    if metadata.mode() & 0o022 != 0 || (require_private && metadata.mode() & 0o077 != 0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "file permissions are unsafe",
+        ));
+    }
+    if metadata.len() > size_limit as u64 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file exceeds the {size_limit}-byte safety limit"),
+        ));
+    }
+    Ok(metadata)
+}
+
+#[cfg(not(windows))]
+fn read_bounded_open_file(
+    file: &mut File,
+    size_limit: usize,
+) -> std::io::Result<Zeroizing<Vec<u8>>> {
+    let before = validate_regular_descriptor(file, false, size_limit)?;
+    let capacity = usize::try_from(before.len())
+        .unwrap_or(size_limit)
+        .min(size_limit);
+    let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
+    (&mut *file)
+        .take(size_limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > size_limit {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("file exceeds the {size_limit}-byte safety limit"),
+        ));
+    }
+    let after = file.metadata()?;
+    if FileIdentity::from_metadata(&before) != FileIdentity::from_metadata(&after) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "file changed while it was being read",
+        ));
+    }
+    Ok(bytes)
+}
+
+#[cfg(not(windows))]
+fn read_bounded_regular_file(
+    path: &Path,
+    size_limit: usize,
+) -> std::io::Result<Option<(Zeroizing<Vec<u8>>, FileIdentity)>> {
+    let Some(mut file) =
+        open_regular_file_no_follow(path, libc::O_RDONLY, None, false, size_limit)?
+    else {
+        return Ok(None);
+    };
+    let identity = FileIdentity::from_metadata(&file.metadata()?);
+    let bytes = read_bounded_open_file(&mut file, size_limit)?;
+    Ok(Some((bytes, identity)))
 }
 
 #[cfg(not(windows))]
@@ -123,9 +638,13 @@ fn resolve_ipsec_layout() -> Result<IpsecLayout, String> {
 #[cfg(not(windows))]
 fn validate_layout_candidate(candidate: &LayoutCandidate) -> Option<IpsecLayout> {
     let configured_binary = Path::new(candidate.binary);
-    let canonical_binary = std::fs::canonicalize(configured_binary).ok()?;
+    let canonical_binary = if candidate.allow_user_owned {
+        std::fs::canonicalize(configured_binary).ok()?
+    } else {
+        resolve_trusted_root_executable(configured_binary)?
+    };
     let metadata = std::fs::metadata(&canonical_binary).ok()?;
-    if !metadata.is_file() || metadata.mode() & 0o022 != 0 {
+    if !metadata.is_file() || metadata.mode() & 0o022 != 0 || metadata.mode() & 0o111 == 0 {
         return None;
     }
 
@@ -270,8 +789,13 @@ async fn ensure_directory(layout: &IpsecLayout, path: &Path) -> Result<(), Strin
             validate_privileged_path(layout, path)?;
             let mkdir = trusted_binary(TRUSTED_MKDIR_BINARIES, "mkdir")?;
             let arguments = vec!["-p".to_string(), path.to_string_lossy().into_owned()];
-            let output =
-                run_elevated(&mkdir, &arguments, "create IPsec configuration directory").await?;
+            let output = run_elevated(
+                &mkdir,
+                &arguments,
+                "create IPsec configuration directory",
+                PRIVILEGED_FILE_TIMEOUT,
+            )
+            .await?;
             if output.status.success() {
                 Ok(())
             } else {
@@ -295,12 +819,22 @@ async fn ensure_managed_include(
     include_line: &str,
     mode: &str,
 ) -> Result<(), String> {
-    let initial_metadata = tokio::fs::metadata(path).await.ok();
-    let existing = match tokio::fs::read(path).await {
-        Ok(bytes) => String::from_utf8(bytes)
-            .map(Zeroizing::new)
-            .map_err(|_| format!("{} is not valid UTF-8", path.display()))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Zeroizing::new(String::new()),
+    let read_path = path.to_path_buf();
+    let read_task = tokio::task::spawn_blocking(move || {
+        read_bounded_regular_file(&read_path, MANAGED_CONFIG_LIMIT)
+    });
+    let read_result = tokio::time::timeout(FILE_PROCESS_TIMEOUT, read_task)
+        .await
+        .map_err(|_| format!("Timed out while safely reading {}", path.display()))?
+        .map_err(|error| format!("Managed include read task failed: {error}"))?;
+    let (existing, initial_identity) = match read_result {
+        Ok(Some((bytes, identity))) => (
+            String::from_utf8(bytes.to_vec())
+                .map(Zeroizing::new)
+                .map_err(|_| format!("{} is not valid UTF-8", path.display()))?,
+            Some(identity),
+        ),
+        Ok(None) => (Zeroizing::new(String::new()), None),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
             if verify_managed_include_elevated(layout, path, include_line).await? {
                 return Ok(());
@@ -312,28 +846,36 @@ async fn ensure_managed_include(
         }
         Err(error) => return Err(format!("Failed to read {}: {error}", path.display())),
     };
-    verify_file_unchanged(path, initial_metadata.as_ref())?;
-    let Some(updated) = append_managed_include(&existing, include_line) else {
+    verify_file_unchanged(path, initial_identity).await?;
+    let Some(updated) = append_managed_include(&existing, include_line)? else {
         return Ok(());
     };
-    verify_file_unchanged(path, initial_metadata.as_ref())?;
+    verify_file_unchanged(path, initial_identity).await?;
     install_private_file(layout, path, Zeroizing::new(updated), mode).await
 }
 
 #[cfg(not(windows))]
-fn verify_file_unchanged(path: &Path, initial: Option<&std::fs::Metadata>) -> Result<(), String> {
-    let current = std::fs::metadata(path).ok();
-    let unchanged = match (initial, current.as_ref()) {
-        (None, None) => true,
-        (Some(initial), Some(current)) => {
-            initial.dev() == current.dev()
-                && initial.ino() == current.ino()
-                && initial.len() == current.len()
-                && initial.mtime() == current.mtime()
-                && initial.mtime_nsec() == current.mtime_nsec()
+async fn verify_file_unchanged(path: &Path, initial: Option<FileIdentity>) -> Result<(), String> {
+    let verify_path = path.to_path_buf();
+    let verify_task = tokio::task::spawn_blocking(move || {
+        let current = open_regular_file_no_follow(
+            &verify_path,
+            libc::O_RDONLY,
+            None,
+            false,
+            MANAGED_CONFIG_LIMIT,
+        )?;
+        match current {
+            Some(file) => Ok(Some(FileIdentity::from_metadata(&file.metadata()?))),
+            None => Ok(None),
         }
-        _ => false,
-    };
+    });
+    let current = tokio::time::timeout(FILE_PROCESS_TIMEOUT, verify_task)
+        .await
+        .map_err(|_| format!("Timed out while revalidating {}", path.display()))?
+        .map_err(|error| format!("Managed include validation task failed: {error}"))?
+        .map_err(|error| format!("Failed to revalidate {}: {error}", path.display()))?;
+    let unchanged = initial == current;
     if unchanged {
         Ok(())
     } else {
@@ -359,7 +901,13 @@ async fn verify_managed_include_elevated(
         include_line.to_string(),
         path.to_string_lossy().into_owned(),
     ];
-    let output = run_elevated(&grep, &arguments, "verify strongSwan managed include").await?;
+    let output = run_elevated(
+        &grep,
+        &arguments,
+        "verify strongSwan managed include",
+        PRIVILEGED_INSPECTION_TIMEOUT,
+    )
+    .await?;
     if output.status.success() {
         Ok(true)
     } else if output.status.code() == Some(1) {
@@ -373,22 +921,46 @@ async fn verify_managed_include_elevated(
 }
 
 #[cfg(not(windows))]
-fn append_managed_include(existing: &str, include_line: &str) -> Option<String> {
+fn append_managed_include(existing: &str, include_line: &str) -> Result<Option<String>, String> {
+    if existing.len() > MANAGED_CONFIG_LIMIT {
+        return Err(format!(
+            "Existing strongSwan configuration exceeds the {MANAGED_CONFIG_LIMIT}-byte safety limit"
+        ));
+    }
+    if include_line.len() > INCLUDE_LINE_LIMIT {
+        return Err("Managed include line exceeds the safety limit".to_string());
+    }
     if managed_include_present(existing, include_line) {
-        return None;
+        return Ok(None);
     }
 
-    let mut updated = existing.to_string();
+    const MANAGED_BLOCK_PREFIX: &str = "# SortOfRemoteNG managed connection fragments\n";
+    let separator_bytes = usize::from(!existing.is_empty() && !existing.ends_with('\n'))
+        + usize::from(!existing.is_empty());
+    let capacity = existing
+        .len()
+        .checked_add(separator_bytes)
+        .and_then(|size| size.checked_add(MANAGED_BLOCK_PREFIX.len()))
+        .and_then(|size| size.checked_add(include_line.len()))
+        .and_then(|size| size.checked_add(1))
+        .filter(|size| *size <= MANAGED_CONFIG_LIMIT)
+        .ok_or_else(|| {
+            format!(
+                "Updated strongSwan configuration would exceed the {MANAGED_CONFIG_LIMIT}-byte safety limit"
+            )
+        })?;
+    let mut updated = String::with_capacity(capacity);
+    updated.push_str(existing);
     if !updated.is_empty() && !updated.ends_with('\n') {
         updated.push('\n');
     }
     if !updated.is_empty() {
         updated.push('\n');
     }
-    updated.push_str("# SortOfRemoteNG managed connection fragments\n");
+    updated.push_str(MANAGED_BLOCK_PREFIX);
     updated.push_str(include_line);
     updated.push('\n');
-    Some(updated)
+    Ok(Some(updated))
 }
 
 #[cfg(not(windows))]
@@ -423,15 +995,16 @@ async fn ensure_sensitive_managed_include(
     if layout.allow_elevation {
         validate_privileged_path(layout, path)?;
     }
-    let grep = trusted_binary(TRUSTED_GREP_BINARIES, "grep")?;
     let path_owned = path.to_path_buf();
     let accepted = covering_include_lines(include_line);
     let include_owned = include_line.to_string();
-    let direct = tokio::task::spawn_blocking(move || {
-        append_sensitive_include_locked(&path_owned, &grep, &accepted, &include_owned)
-    })
-    .await
-    .map_err(|error| format!("Sensitive include task failed: {error}"))??;
+    let direct_task = tokio::task::spawn_blocking(move || {
+        append_sensitive_include_locked(&path_owned, &accepted, &include_owned)
+    });
+    let direct = tokio::time::timeout(FILE_PROCESS_TIMEOUT, direct_task)
+        .await
+        .map_err(|_| "Timed out while safely updating the sensitive include".to_string())?
+        .map_err(|_| "Sensitive include task did not complete".to_string())??;
     if direct {
         return Ok(());
     }
@@ -450,59 +1023,130 @@ async fn ensure_sensitive_managed_include(
 #[cfg(not(windows))]
 fn append_sensitive_include_locked(
     path: &Path,
-    grep: &Path,
     accepted_lines: &[String],
     include_line: &str,
 ) -> Result<bool, String> {
-    use std::os::fd::AsRawFd;
-
-    if std::fs::symlink_metadata(path)
-        .map(|metadata| metadata.file_type().is_symlink())
-        .unwrap_or(false)
+    if include_line.len() > INCLUDE_LINE_LIMIT
+        || accepted_lines
+            .iter()
+            .any(|line| line.len() > INCLUDE_LINE_LIMIT)
     {
-        return Err(format!(
-            "Refusing to modify symlinked secrets file {}",
-            path.display()
-        ));
+        return Err("Sensitive include line exceeds the safety limit".to_string());
     }
-    let mut file = match OpenOptions::new()
-        .append(true)
-        .create(true)
-        .mode(0o600)
-        .open(path)
-    {
-        Ok(file) => file,
+    let mut file = match open_regular_file_no_follow(
+        path,
+        libc::O_RDWR | libc::O_APPEND,
+        Some(0o600),
+        true,
+        MANAGED_CONFIG_LIMIT,
+    ) {
+        Ok(Some(file)) => file,
+        Ok(None) => return Err("Sensitive include file unexpectedly disappeared".to_string()),
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(false),
         Err(error) => return Err(format!("Failed to open {}: {error}", path.display())),
     };
-    // SAFETY: file is an open regular-file descriptor for this scope.
+    // SAFETY: file is a verified regular-file descriptor for this scope.
     if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return Err(format!("Failed to lock {}", path.display()));
     }
     let result = (|| {
-        for accepted in accepted_lines {
-            let status = std::process::Command::new(grep)
-                .args(["-Fqx", "--", accepted])
-                .arg(path)
-                .env("LC_ALL", "C")
-                .status()
-                .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
-            if status.success() {
-                return Ok(());
-            }
-            if status.code() != Some(1) {
-                return Err(format!("Failed to inspect {}", path.display()));
-            }
+        let metadata = validate_regular_descriptor(&file, true, MANAGED_CONFIG_LIMIT)
+            .map_err(|error| format!("Refusing unsafe {}: {error}", path.display()))?;
+        if file_contains_exact_line(&file, accepted_lines, MANAGED_CONFIG_LIMIT)
+            .map_err(|_| format!("Failed to inspect {}", path.display()))?
+        {
+            return Ok(());
         }
-        let block = format!("\n# SortOfRemoteNG managed connection fragments\n{include_line}\n");
+        const PREFIX: &str = "\n# SortOfRemoteNG managed connection fragments\n";
+        let block_size = PREFIX
+            .len()
+            .checked_add(include_line.len())
+            .and_then(|size| size.checked_add(1))
+            .ok_or_else(|| "Sensitive include size overflowed".to_string())?;
+        let final_size = usize::try_from(metadata.len())
+            .ok()
+            .and_then(|size| size.checked_add(block_size))
+            .filter(|size| *size <= MANAGED_CONFIG_LIMIT)
+            .ok_or_else(|| {
+                format!(
+                    "Sensitive include append would exceed the {MANAGED_CONFIG_LIMIT}-byte safety limit"
+                )
+            })?;
+        let mut block = String::with_capacity(block_size.min(final_size));
+        block.push_str(PREFIX);
+        block.push_str(include_line);
+        block.push('\n');
         file.write_all(block.as_bytes())
             .map_err(|error| format!("Failed to append {}: {error}", path.display()))?;
         file.sync_data()
             .map_err(|error| format!("Failed to sync {}: {error}", path.display()))
     })();
     // SAFETY: releasing a lock held on the same valid descriptor.
-    let _ = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
-    result.map(|_| true)
+    let unlock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+    match (result, unlock_result) {
+        (Ok(()), 0) => Ok(true),
+        (Ok(()), _) => Err(format!("Failed to unlock {}", path.display())),
+        (Err(error), _) => Err(error),
+    }
+}
+
+#[cfg(not(windows))]
+fn file_contains_exact_line(
+    file: &std::fs::File,
+    accepted_lines: &[String],
+    size_limit: usize,
+) -> std::io::Result<bool> {
+    let mut offset = 0_u64;
+    let mut chunk = [0_u8; 4096];
+    let mut line = Zeroizing::new(Vec::with_capacity(INCLUDE_LINE_LIMIT.min(1024)));
+    let mut line_overflowed = false;
+
+    loop {
+        if offset >= size_limit as u64 {
+            let mut extra = [0_u8; 1];
+            return if file.read_at(&mut extra, offset)? == 0 {
+                Ok(!line_overflowed && exact_line_matches(&line, accepted_lines))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("file exceeds the {size_limit}-byte safety limit"),
+                ))
+            };
+        }
+        let remaining = (size_limit as u64 - offset) as usize;
+        let chunk_length = remaining.min(chunk.len());
+        let count = file.read_at(&mut chunk[..chunk_length], offset)?;
+        if count == 0 {
+            return Ok(!line_overflowed && exact_line_matches(&line, accepted_lines));
+        }
+        offset = offset.saturating_add(count as u64);
+        for byte in &chunk[..count] {
+            if *byte == b'\n' {
+                if !line_overflowed && exact_line_matches(&line, accepted_lines) {
+                    return Ok(true);
+                }
+                line.zeroize();
+                line.clear();
+                line_overflowed = false;
+            } else if !line_overflowed {
+                if line.len() < INCLUDE_LINE_LIMIT {
+                    line.push(*byte);
+                } else {
+                    line.zeroize();
+                    line.clear();
+                    line_overflowed = true;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn exact_line_matches(line: &[u8], accepted_lines: &[String]) -> bool {
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    accepted_lines
+        .iter()
+        .any(|accepted| line == accepted.as_bytes())
 }
 
 /// Write a validated ipsec.conf connection block. The rendered file is first
@@ -561,11 +1205,32 @@ fn render_remote_subnets(remote_subnets: &[String]) -> Result<String, String> {
     if remote_subnets.is_empty() {
         return Err("At least one remote subnet is required".to_string());
     }
+    if remote_subnets.len() > REMOTE_SUBNET_COUNT_LIMIT {
+        return Err(format!(
+            "Remote subnet count exceeds the {REMOTE_SUBNET_COUNT_LIMIT}-entry safety limit"
+        ));
+    }
+    let mut rendered_size = remote_subnets.len().saturating_sub(1);
     for (index, subnet) in remote_subnets.iter().enumerate() {
         crate::routing::validate_cidr(subnet)
             .map_err(|reason| format!("remote subnet item {} is invalid: {reason}", index + 1))?;
+        rendered_size = rendered_size
+            .checked_add(subnet.len())
+            .filter(|size| *size <= REMOTE_SUBNET_BYTES_LIMIT)
+            .ok_or_else(|| {
+                format!(
+                    "Remote subnet input exceeds the {REMOTE_SUBNET_BYTES_LIMIT}-byte safety limit"
+                )
+            })?;
     }
-    Ok(remote_subnets.join(","))
+    let mut rendered = String::with_capacity(rendered_size);
+    for (index, subnet) in remote_subnets.iter().enumerate() {
+        if index != 0 {
+            rendered.push(',');
+        }
+        rendered.push_str(subnet);
+    }
+    Ok(rendered)
 }
 
 #[cfg(not(windows))]
@@ -588,7 +1253,7 @@ fn render_ipsec_conf(spec: &IpsecConnectionSpec<'_>) -> Result<String, String> {
         .map(|value| format!("    eap_identity={value}\n"))
         .unwrap_or_default();
 
-    Ok(format!(
+    ensure_ipsec_content_limit(format!(
         "conn {}\n    type=tunnel\n    left=%defaultroute\n    leftsourceip=%config\n    leftid={local_id}\n    leftauth={local_auth}\n{eap_identity_line}    right={}\n    rightid={remote_id}\n    rightauth={remote_auth}\n    rightsubnet={remote_subnets}\n    ike={phase1}\n    esp={phase2}\n    keyexchange=ikev2\n    auto=add\n",
         spec.conn_name, spec.server
     ))
@@ -605,7 +1270,7 @@ fn render_l2tp_ipsec_conf(
     validation::validate_hostname(server)?;
     let phase1 = validate_proposal(phase1.unwrap_or("aes256-sha256-modp2048"), "IKE")?;
     let phase2 = validate_proposal(phase2.unwrap_or("aes256-sha256"), "ESP")?;
-    Ok(format!(
+    ensure_ipsec_content_limit(format!(
         "conn {conn_name}\n    type=transport\n    left=%defaultroute\n    leftauth=psk\n    leftprotoport=17/%any\n    right={server}\n    rightauth=psk\n    rightprotoport=17/1701\n    ike={phase1}\n    esp={phase2}\n    keyexchange=ikev1\n    auto=add\n"
     ))
 }
@@ -623,6 +1288,11 @@ fn render_ipsec_secrets(
     let remote = quote_ipsec_secret_selector(remote_id, "remote identity")?;
     if secret_value.is_empty() {
         return Err("IPsec secret must not be empty".to_string());
+    }
+    if secret_value.len() > IPSEC_SECRET_LIMIT {
+        return Err(format!(
+            "IPsec secret exceeds the {IPSEC_SECRET_LIMIT}-byte safety limit"
+        ));
     }
 
     let content = match secret_type {
@@ -646,7 +1316,18 @@ fn render_ipsec_secrets(
         }
         _ => return Err("Unsupported IPsec secret type".to_string()),
     };
-    Ok(Zeroizing::new(content))
+    ensure_ipsec_content_limit(content).map(Zeroizing::new)
+}
+
+#[cfg(not(windows))]
+fn ensure_ipsec_content_limit(content: String) -> Result<String, String> {
+    if content.len() > IPSEC_FILE_LIMIT {
+        Err(format!(
+            "Rendered IPsec content exceeds the {IPSEC_FILE_LIMIT}-byte safety limit"
+        ))
+    } else {
+        Ok(content)
+    }
 }
 
 #[cfg(not(windows))]
@@ -736,41 +1417,77 @@ async fn install_private_file(
     content: Zeroizing<String>,
     mode: &str,
 ) -> Result<(), String> {
-    let temp_path =
-        std::env::temp_dir().join(format!("sortofremoteng-ipsec-{}", Uuid::new_v4().simple()));
-    if let Err(error) = write_private_temp_file(temp_path.clone(), content).await {
-        let _ = tokio::fs::remove_file(&temp_path).await;
-        return Err(error);
-    }
+    let create_task = tokio::task::spawn_blocking(move || PrivateStagingFile::create(content));
+    let staging = tokio::time::timeout(FILE_PROCESS_TIMEOUT, create_task)
+        .await
+        .map_err(|_| "Timed out while creating private IPsec staging material".to_string())?
+        .map_err(|error| format!("Private IPsec file task failed: {error}"))??;
 
-    let install_result = install_file(layout, &temp_path, destination, mode).await;
-    let cleanup_result = tokio::fs::remove_file(&temp_path).await;
-    if let Err(error) = cleanup_result {
-        log::warn!(
-            "Failed to remove temporary private IPsec file {}: {error}",
-            temp_path.display()
-        );
-    }
-    install_result
+    let install_result = install_file(layout, &staging.payload_path, destination, mode).await;
+    let cleanup_task = tokio::task::spawn_blocking(move || staging.cleanup());
+    let cleanup_result = match tokio::time::timeout(FILE_PROCESS_TIMEOUT, cleanup_task).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => Err(format!("Private IPsec cleanup task failed: {error}")),
+        Err(_) => Err("Timed out while removing private IPsec staging material".to_string()),
+    };
+    finalize_install_result(install_result, cleanup_result)
 }
 
 #[cfg(not(windows))]
-async fn write_private_temp_file(path: PathBuf, content: Zeroizing<String>) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(|error| format!("Failed to create private IPsec staging file: {error}"))?;
-        file.write_all(content.as_bytes())
-            .map_err(|error| format!("Failed to write private IPsec staging file: {error}"))?;
-        file.sync_all()
-            .map_err(|error| format!("Failed to sync private IPsec staging file: {error}"))?;
-        Ok::<(), String>(())
-    })
-    .await
-    .map_err(|error| format!("Private IPsec file task failed: {error}"))?
+fn finalize_install_result(
+    install_result: Result<(), String>,
+    cleanup_result: Result<(), String>,
+) -> Result<(), String> {
+    match (install_result, cleanup_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(cleanup_error)) => Err(format!(
+            "IPsec configuration was installed, but sensitive staging cleanup failed; refusing to report success: {cleanup_error}"
+        )),
+        (Err(error), Err(cleanup_error)) => Err(format!(
+            "{error}; sensitive staging cleanup also failed: {cleanup_error}"
+        )),
+    }
+}
+
+#[cfg(not(windows))]
+fn validate_install_destination(layout: &IpsecLayout, destination: &Path) -> Result<(), String> {
+    if !destination.starts_with(&layout.config_root) {
+        return Err("Refusing IPsec installation outside the configured root".to_string());
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| "IPsec installation destination has no parent".to_string())?;
+    open_verified_directory(parent).map_err(|error| {
+        format!(
+            "Refusing unsafe IPsec installation parent {}: {error}",
+            parent.display()
+        )
+    })?;
+    match std::fs::symlink_metadata(destination) {
+        Ok(metadata) => {
+            // SAFETY: geteuid has no preconditions and only returns process state.
+            let current_uid = unsafe { libc::geteuid() };
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || (metadata.uid() != 0 && metadata.uid() != current_uid)
+                || metadata.mode() & 0o022 != 0
+            {
+                return Err(format!(
+                    "Refusing unsafe IPsec installation destination {}",
+                    destination.display()
+                ));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect IPsec installation destination {}: {error}",
+                destination.display()
+            ))
+        }
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -784,6 +1501,7 @@ async fn install_file(
         "600" | "644" => mode,
         _ => return Err("Unsupported IPsec file mode".to_string()),
     };
+    validate_install_destination(layout, destination)?;
     if layout.allow_elevation {
         validate_privileged_path(layout, destination)?;
     }
@@ -794,20 +1512,28 @@ async fn install_file(
         source.to_string_lossy().into_owned(),
         destination.to_string_lossy().into_owned(),
     ];
-    let output = Command::new(&install)
-        .args(&arguments)
-        .env("LC_ALL", "C")
-        .output()
-        .await
-        .map_err(|error| format!("Failed to install IPsec configuration: {error}"))?;
+    let output = run_bounded_command(
+        &install,
+        &arguments,
+        "install IPsec configuration",
+        FILE_PROCESS_TIMEOUT,
+    )
+    .await?;
     if output.status.success() {
         return Ok(());
     }
 
     if looks_like_permission_failure(&output) {
         require_elevation_allowed(layout, "install strongSwan configuration")?;
+        validate_install_destination(layout, destination)?;
         validate_privileged_path(layout, destination)?;
-        let elevated = run_elevated(&install, &arguments, "install IPsec configuration").await?;
+        let elevated = run_elevated(
+            &install,
+            &arguments,
+            "install IPsec configuration",
+            PRIVILEGED_FILE_TIMEOUT,
+        )
+        .await?;
         if elevated.status.success() {
             return Ok(());
         }
@@ -831,18 +1557,64 @@ pub async fn ipsec_up(conn_name: &str) -> Result<(), String> {
 
 /// Bring a connection up and attempt a down operation if startup reports an
 /// error, since strongSwan may have installed a partial CHILD_SA before the
-/// command failed.
+/// command failed. Managed files are also removed even when `ipsec down`
+/// fails, and every rollback failure is surfaced to the caller.
 #[cfg(not(windows))]
 pub async fn ipsec_up_transactional(conn_name: &str) -> Result<(), String> {
-    match ipsec_up(conn_name).await {
-        Ok(()) => Ok(()),
-        Err(setup_error) => match ipsec_down(conn_name).await {
-            Ok(()) => Err(setup_error),
-            Err(teardown_error) => Err(format!(
-                "{setup_error}; additionally failed to tear down a partial IPsec setup: {teardown_error}"
-            )),
-        },
+    validate_connection_name(conn_name)?;
+    run_ipsec_transaction(&SystemIpsecTransactionRunner, conn_name).await
+}
+
+#[cfg(not(windows))]
+#[async_trait::async_trait]
+trait IpsecTransactionRunner: Send + Sync {
+    async fn setup(&self, conn_name: &str) -> Result<(), String>;
+    async fn down(&self, conn_name: &str) -> Result<(), String>;
+    async fn cleanup(&self, conn_name: &str) -> Result<(), String>;
+}
+
+#[cfg(not(windows))]
+struct SystemIpsecTransactionRunner;
+
+#[cfg(not(windows))]
+#[async_trait::async_trait]
+impl IpsecTransactionRunner for SystemIpsecTransactionRunner {
+    async fn setup(&self, conn_name: &str) -> Result<(), String> {
+        ipsec_up(conn_name).await
     }
+
+    async fn down(&self, conn_name: &str) -> Result<(), String> {
+        ipsec_down(conn_name).await
+    }
+
+    async fn cleanup(&self, conn_name: &str) -> Result<(), String> {
+        cleanup_ipsec_files(conn_name).await
+    }
+}
+
+#[cfg(not(windows))]
+async fn run_ipsec_transaction<R: IpsecTransactionRunner + ?Sized>(
+    runner: &R,
+    conn_name: &str,
+) -> Result<(), String> {
+    let Err(setup_error) = runner.setup(conn_name).await else {
+        return Ok(());
+    };
+
+    let down_error = runner.down(conn_name).await.err();
+    let cleanup_error = runner.cleanup(conn_name).await.err();
+    let mut errors = vec![setup_error];
+    if let Some(error) = down_error {
+        errors.push(format!(
+            "additionally failed to tear down the partial IPsec security association: {error}"
+        ));
+    }
+    if let Some(error) = cleanup_error {
+        errors.push(format!(
+            "additionally failed to clean up the partial IPsec configuration: {error}"
+        ));
+    }
+    Err(errors.join("; "))
 }
 
 /// Bring down an IPsec connection via `ipsec down`.
@@ -854,14 +1626,11 @@ pub async fn ipsec_down(conn_name: &str) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-async fn run_ipsec(arguments: &[&str], operation: &str) -> Result<std::process::Output, String> {
+async fn run_ipsec(arguments: &[&str], operation: &str) -> Result<BoundedOutput, String> {
     let layout = resolve_ipsec_layout()?;
-    let output = Command::new(&layout.binary)
-        .args(arguments)
-        .env("LC_ALL", "C")
-        .output()
-        .await
-        .map_err(|error| format!("Failed to {operation}: {error}"))?;
+    let owned_arguments: Vec<String> = arguments.iter().map(|value| (*value).to_string()).collect();
+    let deadline = ipsec_command_timeout(arguments);
+    let output = run_bounded_command(&layout.binary, &owned_arguments, operation, deadline).await?;
     if output.status.success() {
         return Ok(output);
     }
@@ -869,9 +1638,13 @@ async fn run_ipsec(arguments: &[&str], operation: &str) -> Result<std::process::
     if looks_like_permission_failure(&output) {
         require_elevation_allowed(&layout, operation)?;
         validate_privileged_path(&layout, &layout.config_root)?;
-        let owned_arguments: Vec<String> =
-            arguments.iter().map(|value| (*value).to_string()).collect();
-        let elevated = run_elevated(&layout.binary, &owned_arguments, operation).await?;
+        let elevated = run_elevated(
+            &layout.binary,
+            &owned_arguments,
+            operation,
+            deadline.saturating_add(ELEVATION_PROMPT_ALLOWANCE),
+        )
+        .await?;
         if elevated.status.success() {
             return Ok(elevated);
         }
@@ -886,15 +1659,16 @@ async fn run_elevated(
     binary: &Path,
     arguments: &[String],
     operation: &str,
-) -> Result<std::process::Output, String> {
+    deadline: Duration,
+) -> Result<BoundedOutput, String> {
     #[cfg(target_os = "linux")]
     {
-        return run_pkexec(binary, arguments, operation).await;
+        return run_pkexec(binary, arguments, operation, deadline).await;
     }
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (binary, arguments);
+        let _ = (binary, arguments, deadline);
         Err(format!(
             "Administrator privileges are required to {operation}, but this build has no signed privileged-helper boundary; refusing to elevate strongSwan directly"
         ))
@@ -906,26 +1680,139 @@ async fn run_pkexec(
     binary: &Path,
     arguments: &[String],
     operation: &str,
-) -> Result<std::process::Output, String> {
+    deadline: Duration,
+) -> Result<BoundedOutput, String> {
     let pkexec = trusted_binary(TRUSTED_PKEXEC_BINARIES, "pkexec")?;
-    Command::new(pkexec)
-        .arg(binary)
-        .args(arguments)
+    let target = resolve_trusted_root_executable(binary)
+        .ok_or_else(|| "Refusing to elevate an untrusted executable".to_string())?;
+    let mut command = hardened_command(&pkexec);
+    command.arg(target).args(arguments);
+    collect_bounded_output(command, operation, deadline).await
+}
+
+#[cfg(not(windows))]
+fn ipsec_command_timeout(arguments: &[&str]) -> Duration {
+    match arguments.first().copied() {
+        Some("status") => IPSEC_STATUS_TIMEOUT,
+        Some("up") => IPSEC_UP_TIMEOUT,
+        Some("down") => IPSEC_DOWN_TIMEOUT,
+        _ => IPSEC_CONTROL_TIMEOUT,
+    }
+}
+
+#[cfg(not(windows))]
+async fn run_bounded_command(
+    binary: &Path,
+    arguments: &[String],
+    operation: &str,
+    deadline: Duration,
+) -> Result<BoundedOutput, String> {
+    let mut command = hardened_command(binary);
+    command.args(arguments);
+    collect_bounded_output(command, operation, deadline).await
+}
+
+#[cfg(not(windows))]
+fn hardened_command(binary: &Path) -> Command {
+    let mut command = Command::new(binary);
+    command
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_clear()
         .env("LC_ALL", "C")
-        .output()
-        .await
-        .map_err(|error| format!("Failed to request privileges to {operation}: {error}"))
+        .env("PATH", TRUSTED_EXEC_PATH);
+    command.as_std_mut().process_group(0);
+    command
+}
+
+#[cfg(not(windows))]
+async fn collect_bounded_output(
+    mut command: Command,
+    operation: &str,
+    deadline: Duration,
+) -> Result<BoundedOutput, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|_| format!("Failed to start {operation}"))?;
+    let process_group = child.id();
+    let Some(stdout) = child.stdout.take() else {
+        terminate_and_reap(&mut child, process_group).await;
+        return Err(format!("Failed to capture {operation} output"));
+    };
+    let Some(stderr) = child.stderr.take() else {
+        terminate_and_reap(&mut child, process_group).await;
+        return Err(format!("Failed to capture {operation} output"));
+    };
+
+    let completed = tokio::time::timeout(deadline, async {
+        let (status, stdout, stderr) = tokio::join!(
+            child.wait(),
+            capture_bounded(stdout),
+            capture_bounded(stderr)
+        );
+        let status = status?;
+        let (stdout, stdout_truncated) = stdout?;
+        let (stderr, stderr_truncated) = stderr?;
+        Ok::<BoundedOutput, std::io::Error>(BoundedOutput {
+            status,
+            stdout,
+            stderr,
+            stdout_truncated,
+            stderr_truncated,
+        })
+    })
+    .await;
+
+    match completed {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(_)) => {
+            terminate_and_reap(&mut child, process_group).await;
+            Err(format!("Failed while waiting for {operation}"))
+        }
+        Err(_) => {
+            terminate_and_reap(&mut child, process_group).await;
+            Err(format!("Timed out while attempting to {operation}"))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+async fn capture_bounded<R: AsyncRead + Unpin>(
+    mut stream: R,
+) -> std::io::Result<(Zeroizing<Vec<u8>>, bool)> {
+    let mut captured = Zeroizing::new(Vec::with_capacity(PROCESS_OUTPUT_LIMIT.min(8192)));
+    let mut chunk = [0_u8; 4096];
+    let mut truncated = false;
+    loop {
+        let count = stream.read(&mut chunk).await?;
+        if count == 0 {
+            return Ok((captured, truncated));
+        }
+        let remaining = PROCESS_OUTPUT_LIMIT.saturating_sub(captured.len());
+        let retained = remaining.min(count);
+        captured.extend_from_slice(&chunk[..retained]);
+        truncated |= retained < count;
+    }
+}
+
+#[cfg(not(windows))]
+async fn terminate_and_reap(child: &mut Child, process_group: Option<u32>) {
+    if let Some(process_group) = process_group.filter(|value| *value <= i32::MAX as u32) {
+        // SAFETY: the child was placed in a new process group whose id is its
+        // pid. A negative id targets that group and cannot target this process.
+        let _ = unsafe { libc::kill(-(process_group as i32), libc::SIGKILL) };
+    }
+    let _ = child.start_kill();
+    let _ = tokio::time::timeout(PROCESS_REAP_TIMEOUT, child.wait()).await;
 }
 
 #[cfg(not(windows))]
 fn trusted_binary(candidates: &[&str], name: &str) -> Result<PathBuf, String> {
     for candidate in candidates {
-        let path = Path::new(candidate);
-        let Ok(metadata) = std::fs::metadata(path) else {
-            continue;
-        };
-        if metadata.is_file() && metadata.uid() == 0 && metadata.mode() & 0o022 == 0 {
-            return Ok(path.to_path_buf());
+        if let Some(path) = resolve_trusted_root_executable(Path::new(candidate)) {
+            return Ok(path);
         }
     }
     Err(format!(
@@ -934,8 +1821,38 @@ fn trusted_binary(candidates: &[&str], name: &str) -> Result<PathBuf, String> {
 }
 
 #[cfg(not(windows))]
-fn looks_like_permission_failure(output: &std::process::Output) -> bool {
-    let diagnostic = command_diagnostic(output).to_ascii_lowercase();
+fn resolve_trusted_root_executable(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonical = std::fs::canonicalize(path).ok()?;
+    let metadata = std::fs::metadata(&canonical).ok()?;
+    if !metadata.is_file()
+        || metadata.uid() != 0
+        || metadata.mode() & 0o022 != 0
+        || metadata.mode() & 0o111 == 0
+    {
+        return None;
+    }
+    for ancestor in canonical.parent()?.ancestors() {
+        let metadata = std::fs::metadata(ancestor).ok()?;
+        if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+            return None;
+        }
+    }
+    Some(canonical)
+}
+
+#[cfg(not(windows))]
+fn looks_like_permission_failure(output: &BoundedOutput) -> bool {
+    let diagnostic = Zeroizing::new(
+        format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        )
+        .to_ascii_lowercase(),
+    );
     diagnostic.contains("permission denied")
         || diagnostic.contains("operation not permitted")
         || diagnostic.contains("not authorized")
@@ -943,18 +1860,18 @@ fn looks_like_permission_failure(output: &std::process::Output) -> bool {
 }
 
 #[cfg(not(windows))]
-fn command_diagnostic(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !stderr.is_empty() {
-        stderr
+fn command_failure(operation: &str, output: &BoundedOutput) -> String {
+    let status = output
+        .status
+        .code()
+        .map(|code| format!("exit code {code}"))
+        .unwrap_or_else(|| "terminated by signal".to_string());
+    let truncation = if output.stdout_truncated || output.stderr_truncated {
+        "; diagnostic output exceeded the safety limit"
     } else {
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    }
-}
-
-#[cfg(not(windows))]
-fn command_failure(operation: &str, output: &std::process::Output) -> String {
-    format!("Failed to {operation}: {}", command_diagnostic(output))
+        ""
+    };
+    format!("Failed to {operation} ({status}{truncation})")
 }
 
 /// Remove IPsec config and secrets files for a connection.
@@ -1024,7 +1941,13 @@ async fn remove_protected_file(layout: &IpsecLayout, path: &Path) -> Result<(), 
     validate_privileged_path(layout, path)?;
     let rm = trusted_binary(TRUSTED_RM_BINARIES, "rm")?;
     let arguments = vec![path.to_string_lossy().into_owned()];
-    let output = run_elevated(&rm, &arguments, "remove IPsec configuration").await?;
+    let output = run_elevated(
+        &rm,
+        &arguments,
+        "remove IPsec configuration",
+        PRIVILEGED_FILE_TIMEOUT,
+    )
+    .await?;
     if output.status.success() {
         return Ok(());
     }
@@ -1039,6 +1962,9 @@ async fn remove_protected_file(layout: &IpsecLayout, path: &Path) -> Result<(), 
 pub async fn is_ipsec_active(conn_name: &str) -> Result<bool, String> {
     validate_connection_name(conn_name)?;
     let output = run_ipsec(&["status", conn_name], "query IPsec status").await?;
+    if output.stdout_truncated {
+        return Err("IPsec status output exceeded the safety limit".to_string());
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.contains("ESTABLISHED") || stdout.contains("INSTALLED"))
 }
@@ -1251,11 +2177,15 @@ mod tests {
     fn managed_include_append_is_preserving_and_idempotent() {
         let existing = "# administrator settings\nconfig setup\n    uniqueids=no\n";
         let include = "include /etc/ipsec.d/sorng_*.conf";
-        let updated = append_managed_include(existing, include).unwrap();
+        let updated = append_managed_include(existing, include).unwrap().unwrap();
         assert!(updated.starts_with(existing));
         assert_eq!(updated.matches(include).count(), 1);
-        assert!(append_managed_include(&updated, include).is_none());
-        assert!(append_managed_include("include /etc/ipsec.d/*.conf\n", include,).is_none());
+        assert!(append_managed_include(&updated, include).unwrap().is_none());
+        assert!(
+            append_managed_include("include /etc/ipsec.d/*.conf\n", include,)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
@@ -1266,14 +2196,15 @@ mod tests {
         ));
         let original = b": RSA sentinel-private-key\n";
         std::fs::write(&path, original).unwrap();
-        let grep = trusted_binary(TRUSTED_GREP_BINARIES, "grep").unwrap();
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         let include = format!(
             "include {}/sorng_*.secrets",
             path.parent().unwrap().display()
         );
         let accepted = covering_include_lines(&include);
-        assert!(append_sensitive_include_locked(&path, &grep, &accepted, &include).unwrap());
-        assert!(append_sensitive_include_locked(&path, &grep, &accepted, &include).unwrap());
+        assert!(append_sensitive_include_locked(&path, &accepted, &include).unwrap());
+        assert!(append_sensitive_include_locked(&path, &accepted, &include).unwrap());
         let after = std::fs::read(&path).unwrap();
         assert!(after.starts_with(original));
         assert_eq!(String::from_utf8_lossy(&after).matches(&include).count(), 1);
@@ -1315,15 +2246,193 @@ mod tests {
 
     #[tokio::test]
     async fn staging_files_are_owner_only() {
-        let path = std::env::temp_dir().join(format!(
-            "sortofremoteng-ipsec-mode-test-{}",
-            Uuid::new_v4().simple()
-        ));
-        write_private_temp_file(path.clone(), Zeroizing::new("secret".to_string()))
-            .await
-            .unwrap();
+        let staging = PrivateStagingFile::create(Zeroizing::new("secret".to_string())).unwrap();
+        let path = staging.payload_path.clone();
+        let directory = path.parent().unwrap().to_path_buf();
         let metadata = std::fs::metadata(&path).unwrap();
         assert_eq!(metadata.mode() & 0o777, 0o600);
+        staging.cleanup().unwrap();
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+
+    fn private_test_directory(label: &str) -> PathBuf {
+        use std::os::unix::fs::DirBuilderExt as _;
+
+        let path = std::env::temp_dir().join(format!(
+            "sortofremoteng-{label}-{}",
+            Uuid::new_v4().simple()
+        ));
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(0o700).create(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn staging_guard_drop_removes_payload_and_directory() {
+        let staging = PrivateStagingFile::create(Zeroizing::new("secret".to_string())).unwrap();
+        let payload = staging.payload_path.clone();
+        let directory = payload.parent().unwrap().to_path_buf();
+        drop(staging);
+        assert!(!payload.exists());
+        assert!(!directory.exists());
+    }
+
+    #[tokio::test]
+    async fn cancelled_staging_owner_drops_armed_guard() {
+        let staging = PrivateStagingFile::create(Zeroizing::new("secret".to_string())).unwrap();
+        let payload = staging.payload_path.clone();
+        let directory = payload.parent().unwrap().to_path_buf();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let guard = staging;
+            let _ = ready_tx.send(());
+            std::future::pending::<()>().await;
+            drop(guard);
+        });
+        ready_rx.await.unwrap();
+        task.abort();
+        let _ = task.await;
+        assert!(!payload.exists());
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn cleanup_failure_is_reported_and_never_merged_as_success() {
+        let staging = PrivateStagingFile::create(Zeroizing::new("secret".to_string())).unwrap();
+        let directory = staging.payload_path.parent().unwrap().to_path_buf();
+        let unexpected = directory.join("unexpected");
+        std::fs::write(&unexpected, b"block directory removal").unwrap();
+        let cleanup_error = staging.cleanup().unwrap_err();
+        assert!(cleanup_error.contains("staging directory"));
+        let result = finalize_install_result(Ok(()), Err(cleanup_error));
+        assert!(result.unwrap_err().contains("refusing to report success"));
+        std::fs::remove_file(unexpected).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn oversized_config_inputs_fail_before_copy_or_append() {
+        let oversized = "x".repeat(MANAGED_CONFIG_LIMIT + 1);
+        assert!(append_managed_include(&oversized, "include /safe/*.conf").is_err());
+        let staging_error =
+            PrivateStagingFile::create(Zeroizing::new("x".repeat(IPSEC_FILE_LIMIT + 1)))
+                .err()
+                .expect("oversized staging content must fail");
+        assert!(staging_error.contains("safety limit"));
+
+        let directory = private_test_directory("oversized-ipsec");
+        let path = directory.join("ipsec.conf");
+        let file = File::create(&path).unwrap();
+        file.set_len(MANAGED_CONFIG_LIMIT as u64 + 1).unwrap();
+        drop(file);
+        assert!(read_bounded_regular_file(&path, MANAGED_CONFIG_LIMIT).is_err());
         std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn no_follow_reader_rejects_symlink_and_reads_original_descriptor_after_swap() {
+        use std::os::unix::fs::symlink;
+
+        let directory = private_test_directory("ipsec-symlink");
+        let target = directory.join("ipsec.conf");
+        let moved = directory.join("original.conf");
+        let decoy = directory.join("decoy.conf");
+        let link = directory.join("linked.conf");
+        std::fs::write(&target, b"original").unwrap();
+        std::fs::write(&decoy, b"decoy").unwrap();
+        symlink(&target, &link).unwrap();
+        assert!(read_bounded_regular_file(&link, MANAGED_CONFIG_LIMIT).is_err());
+
+        let mut opened =
+            open_regular_file_no_follow(&target, libc::O_RDONLY, None, false, MANAGED_CONFIG_LIMIT)
+                .unwrap()
+                .unwrap();
+        std::fs::rename(&target, &moved).unwrap();
+        symlink(&decoy, &target).unwrap();
+        let bytes = read_bounded_open_file(&mut opened, MANAGED_CONFIG_LIMIT).unwrap();
+        assert_eq!(&*bytes, b"original");
+
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_file(moved).unwrap();
+        std::fs::remove_file(decoy).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn no_follow_reader_rejects_fifo_without_blocking() {
+        let directory = private_test_directory("ipsec-fifo");
+        let fifo = directory.join("ipsec.conf");
+        let fifo_name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: fifo_name is a valid NUL-terminated path and mode is valid.
+        assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
+        assert!(read_bounded_regular_file(&fifo, MANAGED_CONFIG_LIMIT).is_err());
+        std::fs::remove_file(fifo).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    struct FakeTransactionRunner {
+        calls: std::sync::Mutex<Vec<&'static str>>,
+        setup_fails: bool,
+        down_fails: bool,
+        cleanup_fails: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl IpsecTransactionRunner for FakeTransactionRunner {
+        async fn setup(&self, _: &str) -> Result<(), String> {
+            self.calls.lock().unwrap().push("setup");
+            if self.setup_fails {
+                Err("setup failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn down(&self, _: &str) -> Result<(), String> {
+            self.calls.lock().unwrap().push("down");
+            if self.down_fails {
+                Err("down failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+
+        async fn cleanup(&self, _: &str) -> Result<(), String> {
+            self.calls.lock().unwrap().push("cleanup");
+            if self.cleanup_fails {
+                Err("cleanup failed".to_string())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn transactional_failure_never_skips_cleanup() {
+        let runner = FakeTransactionRunner {
+            calls: std::sync::Mutex::new(Vec::new()),
+            setup_fails: true,
+            down_fails: true,
+            cleanup_fails: true,
+        };
+        let error = run_ipsec_transaction(&runner, "safe_name")
+            .await
+            .unwrap_err();
+        assert_eq!(*runner.calls.lock().unwrap(), ["setup", "down", "cleanup"]);
+        assert!(error.contains("setup failed"));
+        assert!(error.contains("down failed"));
+        assert!(error.contains("cleanup failed"));
+    }
+
+    #[test]
+    fn process_deadlines_are_bounded_per_operation() {
+        assert_eq!(ipsec_command_timeout(&["status"]), IPSEC_STATUS_TIMEOUT);
+        assert_eq!(ipsec_command_timeout(&["reload"]), IPSEC_CONTROL_TIMEOUT);
+        assert_eq!(ipsec_command_timeout(&["down"]), IPSEC_DOWN_TIMEOUT);
+        assert_eq!(ipsec_command_timeout(&["up"]), IPSEC_UP_TIMEOUT);
     }
 }
