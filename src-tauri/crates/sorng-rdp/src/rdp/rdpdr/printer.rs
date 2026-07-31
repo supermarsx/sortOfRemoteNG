@@ -214,7 +214,17 @@ fn try_native_print(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let script = "try { Start-Process -FilePath $args[0] -Verb Print -PassThru | Wait-Process -Timeout 10; exit 0 } catch { Write-Error $_; exit 1 }";
-        let status = Command::new("powershell")
+        let system_root = std::env::var_os("SystemRoot")
+            .ok_or_else(|| "Windows system directory is unavailable".to_string())?;
+        let powershell = std::path::PathBuf::from(system_root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        if !powershell.is_file() {
+            return Err("trusted Windows PowerShell executable was not found".to_string());
+        }
+        let status = Command::new(powershell)
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
             .arg(path.as_os_str())
             .status()
@@ -229,7 +239,10 @@ fn try_native_print(path: &std::path::Path) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        for command in ["lpr", "lp"] {
+        for command in ["/usr/bin/lpr", "/usr/bin/lp"] {
+            if !std::path::Path::new(command).is_file() {
+                continue;
+            }
             match Command::new(command).arg(path.as_os_str()).status() {
                 Ok(status) if status.success() => return Ok(()),
                 Ok(_) => continue,
