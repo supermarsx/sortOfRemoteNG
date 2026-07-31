@@ -10,10 +10,15 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{self, Duration};
 
+const DEFAULT_MAX_SESSIONS: usize = 32;
+const HARD_MAX_SESSIONS: usize = 128;
+const MIN_IDLE_TIMEOUT_SEC: u64 = 30;
+const MAX_IDLE_TIMEOUT_SEC: u64 = 3_600;
+
 /// Thread-safe pool of FTP sessions.
 pub struct FtpPool {
     pub sessions: HashMap<String, FtpClient>,
-    /// Maximum number of concurrent sessions (0 = unlimited).
+    /// Maximum number of concurrent sessions.
     pub max_sessions: usize,
     /// Idle timeout in seconds. Connections idle longer are reaped.
     pub idle_timeout_sec: u64,
@@ -29,7 +34,7 @@ impl FtpPool {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
-            max_sessions: 0,
+            max_sessions: DEFAULT_MAX_SESSIONS,
             idle_timeout_sec: 300,
         }
     }
@@ -37,14 +42,14 @@ impl FtpPool {
     pub fn with_limits(max_sessions: usize, idle_timeout_sec: u64) -> Self {
         Self {
             sessions: HashMap::new(),
-            max_sessions,
-            idle_timeout_sec,
+            max_sessions: max_sessions.clamp(1, HARD_MAX_SESSIONS),
+            idle_timeout_sec: idle_timeout_sec.clamp(MIN_IDLE_TIMEOUT_SEC, MAX_IDLE_TIMEOUT_SEC),
         }
     }
 
     /// Insert a connected client into the pool.
     pub fn insert(&mut self, client: FtpClient) -> FtpResult<String> {
-        if self.max_sessions > 0 && self.sessions.len() >= self.max_sessions {
+        if self.sessions.len() >= self.max_sessions {
             return Err(FtpError::pool_exhausted(format!(
                 "Pool limit reached ({})",
                 self.max_sessions
@@ -81,18 +86,27 @@ impl FtpPool {
 
     /// Get pool statistics.
     pub fn stats(&self) -> PoolStats {
-        let active = self.sessions.values().filter(|c| c.is_connected()).count() as u32;
+        let total = self.sessions.len().min(u32::MAX as usize) as u32;
+        let active = self
+            .sessions
+            .values()
+            .filter(|c| c.is_connected())
+            .count()
+            .min(u32::MAX as usize) as u32;
         PoolStats {
-            total_sessions: self.sessions.len() as u32,
+            total_sessions: total,
             active_sessions: active,
-            idle_sessions: self.sessions.len() as u32 - active,
-            max_sessions: self.max_sessions as u32,
+            idle_sessions: total.saturating_sub(active),
+            max_sessions: self.max_sessions.min(u32::MAX as usize) as u32,
         }
     }
 
     /// Reap sessions that have been idle beyond `idle_timeout_sec`.
     pub async fn reap_idle(&mut self) {
-        let cutoff = Utc::now() - chrono::Duration::seconds(self.idle_timeout_sec as i64);
+        let idle_timeout = self
+            .idle_timeout_sec
+            .clamp(MIN_IDLE_TIMEOUT_SEC, MAX_IDLE_TIMEOUT_SEC);
+        let cutoff = Utc::now() - chrono::Duration::seconds(idle_timeout as i64);
         let mut to_remove = Vec::new();
 
         for (id, client) in &self.sessions {
@@ -139,7 +153,7 @@ pub fn spawn_pool_maintenance(
     interval_secs: u64,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut ticker = time::interval(Duration::from_secs(interval_secs));
+        let mut ticker = time::interval(Duration::from_secs(interval_secs.clamp(10, 600)));
         loop {
             ticker.tick().await;
             let mut guard = pool.lock().await;
