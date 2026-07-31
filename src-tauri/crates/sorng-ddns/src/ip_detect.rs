@@ -6,7 +6,10 @@
 use crate::types::*;
 use chrono::Utc;
 use log::{info, warn};
-use std::time::Instant;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
+
+const MAX_IP_RESPONSE_BYTES: usize = 4 * 1024;
 
 /// Validate that a string looks like a valid IPv4 address.
 fn is_valid_ipv4(s: &str) -> bool {
@@ -25,11 +28,7 @@ fn is_valid_ipv4(s: &str) -> bool {
 /// is a footgun. Strings carrying `%` should be normalised to the
 /// bare address before reaching this validator.
 fn is_valid_ipv6(s: &str) -> bool {
-    s.contains(':')
-        && !s.contains(' ')
-        && !s.contains('%')
-        && s.len() >= 2
-        && s.len() <= 45
+    s.contains(':') && !s.contains(' ') && !s.contains('%') && s.len() >= 2 && s.len() <= 45
 }
 
 /// Detect the public IP address using a list of services (with fallback).
@@ -51,18 +50,20 @@ pub async fn detect_public_ip(
 
                 // Validate the response
                 if ipv6 {
-                    if !is_valid_ipv6(&ip) {
-                        warn!(
-                            "IP service {} returned invalid IPv6: {}",
-                            service.label(),
-                            ip
-                        );
-                        last_error = format!("Invalid IPv6 from {}: {}", service.label(), ip);
+                    if !is_valid_ipv6(&ip)
+                        || ip
+                            .parse::<IpAddr>()
+                            .map(|address| {
+                                !matches!(address, IpAddr::V6(_)) || !is_public_ip(address)
+                            })
+                            .unwrap_or(true)
+                    {
+                        warn!("IP service {} returned invalid IPv6", service.label());
+                        last_error = format!("Invalid IPv6 response from {}", service.label());
                         continue;
                     }
                     info!(
-                        "Detected IPv6 {} from {} in {}ms",
-                        ip,
+                        "Detected a public IPv6 address from {} in {}ms",
                         service.label(),
                         latency
                     );
@@ -74,18 +75,20 @@ pub async fn detect_public_ip(
                         latency_ms: latency,
                     });
                 } else {
-                    if !is_valid_ipv4(&ip) {
-                        warn!(
-                            "IP service {} returned invalid IPv4: {}",
-                            service.label(),
-                            ip
-                        );
-                        last_error = format!("Invalid IPv4 from {}: {}", service.label(), ip);
+                    if !is_valid_ipv4(&ip)
+                        || ip
+                            .parse::<IpAddr>()
+                            .map(|address| {
+                                !matches!(address, IpAddr::V4(_)) || !is_public_ip(address)
+                            })
+                            .unwrap_or(true)
+                    {
+                        warn!("IP service {} returned invalid IPv4", service.label());
+                        last_error = format!("Invalid IPv4 response from {}", service.label());
                         continue;
                     }
                     info!(
-                        "Detected IPv4 {} from {} in {}ms",
-                        ip,
+                        "Detected a public IPv4 address from {} in {}ms",
                         service.label(),
                         latency
                     );
@@ -124,33 +127,110 @@ pub async fn detect_dual_stack(
 
 /// Fetch a raw IP string from a URL.
 async fn fetch_ip_from_url(url: &str, timeout_secs: u64) -> Result<String, String> {
-    // Simulate HTTP request (in production, use reqwest or hyper)
-    // For now, use tokio::process::Command to call curl as a fallback
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "-s",
-            "-m",
-            &timeout_secs.to_string(),
-            "--connect-timeout",
-            "5",
-            "-L",
-            url,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to execute curl: {}", e))?;
+    let endpoint = validate_ip_endpoint(url)?;
+    let timeout = Duration::from_secs(timeout_secs.clamp(1, 120));
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .connect_timeout(Duration::from_secs(timeout.as_secs().min(5)))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("SortOfRemoteNG-DDNS/1")
+        .build()
+        .map_err(|_| "Failed to initialize IP detection client".to_string())?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("HTTP request failed: {}", stderr.trim()));
+    let mut response = client
+        .get(endpoint)
+        .header(reqwest::header::ACCEPT, "text/plain")
+        .send()
+        .await
+        .map_err(|_| "IP detection request failed".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "IP detection service returned HTTP {}",
+            response.status()
+        ));
     }
 
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_IP_RESPONSE_BYTES as u64)
+    {
+        return Err("IP detection response exceeded the 4 KiB limit".to_string());
+    }
+
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or(64)
+            .min(MAX_IP_RESPONSE_BYTES as u64) as usize,
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "Failed to read IP detection response".to_string())?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_IP_RESPONSE_BYTES {
+            return Err("IP detection response exceeded the 4 KiB limit".to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    let body = String::from_utf8(body)
+        .map_err(|_| "IP detection response was not valid UTF-8".to_string())?
+        .trim()
+        .to_string();
     if body.is_empty() {
         return Err("Empty response".to_string());
     }
 
     Ok(body)
+}
+
+fn validate_ip_endpoint(url: &str) -> Result<reqwest::Url, String> {
+    let endpoint = reqwest::Url::parse(url).map_err(|_| "Invalid IP detection URL".to_string())?;
+    if endpoint.scheme() != "https" {
+        return Err("IP detection requires an HTTPS endpoint".to_string());
+    }
+    if !endpoint.username().is_empty() || endpoint.password().is_some() {
+        return Err("IP detection URL must not contain credentials".to_string());
+    }
+
+    let host = endpoint
+        .host_str()
+        .ok_or_else(|| "IP detection URL has no host".to_string())?;
+    if let Ok(address) = host.parse::<IpAddr>() {
+        if !is_public_ip(address) {
+            return Err("IP detection URL must use a public host".to_string());
+        }
+    } else {
+        let domain = host.trim_end_matches('.').to_ascii_lowercase();
+        if domain == "localhost" || domain.ends_with(".localhost") || domain.ends_with(".local") {
+            return Err("IP detection URL must use a public host".to_string());
+        }
+    }
+
+    Ok(endpoint)
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            !address.is_private()
+                && !address.is_loopback()
+                && !address.is_link_local()
+                && !address.is_broadcast()
+                && !address.is_documentation()
+                && !address.is_unspecified()
+                && !address.is_multicast()
+        }
+        IpAddr::V6(address) => {
+            !address.is_loopback()
+                && !address.is_unique_local()
+                && !address.is_unicast_link_local()
+                && !address.is_unspecified()
+                && !address.is_multicast()
+        }
+    }
 }
 
 /// Fetch public IP using a custom URL.
@@ -163,18 +243,25 @@ pub async fn detect_from_custom_url(
     let ip = ip.trim().to_string();
     let latency = start.elapsed().as_millis() as u64;
 
-    let (ipv4, ipv6) = if is_valid_ipv6(&ip) {
+    let parsed = ip
+        .parse::<IpAddr>()
+        .map_err(|_| "IP detection endpoint returned an invalid address".to_string())?;
+    if !is_public_ip(parsed) {
+        return Err("IP detection endpoint returned a non-public address".to_string());
+    }
+
+    let (ipv4, ipv6) = if is_valid_ipv6(&ip) && matches!(parsed, IpAddr::V6(_)) {
         (None, Some(ip))
-    } else if is_valid_ipv4(&ip) {
+    } else if is_valid_ipv4(&ip) && matches!(parsed, IpAddr::V4(_)) {
         (Some(ip), None)
     } else {
-        return Err(format!("Invalid IP address: {}", ip));
+        return Err("IP detection endpoint returned an invalid address".to_string());
     };
 
     Ok(IpDetectResult {
         ipv4,
         ipv6,
-        source: format!("Custom ({})", url),
+        source: "Custom URL".to_string(),
         detected_at: Utc::now().to_rfc3339(),
         latency_ms: latency,
     })
