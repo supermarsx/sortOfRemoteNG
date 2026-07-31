@@ -146,7 +146,7 @@ impl PipelineExecutor {
     fn run_action(
         action: &PipelineAction,
         event: &HookEventData,
-        context: &mut PipelineContext,
+        _context: &mut PipelineContext,
     ) -> Result<serde_json::Value, HookError> {
         match action {
             PipelineAction::LogEvent => {
@@ -163,41 +163,27 @@ impl PipelineExecutor {
             }
 
             PipelineAction::ExecuteScript(script) => {
-                // In a real deployment this would invoke the script
-                // runtime.  Here we record the invocation.
-                log::info!("pipeline: execute_script – {script}");
-                context.variables.insert(
-                    "last_script".to_string(),
-                    serde_json::Value::String(script.clone()),
-                );
-                Ok(serde_json::json!({
-                    "script": script,
-                    "executed": true,
-                }))
+                let _ = script;
+                log::warn!("pipeline: execute_script is unsupported and was not executed");
+                Err(HookError::ScriptError(
+                    "script action is unsupported and was not executed".to_string(),
+                ))
             }
 
             PipelineAction::SendNotification(target) => {
-                let target_json = serde_json::to_value(target).unwrap_or(serde_json::Value::Null);
-                log::info!("pipeline: send_notification – {:?}", target);
-                Ok(serde_json::json!({
-                    "notification_sent": true,
-                    "target": target_json,
-                }))
+                let _ = target;
+                log::warn!("pipeline: send_notification is unsupported and was not executed");
+                Err(HookError::EventDispatchFailed(
+                    "notification action is unsupported and was not executed".to_string(),
+                ))
             }
 
             PipelineAction::TransformPayload(expression) => {
-                // Minimal transform: store the expression result as a
-                // context variable.  A production implementation would
-                // support JSONPath / JMESPath.
-                log::info!("pipeline: transform_payload – {expression}");
-                context.variables.insert(
-                    "transform_result".to_string(),
-                    serde_json::Value::String(expression.clone()),
-                );
-                Ok(serde_json::json!({
-                    "transformed": true,
-                    "expression": expression,
-                }))
+                let _ = expression;
+                log::warn!("pipeline: transform_payload is unsupported and was not executed");
+                Err(HookError::ScriptError(
+                    "payload transform is unsupported and was not executed".to_string(),
+                ))
             }
 
             PipelineAction::Delay(ms) => {
@@ -210,27 +196,121 @@ impl PipelineExecutor {
             }
 
             PipelineAction::HttpWebhook(cfg) => {
-                log::info!("pipeline: http_webhook – {} {}", cfg.method, cfg.url);
-                // Actual HTTP calls are delegated to an external HTTP
-                // client; here we record the intent.
-                Ok(serde_json::json!({
-                    "webhook_triggered": true,
-                    "url": cfg.url,
-                    "method": cfg.method,
-                }))
+                let _ = cfg;
+                log::warn!("pipeline: http_webhook is unsupported and was not executed");
+                Err(HookError::WebhookError(
+                    "HTTP webhook action is unsupported and was not executed".to_string(),
+                ))
             }
 
             PipelineAction::Chain(pipeline_id) => {
-                log::info!("pipeline: chain – {pipeline_id}");
-                context.variables.insert(
-                    "chained_pipeline".to_string(),
-                    serde_json::Value::String(pipeline_id.clone()),
-                );
-                Ok(serde_json::json!({
-                    "chained": true,
-                    "pipeline_id": pipeline_id,
-                }))
+                let _ = pipeline_id;
+                log::warn!("pipeline: chain is unsupported and was not executed");
+                Err(HookError::EventDispatchFailed(
+                    "pipeline chain action is unsupported and was not executed".to_string(),
+                ))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_event() -> HookEventData {
+        HookEventData {
+            event_id: "event-1".to_string(),
+            event_type: HookEvent::AppStartup,
+            timestamp: chrono::DateTime::from_timestamp(0, 0).expect("valid test timestamp"),
+            source: "test".to_string(),
+            connection_id: None,
+            session_id: None,
+            payload: serde_json::json!({}),
+            metadata: HashMap::new(),
+        }
+    }
+
+    fn test_step(action: PipelineAction) -> PipelineStep {
+        PipelineStep {
+            step_id: "step-1".to_string(),
+            action,
+            condition: None,
+            timeout_ms: 1_000,
+        }
+    }
+
+    fn webhook_action() -> PipelineAction {
+        PipelineAction::HttpWebhook(WebhookConfig {
+            url: "https://example.invalid/hooks".to_string(),
+            method: "POST".to_string(),
+            headers: HashMap::new(),
+            body_template: None,
+            timeout_ms: 1_000,
+            retry_count: 1,
+        })
+    }
+
+    #[test]
+    fn http_webhook_action_fails_closed_without_mutating_context() {
+        let mut context = PipelineContext::default();
+        let error = PipelineExecutor::execute_step(
+            &test_step(webhook_action()),
+            &test_event(),
+            &mut context,
+        )
+        .expect_err("unsupported HTTP webhook must fail closed");
+
+        assert!(matches!(
+            error,
+            HookError::WebhookError(message)
+                if message == "HTTP webhook action is unsupported and was not executed"
+        ));
+        assert!(context.variables.is_empty());
+        assert!(context.results.is_empty());
+    }
+
+    #[test]
+    fn all_unimplemented_pipeline_actions_fail_closed() {
+        let cases = [
+            (
+                "execute_script",
+                PipelineAction::ExecuteScript("ignored".to_string()),
+            ),
+            (
+                "send_notification",
+                PipelineAction::SendNotification(NotificationTarget::InApp),
+            ),
+            (
+                "transform_payload",
+                PipelineAction::TransformPayload("ignored".to_string()),
+            ),
+            ("http_webhook", webhook_action()),
+            ("chain", PipelineAction::Chain("ignored".to_string())),
+        ];
+
+        for (case, action) in cases {
+            let mut context = PipelineContext::default();
+            let result =
+                PipelineExecutor::execute_step(&test_step(action), &test_event(), &mut context);
+
+            match (case, result) {
+                ("execute_script", Err(HookError::ScriptError(message)))
+                    if message == "script action is unsupported and was not executed" => {}
+                ("send_notification", Err(HookError::EventDispatchFailed(message)))
+                    if message == "notification action is unsupported and was not executed" => {}
+                ("transform_payload", Err(HookError::ScriptError(message)))
+                    if message == "payload transform is unsupported and was not executed" => {}
+                ("http_webhook", Err(HookError::WebhookError(message)))
+                    if message == "HTTP webhook action is unsupported and was not executed" => {}
+                ("chain", Err(HookError::EventDispatchFailed(message)))
+                    if message == "pipeline chain action is unsupported and was not executed" => {}
+                (_, Err(unexpected)) => panic!("{case} returned unexpected error: {unexpected}"),
+                (_, Ok(_)) => panic!("{case} unexpectedly succeeded"),
+            }
+
+            assert!(context.variables.is_empty());
+            assert!(context.results.is_empty());
         }
     }
 }
