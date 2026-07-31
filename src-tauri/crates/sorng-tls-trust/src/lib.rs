@@ -31,9 +31,8 @@
 //!    - `AlwaysTrust`: accept without storing — the explicit replacement for
 //!      today's blind skip (the legacy skip flags map to this override).
 //!    - `Strict`: reject unknown; accept only a pre-approved match.
-//!    - `AlwaysAsk`: no prompt channel for these non-interactive backends, so
-//!      it degrades to TOFU-persist-on-valid-unknown / reject-on-invalid-or-change
-//!      (same as SFTP's `Ask`).
+//!    - `AlwaysAsk`: no prompt channel exists for these non-interactive
+//!      backends, so unknown identities fail closed.
 //!
 //! `verify_tls12_signature` / `verify_tls13_signature` /
 //! `supported_verify_schemes` delegate to rustls' default
@@ -46,7 +45,7 @@
 //! `rustls::ClientConfig::builder()`, which uses the installed default
 //! provider — building with a different provider would panic at handshake.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
@@ -61,6 +60,49 @@ use sorng_storage::trust_store::{
 /// Rendered as "Legacy TLS" in the Trust Center UI. Records are keyed
 /// `tls:host:port` by the store.
 pub const TLS_RECORD_TYPE: &str = "tls";
+const MAX_HOST_BYTES: usize = 253;
+const MAX_LEAF_CERT_BYTES: usize = 1024 * 1024;
+const MAX_CHAIN_CERTIFICATES: usize = 16;
+const MAX_CHAIN_BYTES: usize = 4 * 1024 * 1024;
+const MAX_OCSP_BYTES: usize = 1024 * 1024;
+const MAX_CERT_FIELD_BYTES: usize = 4096;
+const MAX_SAN_ENTRIES: usize = 256;
+const MAX_SAN_BYTES: usize = 1024;
+
+static TRUST_DECISION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn canonical_trust_host(host: &str) -> Result<String, String> {
+    let unbracketed = if host.starts_with('[') && host.ends_with(']') && host.len() > 2 {
+        &host[1..host.len() - 1]
+    } else {
+        host
+    };
+
+    if let Ok(address) = unbracketed.parse::<std::net::IpAddr>() {
+        return Ok(address.to_string());
+    }
+
+    let dns_name = unbracketed.strip_suffix('.').unwrap_or(unbracketed);
+    if dns_name.is_empty()
+        || !dns_name.is_ascii()
+        || dns_name.starts_with('.')
+        || dns_name.contains("..")
+        || dns_name.contains('*')
+    {
+        return Err("invalid TLS trust context host".to_string());
+    }
+    Ok(dns_name.to_ascii_lowercase())
+}
+
+fn server_name_matches_context(
+    context_host: &str,
+    server_name: &ServerName<'_>,
+) -> Result<bool, String> {
+    let expected = canonical_trust_host(context_host)?;
+    let verification_name = server_name.to_str();
+    let actual = canonical_trust_host(verification_name.as_ref())?;
+    Ok(expected == actual)
+}
 
 // ---------------------------------------------------------------------------
 // Pure decision core (unit-tested; mirrors sftp::service::decide_host_key_action)
@@ -88,6 +130,11 @@ pub enum StoreVerdict {
     /// A record exists but the presented fingerprint differs (possible MITM),
     /// or the record is revoked / chain-pinned mismatch.
     Changed,
+    /// A record exists but was explicitly revoked.
+    Revoked,
+    /// The policy requires an interaction or threshold this verifier cannot
+    /// complete.
+    Pending,
 }
 
 impl StoreVerdict {
@@ -96,16 +143,15 @@ impl StoreVerdict {
     pub fn from_verify_result(result: &TrustVerifyResult) -> Self {
         match result {
             TrustVerifyResult::Trusted => StoreVerdict::Match,
-            // First-use / pending states all mean "no usable prior trust".
-            TrustVerifyResult::FirstUse { .. }
-            | TrustVerifyResult::PendingThreshold { .. }
-            | TrustVerifyResult::PendingVerification { .. } => StoreVerdict::Unknown,
+            TrustVerifyResult::FirstUse { .. } => StoreVerdict::Unknown,
+            TrustVerifyResult::PendingThreshold { .. }
+            | TrustVerifyResult::PendingVerification { .. } => StoreVerdict::Pending,
             // Any changed/expired/revoked/chain-mismatch is a hard "changed".
             TrustVerifyResult::Mismatch { .. }
             | TrustVerifyResult::Expired { .. }
-            | TrustVerifyResult::Revoked { .. }
             | TrustVerifyResult::ChainMismatch { .. }
             | TrustVerifyResult::RotationGrace { .. } => StoreVerdict::Changed,
+            TrustVerifyResult::Revoked { .. } => StoreVerdict::Revoked,
         }
     }
 }
@@ -131,15 +177,32 @@ pub fn decide_tls_trust(
     policy: &TrustPolicy,
     chain_valid: bool,
 ) -> TlsTrustAction {
-    // AlwaysTrust short-circuits everything: it is the explicit replacement for
-    // the old blind `danger_accept_invalid_certs(true)`. It accepts any
-    // identity (even a changed one) and never persists a record.
+    if matches!(verdict, StoreVerdict::Revoked) {
+        return TlsTrustAction::Reject(
+            "the server's TLS identity is revoked in the Trust Center".to_string(),
+        );
+    }
+
+    if matches!(policy, TrustPolicy::CaTrustOnly) && !chain_valid {
+        return TlsTrustAction::Reject(
+            "the effective CA-only policy requires successful WebPKI chain and \
+             hostname validation"
+                .to_string(),
+        );
+    }
+
     if matches!(policy, TrustPolicy::AlwaysTrust) {
         return TlsTrustAction::Accept;
     }
 
     match verdict {
         StoreVerdict::Match => TlsTrustAction::Accept,
+        StoreVerdict::Pending => TlsTrustAction::Reject(
+            "the effective trust policy requires approval or additional verification \
+             that is unavailable in this non-interactive TLS client"
+                .to_string(),
+        ),
+        StoreVerdict::Revoked => unreachable!("revocation is handled before policy"),
         StoreVerdict::Changed => TlsTrustAction::Reject(
             "the server's TLS certificate does not match the identity pinned in \
              the Trust Center. This may indicate a man-in-the-middle attack. \
@@ -150,19 +213,28 @@ pub fn decide_tls_trust(
         StoreVerdict::Unknown => match policy {
             // Strict: an unknown host is rejected — only a pre-approved match
             // is allowed.
-            TrustPolicy::Strict => TlsTrustAction::Reject(
+            TrustPolicy::Strict | TrustPolicy::AlwaysAsk => TlsTrustAction::Reject(
                 "the server's TLS certificate is not in the Trust Center and the \
-                 effective policy is Strict. Pin it manually in the Trust Center \
-                 (Legacy TLS) to allow the connection."
+                 effective policy requires explicit approval. This non-interactive \
+                 client cannot prompt; pin it manually in the Trust Center."
                     .to_string(),
             ),
-            // Tofu (default), AlwaysAsk (degrades to TOFU — non-interactive),
-            // and all other policies trust-on-first-use only after the normal
-            // CA/hostname checks have succeeded. This preserves default reqwest
-            // security for public APIs and prevents pinning a first-use MITM
-            // certificate; use the explicit AlwaysTrust override for legacy
-            // self-signed endpoints.
-            _ if chain_valid => TlsTrustAction::AcceptAndPersist,
+            TrustPolicy::Tofu
+            | TrustPolicy::TofuWithExpiry
+            | TrustPolicy::CertificatePinning
+            | TrustPolicy::KeyRotationGrace
+                if chain_valid =>
+            {
+                TlsTrustAction::AcceptAndPersist
+            }
+            TrustPolicy::CaTrustOnly if chain_valid => TlsTrustAction::Accept,
+            TrustPolicy::TrustOnVerify
+            | TrustPolicy::ConditionalTrust
+            | TrustPolicy::ThresholdTrust => TlsTrustAction::Reject(
+                "the effective trust policy cannot be completed by this \
+                 non-interactive TLS client"
+                    .to_string(),
+            ),
             _ => TlsTrustAction::Reject(
                 "the server's TLS certificate could not be validated by the \
                  system trust store, so it was not pinned on first use. If this \
@@ -254,6 +326,25 @@ impl TofuTlsContext {
     fn host_key(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+
+    fn validate(&self) -> Result<(), String> {
+        let host = self.host.as_str();
+        if host.is_empty()
+            || host.len() > MAX_HOST_BYTES
+            || host.trim() != host
+            || host.chars().any(char::is_control)
+            || host.chars().any(char::is_whitespace)
+            || host.contains("://")
+            || host.contains('/')
+            || host.contains('\\')
+            || host.contains('@')
+            || self.port == 0
+        {
+            return Err("invalid TLS trust context endpoint".to_string());
+        }
+        canonical_trust_host(host)?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +362,8 @@ struct LeafCertDetails {
     signature_algorithm: Option<String>,
     san: Option<Vec<String>>,
     pem: Option<String>,
+    chain_fingerprints: Vec<String>,
+    time_valid: bool,
 }
 
 /// Compute the SHA-256 hex fingerprint of a DER blob (lowercase, no colons),
@@ -292,9 +385,24 @@ fn pem_encode(der: &[u8]) -> String {
     format!("-----BEGIN CERTIFICATE-----\n{body}\n-----END CERTIFICATE-----")
 }
 
-fn extract_leaf_details(der: &[u8]) -> LeafCertDetails {
+fn bounded_field(value: String, maximum: usize) -> Option<String> {
+    if !value.is_empty() && value.len() <= maximum && !value.contains('\0') {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn extract_leaf_details(der: &[u8], intermediates: &[CertificateDer<'_>]) -> LeafCertDetails {
     let fingerprint = fingerprint_hex(der);
     let pem = Some(pem_encode(der));
+    let mut chain_fingerprints = Vec::with_capacity(intermediates.len() + 1);
+    chain_fingerprints.push(fingerprint.clone());
+    chain_fingerprints.extend(
+        intermediates
+            .iter()
+            .map(|certificate| fingerprint_hex(certificate.as_ref())),
+    );
 
     match x509_parser::parse_x509_certificate(der) {
         Ok((_rem, cert)) => {
@@ -302,23 +410,31 @@ fn extract_leaf_details(der: &[u8]) -> LeafCertDetails {
                 ext.value
                     .general_names
                     .iter()
-                    .map(|name| format!("{name}"))
+                    .take(MAX_SAN_ENTRIES)
+                    .filter_map(|name| bounded_field(format!("{name}"), MAX_SAN_BYTES))
                     .collect::<Vec<_>>()
             });
+            let now = chrono::Utc::now().timestamp();
             LeafCertDetails {
                 fingerprint,
-                subject: Some(cert.subject().to_string()),
-                issuer: Some(cert.issuer().to_string()),
+                subject: bounded_field(cert.subject().to_string(), MAX_CERT_FIELD_BYTES),
+                issuer: bounded_field(cert.issuer().to_string(), MAX_CERT_FIELD_BYTES),
                 valid_from: cert.validity().not_before.to_rfc2822().ok(),
                 valid_to: cert.validity().not_after.to_rfc2822().ok(),
-                serial: Some(cert.raw_serial_as_string()),
-                signature_algorithm: Some(cert.signature_algorithm.algorithm.to_string()),
+                serial: bounded_field(cert.raw_serial_as_string(), 512),
+                signature_algorithm: bounded_field(
+                    cert.signature_algorithm.algorithm.to_string(),
+                    256,
+                ),
                 san,
                 pem,
+                chain_fingerprints,
+                time_valid: cert.validity().not_before.timestamp() <= now
+                    && now <= cert.validity().not_after.timestamp(),
             }
         }
-        Err(e) => {
-            log::warn!("sorng-tls-trust: failed to parse leaf certificate: {e}");
+        Err(_) => {
+            log::warn!("sorng-tls-trust: failed to parse bounded leaf certificate");
             LeafCertDetails {
                 fingerprint,
                 subject: None,
@@ -329,6 +445,8 @@ fn extract_leaf_details(der: &[u8]) -> LeafCertDetails {
                 signature_algorithm: None,
                 san: None,
                 pem,
+                chain_fingerprints,
+                time_valid: false,
             }
         }
     }
@@ -349,7 +467,21 @@ impl LeafCertDetails {
             serial: self.serial,
             signature_algorithm: self.signature_algorithm,
             san: self.san,
-            chain_fingerprints: Vec::new(),
+            chain_fingerprints: self.chain_fingerprints,
+            subject_cn: None,
+            subject_org: None,
+            subject_ou: None,
+            subject_country: None,
+            subject_state: None,
+            subject_locality: None,
+            subject_email: None,
+            issuer_cn: None,
+            issuer_org: None,
+            issuer_country: None,
+            key_algorithm: None,
+            key_size: None,
+            version: None,
+            chain: None,
         })
     }
 }
@@ -380,6 +512,7 @@ impl TofuVerifier {
     /// Build a verifier whose webpki delegate validates against the native
     /// root store.
     pub fn new(ctx: TofuTlsContext) -> Result<Self, String> {
+        ctx.validate()?;
         let mut roots = rustls::RootCertStore::empty();
         let loaded = rustls_native_certs::load_native_certs();
         for cert in loaded.certs {
@@ -413,8 +546,40 @@ impl ServerCertVerifier for TofuVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
+        if !server_name_matches_context(&self.ctx.host, server_name).map_err(|_| {
+            rustls::Error::General(
+                "the TLS verification name is not a valid scoped trust host".to_string(),
+            )
+        })? {
+            return Err(rustls::Error::General(
+                "the TLS verification name does not match the scoped trust host".to_string(),
+            ));
+        }
+
+        if end_entity.is_empty() || end_entity.len() > MAX_LEAF_CERT_BYTES {
+            return Err(rustls::Error::General(
+                "the server leaf certificate exceeds the safety limit".to_string(),
+            ));
+        }
+        let chain_bytes = intermediates.iter().try_fold(0usize, |total, certificate| {
+            total.checked_add(certificate.len())
+        });
+        if intermediates.len() > MAX_CHAIN_CERTIFICATES
+            || chain_bytes.map_or(true, |total| total > MAX_CHAIN_BYTES)
+        {
+            return Err(rustls::Error::General(
+                "the server certificate chain exceeds the safety limit".to_string(),
+            ));
+        }
+        if ocsp_response.len() > MAX_OCSP_BYTES {
+            return Err(rustls::Error::General(
+                "the server OCSP response exceeds the safety limit".to_string(),
+            ));
+        }
+
         // 1. Fingerprint + parse the leaf cert.
-        let details = extract_leaf_details(end_entity.as_ref());
+        let details = extract_leaf_details(end_entity.as_ref(), intermediates);
+        let certificate_time_valid = details.time_valid;
         let identity = details.into_identity();
 
         // 2. Standard webpki chain/hostname validation. Unknown certificates
@@ -425,25 +590,36 @@ impl ServerCertVerifier for TofuVerifier {
             .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
             .is_ok();
 
+        let _decision_guard = TRUST_DECISION_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .try_lock()
+            .map_err(|_| {
+                rustls::Error::General(
+                    "TLS trust verification is busy; retry the connection".to_string(),
+                )
+            })?;
+
         // 3. Determine the effective policy and consult the store.
         let policy = self.effective_policy();
         let host_key = self.ctx.host_key();
 
-        // AlwaysTrust never touches the store (preserves the escape hatch).
-        let verdict = if matches!(policy, TrustPolicy::AlwaysTrust) {
-            StoreVerdict::Unknown
-        } else {
-            match self
-                .ctx
-                .store
-                .verify(&host_key, TLS_RECORD_TYPE, identity.clone())
-            {
-                Ok(result) => StoreVerdict::from_verify_result(&result),
-                Err(e) => {
-                    return Err(rustls::Error::General(format!(
-                        "trust store verification failed for {host_key}: {e}"
-                    )));
-                }
+        if !certificate_time_valid && !matches!(policy, TrustPolicy::AlwaysTrust) {
+            return Err(rustls::Error::General(
+                "the server TLS certificate is expired or not yet valid".to_string(),
+            ));
+        }
+
+        let verdict = match self
+            .ctx
+            .store
+            .verify(&host_key, TLS_RECORD_TYPE, identity.clone())
+        {
+            Ok(result) => StoreVerdict::from_verify_result(&result),
+            Err(_) => {
+                log::warn!("sorng-tls-trust: persistent trust verification failed");
+                return Err(rustls::Error::General(
+                    "persistent TLS trust verification failed".to_string(),
+                ));
             }
         };
 
@@ -459,10 +635,11 @@ impl ServerCertVerifier for TofuVerifier {
                         identity,
                         false,
                     )
-                    .map_err(|e| {
-                        rustls::Error::General(format!(
-                            "failed to persist TOFU trust record for {host_key}: {e}"
-                        ))
+                    .map_err(|_| {
+                        log::warn!("sorng-tls-trust: persistent trust write failed");
+                        rustls::Error::General(
+                            "failed to persist the TLS trust decision".to_string(),
+                        )
                     })?;
                 Ok(ServerCertVerified::assertion())
             }
@@ -519,7 +696,7 @@ pub fn build_tofu_client(
     builder
         .use_preconfigured_tls(config)
         .build()
-        .map_err(|e| format!("failed to build reqwest client with TOFU verifier: {e}"))
+        .map_err(|_| "failed to build the bounded TOFU HTTP client".to_string())
 }
 
 /// Convenience: map a legacy "skip TLS verification" boolean to the explicit

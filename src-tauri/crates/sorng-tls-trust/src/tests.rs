@@ -66,12 +66,11 @@ fn unknown_under_tofu_rejects_when_chain_is_invalid() {
 }
 
 #[test]
-fn unknown_under_always_ask_degrades_to_tofu_persist_when_chain_is_valid() {
-    // Non-interactive backends cannot prompt; AlwaysAsk degrades to TOFU.
-    assert_eq!(
+fn unknown_under_always_ask_fails_closed_without_a_prompt_channel() {
+    assert!(matches!(
         decide_tls_trust(StoreVerdict::Unknown, &TrustPolicy::AlwaysAsk, true),
-        TlsTrustAction::AcceptAndPersist
-    );
+        TlsTrustAction::Reject(_)
+    ));
 }
 
 #[test]
@@ -103,6 +102,10 @@ fn always_trust_accepts_everything_without_persisting() {
             "AlwaysTrust accepts {verdict:?}"
         );
     }
+    assert!(matches!(
+        decide_tls_trust(StoreVerdict::Revoked, &TrustPolicy::AlwaysTrust, false),
+        TlsTrustAction::Reject(_)
+    ));
 }
 
 // ── Stub store ──────────────────────────────────────────────────────────────
@@ -161,6 +164,20 @@ impl BlockingTrustStore for StubStore {
                     signature_algorithm: None,
                     san: None,
                     chain_fingerprints: Vec::new(),
+                    subject_cn: None,
+                    subject_org: None,
+                    subject_ou: None,
+                    subject_country: None,
+                    subject_state: None,
+                    subject_locality: None,
+                    subject_email: None,
+                    issuer_cn: None,
+                    issuer_org: None,
+                    issuer_country: None,
+                    key_algorithm: None,
+                    key_size: None,
+                    version: None,
+                    chain: None,
                 }),
                 presented: identity,
             }),
@@ -204,6 +221,20 @@ fn tls_identity(fp: &str) -> Identity {
         signature_algorithm: None,
         san: None,
         chain_fingerprints: Vec::new(),
+        subject_cn: None,
+        subject_org: None,
+        subject_ou: None,
+        subject_country: None,
+        subject_state: None,
+        subject_locality: None,
+        subject_email: None,
+        issuer_cn: None,
+        issuer_org: None,
+        issuer_country: None,
+        key_algorithm: None,
+        key_size: None,
+        version: None,
+        chain: None,
     })
 }
 
@@ -213,14 +244,10 @@ fn tls_identity(fp: &str) -> Identity {
 fn run_decision(store: &StubStore, host_key: &str, fp: &str) -> TlsTrustAction {
     let identity = tls_identity(fp);
     let policy = store.global_policy();
-    let verdict = if matches!(policy, TrustPolicy::AlwaysTrust) {
-        StoreVerdict::Unknown
-    } else {
-        let result = store
-            .verify(host_key, TLS_RECORD_TYPE, identity.clone())
-            .unwrap();
-        StoreVerdict::from_verify_result(&result)
-    };
+    let result = store
+        .verify(host_key, TLS_RECORD_TYPE, identity.clone())
+        .unwrap();
+    let verdict = StoreVerdict::from_verify_result(&result);
     let action = decide_tls_trust(verdict, &policy, true);
     if action == TlsTrustAction::AcceptAndPersist {
         store
@@ -289,6 +316,20 @@ fn always_trust_override_accepts_unstored() {
 fn skip_flag_maps_to_always_trust() {
     assert_eq!(skip_flag_to_override(true), Some(TrustPolicy::AlwaysTrust));
     assert_eq!(skip_flag_to_override(false), None);
+}
+
+#[test]
+fn trust_host_canonicalization_is_exact_for_dns_and_ip_names() {
+    assert_eq!(canonical_trust_host("EXAMPLE.com.").unwrap(), "example.com");
+    assert_eq!(
+        canonical_trust_host("[2001:0db8:0:0::1]").unwrap(),
+        "2001:db8::1"
+    );
+    assert_ne!(
+        canonical_trust_host("api.example.com").unwrap(),
+        canonical_trust_host("other.example.com").unwrap()
+    );
+    assert!(canonical_trust_host("*.example.com").is_err());
 }
 
 // ── SyncTrustStore round-trip (real façade, temp file) ──────────────────────
