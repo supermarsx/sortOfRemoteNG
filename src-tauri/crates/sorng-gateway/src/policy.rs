@@ -152,10 +152,11 @@ impl PolicyEngine {
         if conditions.is_empty() {
             return true; // No conditions = match all
         }
-        // For group matching, assume we can get user groups from a function (stubbed here)
+        // Group membership has no authoritative directory provider in this
+        // service yet. Fail closed instead of fabricating membership.
         fn get_user_groups(_user_id: &str) -> Vec<String> {
-            log::warn!("get_user_groups: using placeholder — integrate with real user directory");
-            vec!["users".to_string()]
+            log::warn!("get_user_groups: no authoritative directory is configured");
+            Vec::new()
         }
         let user_groups = get_user_groups(user_id);
         conditions.iter().any(|c| match c {
