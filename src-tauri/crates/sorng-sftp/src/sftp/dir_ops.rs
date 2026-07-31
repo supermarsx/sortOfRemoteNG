@@ -7,6 +7,10 @@ use glob::Pattern;
 use log::info;
 use std::path::Path;
 
+const MAX_DIRECTORY_ENTRIES: usize = 10_000;
+const MAX_RECURSIVE_ENTRIES: usize = 50_000;
+const MAX_RECURSION_DEPTH: u32 = 32;
+
 impl SftpService {
     // ── List directory ───────────────────────────────────────────────────────
 
@@ -14,9 +18,15 @@ impl SftpService {
         &mut self,
         session_id: &str,
         path: &str,
-        options: SftpListOptions,
+        mut options: SftpListOptions,
     ) -> Result<Vec<SftpDirEntry>, String> {
         if options.recursive {
+            if options.max_depth.is_none() {
+                options.max_depth = Some(MAX_RECURSION_DEPTH);
+            }
+            if options.max_depth.unwrap_or(MAX_RECURSION_DEPTH) > MAX_RECURSION_DEPTH {
+                return Err("SFTP recursive listing depth exceeds the supported limit".to_string());
+            }
             return self
                 .list_directory_recursive(session_id, path, &options, 0)
                 .await;
@@ -35,6 +45,9 @@ impl SftpService {
         let raw_entries = sftp
             .readdir(Path::new(path))
             .map_err(|e| format!("readdir '{}' failed: {}", path, e))?;
+        if raw_entries.len() > MAX_DIRECTORY_ENTRIES {
+            return Err("SFTP directory contains too many entries".to_string());
+        }
 
         let glob_pattern = options
             .filter_glob
@@ -133,6 +146,9 @@ impl SftpService {
                 Box::pin(self.list_directory_recursive(session_id, &subdir, options, depth + 1))
                     .await?;
             flat.extend(sub_entries);
+            if flat.len() > MAX_RECURSIVE_ENTRIES {
+                return Err("SFTP recursive listing exceeded the supported entry limit".to_string());
+            }
         }
 
         Ok(flat)
