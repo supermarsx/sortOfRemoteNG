@@ -169,62 +169,44 @@ impl SpamAssassinConfigManager {
         let mut i = 0;
         while i < opt_parts.len() {
             match opt_parts[i] {
-                "-i" | "--listen" => {
-                    if i + 1 < opt_parts.len() {
-                        config.listen_address = Some(opt_parts[i + 1].to_string());
-                        i += 1;
-                    }
+                "-i" | "--listen" if i + 1 < opt_parts.len() => {
+                    config.listen_address = Some(opt_parts[i + 1].to_string());
+                    i += 1;
                 }
-                "-p" | "--port" => {
-                    if i + 1 < opt_parts.len() {
-                        config.port = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "-p" | "--port" if i + 1 < opt_parts.len() => {
+                    config.port = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "-m" | "--max-children" => {
-                    if i + 1 < opt_parts.len() {
-                        config.max_children = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "-m" | "--max-children" if i + 1 < opt_parts.len() => {
+                    config.max_children = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "--min-children" => {
-                    if i + 1 < opt_parts.len() {
-                        config.min_children = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "--min-children" if i + 1 < opt_parts.len() => {
+                    config.min_children = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "--min-spare" => {
-                    if i + 1 < opt_parts.len() {
-                        config.min_spare = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "--min-spare" if i + 1 < opt_parts.len() => {
+                    config.min_spare = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "--max-spare" => {
-                    if i + 1 < opt_parts.len() {
-                        config.max_spare = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "--max-spare" if i + 1 < opt_parts.len() => {
+                    config.max_spare = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "--timeout-child" => {
-                    if i + 1 < opt_parts.len() {
-                        config.timeout_child = opt_parts[i + 1].parse().ok();
-                        i += 1;
-                    }
+                "--timeout-child" if i + 1 < opt_parts.len() => {
+                    config.timeout_child = opt_parts[i + 1].parse().ok();
+                    i += 1;
                 }
-                "-r" | "--pidfile" => {
-                    if i + 1 < opt_parts.len() {
-                        config.pidfile = Some(opt_parts[i + 1].to_string());
-                        i += 1;
-                    }
+                "-r" | "--pidfile" if i + 1 < opt_parts.len() => {
+                    config.pidfile = Some(opt_parts[i + 1].to_string());
+                    i += 1;
                 }
-                "-A" | "--allowed-ips" => {
-                    if i + 1 < opt_parts.len() {
-                        config.allowed_ips = opt_parts[i + 1]
-                            .split(',')
-                            .map(|s| s.trim().to_string())
-                            .collect();
-                        i += 1;
-                    }
+                "-A" | "--allowed-ips" if i + 1 < opt_parts.len() => {
+                    config.allowed_ips = opt_parts[i + 1]
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
+                    i += 1;
                 }
                 "-u" | "--username" if i + 1 < opt_parts.len() => {
                     config.username = Some(opt_parts[i + 1].to_string());
