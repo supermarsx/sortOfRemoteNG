@@ -32,6 +32,13 @@ const ARGON2_TIME_COST: u32 = 3;
 const ARGON2_PARALLELISM: u32 = 4;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
+const MIN_ARGON2_MEMORY_KIB: u32 = 8 * 1024;
+const MAX_ARGON2_MEMORY_KIB: u32 = 256 * 1024;
+const MAX_ARGON2_TIME_COST: u32 = 10;
+const MAX_ARGON2_PARALLELISM: u32 = 16;
+const MAX_ENVELOPE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_META_JSON_BYTES: usize = 16 * 1024;
+const MAX_CIPHERTEXT_B64_BYTES: usize = ((MAX_ENVELOPE_BYTES + 16) * 4 / 3) + 8;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Public API
@@ -41,6 +48,16 @@ const NONCE_LEN: usize = 12;
 ///
 /// Returns `(meta_json, ciphertext_b64)`.
 pub fn encrypt(password: &str, plaintext: &[u8]) -> VaultResult<(String, String)> {
+    if password.is_empty() {
+        return Err(VaultError::kdf("Password must not be empty"));
+    }
+    if plaintext.len() > MAX_ENVELOPE_BYTES {
+        return Err(VaultError::crypto(format!(
+            "Plaintext exceeds the {} byte envelope limit",
+            MAX_ENVELOPE_BYTES
+        )));
+    }
+
     let mut salt = [0u8; SALT_LEN];
     OsRng.fill_bytes(&mut salt);
 
@@ -74,6 +91,16 @@ pub fn encrypt(password: &str, plaintext: &[u8]) -> VaultResult<(String, String)
 
 /// Decrypt `ciphertext_b64` using the `meta_json` envelope and password.
 pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultResult<Vec<u8>> {
+    if password.is_empty() {
+        return Err(VaultError::kdf("Password must not be empty"));
+    }
+    if meta_json.len() > MAX_META_JSON_BYTES {
+        return Err(VaultError::serde("Envelope metadata is too large"));
+    }
+    if ciphertext_b64.len() > MAX_CIPHERTEXT_B64_BYTES {
+        return Err(VaultError::crypto("Envelope ciphertext is too large"));
+    }
+
     let meta: EnvelopeMeta = serde_json::from_str(meta_json)
         .map_err(|e| VaultError::serde(format!("meta parse: {e}")))?;
 
@@ -81,6 +108,12 @@ pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultRe
         return Err(VaultError::crypto(format!(
             "Unsupported envelope version: {}",
             meta.version
+        )));
+    }
+    if meta.kdf != "argon2id" {
+        return Err(VaultError::kdf(format!(
+            "Unsupported envelope KDF: {}",
+            meta.kdf
         )));
     }
 
@@ -93,6 +126,23 @@ pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultRe
     let ciphertext = general_purpose::STANDARD
         .decode(ciphertext_b64)
         .map_err(|e| VaultError::crypto(format!("ciphertext decode: {e}")))?;
+    if salt.len() != SALT_LEN {
+        return Err(VaultError::crypto(format!(
+            "Invalid salt length: expected {SALT_LEN}, got {}",
+            salt.len()
+        )));
+    }
+    if nonce_bytes.len() != NONCE_LEN {
+        return Err(VaultError::crypto(format!(
+            "Invalid nonce length: expected {NONCE_LEN}, got {}",
+            nonce_bytes.len()
+        )));
+    }
+    if ciphertext.len() > MAX_ENVELOPE_BYTES + 16 {
+        return Err(VaultError::crypto(
+            "Decoded envelope ciphertext is too large",
+        ));
+    }
 
     let key = derive_key_with_params(
         password,
@@ -116,6 +166,13 @@ pub fn decrypt(password: &str, meta_json: &str, ciphertext_b64: &str) -> VaultRe
 
 /// Encrypt data with a raw 32-byte key (no KDF).
 pub fn encrypt_with_key(key: &[u8; 32], plaintext: &[u8]) -> VaultResult<Vec<u8>> {
+    if plaintext.len() > MAX_ENVELOPE_BYTES {
+        return Err(VaultError::crypto(format!(
+            "Plaintext exceeds the {} byte envelope limit",
+            MAX_ENVELOPE_BYTES
+        )));
+    }
+
     let cipher = Aes256Gcm::new(key.into());
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -135,6 +192,9 @@ pub fn encrypt_with_key(key: &[u8; 32], plaintext: &[u8]) -> VaultResult<Vec<u8>
 pub fn decrypt_with_key(key: &[u8; 32], data: &[u8]) -> VaultResult<Vec<u8>> {
     if data.len() < NONCE_LEN {
         return Err(VaultError::crypto("Data too short for nonce+ciphertext"));
+    }
+    if data.len() > MAX_ENVELOPE_BYTES + NONCE_LEN + 16 {
+        return Err(VaultError::crypto("Encrypted data exceeds the vault limit"));
     }
     let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new(key.into());
@@ -166,6 +226,28 @@ fn derive_key_with_params(
     time_cost: u32,
     parallelism: u32,
 ) -> VaultResult<[u8; 32]> {
+    if salt.len() != SALT_LEN {
+        return Err(VaultError::kdf(format!(
+            "Invalid Argon2 salt length: expected {SALT_LEN}, got {}",
+            salt.len()
+        )));
+    }
+    if !(MIN_ARGON2_MEMORY_KIB..=MAX_ARGON2_MEMORY_KIB).contains(&memory_kib) {
+        return Err(VaultError::kdf(format!(
+            "Argon2 memory cost must be between {MIN_ARGON2_MEMORY_KIB} and {MAX_ARGON2_MEMORY_KIB} KiB"
+        )));
+    }
+    if !(1..=MAX_ARGON2_TIME_COST).contains(&time_cost) {
+        return Err(VaultError::kdf(format!(
+            "Argon2 time cost must be between 1 and {MAX_ARGON2_TIME_COST}"
+        )));
+    }
+    if !(1..=MAX_ARGON2_PARALLELISM).contains(&parallelism) {
+        return Err(VaultError::kdf(format!(
+            "Argon2 parallelism must be between 1 and {MAX_ARGON2_PARALLELISM}"
+        )));
+    }
+
     let params = argon2::Params::new(memory_kib, time_cost, parallelism, Some(32))
         .map_err(|e| VaultError::kdf(format!("Argon2 params: {e}")))?;
 
@@ -223,5 +305,24 @@ mod tests {
         let key2 = [2u8; 32];
         let encrypted = encrypt_with_key(&key1, b"data").unwrap();
         assert!(decrypt_with_key(&key2, &encrypted).is_err());
+    }
+
+    #[test]
+    fn malformed_nonce_is_rejected_without_panicking() {
+        let (meta, ciphertext) = encrypt("correct", b"data").unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&meta).unwrap();
+        value["nonce_b64"] =
+            serde_json::Value::String(general_purpose::STANDARD.encode([1u8; NONCE_LEN - 1]));
+
+        assert!(decrypt("correct", &value.to_string(), &ciphertext).is_err());
+    }
+
+    #[test]
+    fn hostile_argon2_memory_cost_is_rejected_before_derivation() {
+        let (meta, ciphertext) = encrypt("correct", b"data").unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&meta).unwrap();
+        value["kdf_memory_kib"] = serde_json::json!(u32::MAX);
+
+        assert!(decrypt("correct", &value.to_string(), &ciphertext).is_err());
     }
 }

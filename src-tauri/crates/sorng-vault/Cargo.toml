@@ -19,6 +19,9 @@ aes-gcm = { workspace = true }
 argon2 = "0.5"
 thiserror = { workspace = true }
 dirs = { workspace = true }
+tauri = { workspace = true }
+tempfile = { workspace = true }
+zeroize = { workspace = true }
 
 # Sibling crate for biometric gating
 sorng-biometrics = { path = "../sorng-biometrics" }
@@ -31,4 +34,5 @@ security-framework = "2.11"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # For Secret Service D-Bus protocol (GNOME Keyring / KDE Wallet)
+libc = "0.2"
 zbus = { version = "4", features = ["tokio"] }

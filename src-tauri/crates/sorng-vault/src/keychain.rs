@@ -4,6 +4,7 @@
 //! async API for rest of the application.
 
 use crate::types::*;
+use zeroize::Zeroizing;
 
 // ── Platform dispatch helpers ───────────────────────────────────────
 
@@ -26,14 +27,16 @@ fn plat_store(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
     }
 }
 
-fn plat_read(service: &str, account: &str) -> VaultResult<Vec<u8>> {
+fn plat_read(service: &str, account: &str) -> VaultResult<Zeroizing<Vec<u8>>> {
     #[cfg(target_os = "windows")]
     {
-        sorng_vault_windows::read_secret(service, account).map_err(VaultError::platform)
+        sorng_vault_windows::read_secret(service, account)
+            .map(Zeroizing::new)
+            .map_err(VaultError::platform)
     }
     #[cfg(target_os = "macos")]
     {
-        crate::platform::macos::read_secret(service, account)
+        crate::platform::macos::read_secret(service, account).map(Zeroizing::new)
     }
     #[cfg(target_os = "linux")]
     {
@@ -41,7 +44,7 @@ fn plat_read(service: &str, account: &str) -> VaultResult<Vec<u8>> {
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-        crate::platform::fallback::read_secret(service, account)
+        crate::platform::fallback::read_secret(service, account).map(Zeroizing::new)
     }
 }
 
@@ -133,8 +136,8 @@ fn plat_count(service: &str) -> usize {
 pub async fn store(service: &str, account: &str, secret: &str) -> VaultResult<()> {
     let service = service.to_owned();
     let account = account.to_owned();
-    let secret = secret.as_bytes().to_vec();
-    tokio::task::spawn_blocking(move || plat_store(&service, &account, &secret))
+    let secret = Zeroizing::new(secret.as_bytes().to_vec());
+    tokio::task::spawn_blocking(move || plat_store(&service, &account, secret.as_slice()))
         .await
         .map_err(|e| VaultError::internal(format!("spawn_blocking: {e}")))?
 }
@@ -143,26 +146,36 @@ pub async fn store(service: &str, account: &str, secret: &str) -> VaultResult<()
 pub async fn store_bytes(service: &str, account: &str, secret: &[u8]) -> VaultResult<()> {
     let service = service.to_owned();
     let account = account.to_owned();
-    let secret = secret.to_vec();
-    tokio::task::spawn_blocking(move || plat_store(&service, &account, &secret))
+    let secret = Zeroizing::new(secret.to_vec());
+    tokio::task::spawn_blocking(move || plat_store(&service, &account, secret.as_slice()))
         .await
         .map_err(|e| VaultError::internal(format!("spawn_blocking: {e}")))?
 }
 
 /// Read a secret as UTF-8 string from the OS vault.
 pub async fn read(service: &str, account: &str) -> VaultResult<String> {
-    let bytes = read_bytes(service, account).await?;
-    String::from_utf8(bytes)
+    let bytes = read_bytes_zeroizing(service, account).await?;
+    std::str::from_utf8(bytes.as_slice())
+        .map(str::to_owned)
         .map_err(|e| VaultError::serde(format!("Secret is not valid UTF-8: {e}")))
 }
 
-/// Read raw bytes from the OS vault.
-pub async fn read_bytes(service: &str, account: &str) -> VaultResult<Vec<u8>> {
+/// Read raw bytes from the OS vault into an automatically zeroizing buffer.
+pub async fn read_bytes_zeroizing(service: &str, account: &str) -> VaultResult<Zeroizing<Vec<u8>>> {
     let service = service.to_owned();
     let account = account.to_owned();
     tokio::task::spawn_blocking(move || plat_read(&service, &account))
         .await
         .map_err(|e| VaultError::internal(format!("spawn_blocking: {e}")))?
+}
+
+/// Read raw bytes from the OS vault.
+///
+/// The returned bytes are owned by the caller. Prefer
+/// [`read_bytes_zeroizing`] when the caller can keep the zeroizing wrapper.
+pub async fn read_bytes(service: &str, account: &str) -> VaultResult<Vec<u8>> {
+    let mut bytes = read_bytes_zeroizing(service, account).await?;
+    Ok(std::mem::take(&mut *bytes))
 }
 
 /// Delete a secret from the OS vault.
@@ -210,9 +223,9 @@ pub async fn status() -> VaultResult<VaultStatus> {
 
 /// Generate a random 256-bit data-encryption key and store it in the vault.
 pub async fn generate_and_store_dek() -> VaultResult<Vec<u8>> {
-    let mut dek = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut dek);
-    store_bytes(SERVICE_NAME, MASTER_DEK_ACCOUNT, &dek).await?;
+    let mut dek = Zeroizing::new([0u8; 32]);
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut *dek);
+    store_bytes(SERVICE_NAME, MASTER_DEK_ACCOUNT, &dek[..]).await?;
     Ok(dek.to_vec())
 }
 

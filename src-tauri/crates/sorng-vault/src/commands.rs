@@ -3,6 +3,29 @@
 use super::types::*;
 use super::{envelope, keychain, migration};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
+
+const RESERVED_INTERNAL_SERVICE_PREFIX: &str = "sortofremoteng.internal.";
+
+fn reject_reserved_internal_service(service: &str) -> Result<(), String> {
+    if service
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with(RESERVED_INTERNAL_SERVICE_PREFIX)
+    {
+        return Err(
+            "reserved application secrets are not accessible through generic vault IPC".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn managed_storage_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join("storage.json"))
+        .map_err(|_| "Failed to resolve the application data directory".to_string())
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Vault status
@@ -37,6 +60,7 @@ pub async fn vault_store_secret(
     account: String,
     secret: String,
 ) -> Result<(), String> {
+    reject_reserved_internal_service(&service)?;
     keychain::store(&service, &account, &secret)
         .await
         .map_err(|e| e.to_string())
@@ -45,6 +69,7 @@ pub async fn vault_store_secret(
 /// Read a secret from the OS vault.
 #[tauri::command]
 pub async fn vault_read_secret(service: String, account: String) -> Result<String, String> {
+    reject_reserved_internal_service(&service)?;
     keychain::read(&service, &account)
         .await
         .map_err(|e| e.to_string())
@@ -53,6 +78,7 @@ pub async fn vault_read_secret(service: String, account: String) -> Result<Strin
 /// Delete a secret from the OS vault.
 #[tauri::command]
 pub async fn vault_delete_secret(service: String, account: String) -> Result<(), String> {
+    reject_reserved_internal_service(&service)?;
     keychain::delete(&service, &account)
         .await
         .map_err(|e| e.to_string())
@@ -115,10 +141,13 @@ pub async fn vault_biometric_store(
     secret: String,
     reason: String,
 ) -> Result<(), String> {
-    // Verify biometric first
-    super::biometrics::verify(&reason)
+    reject_reserved_internal_service(&service)?;
+    let verified = super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
+    if !verified {
+        return Err("Biometric verification did not succeed".to_string());
+    }
 
     keychain::store(&service, &account, &secret)
         .await
@@ -132,9 +161,13 @@ pub async fn vault_biometric_read(
     account: String,
     reason: String,
 ) -> Result<String, String> {
-    super::biometrics::verify(&reason)
+    reject_reserved_internal_service(&service)?;
+    let verified = super::biometrics::verify(&reason)
         .await
         .map_err(|e| e.to_string())?;
+    if !verified {
+        return Err("Biometric verification did not succeed".to_string());
+    }
 
     keychain::read(&service, &account)
         .await
@@ -147,33 +180,33 @@ pub async fn vault_biometric_read(
 
 /// Check if legacy storage needs migration.
 #[tauri::command]
-pub async fn vault_needs_migration(storage_path: String) -> Result<bool, String> {
-    Ok(migration::needs_migration(&PathBuf::from(storage_path)))
+pub async fn vault_needs_migration(app: AppHandle) -> Result<bool, String> {
+    Ok(migration::needs_migration(&managed_storage_path(&app)?))
 }
 
 /// Migrate legacy plain-JSON storage into vault-backed encrypted storage.
 #[tauri::command]
 pub async fn vault_migrate(
-    storage_path: String,
+    app: AppHandle,
     old_password: Option<String>,
 ) -> Result<migration::MigrationResult, String> {
-    migration::migrate(&PathBuf::from(storage_path), old_password.as_deref())
+    migration::migrate(&managed_storage_path(&app)?, old_password.as_deref())
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Load storage data from vault-backed encrypted file.
 #[tauri::command]
-pub async fn vault_load_storage(storage_path: String) -> Result<String, String> {
-    migration::load_vault_storage(&PathBuf::from(storage_path))
+pub async fn vault_load_storage(app: AppHandle) -> Result<String, String> {
+    migration::load_vault_storage(&managed_storage_path(&app)?)
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Save storage data to vault-backed encrypted file.
 #[tauri::command]
-pub async fn vault_save_storage(storage_path: String, json_data: String) -> Result<(), String> {
-    migration::save_vault_storage(&PathBuf::from(storage_path), &json_data)
+pub async fn vault_save_storage(app: AppHandle, json_data: String) -> Result<(), String> {
+    migration::save_vault_storage(&managed_storage_path(&app)?, &json_data)
         .await
         .map_err(|e| e.to_string())
 }
