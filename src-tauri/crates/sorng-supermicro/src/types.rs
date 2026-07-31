@@ -137,7 +137,7 @@ impl Default for SmcConfig {
             username: String::from("ADMIN"),
             password: String::new(),
             use_ssl: true,
-            verify_cert: false,
+            verify_cert: true,
             platform: SmcPlatform::Unknown,
             auth_method: SmcAuthMethod::Session,
             timeout_secs: 30,
