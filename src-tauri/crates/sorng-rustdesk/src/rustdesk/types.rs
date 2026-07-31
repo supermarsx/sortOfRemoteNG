@@ -18,6 +18,35 @@ pub struct RustDeskServerConfig {
     pub is_pro: bool,
 }
 
+/// Renderer-safe view of the RustDesk server configuration.
+///
+/// Secret values are deliberately omitted. The boolean fields preserve the
+/// ability to show whether credentials have been configured without exposing
+/// them across the Tauri command boundary.
+#[derive(Debug, Clone, Serialize)]
+pub struct RustDeskServerConfigPublic {
+    pub api_url: String,
+    pub relay_server: Option<String>,
+    pub is_pro: bool,
+    pub api_token_configured: bool,
+    pub server_key_configured: bool,
+}
+
+impl From<&RustDeskServerConfig> for RustDeskServerConfigPublic {
+    fn from(config: &RustDeskServerConfig) -> Self {
+        Self {
+            api_url: config.api_url.clone(),
+            relay_server: config.relay_server.clone(),
+            is_pro: config.is_pro,
+            api_token_configured: !config.api_token.is_empty(),
+            server_key_configured: config
+                .server_key
+                .as_deref()
+                .is_some_and(|key| !key.is_empty()),
+        }
+    }
+}
+
 /// Result returned after testing connectivity to the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustDeskServerStatus {
@@ -51,6 +80,35 @@ pub struct RustDeskClientConfig {
     pub force_relay: bool,
     pub direct_server: Option<String>,
     pub allow_direct_ip: bool,
+}
+
+/// Renderer-safe view of the local RustDesk client configuration.
+#[derive(Debug, Clone, Serialize)]
+pub struct RustDeskClientConfigPublic {
+    pub id_server: Option<String>,
+    pub relay_server: Option<String>,
+    pub api_server: Option<String>,
+    pub force_relay: bool,
+    pub direct_server: Option<String>,
+    pub allow_direct_ip: bool,
+    pub key_configured: bool,
+}
+
+impl From<&RustDeskClientConfig> for RustDeskClientConfigPublic {
+    fn from(config: &RustDeskClientConfig) -> Self {
+        Self {
+            id_server: config.id_server.clone(),
+            relay_server: config.relay_server.clone(),
+            api_server: config.api_server.clone(),
+            force_relay: config.force_relay,
+            direct_server: config.direct_server.clone(),
+            allow_direct_ip: config.allow_direct_ip,
+            key_configured: config
+                .key
+                .as_deref()
+                .is_some_and(|key| !key.is_empty()),
+        }
+    }
 }
 
 // ─── Connection / Session ───────────────────────────────────────────

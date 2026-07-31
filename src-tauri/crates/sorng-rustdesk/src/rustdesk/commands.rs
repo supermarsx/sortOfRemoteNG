@@ -87,9 +87,11 @@ pub async fn rustdesk_configure_server(
 #[tauri::command]
 pub async fn rustdesk_get_server_config(
     state: tauri::State<'_, RustDeskServiceState>,
-) -> Result<Option<RustDeskServerConfig>, String> {
+) -> Result<Option<RustDeskServerConfigPublic>, String> {
     let svc = state.lock().await;
-    Ok(svc.get_server_config().cloned())
+    Ok(svc
+        .get_server_config()
+        .map(RustDeskServerConfigPublic::from))
 }
 
 #[tauri::command]
@@ -105,9 +107,11 @@ pub async fn rustdesk_set_client_config(
 #[tauri::command]
 pub async fn rustdesk_get_client_config(
     state: tauri::State<'_, RustDeskServiceState>,
-) -> Result<Option<RustDeskClientConfig>, String> {
+) -> Result<Option<RustDeskClientConfigPublic>, String> {
     let svc = state.lock().await;
-    Ok(svc.get_client_config().cloned())
+    Ok(svc
+        .get_client_config()
+        .map(RustDeskClientConfigPublic::from))
 }
 
 // ═══════════════════════════════════════════════════════════════════════
