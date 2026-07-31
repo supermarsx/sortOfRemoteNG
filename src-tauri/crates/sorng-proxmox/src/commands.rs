@@ -7,6 +7,57 @@ use super::service::ProxmoxServiceState;
 use super::types::*;
 use tauri::State;
 
+const MAX_USERNAME_BYTES: usize = 256;
+const MAX_PASSWORD_BYTES: usize = 4096;
+const MAX_TOKEN_ID_BYTES: usize = 512;
+const MAX_TOKEN_SECRET_BYTES: usize = 4096;
+
+fn validate_identifier(value: String, label: &str, max_bytes: usize) -> Result<String, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    if value.len() > max_bytes || value.chars().any(char::is_control) {
+        return Err(format!("Invalid {label}"));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_secret(value: Option<String>, label: &str, max_bytes: usize) -> Result<String, String> {
+    let value = value.ok_or_else(|| format!("{label} is required"))?;
+    if value.is_empty() {
+        return Err(format!("{label} is required"));
+    }
+    if value.len() > max_bytes || value.contains(['\r', '\n']) {
+        return Err(format!("Invalid {label}"));
+    }
+    Ok(value)
+}
+
+fn validate_password_username(username: String) -> Result<String, String> {
+    let username = validate_identifier(username, "Proxmox username", MAX_USERNAME_BYTES)?;
+    if let Some((account, realm)) = username.rsplit_once('@') {
+        if account.is_empty() || realm.is_empty() {
+            return Err("Invalid Proxmox username".to_string());
+        }
+    }
+    Ok(username)
+}
+
+fn validate_token_id(token_id: String) -> Result<String, String> {
+    let token_id = validate_identifier(token_id, "Proxmox API token ID", MAX_TOKEN_ID_BYTES)?;
+    let Some((principal, token_name)) = token_id.rsplit_once('!') else {
+        return Err("Invalid Proxmox API token ID".to_string());
+    };
+    let Some((account, realm)) = principal.rsplit_once('@') else {
+        return Err("Invalid Proxmox API token ID".to_string());
+    };
+    if account.is_empty() || realm.is_empty() || token_name.is_empty() {
+        return Err("Invalid Proxmox API token ID".to_string());
+    }
+    Ok(token_id)
+}
+
 // ── Connection ──────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -21,27 +72,45 @@ pub async fn proxmox_connect(
     token_secret: Option<String>,
     insecure: Option<bool>,
     timeout_secs: Option<u64>,
+    fingerprint: Option<String>,
+    acknowledge_invalid_cert_risk: Option<bool>,
 ) -> Result<String, String> {
-    let auth = if let (Some(tid), Some(sec)) = (token_id, token_secret) {
-        ProxmoxAuthMethod::ApiToken {
-            token_id: tid,
-            secret: sec,
-        }
-    } else {
-        ProxmoxAuthMethod::Password {
-            username: username.clone(),
-            password: password.unwrap_or_default(),
+    let insecure = insecure.unwrap_or(false);
+    if insecure && acknowledge_invalid_cert_risk != Some(true) {
+        return Err(
+            "Explicit acknowledgement is required for this self-signed certificate connection attempt"
+                .to_string(),
+        );
+    }
+
+    let auth = match (token_id, token_secret) {
+        (Some(token_id), Some(token_secret)) => ProxmoxAuthMethod::ApiToken {
+            token_id: validate_token_id(token_id)?,
+            secret: validate_secret(
+                Some(token_secret),
+                "Proxmox API token secret",
+                MAX_TOKEN_SECRET_BYTES,
+            )?,
+        },
+        (None, None) => ProxmoxAuthMethod::Password {
+            username: validate_password_username(username)?,
+            password: validate_secret(password, "Proxmox password", MAX_PASSWORD_BYTES)?,
             realm: "pam".into(),
             otp: None,
+        },
+        _ => {
+            return Err(
+                "Proxmox API token ID and token secret must be provided together".to_string(),
+            )
         }
     };
     let config = ProxmoxConfig {
         host,
         port: port.unwrap_or(8006),
         auth,
-        insecure: insecure.unwrap_or(true),
+        insecure,
         timeout_secs: timeout_secs.unwrap_or(30),
-        fingerprint: None,
+        fingerprint,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())
