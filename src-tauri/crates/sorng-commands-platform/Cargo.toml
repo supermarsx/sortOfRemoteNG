@@ -8,9 +8,11 @@ description = "Platform command handlers — split from app crate to reduce cohe
 [dependencies]
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["platform", "ops", "collab"] }
 tauri = { workspace = true }
+tauri-plugin-fs = "=2.5.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
+tempfile = { workspace = true }
