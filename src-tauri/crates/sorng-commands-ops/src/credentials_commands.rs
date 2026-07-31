@@ -1,3 +1,7 @@
+mod error {
+    pub use crate::credentials::error::*;
+}
+
 mod service {
     pub use crate::credentials::service::*;
 }
