@@ -7,6 +7,76 @@ use chrono::Utc;
 use log::info;
 use uuid::Uuid;
 
+const LIBSSH2_FX_NO_SUCH_FILE: i32 = 2;
+const REMOTE_STAT_ABORTED: &str = "Remote destination could not be verified; upload was aborted";
+const REMOTE_PARENT_ABORTED: &str =
+    "Remote parent directory could not be prepared; upload was aborted";
+
+#[derive(Debug, Clone, Copy)]
+struct LocalFileSnapshot {
+    size: u64,
+    modified: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RemoteDestination {
+    Missing,
+    Existing { size: u64, modified: u64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PushFileOutcome {
+    Uploaded,
+    Skipped,
+    Errored,
+}
+
+trait PushSession {
+    async fn inspect_remote_destination(
+        &mut self,
+        session_id: &str,
+        remote_path: &str,
+    ) -> Result<RemoteDestination, String>;
+
+    async fn ensure_remote_parent(
+        &mut self,
+        session_id: &str,
+        remote_parent: &str,
+    ) -> Result<(), String>;
+
+    async fn perform_push_upload(&mut self, request: SftpTransferRequest) -> bool;
+}
+
+impl PushSession for SftpService {
+    async fn inspect_remote_destination(
+        &mut self,
+        session_id: &str,
+        remote_path: &str,
+    ) -> Result<RemoteDestination, String> {
+        let (sftp, _handle) = self.sftp_channel(session_id)?;
+        match sftp.stat(std::path::Path::new(remote_path)) {
+            Ok(stat) => Ok(RemoteDestination::Existing {
+                size: stat.size.unwrap_or(0),
+                modified: stat.mtime.unwrap_or(0),
+            }),
+            Err(error) if is_remote_not_found(error.code()) => Ok(RemoteDestination::Missing),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    async fn ensure_remote_parent(
+        &mut self,
+        session_id: &str,
+        remote_parent: &str,
+    ) -> Result<(), String> {
+        self.mkdir_p(session_id, remote_parent, None).await
+    }
+
+    async fn perform_push_upload(&mut self, request: SftpTransferRequest) -> bool {
+        matches!(self.upload(request).await, Ok(result) if result.success)
+    }
+}
+
 impl SftpService {
     /// Start watching a remote directory for changes.
     pub async fn watch_start(&mut self, config: WatchConfig) -> Result<String, String> {
@@ -179,54 +249,19 @@ impl SftpService {
                 .unwrap_or(local_file)
                 .trim_start_matches('/')
                 .trim_start_matches('\\');
-            let remote_dest = format!("{}/{}", remote_path, relative.replace('\\', "/"));
+            let remote_dest = format!(
+                "{}/{}",
+                remote_path.trim_end_matches('/'),
+                relative.replace('\\', "/")
+            );
+            let local_snapshot = local_file_snapshot(local_file)?;
 
-            // Check remote stat
-            let needs_upload = match self.stat(session_id, &remote_dest).await {
-                Ok(remote_stat) => {
-                    let local_meta = std::fs::metadata(local_file).map_err(|e| e.to_string())?;
-                    let local_mtime = local_meta
-                        .modified()
-                        .ok()
-                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-                    let remote_mtime = remote_stat.modified.unwrap_or(0);
-                    local_meta.len() != remote_stat.size || local_mtime > remote_mtime
-                }
-                Err(_) => true, // remote doesn't exist
-            };
-
-            if !needs_upload {
-                skipped += 1;
-                continue;
-            }
-
-            // Ensure remote parent directory exists
-            if let Some(parent) = std::path::Path::new(&remote_dest).parent() {
-                let parent_str = parent.to_string_lossy().to_string();
-                let _ = self.mkdir_p(session_id, &parent_str, None).await;
-            }
-
-            let req = SftpTransferRequest {
-                session_id: session_id.to_string(),
-                local_path: local_file.clone(),
-                remote_path: remote_dest,
-                direction: TransferDirection::Upload,
-                chunk_size: 1_048_576,
-                resume: false,
-                on_conflict: ConflictResolution::Overwrite,
-                preserve_timestamps: true,
-                preserve_permissions: false,
-                bandwidth_limit_kbps: None,
-                retry_count: 1,
-                retry_delay_ms: 1000,
-                verify_checksum: false,
-            };
-
-            match self.upload(req).await {
-                Ok(r) if r.success => uploaded += 1,
-                _ => errors += 1,
+            match push_local_file(self, session_id, local_file, &remote_dest, local_snapshot)
+                .await?
+            {
+                PushFileOutcome::Uploaded => uploaded += 1,
+                PushFileOutcome::Skipped => skipped += 1,
+                PushFileOutcome::Errored => errors += 1,
             }
         }
 
@@ -285,4 +320,254 @@ fn collect_local_files(root: &str) -> Result<Vec<String>, String> {
     }
 
     Ok(files)
+}
+
+fn local_file_snapshot(path: &str) -> Result<LocalFileSnapshot, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|_| "Local upload source could not be inspected; sync was aborted".to_string())?;
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    Ok(LocalFileSnapshot {
+        size: metadata.len(),
+        modified,
+    })
+}
+
+fn is_remote_not_found(code: ssh2::ErrorCode) -> bool {
+    matches!(code, ssh2::ErrorCode::SFTP(code) if code == LIBSSH2_FX_NO_SUCH_FILE)
+}
+
+fn remote_parent(path: &str) -> Option<&str> {
+    path.rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .filter(|parent| !parent.is_empty())
+}
+
+async fn push_local_file<S: PushSession>(
+    session: &mut S,
+    session_id: &str,
+    local_path: &str,
+    remote_path: &str,
+    local: LocalFileSnapshot,
+) -> Result<PushFileOutcome, String> {
+    let destination = session
+        .inspect_remote_destination(session_id, remote_path)
+        .await
+        .map_err(|_| REMOTE_STAT_ABORTED.to_string())?;
+
+    let needs_upload = match destination {
+        RemoteDestination::Missing => true,
+        RemoteDestination::Existing { size, modified } => {
+            local.size != size || local.modified > modified
+        }
+    };
+    if !needs_upload {
+        return Ok(PushFileOutcome::Skipped);
+    }
+
+    if let Some(parent) = remote_parent(remote_path) {
+        session
+            .ensure_remote_parent(session_id, parent)
+            .await
+            .map_err(|_| REMOTE_PARENT_ABORTED.to_string())?;
+    }
+
+    let request = SftpTransferRequest {
+        session_id: session_id.to_string(),
+        local_path: local_path.to_string(),
+        remote_path: remote_path.to_string(),
+        direction: TransferDirection::Upload,
+        chunk_size: 1_048_576,
+        resume: false,
+        on_conflict: ConflictResolution::Overwrite,
+        preserve_timestamps: true,
+        preserve_permissions: false,
+        bandwidth_limit_kbps: None,
+        retry_count: 1,
+        retry_delay_ms: 1000,
+        verify_checksum: false,
+    };
+
+    if session.perform_push_upload(request).await {
+        Ok(PushFileOutcome::Uploaded)
+    } else {
+        Ok(PushFileOutcome::Errored)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FakePushSession {
+        inspection: Option<Result<RemoteDestination, String>>,
+        parent_result: Result<(), String>,
+        upload_success: bool,
+        inspected_paths: Vec<String>,
+        prepared_parents: Vec<String>,
+        uploads: Vec<SftpTransferRequest>,
+    }
+
+    impl FakePushSession {
+        fn new(inspection: Result<RemoteDestination, String>) -> Self {
+            Self {
+                inspection: Some(inspection),
+                parent_result: Ok(()),
+                upload_success: true,
+                inspected_paths: Vec::new(),
+                prepared_parents: Vec::new(),
+                uploads: Vec::new(),
+            }
+        }
+    }
+
+    impl PushSession for FakePushSession {
+        async fn inspect_remote_destination(
+            &mut self,
+            _session_id: &str,
+            remote_path: &str,
+        ) -> Result<RemoteDestination, String> {
+            self.inspected_paths.push(remote_path.to_string());
+            self.inspection
+                .take()
+                .expect("fake inspection should be called exactly once")
+        }
+
+        async fn ensure_remote_parent(
+            &mut self,
+            _session_id: &str,
+            remote_parent: &str,
+        ) -> Result<(), String> {
+            self.prepared_parents.push(remote_parent.to_string());
+            self.parent_result.clone()
+        }
+
+        async fn perform_push_upload(&mut self, request: SftpTransferRequest) -> bool {
+            self.uploads.push(request);
+            self.upload_success
+        }
+    }
+
+    fn snapshot(size: u64, modified: u64) -> LocalFileSnapshot {
+        LocalFileSnapshot { size, modified }
+    }
+
+    #[test]
+    fn only_sftp_no_such_file_is_treated_as_missing() {
+        assert!(is_remote_not_found(ssh2::ErrorCode::SFTP(2)));
+        assert!(!is_remote_not_found(ssh2::ErrorCode::SFTP(3)));
+        assert!(!is_remote_not_found(ssh2::ErrorCode::SFTP(4)));
+        assert!(!is_remote_not_found(ssh2::ErrorCode::Session(-1)));
+    }
+
+    #[tokio::test]
+    async fn genuine_not_found_uploads_with_the_existing_overwrite_policy() {
+        let mut session = FakePushSession::new(Ok(RemoteDestination::Missing));
+
+        let outcome = push_local_file(
+            &mut session,
+            "session-1",
+            "C:/safe/file.txt",
+            "/remote/file.txt",
+            snapshot(12, 20),
+        )
+        .await
+        .expect("a genuinely missing destination should be uploadable");
+
+        assert_eq!(outcome, PushFileOutcome::Uploaded);
+        assert_eq!(session.prepared_parents, ["/remote"]);
+        assert_eq!(session.uploads.len(), 1);
+        assert!(matches!(
+            session.uploads[0].on_conflict,
+            ConflictResolution::Overwrite
+        ));
+    }
+
+    #[tokio::test]
+    async fn permission_or_ambiguous_stat_error_aborts_without_upload() {
+        let mut session = FakePushSession::new(Err(
+            "permission denied while inspecting /remote/private.txt".to_string(),
+        ));
+
+        let error = push_local_file(
+            &mut session,
+            "session-1",
+            "C:/safe/file.txt",
+            "/remote/private.txt",
+            snapshot(12, 20),
+        )
+        .await
+        .expect_err("an ambiguous stat failure must abort the push");
+
+        assert_eq!(error, REMOTE_STAT_ABORTED);
+        assert!(!error.contains("private.txt"));
+        assert!(!error.contains("permission denied"));
+        assert!(session.prepared_parents.is_empty());
+        assert!(session.uploads.is_empty());
+    }
+
+    #[tokio::test]
+    async fn parent_creation_failure_propagates_without_upload() {
+        let mut session = FakePushSession::new(Ok(RemoteDestination::Missing));
+        session.parent_result = Err("permission denied for /remote/secret".to_string());
+
+        let error = push_local_file(
+            &mut session,
+            "session-1",
+            "C:/safe/file.txt",
+            "/remote/secret/file.txt",
+            snapshot(12, 20),
+        )
+        .await
+        .expect_err("parent creation failure must abort the push");
+
+        assert_eq!(error, REMOTE_PARENT_ABORTED);
+        assert!(!error.contains("/remote/secret"));
+        assert_eq!(session.prepared_parents, ["/remote/secret"]);
+        assert!(session.uploads.is_empty());
+    }
+
+    #[tokio::test]
+    async fn genuine_existing_destination_preserves_skip_and_overwrite_semantics() {
+        let mut unchanged = FakePushSession::new(Ok(RemoteDestination::Existing {
+            size: 12,
+            modified: 20,
+        }));
+        let outcome = push_local_file(
+            &mut unchanged,
+            "session-1",
+            "C:/safe/file.txt",
+            "/remote/file.txt",
+            snapshot(12, 20),
+        )
+        .await
+        .expect("an unchanged existing destination should be skipped");
+        assert_eq!(outcome, PushFileOutcome::Skipped);
+        assert!(unchanged.prepared_parents.is_empty());
+        assert!(unchanged.uploads.is_empty());
+
+        let mut changed = FakePushSession::new(Ok(RemoteDestination::Existing {
+            size: 11,
+            modified: 20,
+        }));
+        let outcome = push_local_file(
+            &mut changed,
+            "session-1",
+            "C:/safe/file.txt",
+            "/remote/file.txt",
+            snapshot(12, 20),
+        )
+        .await
+        .expect("a changed existing destination should be overwritten");
+        assert_eq!(outcome, PushFileOutcome::Uploaded);
+        assert_eq!(changed.uploads.len(), 1);
+        assert!(matches!(
+            changed.uploads[0].on_conflict,
+            ConflictResolution::Overwrite
+        ));
+    }
 }
