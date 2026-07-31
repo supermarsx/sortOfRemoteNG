@@ -21,9 +21,12 @@ pub struct VsphereClient {
 impl VsphereClient {
     /// Build a new client from config (does NOT create a session yet).
     pub fn new(config: &VsphereConfig) -> VmwareResult<Self> {
-        let mut builder = Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
-            .timeout(Duration::from_secs(config.timeout_secs));
+        if config.insecure {
+            return Err(VmwareError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
+        let mut builder = Client::builder().timeout(Duration::from_secs(config.timeout_secs));
         if let Some(proxy_url) = config
             .proxy_url
             .as_deref()
@@ -334,7 +337,7 @@ mod tests {
             port,
             username: "user".into(),
             password: "password".into(),
-            insecure: true,
+            insecure: false,
             timeout_secs: 1,
             proxy_url: None,
         };

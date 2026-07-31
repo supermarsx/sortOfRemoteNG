@@ -32,7 +32,7 @@ pub async fn vmware_connect(
         port: args.port.unwrap_or(443),
         username: args.username,
         password: args.password,
-        insecure: args.insecure.unwrap_or(true),
+        insecure: args.insecure.unwrap_or(false),
         timeout_secs: args.timeout_secs.unwrap_or(30),
         proxy_url: args.proxy_url,
     };

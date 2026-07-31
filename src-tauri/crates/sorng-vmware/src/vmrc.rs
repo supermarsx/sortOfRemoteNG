@@ -246,7 +246,12 @@ impl VmrcManager {
         // 6. Spawn the proxy task
         let rh = remote_host.clone();
         let rp = remote_port;
-        let insecure = req.insecure;
+        if req.insecure {
+            return Err(VmwareError::vmrc(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
+        let insecure = false;
         tokio::spawn(async move {
             run_proxy_loop(listener, rh, rp, insecure, shutdown_rx).await;
         });
@@ -700,6 +705,12 @@ async fn relay_connection(
     remote_port: u16,
     accept_invalid_certs: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if accept_invalid_certs {
+        return Err(
+            "TLS certificate verification cannot be disabled without an explicit runtime acknowledgement contract"
+                .into(),
+        );
+    }
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
     use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
     use rustls::{DigitallySignedStruct, SignatureScheme};
