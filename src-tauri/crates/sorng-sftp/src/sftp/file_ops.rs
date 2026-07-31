@@ -6,6 +6,9 @@ use chrono::Utc;
 use log::info;
 use std::path::Path;
 
+const MAX_TREE_ENTRIES: usize = 50_000;
+const MAX_TEXT_WRITE_BYTES: usize = 10 * 1024 * 1024;
+
 /// Convert an ssh2 `FileStat` + path into our richer `SftpFileStat`.
 pub(crate) fn stat_to_file_stat(
     path: &str,
@@ -227,6 +230,11 @@ impl SftpService {
                 .map_err(|e| format!("readdir '{}' failed: {}", dir, e))?;
 
             for (entry_path, stat) in entries {
+                if result.len() >= MAX_TREE_ENTRIES {
+                    return Err(
+                        "Recursive operation exceeded the supported entry limit".to_string()
+                    );
+                }
                 let name = entry_path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
@@ -509,6 +517,9 @@ impl SftpService {
         path: &str,
         content: &str,
     ) -> Result<u64, String> {
+        if content.len() > MAX_TEXT_WRITE_BYTES {
+            return Err("Text write exceeds the supported size".to_string());
+        }
         let (sftp, handle) = self.sftp_channel(session_id)?;
         let mut file = sftp
             .create(Path::new(path))
