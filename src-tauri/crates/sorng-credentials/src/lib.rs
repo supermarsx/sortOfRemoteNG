@@ -25,6 +25,7 @@ pub mod alerts;
 pub mod audit;
 pub mod error;
 pub mod groups;
+mod persistence;
 pub mod policies;
 pub mod service;
 pub mod tracker;

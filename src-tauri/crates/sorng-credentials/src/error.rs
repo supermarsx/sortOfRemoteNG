@@ -27,6 +27,8 @@ pub enum CredentialError {
     Validation(String),
     /// JSON (de)serialization error.
     Serialization(String),
+    /// Durable credential metadata storage error.
+    Persistence(String),
     /// Generic / internal error.
     Internal(String),
 }
@@ -44,6 +46,7 @@ impl fmt::Display for CredentialError {
             Self::AuditEntryNotFound(id) => write!(f, "Audit entry not found: {id}"),
             Self::Validation(msg) => write!(f, "Validation error: {msg}"),
             Self::Serialization(msg) => write!(f, "Serialization error: {msg}"),
+            Self::Persistence(msg) => write!(f, "Persistence error: {msg}"),
             Self::Internal(msg) => write!(f, "Internal error: {msg}"),
         }
     }
@@ -54,5 +57,11 @@ impl std::error::Error for CredentialError {}
 impl From<serde_json::Error> for CredentialError {
     fn from(err: serde_json::Error) -> Self {
         Self::Serialization(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for CredentialError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Persistence(err.to_string())
     }
 }

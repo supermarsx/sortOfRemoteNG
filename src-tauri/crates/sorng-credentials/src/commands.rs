@@ -3,6 +3,7 @@
 // IPC command handlers exposed to the SortOfRemote NG front-end via Tauri's
 // `#[tauri::command]` system. All commands are prefixed with `cred_`.
 
+use super::error::CredentialError;
 use super::service::CredentialServiceState;
 use super::tracker::CredentialTracker;
 use super::types::*;
@@ -19,18 +20,19 @@ pub async fn cred_add(
     record: CredentialRecord,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker
-        .add_credential(record.clone())
-        .map_err(|e| e.to_string())?;
-    svc.audit.log_action(CredentialAuditEntry {
-        id: Uuid::new_v4().to_string(),
-        credential_id: record.id.clone(),
-        action: AuditAction::Created,
-        timestamp: Utc::now(),
-        details: format!("Credential '{}' added", record.label),
-        user: "system".to_string(),
-    });
-    Ok(())
+    svc.mutate_and_persist(|svc| {
+        svc.tracker.add_credential(record.clone())?;
+        svc.audit.log_action(CredentialAuditEntry {
+            id: Uuid::new_v4().to_string(),
+            credential_id: record.id.clone(),
+            action: AuditAction::Created,
+            timestamp: Utc::now(),
+            details: format!("Credential '{}' added", record.label),
+            user: "system".to_string(),
+        });
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// Remove a credential record by ID.
@@ -40,19 +42,19 @@ pub async fn cred_remove(
     id: String,
 ) -> Result<CredentialRecord, String> {
     let mut svc = state.lock().await;
-    let removed = svc
-        .tracker
-        .remove_credential(&id)
-        .map_err(|e| e.to_string())?;
-    svc.audit.log_action(CredentialAuditEntry {
-        id: Uuid::new_v4().to_string(),
-        credential_id: id.clone(),
-        action: AuditAction::Deleted,
-        timestamp: Utc::now(),
-        details: format!("Credential '{}' removed", removed.label),
-        user: "system".to_string(),
-    });
-    Ok(removed)
+    svc.mutate_and_persist(|svc| {
+        let removed = svc.tracker.remove_credential(&id)?;
+        svc.audit.log_action(CredentialAuditEntry {
+            id: Uuid::new_v4().to_string(),
+            credential_id: id.clone(),
+            action: AuditAction::Deleted,
+            timestamp: Utc::now(),
+            details: format!("Credential '{}' removed", removed.label),
+            user: "system".to_string(),
+        });
+        Ok(removed)
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// Replace an existing credential record.
@@ -62,8 +64,7 @@ pub async fn cred_update(
     record: CredentialRecord,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker
-        .update_credential(record)
+    svc.mutate_and_persist(|svc| svc.tracker.update_credential(record))
         .map_err(|e| e.to_string())
 }
 
@@ -103,18 +104,19 @@ pub async fn cred_record_rotation(
     id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.tracker
-        .record_rotation(&id)
-        .map_err(|e| e.to_string())?;
-    svc.audit.log_action(CredentialAuditEntry {
-        id: Uuid::new_v4().to_string(),
-        credential_id: id.clone(),
-        action: AuditAction::Rotated,
-        timestamp: Utc::now(),
-        details: "Credential rotated".to_string(),
-        user: "system".to_string(),
-    });
-    Ok(())
+    svc.mutate_and_persist(|svc| {
+        svc.tracker.record_rotation(&id)?;
+        svc.audit.log_action(CredentialAuditEntry {
+            id: Uuid::new_v4().to_string(),
+            credential_id: id.clone(),
+            action: AuditAction::Rotated,
+            timestamp: Utc::now(),
+            details: "Credential rotated".to_string(),
+            user: "system".to_string(),
+        });
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 // ── Expiry Analysis ─────────────────────────────────────────────────
@@ -186,12 +188,15 @@ pub async fn cred_add_policy(
     policy: RotationPolicy,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    let policy_clone = policy.clone();
-    svc.tracker.add_policy(policy).map_err(|e| e.to_string())?;
-    svc.policy_engine
-        .policies
-        .insert(policy_clone.id.clone(), policy_clone);
-    Ok(())
+    svc.mutate_and_persist(|svc| {
+        let policy_clone = policy.clone();
+        svc.tracker.add_policy(policy)?;
+        svc.policy_engine
+            .policies
+            .insert(policy_clone.id.clone(), policy_clone);
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// Remove a rotation policy by ID.
@@ -201,8 +206,12 @@ pub async fn cred_remove_policy(
     id: String,
 ) -> Result<RotationPolicy, String> {
     let mut svc = state.lock().await;
-    svc.policy_engine.policies.remove(&id);
-    svc.tracker.remove_policy(&id).map_err(|e| e.to_string())
+    svc.mutate_and_persist(|svc| {
+        let removed = svc.tracker.remove_policy(&id)?;
+        svc.policy_engine.policies.remove(&id);
+        Ok(removed)
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// List all rotation policies.
@@ -254,7 +263,8 @@ pub async fn cred_create_group(
     group: CredentialGroup,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.groups.create_group(group).map_err(|e| e.to_string())
+    svc.mutate_and_persist(|svc| svc.groups.create_group(group))
+        .map_err(|e| e.to_string())
 }
 
 /// Delete a credential group by ID.
@@ -264,7 +274,8 @@ pub async fn cred_delete_group(
     id: String,
 ) -> Result<CredentialGroup, String> {
     let mut svc = state.lock().await;
-    svc.groups.delete_group(&id).map_err(|e| e.to_string())
+    svc.mutate_and_persist(|svc| svc.groups.delete_group(&id))
+        .map_err(|e| e.to_string())
 }
 
 /// List all credential groups.
@@ -284,8 +295,7 @@ pub async fn cred_add_to_group(
     credential_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.groups
-        .add_to_group(&group_id, credential_id)
+    svc.mutate_and_persist(|svc| svc.groups.add_to_group(&group_id, credential_id))
         .map_err(|e| e.to_string())
 }
 
@@ -297,8 +307,7 @@ pub async fn cred_remove_from_group(
     credential_id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.groups
-        .remove_from_group(&group_id, &credential_id)
+    svc.mutate_and_persist(|svc| svc.groups.remove_from_group(&group_id, &credential_id))
         .map_err(|e| e.to_string())
 }
 
@@ -325,16 +334,28 @@ pub async fn cred_acknowledge_alert(
     id: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.alerts.acknowledge_alert(&id)?;
-    svc.audit.log_action(CredentialAuditEntry {
-        id: Uuid::new_v4().to_string(),
-        credential_id: id.clone(),
-        action: AuditAction::AlertAcknowledged,
-        timestamp: Utc::now(),
-        details: format!("Alert {id} acknowledged"),
-        user: "system".to_string(),
-    });
-    Ok(())
+    svc.mutate_and_persist(|svc| {
+        let credential_id = svc
+            .alerts
+            .alerts
+            .iter()
+            .find(|alert| alert.id == id)
+            .map(|alert| alert.credential_id.clone())
+            .ok_or_else(|| CredentialError::Internal(format!("Alert not found: {id}")))?;
+        svc.alerts
+            .acknowledge_alert(&id)
+            .map_err(CredentialError::Internal)?;
+        svc.audit.log_action(CredentialAuditEntry {
+            id: Uuid::new_v4().to_string(),
+            credential_id,
+            action: AuditAction::AlertAcknowledged,
+            timestamp: Utc::now(),
+            details: format!("Alert {id} acknowledged"),
+            user: "system".to_string(),
+        });
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// Scan all credentials and generate new alerts.
@@ -343,10 +364,13 @@ pub async fn cred_generate_alerts(
     state: State<'_, CredentialServiceState>,
 ) -> Result<Vec<CredentialAlert>, String> {
     let mut svc = state.lock().await;
-    let credentials = svc.tracker.credentials.clone();
-    let policies = svc.tracker.policies.clone();
-    let config = svc.config.clone();
-    Ok(svc.alerts.generate_alerts(&credentials, &policies, &config))
+    svc.mutate_and_persist(|svc| {
+        let credentials = svc.tracker.credentials.clone();
+        let policies = svc.tracker.policies.clone();
+        let config = svc.config.clone();
+        Ok(svc.alerts.generate_alerts(&credentials, &policies, &config))
+    })
+    .map_err(|e| e.to_string())
 }
 
 // ── Audit ───────────────────────────────────────────────────────────
@@ -390,6 +414,9 @@ pub async fn cred_update_config(
     config: CredentialsConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.config = config;
-    Ok(())
+    svc.mutate_and_persist(|svc| {
+        svc.config = config;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }

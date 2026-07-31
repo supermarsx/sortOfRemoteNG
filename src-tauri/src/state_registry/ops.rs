@@ -15,6 +15,7 @@ use cicd::service::CicdServiceState;
 use clamav::service::ClamavServiceState;
 use consul::service::{ConsulServiceHolder, ConsulServiceState};
 use cpanel::service::CpanelServiceState;
+use credentials::service::CredentialService;
 use cron::service::CronServiceState;
 use cups::service::CupsServiceState;
 use cyrus_sasl::service::CyrusSaslServiceState;
@@ -74,9 +75,17 @@ use kafka::service::KafkaServiceState;
 /// Number of concrete Tauri state registrations owned by this codegen unit.
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
-pub const MANAGED_STATE_REGISTRATIONS: usize = 71;
+pub const MANAGED_STATE_REGISTRATIONS: usize = 72;
 
-pub fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
+pub fn register(
+    app: &mut tauri::App<tauri::Wry>,
+    app_dir: &std::path::Path,
+) -> Result<(), credentials::error::CredentialError> {
+    // Hydrate before registering any operations-domain state. A corrupt or
+    // unsafe tracker snapshot aborts startup instead of silently resetting.
+    let credential_state = CredentialService::persistent_state(app_dir)?;
+    app.manage(credential_state);
+
     let k8s_state: K8sServiceState = Arc::new(Mutex::new(k8s::service::K8sService::new()));
     app.manage(k8s_state);
 
@@ -381,6 +390,7 @@ pub fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Path) {
         engine: i18n_engine,
         _watcher: i18n_watcher,
     });
+    Ok(())
 }
 
 #[cfg(test)]

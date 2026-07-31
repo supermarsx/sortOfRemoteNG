@@ -28,7 +28,12 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     #[cfg(any(feature = "collab", feature = "platform"))]
     sorng_app_startup_state::register_collab(app, &app_dir);
     #[cfg(feature = "ops")]
-    sorng_app_domains::ops_startup_state::register(app, &app_dir);
+    sorng_app_domains::ops_startup_state::register(app, &app_dir).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("credential lifecycle state could not be loaded: {error}"),
+        )
+    })?;
 
     // t40-f2: recover crash-orphaned in-flight terminal recordings. f2's
     // incremental-flush writer persists a crash snapshot under

@@ -6,12 +6,15 @@
 
 use crate::alerts::AlertManager;
 use crate::audit::AuditLog;
+use crate::error::CredentialError;
 use crate::groups::GroupManager;
+use crate::persistence::{self, PersistedCredentialState};
 use crate::policies::PolicyEngine;
 use crate::tracker::CredentialTracker;
 use crate::types::*;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -32,6 +35,9 @@ pub struct CredentialService {
     pub alerts: AlertManager,
     /// Global configuration.
     pub config: CredentialsConfig,
+    /// Canonical app-managed persistence path. `None` is reserved for pure
+    /// library/tests created with `new` or `with_config`.
+    storage_path: Option<PathBuf>,
 }
 
 impl CredentialService {
@@ -44,6 +50,7 @@ impl CredentialService {
             audit: AuditLog::new(10_000),
             alerts: AlertManager::new(),
             config: CredentialsConfig::default(),
+            storage_path: None,
         }
     }
 
@@ -56,7 +63,107 @@ impl CredentialService {
             audit: AuditLog::new(10_000),
             alerts: AlertManager::new(),
             config,
+            storage_path: None,
         }
+    }
+
+    /// Hydrate the native service from the canonical app data directory.
+    /// Missing state is initialized and durably written; corrupt or unsafe
+    /// state is returned as an error so startup can fail closed.
+    pub fn persistent_state(
+        app_data_dir: &Path,
+    ) -> Result<CredentialServiceState, CredentialError> {
+        let storage_path = app_data_dir
+            .join(persistence::STATE_DIRECTORY)
+            .join(persistence::STATE_FILENAME);
+        let persisted = persistence::load(&storage_path)?;
+        let mut service = match persisted {
+            Some(snapshot) => Self::from_snapshot(snapshot, storage_path),
+            None => {
+                let mut service = Self::new();
+                service.storage_path = Some(storage_path);
+                service.persist_current()?;
+                service
+            }
+        };
+        service.synchronize_policy_engine();
+        Ok(Arc::new(Mutex::new(service)))
+    }
+
+    /// Run a state mutation as a transaction. Both domain failures and durable
+    /// write failures restore the complete previous snapshot before returning.
+    pub fn mutate_and_persist<T>(
+        &mut self,
+        mutation: impl FnOnce(&mut Self) -> Result<T, CredentialError>,
+    ) -> Result<T, CredentialError> {
+        let previous = self.snapshot();
+        let value = match mutation(self) {
+            Ok(value) => value,
+            Err(error) => {
+                self.restore_snapshot(previous);
+                return Err(error);
+            }
+        };
+        if let Err(error) = self.persist_current() {
+            self.restore_snapshot(previous);
+            return Err(error);
+        }
+        Ok(value)
+    }
+
+    fn from_snapshot(snapshot: PersistedCredentialState, storage_path: PathBuf) -> Self {
+        let mut audit = AuditLog::new(persistence::AUDIT_CAPACITY);
+        audit.entries = snapshot.audit_entries;
+        let policies = snapshot.policies;
+        Self {
+            tracker: CredentialTracker {
+                credentials: snapshot.credentials,
+                policies: policies.clone(),
+            },
+            policy_engine: PolicyEngine::with_policies(policies),
+            groups: GroupManager {
+                groups: snapshot.groups,
+            },
+            audit,
+            alerts: AlertManager {
+                alerts: snapshot.alerts,
+            },
+            config: snapshot.config,
+            storage_path: Some(storage_path),
+        }
+    }
+
+    fn snapshot(&self) -> PersistedCredentialState {
+        PersistedCredentialState::new(
+            self.tracker.credentials.clone(),
+            self.tracker.policies.clone(),
+            self.groups.groups.clone(),
+            self.alerts.alerts.clone(),
+            self.audit.entries.clone(),
+            self.config.clone(),
+        )
+    }
+
+    fn restore_snapshot(&mut self, snapshot: PersistedCredentialState) {
+        let storage_path = self.storage_path.clone();
+        *self = Self::from_snapshot(
+            snapshot,
+            storage_path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(persistence::STATE_FILENAME)),
+        );
+        self.storage_path = storage_path;
+    }
+
+    fn persist_current(&self) -> Result<(), CredentialError> {
+        let Some(storage_path) = &self.storage_path else {
+            return Ok(());
+        };
+        persistence::store(storage_path, &self.snapshot())
+    }
+
+    fn synchronize_policy_engine(&mut self) {
+        self.policy_engine = PolicyEngine::with_policies(self.tracker.policies.clone());
     }
 
     /// Compute aggregate statistics across all tracked credentials.
