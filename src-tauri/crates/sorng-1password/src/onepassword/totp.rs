@@ -25,10 +25,17 @@ impl OnePasswordTotp {
         match totp_field {
             Some(field) => {
                 let code = field.value.clone().unwrap_or_default();
+                if !(4..=10).contains(&code.len())
+                    || !code.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    return Err(OnePasswordError::parse_error(
+                        "Connect server returned an invalid TOTP code",
+                    ));
+                }
                 Ok(Some(TotpCode {
                     code,
-                    expires_in_seconds: 30, // Standard TOTP period
-                    period: 30,
+                    expires_in_seconds: None,
+                    period: None,
                 }))
             }
             None => Ok(None),
@@ -56,6 +63,25 @@ impl OnePasswordTotp {
         item_id: &str,
         totp_uri: &str,
     ) -> Result<FullItem, OnePasswordError> {
+        if totp_uri.len() > 4096 {
+            return Err(OnePasswordError::bad_request("TOTP URI is too large"));
+        }
+        let parsed = url::Url::parse(totp_uri)
+            .map_err(|_| OnePasswordError::bad_request("TOTP URI is invalid"))?;
+        let valid_secret = parsed
+            .query_pairs()
+            .any(|(key, value)| key == "secret" && !value.is_empty() && value.len() <= 1024);
+        if parsed.scheme() != "otpauth"
+            || parsed.host_str() != Some("totp")
+            || parsed.username() != ""
+            || parsed.password().is_some()
+            || parsed.fragment().is_some()
+            || !valid_secret
+        {
+            return Err(OnePasswordError::bad_request(
+                "TOTP URI must be a valid otpauth://totp URI with a bounded secret",
+            ));
+        }
         let field = Field {
             id: uuid::Uuid::new_v4().to_string(),
             section: None,
@@ -106,39 +132,81 @@ impl OnePasswordTotp {
     pub async fn list_totp_items(
         client: &OnePasswordApiClient,
     ) -> Result<Vec<(String, Item)>, OnePasswordError> {
-        let vaults = client.list_vaults(None).await?;
+        let deadline = super::api_client::operation_deadline();
+        let vaults =
+            super::api_client::within_operation_deadline(deadline, client.list_vaults(None))
+                .await?;
+        if vaults.len() > super::api_client::MAX_SCAN_VAULTS {
+            return Err(OnePasswordError::server_error(
+                "TOTP scan exceeds the configured vault limit",
+            ));
+        }
         let mut results = Vec::new();
+        let mut scanned = 0usize;
 
         for vault in &vaults {
-            let items = client.list_items(&vault.id, None).await?;
+            let items = super::api_client::within_operation_deadline(
+                deadline,
+                client.list_items(&vault.id, None),
+            )
+            .await?;
+            scanned = scanned.saturating_add(items.len());
+            if scanned > super::api_client::MAX_SCAN_ITEMS {
+                return Err(OnePasswordError::server_error(
+                    "TOTP scan exceeds the configured item limit",
+                ));
+            }
             for item in items {
-                if let Some(id) = &item.id {
-                    if let Ok(full) = client.get_item(&vault.id, id).await {
-                        if full
-                            .fields
-                            .as_ref()
-                            .map(|f| f.iter().any(|field| field.field_type == FieldType::TOTP))
-                            .unwrap_or(false)
-                        {
-                            results.push((
-                                vault.id.clone(),
-                                Item {
-                                    id: full.id,
-                                    title: full.title,
-                                    vault: full.vault,
-                                    category: full.category,
-                                    urls: full.urls,
-                                    favorite: full.favorite,
-                                    tags: full.tags,
-                                    version: full.version,
-                                    state: full.state,
-                                    created_at: full.created_at,
-                                    updated_at: full.updated_at,
-                                    last_edited_by: full.last_edited_by,
-                                },
-                            ));
-                        }
-                    }
+                let id = item.id.as_deref().ok_or_else(|| {
+                    OnePasswordError::parse_error("Connect item is missing its identifier")
+                })?;
+                let full = super::api_client::within_operation_deadline(
+                    deadline,
+                    client.get_item(&vault.id, id),
+                )
+                .await?;
+                if full
+                    .fields
+                    .as_ref()
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .any(|field| field.field_type == FieldType::TOTP)
+                    })
+                    .unwrap_or(false)
+                {
+                    let full_id = full.id.clone().ok_or_else(|| {
+                        OnePasswordError::parse_error("TOTP item is missing its identifier")
+                    })?;
+                    OnePasswordApiClient::validate_identifier(&full_id, "TOTP item identifier")?;
+                    let title = full
+                        .title
+                        .clone()
+                        .filter(|title| {
+                            !title.is_empty()
+                                && title.len() <= 1_024
+                                && !title.chars().any(char::is_control)
+                        })
+                        .ok_or_else(|| {
+                            OnePasswordError::parse_error("TOTP item has an invalid title")
+                        })?;
+                    results.push((
+                        vault.id.clone(),
+                        Item {
+                            id: Some(full_id),
+                            title: Some(title),
+                            vault: full.vault,
+                            category: full.category,
+                            urls: full.urls,
+                            favorite: full.favorite,
+                            tags: full.tags,
+                            version: full.version,
+                            state: full.state,
+                            created_at: full.created_at,
+                            updated_at: full.updated_at,
+                            last_edited_by: full.last_edited_by,
+                        },
+                    ));
                 }
             }
         }

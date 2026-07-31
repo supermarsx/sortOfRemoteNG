@@ -87,6 +87,7 @@ impl OnePasswordFields {
         item_id: &str,
         field: &Field,
     ) -> Result<FullItem, OnePasswordError> {
+        OnePasswordApiClient::validate_identifier(&field.id, "Field identifier")?;
         let ops = vec![PatchOperation {
             op: PatchOp::Add,
             path: "/fields".to_string(),
@@ -105,6 +106,12 @@ impl OnePasswordFields {
         field_id: &str,
         new_value: &str,
     ) -> Result<FullItem, OnePasswordError> {
+        OnePasswordApiClient::validate_identifier(field_id, "Field identifier")?;
+        if new_value.len() > super::api_client::MAX_FIELD_VALUE_BYTES {
+            return Err(OnePasswordError::bad_request(
+                "Field value exceeded the configured safety limit",
+            ));
+        }
         let ops = vec![PatchOperation {
             op: PatchOp::Replace,
             path: format!("/fields/{}/value", field_id),
@@ -121,6 +128,10 @@ impl OnePasswordFields {
         field_id: &str,
         new_label: &str,
     ) -> Result<FullItem, OnePasswordError> {
+        OnePasswordApiClient::validate_identifier(field_id, "Field identifier")?;
+        if new_label.len() > 256 || new_label.chars().any(char::is_control) {
+            return Err(OnePasswordError::bad_request("Field label is invalid"));
+        }
         let ops = vec![PatchOperation {
             op: PatchOp::Replace,
             path: format!("/fields/{}/label", field_id),
@@ -136,6 +147,7 @@ impl OnePasswordFields {
         item_id: &str,
         field_id: &str,
     ) -> Result<FullItem, OnePasswordError> {
+        OnePasswordApiClient::validate_identifier(field_id, "Field identifier")?;
         let ops = vec![PatchOperation {
             op: PatchOp::Remove,
             path: format!("/fields/{}", field_id),

@@ -20,8 +20,7 @@ pub async fn op_set_config(
     config: OnePasswordConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.set_config(config);
-    Ok(())
+    svc.set_config(config).map_err(|e| e.message)
 }
 
 // ─── Connection ──────────────────────────────────────────────────────
@@ -169,10 +168,11 @@ pub async fn op_delete_item(
     vault_id: String,
     item_id: String,
 ) -> Result<(), String> {
-    let mut svc = state.lock().await;
-    svc.delete_item(&vault_id, &item_id)
-        .await
-        .map_err(|e| e.message)
+    drop((state, vault_id, item_id));
+    Err(
+        "permanent 1Password item deletion is disabled until a reauthentication-backed one-time operation token is implemented"
+            .to_string(),
+    )
 }
 
 #[tauri::command]
@@ -330,22 +330,55 @@ pub async fn op_add_totp(
 
 // ─── Watchtower ──────────────────────────────────────────────────────
 
+#[derive(serde::Serialize)]
+pub struct WatchtowerAvailabilitySummary {
+    total_items: u64,
+    weak_passwords: u64,
+    reused_passwords: u64,
+    compromised_passwords: Option<u64>,
+    vulnerable_sites: Option<u64>,
+    unsecured_sites: u64,
+    two_factor_available: u64,
+    inactive_two_factor: u64,
+    alerts: Vec<WatchtowerAlert>,
+}
+
+fn watchtower_availability(summary: WatchtowerSummary) -> WatchtowerAvailabilitySummary {
+    WatchtowerAvailabilitySummary {
+        total_items: summary.total_items,
+        weak_passwords: summary.weak_passwords,
+        reused_passwords: summary.reused_passwords,
+        compromised_passwords: None,
+        vulnerable_sites: None,
+        unsecured_sites: summary.unsecured_sites,
+        two_factor_available: summary.two_factor_available,
+        inactive_two_factor: summary.inactive_two_factor,
+        alerts: summary.alerts,
+    }
+}
+
+/// The Connect API cannot verify compromised-password or vulnerable-site
+/// findings. Return `null` for those categories rather than a misleading zero.
 #[tauri::command]
 pub async fn op_watchtower_analyze_all(
     state: tauri::State<'_, OnePasswordServiceState>,
-) -> Result<WatchtowerSummary, String> {
+) -> Result<WatchtowerAvailabilitySummary, String> {
     let mut svc = state.lock().await;
-    svc.watchtower_analyze_all().await.map_err(|e| e.message)
+    svc.watchtower_analyze_all()
+        .await
+        .map(watchtower_availability)
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
 pub async fn op_watchtower_analyze_vault(
     state: tauri::State<'_, OnePasswordServiceState>,
     vault_id: String,
-) -> Result<WatchtowerSummary, String> {
+) -> Result<WatchtowerAvailabilitySummary, String> {
     let mut svc = state.lock().await;
     svc.watchtower_analyze_vault(&vault_id)
         .await
+        .map(watchtower_availability)
         .map_err(|e| e.message)
 }
 
@@ -465,7 +498,7 @@ pub async fn op_generate_password(
     config: PasswordGenConfig,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    Ok(svc.generate_password(&config))
+    svc.generate_password(&config).map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -475,7 +508,8 @@ pub async fn op_generate_passphrase(
     separator: String,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    Ok(svc.generate_passphrase(word_count, &separator))
+    svc.generate_passphrase(word_count, &separator)
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
@@ -483,6 +517,9 @@ pub async fn op_rate_password_strength(
     _state: tauri::State<'_, OnePasswordServiceState>,
     password: String,
 ) -> Result<String, String> {
+    if password.len() > 4096 {
+        return Err("Password is too large to analyze".to_string());
+    }
     Ok(super::password_gen::OnePasswordPasswordGen::rate_strength(&password).to_string())
 }
 

@@ -12,6 +12,7 @@ pub type OnePasswordServiceState = Arc<Mutex<OnePasswordService>>;
 /// 1Password operations (vaults, items, files, TOTP, watchtower, etc.).
 pub struct OnePasswordService {
     config: OnePasswordConfig,
+    pending_token: Vec<u8>,
     client: Option<OnePasswordApiClient>,
     authenticated: bool,
     cache: Option<VaultCache>,
@@ -33,27 +34,38 @@ impl OnePasswordService {
     pub fn new() -> Self {
         Self {
             config: OnePasswordConfig::default(),
+            pending_token: Vec::new(),
             client: None,
             authenticated: false,
             cache: None,
         }
     }
 
-    pub fn with_config(config: OnePasswordConfig) -> Self {
-        Self {
+    pub fn with_config(mut config: OnePasswordConfig) -> Result<Self, OnePasswordError> {
+        if let Err(error) = OnePasswordApiClient::validate_config(&config) {
+            let mut rejected_token = std::mem::take(&mut config.connect_token).into_bytes();
+            rejected_token.fill(0);
+            return Err(error);
+        }
+        let mut config = config;
+        let pending_token = std::mem::take(&mut config.connect_token).into_bytes();
+        Ok(Self {
             config,
+            pending_token,
             client: None,
             authenticated: false,
             cache: None,
-        }
+        })
     }
 
     pub fn new_state() -> OnePasswordServiceState {
         Arc::new(Mutex::new(Self::new()))
     }
 
-    pub fn new_state_with_config(config: OnePasswordConfig) -> OnePasswordServiceState {
-        Arc::new(Mutex::new(Self::with_config(config)))
+    pub fn new_state_with_config(
+        config: OnePasswordConfig,
+    ) -> Result<OnePasswordServiceState, OnePasswordError> {
+        Ok(Arc::new(Mutex::new(Self::with_config(config)?)))
     }
 
     // ── Configuration ───────────────────────────────────────────────
@@ -62,18 +74,27 @@ impl OnePasswordService {
         &self.config
     }
 
-    pub fn set_config(&mut self, config: OnePasswordConfig) {
+    pub fn set_config(&mut self, mut config: OnePasswordConfig) -> Result<(), OnePasswordError> {
+        if let Err(error) = OnePasswordApiClient::validate_config(&config) {
+            let mut rejected_token = std::mem::take(&mut config.connect_token).into_bytes();
+            rejected_token.fill(0);
+            return Err(error);
+        }
+        self.pending_token.fill(0);
+        self.pending_token = std::mem::take(&mut config.connect_token).into_bytes();
         self.config = config;
         self.client = None;
         self.authenticated = false;
         self.cache = None;
+        Ok(())
     }
 
     // ── Connection ──────────────────────────────────────────────────
 
-    fn ensure_client(&mut self) -> Result<&OnePasswordApiClient, OnePasswordError> {
+    fn initialize_client(&mut self) -> Result<&OnePasswordApiClient, OnePasswordError> {
         if self.client.is_none() {
-            let client = OnePasswordApiClient::from_config(&self.config)?;
+            let token = std::mem::take(&mut self.pending_token);
+            let client = OnePasswordApiClient::from_config_with_token(&self.config, token)?;
             self.client = Some(client);
         }
         self.client
@@ -81,24 +102,48 @@ impl OnePasswordService {
             .ok_or_else(|| OnePasswordError::connection_error("Failed to create HTTP client"))
     }
 
-    #[allow(dead_code)]
-    fn get_client(&self) -> Result<&OnePasswordApiClient, OnePasswordError> {
+    fn ensure_client(&mut self) -> Result<&OnePasswordApiClient, OnePasswordError> {
+        if !self.authenticated {
+            return Err(OnePasswordError::auth_failed(
+                "Not authenticated; connect successfully before using 1Password",
+            ));
+        }
         self.client.as_ref().ok_or_else(|| {
-            OnePasswordError::connection_error("Not connected — call connect() first")
+            OnePasswordError::connection_error("Authenticated client is unavailable")
         })
     }
 
     /// Initialize the client and validate the token.
     pub async fn connect(&mut self) -> Result<bool, OnePasswordError> {
-        self.ensure_client()?;
-        let client = self.get_client()?;
-        let valid = super::auth::OnePasswordAuth::validate_token(client).await?;
-        self.authenticated = valid;
-        Ok(valid)
+        self.initialize_client()?;
+        let validation = {
+            let client = self.client.as_ref().ok_or_else(|| {
+                OnePasswordError::connection_error("Failed to initialize authenticated client")
+            })?;
+            super::auth::OnePasswordAuth::validate_token(client).await
+        };
+        match validation {
+            Ok(true) => {
+                self.authenticated = true;
+                Ok(true)
+            }
+            Ok(false) => {
+                self.authenticated = false;
+                self.client = None;
+                Ok(false)
+            }
+            Err(error) => {
+                self.authenticated = false;
+                self.client = None;
+                Err(error)
+            }
+        }
     }
 
     /// Disconnect and clear state.
     pub fn disconnect(&mut self) {
+        self.pending_token.fill(0);
+        self.pending_token.clear();
         self.client = None;
         self.authenticated = false;
         self.cache = None;
@@ -236,7 +281,11 @@ impl OnePasswordService {
         query: &str,
     ) -> Result<Vec<(String, Item)>, OnePasswordError> {
         let client = self.ensure_client()?;
-        super::items::OnePasswordItems::search_all_vaults(client, query).await
+        super::api_client::within_operation_deadline(
+            super::api_client::operation_deadline(),
+            super::items::OnePasswordItems::search_all_vaults(client, query),
+        )
+        .await
     }
 
     // ── Field operations ────────────────────────────────────────────
@@ -398,18 +447,20 @@ impl OnePasswordService {
 
     pub async fn export_vault_json(
         &mut self,
-        vault_id: &str,
+        _vault_id: &str,
     ) -> Result<ExportResult, OnePasswordError> {
-        let client = self.ensure_client()?;
-        super::import_export::OnePasswordImportExport::export_vault_json(client, vault_id).await
+        Err(OnePasswordError::forbidden(
+            "Plaintext vault export is disabled because this command cannot capture explicit acknowledgement",
+        ))
     }
 
     pub async fn export_vault_csv(
         &mut self,
-        vault_id: &str,
+        _vault_id: &str,
     ) -> Result<ExportResult, OnePasswordError> {
-        let client = self.ensure_client()?;
-        super::import_export::OnePasswordImportExport::export_vault_csv(client, vault_id).await
+        Err(OnePasswordError::forbidden(
+            "Plaintext vault export is disabled because this command cannot capture explicit acknowledgement",
+        ))
     }
 
     pub async fn import_json(
@@ -433,11 +484,18 @@ impl OnePasswordService {
 
     // ── Password Generation ─────────────────────────────────────────
 
-    pub fn generate_password(&self, config: &PasswordGenConfig) -> String {
+    pub fn generate_password(
+        &self,
+        config: &PasswordGenConfig,
+    ) -> Result<String, OnePasswordError> {
         super::password_gen::OnePasswordPasswordGen::generate(config)
     }
 
-    pub fn generate_passphrase(&self, word_count: u32, separator: &str) -> String {
+    pub fn generate_passphrase(
+        &self,
+        word_count: u32,
+        separator: &str,
+    ) -> Result<String, OnePasswordError> {
         super::password_gen::OnePasswordPasswordGen::generate_passphrase(word_count, separator)
     }
 
@@ -452,5 +510,11 @@ impl OnePasswordService {
 
     pub fn invalidate_cache(&mut self) {
         self.cache = None;
+    }
+}
+
+impl Drop for OnePasswordService {
+    fn drop(&mut self) {
+        self.pending_token.fill(0);
     }
 }

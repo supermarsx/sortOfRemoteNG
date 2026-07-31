@@ -26,7 +26,11 @@ impl OnePasswordVaults {
         client: &OnePasswordApiClient,
         name: &str,
     ) -> Result<Option<Vault>, OnePasswordError> {
-        let filter = format!("name eq \"{}\"", name);
+        if name.is_empty() || name.len() > 512 || name.chars().any(char::is_control) {
+            return Err(OnePasswordError::bad_request("Vault name is invalid"));
+        }
+        let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
+        let filter = format!("name eq \"{}\"", escaped);
         let vaults = client.list_vaults(Some(&filter)).await?;
         Ok(vaults.into_iter().next())
     }

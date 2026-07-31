@@ -29,7 +29,11 @@ impl OnePasswordItems {
         vault_id: &str,
         title: &str,
     ) -> Result<Vec<Item>, OnePasswordError> {
-        let filter = format!("title eq \"{}\"", title);
+        if title.len() > 512 || title.chars().any(char::is_control) {
+            return Err(OnePasswordError::bad_request("Item title is invalid"));
+        }
+        let escaped = title.replace('\\', "\\\\").replace('"', "\\\"");
+        let filter = format!("title eq \"{}\"", escaped);
         client.list_items(vault_id, Some(&filter)).await
     }
 
@@ -39,6 +43,11 @@ impl OnePasswordItems {
         vault_id: &str,
         request: &CreateItemRequest,
     ) -> Result<FullItem, OnePasswordError> {
+        if request.vault.id != vault_id {
+            return Err(OnePasswordError::bad_request(
+                "Create request vault does not match the target vault",
+            ));
+        }
         let full_item = FullItem {
             id: None,
             title: Some(request.title.clone()),
@@ -66,6 +75,11 @@ impl OnePasswordItems {
         item_id: &str,
         request: &UpdateItemRequest,
     ) -> Result<FullItem, OnePasswordError> {
+        if request.id != item_id || request.vault.id != vault_id {
+            return Err(OnePasswordError::bad_request(
+                "Update request identifiers do not match the target item",
+            ));
+        }
         let full_item = FullItem {
             id: Some(request.id.clone()),
             title: request.title.clone(),
@@ -196,15 +210,35 @@ impl OnePasswordItems {
         client: &OnePasswordApiClient,
         query: &str,
     ) -> Result<Vec<(String, Item)>, OnePasswordError> {
+        if query.is_empty() || query.len() > 512 || query.chars().any(char::is_control) {
+            return Err(OnePasswordError::bad_request("Search query is invalid"));
+        }
         let vaults = client.list_vaults(None).await?;
+        if vaults.len() > super::api_client::MAX_SCAN_VAULTS {
+            return Err(OnePasswordError::server_error(
+                "Search scope exceeds the configured vault limit",
+            ));
+        }
         let mut results = Vec::new();
+        let mut scanned = 0usize;
         let query_lower = query.to_lowercase();
 
         for vault in &vaults {
             let items = client.list_items(&vault.id, None).await?;
+            scanned = scanned.saturating_add(items.len());
+            if scanned > super::api_client::MAX_SCAN_ITEMS {
+                return Err(OnePasswordError::server_error(
+                    "Search scope exceeds the configured item limit",
+                ));
+            }
             for item in items {
                 if let Some(title) = &item.title {
                     if title.to_lowercase().contains(&query_lower) {
+                        if results.len() >= super::api_client::MAX_ITEMS_PER_VAULT {
+                            return Err(OnePasswordError::server_error(
+                                "Search returned too many results",
+                            ));
+                        }
                         results.push((vault.id.clone(), item));
                     }
                 }

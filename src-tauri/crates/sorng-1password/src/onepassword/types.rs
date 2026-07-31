@@ -159,18 +159,18 @@ impl From<OnePasswordError> for String {
 impl From<reqwest::Error> for OnePasswordError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Self::timeout(format!("Request timed out: {}", e))
+            Self::timeout("Connect request timed out")
         } else if e.is_connect() {
-            Self::connection_error(format!("Connection failed: {}", e))
+            Self::connection_error("Could not connect to the Connect server")
         } else {
-            Self::server_error(format!("HTTP error: {}", e))
+            Self::server_error("Connect HTTP request failed")
         }
     }
 }
 
 // ─── Config ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OnePasswordConfig {
     /// Base URL of the 1Password Connect server, e.g. http://localhost:8080
     pub connect_host: String,
@@ -182,6 +182,18 @@ pub struct OnePasswordConfig {
     pub verify_tls: bool,
     /// Maximum inline file size in KB (files larger will not be inlined)
     pub max_inline_file_size_kb: u32,
+}
+
+impl fmt::Debug for OnePasswordConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OnePasswordConfig")
+            .field("connect_host", &self.connect_host)
+            .field("connect_token", &"[REDACTED]")
+            .field("timeout_secs", &self.timeout_secs)
+            .field("verify_tls", &self.verify_tls)
+            .field("max_inline_file_size_kb", &self.max_inline_file_size_kb)
+            .finish()
+    }
 }
 
 impl Default for OnePasswordConfig {
@@ -589,8 +601,8 @@ pub struct WatchtowerSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TotpCode {
     pub code: String,
-    pub expires_in_seconds: u64,
-    pub period: u64,
+    pub expires_in_seconds: Option<u64>,
+    pub period: Option<u64>,
 }
 
 // ─── Sharing ─────────────────────────────────────────────────────────

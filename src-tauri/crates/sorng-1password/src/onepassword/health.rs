@@ -21,9 +21,9 @@ impl OnePasswordHealth {
     pub async fn is_healthy(client: &OnePasswordApiClient) -> Result<bool, OnePasswordError> {
         let health = client.health().await?;
         if let Some(deps) = &health.dependencies {
-            Ok(deps.iter().all(|d| d.status == "ACTIVE"))
+            Ok(!deps.is_empty() && deps.iter().all(|d| d.status == "ACTIVE"))
         } else {
-            Ok(true)
+            Ok(false)
         }
     }
 

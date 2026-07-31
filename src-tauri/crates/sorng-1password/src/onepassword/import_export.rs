@@ -4,89 +4,30 @@ use super::types::*;
 /// Import and export operations for 1Password items.
 pub struct OnePasswordImportExport;
 
+const MAX_IMPORT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TRANSFER_ITEMS: usize = 1_000;
+const MAX_CSV_LINE_BYTES: usize = 64 * 1024;
+const MAX_IMPORT_ERRORS: usize = 100;
+
 impl OnePasswordImportExport {
     /// Export all items from a vault to JSON format.
     pub async fn export_vault_json(
-        client: &OnePasswordApiClient,
-        vault_id: &str,
+        _client: &OnePasswordApiClient,
+        _vault_id: &str,
     ) -> Result<ExportResult, OnePasswordError> {
-        let items = client.list_items(vault_id, None).await?;
-        let mut full_items = Vec::new();
-
-        for item in &items {
-            if let Some(id) = &item.id {
-                match client.get_item(vault_id, id).await {
-                    Ok(full) => full_items.push(full),
-                    Err(e) => {
-                        log::warn!("Failed to fetch item {}: {}", id, e);
-                    }
-                }
-            }
-        }
-
-        let data = serde_json::to_string_pretty(&full_items).map_err(|e| {
-            OnePasswordError::parse_error(format!("Failed to serialize items: {}", e))
-        })?;
-
-        Ok(ExportResult {
-            format: ExportFormat::Json,
-            total_items: full_items.len() as u64,
-            data,
-        })
+        Err(OnePasswordError::forbidden(
+            "Plaintext vault export requires explicit acknowledgement that this API cannot capture",
+        ))
     }
 
     /// Export items from a vault in CSV format.
     pub async fn export_vault_csv(
-        client: &OnePasswordApiClient,
-        vault_id: &str,
+        _client: &OnePasswordApiClient,
+        _vault_id: &str,
     ) -> Result<ExportResult, OnePasswordError> {
-        let items = client.list_items(vault_id, None).await?;
-        let mut csv_lines = vec!["title,category,username,password,url,notes".to_string()];
-
-        for item in &items {
-            if let Some(id) = &item.id {
-                if let Ok(full) = client.get_item(vault_id, id).await {
-                    let fields = full.fields.unwrap_or_default();
-                    let username = fields
-                        .iter()
-                        .find(|f| f.purpose == Some(FieldPurpose::USERNAME))
-                        .and_then(|f| f.value.as_deref())
-                        .unwrap_or("");
-                    let password = fields
-                        .iter()
-                        .find(|f| f.purpose == Some(FieldPurpose::PASSWORD))
-                        .and_then(|f| f.value.as_deref())
-                        .unwrap_or("");
-                    let notes = fields
-                        .iter()
-                        .find(|f| f.purpose == Some(FieldPurpose::NOTES))
-                        .and_then(|f| f.value.as_deref())
-                        .unwrap_or("");
-                    let url = full
-                        .urls
-                        .as_ref()
-                        .and_then(|urls| urls.first())
-                        .map(|u| u.href.as_str())
-                        .unwrap_or("");
-
-                    csv_lines.push(format!(
-                        "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"",
-                        Self::escape_csv(full.title.as_deref().unwrap_or("")),
-                        full.category,
-                        Self::escape_csv(username),
-                        Self::escape_csv(password),
-                        Self::escape_csv(url),
-                        Self::escape_csv(notes)
-                    ));
-                }
-            }
-        }
-
-        Ok(ExportResult {
-            format: ExportFormat::Csv,
-            total_items: csv_lines.len() as u64 - 1,
-            data: csv_lines.join("\n"),
-        })
+        Err(OnePasswordError::forbidden(
+            "Plaintext vault export requires explicit acknowledgement that this API cannot capture",
+        ))
     }
 
     /// Import items from a JSON array into a vault.
@@ -95,16 +36,27 @@ impl OnePasswordImportExport {
         vault_id: &str,
         json_data: &str,
     ) -> Result<ImportResult, OnePasswordError> {
+        if json_data.len() > MAX_IMPORT_BYTES {
+            return Err(OnePasswordError::new(
+                OnePasswordErrorKind::FileTooLarge,
+                "JSON import exceeded the configured safety limit",
+            ));
+        }
         let items: Vec<FullItem> = serde_json::from_str(json_data)
-            .map_err(|e| OnePasswordError::parse_error(format!("Invalid JSON: {}", e)))?;
+            .map_err(|_| OnePasswordError::parse_error("Import data is not valid JSON"))?;
+        if items.len() > MAX_TRANSFER_ITEMS {
+            return Err(OnePasswordError::new(
+                OnePasswordErrorKind::FileTooLarge,
+                "JSON import contains too many items",
+            ));
+        }
 
         let total = items.len() as u64;
         let mut imported = 0u64;
         let mut skipped = 0u64;
         let mut errors = Vec::new();
 
-        for item in &items {
-            let mut create_item = item.clone();
+        for mut create_item in items {
             create_item.vault = ItemVaultRef {
                 id: vault_id.to_string(),
             };
@@ -113,11 +65,9 @@ impl OnePasswordImportExport {
             match client.create_item(vault_id, &create_item).await {
                 Ok(_) => imported += 1,
                 Err(e) => {
-                    errors.push(format!(
-                        "Failed to import '{}': {}",
-                        item.title.as_deref().unwrap_or("unknown"),
-                        e
-                    ));
+                    if errors.len() < MAX_IMPORT_ERRORS {
+                        errors.push(format!("Item import failed: {}", e.message));
+                    }
                     skipped += 1;
                 }
             }
@@ -137,6 +87,12 @@ impl OnePasswordImportExport {
         vault_id: &str,
         csv_data: &str,
     ) -> Result<ImportResult, OnePasswordError> {
+        if csv_data.len() > MAX_IMPORT_BYTES {
+            return Err(OnePasswordError::new(
+                OnePasswordErrorKind::FileTooLarge,
+                "CSV import exceeded the configured safety limit",
+            ));
+        }
         let lines: Vec<&str> = csv_data.lines().collect();
         if lines.is_empty() {
             return Ok(ImportResult {
@@ -146,25 +102,49 @@ impl OnePasswordImportExport {
                 errors: vec!["Empty CSV data".to_string()],
             });
         }
+        if lines.len().saturating_sub(1) > MAX_TRANSFER_ITEMS {
+            return Err(OnePasswordError::new(
+                OnePasswordErrorKind::FileTooLarge,
+                "CSV import contains too many rows",
+            ));
+        }
 
         let total = (lines.len() - 1) as u64; // Minus header
         let mut imported = 0u64;
         let mut skipped = 0u64;
         let mut errors = Vec::new();
 
-        for line in lines.iter().skip(1) {
-            let cols: Vec<&str> = Self::parse_csv_line(line);
+        for (row_index, line) in lines.iter().enumerate().skip(1) {
+            if line.len() > MAX_CSV_LINE_BYTES {
+                if errors.len() < MAX_IMPORT_ERRORS {
+                    errors.push(format!("CSV row {} is too large", row_index + 1));
+                }
+                skipped += 1;
+                continue;
+            }
+            let cols = match Self::parse_csv_line(line) {
+                Ok(cols) => cols,
+                Err(()) => {
+                    if errors.len() < MAX_IMPORT_ERRORS {
+                        errors.push(format!("CSV row {} is malformed", row_index + 1));
+                    }
+                    skipped += 1;
+                    continue;
+                }
+            };
             if cols.len() < 4 {
-                errors.push(format!("Invalid CSV line: {}", line));
+                if errors.len() < MAX_IMPORT_ERRORS {
+                    errors.push(format!("CSV row {} has too few columns", row_index + 1));
+                }
                 skipped += 1;
                 continue;
             }
 
-            let title = cols[0];
-            let username = cols.get(2).unwrap_or(&"");
-            let password = cols.get(3).unwrap_or(&"");
-            let url = cols.get(4).unwrap_or(&"");
-            let notes = cols.get(5).unwrap_or(&"");
+            let title = cols[0].as_str();
+            let username = cols.get(2).map(String::as_str).unwrap_or("");
+            let password = cols.get(3).map(String::as_str).unwrap_or("");
+            let url = cols.get(4).map(String::as_str).unwrap_or("");
+            let notes = cols.get(5).map(String::as_str).unwrap_or("");
 
             let mut fields = vec![];
             if !username.is_empty() {
@@ -240,7 +220,9 @@ impl OnePasswordImportExport {
             match client.create_item(vault_id, &full_item).await {
                 Ok(_) => imported += 1,
                 Err(e) => {
-                    errors.push(format!("Failed to import '{}': {}", title, e));
+                    if errors.len() < MAX_IMPORT_ERRORS {
+                        errors.push(format!("Item import failed: {}", e.message));
+                    }
                     skipped += 1;
                 }
             }
@@ -254,30 +236,29 @@ impl OnePasswordImportExport {
         })
     }
 
-    fn escape_csv(s: &str) -> String {
-        s.replace('"', "\"\"")
-    }
-
-    fn parse_csv_line(line: &str) -> Vec<&str> {
-        // Simple CSV parsing — handles quoted fields
+    fn parse_csv_line(line: &str) -> Result<Vec<String>, ()> {
         let mut cols = Vec::new();
-        let mut start = 0;
+        let mut field = String::new();
         let mut in_quotes = false;
-        let bytes = line.as_bytes();
+        let mut chars = line.chars().peekable();
 
-        for i in 0..bytes.len() {
-            match bytes[i] {
-                b'"' => in_quotes = !in_quotes,
-                b',' if !in_quotes => {
-                    let field = &line[start..i];
-                    cols.push(field.trim_matches('"'));
-                    start = i + 1;
+        while let Some(ch) = chars.next() {
+            match ch {
+                '"' if in_quotes && chars.peek() == Some(&'"') => {
+                    chars.next();
+                    field.push('"');
                 }
-                _ => {}
+                '"' => in_quotes = !in_quotes,
+                ',' if !in_quotes => {
+                    cols.push(std::mem::take(&mut field));
+                }
+                _ => field.push(ch),
             }
         }
-
-        cols.push(line[start..].trim_matches('"'));
-        cols
+        if in_quotes {
+            return Err(());
+        }
+        cols.push(field);
+        Ok(cols)
     }
 }

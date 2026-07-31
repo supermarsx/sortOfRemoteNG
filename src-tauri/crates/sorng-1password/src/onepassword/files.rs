@@ -54,6 +54,9 @@ impl OnePasswordFiles {
     ) -> Result<String, OnePasswordError> {
         let file = client.get_file(vault_id, item_id, file_id, true).await?;
         if let Some(content) = file.content {
+            if content.len() > 2 * 8_192 * 1024 {
+                return Err(OnePasswordError::file_too_large(file_id));
+            }
             use base64::Engine as _;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(&content)
@@ -82,6 +85,19 @@ impl OnePasswordFiles {
         item_id: &str,
     ) -> Result<i64, OnePasswordError> {
         let files = client.list_files(vault_id, item_id, false).await?;
-        Ok(files.iter().filter_map(|f| f.size).sum())
+        files.iter().try_fold(0i64, |total, file| {
+            let size = file.size.unwrap_or(0);
+            if size < 0 {
+                return Err(OnePasswordError::parse_error(
+                    "Connect server returned an invalid file size",
+                ));
+            }
+            total.checked_add(size).ok_or_else(|| {
+                OnePasswordError::new(
+                    OnePasswordErrorKind::FileTooLarge,
+                    "Total attachment size exceeded the supported range",
+                )
+            })
+        })
     }
 }

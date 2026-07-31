@@ -16,7 +16,7 @@ impl OnePasswordSharing {
             .iter()
             .map(|v| VaultAccess {
                 vault_id: v.id.clone(),
-                permissions: Self::infer_permissions_from_vault(v),
+                permissions: Vec::new(),
             })
             .collect())
     }
@@ -44,24 +44,9 @@ impl OnePasswordSharing {
         client: &OnePasswordApiClient,
         vault_id: &str,
     ) -> Result<bool, OnePasswordError> {
-        // Try listing items — if the token has at least read access
-        match client.list_items(vault_id, None).await {
-            Ok(_) => Ok(true),
-            Err(e) if e.kind == OnePasswordErrorKind::Forbidden => Ok(false),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn infer_permissions_from_vault(_vault: &Vault) -> Vec<VaultPermission> {
-        // With Connect tokens, the permissions are determined by the
-        // token scope, not individual vault settings. A token either
-        // has full access to a vault or no access at all.
-        vec![
-            VaultPermission::ReadItems,
-            VaultPermission::CreateItems,
-            VaultPermission::EditItems,
-            VaultPermission::DeleteItems,
-            VaultPermission::ArchiveItems,
-        ]
+        client.get_vault(vault_id).await?;
+        Err(OnePasswordError::config_error(
+            "Connect does not expose a non-mutating write-permission check",
+        ))
     }
 }

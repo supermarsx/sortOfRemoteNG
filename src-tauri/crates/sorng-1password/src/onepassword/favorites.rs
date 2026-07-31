@@ -9,20 +9,33 @@ impl OnePasswordFavorites {
     pub async fn list_all(
         client: &OnePasswordApiClient,
     ) -> Result<Vec<FavoriteItem>, OnePasswordError> {
-        let vaults = client.list_vaults(None).await?;
+        let deadline = super::api_client::operation_deadline();
+        let vaults =
+            super::api_client::within_operation_deadline(deadline, client.list_vaults(None))
+                .await?;
+        if vaults.len() > super::api_client::MAX_SCAN_VAULTS {
+            return Err(OnePasswordError::server_error(
+                "Favorite scan exceeds the configured vault limit",
+            ));
+        }
         let mut favorites = Vec::new();
+        let mut scanned = 0usize;
 
         for vault in &vaults {
-            let items = client.list_items(&vault.id, None).await?;
+            let items = super::api_client::within_operation_deadline(
+                deadline,
+                client.list_items(&vault.id, None),
+            )
+            .await?;
+            scanned = scanned.saturating_add(items.len());
+            if scanned > super::api_client::MAX_SCAN_ITEMS {
+                return Err(OnePasswordError::server_error(
+                    "Favorite scan exceeds the configured item limit",
+                ));
+            }
             for item in items {
                 if item.favorite == Some(true) {
-                    favorites.push(FavoriteItem {
-                        item_id: item.id.clone().unwrap_or_default(),
-                        vault_id: vault.id.clone(),
-                        title: item.title.clone().unwrap_or_default(),
-                        category: item.category.clone(),
-                        favorited_at: item.updated_at.clone(),
-                    });
+                    favorites.push(Self::validated_favorite(item, &vault.id)?);
                 }
             }
         }
@@ -35,18 +48,22 @@ impl OnePasswordFavorites {
         client: &OnePasswordApiClient,
         vault_id: &str,
     ) -> Result<Vec<FavoriteItem>, OnePasswordError> {
-        let items = client.list_items(vault_id, None).await?;
-        Ok(items
+        let deadline = super::api_client::operation_deadline();
+        let items = super::api_client::within_operation_deadline(
+            deadline,
+            client.list_items(vault_id, None),
+        )
+        .await?;
+        if items.len() > super::api_client::MAX_SCAN_ITEMS {
+            return Err(OnePasswordError::server_error(
+                "Favorite scan exceeds the configured item limit",
+            ));
+        }
+        items
             .into_iter()
-            .filter(|i| i.favorite == Some(true))
-            .map(|item| FavoriteItem {
-                item_id: item.id.clone().unwrap_or_default(),
-                vault_id: vault_id.to_string(),
-                title: item.title.clone().unwrap_or_default(),
-                category: item.category.clone(),
-                favorited_at: item.updated_at.clone(),
-            })
-            .collect())
+            .filter(|item| item.favorite == Some(true))
+            .map(|item| Self::validated_favorite(item, vault_id))
+            .collect()
     }
 
     /// Add an item to favorites.
@@ -65,5 +82,25 @@ impl OnePasswordFavorites {
         item_id: &str,
     ) -> Result<FullItem, OnePasswordError> {
         super::items::OnePasswordItems::toggle_favorite(client, vault_id, item_id, false).await
+    }
+
+    fn validated_favorite(item: Item, vault_id: &str) -> Result<FavoriteItem, OnePasswordError> {
+        let item_id = item.id.ok_or_else(|| {
+            OnePasswordError::parse_error("Favorite item is missing its identifier")
+        })?;
+        OnePasswordApiClient::validate_identifier(&item_id, "Favorite item identifier")?;
+        let title = item
+            .title
+            .filter(|title| {
+                !title.is_empty() && title.len() <= 1_024 && !title.chars().any(char::is_control)
+            })
+            .ok_or_else(|| OnePasswordError::parse_error("Favorite item has an invalid title"))?;
+        Ok(FavoriteItem {
+            item_id,
+            vault_id: vault_id.to_string(),
+            title,
+            category: item.category,
+            favorited_at: item.updated_at,
+        })
     }
 }

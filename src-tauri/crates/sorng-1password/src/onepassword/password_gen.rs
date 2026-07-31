@@ -5,7 +5,22 @@ pub struct OnePasswordPasswordGen;
 
 impl OnePasswordPasswordGen {
     /// Generate a random password with the given configuration.
-    pub fn generate(config: &PasswordGenConfig) -> String {
+    pub fn generate(config: &PasswordGenConfig) -> Result<String, OnePasswordError> {
+        if !(8..=256).contains(&config.length)
+            || config
+                .exclude_characters
+                .as_ref()
+                .is_some_and(|value| value.len() > 256 || value.chars().any(char::is_control))
+        {
+            return Err(OnePasswordError::bad_request(
+                "Password generation configuration is outside the supported range",
+            ));
+        }
+        if !config.include_letters && !config.include_digits && !config.include_symbols {
+            return Err(OnePasswordError::bad_request(
+                "At least one password character set must be selected",
+            ));
+        }
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
@@ -26,7 +41,9 @@ impl OnePasswordPasswordGen {
         }
 
         if chars.is_empty() {
-            chars = "abcdefghijklmnopqrstuvwxyz".to_string();
+            return Err(OnePasswordError::bad_request(
+                "Excluded characters removed every available character",
+            ));
         }
 
         let char_vec: Vec<char> = chars.chars().collect();
@@ -37,11 +54,23 @@ impl OnePasswordPasswordGen {
             password.push(char_vec[idx]);
         }
 
-        password
+        Ok(password)
     }
 
     /// Generate a passphrase using random words.
-    pub fn generate_passphrase(word_count: u32, separator: &str) -> String {
+    pub fn generate_passphrase(
+        word_count: u32,
+        separator: &str,
+    ) -> Result<String, OnePasswordError> {
+        if !(3..=24).contains(&word_count)
+            || separator.is_empty()
+            || separator.len() > 8
+            || separator.chars().any(char::is_control)
+        {
+            return Err(OnePasswordError::bad_request(
+                "Passphrase configuration is outside the supported range",
+            ));
+        }
         use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
 
@@ -62,7 +91,7 @@ impl OnePasswordPasswordGen {
             .cloned()
             .collect();
 
-        selected.join(separator)
+        Ok(selected.join(separator))
     }
 
     /// Build a GeneratorRecipe from a PasswordGenConfig.
@@ -145,7 +174,7 @@ mod tests {
     #[test]
     fn test_generate_default_length() {
         let config = PasswordGenConfig::default();
-        let pwd = OnePasswordPasswordGen::generate(&config);
+        let pwd = OnePasswordPasswordGen::generate(&config).unwrap();
         assert_eq!(pwd.len(), 32);
     }
 
@@ -155,7 +184,7 @@ mod tests {
             length: 16,
             ..Default::default()
         };
-        let pwd = OnePasswordPasswordGen::generate(&config);
+        let pwd = OnePasswordPasswordGen::generate(&config).unwrap();
         assert_eq!(pwd.len(), 16);
     }
 
@@ -168,13 +197,13 @@ mod tests {
             include_symbols: false,
             exclude_characters: None,
         };
-        let pwd = OnePasswordPasswordGen::generate(&config);
+        let pwd = OnePasswordPasswordGen::generate(&config).unwrap();
         assert!(pwd.chars().all(|c| c.is_ascii_digit()));
     }
 
     #[test]
     fn test_passphrase_word_count() {
-        let phrase = OnePasswordPasswordGen::generate_passphrase(4, "-");
+        let phrase = OnePasswordPasswordGen::generate_passphrase(4, "-").unwrap();
         assert_eq!(phrase.split('-').count(), 4);
     }
 
@@ -187,7 +216,7 @@ mod tests {
     #[test]
     fn test_strength_rating() {
         assert_eq!(OnePasswordPasswordGen::rate_strength("abc"), "Very Weak");
-        let strong = OnePasswordPasswordGen::generate(&PasswordGenConfig::default());
+        let strong = OnePasswordPasswordGen::generate(&PasswordGenConfig::default()).unwrap();
         let rating = OnePasswordPasswordGen::rate_strength(&strong);
         assert!(rating == "Strong" || rating == "Very Strong");
     }
