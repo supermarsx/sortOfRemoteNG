@@ -129,9 +129,9 @@ pub async fn backup(
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
     let args = build_backup_args(cfg);
     let env = build_env(cfg);
-    let cmd_str = format!("{} {}", binary, args.join(" "));
+    let cmd_str = "duplicity <arguments redacted>".to_string();
 
-    info!("Executing duplicity backup: {}", cmd_str);
+    info!("Executing duplicity backup");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

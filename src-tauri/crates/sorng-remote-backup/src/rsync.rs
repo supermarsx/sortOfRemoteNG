@@ -235,9 +235,9 @@ pub async fn execute(
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.rsync_binary.as_deref().unwrap_or("rsync");
     let args = build_args(cfg);
-    let cmd_str = format!("{} {}", binary, args.join(" "));
+    let cmd_str = "rsync <arguments redacted>".to_string();
 
-    info!("Executing rsync: {}", cmd_str);
+    info!("Executing rsync");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

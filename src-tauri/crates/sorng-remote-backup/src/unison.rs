@@ -169,9 +169,9 @@ pub async fn execute(
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.unison_binary.as_deref().unwrap_or("unison");
     let args = build_args(cfg);
-    let cmd_str = format!("{} {}", binary, args.join(" "));
+    let cmd_str = "unison <arguments redacted>".to_string();
 
-    info!("Executing Unison sync: {}", cmd_str);
+    info!("Executing Unison sync");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

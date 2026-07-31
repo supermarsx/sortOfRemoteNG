@@ -169,8 +169,8 @@ pub async fn create(
         args.push(p.clone());
     }
 
-    let cmd_str = format!("{} {}", binary, args.join(" "));
-    info!("Executing borg create: {}", cmd_str);
+    let cmd_str = "borg <arguments redacted>".to_string();
+    info!("Executing borg create");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

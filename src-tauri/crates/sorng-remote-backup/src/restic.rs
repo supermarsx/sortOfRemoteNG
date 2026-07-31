@@ -133,8 +133,8 @@ pub async fn backup(
         args.push(p.clone());
     }
 
-    let cmd_str = format!("{} {}", binary, args.join(" "));
-    info!("Executing restic backup: {}", cmd_str);
+    let cmd_str = "restic <arguments redacted>".to_string();
+    info!("Executing restic backup");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

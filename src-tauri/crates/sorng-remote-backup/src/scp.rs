@@ -91,9 +91,9 @@ pub async fn execute(
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.scp_binary.as_deref().unwrap_or("scp");
     let args = build_args(cfg);
-    let cmd_str = format!("{} {}", binary, args.join(" "));
+    let cmd_str = "scp <arguments redacted>".to_string();
 
-    info!("Executing SCP transfer: {}", cmd_str);
+    info!("Executing SCP transfer");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)

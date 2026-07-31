@@ -120,9 +120,9 @@ pub async fn execute(
 ) -> Result<BackupExecutionRecord, BackupError> {
     let args = build_args(cfg);
     let batch = build_batch_commands(cfg);
-    let cmd_str = format!("sftp {}", args.join(" "));
+    let cmd_str = "sftp <arguments redacted>".to_string();
 
-    info!("Executing SFTP transfer: {}", cmd_str);
+    info!("Executing SFTP transfer");
     let started_at = Utc::now();
 
     let mut child = Command::new("sftp")

@@ -191,9 +191,9 @@ pub async fn execute(
     let binary = cfg.rclone_binary.as_deref().unwrap_or("rclone");
     let args = build_args(cfg);
     let env = build_env(cfg);
-    let cmd_str = format!("{} {}", binary, args.join(" "));
+    let cmd_str = "rclone <arguments redacted>".to_string();
 
-    info!("Executing rclone: {}", cmd_str);
+    info!("Executing rclone");
     let started_at = Utc::now();
 
     let mut child = Command::new(binary)
