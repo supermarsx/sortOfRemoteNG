@@ -539,6 +539,8 @@ pub fn rdp_get_thumbnail(
     thumb_width: u32,
     thumb_height: u32,
 ) -> Result<tauri::ipc::Response, String> {
+    validate_rdp_thumbnail_dimensions(thumb_width, thumb_height)?;
+
     let slots = frame_store.slots.read().expect("lock poisoned");
     let slot_arc = slots
         .get(&session_id)
