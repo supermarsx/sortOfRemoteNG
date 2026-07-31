@@ -4,6 +4,15 @@
 //! draft-miller-ssh-agent. Handles encoding and decoding of all
 //! agent message types for both requests and responses.
 
+/// Maximum SSH-agent payload accepted from any local or bridged peer.
+pub const MAX_AGENT_PAYLOAD_LEN: usize = 256 * 1024;
+/// Maximum public/private key field accepted by the codec.
+pub const MAX_KEY_DATA_LEN: usize = 128 * 1024;
+/// Maximum text field accepted from an agent peer.
+pub const MAX_TEXT_LEN: usize = 4 * 1024;
+/// Maximum identities accepted in a single response.
+pub const MAX_IDENTITIES: usize = 1024;
+
 // ── Protocol Constants ──────────────────────────────────────────────
 
 /// Protocol message type constants (draft-miller-ssh-agent §7).
@@ -197,12 +206,96 @@ pub fn write_string(data: &[u8]) -> Vec<u8> {
     buf
 }
 
+/// Validate an identities answer before any aggregate response buffer is
+/// allocated. The returned length is the SSH-agent payload length and does not
+/// include the four-byte packet prefix.
+pub fn validate_identities_answer<'a, I>(identities: I) -> Result<usize, String>
+where
+    I: IntoIterator<Item = (&'a [u8], &'a str)>,
+{
+    // Message type plus identity count.
+    let mut payload_len = 1usize + 4;
+    let mut identity_count = 0usize;
+
+    for (key_blob, comment) in identities {
+        identity_count = identity_count
+            .checked_add(1)
+            .ok_or_else(|| "SSH-agent identity count overflow".to_string())?;
+        ensure_limit("identity count", identity_count, MAX_IDENTITIES)?;
+        ensure_limit("identity key", key_blob.len(), MAX_KEY_DATA_LEN)?;
+        ensure_limit("identity comment", comment.len(), MAX_TEXT_LEN)?;
+
+        payload_len = payload_len
+            .checked_add(4)
+            .and_then(|len| len.checked_add(key_blob.len()))
+            .and_then(|len| len.checked_add(4))
+            .and_then(|len| len.checked_add(comment.len()))
+            .ok_or_else(|| "SSH-agent identity response length overflow".to_string())?;
+        ensure_limit(
+            "identity response payload",
+            payload_len,
+            MAX_AGENT_PAYLOAD_LEN,
+        )?;
+    }
+
+    Ok(payload_len)
+}
+
 /// Encode a full agent message into a wire-format packet (length-prefixed).
 pub fn encode_message(msg: &AgentMessage) -> Vec<u8> {
     let payload = encode_payload(msg);
     let mut packet = write_u32(payload.len() as u32);
     packet.extend(payload);
     packet
+}
+
+/// Encode a message only when its complete payload is within the configured
+/// SSH-agent frame limit. Identity responses are preflighted before encoding,
+/// so an oversized key list cannot allocate a correspondingly oversized wire
+/// buffer.
+pub fn try_encode_message(msg: &AgentMessage) -> Result<Vec<u8>, String> {
+    if let AgentMessage::IdentitiesAnswer { identities } = msg {
+        validate_identities_answer(
+            identities
+                .iter()
+                .map(|identity| (identity.key_blob.as_slice(), identity.comment.as_str())),
+        )?;
+    }
+
+    let payload = encode_payload(msg);
+    ensure_limit(
+        "agent response payload",
+        payload.len(),
+        MAX_AGENT_PAYLOAD_LEN,
+    )?;
+
+    let mut packet = Vec::with_capacity(4 + payload.len());
+    packet.extend(write_u32(payload.len() as u32));
+    packet.extend(payload);
+    Ok(packet)
+}
+
+#[cfg(test)]
+mod outbound_limit_tests {
+    use super::*;
+
+    #[test]
+    fn oversized_identity_answer_is_rejected_before_encoding() {
+        let message = AgentMessage::IdentitiesAnswer {
+            identities: vec![
+                ProtocolIdentity {
+                    key_blob: vec![0; MAX_KEY_DATA_LEN],
+                    comment: String::new(),
+                },
+                ProtocolIdentity {
+                    key_blob: vec![0; MAX_KEY_DATA_LEN],
+                    comment: String::new(),
+                },
+            ],
+        };
+
+        assert!(try_encode_message(&message).is_err());
+    }
 }
 
 /// Encode just the payload (type byte + contents).
@@ -430,6 +523,14 @@ pub fn decode_message(packet: &[u8]) -> Result<AgentMessage, String> {
         }
 
         _ => Err(format!("Unknown message type: {}", msg_type)),
+    }
+}
+
+fn ensure_limit(label: &str, actual: usize, maximum: usize) -> Result<(), String> {
+    if actual <= maximum {
+        Ok(())
+    } else {
+        Err(format!("{} exceeds the configured limit", label))
     }
 }
 

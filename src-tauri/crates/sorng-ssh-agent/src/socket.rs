@@ -98,7 +98,13 @@ pub async fn handle_connection<R, W>(
             proc.process(request).await
         };
 
-        let encoded = protocol::encode_message(&response);
+        let encoded = match protocol::try_encode_message(&response) {
+            Ok(encoded) => encoded,
+            Err(_) => {
+                warn!("Refusing oversized SSH-agent response");
+                protocol::encode_message(&protocol::AgentMessage::Failure)
+            }
+        };
         if let Err(e) = writer.write_all(&encoded).await {
             warn!("Connection {} write error: {}", connection_id, e);
             break;

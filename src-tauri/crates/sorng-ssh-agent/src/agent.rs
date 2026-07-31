@@ -91,9 +91,19 @@ impl BuiltinAgent {
     // ── Request Handlers ────────────────────────────────────────────
 
     fn handle_request_identities(&self) -> AgentMessage {
-        let identities: Vec<ProtocolIdentity> = self
-            .store
-            .list_identities()
+        let stored_identities = self.store.list_identities();
+        if protocol::validate_identities_answer(
+            stored_identities
+                .iter()
+                .map(|(key_blob, comment)| (key_blob.as_slice(), comment.as_str())),
+        )
+        .is_err()
+        {
+            warn!("Refusing oversized SSH-agent identity response");
+            return AgentMessage::Failure;
+        }
+
+        let identities: Vec<ProtocolIdentity> = stored_identities
             .into_iter()
             .map(|(key_blob, comment)| ProtocolIdentity { key_blob, comment })
             .collect();
