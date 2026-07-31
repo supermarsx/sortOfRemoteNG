@@ -7,6 +7,52 @@ use log::{debug, info};
 use reqwest::Client;
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+async fn read_bounded_response(mut response: reqwest::Response) -> FreeIpaResult<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+    {
+        return Err(FreeIpaError::parse(
+            "FreeIPA response body exceeds the 8 MiB safety limit".to_string(),
+        ));
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| {
+        FreeIpaError::parse("Failed to read FreeIPA response body".to_string())
+    })? {
+        let remaining_probe = MAX_RESPONSE_BODY_BYTES + 1 - body.len();
+        let take = chunk.len().min(remaining_probe);
+        body.try_reserve(take).map_err(|_| {
+            FreeIpaError::parse("Unable to buffer FreeIPA response body".to_string())
+        })?;
+        body.extend_from_slice(&chunk[..take]);
+
+        if body.len() > MAX_RESPONSE_BODY_BYTES {
+            return Err(FreeIpaError::parse(
+                "FreeIPA response body exceeds the 8 MiB safety limit".to_string(),
+            ));
+        }
+    }
+
+    Ok(body)
+}
+
+async fn read_bounded_text(response: reqwest::Response) -> FreeIpaResult<String> {
+    let _body = read_bounded_response(response).await?;
+    Ok("response details omitted".to_string())
+}
+
+async fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> FreeIpaResult<T> {
+    let body = read_bounded_response(response).await?;
+    serde_json::from_slice(&body)
+        .map_err(|_| FreeIpaError::parse("FreeIPA response was not valid JSON".to_string()))
+}
+
 /// HTTP client for communicating with a FreeIPA server.
 pub struct FreeIpaClient {
     pub config: FreeIpaConnectionConfig,
@@ -47,7 +93,7 @@ impl FreeIpaClient {
             ("password", self.config.password.as_str()),
         ];
 
-        debug!("FreeIPA login to {}", url);
+        debug!("FreeIPA request");
         let resp = self
             .http
             .post(&url)
@@ -56,17 +102,18 @@ impl FreeIpaClient {
             .header("Accept", "text/plain")
             .form(&params)
             .send()
-            .await?;
+            .await
+            .map_err(|_| FreeIpaError::connection("FreeIPA request failed"))?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(FreeIpaError::auth("Invalid username or password"));
         }
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
+            let _ = read_bounded_text(resp).await?;
             return Err(FreeIpaError::http(
                 status.as_u16(),
-                format!("Login failed ({}): {}", status, body),
+                format!("FreeIPA login failed with HTTP {}", status.as_u16()),
             ));
         }
 
@@ -80,10 +127,7 @@ impl FreeIpaClient {
             .realm
             .clone()
             .unwrap_or_else(|| "UNKNOWN".into());
-        info!(
-            "Authenticated to FreeIPA {} as {}",
-            self.config.server_url, self.config.username
-        );
+        info!("FreeIPA authentication succeeded");
         Ok(format!(
             "Authenticated as {} in realm {}",
             self.config.username, realm
@@ -104,7 +148,7 @@ impl FreeIpaClient {
             "id": 0
         });
 
-        debug!("FreeIPA RPC: {}", method);
+        debug!("FreeIPA request");
         let resp = self
             .http
             .post(&url)
@@ -113,7 +157,8 @@ impl FreeIpaClient {
             .header("Accept", "application/json")
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|_| FreeIpaError::connection("FreeIPA request failed"))?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -122,24 +167,22 @@ impl FreeIpaClient {
             ));
         }
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
+            let _ = read_bounded_text(resp).await?;
             return Err(FreeIpaError::http(
                 status.as_u16(),
-                format!("RPC {method} failed ({}): {}", status, body),
+                format!("FreeIPA RPC failed with HTTP {}", status.as_u16()),
             ));
         }
 
-        let ipa_resp: IpaResponse<T> = resp.json().await.map_err(|e| {
-            FreeIpaError::parse(format!("Failed to parse response for {method}: {e}"))
-        })?;
+        let ipa_resp: IpaResponse<T> = read_bounded_json(resp).await?;
 
         if let Some(err) = ipa_resp.error {
-            return Err(FreeIpaError::ipa(err.code, err.message));
+            return Err(FreeIpaError::ipa(err.code, "FreeIPA API reported an error".to_string()));
         }
 
         ipa_resp
             .result
-            .ok_or_else(|| FreeIpaError::parse(format!("No result in response for {method}")))
+            .ok_or_else(|| FreeIpaError::parse("FreeIPA response did not include a result".to_string()))
     }
 
     /// Ping the FreeIPA server.

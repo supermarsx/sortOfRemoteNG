@@ -9,6 +9,47 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+async fn read_bounded_response(mut response: reqwest::Response) -> VaultResult<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+    {
+        return Err(VaultError::parse_error(
+            "Vault response body exceeds the 8 MiB safety limit".to_string(),
+        ));
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| {
+        VaultError::parse_error("Failed to read Vault response body".to_string())
+    })? {
+        let remaining_probe = MAX_RESPONSE_BODY_BYTES + 1 - body.len();
+        let take = chunk.len().min(remaining_probe);
+        body.try_reserve(take).map_err(|_| {
+            VaultError::parse_error("Unable to buffer Vault response body".to_string())
+        })?;
+        body.extend_from_slice(&chunk[..take]);
+
+        if body.len() > MAX_RESPONSE_BODY_BYTES {
+            return Err(VaultError::parse_error(
+                "Vault response body exceeds the 8 MiB safety limit".to_string(),
+            ));
+        }
+    }
+
+    Ok(body)
+}
+
+async fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> VaultResult<T> {
+    let body = read_bounded_response(response).await?;
+    serde_json::from_slice(&body)
+        .map_err(|_| VaultError::parse_error("Vault response was not valid JSON".to_string()))
+}
+
 /// Low-level Vault HTTP client.
 pub struct VaultClient {
     pub base_url: String,
@@ -83,108 +124,103 @@ impl VaultClient {
         req
     }
 
-    async fn check_response(&self, resp: reqwest::Response) -> VaultResult<Value> {
-        let status = resp.status().as_u16();
+    async fn check_response(
+        &self,
+        response: reqwest::Response,
+    ) -> VaultResult<serde_json::Value> {
+        let status = response.status().as_u16();
         if status == 503 {
             return Err(VaultError::sealed());
         }
-        let body: Value = resp.json().await?;
-        if status == 403 {
-            let errors: Vec<String> = body["errors"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            return Err(VaultError::permission_denied(errors.join(", ")));
-        }
-        if status == 404 {
-            let errors: Vec<String> = body["errors"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            return Err(VaultError::not_found(errors.join(", ")));
-        }
-        if status >= 400 {
-            let errors = body["errors"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            return Err(VaultError::api_error(status, errors));
-        }
-        Ok(body)
-    }
 
-    fn extract_data<T: DeserializeOwned>(body: &Value) -> VaultResult<T> {
-        let data = body
-            .get("data")
-            .ok_or_else(|| VaultError::parse_error("missing 'data' field"))?;
-        serde_json::from_value(data.clone()).map_err(|e| VaultError::parse_error(e.to_string()))
-    }
+        let body = read_bounded_response(response).await?;
+        match status {
+            403 => {
+                return Err(VaultError::permission_denied(
+                    "Vault request was denied".to_string(),
+                ));
+            }
+            404 => {
+                return Err(VaultError::not_found(
+                    "Vault resource was not found".to_string(),
+                ));
+            }
+            status if status >= 400 => {
+                return Err(VaultError::api_error(
+                    status,
+                    vec!["Vault API request failed".to_string()],
+                ));
+            }
+            _ => {}
+        }
 
+        serde_json::from_slice(&body)
+            .map_err(|_| VaultError::parse_error("Vault response was not valid JSON".to_string()))
+    }
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> VaultResult<T> {
-        debug!("VAULT GET {}", path);
-        let resp = self.request(reqwest::Method::GET, path).send().await?;
+        debug!("Vault request");
+        let resp = self.request(reqwest::Method::GET, path).send()
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         let body = self.check_response(resp).await?;
         Self::extract_data(&body)
     }
 
     pub async fn get_raw(&self, path: &str) -> VaultResult<Value> {
-        debug!("VAULT GET (raw) {}", path);
-        let resp = self.request(reqwest::Method::GET, path).send().await?;
+        debug!("Vault request");
+        let resp = self.request(reqwest::Method::GET, path).send()
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         self.check_response(resp).await
     }
 
     pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> VaultResult<T> {
-        debug!("VAULT POST {}", path);
+        debug!("Vault request");
         let resp = self
             .request(reqwest::Method::POST, path)
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         let resp_body = self.check_response(resp).await?;
         Self::extract_data(&resp_body)
     }
 
     pub async fn post_raw(&self, path: &str, body: &Value) -> VaultResult<Value> {
-        debug!("VAULT POST (raw) {}", path);
+        debug!("Vault request");
         let resp = self
             .request(reqwest::Method::POST, path)
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         self.check_response(resp).await
     }
 
     pub async fn post_no_body(&self, path: &str) -> VaultResult<Value> {
-        debug!("VAULT POST (no body) {}", path);
-        let resp = self.request(reqwest::Method::POST, path).send().await?;
+        debug!("Vault request");
+        let resp = self.request(reqwest::Method::POST, path).send()
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         self.check_response(resp).await
     }
 
     pub async fn put_raw(&self, path: &str, body: &Value) -> VaultResult<Value> {
-        debug!("VAULT PUT {}", path);
+        debug!("Vault request");
         let resp = self
             .request(reqwest::Method::PUT, path)
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         self.check_response(resp).await
     }
 
     pub async fn delete_req(&self, path: &str) -> VaultResult<()> {
-        debug!("VAULT DELETE {}", path);
-        let resp = self.request(reqwest::Method::DELETE, path).send().await?;
+        debug!("Vault request");
+        let resp = self.request(reqwest::Method::DELETE, path).send()
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         let status = resp.status().as_u16();
         if status == 204 || status == 200 {
             return Ok(());
@@ -197,14 +233,15 @@ impl VaultClient {
     }
 
     pub async fn list(&self, path: &str) -> VaultResult<Vec<String>> {
-        debug!("VAULT LIST {}", path);
+        debug!("Vault request");
         let resp = self
             .request(
                 reqwest::Method::from_bytes(b"LIST").unwrap_or(reqwest::Method::GET),
                 path,
             )
             .send()
-            .await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
         let body = self.check_response(resp).await?;
         let data: VaultListData = Self::extract_data(&body)?;
         Ok(data.keys)
@@ -219,8 +256,9 @@ impl VaultClient {
             .get(format!("{}/v1/sys/health", self.base_url))
             .query(&[("standbyok", "true"), ("perfstandbyok", "true")])
             .send()
-            .await?;
-        let body = resp.json().await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
+        let body = read_bounded_json(resp).await?;
         Ok(body)
     }
 
@@ -230,8 +268,9 @@ impl VaultClient {
             .http
             .get(format!("{}/v1/sys/seal-status", self.base_url))
             .send()
-            .await?;
-        let body = resp.json().await?;
+            .await
+            .map_err(|_| VaultError::connection_failed("Vault request failed"))?;
+        let body = read_bounded_json(resp).await?;
         Ok(body)
     }
 
