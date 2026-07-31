@@ -4,8 +4,11 @@
 use crate::client::TerraformClient;
 use crate::error::{TerraformError, TerraformResult};
 use crate::types::*;
+use std::time::Duration;
 
 pub struct ModulesManager;
+
+const MAX_REGISTRY_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 impl ModulesManager {
     /// Run `terraform get` to download declared modules.
@@ -94,35 +97,75 @@ impl ModulesManager {
             url.push_str("&verified=true");
         }
 
-        // We cannot make HTTP requests from pure Rust without reqwest/hyper.
-        // Instead, we use curl / Invoke-WebRequest via the system shell.
         let response = Self::http_get(&url).await?;
         Self::parse_registry_response(&response)
     }
 
-    /// Minimal HTTP GET using system tools (curl on Linux/macOS, curl/Invoke-WebRequest on Windows).
+    /// Bounded HTTPS GET for the fixed public Terraform registry endpoint.
     async fn http_get(url: &str) -> TerraformResult<String> {
-        let output = tokio::process::Command::new("curl")
-            .args(["-sS", "--fail", url])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .await;
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("SortOfRemoteNG-Terraform/1")
+            .build()
+            .map_err(|_| {
+                TerraformError::new(
+                    crate::error::TerraformErrorKind::ModuleFailed,
+                    "failed to initialize registry client",
+                )
+            })?;
+        let mut response = client.get(url).send().await.map_err(|_| {
+            TerraformError::new(
+                crate::error::TerraformErrorKind::ModuleFailed,
+                "registry request failed",
+            )
+        })?;
 
-        match output {
-            Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).to_string()),
-            Ok(o) => Err(TerraformError::new(
+        if !response.status().is_success() {
+            return Err(TerraformError::new(
                 crate::error::TerraformErrorKind::ModuleFailed,
-                format!(
-                    "registry request failed: {}",
-                    String::from_utf8_lossy(&o.stderr)
-                ),
-            )),
-            Err(e) => Err(TerraformError::new(
-                crate::error::TerraformErrorKind::ModuleFailed,
-                format!("failed to execute curl: {}", e),
-            )),
+                format!("registry request returned HTTP {}", response.status()),
+            ));
         }
+
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_REGISTRY_RESPONSE_BYTES as u64)
+        {
+            return Err(TerraformError::new(
+                crate::error::TerraformErrorKind::ModuleFailed,
+                "registry response exceeded the 8 MiB limit",
+            ));
+        }
+
+        let mut body = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(16 * 1024)
+                .min(MAX_REGISTRY_RESPONSE_BYTES as u64) as usize,
+        );
+        while let Some(chunk) = response.chunk().await.map_err(|_| {
+            TerraformError::new(
+                crate::error::TerraformErrorKind::ModuleFailed,
+                "failed to read registry response",
+            )
+        })? {
+            if body.len().saturating_add(chunk.len()) > MAX_REGISTRY_RESPONSE_BYTES {
+                return Err(TerraformError::new(
+                    crate::error::TerraformErrorKind::ModuleFailed,
+                    "registry response exceeded the 8 MiB limit",
+                ));
+            }
+            body.extend_from_slice(&chunk);
+        }
+
+        String::from_utf8(body).map_err(|_| {
+            TerraformError::new(
+                crate::error::TerraformErrorKind::ModuleFailed,
+                "registry response was not valid UTF-8",
+            )
+        })
     }
 
     /// Parse the registry API response.
