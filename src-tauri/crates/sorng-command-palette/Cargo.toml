@@ -16,3 +16,6 @@ regex = { workspace = true }
 fuzzy-matcher = "0.3"
 log = { workspace = true }
 sha2 = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-fs = "=2.5.1"
+tempfile = { workspace = true }
