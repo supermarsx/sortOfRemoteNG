@@ -11,3 +11,4 @@ tokio = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+sorng-ssh = { path = "../sorng-ssh" }

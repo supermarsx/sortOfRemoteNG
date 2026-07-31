@@ -5,15 +5,42 @@
 use crate::error::{PgError, PgResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+
+const MAX_SSH_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SSH_ERROR_BYTES: usize = 64 * 1024;
+const MAX_SSH_TIMEOUT_SECS: u64 = 600;
 
 /// PostgreSQL administration client – connects via SSH to manage PG remotely.
 pub struct PgClient {
     pub config: PgConnectionConfig,
+    ssh: IntegrationSshSession,
 }
 
 impl PgClient {
     pub fn new(config: PgConnectionConfig) -> PgResult<Self> {
-        Ok(Self { config })
+        if config.host.trim().is_empty() {
+            return Err(PgError::connection("SSH host cannot be empty"));
+        }
+
+        let ssh_user = config.ssh_user.as_deref().unwrap_or("root");
+        if ssh_user.trim().is_empty() {
+            return Err(PgError::connection("SSH user cannot be empty"));
+        }
+
+        let ssh = IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: ssh_user,
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config
+                .timeout_secs
+                .unwrap_or(30)
+                .clamp(1, MAX_SSH_TIMEOUT_SECS),
+        });
+
+        Ok(Self { config, ssh })
     }
 
     // ── Binary paths ─────────────────────────────────────────────
@@ -108,67 +135,63 @@ impl PgClient {
         }
     }
 
-    // ── SSH command execution stub ───────────────────────────────
+    // ── SSH command execution ────────────────────────────────────
 
     pub async fn exec_ssh(&self, command: &str) -> PgResult<SshOutput> {
-        debug!("PG SSH [{}]: {}", self.config.host, command);
+        debug!(
+            "Executing PostgreSQL administration command on {}",
+            self.config.host
+        );
 
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let stdout = self
+            .ssh
+            .execute(
+                command,
+                Some(
+                    self.config
+                        .timeout_secs
+                        .unwrap_or(30)
+                        .clamp(1, MAX_SSH_TIMEOUT_SECS)
+                        .saturating_mul(1000),
+                ),
+            )
             .await
-            .map_err(|e| PgError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(|error| PgError::ssh(self.redact_transport_error(&error)))?;
+
+        if stdout.len() > MAX_SSH_OUTPUT_BYTES {
+            return Err(PgError::command_failed(
+                "Remote command output exceeded the 8 MiB safety limit",
+            ));
+        }
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout,
+            stderr: String::new(),
+            exit_code: 0,
         })
+    }
+
+    fn redact_transport_error(&self, error: &str) -> String {
+        let mut boundary = error.len().min(MAX_SSH_ERROR_BYTES);
+        while !error.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        let mut redacted = error[..boundary].to_string();
+        for secret in [
+            self.config.ssh_password.as_deref(),
+            self.config.pg_password.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|secret| !secret.is_empty())
+        {
+            redacted = redacted.replace(&shell_escape(secret), "[REDACTED]");
+            redacted = redacted.replace(secret, "[REDACTED]");
+        }
+        if boundary < error.len() {
+            redacted.push_str(" [truncated]");
+        }
+        redacted
     }
 
     /// Execute SQL against the default database and return stdout.
