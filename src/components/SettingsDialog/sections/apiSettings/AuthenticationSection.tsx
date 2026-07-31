@@ -12,8 +12,9 @@ import type { Mgr } from "./types";
 export const AuthenticationSection: React.FC<{
   settings: GlobalSettings;
   mgr: Mgr;
-}> = ({ settings, mgr }) => {
-  const authOn = settings.restApi?.authentication ?? false;
+}> = ({ mgr }) => {
+  const authEnabled = true;
+  const secretStatus = mgr.apiSecretStatus;
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -27,28 +28,59 @@ export const AuthenticationSection: React.FC<{
           icon={<Key size={16} />}
           label={mgr.t("settings.api.requireAuth", "Require Authentication")}
           description={mgr.t(
-            "settings.api.requireAuthDescription",
-            "Require an API key for all requests",
+            "settings.api.requireAuthProductionDescription",
+            "Required in production. Unauthenticated loopback is available only to debug builds through an explicit process environment override.",
           )}
-          checked={authOn}
-          onChange={(v) => mgr.updateRestApi({ authentication: v })}
-          infoTooltip="Require a valid API key in the X-API-Key header for all incoming requests. Strongly recommended when remote connections are allowed."
+          checked
+          disabled
+          onChange={() => {}}
+          infoTooltip="Release builds always require a valid API key or JWT. Persisted settings cannot disable this boundary."
         />
 
         <SettingsApiKeyField
           settingKey="restApi.apiKey"
           label={mgr.t("settings.api.apiKey", "API Key")}
-          value={settings.restApi?.apiKey || ""}
+          value={
+            secretStatus.apiKeyAvailable
+              ? mgr.t(
+                  "settings.api.apiKeyStoredSecurely",
+                  "Stored securely in OS vault",
+                )
+              : ""
+          }
           onCopy={mgr.copyApiKey}
           onRegenerate={mgr.generateApiKey}
-          placeholder={mgr.t("settings.api.noApiKey", "No API key generated")}
+          placeholder={
+            secretStatus.vaultAvailable
+              ? mgr.t("settings.api.noApiKey", "No API key generated")
+              : mgr.t(
+                  "settings.api.secureStorageUnavailable",
+                  "OS credential vault unavailable",
+                )
+          }
           description={mgr.t(
             "settings.api.apiKeyDescription",
-            "Include this key in the X-API-Key header for all requests",
+            "Stored outside general settings. Copy requires native biometric reauthentication.",
           )}
-          infoTooltip="The secret key that clients must include in the X-API-Key header to authenticate API requests."
-          disabled={!authOn}
+          infoTooltip="The key never enters renderer settings. JWT signing material is never exposed to the renderer."
+          disabled={!authEnabled || !secretStatus.vaultAvailable}
         />
+        {secretStatus.apiKeyAvailable && !secretStatus.revealAvailable && (
+          <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">
+            {mgr.t(
+              "settings.api.revealUnavailable",
+              "Copy and reveal are disabled because native biometric reauthentication is unavailable.",
+            )}
+          </p>
+        )}
+        {mgr.apiSecretError && (
+          <p
+            role="alert"
+            className="px-4 pb-3 text-xs text-red-600 dark:text-red-400"
+          >
+            {mgr.apiSecretError}
+          </p>
+        )}
       </Card>
     </div>
   );

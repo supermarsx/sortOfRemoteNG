@@ -15,11 +15,13 @@ rand = { workspace = true }
 secrecy = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 subtle = "2"
 tokio = { workspace = true }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }

@@ -1,8 +1,9 @@
 use crate::aws::AwsConnectionConfig;
 use crate::cloudflare::CloudflareConnectionConfig;
 use crate::vercel::VercelConnectionConfig;
+use axum::extract::DefaultBodyLimit;
 use axum::{
-    extract::{ConnectInfo, FromRef, Path, Query, Request, State},
+    extract::{ConnectInfo, Extension, FromRef, Path, Query, Request, State},
     http::{header, HeaderMap, Method, StatusCode},
     middleware::{from_fn_with_state, Next},
     response::{IntoResponse, Response},
@@ -16,7 +17,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use subtle::ConstantTimeEq;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Semaphore};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::api_capability::{capability_for_path, capability_id};
@@ -131,7 +132,6 @@ impl ApiService {
             *guard = cleaned;
         }
     }
-
 }
 
 /// Composite router state for the hardened REST API (t41).
@@ -153,6 +153,8 @@ pub struct ApiState {
     pub bearer: BearerAuthServiceState,
     /// Fixed-window per-caller rate-limit buckets.
     pub rate_limiter: Arc<RateLimiter>,
+    /// Hard cap on concurrently executing API requests.
+    pub request_slots: Arc<Semaphore>,
 }
 
 impl FromRef<ApiState> for Arc<ApiService> {
@@ -179,6 +181,8 @@ pub struct RateLimiter {
     windows: std::sync::Mutex<HashMap<String, (u64, u32)>>,
 }
 
+const MAX_RATE_LIMIT_BUCKETS: usize = 4096;
+
 impl RateLimiter {
     fn new(limit: u32) -> Self {
         RateLimiter {
@@ -201,9 +205,13 @@ impl RateLimiter {
             // A poisoned lock fails closed rather than panicking the request.
             Err(_) => return false,
         };
-        // Bound memory: drop stale windows when the map grows large.
-        if windows.len() > 4096 {
+        // Bound memory: prune stale entries at the ceiling, then fail closed
+        // for a previously unseen caller if every retained bucket is current.
+        if windows.len() >= MAX_RATE_LIMIT_BUCKETS {
             windows.retain(|_, (min, _)| *min == now_min);
+        }
+        if !windows.contains_key(key) && windows.len() >= MAX_RATE_LIMIT_BUCKETS {
+            return false;
         }
         let entry = windows.entry(key.to_string()).or_insert((now_min, 0));
         if entry.0 != now_min {
@@ -300,19 +308,12 @@ fn client_ip(req: &Request) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// Rate-limit bucket key: client IP plus a non-cryptographic fingerprint of the
-/// presented credential header (so the raw key/token is never stored).
+/// Rate-limit bucket key. Credentials are deliberately excluded: otherwise an
+/// unauthenticated caller can rotate bogus headers to obtain a fresh budget for
+/// every login attempt and grow the bucket map. This API terminates connections
+/// directly, so the peer IP is the strongest non-spoofable pre-auth identity.
 fn rate_limit_key(req: &Request) -> String {
-    use std::hash::{Hash, Hasher};
-    let cred = req
-        .headers()
-        .get("x-api-key")
-        .or_else(|| req.headers().get(header::AUTHORIZATION))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    cred.hash(&mut hasher);
-    format!("{}|{:x}", client_ip(req), hasher.finish())
+    client_ip(req)
 }
 
 fn unauthorized_response() -> Response {
@@ -348,12 +349,47 @@ fn too_many_requests_response() -> Response {
         .into_response()
 }
 
-/// Build the CORS layer. When `corsEnabled` is off we install a bare
-/// [`CorsLayer`] that adds no `Access-Control-Allow-*` headers, so browsers
-/// enforce same-origin. When on, permit any origin/method/header (v1 — a
-/// tighter allow-list is a future refinement).
+fn request_timeout_response() -> Response {
+    (
+        StatusCode::REQUEST_TIMEOUT,
+        Json(serde_json::json!({
+            "error": "request_timeout",
+            "message": "The request exceeded the configured processing deadline.",
+        })),
+    )
+        .into_response()
+}
+
+fn server_busy_response() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "server_busy",
+            "message": "The API concurrency limit is currently exhausted.",
+        })),
+    )
+        .into_response()
+}
+
+fn log_api_operation_failure(operation: &'static str, _error: &impl std::fmt::Display) {
+    tracing::warn!(
+        target: "api",
+        operation,
+        "REST API operation failed"
+    );
+}
+
+/// Build the CORS layer. Wildcard access is confined to explicitly enabled,
+/// authenticated, loopback-only debug runs. Release and remote listeners emit
+/// no wildcard CORS headers; they require a future explicit-origin allowlist.
+const MAX_API_REQUEST_BODY_BYTES: usize = 512 * 1024;
+
+fn wildcard_cors_allowed(config: &ApiRuntimeConfig) -> bool {
+    config.cors_enabled && config.auth_required && !config.allow_remote && cfg!(debug_assertions)
+}
+
 fn cors_layer(config: &ApiRuntimeConfig) -> CorsLayer {
-    if config.cors_enabled {
+    if wildcard_cors_allowed(config) {
         CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
@@ -370,11 +406,27 @@ fn cors_layer(config: &ApiRuntimeConfig) -> CorsLayer {
 /// `config.tls.enabled`, else plain HTTP. The [`BearerAuthService`] and
 /// rate-limit buckets are created per server run and live for its lifetime.
 pub async fn start_server(
-    config: ApiRuntimeConfig,
+    mut config: ApiRuntimeConfig,
     services: Arc<ApiService>,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> anyhow::Result<()> {
+    if let Err(reason) = config.validate_for_start() {
+        anyhow::bail!("{}", reason);
+    }
+
+    // Session JWTs are deliberately scoped to one server run. The persistent
+    // vault secret authenticates the installation, while a fresh 256-bit epoch
+    // prevents a token revoked in one run from becoming valid again after the
+    // in-memory revoke set is reset by a stop/restart.
+    let mut run_epoch = [0u8; 32];
+    {
+        use rand::RngCore as _;
+        rand::rngs::OsRng.fill_bytes(&mut run_epoch);
+    }
+    config.jwt_secret = derive_run_jwt_secret(&config.jwt_secret, &run_epoch);
+
     let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit_per_minute));
+    let request_slots = Arc::new(Semaphore::new(config.max_threads));
     let bearer = BearerAuthService::new();
     let bind = config.bind_addr();
     let tls = config.tls.clone();
@@ -384,6 +436,7 @@ pub async fn start_server(
         config: Arc::new(config),
         bearer,
         rate_limiter,
+        request_slots,
     };
     let app = create_router(state);
 
@@ -405,6 +458,17 @@ pub async fn start_server(
         .map_err(|e| anyhow::anyhow!("REST API server error: {e}"))?;
         Ok(())
     }
+}
+
+fn derive_run_jwt_secret(persistent_secret: &str, run_epoch: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    let mut digest = Sha256::new();
+    digest.update(b"sortofremoteng-rest-api-jwt-run-v1\0");
+    digest.update((persistent_secret.len() as u64).to_be_bytes());
+    digest.update(persistent_secret.as_bytes());
+    digest.update(run_epoch);
+    hex::encode(digest.finalize())
 }
 
 /// Serve the router over TLS via `axum-server`. Graceful shutdown is driven by
@@ -478,14 +542,26 @@ async fn build_rustls_config(
                 validity_days: 365,
                 path_length: None,
             };
+            // Older builds persisted the generated private key in a predictable
+            // temporary JSON file. Remove that legacy artifact best-effort and
+            // use the non-persisting generator for this process-only identity.
+            let legacy_store_path = std::env::temp_dir().join("sorng-api-selfsigned-certs.json");
+            match std::fs::remove_file(&legacy_store_path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => tracing::warn!(
+                    target: "api",
+                    "could not remove legacy persisted self-signed API certificate"
+                ),
+            }
             let store_path = std::env::temp_dir()
-                .join("sorng-api-selfsigned-certs.json")
+                .join(format!("sorng-api-ephemeral-{}.json", uuid::Uuid::new_v4()))
                 .to_string_lossy()
                 .to_string();
             let svc = CertGenService::new(store_path);
             let mut guard = svc.lock().await;
             let generated = guard
-                .generate_self_signed(params)
+                .generate_self_signed_ephemeral(params)
                 .await
                 .map_err(|e| anyhow::anyhow!("failed to generate self-signed cert: {e}"))?;
             RustlsConfig::from_pem(
@@ -508,313 +584,337 @@ async fn build_rustls_config(
 
 /// Build the hardened REST API router.
 ///
-/// Middleware order (outer → inner): audit-log → CORS → rate-limit →
-/// `api_key_gate` (auth) → `capability_gate` → route. `/health` short-circuits
-/// auth/capability/rate-limit; `/auth/login` is exempt from the key gate (it is
-/// the credential-exchange endpoint, guarded by `AuthService` lockout).
+/// Middleware order (outer → inner): audit-log → request budget → CORS →
+/// body-limit → rate-limit → `api_key_gate` (auth) → `capability_gate` → route.
+/// `/health` short-circuits auth/capability/rate-limit; `/auth/login` is exempt
+/// from the key gate (it is the credential-exchange endpoint, guarded by
+/// `AuthService` lockout).
 pub fn create_router(state: ApiState) -> Router {
     Router::new()
-            .route("/health", get(health_check))
-            // Authentication / session tokens
-            .route("/auth/login", post(login))
-            .route("/auth/logout", post(logout))
-            .route("/auth/whoami", get(whoami))
-            .route("/auth/users", get(list_users))
-            // SSH
-            .route("/ssh/connect", post(connect_ssh))
-            .route("/ssh/execute", post(execute_command))
-            .route("/ssh/sessions", get(list_ssh_sessions))
-            // Database
-            .route("/db/connect", post(connect_mysql))
-            .route("/db/query", post(execute_query))
-            // FTP
-            .route("/ftp/connect", post(connect_ftp))
-            .route("/ftp/files/:session_id", get(list_ftp_files))
-            // Network
-            .route("/network/ping", post(ping_host))
-            .route("/network/scan", post(scan_network))
-            .route(
-                "/network/scan/comprehensive",
-                post(scan_network_comprehensive),
-            )
-            // Security
-            .route("/security/totp/generate", get(generate_totp_secret))
-            .route("/security/totp/verify", post(verify_totp))
-            // WOL
-            .route("/wol/wake", post(wake_on_lan))
-            // QR Code
-            .route("/qr/generate", post(generate_qr_code))
-            .route("/qr/generate/png", post(generate_qr_code_png))
-            // RustDesk
-            .route("/rustdesk/connect", post(connect_rustdesk_api))
-            .route(
-                "/rustdesk/disconnect/:session_id",
-                post(disconnect_rustdesk_api),
-            )
-            .route("/rustdesk/sessions", get(list_rustdesk_sessions_api))
-            .route(
-                "/rustdesk/session/:session_id",
-                get(get_rustdesk_session_api),
-            )
-            .route(
-                "/rustdesk/settings/:session_id",
-                post(update_rustdesk_settings_api),
-            )
-            .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
-            .route(
-                "/rustdesk/screenshot/:session_id",
-                get(get_rustdesk_screenshot_api),
-            )
-            .route("/rustdesk/status", get(rustdesk_status_api))
-            // WMI
-            .route("/wmi/connect", post(connect_wmi_api))
-            .route("/wmi/disconnect/:session_id", post(disconnect_wmi_api))
-            .route("/wmi/sessions", get(list_wmi_sessions_api))
-            .route("/wmi/session/:session_id", get(get_wmi_session_api))
-            .route("/wmi/query/:session_id", post(execute_wmi_query_api))
-            .route("/wmi/classes/:session_id", get(get_wmi_classes_api))
-            .route("/wmi/namespaces/:session_id", get(get_wmi_namespaces_api))
-            // RPC
-            .route("/rpc/connect", post(connect_rpc_api))
-            .route("/rpc/disconnect/:session_id", post(disconnect_rpc_api))
-            .route("/rpc/sessions", get(list_rpc_sessions_api))
-            .route("/rpc/session/:session_id", get(get_rpc_session_api))
-            .route("/rpc/call/:session_id", post(call_rpc_method_api))
-            .route("/rpc/methods/:session_id", get(discover_rpc_methods_api))
-            .route("/rpc/batch/:session_id", post(batch_rpc_calls_api))
-            // MeshCentral
-            .route("/meshcentral/connect", post(connect_meshcentral_api))
-            .route(
-                "/meshcentral/disconnect/:session_id",
-                post(disconnect_meshcentral_api),
-            )
-            .route("/meshcentral/sessions", get(list_meshcentral_sessions_api))
-            .route(
-                "/meshcentral/session/:session_id",
-                get(get_meshcentral_session_api),
-            )
-            .route(
-                "/meshcentral/devices/:session_id",
-                get(get_meshcentral_devices_api),
-            )
-            .route(
-                "/meshcentral/groups/:session_id",
-                get(get_meshcentral_groups_api),
-            )
-            .route(
-                "/meshcentral/command/:session_id",
-                post(execute_meshcentral_command_api),
-            )
-            .route(
-                "/meshcentral/command/:session_id/:command_id",
-                get(get_meshcentral_command_result_api),
-            )
-            .route(
-                "/meshcentral/server/:session_id",
-                get(get_meshcentral_server_info_api),
-            )
-            // Agent
-            .route("/agent/connect", post(connect_agent_api))
-            .route("/agent/disconnect/:session_id", post(disconnect_agent_api))
-            .route("/agent/sessions", get(list_agent_sessions_api))
-            .route("/agent/session/:session_id", get(get_agent_session_api))
-            .route("/agent/metrics/:session_id", get(get_agent_metrics_api))
-            .route("/agent/logs/:session_id", get(get_agent_logs_api))
-            .route(
-                "/agent/command/:session_id",
-                post(execute_agent_command_api),
-            )
-            .route(
-                "/agent/command/:session_id/:command_id",
-                get(get_agent_command_result_api),
-            )
-            .route("/agent/status/:session_id", post(update_agent_status_api))
-            .route("/agent/info/:session_id", get(get_agent_info_api))
-            // Commander
-            .route("/commander/connect", post(connect_commander_api))
-            .route(
-                "/commander/disconnect/:session_id",
-                post(disconnect_commander_api),
-            )
-            .route("/commander/sessions", get(list_commander_sessions_api))
-            .route(
-                "/commander/session/:session_id",
-                get(get_commander_session_api),
-            )
-            .route(
-                "/commander/command/:session_id",
-                post(execute_commander_command_api),
-            )
-            .route(
-                "/commander/command/:session_id/:command_id",
-                get(get_commander_command_result_api),
-            )
-            .route(
-                "/commander/upload/:session_id",
-                post(upload_commander_file_api),
-            )
-            .route(
-                "/commander/download/:session_id",
-                post(download_commander_file_api),
-            )
-            .route(
-                "/commander/transfer/:session_id/:transfer_id",
-                get(get_commander_file_transfer_api),
-            )
-            .route(
-                "/commander/list/:session_id",
-                get(list_commander_directory_api),
-            )
-            .route(
-                "/commander/status/:session_id",
-                post(update_commander_status_api),
-            )
-            .route(
-                "/commander/system/:session_id",
-                get(get_commander_system_info_api),
-            )
-            // AWS
-            .route("/aws/connect", post(connect_aws_api))
-            .route("/aws/disconnect/:session_id", post(disconnect_aws_api))
-            .route("/aws/sessions", get(list_aws_sessions_api))
-            .route("/aws/session/:session_id", get(get_aws_session_api))
-            .route(
-                "/aws/ec2/instances/:session_id",
-                get(list_ec2_instances_api),
-            )
-            .route(
-                "/aws/ec2/instance/:session_id/:instance_id",
-                get(get_ec2_instance_api),
-            )
-            .route(
-                "/aws/ec2/action/:session_id/:instance_id",
-                post(execute_ec2_action_api),
-            )
-            .route("/aws/s3/buckets/:session_id", get(list_s3_buckets_api))
-            .route(
-                "/aws/s3/bucket/:session_id/:bucket_name",
-                get(get_s3_bucket_api),
-            )
-            .route(
-                "/aws/s3/objects/:session_id/:bucket_name",
-                get(list_s3_objects_api),
-            )
-            .route(
-                "/aws/s3/object/:session_id/:bucket_name/*key",
-                get(get_s3_object_api),
-            )
-            .route(
-                "/aws/rds/instances/:session_id",
-                get(list_rds_instances_api),
-            )
-            .route(
-                "/aws/rds/instance/:session_id/:instance_id",
-                get(get_rds_instance_api),
-            )
-            .route(
-                "/aws/lambda/functions/:session_id",
-                get(list_lambda_functions_api),
-            )
-            .route(
-                "/aws/lambda/function/:session_id/:function_name",
-                get(get_lambda_function_api),
-            )
-            .route(
-                "/aws/cloudwatch/metrics/:session_id",
-                get(get_cloudwatch_metrics_api),
-            )
-            // Vercel
-            .route("/vercel/connect", post(connect_vercel_api))
-            .route(
-                "/vercel/disconnect/:session_id",
-                post(disconnect_vercel_api),
-            )
-            .route("/vercel/sessions", get(list_vercel_sessions_api))
-            .route("/vercel/session/:session_id", get(get_vercel_session_api))
-            .route(
-                "/vercel/projects/:session_id",
-                get(list_vercel_projects_api),
-            )
-            .route(
-                "/vercel/project/:session_id/:project_id",
-                get(get_vercel_project_api),
-            )
-            .route(
-                "/vercel/deployments/:session_id/:project_id",
-                get(list_vercel_deployments_api),
-            )
-            .route(
-                "/vercel/deployment/:session_id/:deployment_id",
-                get(get_vercel_deployment_api),
-            )
-            .route("/vercel/domains/:session_id", get(list_vercel_domains_api))
-            .route(
-                "/vercel/domain/:session_id/:domain_name",
-                get(get_vercel_domain_api),
-            )
-            .route("/vercel/teams/:session_id", get(list_vercel_teams_api))
-            .route(
-                "/vercel/team/:session_id/:team_id",
-                get(get_vercel_team_api),
-            )
-            // Cloudflare
-            .route("/cloudflare/connect", post(connect_cloudflare_api))
-            .route(
-                "/cloudflare/disconnect/:session_id",
-                post(disconnect_cloudflare_api),
-            )
-            .route("/cloudflare/sessions", get(list_cloudflare_sessions_api))
-            .route(
-                "/cloudflare/session/:session_id",
-                get(get_cloudflare_session_api),
-            )
-            .route(
-                "/cloudflare/zones/:session_id",
-                get(list_cloudflare_zones_api),
-            )
-            .route(
-                "/cloudflare/zone/:session_id/:zone_id",
-                get(get_cloudflare_zone_api),
-            )
-            .route(
-                "/cloudflare/dns/:session_id/:zone_id",
-                get(list_cloudflare_dns_records_api),
-            )
-            .route(
-                "/cloudflare/dns/:session_id/:zone_id/:record_id",
-                get(get_cloudflare_dns_record_api),
-            )
-            .route(
-                "/cloudflare/workers/:session_id",
-                get(list_cloudflare_workers_api),
-            )
-            .route(
-                "/cloudflare/worker/:session_id/:worker_id",
-                get(get_cloudflare_worker_api),
-            )
-            .route(
-                "/cloudflare/pagerules/:session_id/:zone_id",
-                get(list_cloudflare_page_rules_api),
-            )
-            .route(
-                "/cloudflare/pagerule/:session_id/:zone_id/:rule_id",
-                get(get_cloudflare_page_rule_api),
-            )
-            .route(
-                "/cloudflare/analytics/:session_id/:zone_id",
-                get(get_cloudflare_analytics_api),
-            )
-            // Middleware stack, applied outer → inner as:
-            //   audit-log → CORS → rate-limit → api_key_gate → capability_gate.
-            // (`.layer` wraps bottom-up, so the LAST `.layer` call is the
-            // outermost. capability_gate — the existing 403-on-disabled gate —
-            // stays innermost so it wraps every route above.)
-            .layer(from_fn_with_state(state.clone(), capability_gate))
-            .layer(from_fn_with_state(state.clone(), api_key_gate))
-            .layer(from_fn_with_state(state.clone(), rate_limit_mw))
-            .layer(cors_layer(&state.config))
-            .layer(from_fn_with_state(state.clone(), audit_mw))
-            .with_state(state)
+        .route("/health", get(health_check))
+        // Authentication / session tokens
+        .route("/auth/login", post(login))
+        .route("/auth/logout", post(logout))
+        .route("/auth/whoami", get(whoami))
+        .route("/auth/users", get(list_users))
+        // SSH
+        .route("/ssh/connect", post(connect_ssh))
+        .route("/ssh/execute", post(execute_command))
+        .route("/ssh/sessions", get(list_ssh_sessions))
+        // Database
+        .route("/db/connect", post(connect_mysql))
+        .route("/db/query", post(execute_query))
+        .route("/db/disconnect/:connection_id", post(disconnect_mysql))
+        // FTP
+        .route("/ftp/connect", post(connect_ftp))
+        .route("/ftp/files/:session_id", get(list_ftp_files))
+        // Network
+        .route("/network/ping", post(ping_host))
+        .route("/network/scan", post(scan_network))
+        .route(
+            "/network/scan/comprehensive",
+            post(scan_network_comprehensive),
+        )
+        // Security
+        .route("/security/totp/generate", get(generate_totp_secret))
+        .route("/security/totp/verify", post(verify_totp))
+        // WOL
+        .route("/wol/wake", post(wake_on_lan))
+        // QR Code
+        .route("/qr/generate", post(generate_qr_code))
+        .route("/qr/generate/png", post(generate_qr_code_png))
+        // RustDesk
+        .route("/rustdesk/connect", post(connect_rustdesk_api))
+        .route(
+            "/rustdesk/disconnect/:session_id",
+            post(disconnect_rustdesk_api),
+        )
+        .route("/rustdesk/sessions", get(list_rustdesk_sessions_api))
+        .route(
+            "/rustdesk/session/:session_id",
+            get(get_rustdesk_session_api),
+        )
+        .route(
+            "/rustdesk/settings/:session_id",
+            post(update_rustdesk_settings_api),
+        )
+        .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
+        .route(
+            "/rustdesk/screenshot/:session_id",
+            get(get_rustdesk_screenshot_api),
+        )
+        .route("/rustdesk/status", get(rustdesk_status_api))
+        // WMI
+        .route("/wmi/connect", post(connect_wmi_api))
+        .route("/wmi/disconnect/:session_id", post(disconnect_wmi_api))
+        .route("/wmi/sessions", get(list_wmi_sessions_api))
+        .route("/wmi/session/:session_id", get(get_wmi_session_api))
+        .route("/wmi/query/:session_id", post(execute_wmi_query_api))
+        .route("/wmi/classes/:session_id", get(get_wmi_classes_api))
+        .route("/wmi/namespaces/:session_id", get(get_wmi_namespaces_api))
+        // RPC
+        .route("/rpc/connect", post(connect_rpc_api))
+        .route("/rpc/disconnect/:session_id", post(disconnect_rpc_api))
+        .route("/rpc/sessions", get(list_rpc_sessions_api))
+        .route("/rpc/session/:session_id", get(get_rpc_session_api))
+        .route("/rpc/call/:session_id", post(call_rpc_method_api))
+        .route("/rpc/methods/:session_id", get(discover_rpc_methods_api))
+        .route("/rpc/batch/:session_id", post(batch_rpc_calls_api))
+        // MeshCentral
+        .route("/meshcentral/connect", post(connect_meshcentral_api))
+        .route(
+            "/meshcentral/disconnect/:session_id",
+            post(disconnect_meshcentral_api),
+        )
+        .route("/meshcentral/sessions", get(list_meshcentral_sessions_api))
+        .route(
+            "/meshcentral/session/:session_id",
+            get(get_meshcentral_session_api),
+        )
+        .route(
+            "/meshcentral/devices/:session_id",
+            get(get_meshcentral_devices_api),
+        )
+        .route(
+            "/meshcentral/groups/:session_id",
+            get(get_meshcentral_groups_api),
+        )
+        .route(
+            "/meshcentral/command/:session_id",
+            post(execute_meshcentral_command_api),
+        )
+        .route(
+            "/meshcentral/command/:session_id/:command_id",
+            get(get_meshcentral_command_result_api),
+        )
+        .route(
+            "/meshcentral/server/:session_id",
+            get(get_meshcentral_server_info_api),
+        )
+        // Agent
+        .route("/agent/connect", post(connect_agent_api))
+        .route("/agent/disconnect/:session_id", post(disconnect_agent_api))
+        .route("/agent/sessions", get(list_agent_sessions_api))
+        .route("/agent/session/:session_id", get(get_agent_session_api))
+        .route("/agent/metrics/:session_id", get(get_agent_metrics_api))
+        .route("/agent/logs/:session_id", get(get_agent_logs_api))
+        .route(
+            "/agent/command/:session_id",
+            post(execute_agent_command_api),
+        )
+        .route(
+            "/agent/command/:session_id/:command_id",
+            get(get_agent_command_result_api),
+        )
+        .route("/agent/status/:session_id", post(update_agent_status_api))
+        .route("/agent/info/:session_id", get(get_agent_info_api))
+        // Commander
+        .route("/commander/connect", post(connect_commander_api))
+        .route(
+            "/commander/disconnect/:session_id",
+            post(disconnect_commander_api),
+        )
+        .route("/commander/sessions", get(list_commander_sessions_api))
+        .route(
+            "/commander/session/:session_id",
+            get(get_commander_session_api),
+        )
+        .route(
+            "/commander/command/:session_id",
+            post(execute_commander_command_api),
+        )
+        .route(
+            "/commander/command/:session_id/:command_id",
+            get(get_commander_command_result_api),
+        )
+        .route(
+            "/commander/upload/:session_id",
+            post(upload_commander_file_api),
+        )
+        .route(
+            "/commander/download/:session_id",
+            post(download_commander_file_api),
+        )
+        .route(
+            "/commander/transfer/:session_id/:transfer_id",
+            get(get_commander_file_transfer_api),
+        )
+        .route(
+            "/commander/list/:session_id",
+            get(list_commander_directory_api),
+        )
+        .route(
+            "/commander/status/:session_id",
+            post(update_commander_status_api),
+        )
+        .route(
+            "/commander/system/:session_id",
+            get(get_commander_system_info_api),
+        )
+        // AWS
+        .route("/aws/connect", post(connect_aws_api))
+        .route("/aws/disconnect/:session_id", post(disconnect_aws_api))
+        .route("/aws/sessions", get(list_aws_sessions_api))
+        .route("/aws/session/:session_id", get(get_aws_session_api))
+        .route(
+            "/aws/ec2/instances/:session_id",
+            get(list_ec2_instances_api),
+        )
+        .route(
+            "/aws/ec2/instance/:session_id/:instance_id",
+            get(get_ec2_instance_api),
+        )
+        .route(
+            "/aws/ec2/action/:session_id/:instance_id",
+            post(execute_ec2_action_api),
+        )
+        .route("/aws/s3/buckets/:session_id", get(list_s3_buckets_api))
+        .route(
+            "/aws/s3/bucket/:session_id/:bucket_name",
+            get(get_s3_bucket_api),
+        )
+        .route(
+            "/aws/s3/objects/:session_id/:bucket_name",
+            get(list_s3_objects_api),
+        )
+        .route(
+            "/aws/s3/object/:session_id/:bucket_name/*key",
+            get(get_s3_object_api),
+        )
+        .route(
+            "/aws/rds/instances/:session_id",
+            get(list_rds_instances_api),
+        )
+        .route(
+            "/aws/rds/instance/:session_id/:instance_id",
+            get(get_rds_instance_api),
+        )
+        .route(
+            "/aws/lambda/functions/:session_id",
+            get(list_lambda_functions_api),
+        )
+        .route(
+            "/aws/lambda/function/:session_id/:function_name",
+            get(get_lambda_function_api),
+        )
+        .route(
+            "/aws/cloudwatch/metrics/:session_id",
+            get(get_cloudwatch_metrics_api),
+        )
+        // Vercel
+        .route("/vercel/connect", post(connect_vercel_api))
+        .route(
+            "/vercel/disconnect/:session_id",
+            post(disconnect_vercel_api),
+        )
+        .route("/vercel/sessions", get(list_vercel_sessions_api))
+        .route("/vercel/session/:session_id", get(get_vercel_session_api))
+        .route(
+            "/vercel/projects/:session_id",
+            get(list_vercel_projects_api),
+        )
+        .route(
+            "/vercel/project/:session_id/:project_id",
+            get(get_vercel_project_api),
+        )
+        .route(
+            "/vercel/deployments/:session_id/:project_id",
+            get(list_vercel_deployments_api),
+        )
+        .route(
+            "/vercel/deployment/:session_id/:deployment_id",
+            get(get_vercel_deployment_api),
+        )
+        .route("/vercel/domains/:session_id", get(list_vercel_domains_api))
+        .route(
+            "/vercel/domain/:session_id/:domain_name",
+            get(get_vercel_domain_api),
+        )
+        .route("/vercel/teams/:session_id", get(list_vercel_teams_api))
+        .route(
+            "/vercel/team/:session_id/:team_id",
+            get(get_vercel_team_api),
+        )
+        // Cloudflare
+        .route("/cloudflare/connect", post(connect_cloudflare_api))
+        .route(
+            "/cloudflare/disconnect/:session_id",
+            post(disconnect_cloudflare_api),
+        )
+        .route("/cloudflare/sessions", get(list_cloudflare_sessions_api))
+        .route(
+            "/cloudflare/session/:session_id",
+            get(get_cloudflare_session_api),
+        )
+        .route(
+            "/cloudflare/zones/:session_id",
+            get(list_cloudflare_zones_api),
+        )
+        .route(
+            "/cloudflare/zone/:session_id/:zone_id",
+            get(get_cloudflare_zone_api),
+        )
+        .route(
+            "/cloudflare/dns/:session_id/:zone_id",
+            get(list_cloudflare_dns_records_api),
+        )
+        .route(
+            "/cloudflare/dns/:session_id/:zone_id/:record_id",
+            get(get_cloudflare_dns_record_api),
+        )
+        .route(
+            "/cloudflare/workers/:session_id",
+            get(list_cloudflare_workers_api),
+        )
+        .route(
+            "/cloudflare/worker/:session_id/:worker_id",
+            get(get_cloudflare_worker_api),
+        )
+        .route(
+            "/cloudflare/pagerules/:session_id/:zone_id",
+            get(list_cloudflare_page_rules_api),
+        )
+        .route(
+            "/cloudflare/pagerule/:session_id/:zone_id/:rule_id",
+            get(get_cloudflare_page_rule_api),
+        )
+        .route(
+            "/cloudflare/analytics/:session_id/:zone_id",
+            get(get_cloudflare_analytics_api),
+        )
+        // Middleware stack, applied outer → inner as:
+        //   audit-log → request-budget → CORS → body-limit → rate-limit
+        //   → api_key_gate → capability_gate.
+        // (`.layer` wraps bottom-up, so the LAST `.layer` call is the
+        // outermost. capability_gate — the existing 403-on-disabled gate —
+        // stays innermost so it wraps every route above.)
+        .layer(from_fn_with_state(state.clone(), capability_gate))
+        .layer(from_fn_with_state(state.clone(), api_key_gate))
+        .layer(from_fn_with_state(state.clone(), rate_limit_mw))
+        .layer(DefaultBodyLimit::max(MAX_API_REQUEST_BODY_BYTES))
+        .layer(cors_layer(&state.config))
+        .layer(from_fn_with_state(state.clone(), request_budget_mw))
+        .layer(from_fn_with_state(state.clone(), audit_mw))
+        .with_state(state)
+}
+
+/// Reject excess concurrency immediately instead of creating an unbounded wait
+/// queue, and cancel handler work that exceeds the configured deadline.
+async fn request_budget_mw(State(state): State<ApiState>, req: Request, next: Next) -> Response {
+    let _permit = match state.request_slots.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => return server_busy_response(),
+    };
+    let timeout = std::time::Duration::from_secs(
+        state
+            .config
+            .request_timeout_secs
+            .clamp(1, crate::api_config::MAX_REQUEST_TIMEOUT_SECS),
+    );
+    match tokio::time::timeout(timeout, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => request_timeout_response(),
+    }
 }
 
 /// Outermost middleware: structured audit log of every request (method, path,
@@ -867,7 +967,7 @@ async fn rate_limit_mw(State(state): State<ApiState>, req: Request, next: Next) 
 /// Authentication gate. Enforces [`decide_auth`] and, on success, records the
 /// resolved principal into the response extensions for [`audit_mw`]. Never logs
 /// the key or token.
-async fn api_key_gate(State(state): State<ApiState>, req: Request, next: Next) -> Response {
+async fn api_key_gate(State(state): State<ApiState>, mut req: Request, next: Next) -> Response {
     let decision = {
         let bearer = state.bearer.lock().await;
         decide_auth(
@@ -880,6 +980,11 @@ async fn api_key_gate(State(state): State<ApiState>, req: Request, next: Next) -
     };
     match decision {
         AuthDecision::Allow(principal) => {
+            // Make the authenticated identity available to handlers and future
+            // per-resource ownership extractors. Keep the response copy for the
+            // outer audit middleware, which cannot see request extensions after
+            // `next.run` consumes the request.
+            req.extensions_mut().insert(principal.clone());
             let mut response = next.run(req).await;
             response.extensions_mut().insert(principal);
             response
@@ -895,11 +1000,7 @@ async fn api_key_gate(State(state): State<ApiState>, req: Request, next: Next) -
 ///
 /// Paths that don't map to any capability (i.e. unknown routes) fall
 /// through — they'll hit axum's normal 404 handler.
-async fn capability_gate(
-    State(svc): State<Arc<ApiService>>,
-    req: Request,
-    next: Next,
-) -> Response {
+async fn capability_gate(State(svc): State<Arc<ApiService>>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
     if let Some(cap) = capability_for_path(path) {
         let id = capability_id(cap);
@@ -955,7 +1056,12 @@ async fn login(
         match auth.verify_user(&req.username, &req.password).await {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!(target: "api", "login verification error: {e}");
+                tracing::warn!(
+                    target: "api",
+                    operation = "login verification",
+                    "REST API operation failed"
+                );
+                let _ = e;
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         }
@@ -977,7 +1083,12 @@ async fn login(
                 SESSION_TTL_SECS,
             )
             .map_err(|e| {
-                tracing::error!(target: "api", "failed to issue session token: {e}");
+                tracing::error!(
+                    target: "api",
+                    operation = "session token issuance",
+                    "REST API operation failed"
+                );
+                let _ = e;
                 StatusCode::INTERNAL_SERVER_ERROR
             })?
     };
@@ -1024,7 +1135,8 @@ async fn logout(State(state): State<ApiState>, headers: HeaderMap) -> Response {
 async fn whoami(State(state): State<ApiState>, headers: HeaderMap) -> Json<serde_json::Value> {
     if let Some(token) = bearer_token(&headers) {
         let bearer = state.bearer.lock().await;
-        if let Ok(claims) = bearer.verify_session_token(state.config.jwt_secret.as_bytes(), &token) {
+        if let Ok(claims) = bearer.verify_session_token(state.config.jwt_secret.as_bytes(), &token)
+        {
             return Json(serde_json::json!({
                 "principal": claims.sub,
                 "role": claims.role,
@@ -1063,6 +1175,12 @@ async fn connect_ssh(
     State(services): State<Arc<ApiService>>,
     Json(req): Json<SshConnectRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    // REST callers cannot satisfy Tauri's native file-picker scope. Accepting
+    // an arbitrary path here would let an API credential use local private-key
+    // files as an authentication oracle/deputy.
+    if req.key_path.is_some() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let config = SshConnectionConfig {
         host: req.host,
         port: req.port,
@@ -1160,21 +1278,23 @@ struct DbConnectRequest {
 
 async fn connect_mysql(
     State(services): State<Arc<ApiService>>,
+    Extension(principal): Extension<Principal>,
     Json(req): Json<DbConnectRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let mut db = services.db_service.lock().await;
-    match db
-        .connect_mysql(
-            req.host,
-            req.port,
-            req.username,
-            req.password,
-            req.database.unwrap_or_default(),
-            None,
-            None,
-            None,
-        )
-        .await
+    match crate::db::DbService::connect_mysql_for_rest_on_state(
+        &services.db_service,
+        principal.0,
+        req.host,
+        req.port,
+        req.username,
+        req.password,
+        req.database.unwrap_or_default(),
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
     {
         Ok(connection_id) => Ok(Json(serde_json::json!({
             "success": true,
@@ -1193,15 +1313,38 @@ struct QueryRequest {
 
 async fn execute_query(
     State(services): State<Arc<ApiService>>,
+    Extension(principal): Extension<Principal>,
     Json(req): Json<QueryRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let db = services.db_service.lock().await;
-    match db.execute_query(req.query).await {
+    match crate::db::DbService::execute_query_for_rest_owner_state(
+        &services.db_service,
+        &req.connection_id,
+        &principal.0,
+        req.query,
+    )
+    .await
+    {
         Ok(results) => Ok(Json(serde_json::json!({
             "success": true,
             "results": results
         }))),
+        Err(error) if error == "Database session not found" => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::BAD_REQUEST),
+    }
+}
+
+async fn disconnect_mysql(
+    State(services): State<Arc<ApiService>>,
+    Extension(principal): Extension<Principal>,
+    Path(connection_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut db = services.db_service.lock().await;
+    match db
+        .disconnect_db_session_for_rest_owner(&connection_id, &principal.0)
+        .await
+    {
+        Ok(()) => Ok(Json(serde_json::json!({ "success": true }))),
+        Err(_) => Err(StatusCode::NOT_FOUND),
     }
 }
 
@@ -1421,7 +1564,7 @@ async fn connect_rustdesk_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect RustDesk: {}", e);
+            log_api_operation_failure("Failed to connect RustDesk", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1437,7 +1580,7 @@ async fn disconnect_rustdesk_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect RustDesk: {}", e);
+            log_api_operation_failure("Failed to disconnect RustDesk", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1493,7 +1636,7 @@ async fn update_rustdesk_settings_api(
             "status": "updated"
         }))),
         Err(e) => {
-            eprintln!("Failed to update RustDesk settings: {}", e);
+            log_api_operation_failure("Failed to update RustDesk settings", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1520,7 +1663,7 @@ async fn send_rustdesk_input_api(
             "status": "sent"
         }))),
         Err(e) => {
-            eprintln!("Failed to send RustDesk input: {}", e);
+            log_api_operation_failure("Failed to send RustDesk input", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1563,7 +1706,7 @@ async fn connect_wmi_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect WMI: {}", e);
+            log_api_operation_failure("Failed to connect WMI", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1579,7 +1722,7 @@ async fn disconnect_wmi_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect WMI: {}", e);
+            log_api_operation_failure("Failed to disconnect WMI", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1619,7 +1762,7 @@ async fn execute_wmi_query_api(
     match wmi.execute_wmi_query(&session_id, req.query).await {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            eprintln!("Failed to execute WMI query: {}", e);
+            log_api_operation_failure("Failed to execute WMI query", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1637,7 +1780,7 @@ async fn get_wmi_classes_api(
             "classes": classes
         }))),
         Err(e) => {
-            eprintln!("Failed to get WMI classes: {}", e);
+            log_api_operation_failure("Failed to get WMI classes", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1653,7 +1796,7 @@ async fn get_wmi_namespaces_api(
             "namespaces": namespaces
         }))),
         Err(e) => {
-            eprintln!("Failed to get WMI namespaces: {}", e);
+            log_api_operation_failure("Failed to get WMI namespaces", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1671,7 +1814,7 @@ async fn connect_rpc_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect RPC: {}", e);
+            log_api_operation_failure("Failed to connect RPC", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1687,7 +1830,7 @@ async fn disconnect_rpc_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect RPC: {}", e);
+            log_api_operation_failure("Failed to disconnect RPC", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1722,7 +1865,7 @@ async fn call_rpc_method_api(
     match rpc.call_rpc_method(&session_id, request).await {
         Ok(response) => Ok(Json(serde_json::json!(response))),
         Err(e) => {
-            eprintln!("Failed to call RPC method: {}", e);
+            log_api_operation_failure("Failed to call RPC method", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1738,7 +1881,7 @@ async fn discover_rpc_methods_api(
             "methods": methods
         }))),
         Err(e) => {
-            eprintln!("Failed to discover RPC methods: {}", e);
+            log_api_operation_failure("Failed to discover RPC methods", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1755,7 +1898,7 @@ async fn batch_rpc_calls_api(
             "responses": responses
         }))),
         Err(e) => {
-            eprintln!("Failed to batch RPC calls: {}", e);
+            log_api_operation_failure("Failed to batch RPC calls", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1773,7 +1916,7 @@ async fn connect_meshcentral_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect MeshCentral: {}", e);
+            log_api_operation_failure("Failed to connect MeshCentral", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1789,7 +1932,7 @@ async fn disconnect_meshcentral_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect MeshCentral: {}", e);
+            log_api_operation_failure("Failed to disconnect MeshCentral", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1825,7 +1968,7 @@ async fn get_meshcentral_devices_api(
             "devices": devices
         }))),
         Err(e) => {
-            eprintln!("Failed to get MeshCentral devices: {}", e);
+            log_api_operation_failure("Failed to get MeshCentral devices", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1841,7 +1984,7 @@ async fn get_meshcentral_groups_api(
             "groups": groups
         }))),
         Err(e) => {
-            eprintln!("Failed to get MeshCentral groups: {}", e);
+            log_api_operation_failure("Failed to get MeshCentral groups", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1861,7 +2004,7 @@ async fn execute_meshcentral_command_api(
             "command_id": command_id
         }))),
         Err(e) => {
-            eprintln!("Failed to execute MeshCentral command: {}", e);
+            log_api_operation_failure("Failed to execute MeshCentral command", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1878,7 +2021,7 @@ async fn get_meshcentral_command_result_api(
     {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            eprintln!("Failed to get MeshCentral command result: {}", e);
+            log_api_operation_failure("Failed to get MeshCentral command result", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1892,7 +2035,7 @@ async fn get_meshcentral_server_info_api(
     match meshcentral.get_meshcentral_server_info(&session_id).await {
         Ok(info) => Ok(Json(serde_json::json!(info))),
         Err(e) => {
-            eprintln!("Failed to get MeshCentral server info: {}", e);
+            log_api_operation_failure("Failed to get MeshCentral server info", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1910,7 +2053,7 @@ async fn connect_agent_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect agent: {}", e);
+            log_api_operation_failure("Failed to connect agent", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1926,7 +2069,7 @@ async fn disconnect_agent_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect agent: {}", e);
+            log_api_operation_failure("Failed to disconnect agent", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1960,7 +2103,7 @@ async fn get_agent_metrics_api(
     match agent.get_agent_metrics(&session_id).await {
         Ok(metrics) => Ok(Json(serde_json::json!(metrics))),
         Err(e) => {
-            eprintln!("Failed to get agent metrics: {}", e);
+            log_api_operation_failure("Failed to get agent metrics", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1981,7 +2124,7 @@ async fn get_agent_logs_api(
             "logs": logs
         }))),
         Err(e) => {
-            eprintln!("Failed to get agent logs: {}", e);
+            log_api_operation_failure("Failed to get agent logs", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -1998,7 +2141,7 @@ async fn execute_agent_command_api(
             "command_id": command_id
         }))),
         Err(e) => {
-            eprintln!("Failed to execute agent command: {}", e);
+            log_api_operation_failure("Failed to execute agent command", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2015,7 +2158,7 @@ async fn get_agent_command_result_api(
     {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            eprintln!("Failed to get agent command result: {}", e);
+            log_api_operation_failure("Failed to get agent command result", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2032,7 +2175,7 @@ async fn update_agent_status_api(
             "status": "updated"
         }))),
         Err(e) => {
-            eprintln!("Failed to update agent status: {}", e);
+            log_api_operation_failure("Failed to update agent status", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2046,7 +2189,7 @@ async fn get_agent_info_api(
     match agent.get_agent_info(&session_id).await {
         Ok(info) => Ok(Json(info)),
         Err(e) => {
-            eprintln!("Failed to get agent info: {}", e);
+            log_api_operation_failure("Failed to get agent info", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2064,7 +2207,7 @@ async fn connect_commander_api(
             "status": "connected"
         }))),
         Err(e) => {
-            eprintln!("Failed to connect commander: {}", e);
+            log_api_operation_failure("Failed to connect commander", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2080,7 +2223,7 @@ async fn disconnect_commander_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect commander: {}", e);
+            log_api_operation_failure("Failed to disconnect commander", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2120,7 +2263,7 @@ async fn execute_commander_command_api(
             "command_id": command_id
         }))),
         Err(e) => {
-            eprintln!("Failed to execute commander command: {}", e);
+            log_api_operation_failure("Failed to execute commander command", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2137,68 +2280,30 @@ async fn get_commander_command_result_api(
     {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            eprintln!("Failed to get commander command result: {}", e);
+            log_api_operation_failure("Failed to get commander command result", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
 
 async fn upload_commander_file_api(
-    State(services): State<Arc<ApiService>>,
-    Path(session_id): Path<String>,
-    Json(params): Json<serde_json::Value>,
+    State(_services): State<Arc<ApiService>>,
+    Path(_session_id): Path<String>,
+    Json(_params): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let commander = services.commander_service.lock().await;
-    let local_path = params
-        .get("local_path")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let remote_path = params
-        .get("remote_path")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    match commander
-        .upload_commander_file(&session_id, local_path.to_string(), remote_path.to_string())
-        .await
-    {
-        Ok(transfer_id) => Ok(Json(serde_json::json!({
-            "transfer_id": transfer_id
-        }))),
-        Err(e) => {
-            eprintln!("Failed to upload commander file: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+    // Fail closed until the REST API has a native-approved, one-time file
+    // capability. Raw local paths make this endpoint a file-exfiltration deputy.
+    Err(StatusCode::NOT_IMPLEMENTED)
 }
 
 async fn download_commander_file_api(
-    State(services): State<Arc<ApiService>>,
-    Path(session_id): Path<String>,
-    Json(params): Json<serde_json::Value>,
+    State(_services): State<Arc<ApiService>>,
+    Path(_session_id): Path<String>,
+    Json(_params): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let commander = services.commander_service.lock().await;
-    let remote_path = params
-        .get("remote_path")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let local_path = params
-        .get("local_path")
-        .and_then(|v| v.as_str())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    match commander
-        .download_commander_file(&session_id, remote_path.to_string(), local_path.to_string())
-        .await
-    {
-        Ok(transfer_id) => Ok(Json(serde_json::json!({
-            "transfer_id": transfer_id
-        }))),
-        Err(e) => {
-            eprintln!("Failed to download commander file: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+    // Raw destinations would allow an API caller to overwrite arbitrary local
+    // files. A future implementation must consume a native-scoped capability.
+    Err(StatusCode::NOT_IMPLEMENTED)
 }
 
 async fn get_commander_file_transfer_api(
@@ -2212,7 +2317,7 @@ async fn get_commander_file_transfer_api(
     {
         Ok(transfer) => Ok(Json(serde_json::json!(transfer))),
         Err(e) => {
-            eprintln!("Failed to get commander file transfer: {}", e);
+            log_api_operation_failure("Failed to get commander file transfer", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2230,7 +2335,7 @@ async fn list_commander_directory_api(
             "files": files
         }))),
         Err(e) => {
-            eprintln!("Failed to list commander directory: {}", e);
+            log_api_operation_failure("Failed to list commander directory", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2247,7 +2352,7 @@ async fn update_commander_status_api(
             "status": "updated"
         }))),
         Err(e) => {
-            eprintln!("Failed to update commander status: {}", e);
+            log_api_operation_failure("Failed to update commander status", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2261,7 +2366,7 @@ async fn get_commander_system_info_api(
     match commander.get_commander_system_info(&session_id).await {
         Ok(info) => Ok(Json(info)),
         Err(e) => {
-            eprintln!("Failed to get commander system info: {}", e);
+            log_api_operation_failure("Failed to get commander system info", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2277,7 +2382,7 @@ async fn connect_aws_api(
     let config: AwsConnectionConfig = match serde_json::from_value(params) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to parse AWS connection config: {}", e);
+            log_api_operation_failure("Failed to parse AWS connection config", &e);
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -2286,7 +2391,7 @@ async fn connect_aws_api(
             "session_id": session_id
         }))),
         Err(e) => {
-            eprintln!("Failed to connect to AWS: {}", e);
+            log_api_operation_failure("Failed to connect to AWS", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2302,7 +2407,7 @@ async fn disconnect_aws_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect from AWS: {}", e);
+            log_api_operation_failure("Failed to disconnect from AWS", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2335,7 +2440,7 @@ async fn list_ec2_instances_api(
     match aws.list_ec2_instances(&session_id).await {
         Ok(instances) => Ok(Json(serde_json::json!(instances))),
         Err(e) => {
-            eprintln!("Failed to list EC2 instances: {}", e);
+            log_api_operation_failure("Failed to list EC2 instances", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2352,7 +2457,7 @@ async fn get_ec2_instance_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get EC2 instance: {}", e);
+            log_api_operation_failure("Failed to get EC2 instance", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2374,7 +2479,7 @@ async fn execute_ec2_action_api(
     {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            eprintln!("Failed to execute EC2 action: {}", e);
+            log_api_operation_failure("Failed to execute EC2 action", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2388,7 +2493,7 @@ async fn list_s3_buckets_api(
     match aws.list_s3_buckets(&session_id).await {
         Ok(buckets) => Ok(Json(serde_json::json!(buckets))),
         Err(e) => {
-            eprintln!("Failed to list S3 buckets: {}", e);
+            log_api_operation_failure("Failed to list S3 buckets", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2405,7 +2510,7 @@ async fn get_s3_bucket_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get S3 bucket: {}", e);
+            log_api_operation_failure("Failed to get S3 bucket", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2435,7 +2540,7 @@ async fn list_rds_instances_api(
     match aws.list_rds_instances(&session_id).await {
         Ok(instances) => Ok(Json(serde_json::json!(instances))),
         Err(e) => {
-            eprintln!("Failed to list RDS instances: {}", e);
+            log_api_operation_failure("Failed to list RDS instances", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2457,7 +2562,7 @@ async fn get_rds_instance_api(
             }
         }
         Err(e) => {
-            eprintln!("Failed to get RDS instance: {}", e);
+            log_api_operation_failure("Failed to get RDS instance", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2471,7 +2576,7 @@ async fn list_lambda_functions_api(
     match aws.list_lambda_functions(&session_id).await {
         Ok(functions) => Ok(Json(serde_json::json!(functions))),
         Err(e) => {
-            eprintln!("Failed to list Lambda functions: {}", e);
+            log_api_operation_failure("Failed to list Lambda functions", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2493,7 +2598,7 @@ async fn get_lambda_function_api(
             }
         }
         Err(e) => {
-            eprintln!("Failed to get Lambda function: {}", e);
+            log_api_operation_failure("Failed to get Lambda function", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2519,7 +2624,7 @@ async fn get_cloudwatch_metrics_api(
     {
         Ok(metrics) => Ok(Json(serde_json::json!(metrics))),
         Err(e) => {
-            eprintln!("Failed to get CloudWatch metrics: {}", e);
+            log_api_operation_failure("Failed to get CloudWatch metrics", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2534,7 +2639,7 @@ async fn connect_vercel_api(
     let config: VercelConnectionConfig = match serde_json::from_value(params) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to parse Vercel connection config: {}", e);
+            log_api_operation_failure("Failed to parse Vercel connection config", &e);
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -2543,7 +2648,7 @@ async fn connect_vercel_api(
             "session_id": session_id
         }))),
         Err(e) => {
-            eprintln!("Failed to connect to Vercel: {}", e);
+            log_api_operation_failure("Failed to connect to Vercel", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2559,7 +2664,7 @@ async fn disconnect_vercel_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect from Vercel: {}", e);
+            log_api_operation_failure("Failed to disconnect from Vercel", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2592,7 +2697,7 @@ async fn list_vercel_projects_api(
     match vercel.list_vercel_projects(&session_id).await {
         Ok(projects) => Ok(Json(serde_json::json!(projects))),
         Err(e) => {
-            eprintln!("Failed to list Vercel projects: {}", e);
+            log_api_operation_failure("Failed to list Vercel projects", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2609,7 +2714,7 @@ async fn get_vercel_project_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Vercel project: {}", e);
+            log_api_operation_failure("Failed to get Vercel project", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2626,7 +2731,7 @@ async fn list_vercel_deployments_api(
     {
         Ok(deployments) => Ok(Json(serde_json::json!(deployments))),
         Err(e) => {
-            eprintln!("Failed to list Vercel deployments: {}", e);
+            log_api_operation_failure("Failed to list Vercel deployments", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2648,7 +2753,7 @@ async fn list_vercel_domains_api(
     match vercel.list_vercel_domains(&session_id).await {
         Ok(domains) => Ok(Json(serde_json::json!(domains))),
         Err(e) => {
-            eprintln!("Failed to list Vercel domains: {}", e);
+            log_api_operation_failure("Failed to list Vercel domains", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2665,7 +2770,7 @@ async fn get_vercel_domain_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Vercel domain: {}", e);
+            log_api_operation_failure("Failed to get Vercel domain", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2679,7 +2784,7 @@ async fn list_vercel_teams_api(
     match vercel.list_vercel_teams(&session_id).await {
         Ok(teams) => Ok(Json(serde_json::json!(teams))),
         Err(e) => {
-            eprintln!("Failed to list Vercel teams: {}", e);
+            log_api_operation_failure("Failed to list Vercel teams", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2696,7 +2801,7 @@ async fn get_vercel_team_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Vercel team: {}", e);
+            log_api_operation_failure("Failed to get Vercel team", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2711,7 +2816,7 @@ async fn connect_cloudflare_api(
     let config: CloudflareConnectionConfig = match serde_json::from_value(params) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to parse Cloudflare connection config: {}", e);
+            log_api_operation_failure("Failed to parse Cloudflare connection config", &e);
             return Err(StatusCode::BAD_REQUEST);
         }
     };
@@ -2720,7 +2825,7 @@ async fn connect_cloudflare_api(
             "session_id": session_id
         }))),
         Err(e) => {
-            eprintln!("Failed to connect to Cloudflare: {}", e);
+            log_api_operation_failure("Failed to connect to Cloudflare", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2736,7 +2841,7 @@ async fn disconnect_cloudflare_api(
             "status": "disconnected"
         }))),
         Err(e) => {
-            eprintln!("Failed to disconnect from Cloudflare: {}", e);
+            log_api_operation_failure("Failed to disconnect from Cloudflare", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2769,7 +2874,7 @@ async fn list_cloudflare_zones_api(
     match cloudflare.list_cloudflare_zones(&session_id).await {
         Ok(zones) => Ok(Json(serde_json::json!(zones))),
         Err(e) => {
-            eprintln!("Failed to list Cloudflare zones: {}", e);
+            log_api_operation_failure("Failed to list Cloudflare zones", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2786,7 +2891,7 @@ async fn get_cloudflare_zone_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Cloudflare zone: {}", e);
+            log_api_operation_failure("Failed to get Cloudflare zone", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2803,7 +2908,7 @@ async fn list_cloudflare_dns_records_api(
     {
         Ok(records) => Ok(Json(serde_json::json!(records))),
         Err(e) => {
-            eprintln!("Failed to list Cloudflare DNS records: {}", e);
+            log_api_operation_failure("Failed to list Cloudflare DNS records", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2823,7 +2928,7 @@ async fn get_cloudflare_dns_record_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Cloudflare DNS record: {}", e);
+            log_api_operation_failure("Failed to get Cloudflare DNS record", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2845,7 +2950,7 @@ async fn list_cloudflare_workers_api(
     {
         Ok(workers) => Ok(Json(serde_json::json!(workers))),
         Err(e) => {
-            eprintln!("Failed to list Cloudflare workers: {}", e);
+            log_api_operation_failure("Failed to list Cloudflare workers", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2870,7 +2975,7 @@ async fn get_cloudflare_worker_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Cloudflare worker: {}", e);
+            log_api_operation_failure("Failed to get Cloudflare worker", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2887,7 +2992,7 @@ async fn list_cloudflare_page_rules_api(
     {
         Ok(rules) => Ok(Json(serde_json::json!(rules))),
         Err(e) => {
-            eprintln!("Failed to list Cloudflare page rules: {}", e);
+            log_api_operation_failure("Failed to list Cloudflare page rules", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2907,7 +3012,7 @@ async fn get_cloudflare_page_rule_api(
             None => Err(StatusCode::NOT_FOUND),
         },
         Err(e) => {
-            eprintln!("Failed to get Cloudflare page rule: {}", e);
+            log_api_operation_failure("Failed to get Cloudflare page rule", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2927,7 +3032,7 @@ async fn get_cloudflare_analytics_api(
     {
         Ok(analytics) => Ok(Json(serde_json::json!(analytics))),
         Err(e) => {
-            eprintln!("Failed to get Cloudflare analytics: {}", e);
+            log_api_operation_failure("Failed to get Cloudflare analytics", &e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -2955,13 +3060,20 @@ mod middleware_tests {
         let settings = json!({
             "restApi": {
                 "authentication": auth_required,
-                "apiKey": KEY,
-                "jwtSecret": SECRET,
                 "rateLimiting": rate > 0,
                 "maxRequestsPerMinute": rate,
             }
         });
-        ApiRuntimeConfig::resolve_with_env(&settings, Path::new("/tmp"), |_| None)
+        ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &settings,
+            Path::new("/tmp"),
+            |key| {
+                (!auth_required && key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API")
+                    .then(|| "1".to_string())
+            },
+            Some(KEY),
+            Some(SECRET),
+        )
     }
 
     fn header_map(name: &'static str, value: &str) -> HeaderMap {
@@ -3113,12 +3225,51 @@ mod middleware_tests {
         ));
     }
 
+    #[tokio::test]
+    async fn server_restart_epoch_prevents_revoked_token_revival() {
+        let persistent = "0123456789abcdef0123456789abcdef";
+        let first_run_secret = derive_run_jwt_secret(persistent, &[0x11; 32]);
+        let second_run_secret = derive_run_jwt_secret(persistent, &[0x22; 32]);
+        assert_eq!(
+            first_run_secret,
+            derive_run_jwt_secret(persistent, &[0x11; 32]),
+            "fixed epochs must derive deterministically"
+        );
+        assert_ne!(first_run_secret, second_run_secret);
+
+        let first_run = BearerAuthService::new();
+        let issued = {
+            let bearer = first_run.lock().await;
+            bearer
+                .issue_session_token(first_run_secret.as_bytes(), "admin", Role::Admin, 600)
+                .unwrap()
+        };
+        {
+            let mut bearer = first_run.lock().await;
+            bearer.revoke_session_token(&issued.token);
+            assert!(bearer
+                .verify_session_token(first_run_secret.as_bytes(), &issued.token)
+                .is_err());
+        }
+
+        // A restart creates a fresh service with an empty revoke map, but the
+        // run-scoped signing secret still makes the old token invalid.
+        let second_run = BearerAuthService::new();
+        let bearer = second_run.lock().await;
+        assert!(bearer
+            .verify_session_token(second_run_secret.as_bytes(), &issued.token)
+            .is_err());
+    }
+
     #[test]
     fn rate_limiter_enforces_within_window() {
         let rl = RateLimiter::new(2);
         assert!(rl.check("caller-a"));
         assert!(rl.check("caller-a"));
-        assert!(!rl.check("caller-a"), "third request in-window must be denied");
+        assert!(
+            !rl.check("caller-a"),
+            "third request in-window must be denied"
+        );
         // A different key has an independent budget.
         assert!(rl.check("caller-b"));
     }
@@ -3129,5 +3280,40 @@ mod middleware_tests {
         for _ in 0..1000 {
             assert!(rl.check("caller"));
         }
+    }
+
+    #[test]
+    fn rotating_credentials_cannot_change_pre_auth_bucket() {
+        let first = Request::builder()
+            .header("x-api-key", "bogus-a")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let second = Request::builder()
+            .header("authorization", "Bearer bogus-b")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        assert_eq!(rate_limit_key(&first), rate_limit_key(&second));
+    }
+
+    #[test]
+    fn rate_limiter_bucket_storage_is_bounded() {
+        let rl = RateLimiter::new(1);
+        for index in 0..MAX_RATE_LIMIT_BUCKETS {
+            assert!(rl.check(&format!("caller-{index}")));
+        }
+        assert!(!rl.check("overflow-caller"));
+    }
+
+    #[test]
+    fn wildcard_cors_is_never_allowed_for_remote_exposure() {
+        let mut config = cfg(true, 1);
+        config.cors_enabled = true;
+        config.allow_remote = true;
+        assert!(!wildcard_cors_allowed(&config));
+    }
+
+    #[test]
+    fn request_body_limit_remains_conservative() {
+        assert!(MAX_API_REQUEST_BODY_BYTES <= 512 * 1024);
     }
 }

@@ -163,7 +163,11 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         description: "Direct MySQL connect and query execution.",
         group: CapabilityGroup::Protocols,
         prefix: "/db",
-        endpoints: &["POST /db/connect", "POST /db/query"],
+        endpoints: &[
+            "POST /db/connect",
+            "POST /db/query",
+            "POST /db/disconnect/:connection_id",
+        ],
         mandatory: false,
     },
     CapabilityMeta {
@@ -355,10 +359,7 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         description: "TOTP secret generation and verification.",
         group: CapabilityGroup::Network,
         prefix: "/security",
-        endpoints: &[
-            "GET /security/totp/generate",
-            "POST /security/totp/verify",
-        ],
+        endpoints: &["GET /security/totp/generate", "POST /security/totp/verify"],
         mandatory: false,
     },
     CapabilityMeta {
@@ -456,6 +457,7 @@ mod tests {
         "/ssh/sessions",
         "/db/connect",
         "/db/query",
+        "/db/disconnect/:connection_id",
         "/ftp/connect",
         "/ftp/files/:session_id",
         "/network/ping",
@@ -551,10 +553,7 @@ mod tests {
         // `/ssh` must NOT match `/sshfoo`. Whole-segment boundary check.
         assert_eq!(capability_for_path("/sshfoo"), None);
         // But trailing slash should still match.
-        assert_eq!(
-            capability_for_path("/ssh/"),
-            Some(ApiCapability::Ssh)
-        );
+        assert_eq!(capability_for_path("/ssh/"), Some(ApiCapability::Ssh));
         // And the bare prefix matches.
         assert_eq!(capability_for_path("/ssh"), Some(ApiCapability::Ssh));
     }

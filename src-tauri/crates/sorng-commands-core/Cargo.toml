@@ -9,6 +9,7 @@ description = "Core command handlers — split from app crate to reduce coherenc
 sorng-app-domains = { path = "../sorng-app-domains", default-features = false, features = ["cloud"] }
 sorng-app-shell = { path = "../sorng-app-shell" }
 sorng-core = { path = "../sorng-core" }
+sorng-biometrics = { path = "../sorng-biometrics" }
 sorng-encryption = { path = "../sorng-encryption" }
 sorng-vault = { path = "../sorng-vault" }
 # Pulled in for the path-included `encryption_rotation_commands.rs`

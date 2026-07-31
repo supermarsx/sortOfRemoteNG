@@ -533,7 +533,6 @@ export interface GlobalSettings {
     port: number;
     useRandomPort: boolean;
     authentication: boolean;
-    apiKey?: string;
     corsEnabled: boolean;
     rateLimiting: boolean;
     startOnLaunch: boolean;

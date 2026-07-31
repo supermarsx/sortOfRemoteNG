@@ -1,21 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// Stub @tauri-apps/api/core so the capability-catalog effect resolves
-// to a deterministic catalog in tests (no real Tauri runtime in jsdom).
-// The hook resolves `invoke` via a dynamic import, so route the mock
-// through a module-scoped spy (the pattern used across the suite, e.g.
-// tests/hooks/useBulkConnectionCheck.test.ts) that each test can retune.
-const invokeMock = vi.fn();
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: unknown[]) => invokeMock(...args),
-  isTauri: () => true,
-}));
+// vitest.setup.ts supplies the shared Tauri core mock. Retune that exact mock
+// for this suite rather than registering a competing module factory.
+const invokeMock = vi.mocked(invoke);
+const isTauriMock = vi.mocked(isTauri);
 
 const fakeCatalog = [
   {
@@ -81,7 +75,7 @@ const runningStatus = {
 
 // Default backend behaviour: catalog resolves, server reports stopped,
 // start/restart bring it up on the configured 9876, key regenerates to a
-// deterministic 64-char hex. Individual tests override via invokeMock.
+// secure native status. Individual tests override via invokeMock.
 function defaultInvoke(cmd: string): Promise<unknown> {
   switch (cmd) {
     case "get_api_capabilities":
@@ -90,13 +84,25 @@ function defaultInvoke(cmd: string): Promise<unknown> {
       return Promise.resolve();
     case "api_server_status":
       return Promise.resolve(stoppedStatus);
+    case "api_secret_status":
+      return Promise.resolve({
+        vaultAvailable: true,
+        apiKeyAvailable: true,
+        jwtSecretAvailable: true,
+        revealAvailable: true,
+      });
     case "api_server_start":
     case "api_server_restart":
       return Promise.resolve(runningStatus);
     case "api_server_stop":
       return Promise.resolve();
     case "api_regenerate_key":
-      return Promise.resolve("a".repeat(64));
+      return Promise.resolve({
+        vaultAvailable: true,
+        apiKeyAvailable: true,
+        jwtSecretAvailable: true,
+        revealAvailable: true,
+      });
     default:
       return Promise.reject(new Error(`unknown command ${cmd}`));
   }
@@ -114,7 +120,6 @@ function makeSettings(
       port: 9876,
       useRandomPort: false,
       authentication: true,
-      apiKey: "test-key-123",
       corsEnabled: false,
       rateLimiting: true,
       startOnLaunch: false,
@@ -133,20 +138,18 @@ describe("useApiSettings", () => {
   beforeEach(() => {
     invokeMock.mockReset();
     invokeMock.mockImplementation((cmd: string) => defaultInvoke(cmd));
-    // The hook resolves `invoke` via a dynamic `import('@tauri-apps/api/core')`.
-    // Route the runtime bridge that the real module calls into (core.js reads
-    // `window.__TAURI_INTERNALS__.invoke`) so the command layer is intercepted
-    // deterministically regardless of module-mock resolution order.
-    (
-      window as unknown as { __TAURI_INTERNALS__?: unknown }
-    ).__TAURI_INTERNALS__ = {
-      invoke: (...args: unknown[]) => invokeMock(...args),
-    };
+    isTauriMock.mockReset();
+    isTauriMock.mockReturnValue(true);
+    vi.stubGlobal("isTauri", true);
+    vi.stubGlobal("__TAURI_INTERNALS__", {
+      invoke: invokeMock,
+    });
   });
 
   afterEach(() => {
-    delete (window as unknown as { __TAURI_INTERNALS__?: unknown })
-      .__TAURI_INTERNALS__;
+    isTauriMock.mockReset();
+    isTauriMock.mockReturnValue(false);
+    vi.unstubAllGlobals();
   });
 
   it("returns initial stopped status", () => {
@@ -171,7 +174,7 @@ describe("useApiSettings", () => {
     });
   });
 
-  it("generateApiKey produces a 64-char hex key", async () => {
+  it("generateApiKey never writes the secret into renderer settings", async () => {
     const update = vi.fn();
     const { result } = renderHook(() => useApiSettings(makeSettings(), update));
 
@@ -180,9 +183,13 @@ describe("useApiSettings", () => {
       await result.current.generateApiKey();
     });
 
-    expect(update).toHaveBeenCalledTimes(1);
-    const call = update.mock.calls[0][0] as { restApi: { apiKey: string } };
-    expect(call.restApi.apiKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(invokeMock).toHaveBeenCalledWith(
+      "api_regenerate_key",
+      {},
+      undefined,
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(result.current.apiSecretStatus.apiKeyAvailable).toBe(true);
   });
 
   it("generateRandomPort sets port between 10000-60000", () => {

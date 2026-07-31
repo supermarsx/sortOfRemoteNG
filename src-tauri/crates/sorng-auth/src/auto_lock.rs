@@ -20,6 +20,8 @@
 //!
 
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
@@ -53,6 +55,9 @@ pub enum LockState {
 /// Auto-lock service state
 pub type AutoLockServiceState = Arc<Mutex<AutoLockService>>;
 
+pub type LockTransitionCallback =
+    Arc<dyn Fn(bool) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> + Send + Sync>;
+
 /// Service for managing automatic application locking
 pub struct AutoLockService {
     /// Current configuration
@@ -65,6 +70,8 @@ pub struct AutoLockService {
     lock_task: Option<tokio::task::JoinHandle<()>>,
     /// SHA-256 hash of the unlock password
     password_hash: Option<String>,
+    /// Native lifecycle callback invoked for actual locked/unlocked transitions.
+    lock_transition_callback: Option<LockTransitionCallback>,
 }
 
 impl AutoLockService {
@@ -82,24 +89,20 @@ impl AutoLockService {
             last_activity: Instant::now(),
             lock_task: None,
             password_hash: None,
+            lock_transition_callback: None,
         };
 
         Arc::new(Mutex::new(service))
     }
 
     /// Starts the activity monitoring task
-    pub async fn start_monitoring(&mut self) {
-        if self.lock_task.is_some() {
+    pub async fn start_monitoring(state: &AutoLockServiceState) {
+        let mut service = state.lock().await;
+        if service.lock_task.is_some() {
             return; // Already started
         }
 
-        let state = Arc::new(Mutex::new(AutoLockService {
-            config: self.config.clone(),
-            state: self.state.clone(),
-            last_activity: self.last_activity,
-            lock_task: None,
-            password_hash: None,
-        }));
+        let weak_state = Arc::downgrade(state);
 
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -107,6 +110,9 @@ impl AutoLockService {
             loop {
                 interval.tick().await;
 
+                let Some(state) = weak_state.upgrade() else {
+                    break;
+                };
                 let mut service = state.lock().await;
                 if !service.config.enabled || matches!(service.state, LockState::Locked) {
                     continue;
@@ -126,7 +132,20 @@ impl AutoLockService {
             }
         });
 
-        self.lock_task = Some(handle);
+        service.lock_task = Some(handle);
+    }
+
+    pub fn set_lock_transition_callback(&mut self, callback: LockTransitionCallback) {
+        self.lock_transition_callback = Some(callback);
+    }
+
+    async fn notify_lock_transition(&self, locked: bool) {
+        let Some(callback) = self.lock_transition_callback.clone() else {
+            return;
+        };
+        if let Err(error) = callback(locked).await {
+            log::error!("Native lock transition cleanup failed: {error}");
+        }
     }
 
     /// Updates the auto-lock configuration
@@ -151,8 +170,12 @@ impl AutoLockService {
 
     /// Locks the application
     pub async fn lock_application(&mut self) {
+        let transitioned = !matches!(self.state, LockState::Locked);
         self.state = LockState::Locked;
         log::info!("Application locked due to inactivity");
+        if transitioned {
+            self.notify_lock_transition(true).await;
+        }
     }
 
     /// Unlocks the application (only when password is not required)
@@ -160,8 +183,12 @@ impl AutoLockService {
         if self.config.require_password {
             return Err("Password verification required to unlock".to_string());
         }
+        let transitioned = matches!(self.state, LockState::Locked);
         self.state = LockState::Unlocked;
         self.last_activity = Instant::now();
+        if transitioned {
+            self.notify_lock_transition(false).await;
+        }
         Ok(())
     }
 
@@ -194,8 +221,12 @@ impl AutoLockService {
                 self.set_unlock_password(password).await?;
             }
         }
+        let transitioned = matches!(self.state, LockState::Locked);
         self.state = LockState::Unlocked;
         self.last_activity = Instant::now();
+        if transitioned {
+            self.notify_lock_transition(false).await;
+        }
         Ok(())
     }
 
@@ -271,6 +302,7 @@ mod tests {
             last_activity: Instant::now(),
             lock_task: None,
             password_hash: None,
+            lock_transition_callback: None,
         }
     }
 
@@ -314,6 +346,23 @@ mod tests {
         let mut svc = make_service().await;
         svc.force_lock().await;
         assert!(matches!(svc.get_lock_state().await, LockState::Locked));
+    }
+
+    #[tokio::test]
+    async fn lock_transition_callback_runs_without_followup_command() {
+        let mut svc = make_service().await;
+        let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let callback_locked = locked.clone();
+        svc.set_lock_transition_callback(Arc::new(move |is_locked| {
+            let callback_locked = callback_locked.clone();
+            Box::pin(async move {
+                callback_locked.store(is_locked, std::sync::atomic::Ordering::Release);
+                Ok(())
+            })
+        }));
+
+        svc.lock_application().await;
+        assert!(locked.load(std::sync::atomic::Ordering::Acquire));
     }
 
     // ── Activity recording ──────────────────────────────────────────────

@@ -191,7 +191,7 @@ export const defaultSettings: GlobalSettings = {
   webRecording: {
     enabled: true,
     autoRecordWebSessions: false,
-    recordHeaders: true,
+    recordHeaders: false,
     maxWebRecordingDurationMinutes: 0,
     maxStoredWebRecordings: 50,
     defaultExportFormat: "har" as const,

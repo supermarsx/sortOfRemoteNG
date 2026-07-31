@@ -1,9 +1,10 @@
 //! Resolved runtime configuration for the external REST API (t41).
 //!
 //! This module is the single source of truth for turning the three
-//! overlapping config surfaces — the persisted `settings.restApi` blob, the
-//! readme-advertised environment variables (`API_KEY` / `JWT_SECRET` /
-//! `USER_STORE_PATH`), and the hardcoded defaults — into one resolved
+//! overlapping config surfaces — the non-secret persisted `settings.restApi`
+//! blob, native-only OS-vault secret overlays, the readme-advertised
+//! environment variables (`API_KEY` / `JWT_SECRET` / `USER_STORE_PATH`), and
+//! the hardcoded defaults — into one resolved
 //! [`ApiRuntimeConfig`] the server startup path can consume directly.
 //!
 //! It is a **pure resolver**: no axum, tower, or Tauri dependencies, no I/O
@@ -11,37 +12,34 @@
 //! binding of sockets. That keeps the precedence + security logic (which is a
 //! genuine attack surface) trivially unit-testable in isolation.
 //!
-//! Precedence (Decision D2 — settings-source-of-truth + env override):
-//!   env var (when present & non-empty) → `settings.restApi.*` → generated/default.
+//! Secret precedence:
+//!   env var (when present & non-empty) → native OS-vault overlay → missing.
 //!
 //! Security posture encoded here:
 //!   * Bind loopback (`127.0.0.1`) unless `allowRemoteConnections` is set, in
 //!     which case bind all interfaces (`0.0.0.0`).
 //!   * Authentication is **forced on** whenever remote connections are allowed,
 //!     regardless of the `authentication` toggle (defense in depth — D1).
-//!   * `api_key` / `jwt_secret` are auto-generated with a CSPRNG (`OsRng`,
-//!     ≥256-bit) when neither env nor settings supply them; the caller learns
-//!     via the `*_generated` flags that it should persist them.
+//!   * Persisted settings are never consulted for API/JWT secret material.
+//!     Generation and OS-vault persistence happen before this resolver runs.
 //!   * Secret material is never emitted by the [`fmt::Debug`] impl.
 
 use std::net::{IpAddr, Ipv4Addr};
-use std::path::{Path, PathBuf};
-
-use rand::rngs::OsRng;
-use rand::RngCore;
+use std::path::{Component, Path, PathBuf};
 
 /// Default listening port when the setting is absent or invalid (Decision D6 —
 /// standardize on the frontend/settings default rather than the legacy 3001).
 pub const DEFAULT_PORT: u16 = 9876;
+pub const DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE: u32 = 120;
+pub const MAX_RATE_LIMIT_PER_MINUTE: u32 = 10_000;
+pub const DEFAULT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const MAX_CONCURRENT_REQUESTS: usize = 64;
+pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
+pub const MAX_REQUEST_TIMEOUT_SECS: u64 = 300;
 
 /// Default user-store filename joined onto the app data directory when neither
 /// `USER_STORE_PATH` nor a settings override is supplied.
 pub const DEFAULT_USER_STORE_FILE: &str = "users.json";
-
-/// Number of random bytes used for auto-generated secrets. 32 bytes = 256 bits
-/// of entropy, satisfying the "≥256-bit" JWT-secret invariant with margin once
-/// hex-encoded (64 chars).
-const SECRET_BYTES: usize = 32;
 
 /// TLS provisioning mode, mirroring `settings.restApi.sslMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,38 +116,112 @@ pub struct ApiRuntimeConfig {
     pub allow_remote: bool,
     /// Whether callers must authenticate. Forced `true` when `allow_remote`.
     pub auth_required: bool,
-    /// Resolved static API key (`X-API-Key`). Always non-empty.
+    /// Resolved static API key (`X-API-Key`).
     pub api_key: String,
-    /// True when `api_key` was freshly generated (caller should persist it).
-    pub api_key_generated: bool,
-    /// Resolved HMAC secret for signing internal JWTs. Always ≥256-bit.
+    /// Resolved HMAC secret for signing internal JWTs.
     pub jwt_secret: String,
-    /// True when `jwt_secret` was freshly generated (caller should persist it).
-    pub jwt_secret_generated: bool,
     /// Resolved path to the file-backed user/role store.
     pub user_store_path: PathBuf,
-    /// Requests-per-minute cap; `0` disables rate limiting. Already accounts
-    /// for the `rateLimiting` on/off toggle.
+    /// Requests-per-minute cap. `0` is permitted only for local debug runs;
+    /// remote and release resolution always supplies a non-zero safe baseline.
     pub rate_limit_per_minute: u32,
     /// Whether cross-origin requests are permitted.
     pub cors_enabled: bool,
     /// Resolved TLS configuration.
     pub tls: TlsConfig,
-    /// Best-effort worker/concurrency hint (Decision D5 — may be a no-op).
+    /// Enforced maximum number of concurrently executing REST requests.
     pub max_threads: usize,
     /// Best-effort per-request timeout hint, in seconds (Decision D5).
     pub request_timeout_secs: u64,
 }
 
 impl ApiRuntimeConfig {
+    /// Reject configurations that could expose an insecure or ephemeral API.
+    ///
+    /// Loopback with authentication disabled intentionally remains available
+    /// for local development.
+    pub fn validate_for_start(&self) -> Result<(), String> {
+        if self.allow_remote && !self.tls.enabled {
+            return Err(
+                "remote REST API access requires TLS; refusing to bind without encryption"
+                    .to_string(),
+            );
+        }
+        if self.allow_remote && !self.auth_required {
+            return Err(
+                "remote REST API access requires authentication; refusing to bind".to_string(),
+            );
+        }
+        if self.allow_remote && !self.tls.enabled {
+            return Err(
+                "remote REST API access requires TLS; refusing to transmit credentials over plaintext HTTP"
+                    .to_string(),
+            );
+        }
+        if self.auth_required && self.api_key.as_bytes().len() < 32 {
+            return Err(
+                "REST API authentication requires an API key of at least 32 bytes from the OS vault or API_KEY"
+                    .to_string(),
+            );
+        }
+        if (self.allow_remote || !cfg!(debug_assertions)) && self.rate_limit_per_minute == 0 {
+            return Err(
+                "REST API rate limiting is mandatory for remote and release exposure".to_string(),
+            );
+        }
+        if !(1..=MAX_CONCURRENT_REQUESTS).contains(&self.max_threads) {
+            return Err("REST API concurrency limit is outside the safe range".to_string());
+        }
+        if !(1..=MAX_REQUEST_TIMEOUT_SECS).contains(&self.request_timeout_secs) {
+            return Err("REST API request timeout is outside the safe range".to_string());
+        }
+        if self.jwt_secret.as_bytes().len() < 32 {
+            return Err(
+                "REST API JWT signing requires at least 32 bytes from the OS vault or JWT_SECRET"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
     /// Resolve using the real process environment.
     pub fn resolve(settings: &serde_json::Value, app_dir: &Path) -> Self {
         Self::resolve_with_env(settings, app_dir, |k| std::env::var(k).ok())
     }
 
+    /// Resolve with native-only secrets loaded from the OS credential vault.
+    /// Process environment values still take precedence.
+    pub fn resolve_with_native_secrets(
+        settings: &serde_json::Value,
+        app_dir: &Path,
+        api_key: Option<&str>,
+        jwt_secret: Option<&str>,
+    ) -> Self {
+        Self::resolve_with_env_and_secrets(
+            settings,
+            app_dir,
+            |key| std::env::var(key).ok(),
+            api_key,
+            jwt_secret,
+        )
+    }
+
     /// Resolve using an injected environment accessor (for tests / headless
     /// callers). `env(key)` returns the raw value of an env var if set.
     pub fn resolve_with_env<F>(settings: &serde_json::Value, app_dir: &Path, env: F) -> Self
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        Self::resolve_with_env_and_secrets(settings, app_dir, env, None, None)
+    }
+
+    pub fn resolve_with_env_and_secrets<F>(
+        settings: &serde_json::Value,
+        app_dir: &Path,
+        env: F,
+        native_api_key: Option<&str>,
+        native_jwt_secret: Option<&str>,
+    ) -> Self
     where
         F: Fn(&str) -> Option<String>,
     {
@@ -170,8 +242,20 @@ impl ApiRuntimeConfig {
         // Auth is forced on whenever the server is remotely reachable, even if
         // the `authentication` toggle is off — mirrors the mandatory-capability
         // pattern and prevents an unauthenticated 0.0.0.0 exposure.
-        let auth_configured = get_bool(r, "authentication").unwrap_or(false);
-        let auth_required = auth_configured || allow_remote;
+        // Release builds always require authentication, including on loopback.
+        // A local unauthenticated server is available only to debug builds via
+        // an explicit process-local override; persisted settings cannot weaken
+        // the production authentication boundary.
+        let debug_unauthenticated_loopback = cfg!(debug_assertions)
+            && env("SORNG_ALLOW_UNAUTHENTICATED_REST_API")
+                .map(|value| {
+                    matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "1" | "true" | "yes" | "on"
+                    )
+                })
+                .unwrap_or(false);
+        let auth_required = allow_remote || !debug_unauthenticated_loopback;
 
         // Port: honor the configured value when valid, else the default. A
         // configured `0` is treated as "unset" (the OS-ephemeral case is
@@ -182,31 +266,35 @@ impl ApiRuntimeConfig {
         };
         let use_random_port = get_bool(r, "useRandomPort").unwrap_or(false);
 
-        // API key: env → settings → generated.
-        let (api_key, api_key_generated) =
-            match env_nonempty(&env, "API_KEY").or_else(|| get_str_nonempty(r, "apiKey")) {
-                Some(k) => (k, false),
-                None => (gen_secret_hex(), true),
-            };
-
-        // JWT secret: env → settings (`jwtSecret`, read defensively though not
-        // in the current settings type) → generated (≥256-bit).
-        let (jwt_secret, jwt_secret_generated) =
-            match env_nonempty(&env, "JWT_SECRET").or_else(|| get_str_nonempty(r, "jwtSecret")) {
-                Some(s) => (s, false),
-                None => (gen_secret_hex(), true),
-            };
+        // Secrets never come from persisted settings. Explicit environment
+        // values override the native OS-vault overlay.
+        let api_key = env_nonempty(&env, "API_KEY")
+            .or_else(|| secret_override_nonempty(native_api_key))
+            .unwrap_or_default();
+        let jwt_secret = env_nonempty(&env, "JWT_SECRET")
+            .or_else(|| secret_override_nonempty(native_jwt_secret))
+            .unwrap_or_default();
 
         // User store path: env → settings (`userStorePath`) → app_dir/users.json.
         let user_store_path = env_nonempty(&env, "USER_STORE_PATH")
-            .or_else(|| get_str_nonempty(r, "userStorePath"))
             .map(PathBuf::from)
+            .or_else(|| {
+                get_str_nonempty(r, "userStorePath")
+                    .and_then(|path| safe_settings_user_store_path(&path, app_dir))
+            })
             .unwrap_or_else(|| app_dir.join(DEFAULT_USER_STORE_FILE));
 
-        // Rate limit: gated by the `rateLimiting` toggle; `0` = off.
+        // Rate limiting is optional only for explicit local debug operation.
+        // Remote listeners and every release build receive a non-zero baseline
+        // even if persisted settings attempt to disable the control.
         let rate_limiting_on = get_bool(r, "rateLimiting").unwrap_or(false);
-        let rate_limit_per_minute = if rate_limiting_on {
-            get_u64(r, "maxRequestsPerMinute").unwrap_or(0) as u32
+        let configured_rate_limit = get_u64(r, "maxRequestsPerMinute")
+            .map(|value| value.clamp(1, MAX_RATE_LIMIT_PER_MINUTE as u64) as u32);
+        let rate_limit_required = allow_remote || !cfg!(debug_assertions);
+        let rate_limit_per_minute = if rate_limit_required {
+            configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
+        } else if rate_limiting_on {
+            configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
         } else {
             0
         };
@@ -249,8 +337,12 @@ impl ApiRuntimeConfig {
             TlsConfig::disabled()
         };
 
-        let max_threads = get_u64(r, "maxThreads").unwrap_or(4).max(1) as usize;
-        let request_timeout_secs = get_u64(r, "requestTimeout").unwrap_or(30);
+        let max_threads = get_u64(r, "maxThreads")
+            .unwrap_or(DEFAULT_MAX_CONCURRENT_REQUESTS as u64)
+            .clamp(1, MAX_CONCURRENT_REQUESTS as u64) as usize;
+        let request_timeout_secs = get_u64(r, "requestTimeout")
+            .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS)
+            .clamp(1, MAX_REQUEST_TIMEOUT_SECS);
 
         ApiRuntimeConfig {
             enabled,
@@ -261,9 +353,7 @@ impl ApiRuntimeConfig {
             allow_remote,
             auth_required,
             api_key,
-            api_key_generated,
             jwt_secret,
-            jwt_secret_generated,
             user_store_path,
             rate_limit_per_minute,
             cors_enabled,
@@ -289,8 +379,7 @@ impl ApiRuntimeConfig {
     }
 }
 
-/// Redacting Debug impl — never emit `api_key` / `jwt_secret` (§6 invariant:
-/// secrets must never be logged). We surface only whether each was generated.
+/// Redacting Debug impl — never emit `api_key` / `jwt_secret`.
 impl std::fmt::Debug for ApiRuntimeConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ApiRuntimeConfig")
@@ -302,10 +391,8 @@ impl std::fmt::Debug for ApiRuntimeConfig {
             .field("allow_remote", &self.allow_remote)
             .field("auth_required", &self.auth_required)
             .field("api_key", &"<redacted>")
-            .field("api_key_generated", &self.api_key_generated)
             .field("jwt_secret", &"<redacted>")
-            .field("jwt_secret_generated", &self.jwt_secret_generated)
-            .field("user_store_path", &self.user_store_path)
+            .field("user_store_path", &"<redacted>")
             .field("rate_limit_per_minute", &self.rate_limit_per_minute)
             .field("cors_enabled", &self.cors_enabled)
             .field("tls", &self.tls)
@@ -315,14 +402,25 @@ impl std::fmt::Debug for ApiRuntimeConfig {
     }
 }
 
-// --- helpers -------------------------------------------------------------
+/// Persisted UI settings are untrusted application data. Keep their user-store
+/// override beneath the application directory so the API cannot become an
+/// arbitrary-file write deputy. The environment override remains available to
+/// trusted operators for deployments that deliberately store users elsewhere.
+fn safe_settings_user_store_path(raw: &str, app_dir: &Path) -> Option<PathBuf> {
+    let relative = Path::new(raw);
+    if relative.as_os_str().is_empty()
+        || relative.is_absolute()
+        || !relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return None;
+    }
 
-/// Generate a hex-encoded CSPRNG secret (`SECRET_BYTES` bytes → 64 hex chars).
-fn gen_secret_hex() -> String {
-    let mut buf = [0u8; SECRET_BYTES];
-    OsRng.fill_bytes(&mut buf);
-    hex::encode(buf)
+    Some(app_dir.join(relative))
 }
+
+// --- helpers -------------------------------------------------------------
 
 fn get_bool(v: &serde_json::Value, key: &str) -> Option<bool> {
     v.get(key).and_then(|x| x.as_bool())
@@ -354,6 +452,13 @@ where
     env(key)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn secret_override_nonempty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -392,14 +497,18 @@ mod tests {
         assert_eq!(cfg.bind_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(cfg.port, DEFAULT_PORT);
         assert!(!cfg.use_random_port);
-        assert!(!cfg.auth_required);
-        // Both secrets generated in the absence of env/settings.
-        assert!(cfg.api_key_generated);
-        assert!(cfg.jwt_secret_generated);
-        assert_eq!(cfg.api_key.len(), SECRET_BYTES * 2);
-        assert_eq!(cfg.jwt_secret.len(), SECRET_BYTES * 2);
+        assert!(cfg.auth_required);
+        assert!(cfg.api_key.is_empty());
+        assert!(cfg.jwt_secret.is_empty());
         assert_eq!(cfg.user_store_path, app_dir().join("users.json"));
-        assert_eq!(cfg.rate_limit_per_minute, 0);
+        assert_eq!(
+            cfg.rate_limit_per_minute,
+            if cfg!(debug_assertions) {
+                0
+            } else {
+                DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE
+            }
+        );
         assert!(!cfg.cors_enabled);
         assert!(!cfg.tls.enabled);
     }
@@ -426,7 +535,10 @@ mod tests {
         let cfg = resolve(&json!({
             "restApi": { "allowRemoteConnections": true, "authentication": false }
         }));
-        assert!(cfg.auth_required, "auth must be forced on for remote exposure");
+        assert!(
+            cfg.auth_required,
+            "auth must be forced on for remote exposure"
+        );
     }
 
     #[test]
@@ -439,88 +551,144 @@ mod tests {
     }
 
     #[test]
-    fn no_auth_when_local_and_toggle_off() {
+    fn auth_required_when_local_even_if_toggle_off() {
         let cfg = resolve(&json!({ "restApi": { "authentication": false } }));
-        assert!(!cfg.auth_required);
+        assert!(cfg.auth_required);
     }
 
     #[test]
-    fn api_key_env_overrides_settings() {
-        let settings = json!({ "restApi": { "apiKey": "from-settings" } });
-        let cfg = ApiRuntimeConfig::resolve_with_env(
+    fn api_key_env_overrides_native_vault_overlay() {
+        let settings = json!({ "restApi": { "apiKey": "plaintext-must-be-ignored" } });
+        let cfg = ApiRuntimeConfig::resolve_with_env_and_secrets(
             &settings,
             &app_dir(),
             env_from(&[("API_KEY", "from-env")]),
+            Some("from-vault"),
+            Some("0123456789abcdef0123456789abcdef"),
         );
         assert_eq!(cfg.api_key, "from-env");
-        assert!(!cfg.api_key_generated);
     }
 
     #[test]
-    fn api_key_from_settings_when_no_env() {
-        let cfg = resolve(&json!({ "restApi": { "apiKey": "settings-key" } }));
-        assert_eq!(cfg.api_key, "settings-key");
-        assert!(!cfg.api_key_generated);
+    fn plaintext_settings_secrets_are_ignored() {
+        let cfg = resolve(&json!({
+            "restApi": {
+                "apiKey": "plaintext-api-key",
+                "jwtSecret": "plaintext-jwt-secret"
+            }
+        }));
+        assert!(cfg.api_key.is_empty());
+        assert!(cfg.jwt_secret.is_empty());
     }
 
     #[test]
-    fn api_key_generated_when_absent_and_is_random() {
-        let a = resolve(&json!({}));
-        let b = resolve(&json!({}));
-        assert!(a.api_key_generated && b.api_key_generated);
-        // 256-bit hex-encoded.
-        assert_eq!(a.api_key.len(), 64);
-        assert!(a.api_key.chars().all(|c| c.is_ascii_hexdigit()));
-        // Overwhelmingly likely to differ — guards against a constant.
-        assert_ne!(a.api_key, b.api_key);
+    fn native_vault_secrets_overlay_non_secret_settings() {
+        let cfg = ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &json!({}),
+            &app_dir(),
+            no_env(),
+            Some("vault-api-key"),
+            Some("0123456789abcdef0123456789abcdef"),
+        );
+        assert_eq!(cfg.api_key, "vault-api-key");
+        assert_eq!(cfg.jwt_secret, "0123456789abcdef0123456789abcdef");
     }
 
     #[test]
-    fn empty_env_key_falls_through_to_generation() {
-        // API_KEY set but empty must not mask the fallback.
-        let cfg = ApiRuntimeConfig::resolve_with_env(
+    fn empty_env_key_falls_through_to_native_vault_overlay() {
+        let cfg = ApiRuntimeConfig::resolve_with_env_and_secrets(
             &json!({}),
             &app_dir(),
             env_from(&[("API_KEY", "   ")]),
+            Some("vault-api-key"),
+            Some("0123456789abcdef0123456789abcdef"),
         );
-        assert!(cfg.api_key_generated);
-        assert_eq!(cfg.api_key.len(), 64);
+        assert_eq!(cfg.api_key, "vault-api-key");
     }
 
     #[test]
-    fn empty_settings_key_falls_through_to_generation() {
-        // The frontend default is `apiKey: ""` — must be treated as unset.
-        let cfg = resolve(&json!({ "restApi": { "apiKey": "" } }));
-        assert!(cfg.api_key_generated);
-    }
-
-    #[test]
-    fn jwt_secret_precedence_env_over_settings_over_gen() {
-        // env wins
-        let cfg = ApiRuntimeConfig::resolve_with_env(
-            &json!({ "restApi": { "jwtSecret": "s-secret" } }),
+    fn jwt_secret_precedence_is_env_over_native_vault() {
+        let cfg = ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &json!({ "restApi": { "jwtSecret": "plaintext-must-be-ignored" } }),
             &app_dir(),
-            env_from(&[("JWT_SECRET", "e-secret")]),
+            env_from(&[("JWT_SECRET", "environment-secret-32-bytes-long!!")]),
+            Some("vault-api-key"),
+            Some("vault-secret-0123456789abcdef0123"),
         );
-        assert_eq!(cfg.jwt_secret, "e-secret");
-        assert!(!cfg.jwt_secret_generated);
-
-        // settings when no env
-        let cfg = resolve(&json!({ "restApi": { "jwtSecret": "s-secret" } }));
-        assert_eq!(cfg.jwt_secret, "s-secret");
-        assert!(!cfg.jwt_secret_generated);
-
-        // generated when neither
-        let cfg = resolve(&json!({}));
-        assert!(cfg.jwt_secret_generated);
+        assert_eq!(cfg.jwt_secret, "environment-secret-32-bytes-long!!");
     }
 
     #[test]
-    fn generated_jwt_secret_is_at_least_256_bit() {
-        let cfg = resolve(&json!({}));
-        // hex chars / 2 = bytes; * 8 = bits.
-        let bits = (cfg.jwt_secret.len() / 2) * 8;
-        assert!(bits >= 256, "jwt secret was {bits} bits");
+    fn start_validation_fails_closed_without_secure_secrets() {
+        let cfg = resolve(&json!({ "restApi": { "authentication": true } }));
+        assert!(cfg.validate_for_start().is_err());
+
+        let weak_api_key = ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &json!({}),
+            &app_dir(),
+            no_env(),
+            Some("too-short"),
+            Some("0123456789abcdef0123456789abcdef"),
+        );
+        assert!(weak_api_key.validate_for_start().is_err());
+
+        let short_jwt = ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &json!({}),
+            &app_dir(),
+            no_env(),
+            Some("vault-api-key"),
+            Some("too-short"),
+        );
+        assert!(short_jwt.validate_for_start().is_err());
+    }
+
+    #[test]
+    fn remote_start_requires_tls() {
+        let cfg = ApiRuntimeConfig::resolve_with_env_and_secrets(
+            &json!({ "restApi": { "allowRemoteConnections": true } }),
+            &app_dir(),
+            no_env(),
+            Some("0123456789abcdef0123456789abcdef"),
+            Some("0123456789abcdef0123456789abcdef"),
+        );
+        let error = cfg.validate_for_start().unwrap_err();
+        assert!(error.contains("requires TLS"), "got: {error}");
+    }
+
+    #[test]
+    fn remote_rate_limit_cannot_be_disabled() {
+        let cfg = resolve(&json!({
+            "restApi": {
+                "allowRemoteConnections": true,
+                "rateLimiting": false,
+                "maxRequestsPerMinute": 0
+            }
+        }));
+        assert_eq!(
+            cfg.rate_limit_per_minute,
+            DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE
+        );
+    }
+
+    #[test]
+    fn request_resource_limits_are_clamped() {
+        let low = resolve(&json!({
+            "restApi": { "maxThreads": 0, "requestTimeout": 0 }
+        }));
+        assert_eq!(low.max_threads, 1);
+        assert_eq!(low.request_timeout_secs, 1);
+
+        let high = resolve(&json!({
+            "restApi": {
+                "maxThreads": u64::MAX,
+                "requestTimeout": u64::MAX,
+                "rateLimiting": true,
+                "maxRequestsPerMinute": u64::MAX
+            }
+        }));
+        assert_eq!(high.max_threads, MAX_CONCURRENT_REQUESTS);
+        assert_eq!(high.request_timeout_secs, MAX_REQUEST_TIMEOUT_SECS);
+        assert_eq!(high.rate_limit_per_minute, MAX_RATE_LIMIT_PER_MINUTE);
     }
 
     #[test]
@@ -533,9 +701,15 @@ mod tests {
         );
         assert_eq!(cfg.user_store_path, PathBuf::from("/env/users.json"));
 
-        // settings when no env
-        let cfg = resolve(&json!({ "restApi": { "userStorePath": "/settings/users.json" } }));
-        assert_eq!(cfg.user_store_path, PathBuf::from("/settings/users.json"));
+        // A relative settings path is anchored beneath the app directory.
+        let cfg = resolve(&json!({ "restApi": { "userStorePath": "data/users.json" } }));
+        assert_eq!(cfg.user_store_path, app_dir().join("data/users.json"));
+
+        // Absolute and traversing settings paths fail closed to the default.
+        let cfg = resolve(&json!({ "restApi": { "userStorePath": "/outside/users.json" } }));
+        assert_eq!(cfg.user_store_path, app_dir().join("users.json"));
+        let cfg = resolve(&json!({ "restApi": { "userStorePath": "../outside/users.json" } }));
+        assert_eq!(cfg.user_store_path, app_dir().join("users.json"));
 
         // default when neither
         let cfg = resolve(&json!({}));
@@ -692,11 +866,17 @@ mod tests {
         let cfg = ApiRuntimeConfig::resolve_with_env(
             &json!({}),
             &app_dir(),
-            env_from(&[("API_KEY", "supersecretkey"), ("JWT_SECRET", "supersecretjwt")]),
+            env_from(&[
+                ("API_KEY", "supersecretkey"),
+                ("JWT_SECRET", "supersecretjwt"),
+            ]),
         );
         let dbg = format!("{cfg:?}");
         assert!(!dbg.contains("supersecretkey"), "api_key leaked in Debug");
-        assert!(!dbg.contains("supersecretjwt"), "jwt_secret leaked in Debug");
+        assert!(
+            !dbg.contains("supersecretjwt"),
+            "jwt_secret leaked in Debug"
+        );
         assert!(dbg.contains("<redacted>"));
     }
 }

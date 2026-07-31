@@ -72,9 +72,17 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // encrypted form is readable for vault-mode installs. Password / hybrid
     // installs surface "locked" and fall through to safe defaults (API stays
     // off); the capabilities load anyway as soon as the user unlocks.
-    let settings_value =
-        tauri::async_runtime::block_on(read_api_settings_snapshot(app.app_handle(), &app_dir))
-            .unwrap_or_else(|| serde_json::json!({}));
+    let settings_value = match tauri::async_runtime::block_on(read_api_settings_snapshot(
+        app.app_handle(),
+        &app_dir,
+    )) {
+        Ok(Some(settings)) => settings,
+        Ok(None) => serde_json::json!({}),
+        Err(error) => {
+            log::warn!("REST API settings were unavailable; startup remains disabled: {error}");
+            serde_json::json!({})
+        }
+    };
 
     if let Some(list) = settings_value
         .get("restApi")
@@ -107,8 +115,8 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // used for live capability updates above.
     let services_for_launcher = Arc::new(api_service.clone());
     let app_handle_for_launcher = app.app_handle().clone();
-    let launcher = sorng_commands_core::api_server_commands::ApiServerLauncher::new(
-        move |shutdown_rx| {
+    let launcher =
+        sorng_commands_core::api_server_commands::ApiServerLauncher::new(move |shutdown_rx| {
             let services = services_for_launcher.clone();
             let app_handle = app_handle_for_launcher.clone();
             Box::pin(async move {
@@ -117,30 +125,30 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
                     .app_data_dir()
                     .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
                 let settings = read_api_settings_snapshot(&app_handle, &app_dir)
-                    .await
+                    .await?
                     .unwrap_or_else(|| serde_json::json!({}));
-                let config = crate::api_config::ApiRuntimeConfig::resolve(&settings, &app_dir);
-
-                // Fail closed (§6): never expose the API when auth is required
-                // but no key resolved. The resolver auto-generates a key when
-                // none is supplied, so this is defense in depth.
-                if config.auth_required && config.api_key.trim().is_empty() {
-                    return Err(
-                        "REST API refused to start: authentication is required but no API key is configured"
-                            .to_string(),
-                    );
-                }
-
-                // Persist auto-generated key/secret so they stay stable across
-                // restarts and the API key is retrievable in Settings → API.
-                // Best-effort: a write failure must not block startup.
-                if config.api_key_generated || config.jwt_secret_generated {
-                    if let Err(e) =
-                        persist_generated_api_secrets(&app_handle, &app_dir, &config).await
-                    {
-                        log::warn!("Could not persist generated REST API secrets: {e}");
-                    }
-                }
+                let env_api_key = std::env::var("API_KEY")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty());
+                let env_jwt_secret = std::env::var("JWT_SECRET")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty());
+                let vault_secrets = if env_api_key.is_none() || env_jwt_secret.is_none() {
+                    Some(crate::app_settings_commands::ensure_rest_api_runtime_secrets().await?)
+                } else {
+                    None
+                };
+                let config = crate::api_config::ApiRuntimeConfig::resolve_with_native_secrets(
+                    &settings,
+                    &app_dir,
+                    vault_secrets
+                        .as_ref()
+                        .map(|secrets| secrets.api_key.as_str()),
+                    vault_secrets
+                        .as_ref()
+                        .map(|secrets| secrets.jwt_secret.as_str()),
+                );
+                config.validate_for_start()?;
 
                 let bind_addr = config.bind_addr().to_string();
                 let port = config.port;
@@ -160,8 +168,7 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
                     auth_required,
                 })
             }) as sorng_commands_core::api_server_commands::LaunchFuture
-        },
-    );
+        });
 
     // Register the controller under the CONCRETE sorng-commands-core type so
     // the `api_server_*` Tauri commands (which read
@@ -241,6 +248,8 @@ fn resolve_user_store_path(
     app_dir: &std::path::Path,
 ) -> std::path::PathBuf {
     let settings = tauri::async_runtime::block_on(read_api_settings_snapshot(app_handle, app_dir))
+        .ok()
+        .flatten()
         .unwrap_or_else(|| serde_json::json!({}));
     crate::api_config::ApiRuntimeConfig::resolve(&settings, app_dir).user_store_path
 }
@@ -251,46 +260,9 @@ fn resolve_user_store_path(
 async fn read_api_settings_snapshot(
     app_handle: &tauri::AppHandle,
     app_dir: &std::path::Path,
-) -> Option<serde_json::Value> {
-    let enc_state = app_handle.try_state::<sorng_encryption::EncryptionState>()?;
-    crate::app_settings_commands::read_app_settings_inner(app_dir, &enc_state)
-        .await
-        .ok()
-        .flatten()
-}
-
-/// Persist freshly auto-generated REST API secrets back into `settings.restApi`
-/// so they remain stable across restarts (and the API key is retrievable in
-/// Settings → API). Read-modify-write preserves sibling `restApi` fields.
-/// Never logs the secret material (§6 invariant).
-async fn persist_generated_api_secrets(
-    app_handle: &tauri::AppHandle,
-    app_dir: &std::path::Path,
-    config: &crate::api_config::ApiRuntimeConfig,
-) -> Result<(), String> {
+) -> Result<Option<serde_json::Value>, String> {
     let enc_state = app_handle
         .try_state::<sorng_encryption::EncryptionState>()
         .ok_or_else(|| "encryption state unavailable".to_string())?;
-    let current = crate::app_settings_commands::read_app_settings_inner(app_dir, &enc_state)
-        .await?
-        .unwrap_or_else(|| serde_json::json!({}));
-    let mut rest = current
-        .get("restApi")
-        .and_then(|v| v.as_object())
-        .cloned()
-        .unwrap_or_default();
-    if config.api_key_generated {
-        rest.insert(
-            "apiKey".to_string(),
-            serde_json::Value::String(config.api_key.clone()),
-        );
-    }
-    if config.jwt_secret_generated {
-        rest.insert(
-            "jwtSecret".to_string(),
-            serde_json::Value::String(config.jwt_secret.clone()),
-        );
-    }
-    let patch = serde_json::json!({ "restApi": serde_json::Value::Object(rest) });
-    crate::app_settings_commands::write_app_settings_inner(app_dir, &enc_state, patch).await
+    crate::app_settings_commands::read_app_settings_secure_inner(app_dir, &enc_state).await
 }

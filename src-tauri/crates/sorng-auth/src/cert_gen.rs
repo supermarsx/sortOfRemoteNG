@@ -594,10 +594,7 @@ impl CertGenService {
     // Public API: Generate self-signed certificate
     // -----------------------------------------------------------------------
 
-    pub async fn generate_self_signed(
-        &mut self,
-        params: CertGenParams,
-    ) -> Result<GeneratedCert, String> {
+    fn generate_self_signed_material(params: CertGenParams) -> Result<GeneratedCert, String> {
         let key_pair = Self::generate_key_pair(&params.algorithm)?;
         let cert_params = Self::build_cert_params(&params, key_pair);
 
@@ -626,7 +623,7 @@ impl CertGenService {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
 
-        let generated = GeneratedCert {
+        Ok(GeneratedCert {
             id: id.clone(),
             cert_pem,
             key_pem,
@@ -643,10 +640,27 @@ impl CertGenService {
             san: Self::san_list(&params),
             signed_by: None,
             created_at: now,
-        };
+        })
+    }
+
+    /// Generate a process-only certificate without writing its private key to
+    /// the certificate store. Intended for ephemeral listener identities.
+    pub async fn generate_self_signed_ephemeral(
+        &mut self,
+        params: CertGenParams,
+    ) -> Result<GeneratedCert, String> {
+        Self::generate_self_signed_material(params)
+    }
+
+    pub async fn generate_self_signed(
+        &mut self,
+        params: CertGenParams,
+    ) -> Result<GeneratedCert, String> {
+        let generated = Self::generate_self_signed_material(params)?;
+        let id = generated.id.clone();
 
         self.store.certs.insert(
-            id.clone(),
+            id,
             CertStoreEntry {
                 cert: generated.clone(),
                 label: None,
@@ -1227,4 +1241,3 @@ impl CertGenService {
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
-

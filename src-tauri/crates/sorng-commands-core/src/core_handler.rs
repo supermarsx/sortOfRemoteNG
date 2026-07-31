@@ -45,7 +45,9 @@ pub fn is_command(command: &str) -> bool {
             | "api_server_stop"
             | "api_server_restart"
             | "api_server_status"
+            | "api_secret_status"
             | "api_regenerate_key"
+            | "api_reveal_key"
             | "encryption_status"
             | "encryption_setup"
             | "encryption_unlock"
@@ -1355,7 +1357,9 @@ define_command_group!(
         api_server_commands::api_server_stop,
         api_server_commands::api_server_restart,
         api_server_commands::api_server_status,
+        api_server_commands::api_secret_status,
         api_server_commands::api_regenerate_key,
+        api_server_commands::api_reveal_key,
         encryption_commands::encryption_status,
         encryption_commands::encryption_setup,
         encryption_commands::encryption_unlock,

@@ -1,24 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { GlobalSettings } from '../../types/settings/settings';
-import type { ApiCapability } from '../../types/api/capabilities';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { GlobalSettings } from "../../types/settings/settings";
+import type { ApiCapability } from "../../types/api/capabilities";
 import {
   countDisabledCapabilities,
   isCapabilityEnabled,
-} from '../../types/api/capabilities';
+} from "../../types/api/capabilities";
 
 /**
  * Resolve Tauri's `invoke` at runtime so non-Tauri environments (vitest
  * with jsdom, `npm run dev` without the shell) don't crash on the static
  * import. Tests stub the backend by mocking `@tauri-apps/api/core`.
  */
+interface TauriCoreModule {
+  invoke: <R>(cmd: string, args?: Record<string, unknown>) => Promise<R>;
+  isTauri?: () => boolean;
+}
+
+async function loadTauriCore(): Promise<TauriCoreModule> {
+  return (await import("@tauri-apps/api/core")) as TauriCoreModule;
+}
+
 async function tauriInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
-  const mod = (await import('@tauri-apps/api/core')) as {
-    invoke: <R>(cmd: string, args?: Record<string, unknown>) => Promise<R>;
-  };
+  const mod = await loadTauriCore();
   return mod.invoke<T>(cmd, args);
 }
 
@@ -38,6 +45,20 @@ export interface ApiServerStatusResult {
   authRequired: boolean;
 }
 
+export interface ApiSecretStatusResult {
+  vaultAvailable: boolean;
+  apiKeyAvailable: boolean;
+  jwtSecretAvailable: boolean;
+  revealAvailable: boolean;
+}
+
+const EMPTY_SECRET_STATUS: ApiSecretStatusResult = {
+  vaultAvailable: false,
+  apiKeyAvailable: false,
+  jwtSecretAvailable: false,
+  revealAvailable: false,
+};
+
 /**
  * Lazy loader for the capability catalog.
  *
@@ -46,11 +67,19 @@ export interface ApiServerStatusResult {
  * rather than crashing.
  */
 async function loadCapabilityCatalog(): Promise<ApiCapability[]> {
+  let tauriRuntime = false;
   try {
-    return await tauriInvoke<ApiCapability[]>('get_api_capabilities');
-  } catch (err) {
-    if (typeof console !== 'undefined') {
-      console.debug('[useApiSettings] capability catalog unavailable:', err);
+    const mod = await loadTauriCore();
+    tauriRuntime = typeof mod.isTauri !== "function" || Boolean(mod.isTauri());
+    if (!tauriRuntime) {
+      return [];
+    }
+    return await mod.invoke<ApiCapability[]>("get_api_capabilities");
+  } catch {
+    if (tauriRuntime && typeof console !== "undefined") {
+      console.warn(
+        "[useApiSettings] capability catalog could not be loaded in the Tauri runtime.",
+      );
     }
     return [];
   }
@@ -59,14 +88,19 @@ async function loadCapabilityCatalog(): Promise<ApiCapability[]> {
 /** Push the user's disabled-list into the running API server.
  *  Best-effort: failures are logged but never throw so a backend that
  *  hasn't started yet can't break the settings dialog. */
-async function pushDisabledCapabilities(disabled: readonly string[]): Promise<void> {
+async function pushDisabledCapabilities(
+  disabled: readonly string[],
+): Promise<void> {
   try {
-    await tauriInvoke<void>('set_api_disabled_capabilities', {
+    await tauriInvoke<void>("set_api_disabled_capabilities", {
       disabled: [...disabled],
     });
   } catch (err) {
-    if (typeof console !== 'undefined') {
-      console.debug('[useApiSettings] set_api_disabled_capabilities failed:', err);
+    if (typeof console !== "undefined") {
+      console.debug(
+        "[useApiSettings] set_api_disabled_capabilities failed:",
+        err,
+      );
     }
   }
 }
@@ -77,11 +111,14 @@ export function useApiSettings(
 ) {
   const { t } = useTranslation();
   const [serverStatus, setServerStatus] = useState<
-    'stopped' | 'running' | 'starting' | 'stopping'
-  >('stopped');
+    "stopped" | "running" | "starting" | "stopping"
+  >("stopped");
   const [actualPort, setActualPort] = useState<number | null>(null);
   const [bindAddr, setBindAddr] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
+  const [apiSecretStatus, setApiSecretStatus] =
+    useState<ApiSecretStatusResult>(EMPTY_SECRET_STATUS);
+  const [apiSecretError, setApiSecretError] = useState<string | null>(null);
 
   // When remote connections are allowed the backend forces authentication on
   // regardless of the `authentication` toggle (defense-in-depth, D5). Surface
@@ -90,7 +127,7 @@ export function useApiSettings(
 
   /** Fold a backend status snapshot into local state. */
   const applyStatus = useCallback((s: ApiServerStatusResult) => {
-    setServerStatus(s.running ? 'running' : 'stopped');
+    setServerStatus(s.running ? "running" : "stopped");
     setActualPort(s.port ? s.port : null);
     setBindAddr(s.bindAddr ? s.bindAddr : null);
     setAuthRequired(Boolean(s.authRequired));
@@ -100,20 +137,37 @@ export function useApiSettings(
    *  Tauri shell is unavailable (dev/tests). */
   const refreshServerStatus = useCallback(async () => {
     try {
-      const s = await tauriInvoke<ApiServerStatusResult>('api_server_status');
+      const s = await tauriInvoke<ApiServerStatusResult>("api_server_status");
       applyStatus(s);
     } catch (err) {
-      if (typeof console !== 'undefined') {
-        console.debug('[useApiSettings] api_server_status unavailable:', err);
+      if (typeof console !== "undefined") {
+        console.debug("[useApiSettings] api_server_status unavailable:", err);
       }
     }
   }, [applyStatus]);
+
+  const refreshApiSecretStatus = useCallback(async () => {
+    try {
+      const status =
+        await tauriInvoke<ApiSecretStatusResult>("api_secret_status");
+      setApiSecretStatus(status);
+      setApiSecretError(null);
+    } catch (error) {
+      setApiSecretStatus(EMPTY_SECRET_STATUS);
+      setApiSecretError(
+        error instanceof Error
+          ? error.message
+          : "Secure REST API storage is unavailable.",
+      );
+    }
+  }, []);
 
   // Reflect the real server state on mount (and whenever the refresher
   // identity changes, which it doesn't after first render).
   useEffect(() => {
     void refreshServerStatus();
-  }, [refreshServerStatus]);
+    void refreshApiSecretStatus();
+  }, [refreshApiSecretStatus, refreshServerStatus]);
 
   // Catalog is loaded once per mount. The Rust catalog is static so we
   // don't bother re-fetching after settings changes.
@@ -147,7 +201,7 @@ export function useApiSettings(
   }, [capabilitiesLoaded, disabledCapabilities]);
 
   const updateRestApi = useCallback(
-    (updates: Partial<GlobalSettings['restApi']>) => {
+    (updates: Partial<GlobalSettings["restApi"]>) => {
       updateSettings({ restApi: { ...settings.restApi, ...updates } });
     },
     [settings.restApi, updateSettings],
@@ -246,35 +300,34 @@ export function useApiSettings(
   );
 
   const generateApiKey = useCallback(async () => {
+    setApiSecretError(null);
     try {
-      // Backend generates a 256-bit key, persists it to the encrypted
-      // settings store, and returns it exactly once. Never log the key.
-      const key = await tauriInvoke<string>('api_regenerate_key');
-      // Mirror into in-memory settings so the field updates immediately.
-      updateRestApi({ apiKey: key });
+      const status =
+        await tauriInvoke<ApiSecretStatusResult>("api_regenerate_key");
+      setApiSecretStatus(status);
     } catch (err) {
-      if (typeof console !== 'undefined') {
-        console.debug(
-          '[useApiSettings] api_regenerate_key unavailable, using local fallback:',
-          err,
-        );
-      }
-      // Non-Tauri fallback (dev/tests): generate client-side so the button
-      // still works. Same 256-bit hex shape as the backend.
-      const array = new Uint8Array(32);
-      crypto.getRandomValues(array);
-      const key = Array.from(array)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      updateRestApi({ apiKey: key });
+      setApiSecretError(
+        err instanceof Error
+          ? err.message
+          : "The API key could not be rotated in secure storage.",
+      );
     }
-  }, [updateRestApi]);
+  }, []);
 
   const copyApiKey = useCallback(async () => {
-    if (settings.restApi?.apiKey) {
-      await navigator.clipboard.writeText(settings.restApi.apiKey);
+    setApiSecretError(null);
+    try {
+      const key = await tauriInvoke<string>("api_reveal_key");
+      if (!key) throw new Error("The secure API key was empty.");
+      await navigator.clipboard.writeText(key);
+    } catch (err) {
+      setApiSecretError(
+        err instanceof Error
+          ? err.message
+          : "Biometric API-key reveal was not available.",
+      );
     }
-  }, [settings.restApi?.apiKey]);
+  }, []);
 
   const generateRandomPort = useCallback(() => {
     const randomPort = Math.floor(Math.random() * 50000) + 10000;
@@ -282,42 +335,42 @@ export function useApiSettings(
   }, [updateRestApi]);
 
   const handleStartServer = useCallback(async () => {
-    setServerStatus('starting');
+    setServerStatus("starting");
     try {
-      const s = await tauriInvoke<ApiServerStatusResult>('api_server_start');
+      const s = await tauriInvoke<ApiServerStatusResult>("api_server_start");
       applyStatus(s);
     } catch (error) {
-      console.error('Failed to start API server:', error);
+      console.error("Failed to start API server:", error);
       // Don't strand the UI in "starting…"; reconcile with the real state.
-      setServerStatus('stopped');
+      setServerStatus("stopped");
       setActualPort(null);
       void refreshServerStatus();
     }
   }, [applyStatus, refreshServerStatus]);
 
   const handleStopServer = useCallback(async () => {
-    setServerStatus('stopping');
+    setServerStatus("stopping");
     try {
-      await tauriInvoke<void>('api_server_stop');
-      setServerStatus('stopped');
+      await tauriInvoke<void>("api_server_stop");
+      setServerStatus("stopped");
       setActualPort(null);
       setBindAddr(null);
       // Confirm against the backend (also refreshes auth-required).
       void refreshServerStatus();
     } catch (error) {
-      console.error('Failed to stop API server:', error);
+      console.error("Failed to stop API server:", error);
       void refreshServerStatus();
     }
   }, [refreshServerStatus]);
 
   const handleRestartServer = useCallback(async () => {
-    setServerStatus('starting');
+    setServerStatus("starting");
     try {
-      const s = await tauriInvoke<ApiServerStatusResult>('api_server_restart');
+      const s = await tauriInvoke<ApiServerStatusResult>("api_server_restart");
       applyStatus(s);
     } catch (error) {
-      console.error('Failed to restart API server:', error);
-      setServerStatus('stopped');
+      console.error("Failed to restart API server:", error);
+      setServerStatus("stopped");
       setActualPort(null);
       void refreshServerStatus();
     }
@@ -330,6 +383,9 @@ export function useApiSettings(
     bindAddr,
     authRequired,
     authForcedByRemote,
+    apiSecretStatus,
+    apiSecretError,
+    refreshApiSecretStatus,
     refreshServerStatus,
     capabilities,
     capabilitiesLoaded,

@@ -13,7 +13,8 @@ mod anydesk_commands;
 #[path = "../../../src/app_auth_commands.rs"]
 mod app_auth_commands;
 #[path = "../../../src/app_settings_commands.rs"]
-mod app_settings_commands;
+#[doc(hidden)]
+pub mod app_settings_commands;
 #[allow(dead_code)]
 #[path = "../../../src/app_shell_commands.rs"]
 mod app_shell_commands;

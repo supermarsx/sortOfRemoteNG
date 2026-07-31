@@ -39,10 +39,6 @@ use tokio::task::JoinHandle;
 /// bounded so the UI never hangs on a wedged server.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
-/// Number of random bytes for a regenerated API key. 32 bytes = 256 bits,
-/// matching the entropy the config resolver uses for auto-generated secrets.
-const API_KEY_BYTES: usize = 32;
-
 /// Secret-free status snapshot returned by `api_server_status` and by the
 /// start/restart commands.
 ///
@@ -61,6 +57,15 @@ pub struct ApiServerStatus {
     pub port: u16,
     /// Whether callers must authenticate (forced on for remote exposure).
     pub auth_required: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiSecretStatus {
+    pub vault_available: bool,
+    pub api_key_available: bool,
+    pub jwt_secret_available: bool,
+    pub reveal_available: bool,
 }
 
 /// The outcome of one successful server launch, handed back to the controller
@@ -200,9 +205,7 @@ impl ApiServerController {
             let abort = join.abort_handle();
             if tokio::time::timeout(SHUTDOWN_GRACE, join).await.is_err() {
                 abort.abort();
-                log::warn!(
-                    "REST API server did not shut down within {SHUTDOWN_GRACE:?}; aborted"
-                );
+                log::warn!("REST API server did not shut down within {SHUTDOWN_GRACE:?}; aborted");
             }
         }
 
@@ -227,15 +230,6 @@ impl ApiServerController {
         }
         state.status.clone()
     }
-}
-
-/// Generate a fresh hex-encoded CSPRNG API key (`API_KEY_BYTES` bytes).
-fn generate_api_key() -> String {
-    use rand::rngs::OsRng;
-    use rand::RngCore;
-    let mut buf = [0u8; API_KEY_BYTES];
-    OsRng.fill_bytes(&mut buf);
-    hex::encode(buf)
 }
 
 // ── Tauri commands ───────────────────────────────────────────────────────
@@ -266,52 +260,51 @@ pub async fn api_server_restart(
 
 /// Report the live server status (running, bind address, port, auth-required).
 #[tauri::command]
-pub fn api_server_status(
-    controller: tauri::State<'_, ApiServerController>,
-) -> ApiServerStatus {
+pub fn api_server_status(controller: tauri::State<'_, ApiServerController>) -> ApiServerStatus {
     controller.status()
 }
 
-/// Generate a new API key, persist it to `settings.restApi.apiKey`, and return
-/// it to the caller (once). The running server keeps its current key until it
-/// is restarted — the frontend is expected to prompt for / trigger a restart.
-///
-/// Security: the new key is written to the encrypted settings store and
-/// returned exactly once; it is **never** logged.
+async fn secret_status_snapshot() -> ApiSecretStatus {
+    let (vault_available, api_key_available, jwt_secret_available) =
+        crate::app_settings_commands::rest_api_secret_availability_inner().await;
+    ApiSecretStatus {
+        vault_available,
+        api_key_available,
+        jwt_secret_available,
+        reveal_available: sorng_biometrics::availability::is_available().await,
+    }
+}
+
 #[tauri::command]
-pub async fn api_regenerate_key(
-    app: tauri::AppHandle,
-    enc_state: tauri::State<'_, sorng_encryption::EncryptionState>,
-) -> Result<String, String> {
-    use tauri::Manager;
+pub async fn api_secret_status() -> ApiSecretStatus {
+    secret_status_snapshot().await
+}
 
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+/// Generate and verify a new API key in the OS credential vault. The running
+/// server keeps its current key until it is restarted.
+#[tauri::command]
+pub async fn api_regenerate_key() -> Result<ApiSecretStatus, String> {
+    crate::app_settings_commands::regenerate_rest_api_key_inner().await?;
+    Ok(secret_status_snapshot().await)
+}
 
-    // Read the current settings so we can preserve every sibling `restApi`
-    // field — `write_app_settings_inner` shallow-merges at the *root*, so a
-    // bare `{ "restApi": { "apiKey": ... } }` patch would otherwise clobber
-    // the rest of the object.
-    let current = crate::app_settings_commands::read_app_settings_inner(&dir, &enc_state)
-        .await?
-        .unwrap_or_else(|| serde_json::json!({}));
-
-    let mut rest = current
-        .get("restApi")
-        .and_then(|v| v.as_object())
-        .cloned()
-        .unwrap_or_default();
-
-    let new_key = generate_api_key();
-    rest.insert(
-        "apiKey".to_string(),
-        serde_json::Value::String(new_key.clone()),
-    );
-
-    let patch = serde_json::json!({ "restApi": serde_json::Value::Object(rest) });
-    crate::app_settings_commands::write_app_settings_inner(&dir, &enc_state, patch).await?;
-
-    // NOTE: never log `new_key`.
-    Ok(new_key)
+/// Reveal the API key only after native biometric reauthentication. There is
+/// intentionally no corresponding JWT-secret command.
+#[tauri::command]
+pub async fn api_reveal_key() -> Result<String, String> {
+    if !sorng_biometrics::availability::is_available().await {
+        return Err(
+            "API-key reveal is disabled because native biometric reauthentication is unavailable"
+                .to_string(),
+        );
+    }
+    let verified = sorng_biometrics::authenticate::verify("Reveal the sortOfRemoteNG REST API key")
+        .await
+        .map_err(|error| error.to_string())?;
+    if !verified {
+        return Err("biometric reauthentication did not succeed".to_string());
+    }
+    crate::app_settings_commands::reveal_rest_api_key_inner().await
 }
 
 #[cfg(test)]
@@ -374,12 +367,8 @@ mod tests {
     #[tokio::test]
     async fn start_sets_running_and_reflects_config() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let ctrl = ApiServerController::new(blocking_launcher(
-            "0.0.0.0:1234",
-            1234,
-            true,
-            calls.clone(),
-        ));
+        let ctrl =
+            ApiServerController::new(blocking_launcher("0.0.0.0:1234", 1234, true, calls.clone()));
 
         let status = ctrl.start().await.expect("start should succeed");
         assert!(status.running);
@@ -397,8 +386,12 @@ mod tests {
     #[tokio::test]
     async fn double_start_is_rejected() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let ctrl =
-            ApiServerController::new(blocking_launcher("127.0.0.1:9876", 9876, false, calls.clone()));
+        let ctrl = ApiServerController::new(blocking_launcher(
+            "127.0.0.1:9876",
+            9876,
+            false,
+            calls.clone(),
+        ));
 
         ctrl.start().await.expect("first start");
         let err = ctrl.start().await.expect_err("second start must fail");
@@ -424,7 +417,9 @@ mod tests {
     async fn stop_when_never_started_is_ok() {
         let ctrl = ApiServerController::new(failing_launcher("unused"));
         // Idempotent: no server was ever started.
-        ctrl.stop().await.expect("stop on idle controller is a no-op");
+        ctrl.stop()
+            .await
+            .expect("stop on idle controller is a no-op");
         assert!(!ctrl.status().running);
     }
 
@@ -464,7 +459,10 @@ mod tests {
     #[tokio::test]
     async fn launcher_failure_propagates_and_leaves_stopped() {
         let ctrl = ApiServerController::new(failing_launcher("auth required but no key"));
-        let err = ctrl.start().await.expect_err("start must surface the refusal");
+        let err = ctrl
+            .start()
+            .await
+            .expect_err("start must surface the refusal");
         assert!(err.contains("auth required"), "got: {err}");
         assert!(!ctrl.status().running);
     }
@@ -488,15 +486,5 @@ mod tests {
             !ctrl.status().running,
             "status must reflect a server that ended on its own"
         );
-    }
-
-    #[test]
-    fn generated_api_key_is_256_bit_hex() {
-        let a = generate_api_key();
-        let b = generate_api_key();
-        assert_eq!(a.len(), API_KEY_BYTES * 2);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        // Overwhelmingly likely to differ — guards against a constant.
-        assert_ne!(a, b);
     }
 }
