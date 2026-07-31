@@ -58,11 +58,10 @@ impl HealthMonitor {
         protocol: &str,
     ) -> ConnectionHealthEntry {
         let start = Instant::now();
-        let addr = format!("{hostname}:{port}");
         let check_timeout = Duration::from_millis(self.config.health_check_timeout_ms);
 
         let (status, latency_ms, error_msg) =
-            match timeout(check_timeout, TcpStream::connect(&addr)).await {
+            match timeout(check_timeout, TcpStream::connect((hostname, port))).await {
                 Ok(Ok(_stream)) => {
                     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
                     let status = if elapsed > 1000.0 {
@@ -89,7 +88,7 @@ impl HealthMonitor {
             updated.latency_ms = latency_ms;
             updated.last_checked = Some(now);
             if let Some(ref err) = error_msg {
-                updated.error_count += 1;
+                updated.error_count = updated.error_count.saturating_add(1);
                 updated.last_error = Some(err.clone());
             }
             // Record latency history.
