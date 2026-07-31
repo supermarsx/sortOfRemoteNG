@@ -2,9 +2,11 @@
 //!
 //! Updates via `https://ydns.io/api/v1/update/?host=...&ip=...`.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a YDNS hostname.
@@ -25,21 +27,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let url = format!("https://ydns.io/api/v1/update/?host={}&ip={}", fqdn, ip);
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-m",
-        "30",
-        "-u",
-        &format!("{}:{}", username, password),
-        &url,
-    ]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body =
+        http::send(http::request(Method::GET, &url, true)?.basic_auth(username, Some(password)))
+            .await?
+            .body;
 
     let (status, error) = if body == "ok" {
         (UpdateStatus::Success, None)

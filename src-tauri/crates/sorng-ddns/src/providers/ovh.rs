@@ -2,9 +2,11 @@
 //!
 //! Updates via OVH DynHost or REST API.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update an OVH DynHost record.
@@ -36,21 +38,10 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         fqdn, ip
     );
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-m",
-        "30",
-        "-u",
-        &format!("{}:{}", username, password),
-        &url,
-    ]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body =
+        http::send(http::request(Method::GET, &url, true)?.basic_auth(username, Some(password)))
+            .await?
+            .body;
 
     let (status, error) = if body.starts_with("good") {
         (UpdateStatus::Success, None)

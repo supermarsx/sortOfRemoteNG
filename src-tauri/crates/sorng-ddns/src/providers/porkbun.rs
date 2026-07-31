@@ -2,9 +2,11 @@
 //!
 //! Updates via Porkbun API v3 (`https://porkbun.com/api/json/v3/`).
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a Porkbun A/AAAA record.
@@ -50,25 +52,9 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         "ttl": ttl.to_string()
     });
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-m",
-        "30",
-        "-X",
-        "POST",
-        "-H",
-        "Content-Type: application/json",
-        "-d",
-        &payload.to_string(),
-        &url,
-    ]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(http::request(Method::POST, &url, true)?.json(&payload))
+        .await?
+        .body;
 
     let json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
 

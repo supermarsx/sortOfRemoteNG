@@ -2,9 +2,11 @@
 //!
 //! Updates via Gandi LiveDNS REST API.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a Gandi LiveDNS record.
@@ -44,30 +46,17 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         "rrset_ttl": ttl
     });
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-m",
-        "30",
-        "-X",
-        "PUT",
-        "-H",
-        &format!("Authorization: Bearer {}", token),
-        "-H",
-        "Content-Type: application/json",
-        "-d",
-        &payload.to_string(),
-        &url,
-    ]);
+    let response = http::send_allow_error(
+        http::request(Method::PUT, &url, true)?
+            .bearer_auth(token)
+            .json(&payload),
+    )
+    .await?;
+    let http_code = response.status.as_u16();
+    let http_success = response.status.is_success();
+    let body = response.body;
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let http_code = output.status.code().unwrap_or(0);
-
-    let (status, error) = if output.status.success() || body.contains("\"message\"") {
+    let (status, error) = if http_success {
         let json: serde_json::Value =
             serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
         let msg = json["message"].as_str().unwrap_or("");
@@ -75,20 +64,20 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         if msg.contains("DNS Record Created") || msg.contains("updated") || body.is_empty() {
             info!("Gandi: Updated {} → {}", fqdn, ip);
             (UpdateStatus::Success, None)
-        } else if msg.contains("401") || msg.contains("Unauthorized") {
-            (UpdateStatus::AuthError, Some("Invalid token".to_string()))
-        } else if msg.contains("404") {
-            (
-                UpdateStatus::Failed,
-                Some("Domain or record not found".to_string()),
-            )
         } else {
             (UpdateStatus::Success, None) // Gandi returns 201 on create
         }
+    } else if matches!(http_code, 401 | 403) {
+        (UpdateStatus::AuthError, Some("Invalid token".to_string()))
+    } else if http_code == 404 {
+        (
+            UpdateStatus::Failed,
+            Some("Domain or record not found".to_string()),
+        )
     } else {
         (
             UpdateStatus::Failed,
-            Some(format!("HTTP {}: {}", http_code, body)),
+            Some(format!("Gandi returned HTTP {}", http_code)),
         )
     };
 
@@ -101,7 +90,11 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         ip_previous: None,
         hostname: profile.hostname.clone(),
         fqdn,
-        provider_response: Some(body),
+        provider_response: Some(if http_success {
+            "OK".to_string()
+        } else {
+            format!("Gandi returned HTTP {}", http_code)
+        }),
         error,
         timestamp: Utc::now().to_rfc3339(),
         latency_ms: start.elapsed().as_millis() as u64,

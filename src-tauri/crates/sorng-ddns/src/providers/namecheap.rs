@@ -3,9 +3,11 @@
 //! Updates via Namecheap Dynamic DNS HTTP API.
 //! `https://dynamicdns.park-your-domain.com/update?host=...&domain=...&password=...&ip=...`
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a Namecheap hostname.
@@ -39,31 +41,24 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
 
     let mut results = Vec::new();
     for host in &hosts {
-        let url = format!(
-            "https://dynamicdns.park-your-domain.com/update?host={}&domain={}.{}&password={}&ip={}",
-            host, sld, tld, password, ip
-        );
-
-        let mut cmd = tokio::process::Command::new("curl");
-        cmd.args(["-s", "-m", "30", &url]);
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("curl failed: {}", e))?;
-        let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let mut url = http::parse_url("https://dynamicdns.park-your-domain.com/update", true)?;
+        url.query_pairs_mut()
+            .append_pair("host", host)
+            .append_pair("domain", &format!("{}.{}", sld, tld))
+            .append_pair("password", &password)
+            .append_pair("ip", ip);
+        let body = http::send(http::request(Method::GET, url.as_str(), true)?)
+            .await?
+            .body;
 
         // Namecheap returns XML; check for <ErrCount>0</ErrCount>
         let success = body.contains("<ErrCount>0</ErrCount>");
-        results.push((host.clone(), success, body));
+        results.push((host.clone(), success));
     }
 
-    let all_ok = results.iter().all(|(_, ok, _)| *ok);
-    let fqdn = format!(
-        "{}.{}",
-        hosts.first().unwrap_or(&"@".to_string()),
-        profile.domain
-    );
+    let all_ok = results.iter().all(|(_, ok)| *ok);
+    let first_host = hosts.first().map(String::as_str).unwrap_or("@");
+    let fqdn = format!("{}.{}", first_host, profile.domain);
 
     let (status, error) = if all_ok {
         info!("Namecheap: Updated {}.{} → {}", sld, tld, ip);
@@ -71,8 +66,8 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     } else {
         let errs: Vec<String> = results
             .iter()
-            .filter(|(_, ok, _)| !*ok)
-            .map(|(h, _, body)| format!("Host {}: {}", h, body))
+            .filter(|(_, ok)| !*ok)
+            .map(|(h, _)| format!("Host {}: provider rejected the update", h))
             .collect();
         (UpdateStatus::Failed, Some(errs.join("; ")))
     };
@@ -89,7 +84,9 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         provider_response: Some(
             results
                 .iter()
-                .map(|(h, _, b)| format!("{}: {}", h, b))
+                .map(|(h, ok)| {
+                    format!("{}: {}", h, if *ok { "updated" } else { "update rejected" })
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
         ),

@@ -3,9 +3,11 @@
 //! Full DNS record management via Cloudflare API v4.
 //! Supports A/AAAA records, proxy toggle, TTL, zone auto-detection.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::{info, warn};
+use reqwest::{header::CONTENT_TYPE, Method, RequestBuilder};
 use std::time::Instant;
 
 /// Build the Cloudflare API base URL.
@@ -14,38 +16,22 @@ fn api_base() -> &'static str {
 }
 
 /// Build authorization headers based on auth method.
-fn build_auth_args(auth: &DdnsAuthMethod) -> Result<Vec<String>, String> {
+fn with_auth(request: RequestBuilder, auth: &DdnsAuthMethod) -> Result<RequestBuilder, String> {
     match auth {
-        DdnsAuthMethod::ApiToken { token } => Ok(vec![
-            "-H".to_string(),
-            format!("Authorization: Bearer {}", token),
-        ]),
-        DdnsAuthMethod::GlobalApiKey { email, api_key } => Ok(vec![
-            "-H".to_string(),
-            format!("X-Auth-Email: {}", email),
-            "-H".to_string(),
-            format!("X-Auth-Key: {}", api_key),
-        ]),
+        DdnsAuthMethod::ApiToken { token } => Ok(request.bearer_auth(token)),
+        DdnsAuthMethod::GlobalApiKey { email, api_key } => Ok(request
+            .header("X-Auth-Email", email)
+            .header("X-Auth-Key", api_key)),
         _ => Err("Cloudflare requires ApiToken or GlobalApiKey auth".to_string()),
     }
 }
 
 /// List all zones for the account.
 pub async fn list_zones(auth: &DdnsAuthMethod) -> Result<Vec<CloudflareZone>, String> {
-    let auth_args = build_auth_args(auth)?;
     let url = format!("{}/zones?per_page=50", api_base());
-
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-X", "GET"])
-        .args(&auth_args)
-        .args(["-H", "Content-Type: application/json"])
-        .arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout);
+    let request = with_auth(http::request(Method::GET, &url, true)?, auth)?
+        .header(CONTENT_TYPE, "application/json");
+    let body = http::send(request).await?.body;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
 
@@ -83,26 +69,23 @@ pub async fn list_records(
     record_type: Option<&str>,
     name: Option<&str>,
 ) -> Result<Vec<CloudflareDnsRecord>, String> {
-    let auth_args = build_auth_args(auth)?;
-    let mut url = format!("{}/zones/{}/dns_records?per_page=100", api_base(), zone_id);
-    if let Some(rt) = record_type {
-        url.push_str(&format!("&type={}", rt));
+    let mut url = http::parse_url(
+        &format!("{}/zones/{}/dns_records", api_base(), zone_id),
+        true,
+    )?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("per_page", "100");
+        if let Some(rt) = record_type {
+            query.append_pair("type", rt);
+        }
+        if let Some(n) = name {
+            query.append_pair("name", n);
+        }
     }
-    if let Some(n) = name {
-        url.push_str(&format!("&name={}", n));
-    }
-
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-X", "GET"])
-        .args(&auth_args)
-        .args(["-H", "Content-Type: application/json"])
-        .arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout);
+    let request = with_auth(http::request(Method::GET, url.as_str(), true)?, auth)?
+        .header(CONTENT_TYPE, "application/json");
+    let body = http::send(request).await?.body;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
 
@@ -154,7 +137,6 @@ pub async fn create_record(
     proxied: bool,
     comment: Option<&str>,
 ) -> Result<CloudflareDnsRecord, String> {
-    let auth_args = build_auth_args(auth)?;
     let url = format!("{}/zones/{}/dns_records", api_base(), zone_id);
 
     let mut payload = serde_json::json!({
@@ -168,19 +150,10 @@ pub async fn create_record(
         payload["comment"] = serde_json::Value::String(c.to_string());
     }
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-X", "POST"])
-        .args(&auth_args)
-        .args(["-H", "Content-Type: application/json"])
-        .arg("-d")
-        .arg(payload.to_string())
-        .arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout);
+    let request = with_auth(http::request(Method::POST, &url, true)?, auth)?
+        .header(CONTENT_TYPE, "application/json")
+        .json(&payload);
+    let body = http::send(request).await?.body;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
 
@@ -211,20 +184,10 @@ pub async fn delete_record(
     zone_id: &str,
     record_id: &str,
 ) -> Result<(), String> {
-    let auth_args = build_auth_args(auth)?;
     let url = format!("{}/zones/{}/dns_records/{}", api_base(), zone_id, record_id);
-
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-X", "DELETE"])
-        .args(&auth_args)
-        .args(["-H", "Content-Type: application/json"])
-        .arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout);
+    let request = with_auth(http::request(Method::DELETE, &url, true)?, auth)?
+        .header(CONTENT_TYPE, "application/json");
+    let body = http::send(request).await?.body;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))?;
 
@@ -247,8 +210,6 @@ pub async fn update(
     } else {
         format!("{}.{}", profile.hostname, profile.domain)
     };
-
-    let auth_args = build_auth_args(&profile.auth)?;
 
     // Resolve zone_id and record_id
     let (zone_id, proxied, ttl, comment) = match &profile.provider_settings {
@@ -326,21 +287,12 @@ pub async fn update(
             zone_id,
             existing.id
         );
-        let mut cmd = tokio::process::Command::new("curl");
-        cmd.args(["-s", "-X", "PATCH"])
-            .args(&auth_args)
-            .args(["-H", "Content-Type: application/json"])
-            .arg("-d")
-            .arg(payload.to_string())
-            .arg(&url);
-
-        let output = cmd
-            .output()
-            .await
-            .map_err(|e| format!("curl failed: {}", e))?;
-        let body = String::from_utf8_lossy(&output.stdout);
-        let json: serde_json::Value =
-            serde_json::from_str(&body).map_err(|_| format!("Invalid response: {}", body))?;
+        let request = with_auth(http::request(Method::PATCH, &url, true)?, &profile.auth)?
+            .header(CONTENT_TYPE, "application/json")
+            .json(&payload);
+        let body = http::send(request).await?.body;
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| "Cloudflare returned an invalid response".to_string())?;
 
         if json["success"].as_bool() != Some(true) {
             return Ok(DdnsUpdateResult {
@@ -352,8 +304,8 @@ pub async fn update(
                 ip_previous: Some(existing.content.clone()),
                 hostname: profile.hostname.clone(),
                 fqdn,
-                provider_response: Some(body.to_string()),
-                error: Some(format!("API error: {}", json["errors"])),
+                provider_response: Some("Cloudflare rejected the update".to_string()),
+                error: Some("Cloudflare API rejected the update".to_string()),
                 timestamp: Utc::now().to_rfc3339(),
                 latency_ms: start.elapsed().as_millis() as u64,
             });
@@ -372,7 +324,7 @@ pub async fn update(
             ip_previous: Some(existing.content.clone()),
             hostname: profile.hostname.clone(),
             fqdn,
-            provider_response: Some(body.to_string()),
+            provider_response: Some(body),
             error: None,
             timestamp: Utc::now().to_rfc3339(),
             latency_ms: start.elapsed().as_millis() as u64,

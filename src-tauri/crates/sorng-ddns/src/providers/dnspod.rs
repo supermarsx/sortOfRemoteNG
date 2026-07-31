@@ -2,9 +2,11 @@
 //!
 //! Updates via DNSPod (Tencent Cloud) API.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a DNSPod record.
@@ -30,7 +32,6 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         _ => (None, None, "默认".to_string()),
     };
 
-    let login_token = format!("{},{}", token_id, token);
     let sub_domain = if profile.hostname.is_empty() {
         "@"
     } else {
@@ -40,34 +41,21 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     // Use ddns endpoint for simplicity
     let url = "https://dnsapi.cn/Record.Ddns";
 
-    let mut form_data = format!(
-        "login_token={}&format=json&domain={}&sub_domain={}&record_line={}&value={}",
-        login_token, profile.domain, sub_domain, record_line, ip
-    );
-
+    let mut form_data = vec![
+        ("login_token", format!("{},{}", token_id, token)),
+        ("format", "json".to_string()),
+        ("domain", profile.domain.clone()),
+        ("sub_domain", sub_domain.to_string()),
+        ("record_line", record_line),
+        ("value", ip.to_string()),
+    ];
     if let Some(ref rid) = record_id {
-        form_data.push_str(&format!("&record_id={}", rid));
+        form_data.push(("record_id", rid.clone()));
     }
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-m",
-        "30",
-        "-X",
-        "POST",
-        "-H",
-        "Content-Type: application/x-www-form-urlencoded",
-        "-d",
-        &form_data,
-        url,
-    ]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(http::request(Method::POST, url, true)?.form(&form_data))
+        .await?
+        .body;
 
     let json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
 

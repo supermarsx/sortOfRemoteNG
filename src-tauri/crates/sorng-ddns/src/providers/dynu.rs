@@ -2,9 +2,11 @@
 //!
 //! Updates via Dynu IP Update Protocol (dyndns2-compatible).
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a Dynu hostname.
@@ -34,22 +36,10 @@ pub async fn update(
         url.push_str(&format!("&myipv6={}", v6));
     }
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30"]);
-
-    if !username.is_empty() {
-        cmd.args(["-u", &format!("{}:{}", username, password)]);
-    } else {
-        cmd.args(["-u", &format!(":{}", password)]);
-    }
-
-    cmd.arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body =
+        http::send(http::request(Method::GET, &url, true)?.basic_auth(username, Some(password)))
+            .await?
+            .body;
 
     let (status, error) = if body.starts_with("good") {
         (UpdateStatus::Success, None)

@@ -2,6 +2,7 @@
 //!
 //! Supports arbitrary URL templates with placeholder substitution.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
@@ -45,22 +46,20 @@ pub async fn update(
         .replace("{username}", &username)
         .replace("{password}", &password);
 
-    let method = settings.method.to_uppercase();
-
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30", "-X", &method]);
+    let method = http::method(&settings.method)?;
+    let mut request = http::request(method, &url, true)?;
 
     // Auth headers
     match &profile.auth {
         DdnsAuthMethod::Basic { username, password } => {
-            cmd.args(["-u", &format!("{}:{}", username, password)]);
+            request = request.basic_auth(username, Some(password));
         }
         DdnsAuthMethod::ApiToken { token } => {
-            cmd.args(["-H", &format!("Authorization: Bearer {}", token)]);
+            request = request.bearer_auth(token);
         }
         DdnsAuthMethod::CustomHeaders { headers } => {
             for (k, v) in headers {
-                cmd.args(["-H", &format!("{}: {}", k, v)]);
+                request = http::header(request, k, v)?;
             }
         }
         _ => {}
@@ -68,12 +67,12 @@ pub async fn update(
 
     // Extra headers
     for (k, v) in &settings.extra_headers {
-        cmd.args(["-H", &format!("{}: {}", k, v)]);
+        request = http::header(request, k, v)?;
     }
 
     // Content-Type
     if let Some(ref ct) = settings.content_type {
-        cmd.args(["-H", &format!("Content-Type: {}", ct)]);
+        request = http::header(request, "Content-Type", ct)?;
     }
 
     // Body
@@ -85,18 +84,14 @@ pub async fn update(
             .replace("{hostname}", &profile.hostname)
             .replace("{domain}", &profile.domain)
             .replace("{fqdn}", &fqdn);
-        cmd.args(["-d", &body]);
+        request = request.body(body);
     }
 
-    cmd.arg(&url);
+    let response = http::send_allow_error(request).await?;
+    let http_status = response.status;
+    let body = response.body;
 
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    let (status, error) = if output.status.success() {
+    let (status, error) = if http_status.is_success() {
         if let Some(ref match_str) = settings.success_match {
             if body.contains(match_str) {
                 info!("Custom DDNS: Updated {} → {}", fqdn, ip);
@@ -115,7 +110,10 @@ pub async fn update(
             (UpdateStatus::Success, None)
         }
     } else {
-        (UpdateStatus::Failed, Some(format!("HTTP error: {}", body)))
+        (
+            UpdateStatus::Failed,
+            Some(format!("HTTP {}: {}", http_status.as_u16(), body)),
+        )
     };
 
     Ok(DdnsUpdateResult {

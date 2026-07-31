@@ -2,9 +2,11 @@
 //!
 //! Updates via hash-based URL or direct URL update.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update an Afraid DNS hostname.
@@ -45,14 +47,9 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         }
     };
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30", &url]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(http::request(Method::GET, &url, true)?)
+        .await?
+        .body;
 
     let lower = body.to_lowercase();
     let (status, error) = if lower.contains("updated") || lower.contains("has not changed") {

@@ -2,9 +2,11 @@
 //!
 //! Token-based subdomain updates via `https://www.duckdns.org/update`.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a DuckDNS subdomain.
@@ -26,31 +28,27 @@ pub async fn update(
         _ => (false, None),
     };
 
-    let mut url = format!(
-        "https://www.duckdns.org/update?domains={}&token={}&ip={}",
-        subdomain, token, ip
-    );
-
-    if let Some(v6) = ipv6 {
-        url.push_str(&format!("&ipv6={}", v6));
+    let mut url = http::parse_url("https://www.duckdns.org/update", true)?;
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("domains", subdomain)
+            .append_pair("token", &token)
+            .append_pair("ip", ip);
+        if let Some(v6) = ipv6 {
+            query.append_pair("ipv6", v6);
+        }
+        if let Some(ref txt) = txt_value {
+            query.append_pair("txt", txt);
+        }
+        if clear_txt {
+            query.append_pair("clear", "true");
+        }
     }
 
-    if let Some(ref txt) = txt_value {
-        url.push_str(&format!("&txt={}", txt));
-    }
-
-    if clear_txt {
-        url.push_str("&clear=true");
-    }
-
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30", &url]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(http::request(Method::GET, url.as_str(), true)?)
+        .await?
+        .body;
 
     let (status, error) = if body == "OK" {
         (UpdateStatus::Success, None)

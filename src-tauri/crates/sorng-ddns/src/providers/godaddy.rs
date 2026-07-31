@@ -2,9 +2,11 @@
 //!
 //! Updates DNS records via GoDaddy API v1.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a GoDaddy A record.
@@ -45,34 +47,29 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         "ttl": ttl
     }]);
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30", "-X", "PUT"])
-        .args([
-            "-H",
-            &format!("Authorization: sso-key {}:{}", api_key, api_secret),
-        ])
-        .args(["-H", "Content-Type: application/json"])
-        .arg("-d")
-        .arg(payload.to_string())
-        .arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let status_code = output.status.code().unwrap_or(0);
+    let response = http::send_allow_error(
+        http::request(Method::PUT, &url, true)?
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("sso-key {}:{}", api_key, api_secret),
+            )
+            .json(&payload),
+    )
+    .await?;
+    let status_code = response.status.as_u16();
+    let http_success = response.status.is_success();
+    let body = response.body;
 
     // GoDaddy returns 200 with empty body on success
-    let (status, error) = if output.status.success() && (body.is_empty() || body == "{}") {
+    let (status, error) = if http_success && (body.is_empty() || body == "{}") {
         info!("GoDaddy: Updated {} → {}", fqdn, ip);
         (UpdateStatus::Success, None)
-    } else if body.contains("UNABLE_TO_AUTHENTICATE") {
+    } else if matches!(status_code, 401 | 403) || body.contains("UNABLE_TO_AUTHENTICATE") {
         (
             UpdateStatus::AuthError,
             Some("Authentication failed".to_string()),
         )
-    } else if body.contains("TOO_MANY_REQUESTS") {
+    } else if status_code == 429 || body.contains("TOO_MANY_REQUESTS") {
         (
             UpdateStatus::RateLimited,
             Some("Rate limited by GoDaddy".to_string()),
@@ -80,7 +77,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
     } else {
         (
             UpdateStatus::Failed,
-            Some(format!("HTTP {}: {}", status_code, body)),
+            Some(format!("GoDaddy returned HTTP {}", status_code)),
         )
     };
 
@@ -96,7 +93,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         provider_response: Some(if body.is_empty() {
             "OK".to_string()
         } else {
-            body
+            format!("GoDaddy returned HTTP {}", status_code)
         }),
         error,
         timestamp: Utc::now().to_rfc3339(),

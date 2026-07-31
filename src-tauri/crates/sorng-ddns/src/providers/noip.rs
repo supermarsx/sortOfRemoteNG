@@ -3,9 +3,11 @@
 //! Updates hostnames via the No-IP HTTP update API.
 //! Protocol: `https://dynupdate.no-ip.com/nic/update?hostname=...&myip=...`
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// No-IP update endpoint.
@@ -80,6 +82,9 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         ProviderSettings::NoIp(s) => s.use_https,
         _ => true,
     };
+    if !use_https {
+        return Err("No-IP credentials cannot be sent over plaintext HTTP".to_string());
+    }
 
     let offline = match &profile.provider_settings {
         ProviderSettings::NoIp(s) => s.offline,
@@ -92,21 +97,16 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         url.push_str("&offline=YES");
     }
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args([
-        "-s",
-        "-u",
-        &format!("{}:{}", username, password),
-        "-A",
-        "SortOfRemoteNG/1.0 mars@sortofremoteng.com",
-        &url,
-    ]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(
+        http::request(Method::GET, &url, true)?
+            .basic_auth(username, Some(password))
+            .header(
+                reqwest::header::USER_AGENT,
+                "SortOfRemoteNG/1.0 mars@sortofremoteng.com",
+            ),
+    )
+    .await?
+    .body;
 
     let (status, error) = parse_response(&body);
 

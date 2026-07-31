@@ -12,6 +12,7 @@ pub mod dynu;
 pub mod gandi;
 pub mod godaddy;
 pub mod google_domains;
+mod http;
 pub mod hurricane;
 pub mod namecheap;
 pub mod noip;

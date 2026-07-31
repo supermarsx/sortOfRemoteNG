@@ -2,9 +2,11 @@
 //!
 //! Updates via `https://dyn.dns.he.net/nic/update` or TunnelBroker endpoint.
 
+use super::http;
 use crate::types::*;
 use chrono::Utc;
 use log::info;
+use reqwest::Method;
 use std::time::Instant;
 
 /// Update a Hurricane Electric hostname.
@@ -26,34 +28,26 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         _ => None,
     };
 
-    let url = if let Some(ref tid) = tunnel_id {
-        // TunnelBroker endpoint
-        format!(
-            "https://ipv4.tunnelbroker.net/nic/update?hostname={}&myip={}",
-            tid, ip
-        )
+    let (url, use_basic_auth) = if let Some(ref tid) = tunnel_id {
+        let mut url = http::parse_url("https://ipv4.tunnelbroker.net/nic/update", true)?;
+        url.query_pairs_mut()
+            .append_pair("hostname", tid)
+            .append_pair("myip", ip);
+        (url, true)
     } else {
-        // Standard DNS update
-        format!(
-            "https://dyn.dns.he.net/nic/update?hostname={}&password={}&myip={}",
-            fqdn, password, ip
-        )
+        let mut url = http::parse_url("https://dyn.dns.he.net/nic/update", true)?;
+        url.query_pairs_mut()
+            .append_pair("hostname", &fqdn)
+            .append_pair("password", &password)
+            .append_pair("myip", ip);
+        (url, false)
     };
 
-    let mut cmd = tokio::process::Command::new("curl");
-    cmd.args(["-s", "-m", "30"]);
-
-    if tunnel_id.is_some() {
-        cmd.args(["-u", &format!("{}:{}", hostname, password)]);
+    let mut request = http::request(Method::GET, url.as_str(), true)?;
+    if use_basic_auth {
+        request = request.basic_auth(hostname, Some(password));
     }
-
-    cmd.arg(&url);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("curl failed: {}", e))?;
-    let body = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let body = http::send(request).await?.body;
 
     let (status, error) = if body.starts_with("good") {
         (UpdateStatus::Success, None)
