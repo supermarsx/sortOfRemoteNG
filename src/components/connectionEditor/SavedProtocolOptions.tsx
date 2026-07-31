@@ -302,6 +302,118 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
     );
   }
 
+  if (protocol === "vnc" && section === "connection") {
+    return (
+      <section
+        data-editor-search-section="vnc-options"
+        className={`${cardClass} border-warning/35 bg-warning/5`}
+      >
+        <div className="flex items-start gap-2">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
+          <div>
+            <h4 className="text-xs font-semibold text-[var(--color-text)]">
+              Native VNC security policy
+            </h4>
+            <p className="mt-1 text-[11px] leading-4 text-[var(--color-textMuted)]">
+              The native transport blocks legacy unencrypted, weak-authentication,
+              and unauthenticated modes unless the corresponding per-connection
+              exceptions are explicitly enabled in Security.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (protocol === "vnc" && section === "security") {
+    const allowUnencrypted = formData.vncAllowUnencryptedTransport === true;
+    const allowWeak = formData.vncAllowWeakAuthentication === true;
+    return (
+      <section
+        data-editor-search-section="vnc-options"
+        className={`${cardClass} border-error/40 bg-error/5`}
+      >
+        <div className="flex items-start gap-2 text-[11px] leading-4 text-[var(--color-textMuted)]">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-error" />
+          <span>
+            These are explicit security exceptions, not compatibility defaults.
+            The session will fail closed while any required consent is absent.
+          </span>
+        </div>
+        <div data-editor-search-field="vnc-unencrypted-transport">
+          <CheckboxField
+            id="vnc-allow-unencrypted-transport"
+            label="Allow unencrypted VNC transport"
+            description="Permits screen contents, input, and credentials to cross the network without transport encryption."
+            checked={allowUnencrypted}
+            onChange={(vncAllowUnencryptedTransport) =>
+              setFormData((previous) => ({
+                ...previous,
+                vncAllowUnencryptedTransport,
+                vncAllowWeakAuthentication: vncAllowUnencryptedTransport
+                  ? previous.vncAllowWeakAuthentication
+                  : false,
+                vncAllowUnauthenticated: vncAllowUnencryptedTransport
+                  ? previous.vncAllowUnauthenticated
+                  : false,
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        <div data-editor-search-field="vnc-weak-authentication">
+          <CheckboxField
+            id="vnc-allow-weak-authentication"
+            label="Allow legacy weak VNC authentication"
+            description="Permits legacy VNC DES or ARD authentication that does not provide modern cryptographic protection."
+            checked={allowWeak}
+            onChange={(vncAllowWeakAuthentication) =>
+              setFormData((previous) => ({
+                ...previous,
+                vncAllowUnencryptedTransport: vncAllowWeakAuthentication
+                  ? true
+                  : previous.vncAllowUnencryptedTransport,
+                vncAllowWeakAuthentication,
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        <div data-editor-search-field="vnc-unauthenticated">
+          <CheckboxField
+            id="vnc-allow-unauthenticated"
+            label="Allow unauthenticated VNC"
+            description="Permits a server that proves no identity and requests no credential. Use only in a physically isolated environment."
+            checked={formData.vncAllowUnauthenticated === true}
+            onChange={(vncAllowUnauthenticated) =>
+              setFormData((previous) => ({
+                ...previous,
+                vncAllowUnencryptedTransport: vncAllowUnauthenticated
+                  ? true
+                  : previous.vncAllowUnencryptedTransport,
+                vncAllowUnauthenticated,
+              }))
+            }
+            variant="form"
+          />
+        </div>
+        {allowUnencrypted ||
+        allowWeak ||
+        formData.vncAllowUnauthenticated === true ? (
+          <p className="rounded-md border border-error/50 bg-error/10 p-2 text-[11px] font-semibold leading-4 text-error">
+            One or more VNC security exceptions are enabled for this saved
+            connection. Disable them when the server supports a safer mode.
+          </p>
+        ) : (
+          <p className="text-[11px] leading-4 text-[var(--color-textMuted)]">
+            Legacy cleartext, weak-authentication, and unauthenticated VNC modes
+            are blocked by default.
+          </p>
+        )}
+      </section>
+    );
+  }
+
   if (
     (protocol === "sftp" || protocol === "scp") &&
     section === "authentication"

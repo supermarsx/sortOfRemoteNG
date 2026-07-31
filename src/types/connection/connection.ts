@@ -252,6 +252,11 @@ export interface Connection
   macAddress?: string;
   wolPort?: number;
 
+  // VNC safety policy. All risky modes are opt-in and false when absent.
+  vncAllowUnencryptedTransport?: boolean;
+  vncAllowWeakAuthentication?: boolean;
+  vncAllowUnauthenticated?: boolean;
+
   // RustDesk specific
   rustdeskId?: string;
   rustdeskPassword?: string;

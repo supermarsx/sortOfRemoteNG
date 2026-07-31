@@ -112,12 +112,17 @@ pub fn parse_server_init(data: &[u8]) -> Result<(u16, u16, PixelFormat, String),
     let pixel_format = PixelFormat::from_bytes(&pf_bytes);
 
     let name_len = u32::from_be_bytes([data[20], data[21], data[22], data[23]]) as usize;
+    if name_len > crate::vnc::types::MAX_VNC_DESKTOP_NAME_BYTES {
+        return Err("ServerInit desktop name exceeds the safety limit".into());
+    }
 
-    let name = if data.len() >= 24 + name_len {
-        String::from_utf8_lossy(&data[24..24 + name_len]).to_string()
-    } else {
-        String::new()
-    };
+    let end = 24usize
+        .checked_add(name_len)
+        .ok_or_else(|| "ServerInit desktop name length overflow".to_string())?;
+    if data.len() < end {
+        return Err("ServerInit desktop name is truncated".into());
+    }
+    let name = String::from_utf8_lossy(&data[24..end]).to_string();
 
     Ok((width, height, pixel_format, name))
 }
@@ -180,9 +185,6 @@ pub fn encoding_from_name(name: &str) -> Option<EncodingType> {
         "copyrect" => Some(EncodingType::CopyRect),
         "rre" => Some(EncodingType::RRE),
         "hextile" => Some(EncodingType::Hextile),
-        "trle" => Some(EncodingType::TRLE),
-        "zrle" => Some(EncodingType::ZRLE),
-        "tight" => Some(EncodingType::Tight),
         _ => None,
     }
 }
@@ -203,7 +205,6 @@ pub fn resolve_encodings(names: &[String], local_cursor: bool) -> Vec<EncodingTy
         result.push(EncodingType::CursorPseudo);
     }
     result.push(EncodingType::DesktopSizePseudo);
-    result.push(EncodingType::ExtendedDesktopSizePseudo);
     result.push(EncodingType::LastRectPseudo);
 
     result
@@ -400,10 +401,7 @@ mod tests {
         data.extend_from_slice(&PixelFormat::rgba32().to_bytes());
         data.extend_from_slice(&5u32.to_be_bytes()); // says 5 bytes but we don't include them
 
-        let (w, h, _, name) = parse_server_init(&data).unwrap();
-        assert_eq!(w, 1920);
-        assert_eq!(h, 1080);
-        assert_eq!(name, ""); // graceful fallback
+        assert!(parse_server_init(&data).is_err());
     }
 
     // ── Rect header parsing ─────────────────────────────────────────
@@ -507,8 +505,8 @@ mod tests {
     #[test]
     fn encoding_from_name_known() {
         assert_eq!(encoding_from_name("Raw"), Some(EncodingType::Raw));
-        assert_eq!(encoding_from_name("zrle"), Some(EncodingType::ZRLE));
-        assert_eq!(encoding_from_name("TIGHT"), Some(EncodingType::Tight));
+        assert_eq!(encoding_from_name("hextile"), Some(EncodingType::Hextile));
+        assert_eq!(encoding_from_name("TIGHT"), None);
     }
 
     #[test]
@@ -518,9 +516,9 @@ mod tests {
 
     #[test]
     fn resolve_encodings_adds_pseudo() {
-        let names = vec!["ZRLE".into(), "Raw".into()];
+        let names = vec!["Hextile".into(), "Raw".into()];
         let resolved = resolve_encodings(&names, true);
-        assert!(resolved.contains(&EncodingType::ZRLE));
+        assert!(resolved.contains(&EncodingType::Hextile));
         assert!(resolved.contains(&EncodingType::Raw));
         assert!(resolved.contains(&EncodingType::CopyRect));
         assert!(resolved.contains(&EncodingType::CursorPseudo));

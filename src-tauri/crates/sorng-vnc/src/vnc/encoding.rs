@@ -4,6 +4,20 @@
 //! uniform RGBA pixel buffer.
 
 use crate::vnc::types::PixelFormat;
+use crate::vnc::types::{MAX_VNC_RECT_RGBA_BYTES, MAX_VNC_RECT_WIRE_BYTES, MAX_VNC_SUBRECTANGLES};
+
+fn checked_pixel_bytes(
+    width: u16,
+    height: u16,
+    bytes_per_pixel: usize,
+    limit: usize,
+) -> Result<usize, String> {
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+        .filter(|size| *size <= limit)
+        .ok_or_else(|| "VNC rectangle exceeds the configured safety limit".to_string())
+}
 
 /// A decoded framebuffer rectangle.
 #[derive(Debug, Clone)]
@@ -12,6 +26,8 @@ pub struct DecodedRect {
     pub y: u16,
     pub width: u16,
     pub height: u16,
+    pub source_x: Option<u16>,
+    pub source_y: Option<u16>,
     /// RGBA pixel data (4 bytes per pixel).
     pub pixels: Vec<u8>,
 }
@@ -29,7 +45,7 @@ pub fn decode_raw(
     pixel_format: &PixelFormat,
 ) -> Result<DecodedRect, String> {
     let bpp = pixel_format.bytes_per_pixel();
-    let expected = width as usize * height as usize * bpp;
+    let expected = checked_pixel_bytes(width, height, bpp, MAX_VNC_RECT_WIRE_BYTES)?;
     if data.len() < expected {
         return Err(format!(
             "Raw data too short: expected {} bytes, got {}",
@@ -38,13 +54,15 @@ pub fn decode_raw(
         ));
     }
 
-    let pixels = convert_to_rgba(&data[..expected], pixel_format);
+    let pixels = convert_to_rgba(&data[..expected], pixel_format)?;
 
     Ok(DecodedRect {
         x,
         y,
         width,
         height,
+        source_x: None,
+        source_y: None,
         pixels,
     })
 }
@@ -80,11 +98,30 @@ pub fn decode_rre(
     }
 
     let num_subrects = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if num_subrects > MAX_VNC_SUBRECTANGLES {
+        return Err("RRE subrectangle count exceeds the safety limit".into());
+    }
     let bg_pixel = &data[4..4 + bpp];
     let bg_rgba = pixel_to_rgba(bg_pixel, pixel_format);
 
-    let pixel_count = width as usize * height as usize;
-    let mut pixels = Vec::with_capacity(pixel_count * 4);
+    let pixel_count = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| "RRE pixel count overflow".to_string())?;
+    let rgba_len = pixel_count
+        .checked_mul(4)
+        .filter(|size| *size <= MAX_VNC_RECT_RGBA_BYTES)
+        .ok_or_else(|| "RRE rectangle exceeds the RGBA safety limit".to_string())?;
+    let subrect_size = bpp
+        .checked_add(8)
+        .ok_or_else(|| "RRE subrectangle size overflow".to_string())?;
+    let required = num_subrects
+        .checked_mul(subrect_size)
+        .and_then(|size| size.checked_add(4 + bpp))
+        .ok_or_else(|| "RRE payload length overflow".to_string())?;
+    if data.len() < required || required > MAX_VNC_RECT_WIRE_BYTES {
+        return Err("RRE payload is truncated or oversized".into());
+    }
+    let mut pixels = Vec::with_capacity(rgba_len);
 
     // Fill with background colour.
     for _ in 0..pixel_count {
@@ -93,10 +130,12 @@ pub fn decode_rre(
 
     // Apply subrects.
     let mut offset = 4 + bpp;
-    let subrect_size = bpp + 8; // pixel + 4x u16
     for _ in 0..num_subrects {
-        if offset + subrect_size > data.len() {
-            break;
+        let end = offset
+            .checked_add(subrect_size)
+            .ok_or_else(|| "RRE subrectangle offset overflow".to_string())?;
+        if end > data.len() {
+            return Err("RRE subrectangle is truncated".into());
         }
         let sr_rgba = pixel_to_rgba(&data[offset..offset + bpp], pixel_format);
         let off2 = offset + bpp;
@@ -114,7 +153,7 @@ pub fn decode_rre(
                 }
             }
         }
-        offset += subrect_size;
+        offset = end;
     }
 
     Ok(DecodedRect {
@@ -122,6 +161,8 @@ pub fn decode_rre(
         y,
         width,
         height,
+        source_x: None,
+        source_y: None,
         pixels,
     })
 }
@@ -140,8 +181,8 @@ pub fn decode_hextile(
     let bpp = pixel_format.bytes_per_pixel();
     let w = width as usize;
     let h = height as usize;
-    let pixel_count = w * h;
-    let mut pixels = vec![0u8; pixel_count * 4];
+    let rgba_len = checked_pixel_bytes(width, height, 4, MAX_VNC_RECT_RGBA_BYTES)?;
+    let mut pixels = vec![0u8; rgba_len];
 
     // Hextile sub-encoding flags.
     const RAW: u8 = 1;
@@ -169,6 +210,9 @@ pub fn decode_hextile(
             }
             let flags = data[offset];
             offset += 1;
+            if flags & !0x1f != 0 || (flags & RAW != 0 && flags != RAW) {
+                return Err("Invalid Hextile sub-encoding flags".into());
+            }
 
             if flags & RAW != 0 {
                 // Raw tile.
@@ -176,7 +220,7 @@ pub fn decode_hextile(
                 if offset + raw_size > data.len() {
                     return Err("Hextile raw tile data truncated".into());
                 }
-                let tile_rgba = convert_to_rgba(&data[offset..offset + raw_size], pixel_format);
+                let tile_rgba = convert_to_rgba(&data[offset..offset + raw_size], pixel_format)?;
                 blit_tile(&mut pixels, w, tile_x, tile_y, tile_w, tile_h, &tile_rgba);
                 offset += raw_size;
                 continue;
@@ -257,19 +301,31 @@ pub fn decode_hextile(
         y,
         width,
         height,
+        source_x: None,
+        source_y: None,
         pixels,
     })
 }
 
 /// Calculate the expected raw data size for a rectangle.
 pub fn raw_data_size(width: u16, height: u16, pixel_format: &PixelFormat) -> usize {
-    width as usize * height as usize * pixel_format.bytes_per_pixel()
+    checked_pixel_bytes(
+        width,
+        height,
+        pixel_format.bytes_per_pixel(),
+        MAX_VNC_RECT_WIRE_BYTES,
+    )
+    .unwrap_or(0)
 }
 
 // ── Pixel conversion helpers ────────────────────────────────────────────
 
 /// Convert a single pixel from the server's format to RGBA.
 pub fn pixel_to_rgba(data: &[u8], pf: &PixelFormat) -> [u8; 4] {
+    let bpp = pf.bytes_per_pixel();
+    if !matches!(bpp, 1 | 2 | 4) || data.len() < bpp {
+        return [0, 0, 0, 255];
+    }
     if !pf.true_colour {
         // Indexed colour — return grayscale approximation.
         let v = if !data.is_empty() { data[0] } else { 0 };
@@ -321,16 +377,29 @@ pub fn pixel_to_rgba(data: &[u8], pf: &PixelFormat) -> [u8; 4] {
 }
 
 /// Convert a block of pixels from the server's format to RGBA.
-pub fn convert_to_rgba(data: &[u8], pf: &PixelFormat) -> Vec<u8> {
+pub fn convert_to_rgba(data: &[u8], pf: &PixelFormat) -> Result<Vec<u8>, String> {
+    pf.validate().map_err(|error| error.message)?;
     let bpp = pf.bytes_per_pixel();
+    if !matches!(bpp, 1 | 2 | 4) {
+        return Err("Unsupported pixel width for RGBA conversion".into());
+    }
+    if data.len() % bpp != 0 {
+        return Err("Pixel data is not aligned to the negotiated pixel width".into());
+    }
     let pixel_count = data.len() / bpp;
-    let mut out = Vec::with_capacity(pixel_count * 4);
+    let output_len = pixel_count
+        .checked_mul(4)
+        .ok_or_else(|| "RGBA output length overflow".to_string())?;
+    if output_len > MAX_VNC_RECT_RGBA_BYTES {
+        return Err("RGBA output exceeds the safety limit".into());
+    }
+    let mut out = Vec::with_capacity(output_len);
     for i in 0..pixel_count {
         let offset = i * bpp;
         let rgba = pixel_to_rgba(&data[offset..offset + bpp], pf);
         out.extend_from_slice(&rgba);
     }
-    out
+    Ok(out)
 }
 
 /// Blit a tile of RGBA pixels into a larger pixel buffer.
@@ -355,10 +424,19 @@ fn blit_tile(
 }
 
 /// Simple base64 encoding for sending pixel data over events.
-pub fn base64_encode_pixels(data: &[u8]) -> String {
+pub fn base64_encode_pixels(data: &[u8]) -> Result<String, String> {
+    if data.len() > MAX_VNC_RECT_RGBA_BYTES {
+        return Err("Framebuffer event exceeds the base64 safety limit".into());
+    }
     // Simple base64 implementation for pixel data.
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
+    let capacity = data
+        .len()
+        .checked_add(2)
+        .and_then(|size| size.checked_div(3))
+        .and_then(|size| size.checked_mul(4))
+        .ok_or_else(|| "Base64 output length overflow".to_string())?;
+    let mut result = String::with_capacity(capacity);
 
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -380,7 +458,7 @@ pub fn base64_encode_pixels(data: &[u8]) -> String {
         }
     }
 
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -457,9 +535,14 @@ mod tests {
         // Two black pixels.
         data.extend_from_slice(&[0, 0, 0, 0]);
         data.extend_from_slice(&[0, 0, 0, 0]);
-        let result = convert_to_rgba(&data, &pf);
+        let result = convert_to_rgba(&data, &pf).unwrap();
         assert_eq!(result.len(), 8); // 2 pixels × 4 bytes
         assert_eq!(result, vec![0, 0, 0, 255, 0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn convert_to_rgba_rejects_indexed_colour() {
+        assert!(convert_to_rgba(&[0], &PixelFormat::indexed8()).is_err());
     }
 
     // ── decode_raw ──────────────────────────────────────────────────
@@ -554,18 +637,18 @@ mod tests {
 
     #[test]
     fn base64_encode_empty() {
-        assert_eq!(base64_encode_pixels(&[]), "");
+        assert_eq!(base64_encode_pixels(&[]).unwrap(), "");
     }
 
     #[test]
     fn base64_encode_hello() {
-        let encoded = base64_encode_pixels(b"Hello");
+        let encoded = base64_encode_pixels(b"Hello").unwrap();
         assert_eq!(encoded, "SGVsbG8=");
     }
 
     #[test]
     fn base64_encode_3_bytes() {
-        let encoded = base64_encode_pixels(&[0, 0, 0]);
+        let encoded = base64_encode_pixels(&[0, 0, 0]).unwrap();
         assert_eq!(encoded, "AAAA");
     }
 

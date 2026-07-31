@@ -1,6 +1,7 @@
 //! VNC/RFB crate: sub-modules.
 
 pub mod auth;
+pub mod commands;
 pub mod encoding;
 pub mod protocol;
 pub mod service;

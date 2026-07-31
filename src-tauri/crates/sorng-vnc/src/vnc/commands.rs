@@ -19,6 +19,9 @@ pub async fn connect_vnc(
     label: Option<String>,
     shared: Option<bool>,
     view_only: Option<bool>,
+    allow_unencrypted_transport: Option<bool>,
+    allow_weak_authentication: Option<bool>,
+    allow_unauthenticated: Option<bool>,
 ) -> Result<String, String> {
     let config = VncConfig {
         host,
@@ -28,6 +31,9 @@ pub async fn connect_vnc(
         label,
         shared: shared.unwrap_or(true),
         view_only: view_only.unwrap_or(false),
+        allow_unencrypted_transport: allow_unencrypted_transport.unwrap_or(false),
+        allow_weak_authentication: allow_weak_authentication.unwrap_or(false),
+        allow_unauthenticated: allow_unauthenticated.unwrap_or(false),
         ..VncConfig::default()
     };
     let mut svc = state.lock().await;
@@ -83,7 +89,9 @@ pub async fn list_vnc_sessions(
     Ok(svc.list_session_info().await)
 }
 
-#[tauri::command]
+// This remains a service-level helper. The app-facing shim owns the sole
+// `#[tauri::command]` registration because it returns stats together with the
+// bounded native event drain expected by the renderer.
 pub async fn get_vnc_session_stats(
     state: tauri::State<'_, VncServiceState>,
     session_id: String,
@@ -199,6 +207,9 @@ mod tests {
         assert_eq!(config.port, 5900);
         assert!(config.shared);
         assert!(!config.view_only);
+        assert!(!config.allow_unencrypted_transport);
+        assert!(!config.allow_weak_authentication);
+        assert!(!config.allow_unauthenticated);
     }
 
     #[test]

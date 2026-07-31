@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::Zeroize;
 
 use crate::vnc::session::{frame_to_event, SessionCommand, SessionEvent, VncSessionHandle};
 use crate::vnc::types::*;
@@ -34,18 +35,28 @@ impl VncService {
     /// Connect a new VNC session.
     ///
     /// Returns the session id on success.
-    pub async fn connect(&mut self, config: VncConfig) -> Result<String, VncError> {
+    pub async fn connect(&mut self, mut config: VncConfig) -> Result<String, VncError> {
+        if self.sessions.len() >= MAX_VNC_SESSIONS {
+            if let Some(password) = config.password.as_mut() {
+                password.zeroize();
+            }
+            return Err(VncError::new(
+                VncErrorKind::Internal,
+                "VNC session limit reached",
+            ));
+        }
         let id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate connections to the same host:port.
         for session in self.sessions.values() {
             if session.config.host == config.host && session.config.port == config.port {
                 let st = session.state.lock().await;
-                if st.connected {
-                    return Err(VncError::new(
-                        VncErrorKind::AlreadyConnected,
-                        format!("Already connected to {}:{}", config.host, config.port),
-                    ));
+                if !st.terminated {
+                    let message = format!("Already connected to {}:{}", config.host, config.port);
+                    if let Some(password) = config.password.as_mut() {
+                        password.zeroize();
+                    }
+                    return Err(VncError::new(VncErrorKind::AlreadyConnected, message));
                 }
             }
         }
@@ -81,7 +92,7 @@ impl VncService {
 
     /// Disconnect and remove a session.
     pub async fn disconnect_and_remove(&mut self, session_id: &str) -> Result<(), VncError> {
-        self.disconnect(session_id).await.ok();
+        self.disconnect(session_id).await?;
         self.remove_session(session_id);
         Ok(())
     }
@@ -110,6 +121,14 @@ impl VncService {
             .sessions
             .get(session_id)
             .ok_or_else(|| VncError::session_not_found(session_id))?;
+        let st = session.state.lock().await;
+        if !st.connected {
+            return Err(VncError::new(
+                VncErrorKind::NotConnected,
+                "VNC session is not connected",
+            ));
+        }
+        drop(st);
         session
             .send_command(SessionCommand::KeyEvent { down, key })
             .await
@@ -127,6 +146,19 @@ impl VncService {
             .sessions
             .get(session_id)
             .ok_or_else(|| VncError::session_not_found(session_id))?;
+        let st = session.state.lock().await;
+        if !st.connected {
+            return Err(VncError::new(
+                VncErrorKind::NotConnected,
+                "VNC session is not connected",
+            ));
+        }
+        if x >= st.framebuffer_width || y >= st.framebuffer_height {
+            return Err(VncError::protocol(
+                "VNC pointer coordinates lie outside the framebuffer",
+            ));
+        }
+        drop(st);
         session
             .send_command(SessionCommand::PointerEvent { button_mask, x, y })
             .await
@@ -134,6 +166,11 @@ impl VncService {
 
     /// Send clipboard text to a session.
     pub async fn send_clipboard(&self, session_id: &str, text: String) -> Result<(), VncError> {
+        if text.len() > MAX_VNC_CLIPBOARD_BYTES {
+            return Err(VncError::protocol(
+                "VNC clipboard text exceeds the safety limit",
+            ));
+        }
         let session = self
             .sessions
             .get(session_id)
@@ -164,6 +201,7 @@ impl VncService {
         session_id: &str,
         pixel_format: PixelFormat,
     ) -> Result<(), VncError> {
+        pixel_format.validate()?;
         let session = self
             .sessions
             .get(session_id)
@@ -179,6 +217,25 @@ impl VncService {
         session_id: &str,
         encodings: Vec<EncodingType>,
     ) -> Result<(), VncError> {
+        if encodings.is_empty()
+            || encodings.len() > MAX_VNC_ENCODINGS
+            || encodings.iter().any(|encoding| {
+                !matches!(
+                    encoding,
+                    EncodingType::Raw
+                        | EncodingType::CopyRect
+                        | EncodingType::RRE
+                        | EncodingType::Hextile
+                        | EncodingType::CursorPseudo
+                        | EncodingType::DesktopSizePseudo
+                        | EncodingType::LastRectPseudo
+                )
+            })
+        {
+            return Err(VncError::protocol(
+                "Unsupported or oversized VNC encoding list",
+            ));
+        }
         let session = self
             .sessions
             .get(session_id)
@@ -292,7 +349,11 @@ impl VncService {
             .ok_or_else(|| VncError::session_not_found(session_id))?;
 
         let mut events = Vec::new();
-        let limit = if max == 0 { 1000 } else { max };
+        let limit = if max == 0 {
+            MAX_VNC_DRAIN_EVENTS
+        } else {
+            max.min(MAX_VNC_DRAIN_EVENTS)
+        };
         for _ in 0..limit {
             match session.event_rx.try_recv() {
                 Ok(ev) => events.push(ev),
@@ -309,11 +370,12 @@ impl VncService {
         session_id: &str,
         max: usize,
     ) -> Result<Vec<VncFrameEvent>, VncError> {
-        let events = self.drain_events(session_id, max).await?;
+        let frame_limit = if max == 0 { 1 } else { max.min(1) };
+        let events = self.drain_events(session_id, frame_limit).await?;
         let mut frames = Vec::new();
         for ev in events {
             if let SessionEvent::Frame(rect) = ev {
-                frames.push(frame_to_event(session_id, &rect));
+                frames.push(frame_to_event(session_id, rect)?);
             }
         }
         Ok(frames)
@@ -324,7 +386,7 @@ impl VncService {
         let mut to_remove = Vec::new();
         for (id, session) in &self.sessions {
             let st = session.state.lock().await;
-            if !st.connected {
+            if st.terminated {
                 to_remove.push(id.clone());
             }
         }
@@ -445,8 +507,7 @@ mod tests {
     #[tokio::test]
     async fn disconnect_and_remove_missing() {
         let mut svc = VncService::new();
-        // Should not error — it silently ignores missing.
-        assert!(svc.disconnect_and_remove("none").await.is_ok());
+        assert!(svc.disconnect_and_remove("none").await.is_err());
     }
 
     #[tokio::test]

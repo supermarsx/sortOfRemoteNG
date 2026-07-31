@@ -12,28 +12,67 @@ use md5::{Digest, Md5};
 use num_bigint::BigUint;
 use num_traits::One;
 use rand::RngCore;
+use zeroize::Zeroize;
 
 /// Select the best available security type from the server's list.
 ///
-/// Prefers VNC authentication over None (so we use encryption when available).
+/// The default policy refuses all implemented cleartext authentication modes.
 pub fn select_security_type(types: &[SecurityType]) -> Option<SecurityType> {
-    // Preference order: ARD (user+pass DH) > VncAuthentication > None > Others.
-    let preference = [
-        SecurityType::AppleRemoteDesktop,
-        SecurityType::VncAuthentication,
-        SecurityType::None,
-        SecurityType::Tight,
-        SecurityType::VeNCrypt,
-    ];
+    select_security_type_with_policy(types, false, false, false)
+}
 
-    for candidate in &preference {
-        if types.contains(candidate) {
-            return Some(*candidate);
-        }
+/// Select a security type without silently downgrading from an advertised
+/// secure mechanism. Cleartext and legacy modes require explicit policy consent.
+pub fn select_security_type_with_policy(
+    types: &[SecurityType],
+    allow_unencrypted_transport: bool,
+    allow_weak_authentication: bool,
+    allow_unauthenticated: bool,
+) -> Option<SecurityType> {
+    if types.contains(&SecurityType::VeNCrypt) {
+        return Some(SecurityType::VeNCrypt);
     }
+    if types.contains(&SecurityType::Tight) {
+        return Some(SecurityType::Tight);
+    }
+    if !allow_unencrypted_transport {
+        return None;
+    }
+    if allow_weak_authentication && types.contains(&SecurityType::AppleRemoteDesktop) {
+        return Some(SecurityType::AppleRemoteDesktop);
+    }
+    if allow_weak_authentication && types.contains(&SecurityType::VncAuthentication) {
+        return Some(SecurityType::VncAuthentication);
+    }
+    if allow_unauthenticated && types.contains(&SecurityType::None) {
+        return Some(SecurityType::None);
+    }
+    None
+}
 
-    // Fall back to first available.
-    types.first().cloned()
+pub fn validate_security_policy(
+    security_type: SecurityType,
+    allow_unencrypted_transport: bool,
+    allow_weak_authentication: bool,
+    allow_unauthenticated: bool,
+) -> Result<(), VncError> {
+    match security_type {
+        SecurityType::VeNCrypt | SecurityType::Tight => Ok(()),
+        SecurityType::AppleRemoteDesktop | SecurityType::VncAuthentication
+            if allow_unencrypted_transport && allow_weak_authentication =>
+        {
+            Ok(())
+        }
+        SecurityType::None if allow_unencrypted_transport && allow_unauthenticated => Ok(()),
+        SecurityType::None => Err(VncError::new(
+            VncErrorKind::AuthUnsupported,
+            "Unauthenticated VNC requires explicit cleartext and unauthenticated consent",
+        )),
+        _ => Err(VncError::new(
+            VncErrorKind::AuthUnsupported,
+            "Legacy VNC authentication requires explicit cleartext and weak-auth consent",
+        )),
+    }
 }
 
 /// Handle "None" security (type 1) — no authentication required.
@@ -60,12 +99,13 @@ pub fn handle_vnc_auth(challenge: &[u8; 16], password: &str) -> Result<Vec<u8>, 
         });
     }
 
-    let key = make_des_key(password);
+    let mut key = make_des_key(password);
 
     // Encrypt the 16-byte challenge in two 8-byte DES ECB blocks.
     let mut response = Vec::with_capacity(16);
     response.extend_from_slice(&des_encrypt_block(&key, &challenge[0..8]));
     response.extend_from_slice(&des_encrypt_block(&key, &challenge[8..16]));
+    key.zeroize();
 
     Ok(response)
 }
@@ -107,7 +147,17 @@ pub fn parse_ard_server_params(data: &[u8]) -> Result<ArdServerParams, VncError>
 
     let generator = u16::from_be_bytes([data[0], data[1]]);
     let key_length = u16::from_be_bytes([data[2], data[3]]);
-    let expected_len = 4 + (key_length as usize) * 2;
+    let key_len = key_length as usize;
+    if !(128..=512).contains(&key_len) {
+        return Err(VncError {
+            kind: VncErrorKind::ProtocolViolation,
+            message: "ARD key length is outside the supported safety bounds".into(),
+        });
+    }
+    let expected_len = key_len
+        .checked_mul(2)
+        .and_then(|size| size.checked_add(4))
+        .ok_or_else(|| VncError::protocol("ARD parameter length overflow"))?;
 
     if data.len() < expected_len {
         return Err(VncError {
@@ -121,8 +171,8 @@ pub fn parse_ard_server_params(data: &[u8]) -> Result<ArdServerParams, VncError>
     }
 
     let prime_start = 4;
-    let prime_end = prime_start + key_length as usize;
-    let pub_end = prime_end + key_length as usize;
+    let prime_end = prime_start + key_len;
+    let pub_end = prime_end + key_len;
 
     Ok(ArdServerParams {
         generator,
@@ -152,10 +202,13 @@ pub fn handle_ard_auth(
     password: &str,
 ) -> Result<ArdAuthResponse, VncError> {
     let key_len = params.key_length as usize;
-    if key_len == 0 {
+    if !(128..=512).contains(&key_len)
+        || params.prime.len() != key_len
+        || params.server_public_key.len() != key_len
+    {
         return Err(VncError {
             kind: VncErrorKind::AuthFailed,
-            message: "ARD key length is zero".into(),
+            message: "ARD key parameters are outside the supported safety bounds".into(),
         });
     }
 
@@ -164,11 +217,19 @@ pub fn handle_ard_auth(
     let p = BigUint::from_bytes_be(&params.prime);
     let server_pub = BigUint::from_bytes_be(&params.server_public_key);
 
-    // Validate prime is > 1 to avoid degenerate DH.
-    if p <= BigUint::one() {
+    // Validate prime and public values before computing p - 1.
+    let one = BigUint::one();
+    if p <= one || params.generator < 2 {
         return Err(VncError {
             kind: VncErrorKind::AuthFailed,
-            message: "ARD prime modulus is too small".into(),
+            message: "ARD Diffie-Hellman parameters are invalid".into(),
+        });
+    }
+    let upper_public_bound = &p - BigUint::one();
+    if server_pub <= BigUint::one() || server_pub >= upper_public_bound {
+        return Err(VncError {
+            kind: VncErrorKind::AuthFailed,
+            message: "ARD server public value is invalid".into(),
         });
     }
 
@@ -176,6 +237,7 @@ pub fn handle_ard_auth(
     let mut private_bytes = vec![0u8; key_len];
     rand::thread_rng().fill_bytes(&mut private_bytes);
     let private_key = BigUint::from_bytes_be(&private_bytes);
+    private_bytes.zeroize();
 
     // Compute client public key: g^private mod p
     let client_pub = g.modpow(&private_key, &p);
@@ -184,18 +246,22 @@ pub fn handle_ard_auth(
     let shared_secret = server_pub.modpow(&private_key, &p);
 
     // Convert shared secret to big-endian bytes, zero-padded to key_len.
-    let secret_bytes = biguint_to_fixed_be(&shared_secret, key_len);
+    let mut secret_bytes = biguint_to_fixed_be(&shared_secret, key_len);
 
     // Derive AES-128 key: MD5(shared_secret_bytes).
     let mut hasher = Md5::new();
     hasher.update(&secret_bytes);
-    let aes_key: [u8; 16] = hasher.finalize().into();
+    let mut aes_key: [u8; 16] = hasher.finalize().into();
 
     // Build the 128-byte credential buffer.
-    let credentials = build_ard_credentials(username, password);
+    let mut credentials = build_ard_credentials(username, password);
 
     // Encrypt with AES-128-ECB.
-    let encrypted = aes128_ecb_encrypt(&aes_key, &credentials)?;
+    let encrypted_result = aes128_ecb_encrypt(&aes_key, &credentials);
+    credentials.zeroize();
+    aes_key.zeroize();
+    secret_bytes.zeroize();
+    let encrypted = encrypted_result?;
 
     // Client public key as big-endian bytes, zero-padded to key_len.
     let client_pub_bytes = biguint_to_fixed_be(&client_pub, key_len);
@@ -290,19 +356,9 @@ pub fn parse_security_result(data: &[u8]) -> Result<(), VncError> {
         0 => Ok(()),
         1 => {
             // In RFB 3.8+ there is optionally a reason string.
-            let reason = if data.len() >= 8 {
-                let reason_len = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
-                if data.len() >= 8 + reason_len {
-                    String::from_utf8_lossy(&data[8..8 + reason_len]).into_owned()
-                } else {
-                    "Authentication failed".into()
-                }
-            } else {
-                "Authentication failed".into()
-            };
             Err(VncError {
                 kind: VncErrorKind::AuthFailed,
-                message: reason,
+                message: "Authentication failed".into(),
             })
         }
         2 => Err(VncError {
@@ -509,16 +565,13 @@ mod tests {
     #[test]
     fn select_security_type_prefers_vnc_auth() {
         let types = vec![SecurityType::None, SecurityType::VncAuthentication];
-        assert_eq!(
-            select_security_type(&types),
-            Some(SecurityType::VncAuthentication)
-        );
+        assert_eq!(select_security_type(&types), None);
     }
 
     #[test]
     fn select_security_type_none_only() {
         let types = vec![SecurityType::None];
-        assert_eq!(select_security_type(&types), Some(SecurityType::None));
+        assert_eq!(select_security_type(&types), None);
     }
 
     #[test]
@@ -555,7 +608,7 @@ mod tests {
         data.extend_from_slice(&(reason.len() as u32).to_be_bytes());
         data.extend_from_slice(reason);
         let err = parse_security_result(&data).unwrap_err();
-        assert!(err.message.contains("Bad password"));
+        assert_eq!(err.message, "Authentication failed");
     }
 
     #[test]
@@ -574,18 +627,18 @@ mod tests {
 
     #[test]
     fn parse_ard_server_params_valid() {
-        // Generator = 2, key_length = 8.
+        // Generator = 2, key_length = 128.
         let mut data = Vec::new();
         data.extend_from_slice(&2u16.to_be_bytes()); // generator
-        data.extend_from_slice(&8u16.to_be_bytes()); // key_length
-        data.extend_from_slice(&[0xFF; 8]); // prime (8 bytes)
-        data.extend_from_slice(&[0xAA; 8]); // server_public_key (8 bytes)
+        data.extend_from_slice(&128u16.to_be_bytes()); // key_length
+        data.extend_from_slice(&[0xFF; 128]); // prime
+        data.extend_from_slice(&[0xAA; 128]); // server_public_key
 
         let params = parse_ard_server_params(&data).unwrap();
         assert_eq!(params.generator, 2);
-        assert_eq!(params.key_length, 8);
-        assert_eq!(params.prime.len(), 8);
-        assert_eq!(params.server_public_key.len(), 8);
+        assert_eq!(params.key_length, 128);
+        assert_eq!(params.prime.len(), 128);
+        assert_eq!(params.server_public_key.len(), 128);
     }
 
     #[test]
@@ -664,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_ard_auth_full_flow() {
+    fn handle_ard_auth_rejects_undersized_parameters() {
         // Use small DH parameters for testing:
         // p = 23 (prime), g = 5, server private = 6, server_pub = 5^6 mod 23 = 8.
         let p: u8 = 23;
@@ -682,9 +735,7 @@ mod tests {
             server_public_key: biguint_to_fixed_be(&server_pub, key_length as usize),
         };
 
-        let result = handle_ard_auth(&params, "testuser", "testpass").unwrap();
-        assert_eq!(result.encrypted_credentials.len(), 128);
-        assert_eq!(result.client_public_key.len(), key_length as usize);
+        assert!(handle_ard_auth(&params, "testuser", "testpass").is_err());
     }
 
     #[test]
@@ -718,7 +769,7 @@ mod tests {
             SecurityType::AppleRemoteDesktop,
         ];
         assert_eq!(
-            select_security_type(&types),
+            select_security_type_with_policy(&types, true, true, true),
             Some(SecurityType::AppleRemoteDesktop)
         );
     }

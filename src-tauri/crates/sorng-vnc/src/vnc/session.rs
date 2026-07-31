@@ -4,11 +4,16 @@
 //! full RFB handshake, then enters a server-message read loop,
 //! dispatching framebuffer updates, bell, and clipboard events.
 
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::vnc::auth;
 use crate::vnc::encoding::{
@@ -16,6 +21,55 @@ use crate::vnc::encoding::{
 };
 use crate::vnc::protocol;
 use crate::vnc::types::*;
+
+const HANDSHAKE_IO_TIMEOUT: Duration = Duration::from_secs(30);
+const HANDSHAKE_TOTAL_TIMEOUT: Duration = Duration::from_secs(90);
+const SESSION_IO_TIMEOUT: Duration = Duration::from_secs(60);
+const COMMAND_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn read_exact_with_timeout(
+    reader: &mut (impl AsyncRead + Unpin),
+    buffer: &mut [u8],
+    duration: Duration,
+) -> Result<(), VncError> {
+    timeout(duration, reader.read_exact(buffer))
+        .await
+        .map_err(|_| VncError::timeout("VNC read timed out"))?
+        .map(|_| ())
+        .map_err(VncError::from)
+}
+
+async fn write_all_with_timeout(
+    writer: &mut (impl AsyncWrite + Unpin),
+    buffer: &[u8],
+    duration: Duration,
+) -> Result<(), VncError> {
+    timeout(duration, writer.write_all(buffer))
+        .await
+        .map_err(|_| VncError::timeout("VNC write timed out"))?
+        .map_err(VncError::from)
+}
+
+fn checked_payload_len(
+    width: u16,
+    height: u16,
+    bytes_per_pixel: usize,
+    limit: usize,
+) -> Result<usize, VncError> {
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+        .filter(|size| *size <= limit)
+        .ok_or_else(|| VncError::protocol("VNC rectangle exceeds the safety limit"))
+}
+
+fn validate_framebuffer(width: u16, height: u16) -> Result<(), VncError> {
+    if width == 0 || height == 0 || width > MAX_VNC_DIMENSION || height > MAX_VNC_DIMENSION {
+        return Err(VncError::protocol("Invalid VNC framebuffer dimensions"));
+    }
+    checked_payload_len(width, height, 4, MAX_VNC_FRAMEBUFFER_BYTES)?;
+    Ok(())
+}
 
 /// Commands sent from the service layer to the session task.
 #[derive(Debug)]
@@ -74,6 +128,7 @@ pub enum SessionEvent {
 #[derive(Debug)]
 pub struct SharedSessionState {
     pub connected: bool,
+    pub terminated: bool,
     pub framebuffer_width: u16,
     pub framebuffer_height: u16,
     pub pixel_format: PixelFormat,
@@ -87,6 +142,7 @@ pub struct SharedSessionState {
 }
 
 pub type SharedState = Arc<Mutex<SharedSessionState>>;
+type HandshakeSignal = Arc<Mutex<Option<oneshot::Sender<Result<(), VncError>>>>>;
 
 /// Handle to a running VNC session.
 ///
@@ -97,16 +153,28 @@ pub struct VncSessionHandle {
     pub cmd_tx: mpsc::Sender<SessionCommand>,
     pub event_rx: mpsc::Receiver<SessionEvent>,
     pub state: SharedState,
+    task: JoinHandle<()>,
 }
 
 impl VncSessionHandle {
     /// Spawn a new session task that connects and runs the RFB session.
-    pub async fn connect(id: String, config: VncConfig) -> Result<Self, VncError> {
-        let (cmd_tx, cmd_rx) = mpsc::channel(256);
-        let (event_tx, event_rx) = mpsc::channel(512);
+    pub(crate) async fn connect(id: String, mut config: VncConfig) -> Result<Self, VncError> {
+        let password = config.password.take().map(Zeroizing::new);
+        if password
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_VNC_PASSWORD_BYTES)
+        {
+            return Err(VncError::protocol("VNC password exceeds the safety limit"));
+        }
+        config.validate()?;
+        let (cmd_tx, cmd_rx) = mpsc::channel(MAX_VNC_COMMAND_QUEUE);
+        let (event_tx, event_rx) = mpsc::channel(MAX_VNC_EVENT_QUEUE);
+        let (handshake_tx, handshake_rx) = oneshot::channel();
+        let handshake_signal = Arc::new(Mutex::new(Some(handshake_tx)));
 
         let state = Arc::new(Mutex::new(SharedSessionState {
             connected: false,
+            terminated: false,
             framebuffer_width: 0,
             framebuffer_height: 0,
             pixel_format: config.pixel_format.unwrap_or_default(),
@@ -119,60 +187,110 @@ impl VncSessionHandle {
             last_activity: chrono::Utc::now().to_rfc3339(),
         }));
 
-        let addr = format!("{}:{}", config.host, config.port);
-
         // TCP connect with timeout.
         let stream = timeout(
             Duration::from_secs(config.connect_timeout_secs),
-            TcpStream::connect(&addr),
+            TcpStream::connect((config.host.as_str(), config.port)),
         )
         .await
-        .map_err(|_| VncError::timeout(format!("Connection to {} timed out", addr)))?
+        .map_err(|_| VncError::timeout("VNC connection timed out"))?
         .map_err(VncError::from)?;
 
         stream.set_nodelay(true).ok();
 
         let task_state = state.clone();
+        let cleanup_state = state.clone();
+        let task_handshake_signal = handshake_signal.clone();
+        let failure_handshake_signal = handshake_signal.clone();
         let task_config = config.clone();
         let task_id = id.clone();
 
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let result = session_task(
                 task_id,
                 task_config,
+                password,
                 stream,
                 cmd_rx,
                 event_tx.clone(),
                 task_state,
+                task_handshake_signal,
             )
             .await;
+            if let Err(error) = &result {
+                if let Some(sender) = failure_handshake_signal.lock().await.take() {
+                    let _ = sender.send(Err(error.clone()));
+                }
+            }
+            {
+                let mut st = cleanup_state.lock().await;
+                st.connected = false;
+                st.terminated = true;
+            }
             if let Err(e) = result {
-                let _ = event_tx
-                    .send(SessionEvent::Disconnected(Some(e.message)))
-                    .await;
+                let _ = event_tx.try_send(SessionEvent::Disconnected(Some(e.message)));
             }
         });
 
+        let public_config = config;
+        let handshake_result = timeout(HANDSHAKE_TOTAL_TIMEOUT, handshake_rx).await;
+        let handshake_error = match handshake_result {
+            Ok(Ok(Ok(()))) => None,
+            Ok(Ok(Err(error))) => Some(error),
+            Ok(Err(_)) => Some(VncError::new(
+                VncErrorKind::Internal,
+                "VNC handshake task ended without a completion result",
+            )),
+            Err(_) => Some(VncError::timeout("VNC handshake timed out")),
+        };
+        if let Some(error) = handshake_error {
+            task.abort();
+            let mut st = state.lock().await;
+            st.connected = false;
+            st.terminated = true;
+            return Err(error);
+        }
         Ok(Self {
             id,
-            config,
+            config: public_config,
             cmd_tx,
             event_rx,
             state,
+            task,
         })
     }
 
     /// Send a command to the session task.
-    pub async fn send_command(&self, cmd: SessionCommand) -> Result<(), VncError> {
-        self.cmd_tx
-            .send(cmd)
+    pub(crate) async fn send_command(&self, cmd: SessionCommand) -> Result<(), VncError> {
+        match &cmd {
+            SessionCommand::ClientCutText(text) if text.len() > MAX_VNC_CLIPBOARD_BYTES => {
+                return Err(VncError::protocol(
+                    "VNC clipboard text exceeds the safety limit",
+                ));
+            }
+            SessionCommand::SetEncodings(encodings)
+                if encodings.is_empty() || encodings.len() > MAX_VNC_ENCODINGS =>
+            {
+                return Err(VncError::protocol("Invalid VNC encoding list size"));
+            }
+            SessionCommand::SetPixelFormat(pixel_format) => pixel_format.validate()?,
+            _ => {}
+        }
+        timeout(COMMAND_SEND_TIMEOUT, self.cmd_tx.send(cmd))
             .await
+            .map_err(|_| VncError::timeout("VNC command queue is full"))?
             .map_err(|_| VncError::new(VncErrorKind::NotConnected, "Session task is gone"))
     }
 
     /// Request disconnect.
-    pub async fn disconnect(&self) -> Result<(), VncError> {
+    pub(crate) async fn disconnect(&self) -> Result<(), VncError> {
         self.send_command(SessionCommand::Disconnect).await
+    }
+}
+
+impl Drop for VncSessionHandle {
+    fn drop(&mut self) {
+        self.task.abort();
     }
 }
 
@@ -182,22 +300,29 @@ impl VncSessionHandle {
 async fn session_task(
     _id: String,
     config: VncConfig,
+    password: Option<Zeroizing<String>>,
     mut stream: TcpStream,
     mut cmd_rx: mpsc::Receiver<SessionCommand>,
     event_tx: mpsc::Sender<SessionEvent>,
     state: SharedState,
+    handshake_signal: HandshakeSignal,
 ) -> Result<(), VncError> {
     // ── 1. Version handshake ────────────────────────────────────────
 
     let mut version_buf = [0u8; 12];
-    stream.read_exact(&mut version_buf).await?;
+    read_exact_with_timeout(&mut stream, &mut version_buf, HANDSHAKE_IO_TIMEOUT).await?;
     {
         let mut st = state.lock().await;
         st.bytes_received += 12;
     }
 
     let version_str = String::from_utf8_lossy(&version_buf);
-    let rfb_version = RfbVersion::from_version_string(&version_str).unwrap_or(RfbVersion::V3_8);
+    let rfb_version = RfbVersion::from_version_string(&version_str).ok_or_else(|| {
+        VncError::new(
+            VncErrorKind::UnsupportedVersion,
+            "Server offered an unsupported RFB version",
+        )
+    })?;
 
     // Respond with 3.8 (or the server's version if lower).
     let client_version = match rfb_version {
@@ -205,7 +330,7 @@ async fn session_task(
         RfbVersion::V3_7 => b"RFB 003.007\n",
         RfbVersion::V3_8 => RfbVersion::client_version_string(),
     };
-    stream.write_all(client_version).await?;
+    write_all_with_timeout(&mut stream, client_version, HANDSHAKE_IO_TIMEOUT).await?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += 12;
@@ -218,35 +343,48 @@ async fn session_task(
         RfbVersion::V3_3 => {
             // Server sends a single u32.
             let mut buf = [0u8; 4];
-            stream.read_exact(&mut buf).await?;
+            read_exact_with_timeout(&mut stream, &mut buf, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 4;
             }
             let type_num = u32::from_be_bytes(buf);
-            SecurityType::from_byte(type_num as u8).ok_or_else(|| {
+            let type_byte = u8::try_from(type_num)
+                .map_err(|_| VncError::protocol("Invalid RFB 3.3 security type value"))?;
+            SecurityType::from_byte(type_byte).ok_or_else(|| {
                 VncError::protocol(format!("Unsupported security type: {}", type_num))
             })?
         }
         _ => {
             // Server sends count + list of security types.
             let mut count_buf = [0u8; 1];
-            stream.read_exact(&mut count_buf).await?;
+            read_exact_with_timeout(&mut stream, &mut count_buf, HANDSHAKE_IO_TIMEOUT).await?;
             let count = count_buf[0] as usize;
 
             if count == 0 {
                 // Server sends error reason.
                 let mut len_buf = [0u8; 4];
-                stream.read_exact(&mut len_buf).await?;
+                read_exact_with_timeout(&mut stream, &mut len_buf, HANDSHAKE_IO_TIMEOUT).await?;
                 let len = u32::from_be_bytes(len_buf) as usize;
+                if len > MAX_VNC_DESKTOP_NAME_BYTES {
+                    return Err(VncError::protocol(
+                        "Server refusal reason exceeds the safety limit",
+                    ));
+                }
                 let mut reason_buf = vec![0u8; len];
-                stream.read_exact(&mut reason_buf).await?;
-                let reason = String::from_utf8_lossy(&reason_buf).into_owned();
-                return Err(VncError::protocol(format!("Server refused: {}", reason)));
+                read_exact_with_timeout(&mut stream, &mut reason_buf, HANDSHAKE_IO_TIMEOUT).await?;
+                return Err(VncError::protocol(
+                    "Server refused VNC security negotiation",
+                ));
+            }
+            if count > 32 {
+                return Err(VncError::protocol(
+                    "Server security-type list exceeds the safety limit",
+                ));
             }
 
             let mut type_buf = vec![0u8; count];
-            stream.read_exact(&mut type_buf).await?;
+            read_exact_with_timeout(&mut stream, &mut type_buf, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 1 + count as u64;
@@ -257,12 +395,22 @@ async fn session_task(
                 .filter_map(SecurityType::from_byte)
                 .collect();
 
-            let selected = auth::select_security_type(&types).ok_or_else(|| {
-                VncError::new(VncErrorKind::AuthUnsupported, "No supported security types")
+            let selected = auth::select_security_type_with_policy(
+                &types,
+                config.allow_unencrypted_transport,
+                config.allow_weak_authentication,
+                config.allow_unauthenticated,
+            )
+            .ok_or_else(|| {
+                VncError::new(
+                    VncErrorKind::AuthUnsupported,
+                    "No server security type satisfies the configured VNC safety policy",
+                )
             })?;
 
             // Tell the server our choice.
-            stream.write_all(&[selected.to_byte()]).await?;
+            write_all_with_timeout(&mut stream, &[selected.to_byte()], HANDSHAKE_IO_TIMEOUT)
+                .await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_sent += 1;
@@ -271,6 +419,12 @@ async fn session_task(
             selected
         }
     };
+    auth::validate_security_policy(
+        security_type,
+        config.allow_unencrypted_transport,
+        config.allow_weak_authentication,
+        config.allow_unauthenticated,
+    )?;
 
     {
         let mut st = state.lock().await;
@@ -284,7 +438,7 @@ async fn session_task(
             // RFB 3.8 still has a SecurityResult after None auth.
             if rfb_version != RfbVersion::V3_3 {
                 let mut result_buf = [0u8; 4];
-                stream.read_exact(&mut result_buf).await?;
+                read_exact_with_timeout(&mut stream, &mut result_buf, HANDSHAKE_IO_TIMEOUT).await?;
                 {
                     let mut st = state.lock().await;
                     st.bytes_received += 4;
@@ -294,15 +448,29 @@ async fn session_task(
         }
         SecurityType::VncAuthentication => {
             let mut challenge = [0u8; 16];
-            stream.read_exact(&mut challenge).await?;
+            read_exact_with_timeout(&mut stream, &mut challenge, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 16;
             }
 
-            let password = config.password.as_deref().unwrap_or("");
-            let response = auth::handle_vnc_auth(&challenge, password)?;
-            stream.write_all(&response).await?;
+            let password = password
+                .as_ref()
+                .map(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| VncError::auth_failed("VNC password is required"))?;
+            if password.as_bytes().len() > 8 {
+                return Err(VncError::auth_failed(
+                    "VNC DES passwords are limited to 8 bytes by the protocol",
+                ));
+            }
+            let response_result = auth::handle_vnc_auth(&challenge, password);
+            challenge.zeroize();
+            let mut response = response_result?;
+            let write_result =
+                write_all_with_timeout(&mut stream, &response, HANDSHAKE_IO_TIMEOUT).await;
+            response.zeroize();
+            write_result?;
             {
                 let mut st = state.lock().await;
                 st.bytes_sent += 16;
@@ -310,7 +478,7 @@ async fn session_task(
 
             // Read SecurityResult.
             let mut result_buf = [0u8; 4];
-            stream.read_exact(&mut result_buf).await?;
+            read_exact_with_timeout(&mut stream, &mut result_buf, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 4;
@@ -322,16 +490,24 @@ async fn session_task(
             // Server sends: generator(2) + key_length(2) + prime(key_length) + pub_key(key_length).
             // Read the 4-byte header first to learn key_length.
             let mut ard_header = [0u8; 4];
-            stream.read_exact(&mut ard_header).await?;
+            read_exact_with_timeout(&mut stream, &mut ard_header, HANDSHAKE_IO_TIMEOUT).await?;
             let key_length = u16::from_be_bytes([ard_header[2], ard_header[3]]) as usize;
+            if !(128..=512).contains(&key_length) {
+                return Err(VncError::auth_failed(
+                    "ARD key length is outside the supported safety bounds",
+                ));
+            }
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 4;
             }
 
             // Read prime + server public key.
-            let mut ard_keys = vec![0u8; key_length * 2];
-            stream.read_exact(&mut ard_keys).await?;
+            let ard_key_bytes = key_length
+                .checked_mul(2)
+                .ok_or_else(|| VncError::protocol("ARD key length overflow"))?;
+            let mut ard_keys = vec![0u8; ard_key_bytes];
+            read_exact_with_timeout(&mut stream, &mut ard_keys, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += (key_length * 2) as u64;
@@ -344,15 +520,38 @@ async fn session_task(
 
             let params = auth::parse_ard_server_params(&ard_data)?;
 
-            let username = config.username.as_deref().unwrap_or("");
-            let password = config.password.as_deref().unwrap_or("");
-            let ard_response = auth::handle_ard_auth(&params, username, password)?;
+            let username = config
+                .username
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| VncError::auth_failed("ARD username is required"))?;
+            let password = password
+                .as_ref()
+                .map(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| VncError::auth_failed("ARD password is required"))?;
+            if username.as_bytes().len() > 63 || password.as_bytes().len() > 63 {
+                return Err(VncError::auth_failed(
+                    "ARD credentials cannot exceed 63 bytes",
+                ));
+            }
+            let mut ard_response = auth::handle_ard_auth(&params, username, password)?;
 
             // Client sends: encrypted_credentials(128) + client_public_key(key_length).
-            stream
-                .write_all(&ard_response.encrypted_credentials)
-                .await?;
-            stream.write_all(&ard_response.client_public_key).await?;
+            let encrypted_write_result = write_all_with_timeout(
+                &mut stream,
+                &ard_response.encrypted_credentials,
+                HANDSHAKE_IO_TIMEOUT,
+            )
+            .await;
+            ard_response.encrypted_credentials.zeroize();
+            encrypted_write_result?;
+            write_all_with_timeout(
+                &mut stream,
+                &ard_response.client_public_key,
+                HANDSHAKE_IO_TIMEOUT,
+            )
+            .await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_sent += (128 + key_length) as u64;
@@ -360,7 +559,7 @@ async fn session_task(
 
             // Read SecurityResult.
             let mut result_buf = [0u8; 4];
-            stream.read_exact(&mut result_buf).await?;
+            read_exact_with_timeout(&mut stream, &mut result_buf, HANDSHAKE_IO_TIMEOUT).await?;
             {
                 let mut st = state.lock().await;
                 st.bytes_received += 4;
@@ -402,11 +601,12 @@ async fn session_task(
             ));
         }
     }
+    drop(password);
 
     // ── 4. ClientInit → ServerInit ──────────────────────────────────
 
     let client_init = protocol::build_client_init(config.shared);
-    stream.write_all(&client_init).await?;
+    write_all_with_timeout(&mut stream, &client_init, HANDSHAKE_IO_TIMEOUT).await?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += client_init.len() as u64;
@@ -414,57 +614,53 @@ async fn session_task(
 
     // ServerInit: 2(w) + 2(h) + 16(pf) + 4(name_len) + name
     let mut si_header = [0u8; 24]; // 2+2+16+4
-    stream.read_exact(&mut si_header).await?;
+    read_exact_with_timeout(&mut stream, &mut si_header, HANDSHAKE_IO_TIMEOUT).await?;
     let name_len =
         u32::from_be_bytes([si_header[20], si_header[21], si_header[22], si_header[23]]) as usize;
+    if name_len > MAX_VNC_DESKTOP_NAME_BYTES {
+        return Err(VncError::protocol(
+            "Server desktop name exceeds the safety limit",
+        ));
+    }
     let mut name_buf = vec![0u8; name_len];
-    stream.read_exact(&mut name_buf).await?;
+    read_exact_with_timeout(&mut stream, &mut name_buf, HANDSHAKE_IO_TIMEOUT).await?;
 
     let fb_width = u16::from_be_bytes([si_header[0], si_header[1]]);
     let fb_height = u16::from_be_bytes([si_header[2], si_header[3]]);
+    validate_framebuffer(fb_width, fb_height)?;
     let server_pf = PixelFormat::from_bytes(
         &si_header[4..20]
             .try_into()
             .map_err(|_| VncError::protocol("Bad PixelFormat in ServerInit"))?,
     );
+    server_pf.validate()?;
     let server_name = String::from_utf8_lossy(&name_buf).into_owned();
 
     // Use the client's preferred pixel format if specified.
     let active_pf = config.pixel_format.unwrap_or(server_pf);
+    active_pf.validate()?;
 
     {
         let mut st = state.lock().await;
         st.bytes_received += 24 + name_len as u64;
-        st.connected = true;
         st.framebuffer_width = fb_width;
         st.framebuffer_height = fb_height;
         st.pixel_format = active_pf;
         st.server_name = server_name.clone();
     }
 
-    let _ = event_tx
-        .send(SessionEvent::Connected {
-            width: fb_width,
-            height: fb_height,
-            pixel_format: active_pf,
-            server_name: server_name.clone(),
-            protocol_version: rfb_version.to_string(),
-            security_type: security_type.name().to_string(),
-        })
-        .await;
-
     // ── 5. Send SetPixelFormat + SetEncodings ───────────────────────
 
     if config.pixel_format.is_some() {
         let msg = protocol::build_set_pixel_format(&active_pf);
-        stream.write_all(&msg).await?;
+        write_all_with_timeout(&mut stream, &msg, HANDSHAKE_IO_TIMEOUT).await?;
         let mut st = state.lock().await;
         st.bytes_sent += msg.len() as u64;
     }
 
     let encodings = protocol::resolve_encodings(&config.encodings, config.local_cursor);
     let enc_msg = protocol::build_set_encodings(&encodings);
-    stream.write_all(&enc_msg).await?;
+    write_all_with_timeout(&mut stream, &enc_msg, HANDSHAKE_IO_TIMEOUT).await?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += enc_msg.len() as u64;
@@ -473,11 +669,23 @@ async fn session_task(
     // ── 6. Initial full framebuffer request ─────────────────────────
 
     let fbr = protocol::build_fb_update_request(false, 0, 0, fb_width, fb_height);
-    stream.write_all(&fbr).await?;
+    write_all_with_timeout(&mut stream, &fbr, HANDSHAKE_IO_TIMEOUT).await?;
     {
         let mut st = state.lock().await;
         st.bytes_sent += fbr.len() as u64;
+        st.connected = true;
     }
+    if let Some(sender) = handshake_signal.lock().await.take() {
+        let _ = sender.send(Ok(()));
+    }
+    let _ = event_tx.try_send(SessionEvent::Connected {
+        width: fb_width,
+        height: fb_height,
+        pixel_format: active_pf,
+        server_name: server_name.clone(),
+        protocol_version: rfb_version.to_string(),
+        security_type: security_type.name().to_string(),
+    });
 
     // ── 7. Main event loop ──────────────────────────────────────────
 
@@ -491,20 +699,29 @@ async fn session_task(
     let (mut reader, writer) = stream.into_split();
     let writer = Arc::new(Mutex::new(writer));
     let writer_cmd = writer.clone();
+    let local_shutdown = Arc::new(AtomicBool::new(false));
 
     // Periodic full-screen update request.
     let writer_update = writer.clone();
     let state_update = state.clone();
-    let _update_task = {
-        let fb_w = fb_width;
-        let fb_h = fb_height;
+    let update_task = {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(update_interval);
             loop {
                 interval.tick().await;
+                let (fb_w, fb_h) = {
+                    let st = state_update.lock().await;
+                    if !st.connected {
+                        break;
+                    }
+                    (st.framebuffer_width, st.framebuffer_height)
+                };
                 let fbr = protocol::build_fb_update_request(true, 0, 0, fb_w, fb_h);
                 let mut w = writer_update.lock().await;
-                if w.write_all(&fbr).await.is_err() {
+                if write_all_with_timeout(&mut *w, &fbr, SESSION_IO_TIMEOUT)
+                    .await
+                    .is_err()
+                {
                     break;
                 }
                 let mut st = state_update.lock().await;
@@ -514,7 +731,7 @@ async fn session_task(
     };
 
     // Keepalive task.
-    let _keepalive_task = keepalive_interval.map(|interval| {
+    let keepalive_task = keepalive_interval.map(|interval| {
         let writer_ka = writer.clone();
         let state_ka = state.clone();
         tokio::spawn(async move {
@@ -523,7 +740,10 @@ async fn session_task(
                 timer.tick().await;
                 let fbr = protocol::build_fb_update_request(true, 0, 0, 1, 1);
                 let mut w = writer_ka.lock().await;
-                if w.write_all(&fbr).await.is_err() {
+                if write_all_with_timeout(&mut *w, &fbr, SESSION_IO_TIMEOUT)
+                    .await
+                    .is_err()
+                {
                     break;
                 }
                 let mut st = state_ka.lock().await;
@@ -535,7 +755,8 @@ async fn session_task(
     // Command processing task.
     let cmd_event_tx = event_tx.clone();
     let cmd_state = state.clone();
-    let _cmd_task = tokio::spawn(async move {
+    let cmd_local_shutdown = local_shutdown.clone();
+    let cmd_task = tokio::spawn(async move {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SessionCommand::KeyEvent { down, key } => {
@@ -544,7 +765,10 @@ async fn session_task(
                     }
                     let msg = protocol::build_key_event(down, key);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&msg).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &msg, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
@@ -556,16 +780,25 @@ async fn session_task(
                     }
                     let msg = protocol::build_pointer_event(button_mask, x, y);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&msg).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &msg, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
                     st.bytes_sent += msg.len() as u64;
                 }
                 SessionCommand::ClientCutText(text) => {
+                    if text.len() > MAX_VNC_CLIPBOARD_BYTES {
+                        continue;
+                    }
                     let msg = protocol::build_client_cut_text(&text);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&msg).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &msg, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
@@ -582,16 +815,25 @@ async fn session_task(
                     );
                     drop(st);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&fbr).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &fbr, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
                     st.bytes_sent += fbr.len() as u64;
                 }
                 SessionCommand::SetPixelFormat(pf) => {
+                    if pf.validate().is_err() {
+                        continue;
+                    }
                     let msg = protocol::build_set_pixel_format(&pf);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&msg).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &msg, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
@@ -599,16 +841,39 @@ async fn session_task(
                     st.pixel_format = pf;
                 }
                 SessionCommand::SetEncodings(encs) => {
+                    if encs.is_empty()
+                        || encs.len() > MAX_VNC_ENCODINGS
+                        || encs.iter().any(|encoding| {
+                            !matches!(
+                                encoding,
+                                EncodingType::Raw
+                                    | EncodingType::CopyRect
+                                    | EncodingType::RRE
+                                    | EncodingType::Hextile
+                                    | EncodingType::CursorPseudo
+                                    | EncodingType::DesktopSizePseudo
+                                    | EncodingType::LastRectPseudo
+                            )
+                        })
+                    {
+                        continue;
+                    }
                     let msg = protocol::build_set_encodings(&encs);
                     let mut w = writer_cmd.lock().await;
-                    if w.write_all(&msg).await.is_err() {
+                    if write_all_with_timeout(&mut *w, &msg, SESSION_IO_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                     let mut st = cmd_state.lock().await;
                     st.bytes_sent += msg.len() as u64;
                 }
                 SessionCommand::Disconnect => {
-                    let _ = cmd_event_tx.send(SessionEvent::Disconnected(None)).await;
+                    cmd_local_shutdown.store(true, Ordering::Release);
+                    let mut w = writer_cmd.lock().await;
+                    let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
+                    let _ = cmd_event_tx.try_send(SessionEvent::Disconnected(None));
                     break;
                 }
             }
@@ -616,17 +881,21 @@ async fn session_task(
             let mut st = cmd_state.lock().await;
             st.last_activity = chrono::Utc::now().to_rfc3339();
         }
+        cmd_local_shutdown.store(true, Ordering::Release);
+        let mut w = writer_cmd.lock().await;
+        let _ = timeout(SESSION_IO_TIMEOUT, w.shutdown()).await;
     });
 
     // Server message read loop.
+    let mut terminal_error = None;
     loop {
         let mut msg_type_buf = [0u8; 1];
-        match reader.read_exact(&mut msg_type_buf).await {
-            Ok(_) => {}
+        match read_exact_with_timeout(&mut reader, &mut msg_type_buf, SESSION_IO_TIMEOUT).await {
+            Ok(()) => {}
             Err(e) => {
-                let _ = event_tx
-                    .send(SessionEvent::Disconnected(Some(e.to_string())))
-                    .await;
+                if !local_shutdown.load(Ordering::Acquire) {
+                    terminal_error = Some(e);
+                }
                 break;
             }
         }
@@ -638,23 +907,46 @@ async fn session_task(
 
         let msg_type = ServerMessageType::from_byte(msg_type_buf[0]);
 
-        match msg_type {
+        let handler_result = match msg_type {
             Some(ServerMessageType::FramebufferUpdate) => {
-                handle_fb_update(&mut reader, &event_tx, &state).await?;
+                match timeout(
+                    SESSION_IO_TIMEOUT,
+                    handle_fb_update(&mut reader, &event_tx, &state),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => Err(VncError::timeout("VNC framebuffer update timed out")),
+                }
             }
             Some(ServerMessageType::SetColourMapEntries) => {
-                handle_colour_map(&mut reader, &state).await?;
+                match timeout(SESSION_IO_TIMEOUT, handle_colour_map(&mut reader, &state)).await {
+                    Ok(result) => result,
+                    Err(_) => Err(VncError::timeout("VNC colour-map update timed out")),
+                }
             }
             Some(ServerMessageType::Bell) => {
-                let _ = event_tx.send(SessionEvent::Bell).await;
+                let _ = event_tx.try_send(SessionEvent::Bell);
+                Ok(())
             }
             Some(ServerMessageType::ServerCutText) => {
-                handle_cut_text(&mut reader, &event_tx, &state).await?;
+                match timeout(
+                    SESSION_IO_TIMEOUT,
+                    handle_cut_text(&mut reader, &event_tx, &state),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(_) => Err(VncError::timeout("VNC clipboard update timed out")),
+                }
             }
-            None => {
-                // Unknown message type — try to skip.
-                log::warn!("Unknown server message type: {}", msg_type_buf[0]);
+            None => Err(VncError::protocol("Unsupported VNC server message type")),
+        };
+        if let Err(error) = handler_result {
+            if !local_shutdown.load(Ordering::Acquire) {
+                terminal_error = Some(error);
             }
+            break;
         }
 
         {
@@ -667,8 +959,17 @@ async fn session_task(
         let mut st = state.lock().await;
         st.connected = false;
     }
+    update_task.abort();
+    if let Some(task) = keepalive_task {
+        task.abort();
+    }
+    cmd_task.abort();
 
-    Ok(())
+    if let Some(error) = terminal_error {
+        Err(error)
+    } else {
+        Ok(())
+    }
 }
 
 // ── Message handlers ────────────────────────────────────────────────────
@@ -682,6 +983,11 @@ async fn handle_fb_update(
     let mut header = [0u8; 3];
     reader.read_exact(&mut header).await?;
     let num_rects = u16::from_be_bytes([header[1], header[2]]) as usize;
+    if num_rects > MAX_VNC_RECTANGLES {
+        return Err(VncError::protocol(
+            "Framebuffer rectangle count exceeds the safety limit",
+        ));
+    }
 
     {
         let mut st = state.lock().await;
@@ -713,11 +1019,33 @@ async fn handle_fb_update(
             rect_header[11],
         ]);
         let encoding = EncodingType::from_i32(enc_val);
+        if !matches!(
+            encoding,
+            EncodingType::DesktopSizePseudo | EncodingType::LastRectPseudo
+        ) {
+            if w == 0 || h == 0 {
+                return Err(VncError::protocol("VNC rectangle has zero dimensions"));
+            }
+            let st = state.lock().await;
+            if u32::from(x) + u32::from(w) > u32::from(st.framebuffer_width)
+                || u32::from(y) + u32::from(h) > u32::from(st.framebuffer_height)
+            {
+                return Err(VncError::protocol(
+                    "VNC rectangle lies outside the framebuffer",
+                ));
+            }
+        }
+        if matches!(
+            encoding,
+            EncodingType::Raw | EncodingType::RRE | EncodingType::Hextile
+        ) {
+            checked_payload_len(w, h, 4, MAX_VNC_RECT_RGBA_BYTES)?;
+        }
 
         match encoding {
             EncodingType::Raw => {
                 let bpp = pixel_format.bytes_per_pixel();
-                let data_len = w as usize * h as usize * bpp;
+                let data_len = checked_payload_len(w, h, bpp, MAX_VNC_RECT_WIRE_BYTES)?;
                 let mut data = vec![0u8; data_len];
                 reader.read_exact(&mut data).await?;
                 {
@@ -725,9 +1053,9 @@ async fn handle_fb_update(
                     st.bytes_received += data_len as u64;
                     st.frame_count += 1;
                 }
-                if let Ok(decoded) = decode_raw(x, y, w, h, &data, &pixel_format) {
-                    let _ = event_tx.send(SessionEvent::Frame(decoded)).await;
-                }
+                let decoded =
+                    decode_raw(x, y, w, h, &data, &pixel_format).map_err(VncError::protocol)?;
+                let _ = event_tx.try_send(SessionEvent::Frame(decoded));
             }
             EncodingType::CopyRect => {
                 let mut data = [0u8; 4];
@@ -737,18 +1065,26 @@ async fn handle_fb_update(
                     st.bytes_received += 4;
                     st.frame_count += 1;
                 }
-                if let Ok((_src_x, _src_y)) = decode_copyrect(&data) {
-                    // CopyRect is handled at the framebuffer level.
-                    // The frontend needs to copy from src to dest.
-                    let decoded = DecodedRect {
-                        x,
-                        y,
-                        width: w,
-                        height: h,
-                        pixels: Vec::new(), // Empty = CopyRect.
-                    };
-                    let _ = event_tx.send(SessionEvent::Frame(decoded)).await;
+                let (src_x, src_y) = decode_copyrect(&data).map_err(VncError::protocol)?;
+                let st = state.lock().await;
+                if u32::from(src_x) + u32::from(w) > u32::from(st.framebuffer_width)
+                    || u32::from(src_y) + u32::from(h) > u32::from(st.framebuffer_height)
+                {
+                    return Err(VncError::protocol(
+                        "CopyRect source lies outside the framebuffer",
+                    ));
                 }
+                drop(st);
+                let decoded = DecodedRect {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                    source_x: Some(src_x),
+                    source_y: Some(src_y),
+                    pixels: Vec::new(),
+                };
+                let _ = event_tx.try_send(SessionEvent::Frame(decoded));
             }
             EncodingType::RRE => {
                 // Read subrect count + background pixel to determine total size.
@@ -761,8 +1097,18 @@ async fn handle_fb_update(
                     header_data[2],
                     header_data[3],
                 ]) as usize;
-                let subrect_size = bpp + 8;
-                let remaining = num_sub * subrect_size;
+                if num_sub > MAX_VNC_SUBRECTANGLES {
+                    return Err(VncError::protocol(
+                        "RRE subrectangle count exceeds the safety limit",
+                    ));
+                }
+                let subrect_size = bpp
+                    .checked_add(8)
+                    .ok_or_else(|| VncError::protocol("RRE size overflow"))?;
+                let remaining = num_sub
+                    .checked_mul(subrect_size)
+                    .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                    .ok_or_else(|| VncError::protocol("RRE payload exceeds the safety limit"))?;
                 let mut sub_data = vec![0u8; remaining];
                 reader.read_exact(&mut sub_data).await?;
 
@@ -774,34 +1120,50 @@ async fn handle_fb_update(
                     st.frame_count += 1;
                 }
 
-                if let Ok(decoded) = decode_rre(x, y, w, h, &full_data, &pixel_format) {
-                    let _ = event_tx.send(SessionEvent::Frame(decoded)).await;
-                }
+                let decoded = decode_rre(x, y, w, h, &full_data, &pixel_format)
+                    .map_err(VncError::protocol)?;
+                let _ = event_tx.try_send(SessionEvent::Frame(decoded));
             }
             EncodingType::Hextile => {
                 // Hextile is variable-length; we need to read tile by tile.
                 // For simplicity, we read a generous buffer and decode.
-                let max_possible = w as usize * h as usize * pixel_format.bytes_per_pixel() + 1024;
+                let max_possible = checked_payload_len(
+                    w,
+                    h,
+                    pixel_format.bytes_per_pixel(),
+                    MAX_VNC_RECT_WIRE_BYTES,
+                )?;
                 let mut data = Vec::with_capacity(max_possible);
                 // Read raw data into a buffer until we can decode.
                 // Since Hextile is tricky with variable-length tiles,
                 // we read tile-by-tile from the stream.
                 read_hextile_data(reader, &mut data, w, h, &pixel_format, state).await?;
 
-                if let Ok(decoded) = decode_hextile(x, y, w, h, &data, &pixel_format) {
-                    {
-                        let mut st = state.lock().await;
-                        st.frame_count += 1;
-                    }
-                    let _ = event_tx.send(SessionEvent::Frame(decoded)).await;
+                let decoded =
+                    decode_hextile(x, y, w, h, &data, &pixel_format).map_err(VncError::protocol)?;
+                {
+                    let mut st = state.lock().await;
+                    st.frame_count += 1;
                 }
+                let _ = event_tx.try_send(SessionEvent::Frame(decoded));
             }
             EncodingType::CursorPseudo => {
                 // Cursor pseudo-encoding: pixel data + bitmask.
                 let bpp = pixel_format.bytes_per_pixel();
-                let pixel_len = w as usize * h as usize * bpp;
-                let mask_len = (w as usize).div_ceil(8) * h as usize;
-                let total = pixel_len + mask_len;
+                if w > MAX_VNC_CURSOR_DIMENSION || h > MAX_VNC_CURSOR_DIMENSION {
+                    return Err(VncError::protocol(
+                        "VNC cursor exceeds the dimension safety limit",
+                    ));
+                }
+                let pixel_len = checked_payload_len(w, h, bpp, MAX_VNC_RECT_WIRE_BYTES)?;
+                let mask_len = (w as usize)
+                    .div_ceil(8)
+                    .checked_mul(h as usize)
+                    .ok_or_else(|| VncError::protocol("Cursor mask length overflow"))?;
+                let total = pixel_len
+                    .checked_add(mask_len)
+                    .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                    .ok_or_else(|| VncError::protocol("Cursor payload exceeds the safety limit"))?;
                 let mut data = vec![0u8; total];
                 reader.read_exact(&mut data).await?;
                 {
@@ -811,45 +1173,34 @@ async fn handle_fb_update(
 
                 // Convert cursor pixels to RGBA.
                 let pixels =
-                    crate::vnc::encoding::convert_to_rgba(&data[..pixel_len], &pixel_format);
-                let _ = event_tx
-                    .send(SessionEvent::Cursor {
-                        pixels,
-                        width: w,
-                        height: h,
-                        hotspot_x: x,
-                        hotspot_y: y,
-                    })
-                    .await;
+                    crate::vnc::encoding::convert_to_rgba(&data[..pixel_len], &pixel_format)
+                        .map_err(VncError::protocol)?;
+                let _ = event_tx.try_send(SessionEvent::Cursor {
+                    pixels,
+                    width: w,
+                    height: h,
+                    hotspot_x: x,
+                    hotspot_y: y,
+                });
             }
             EncodingType::DesktopSizePseudo => {
                 // No data to read — just means the framebuffer was resized.
+                validate_framebuffer(w, h)?;
                 {
                     let mut st = state.lock().await;
                     st.framebuffer_width = w;
                     st.framebuffer_height = h;
                 }
-                let _ = event_tx
-                    .send(SessionEvent::Resize {
-                        width: w,
-                        height: h,
-                    })
-                    .await;
+                let _ = event_tx.try_send(SessionEvent::Resize {
+                    width: w,
+                    height: h,
+                });
             }
             EncodingType::LastRectPseudo => {
                 // This indicates the last rectangle in the update.
                 break;
             }
-            _ => {
-                // Skip unknown encodings — read raw data size if Raw-compatible.
-                let skip_size = w as usize * h as usize * pixel_format.bytes_per_pixel();
-                if skip_size > 0 && skip_size < 64 * 1024 * 1024 {
-                    let mut skip_buf = vec![0u8; skip_size];
-                    reader.read_exact(&mut skip_buf).await?;
-                    let mut st = state.lock().await;
-                    st.bytes_received += skip_size as u64;
-                }
-            }
+            _ => return Err(VncError::protocol("Unsupported VNC rectangle encoding")),
         }
     }
 
@@ -887,25 +1238,46 @@ async fn read_hextile_data(
             reader.read_exact(&mut flag_buf).await?;
             data.push(flag_buf[0]);
             let flags = flag_buf[0];
+            if flags & !0x1f != 0 || (flags & RAW != 0 && flags != RAW) {
+                return Err(VncError::protocol("Invalid Hextile sub-encoding flags"));
+            }
 
             let mut tile_bytes = 0u64;
 
             if flags & RAW != 0 {
                 let raw_size = tile_w * tile_h * bpp;
                 let start = data.len();
-                data.resize(start + raw_size, 0);
+                let new_len = start
+                    .checked_add(raw_size)
+                    .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                    .ok_or_else(|| {
+                        VncError::protocol("Hextile payload exceeds the safety limit")
+                    })?;
+                data.resize(new_len, 0);
                 reader.read_exact(&mut data[start..]).await?;
                 tile_bytes += raw_size as u64;
             } else {
                 if flags & BG_SPECIFIED != 0 {
                     let start = data.len();
-                    data.resize(start + bpp, 0);
+                    let new_len = start
+                        .checked_add(bpp)
+                        .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                        .ok_or_else(|| {
+                            VncError::protocol("Hextile payload exceeds the safety limit")
+                        })?;
+                    data.resize(new_len, 0);
                     reader.read_exact(&mut data[start..]).await?;
                     tile_bytes += bpp as u64;
                 }
                 if flags & FG_SPECIFIED != 0 {
                     let start = data.len();
-                    data.resize(start + bpp, 0);
+                    let new_len = start
+                        .checked_add(bpp)
+                        .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                        .ok_or_else(|| {
+                            VncError::protocol("Hextile payload exceeds the safety limit")
+                        })?;
+                    data.resize(new_len, 0);
                     reader.read_exact(&mut data[start..]).await?;
                     tile_bytes += bpp as u64;
                 }
@@ -919,13 +1291,25 @@ async fn read_hextile_data(
                     for _ in 0..num_subrects {
                         if flags & SUBRECTS_COLOURED != 0 {
                             let start = data.len();
-                            data.resize(start + bpp, 0);
+                            let new_len = start
+                                .checked_add(bpp)
+                                .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                                .ok_or_else(|| {
+                                    VncError::protocol("Hextile payload exceeds the safety limit")
+                                })?;
+                            data.resize(new_len, 0);
                             reader.read_exact(&mut data[start..]).await?;
                             tile_bytes += bpp as u64;
                         }
                         // xy + wh (2 bytes).
                         let start = data.len();
-                        data.resize(start + 2, 0);
+                        let new_len = start
+                            .checked_add(2)
+                            .filter(|size| *size <= MAX_VNC_RECT_WIRE_BYTES)
+                            .ok_or_else(|| {
+                                VncError::protocol("Hextile payload exceeds the safety limit")
+                            })?;
+                        data.resize(new_len, 0);
                         reader.read_exact(&mut data[start..]).await?;
                         tile_bytes += 2;
                     }
@@ -950,6 +1334,11 @@ async fn handle_colour_map(
     let mut header = [0u8; 5];
     reader.read_exact(&mut header).await?;
     let num_colours = u16::from_be_bytes([header[3], header[4]]) as usize;
+    if num_colours > 256 {
+        return Err(VncError::protocol(
+            "VNC colour-map update exceeds the safety limit",
+        ));
+    }
     // Each colour entry is 6 bytes (R, G, B each 2 bytes).
     let data_len = num_colours * 6;
     let mut data = vec![0u8; data_len];
@@ -970,6 +1359,11 @@ async fn handle_cut_text(
     let mut header = [0u8; 7];
     reader.read_exact(&mut header).await?;
     let text_len = u32::from_be_bytes([header[3], header[4], header[5], header[6]]) as usize;
+    if text_len > MAX_VNC_CLIPBOARD_BYTES {
+        return Err(VncError::protocol(
+            "VNC clipboard update exceeds the safety limit",
+        ));
+    }
     let mut text_buf = vec![0u8; text_len];
     reader.read_exact(&mut text_buf).await?;
     {
@@ -977,22 +1371,25 @@ async fn handle_cut_text(
         st.bytes_received += 7 + text_len as u64;
     }
     let text = String::from_utf8_lossy(&text_buf).into_owned();
-    let _ = event_tx.send(SessionEvent::Clipboard(text)).await;
+    let _ = event_tx.try_send(SessionEvent::Clipboard(text));
     Ok(())
 }
 
 // ── Utility function for event payload construction ─────────────────────
 
 /// Build a `VncFrameEvent` from a decoded rect for Tauri event emission.
-pub fn frame_to_event(session_id: &str, rect: &DecodedRect) -> VncFrameEvent {
-    VncFrameEvent {
+pub fn frame_to_event(session_id: &str, rect: DecodedRect) -> Result<VncFrameEvent, VncError> {
+    let data = base64_encode_pixels(&rect.pixels).map_err(VncError::protocol)?;
+    Ok(VncFrameEvent {
         session_id: session_id.to_string(),
-        data: base64_encode_pixels(&rect.pixels),
+        data,
         x: rect.x,
         y: rect.y,
         width: rect.width,
         height: rect.height,
-    }
+        source_x: rect.source_x,
+        source_y: rect.source_y,
+    })
 }
 
 #[cfg(test)]
@@ -1113,6 +1510,7 @@ mod tests {
     fn shared_state_defaults() {
         let st = SharedSessionState {
             connected: false,
+            terminated: false,
             framebuffer_width: 0,
             framebuffer_height: 0,
             pixel_format: PixelFormat::rgba32(),
@@ -1137,16 +1535,19 @@ mod tests {
             y: 20,
             width: 2,
             height: 2,
+            source_x: None,
+            source_y: None,
             pixels: vec![
                 0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 128, 128, 128, 255,
             ],
         };
-        let ev = frame_to_event("sess1", &rect);
+        let ev = frame_to_event("sess1", rect).unwrap();
         assert_eq!(ev.session_id, "sess1");
         assert_eq!(ev.x, 10);
         assert_eq!(ev.y, 20);
         assert_eq!(ev.width, 2);
         assert_eq!(ev.height, 2);
+        assert_eq!(ev.source_x, None);
         assert!(!ev.data.is_empty());
     }
 
@@ -1157,9 +1558,13 @@ mod tests {
             y: 0,
             width: 0,
             height: 0,
+            source_x: Some(4),
+            source_y: Some(5),
             pixels: Vec::new(),
         };
-        let ev = frame_to_event("s2", &rect);
+        let ev = frame_to_event("s2", rect).unwrap();
         assert_eq!(ev.data, "");
+        assert_eq!(ev.source_x, Some(4));
+        assert_eq!(ev.source_y, Some(5));
     }
 }

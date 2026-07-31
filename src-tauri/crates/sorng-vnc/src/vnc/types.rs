@@ -3,6 +3,25 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub const MAX_VNC_HOST_BYTES: usize = 253;
+pub const MAX_VNC_USERNAME_BYTES: usize = 256;
+pub const MAX_VNC_PASSWORD_BYTES: usize = 1024;
+pub const MAX_VNC_LABEL_BYTES: usize = 256;
+pub const MAX_VNC_ENCODINGS: usize = 16;
+pub const MAX_VNC_DESKTOP_NAME_BYTES: usize = 4 * 1024;
+pub const MAX_VNC_CLIPBOARD_BYTES: usize = 256 * 1024;
+pub const MAX_VNC_RECTANGLES: usize = 1024;
+pub const MAX_VNC_SUBRECTANGLES: usize = 65_536;
+pub const MAX_VNC_RECT_WIRE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_VNC_RECT_RGBA_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_VNC_FRAMEBUFFER_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_VNC_DIMENSION: u16 = 16_384;
+pub const MAX_VNC_CURSOR_DIMENSION: u16 = 512;
+pub const MAX_VNC_SESSIONS: usize = 2;
+pub const MAX_VNC_DRAIN_EVENTS: usize = 8;
+pub const MAX_VNC_COMMAND_QUEUE: usize = 32;
+pub const MAX_VNC_EVENT_QUEUE: usize = 2;
+
 // ── RFB Protocol Version ────────────────────────────────────────────────
 
 /// Supported RFB protocol versions.
@@ -214,6 +233,31 @@ impl PixelFormat {
     /// Bytes per pixel (1, 2, or 4).
     pub fn bytes_per_pixel(&self) -> usize {
         (self.bits_per_pixel as usize).div_ceil(8)
+    }
+
+    pub fn validate(&self) -> Result<(), VncError> {
+        if !matches!(self.bits_per_pixel, 8 | 16 | 32) {
+            return Err(VncError::protocol("Unsupported VNC pixel width"));
+        }
+        if self.depth == 0 || self.depth > self.bits_per_pixel {
+            return Err(VncError::protocol("Invalid VNC pixel depth"));
+        }
+        if !self.true_colour {
+            return Err(VncError::protocol(
+                "Indexed-colour VNC pixel formats are not supported",
+            ));
+        }
+        let max_shift = self.bits_per_pixel.saturating_sub(1);
+        if self.red_max == 0
+            || self.green_max == 0
+            || self.blue_max == 0
+            || self.red_shift > max_shift
+            || self.green_shift > max_shift
+            || self.blue_shift > max_shift
+        {
+            return Err(VncError::protocol("Invalid VNC true-colour pixel format"));
+        }
+        Ok(())
     }
 }
 
@@ -478,6 +522,15 @@ pub struct VncConfig {
     /// Keep-alive interval in seconds (0 = disabled, sends FramebufferUpdateRequest).
     #[serde(default)]
     pub keepalive_interval_secs: u64,
+    /// Explicit consent to send the VNC session over a cleartext transport.
+    #[serde(default)]
+    pub allow_unencrypted_transport: bool,
+    /// Explicit consent to use legacy password authentication (VNC DES or ARD DH).
+    #[serde(default)]
+    pub allow_weak_authentication: bool,
+    /// Explicit consent to connect without any server authentication.
+    #[serde(default)]
+    pub allow_unauthenticated: bool,
 }
 
 fn default_vnc_port() -> u16 {
@@ -499,13 +552,7 @@ fn default_compression() -> u8 {
     2
 }
 fn default_encodings() -> Vec<String> {
-    vec![
-        "ZRLE".into(),
-        "Tight".into(),
-        "Hextile".into(),
-        "CopyRect".into(),
-        "Raw".into(),
-    ]
+    vec!["Hextile".into(), "CopyRect".into(), "Raw".into()]
 }
 
 impl Default for VncConfig {
@@ -527,7 +574,92 @@ impl Default for VncConfig {
             jpeg_quality: default_jpeg_quality(),
             compression_level: default_compression(),
             keepalive_interval_secs: 0,
+            allow_unencrypted_transport: false,
+            allow_weak_authentication: false,
+            allow_unauthenticated: false,
         }
+    }
+}
+
+impl VncConfig {
+    pub fn validate(&self) -> Result<(), VncError> {
+        let host = self.host.trim();
+        if host.is_empty()
+            || host.len() > MAX_VNC_HOST_BYTES
+            || host.chars().any(|c| c.is_control() || c.is_whitespace())
+            || host.contains("://")
+            || host
+                .chars()
+                .any(|c| matches!(c, '/' | '\\' | '@' | '?' | '#'))
+        {
+            return Err(VncError::new(
+                VncErrorKind::DnsResolution,
+                "Invalid VNC host",
+            ));
+        }
+        if self.port == 0 {
+            return Err(VncError::new(
+                VncErrorKind::ConnectionRefused,
+                "VNC port must be non-zero",
+            ));
+        }
+        if self
+            .username
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_VNC_USERNAME_BYTES)
+            || self
+                .password
+                .as_ref()
+                .is_some_and(|value| value.len() > MAX_VNC_PASSWORD_BYTES)
+            || self
+                .label
+                .as_ref()
+                .is_some_and(|value| value.len() > MAX_VNC_LABEL_BYTES)
+        {
+            return Err(VncError::new(
+                VncErrorKind::ProtocolViolation,
+                "VNC configuration contains an oversized field",
+            ));
+        }
+        if self.encodings.is_empty() || self.encodings.len() > MAX_VNC_ENCODINGS {
+            return Err(VncError::protocol("Invalid VNC encoding list size"));
+        }
+        for encoding in &self.encodings {
+            if !matches!(
+                encoding.to_ascii_lowercase().as_str(),
+                "raw" | "copyrect" | "rre" | "hextile"
+            ) {
+                return Err(VncError::protocol(format!(
+                    "Unsupported VNC encoding requested: {}",
+                    encoding.chars().take(32).collect::<String>()
+                )));
+            }
+        }
+        if !(1..=60).contains(&self.connect_timeout_secs) {
+            return Err(VncError::new(
+                VncErrorKind::Timeout,
+                "VNC connect timeout must be between 1 and 60 seconds",
+            ));
+        }
+        if !(16..=5_000).contains(&self.update_interval_ms) {
+            return Err(VncError::protocol(
+                "VNC update interval must be between 16 and 5000 ms",
+            ));
+        }
+        if self.keepalive_interval_secs > 3_600 {
+            return Err(VncError::protocol(
+                "VNC keepalive interval cannot exceed 3600 seconds",
+            ));
+        }
+        if self.jpeg_quality > 9 || self.compression_level > 9 {
+            return Err(VncError::protocol(
+                "Invalid VNC quality or compression setting",
+            ));
+        }
+        if let Some(pixel_format) = self.pixel_format {
+            pixel_format.validate()?;
+        }
+        Ok(())
     }
 }
 
@@ -575,7 +707,7 @@ impl VncSession {
             id,
             host: config.host.clone(),
             port: config.port,
-            connected: true,
+            connected: false,
             username: config.username.clone(),
             label: config.label.clone(),
             protocol_version: None,
@@ -606,6 +738,12 @@ pub struct VncFrameEvent {
     pub y: u16,
     pub width: u16,
     pub height: u16,
+    /// CopyRect source X coordinate; absent for pixel-bearing frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_x: Option<u16>,
+    /// CopyRect source Y coordinate; absent for pixel-bearing frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_y: Option<u16>,
 }
 
 /// Bell event (server requests attention).
@@ -969,7 +1107,7 @@ mod tests {
         };
         let s = VncSession::from_config("sess-1".into(), &cfg);
         assert_eq!(s.id, "sess-1");
-        assert!(s.connected);
+        assert!(!s.connected);
         assert!(s.view_only);
         assert_eq!(s.host, "host.example.com");
         assert_eq!(s.label.as_deref(), Some("Desktop"));
@@ -998,6 +1136,8 @@ mod tests {
             y: 0,
             width: 100,
             height: 100,
+            source_x: None,
+            source_y: None,
         };
         let json = serde_json::to_string(&ev).unwrap();
         let de: VncFrameEvent = serde_json::from_str(&json).unwrap();
