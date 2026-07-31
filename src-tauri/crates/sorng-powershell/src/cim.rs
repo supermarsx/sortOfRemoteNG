@@ -100,10 +100,16 @@ impl CimSessionManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                return Err(format!("Failed to create CIM session: {}", stderr.trim()));
+                return Err(format!(
+                    "Failed to create CIM session (remote error output omitted; {} bytes)",
+                    stderr.len()
+                ));
             }
 
-            debug!("CIM session creation output: {}", stdout.trim());
+            debug!(
+                "CIM session creation completed ({} output bytes)",
+                stdout.len()
+            );
         }
 
         self.sessions.insert(
@@ -182,7 +188,10 @@ impl CimSessionManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                warn!("CIM query warnings: {}", stderr.trim());
+                warn!(
+                    "CIM query returned {} warning bytes; payload omitted",
+                    stderr.len()
+                );
             }
             stdout
         };
@@ -236,7 +245,10 @@ impl CimSessionManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                return Err(format!("CIM method invocation error: {}", stderr.trim()));
+                return Err(format!(
+                    "CIM method invocation failed (remote error output omitted; {} bytes)",
+                    stderr.len()
+                ));
             }
             stdout
         };
@@ -287,7 +299,10 @@ impl CimSessionManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                return Err(format!("Failed to register CIM event: {}", stderr.trim()));
+                return Err(format!(
+                    "Failed to register CIM event (remote error output omitted; {} bytes)",
+                    stderr.len()
+                ));
             }
         }
 
