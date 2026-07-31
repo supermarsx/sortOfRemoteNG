@@ -3,7 +3,7 @@
 use crate::client;
 use crate::error::UserMgmtError;
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 
 /// List all users from /etc/passwd.
 pub async fn list_users(host: &UserMgmtHost) -> Result<Vec<SystemUser>, UserMgmtError> {
@@ -199,15 +199,10 @@ async fn set_password_stdin(
     username: &str,
     password: &str,
 ) -> Result<(), UserMgmtError> {
-    let payload = format!("{username}:{password}");
-    client::exec_ok(host, "chpasswd", &[])
-        .await
-        .or_else(|_| -> Result<String, UserMgmtError> {
-            debug!("chpasswd without stdin not supported, password must be set manually");
-            Ok(String::new())
-        })?;
-    let _ = payload; // placeholder — real impl would pipe stdin
-    Ok(())
+    let _ = (host, username, password);
+    Err(UserMgmtError::Other(
+        "Password updates require secure stdin transport, which is not available".to_string(),
+    ))
 }
 
 fn parse_passwd_line(
