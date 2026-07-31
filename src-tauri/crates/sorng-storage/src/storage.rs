@@ -193,7 +193,7 @@ impl SecureStorage {
     /// # Arguments
     ///
     /// * `data` - The `StorageData` to save
-    /// * `use_password` - Whether to encrypt using the configured password
+    /// * `use_password` - Legacy downgrade guard; true requires initialized encryption
     ///
     /// # Returns
     ///
@@ -208,7 +208,7 @@ impl SecureStorage {
     ///
     /// # Example
     ///
-    pub async fn save_data(&self, data: StorageData, _use_password: bool) -> Result<(), String> {
+    pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
 
         // Encryption dispatch — master DEK only. The `use_password`
@@ -222,6 +222,11 @@ impl SecureStorage {
                 return Err(
                     "Connections database encryption state is locked; unlock before saving"
                         .to_string(),
+                );
+            }
+            None if use_password => {
+                return Err(
+                    "Protected storage was requested but encryption is not initialized".to_string(),
                 );
             }
             None => false,
@@ -508,6 +513,20 @@ mod connections_dispatch_tests {
         let loaded = svc.load_data().await.unwrap().unwrap();
         assert_eq!(loaded.connections.len(), 1);
         assert_eq!(loaded.connections[0]["host"], "h.example");
+    }
+
+    #[tokio::test]
+    async fn requested_protection_without_state_refuses_plaintext_downgrade() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("data.json").to_string_lossy().to_string();
+        let svc = build_storage(path.clone());
+
+        let error = svc.save_data(sample_data(), true).await.unwrap_err();
+        assert!(error.contains("encryption is not initialized"));
+        assert!(
+            !Path::new(&path).exists(),
+            "requested protection must not write plaintext storage"
+        );
     }
 
     #[tokio::test]
