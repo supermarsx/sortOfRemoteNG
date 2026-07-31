@@ -32,6 +32,8 @@ export interface CpanelConnectionConfig {
   cpanel_port?: number;
   use_tls?: boolean;
   accept_invalid_certs?: boolean;
+  /** Runtime-only acknowledgement. Never persist this field. */
+  acknowledge_invalid_cert_risk?: boolean;
   auth_mode: CpanelAuthMode;
   username: string;
   /** Present when `auth_mode = "password"`. */

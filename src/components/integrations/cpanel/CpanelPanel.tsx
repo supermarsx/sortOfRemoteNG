@@ -21,6 +21,8 @@ import type {
 } from "../../../types/cpanel";
 import { useCpanelConnection } from "../../../hooks/integration/cpanel/useCpanelConnection";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { cpanelCategoryTabs } from "./registry";
 
 /** The secret blob stored in the OS vault packs both possible credentials (the
@@ -89,6 +91,17 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
   } = useCpanelConnection();
 
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [showTlsWarning, setShowTlsWarning] = useState(false);
+  const tlsAck = useInsecureTlsAck({
+    configId: [
+      instanceId ?? "unsaved",
+      form.useTls ? "https" : "http",
+      form.host.trim().toLowerCase(),
+      form.whmPort.trim(),
+      form.cpanelPort.trim(),
+    ].join(":"),
+    insecure: form.useTls && form.acceptInvalidCerts,
+  });
   const [activeTab, setActiveTab] = useState<string | null>(
     cpanelCategoryTabs[0]?.categoryKey ?? null,
   );
@@ -137,81 +150,110 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
     [],
   );
 
-  const buildConfig = useCallback((): CpanelConnectionConfig => {
-    const whmPort = Number.parseInt(form.whmPort, 10);
-    const cpanelPort = Number.parseInt(form.cpanelPort, 10);
-    const usingPassword = form.authMode === "password";
-    return {
-      host: form.host.trim(),
-      whm_port: Number.isFinite(whmPort) ? whmPort : DEFAULT_WHM_PORT,
-      cpanel_port: Number.isFinite(cpanelPort)
-        ? cpanelPort
-        : DEFAULT_CPANEL_PORT,
-      use_tls: form.useTls,
-      accept_invalid_certs: form.acceptInvalidCerts,
-      auth_mode: form.authMode,
-      username: form.username.trim(),
-      password: usingPassword ? form.password : undefined,
-      api_token: usingPassword ? undefined : form.apiToken,
-      timeout_secs: DEFAULT_TIMEOUT_SECS,
-    };
-  }, [form]);
-
-  const handleConnect = useCallback(async () => {
-    setError(null);
-    try {
-      const config = buildConfig();
-      const secret = JSON.stringify({
-        password: form.password,
-        apiToken: form.apiToken,
-      } satisfies CpanelSecret);
-      const fields = {
-        whmPort: String(config.whm_port),
-        cpanelPort: String(config.cpanel_port),
-        authMode: config.auth_mode,
-        username: config.username,
-        useTls: String(config.use_tls),
-        acceptInvalidCerts: String(config.accept_invalid_certs),
+  const buildConfig = useCallback(
+    (acknowledgeInvalidCertRisk = false): CpanelConnectionConfig => {
+      const whmPort = Number.parseInt(form.whmPort, 10);
+      const cpanelPort = Number.parseInt(form.cpanelPort, 10);
+      const usingPassword = form.authMode === "password";
+      return {
+        host: form.host.trim(),
+        whm_port: Number.isFinite(whmPort) ? whmPort : DEFAULT_WHM_PORT,
+        cpanel_port: Number.isFinite(cpanelPort)
+          ? cpanelPort
+          : DEFAULT_CPANEL_PORT,
+        use_tls: form.useTls,
+        accept_invalid_certs: form.acceptInvalidCerts,
+        acknowledge_invalid_cert_risk:
+          form.useTls &&
+          form.acceptInvalidCerts &&
+          acknowledgeInvalidCertRisk
+            ? true
+            : undefined,
+        auth_mode: form.authMode,
+        username: form.username.trim(),
+        password: usingPassword ? form.password : undefined,
+        api_token: usingPassword ? undefined : form.apiToken,
+        timeout_secs: DEFAULT_TIMEOUT_SECS,
       };
-      const name = form.name.trim() || form.host.trim() || "cPanel/WHM";
+    },
+    [form],
+  );
 
-      // Persist host + creds (encrypted) and use the instance id as the stable
-      // connection id, so reconnecting a saved instance reuses its id.
-      let id = instanceId ?? null;
-      if (id) {
-        await updateInstance(id, {
-          integrationKey: "cpanel",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-      } else {
-        const created = await createInstance({
-          integrationKey: "cpanel",
-          name,
-          host: config.host,
-          fields,
-          secret,
-        });
-        id = created.id;
+  const handleConnect = useCallback(
+    async (acknowledgeInvalidCertRisk = false) => {
+      setError(null);
+      let persisted = false;
+      try {
+        const config = buildConfig(acknowledgeInvalidCertRisk);
+        const secret = JSON.stringify({
+          password: form.password,
+          apiToken: form.apiToken,
+        } satisfies CpanelSecret);
+        const fields = {
+          whmPort: String(config.whm_port),
+          cpanelPort: String(config.cpanel_port),
+          authMode: config.auth_mode,
+          username: config.username,
+          useTls: String(config.use_tls),
+          acceptInvalidCerts: String(config.accept_invalid_certs),
+        };
+        const name = form.name.trim() || form.host.trim() || "cPanel/WHM";
+
+        // Persist host + creds (encrypted) and use the instance id as the stable
+        // connection id, so reconnecting a saved instance reuses its id.
+        let id = instanceId ?? null;
+        if (id) {
+          await updateInstance(id, {
+            integrationKey: "cpanel",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+        } else {
+          const created = await createInstance({
+            integrationKey: "cpanel",
+            name,
+            host: config.host,
+            fields,
+            secret,
+          });
+          id = created.id;
+        }
+        persisted = true;
+
+        await connect(id, config);
+        setActiveTab(cpanelCategoryTabs[0]?.categoryKey ?? null);
+      } catch {
+        if (!persisted) {
+          setError(
+            t(
+              "integrations.cpanel.saveFailed",
+              "Failed to save cPanel connection settings.",
+            ),
+          );
+        }
       }
+    },
+    [
+      buildConfig,
+      form,
+      instanceId,
+      createInstance,
+      updateInstance,
+      connect,
+      setError,
+      t,
+    ],
+  );
 
-      await connect(id, config);
-      setActiveTab(cpanelCategoryTabs[0]?.categoryKey ?? null);
-    } catch {
-      // `connect` already surfaced the error via the hook; persistence failures
-      // fall through here too and leave the form editable.
+  const requestConnect = useCallback(() => {
+    if (tlsAck.needsAck) {
+      setShowTlsWarning(true);
+      return;
     }
-  }, [
-    buildConfig,
-    form,
-    instanceId,
-    createInstance,
-    updateInstance,
-    connect,
-    setError,
-  ]);
+    void handleConnect(tlsAck.acknowledged).finally(tlsAck.reset);
+  }, [handleConnect, tlsAck]);
 
   const ActiveTab = useMemo(() => {
     if (!connectionId || !activeTab) return null;
@@ -383,8 +425,10 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
             </label>
 
             <button
-              onClick={handleConnect}
-              disabled={connecting || !form.host.trim() || !form.username.trim()}
+              onClick={requestConnect}
+              disabled={
+                connecting || !form.host.trim() || !form.username.trim()
+              }
               className="mt-2 flex items-center justify-center gap-2 rounded bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {connecting ? (
@@ -448,6 +492,18 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
           )}
         </div>
       )}
+      <InsecureTlsWarningModal
+        isOpen={showTlsWarning}
+        kind="integration"
+        endpoint={`${form.useTls ? "https" : "http"}://${form.host}:${form.whmPort} and ${form.useTls ? "https" : "http"}://${form.host}:${form.cpanelPort}`}
+        connectionName={form.name || "cPanel/WHM"}
+        onCancel={() => setShowTlsWarning(false)}
+        onAcknowledge={() => {
+          tlsAck.acknowledge();
+          setShowTlsWarning(false);
+          void handleConnect(true).finally(tlsAck.reset);
+        }}
+      />
     </div>
   );
 };
