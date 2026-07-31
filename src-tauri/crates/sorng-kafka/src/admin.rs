@@ -1,4 +1,9 @@
 use std::collections::HashMap;
+use std::fmt::Write as FmtWrite;
+use std::fs::OpenOptions;
+use std::io::{self, Seek, SeekFrom, Write as IoWrite};
+use std::path::{Path, PathBuf};
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
 use rdkafka::admin::{
@@ -8,10 +13,229 @@ use rdkafka::admin::{
 use rdkafka::client::DefaultClientContext;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::metadata::Metadata;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::{KafkaError, KafkaResult};
 use crate::types::*;
+
+const SECRET_TEMP_CREATE_ATTEMPTS: usize = 16;
+const CLI_OUTPUT_LIMIT: usize = 1024 * 1024;
+const CLI_MIN_TIMEOUT: Duration = Duration::from_secs(5);
+const CLI_MAX_TIMEOUT: Duration = Duration::from_secs(60);
+const KAFKA_ACLS_CANDIDATES: &[&str] = &["kafka-acls", "kafka-acls.sh"];
+
+struct SecretTempFile {
+    path: PathBuf,
+    secret_len: u64,
+}
+
+impl SecretTempFile {
+    fn create(prefix: &str, suffix: &str, contents: &[u8]) -> io::Result<Self> {
+        for _ in 0..SECRET_TEMP_CREATE_ATTEMPTS {
+            let path =
+                std::env::temp_dir().join(secret_temp_filename(prefix, suffix, Uuid::new_v4()));
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+
+            let mut file = match options.open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            };
+            let guard = Self {
+                path,
+                secret_len: contents.len() as u64,
+            };
+            let write_result = file.write_all(contents).and_then(|_| file.sync_all());
+            drop(file);
+            if let Err(error) = write_result {
+                drop(guard);
+                return Err(error);
+            }
+            return Ok(guard);
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate a private temporary file",
+        ))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for SecretTempFile {
+    fn drop(&mut self) {
+        if let Ok(mut file) = OpenOptions::new().write(true).open(&self.path) {
+            let mut zeros = [0_u8; 4096];
+            let _ = file.seek(SeekFrom::Start(0));
+            let mut remaining = self.secret_len;
+            while remaining > 0 {
+                let count = remaining.min(zeros.len() as u64) as usize;
+                if file.write_all(&zeros[..count]).is_err() {
+                    break;
+                }
+                remaining -= count as u64;
+            }
+            let _ = file.flush();
+            let _ = file.set_len(0);
+            zeros.zeroize();
+        }
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn secret_temp_filename(prefix: &str, suffix: &str, id: Uuid) -> String {
+    format!("{prefix}{id}{suffix}")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CliProcessError {
+    NotFound,
+    StartFailed,
+    WaitFailed,
+    TimedOut,
+    OutputTooLarge,
+    ReadFailed,
+}
+
+struct CliProcessOutput {
+    status: ExitStatus,
+    stdout: Zeroizing<Vec<u8>>,
+    #[allow(dead_code)]
+    stderr: Zeroizing<Vec<u8>>,
+}
+
+fn bounded_cli_timeout(configured: Duration) -> Duration {
+    configured.clamp(CLI_MIN_TIMEOUT, CLI_MAX_TIMEOUT)
+}
+
+fn append_bounded(output: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<(), ()> {
+    if chunk.len() > limit.saturating_sub(output.len()) {
+        return Err(());
+    }
+    output.extend_from_slice(chunk);
+    Ok(())
+}
+
+async fn read_bounded<R>(mut reader: R, limit: usize) -> Result<Zeroizing<Vec<u8>>, CliProcessError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Zeroizing::new(Vec::with_capacity(limit.min(8192)));
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = match reader.read(&mut buffer).await {
+            Ok(count) => count,
+            Err(_) => {
+                buffer.zeroize();
+                return Err(CliProcessError::ReadFailed);
+            }
+        };
+        if count == 0 {
+            break;
+        }
+        if append_bounded(&mut output, &buffer[..count], limit).is_err() {
+            buffer.zeroize();
+            return Err(CliProcessError::OutputTooLarge);
+        }
+    }
+    buffer.zeroize();
+    Ok(output)
+}
+
+async fn run_bounded_command(
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<CliProcessOutput, CliProcessError> {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = command.spawn().map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            CliProcessError::NotFound
+        } else {
+            CliProcessError::StartFailed
+        }
+    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .expect("stdout is piped for Kafka CLI commands");
+    let stderr = child
+        .stderr
+        .take()
+        .expect("stderr is piped for Kafka CLI commands");
+    let stdout_task = tokio::spawn(read_bounded(stdout, CLI_OUTPUT_LIMIT));
+    let stderr_task = tokio::spawn(read_bounded(stderr, CLI_OUTPUT_LIMIT));
+
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(_)) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let _ = tokio::join!(stdout_task, stderr_task);
+            return Err(CliProcessError::WaitFailed);
+        }
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let _ = tokio::join!(stdout_task, stderr_task);
+            return Err(CliProcessError::TimedOut);
+        }
+    };
+    let (stdout, stderr) = tokio::join!(stdout_task, stderr_task);
+    let stdout = stdout.map_err(|_| CliProcessError::ReadFailed)??;
+    let stderr = stderr.map_err(|_| CliProcessError::ReadFailed)??;
+
+    Ok(CliProcessOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn escape_jaas_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\r' => escaped.push_str("\\r"),
+            '\n' => escaped.push_str("\\n"),
+            character => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+fn escape_property_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '\r' => escaped.push_str("\\r"),
+            '\n' => escaped.push_str("\\n"),
+            character => escaped.push(character),
+        }
+    }
+    escaped
+}
 
 /// Connection parameters needed for CLI-based operations (e.g. ACLs).
 #[derive(Debug, Clone)]
@@ -40,34 +264,42 @@ impl CliConfig {
         }
     }
 
-    /// Write a temporary command-config properties file for kafka-acls.
-    /// Returns the file path. Caller is responsible for cleanup.
-    fn write_command_config(&self) -> Result<std::path::PathBuf, KafkaError> {
-        let mut props = String::new();
-        props.push_str(&format!(
-            "security.protocol={}\n",
+    /// Write a private, automatically cleaned command-config file for kafka-acls.
+    fn write_command_config(&self) -> Result<SecretTempFile, KafkaError> {
+        let mut props = Zeroizing::new(String::new());
+        let _ = writeln!(
+            props,
+            "security.protocol={}",
             self.security_protocol.as_kafka_str()
-        ));
+        );
         if let Some(ref mech) = self.sasl_mechanism {
-            props.push_str(&format!("sasl.mechanism={}\n", mech.as_kafka_str()));
+            let _ = writeln!(props, "sasl.mechanism={}", mech.as_kafka_str());
         }
         if let Some(ref user) = self.sasl_username {
-            props.push_str(&format!("sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"{}\" password=\"{}\";\n", user, self.sasl_password.as_deref().unwrap_or("")));
+            let user = escape_jaas_value(user);
+            let password = Zeroizing::new(escape_jaas_value(
+                self.sasl_password.as_deref().unwrap_or(""),
+            ));
+            let _ = writeln!(
+                props,
+                "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"{user}\" password=\"{}\";",
+                password.as_str()
+            );
         }
         if let Some(ref ca) = self.ssl_ca_location {
-            props.push_str(&format!("ssl.truststore.location={}\n", ca));
+            let ca = escape_property_value(ca);
+            let _ = writeln!(props, "ssl.truststore.location={ca}");
         }
         if let Some(ref cert) = self.ssl_cert_location {
-            props.push_str(&format!("ssl.keystore.location={}\n", cert));
+            let cert = escape_property_value(cert);
+            let _ = writeln!(props, "ssl.keystore.location={cert}");
         }
         if let Some(ref key_pw) = self.ssl_key_password {
-            props.push_str(&format!("ssl.keystore.password={}\n", key_pw));
+            let key_password = Zeroizing::new(escape_property_value(key_pw));
+            let _ = writeln!(props, "ssl.keystore.password={}", key_password.as_str());
         }
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!("sorng-kafka-cli-{}.properties", std::process::id()));
-        std::fs::write(&path, &props)
-            .map_err(|e| KafkaError::admin_error(format!("Failed to write CLI config: {}", e)))?;
-        Ok(path)
+        SecretTempFile::create("sorng-kafka-cli-", ".properties", props.as_bytes())
+            .map_err(|_| KafkaError::acl_error("Failed to prepare Kafka CLI credentials"))
     }
 
     /// Build base arguments for kafka-acls CLI.
@@ -384,33 +616,15 @@ impl KafkaAdminClient {
     // the ACL admin API.  The CLI binary must be on $PATH.
     // -----------------------------------------------------------------------
 
-    /// Locate the kafka-acls binary (tries common names).
-    fn find_kafka_acls_bin() -> KafkaResult<String> {
-        for name in &["kafka-acls", "kafka-acls.sh"] {
-            let probe = std::process::Command::new(name)
-                .arg("--help")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            if probe.is_ok() {
-                return Ok(name.to_string());
-            }
-        }
-        Err(KafkaError::acl_error(
-            "kafka-acls CLI not found on PATH. Install Apache Kafka CLI tools to manage ACLs.",
-        ))
-    }
-
     /// Run the kafka-acls CLI with the given arguments and return stdout.
     async fn run_kafka_acls(&self, extra_args: &[&str]) -> KafkaResult<String> {
-        let bin = Self::find_kafka_acls_bin()?;
         let mut args = self.cli_config.base_args();
 
         let config_file = if self.cli_config.needs_command_config() {
-            let path = self.cli_config.write_command_config()?;
+            let file = self.cli_config.write_command_config()?;
             args.push("--command-config".to_string());
-            args.push(path.display().to_string());
-            Some(path)
+            args.push(file.path().to_string_lossy().into_owned());
+            Some(file)
         } else {
             None
         };
@@ -419,24 +633,38 @@ impl KafkaAdminClient {
             args.push(a.to_string());
         }
 
-        log::info!("Running: {} {}", bin, args.join(" "));
-
-        let output =
-            Command::new(&bin).args(&args).output().await.map_err(|e| {
-                KafkaError::acl_error(format!("Failed to execute kafka-acls: {}", e))
-            })?;
-
-        // Cleanup temp config
-        if let Some(path) = config_file {
-            let _ = std::fs::remove_file(path);
+        log::info!("Running Kafka ACL command");
+        let timeout = bounded_cli_timeout(self.timeout);
+        let mut output = None;
+        for candidate in KAFKA_ACLS_CANDIDATES {
+            match run_bounded_command(candidate, &args, timeout).await {
+                Ok(result) => {
+                    output = Some(result);
+                    break;
+                }
+                Err(CliProcessError::NotFound) => continue,
+                Err(CliProcessError::TimedOut) => {
+                    return Err(KafkaError::acl_error("kafka-acls command timed out"));
+                }
+                Err(CliProcessError::OutputTooLarge) => {
+                    return Err(KafkaError::acl_error(
+                        "kafka-acls output exceeded the safety limit",
+                    ));
+                }
+                Err(_) => {
+                    return Err(KafkaError::acl_error("kafka-acls command failed"));
+                }
+            }
         }
+        let output = output.ok_or_else(|| {
+            KafkaError::acl_error(
+                "kafka-acls CLI not found on PATH. Install Apache Kafka CLI tools to manage ACLs.",
+            )
+        })?;
+        drop(config_file);
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(KafkaError::acl_error(format!(
-                "kafka-acls exited with {}: {}",
-                output.status, stderr
-            )));
+            return Err(KafkaError::acl_error("kafka-acls command failed"));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -691,4 +919,44 @@ fn parse_kafka_acls_list(output: &str) -> Vec<AclEntry> {
     }
 
     entries
+}
+
+#[cfg(test)]
+mod safety_helper_tests {
+    use super::*;
+
+    #[test]
+    fn escaping_prevents_properties_and_jaas_line_injection() {
+        assert_eq!(escape_property_value("a\\b\r\nc"), "a\\\\b\\r\\nc");
+        assert_eq!(escape_jaas_value("a\"\\b\r\nc"), "a\\\"\\\\b\\r\\nc");
+    }
+
+    #[test]
+    fn bounded_append_rejects_a_chunk_without_partially_copying_it() {
+        let mut output = b"1234".to_vec();
+        assert!(append_bounded(&mut output, b"56", 5).is_err());
+        assert_eq!(output, b"1234");
+    }
+
+    #[test]
+    fn cli_timeout_is_clamped_to_safe_bounds() {
+        assert_eq!(bounded_cli_timeout(Duration::ZERO), CLI_MIN_TIMEOUT);
+        assert_eq!(
+            bounded_cli_timeout(Duration::from_secs(30)),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            bounded_cli_timeout(Duration::from_secs(600)),
+            CLI_MAX_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn filename_uses_the_full_collision_resistant_identifier() {
+        let id = Uuid::from_u128(0x12345678_1234_5678_9abc_def012345678);
+        assert_eq!(
+            secret_temp_filename("kafka-", ".properties", id),
+            "kafka-12345678-1234-5678-9abc-def012345678.properties"
+        );
+    }
 }

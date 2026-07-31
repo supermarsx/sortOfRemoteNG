@@ -24,6 +24,7 @@ reqwest = { workspace = true, features = ["cookies"] }
 url = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
+zeroize = { workspace = true }
 # Runtime `librdkafka` presence probe (t3-e38). Used by `runtime_check.rs`
 # to surface a typed `LibraryMissing` error with a per-OS install hint when
 # the `dynamic-linking` feature is active and the native library is absent.

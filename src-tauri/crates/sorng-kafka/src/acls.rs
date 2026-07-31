@@ -4,9 +4,8 @@ use crate::types::*;
 
 /// Create ACL entries on the cluster.
 ///
-/// Note: rdkafka 0.36 does not expose ACL admin APIs.  The KafkaAdminClient
-/// stub logs a warning and returns Ok(()) until a future rdkafka release adds
-/// support.
+/// The admin client delegates to the authenticated `kafka-acls` CLI because
+/// the linked rdkafka version does not expose ACL admin APIs directly.
 pub async fn create_acls(admin: &KafkaAdminClient, entries: &[AclEntry]) -> KafkaResult<()> {
     if entries.is_empty() {
         return Ok(());
@@ -27,7 +26,7 @@ pub async fn delete_acls(
     let mut deleted = Vec::new();
     for filter in filters {
         // Capture existing entries before deletion so we can report what was removed.
-        let existing = admin.describe_acls(filter).await.unwrap_or_default();
+        let existing = admin.describe_acls(filter).await?;
         admin.delete_acls(filter).await?;
         deleted.extend(existing);
     }
