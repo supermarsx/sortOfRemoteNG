@@ -217,7 +217,7 @@ export function teardownBuiltInCloudRuntime(
   if (!lease || lease.sessionId !== sessionId) return Promise.resolve();
   if (lease.teardownPromise) return lease.teardownPromise;
 
-  lease.teardownPromise = Promise.resolve()
+  const teardownPromise = Promise.resolve()
     .then(async () => {
       let handle: BuiltInCloudRuntimeHandle | undefined;
       try {
@@ -227,10 +227,15 @@ export function teardownBuiltInCloudRuntime(
       }
       await disconnect(handle);
     })
-    .catch(() => undefined)
-    .finally(() => {
+    .then(() => {
       if (runtimeLeases.get(key) === lease) runtimeLeases.delete(key);
     });
+  lease.teardownPromise = teardownPromise.catch((error) => {
+    if (runtimeLeases.get(key) === lease) {
+      lease.teardownPromise = null;
+    }
+    throw error;
+  });
   return lease.teardownPromise;
 }
 
