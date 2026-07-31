@@ -354,6 +354,8 @@ sorng-recording = { path = "crates/sorng-recording" }
 
 serde_json = { workspace = true }
 serde = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
 url = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
