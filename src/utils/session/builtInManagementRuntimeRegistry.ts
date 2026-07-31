@@ -114,15 +114,19 @@ export function teardownBuiltInManagementRuntime(
   if (!lease || lease.sessionId !== sessionId) return Promise.resolve();
   if (lease.teardownPromise) return lease.teardownPromise;
 
-  lease.teardownPromise = Promise.resolve()
+  const teardownPromise = Promise.resolve()
     .then(disconnect)
-    .then(() => undefined)
-    .catch(() => undefined)
-    .finally(() => {
+    .then(() => {
       if (activeRuntimeLeases.get(protocol) === lease) {
         activeRuntimeLeases.delete(protocol);
       }
     });
+  lease.teardownPromise = teardownPromise.catch((error) => {
+    if (activeRuntimeLeases.get(protocol) === lease) {
+      lease.teardownPromise = null;
+    }
+    throw error;
+  });
   return lease.teardownPromise;
 }
 

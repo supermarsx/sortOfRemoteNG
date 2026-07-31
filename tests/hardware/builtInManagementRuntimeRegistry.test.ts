@@ -49,11 +49,20 @@ describe("built-in management runtime registry", () => {
     expect(claimBuiltInManagementRuntime("ilo", "b")).toBe(true);
   });
 
-  it("releases a lease after disconnect failure", async () => {
+  it("retains a lease after disconnect failure and releases it after retry", async () => {
+    const disconnect = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+
     expect(claimBuiltInManagementRuntime("supermicro", "a")).toBe(true);
-    await teardownBuiltInManagementRuntime("supermicro", "a", async () => {
-      throw new Error("offline");
-    });
+    await expect(
+      teardownBuiltInManagementRuntime("supermicro", "a", disconnect),
+    ).rejects.toThrow("offline");
+    expect(claimBuiltInManagementRuntime("supermicro", "b")).toBe(false);
+
+    await teardownBuiltInManagementRuntime("supermicro", "a", disconnect);
+    expect(disconnect).toHaveBeenCalledTimes(2);
     expect(claimBuiltInManagementRuntime("supermicro", "b")).toBe(true);
   });
 });
