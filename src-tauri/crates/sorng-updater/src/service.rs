@@ -695,13 +695,21 @@ fn persist_settings(path: &Path, settings: &StoredUpdaterSettings) -> Result<(),
     }
 
     let mut root = match std::fs::read_to_string(path) {
-        Ok(raw) => serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| json!({})),
+        Ok(raw) => serde_json::from_str::<Value>(&raw).map_err(|error| {
+            UpdateError::Settings(format!(
+                "Refusing to overwrite malformed settings at {}: {error}",
+                path.display()
+            ))
+        })?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({}),
         Err(error) => return Err(error.into()),
     };
 
     if !root.is_object() {
-        root = json!({});
+        return Err(UpdateError::Settings(format!(
+            "Refusing to overwrite settings at {} because the document root is not an object",
+            path.display()
+        )));
     }
 
     let root_obj = root.as_object_mut().expect("root object checked");
@@ -709,7 +717,10 @@ fn persist_settings(path: &Path, settings: &StoredUpdaterSettings) -> Result<(),
         .entry(SETTINGS_KEY_UPDATER.to_string())
         .or_insert_with(|| json!({}));
     if !updater.is_object() {
-        *updater = json!({});
+        return Err(UpdateError::Settings(format!(
+            "Refusing to overwrite settings at {} because the updater section is not an object",
+            path.display()
+        )));
     }
     let updater_obj = updater.as_object_mut().expect("updater object checked");
     updater_obj.insert(
@@ -737,8 +748,8 @@ fn persist_settings(path: &Path, settings: &StoredUpdaterSettings) -> Result<(),
     }
     updater_obj.remove(LEGACY_PRIVATE_ENDPOINT_KEY);
 
-    let body = serde_json::to_string_pretty(&root)?;
-    std::fs::write(path, format!("{body}\n"))?;
+    let body = format!("{}\n", serde_json::to_string_pretty(&root)?);
+    sorng_storage::durable::durable_write(path, body.as_bytes()).map_err(UpdateError::Io)?;
     Ok(())
 }
 

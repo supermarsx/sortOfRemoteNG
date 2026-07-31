@@ -67,12 +67,26 @@ pub fn write_private_endpoint(app_data_dir: &Path, url: Option<&str>) -> std::io
     let path: PathBuf = app_data_dir.join(SETTINGS_FILENAME);
 
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
-        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|_| serde_json::json!({})),
+        Ok(s) => serde_json::from_str(&s).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "refusing to overwrite malformed settings at {}: {error}",
+                    path.display()
+                ),
+            )
+        })?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
         Err(e) => return Err(e),
     };
     if !root.is_object() {
-        root = serde_json::json!({});
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "refusing to overwrite settings at {} because the root is not an object",
+                path.display()
+            ),
+        ));
     }
 
     let obj = root.as_object_mut().expect("checked");
@@ -80,7 +94,13 @@ pub fn write_private_endpoint(app_data_dir: &Path, url: Option<&str>) -> std::io
         .entry(SETTINGS_KEY_UPDATER.to_string())
         .or_insert_with(|| serde_json::json!({}));
     if !updater.is_object() {
-        *updater = serde_json::json!({});
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "refusing to overwrite settings at {} because updater is not an object",
+                path.display()
+            ),
+        ));
     }
     let updater_obj = updater.as_object_mut().expect("checked");
 
@@ -115,7 +135,8 @@ pub fn write_private_endpoint(app_data_dir: &Path, url: Option<&str>) -> std::io
 
     let body = serde_json::to_string_pretty(&root)
         .map_err(|e| std::io::Error::other(format!("serialize: {e}")))?;
-    std::fs::write(&path, body)
+    sorng_storage::durable::durable_write(&path, format!("{body}\n").as_bytes())
+        .map_err(std::io::Error::other)
 }
 
 fn is_valid_private_endpoint(input: &str) -> bool {
@@ -204,5 +225,15 @@ mod tests {
         let raw = std::fs::read_to_string(tmp.path().join(SETTINGS_FILENAME)).unwrap();
         assert!(raw.contains("\"theme\""));
         assert!(raw.contains("https://new.example/x"));
+    }
+
+    #[test]
+    fn write_refuses_to_destroy_malformed_settings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(SETTINGS_FILENAME);
+        std::fs::write(&path, "{broken").unwrap();
+
+        assert!(write_private_endpoint(tmp.path(), Some("https://new.example/x")).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "{broken");
     }
 }

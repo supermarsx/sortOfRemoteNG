@@ -13,3 +13,4 @@ log = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-updater = "2"
 url = { workspace = true }
+sorng-storage = { path = "../sorng-storage" }
