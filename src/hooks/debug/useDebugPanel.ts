@@ -50,6 +50,11 @@ interface UseDebugPanelParams {
   handleOpenDevtools: () => void;
 }
 
+function redactSessionId(id: string): string {
+  if (id.length <= 8) return '<redacted>';
+  return `${id.slice(0, 4)}...${id.slice(-4)}`;
+}
+
 export function useDebugPanel({
   dispatch,
   setActiveSessionId,
@@ -254,18 +259,23 @@ export function useDebugPanel({
       });
     }
 
-    list.push({
-      id: 'log-state',
-      label: 'Dump State to Console',
-      description: 'Log current sessions and connection count to devtools console',
-      category: 'state',
-      action: () => {
-        console.group('[Debug] App State Dump');
-        console.log('Sessions:', sessions.length, sessions);
-        console.log('Timestamp:', new Date().toISOString());
-        console.groupEnd();
-      },
-    });
+    if (isDevelopment) {
+      list.push({
+        id: 'log-state',
+        label: 'Dump Redacted State to Console',
+        description: 'Log session count and redacted IDs to devtools console',
+        category: 'state',
+        action: () => {
+          console.group('[Debug] App State Dump');
+          console.debug('Sessions:', {
+            count: sessions.length,
+            redactedIds: sessions.map((session) => redactSessionId(session.id)),
+          });
+          console.debug('Timestamp:', new Date().toISOString());
+          console.groupEnd();
+        },
+      });
+    }
 
     return list;
   }, [addSession, createMockSession, dispatch, sessions, handleOpenDevtools, isDevelopment]);
