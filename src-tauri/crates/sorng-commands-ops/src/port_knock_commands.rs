@@ -2,6 +2,10 @@ mod base64_util {
     pub use crate::port_knock::base64_util::*;
 }
 
+mod client {
+    pub use crate::port_knock::client::{validate_host, validate_port};
+}
+
 mod service {
     pub use crate::port_knock::service::*;
 }

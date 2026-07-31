@@ -6,6 +6,46 @@ use super::types::*;
 
 type State<'a> = tauri::State<'a, Arc<Mutex<PortKnockService>>>;
 
+const MAX_SCANNER_TIMEOUT_MS: u64 = 30_000;
+const MAX_NMAP_PORTS: usize = 4_096;
+const MAX_RTT_SAMPLES: u32 = 100;
+
+fn validate_probe_request(host: &str, port: u16, timeout_ms: u64) -> Result<(), String> {
+    super::client::validate_host(host).map_err(|error| error.to_string())?;
+    super::client::validate_port(port).map_err(|error| error.to_string())?;
+    if !(1..=MAX_SCANNER_TIMEOUT_MS).contains(&timeout_ms) {
+        return Err(format!(
+            "Timeout must be between 1 and {MAX_SCANNER_TIMEOUT_MS} ms"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_nmap_request(host: &str, ports: &[u16]) -> Result<(), String> {
+    super::client::validate_host(host).map_err(|error| error.to_string())?;
+    if ports.is_empty() || ports.len() > MAX_NMAP_PORTS {
+        return Err(format!(
+            "Nmap command requires 1 to {MAX_NMAP_PORTS} non-zero ports"
+        ));
+    }
+    for &port in ports {
+        super::client::validate_port(port).map_err(|_| {
+            format!("Nmap command requires 1 to {MAX_NMAP_PORTS} non-zero ports")
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_rtt_request(host: &str, count: u32) -> Result<(), String> {
+    super::client::validate_host(host).map_err(|error| error.to_string())?;
+    if !(1..=MAX_RTT_SAMPLES).contains(&count) {
+        return Err(format!(
+            "RTT sample count must be between 1 and {MAX_RTT_SAMPLES}"
+        ));
+    }
+    Ok(())
+}
+
 // ─── Host Management (5) ───────────────────────────────────────────
 
 #[command]
@@ -489,6 +529,7 @@ pub async fn port_knock_check_port_command(
     protocol: KnockProtocol,
     timeout_ms: u64,
 ) -> Result<String, String> {
+    validate_probe_request(&host, port, timeout_ms)?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.check_port_command(&host, port, protocol, timeout_ms))
 }
@@ -500,6 +541,7 @@ pub async fn port_knock_banner_grab_command(
     port: u16,
     timeout_ms: u64,
 ) -> Result<String, String> {
+    validate_probe_request(&host, port, timeout_ms)?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.banner_grab_command(&host, port, timeout_ms))
 }
@@ -511,6 +553,7 @@ pub async fn port_knock_nmap_command(
     ports: Vec<u16>,
     fast: bool,
 ) -> Result<String, String> {
+    validate_nmap_request(&host, &ports)?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.nmap_scan_command(&host, &ports, fast))
 }
@@ -521,6 +564,7 @@ pub async fn port_knock_rtt_command(
     host: String,
     count: u32,
 ) -> Result<String, String> {
+    validate_rtt_request(&host, count)?;
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.measure_rtt_command(&host, count))
 }
@@ -573,4 +617,49 @@ pub async fn port_knock_get_recent_history(
 ) -> Result<Vec<KnockHistoryEntry>, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
     Ok(svc.get_recent_history(count).into_iter().cloned().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        validate_nmap_request, validate_probe_request, validate_rtt_request, MAX_NMAP_PORTS,
+        MAX_RTT_SAMPLES, MAX_SCANNER_TIMEOUT_MS,
+    };
+
+    #[test]
+    fn probe_validation_accepts_safe_targets_and_bounds() {
+        assert!(validate_probe_request("host.example", 1, 1).is_ok());
+        assert!(
+            validate_probe_request("[2001:db8::1]", u16::MAX, MAX_SCANNER_TIMEOUT_MS).is_ok()
+        );
+    }
+
+    #[test]
+    fn probe_validation_rejects_host_port_and_timeout_abuse() {
+        assert!(validate_probe_request("host; shutdown", 22, 1_000).is_err());
+        assert!(validate_probe_request("host.example", 0, 1_000).is_err());
+        assert!(validate_probe_request("host.example", 22, 0).is_err());
+        assert!(
+            validate_probe_request("host.example", 22, MAX_SCANNER_TIMEOUT_MS + 1).is_err()
+        );
+    }
+
+    #[test]
+    fn nmap_validation_enforces_host_and_port_set_bounds() {
+        assert!(validate_nmap_request("host.example", &[22, 443]).is_ok());
+        assert!(validate_nmap_request("host && whoami", &[22]).is_err());
+        assert!(validate_nmap_request("host.example", &[]).is_err());
+        assert!(validate_nmap_request("host.example", &[0]).is_err());
+        assert!(
+            validate_nmap_request("host.example", &vec![22; MAX_NMAP_PORTS + 1]).is_err()
+        );
+    }
+
+    #[test]
+    fn rtt_validation_enforces_host_and_sample_bounds() {
+        assert!(validate_rtt_request("127.0.0.1", 1).is_ok());
+        assert!(validate_rtt_request("host$(whoami)", 1).is_err());
+        assert!(validate_rtt_request("host.example", 0).is_err());
+        assert!(validate_rtt_request("host.example", MAX_RTT_SAMPLES + 1).is_err());
+    }
 }
