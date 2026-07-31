@@ -14,13 +14,53 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+const MAX_SERIAL_SESSIONS: usize = 64;
+
+fn bounded_event_text(mut value: String, max_bytes: usize) -> String {
+    if value.len() > max_bytes {
+        let mut end = max_bytes;
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+    }
+    value
+}
+
+async fn write_deadline(handle: &SerialSessionHandle) -> tokio::time::Instant {
+    let timeout_ms = handle
+        .config
+        .read()
+        .await
+        .write_timeout_ms
+        .clamp(1, MAX_SERIAL_TIMEOUT_MS);
+    tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms)
+}
+
+async fn await_command_completion(
+    handle: &SerialSessionHandle,
+    command: SessionCommand,
+    completion: tokio::sync::oneshot::Receiver<Result<(), String>>,
+    deadline: tokio::time::Instant,
+) -> Result<(), String> {
+    match tokio::time::timeout_at(deadline, handle.send_command(command)).await {
+        Ok(result) => result?,
+        Err(_) => return Err("Serial command timed out before queue admission".to_string()),
+    }
+    match tokio::time::timeout_at(deadline, completion).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("Serial session closed before command completion".to_string()),
+        Err(_) => Err("Serial command completion timed out".to_string()),
+    }
+}
+
 /// Type alias used as Tauri managed state.
 pub type SerialServiceState = Arc<SerialService>;
 
 /// Central serial service.
 pub struct SerialService {
     sessions: RwLock<HashMap<String, Arc<SerialSessionHandle>>>,
-    log_writers: RwLock<HashMap<String, tokio::sync::Mutex<LogWriter>>>,
+    log_writers: Arc<RwLock<HashMap<String, tokio::sync::Mutex<LogWriter>>>>,
     event_emitter: Option<DynEventEmitter>,
 }
 
@@ -29,7 +69,7 @@ impl SerialService {
     pub fn new() -> SerialServiceState {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
-            log_writers: RwLock::new(HashMap::new()),
+            log_writers: Arc::new(RwLock::new(HashMap::new())),
             event_emitter: None,
         })
     }
@@ -38,7 +78,7 @@ impl SerialService {
     pub fn new_with_emitter(emitter: DynEventEmitter) -> SerialServiceState {
         Arc::new(Self {
             sessions: RwLock::new(HashMap::new()),
-            log_writers: RwLock::new(HashMap::new()),
+            log_writers: Arc::new(RwLock::new(HashMap::new())),
             event_emitter: Some(emitter),
         })
     }
@@ -77,11 +117,18 @@ impl SerialService {
 
     /// Open a new serial session.
     pub async fn connect(&self, config: SerialConfig) -> Result<SerialSession, String> {
+        config.validate()?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate port
         {
             let sessions = self.sessions.read().await;
+            if sessions.len() >= MAX_SERIAL_SESSIONS {
+                return Err(format!(
+                    "Serial session limit of {} has been reached",
+                    MAX_SERIAL_SESSIONS
+                ));
+            }
             for handle in sessions.values() {
                 if handle.port_name == config.port_name && handle.is_connected() {
                     return Err(format!(
@@ -102,8 +149,20 @@ impl SerialService {
         // Store the session
         {
             let mut sessions = self.sessions.write().await;
-            sessions.insert(session_id.clone(), handle);
+            if sessions.len() >= MAX_SERIAL_SESSIONS
+                || sessions.values().any(|existing| {
+                    existing.port_name == config.port_name && existing.is_connected()
+                })
+            {
+                drop(sessions);
+                let _ = handle.send_command(SessionCommand::Disconnect).await;
+                return Err(
+                    "Serial session admission changed while the port was opening".to_string(),
+                );
+            }
+            sessions.insert(session_id.clone(), handle.clone());
         }
+        self.start_event_forwarder(self.event_emitter.clone(), session_id.clone(), handle);
 
         Ok(info)
     }
@@ -112,6 +171,7 @@ impl SerialService {
     #[cfg(test)]
     pub async fn connect_simulated(&self, config: SerialConfig) -> Result<SerialSession, String> {
         use crate::serial::transport::SimulatedTransport;
+        config.validate()?;
         let session_id = uuid::Uuid::new_v4().to_string();
 
         // Check for duplicate port
@@ -133,8 +193,9 @@ impl SerialService {
         let info = handle.info().await;
         {
             let mut sessions = self.sessions.write().await;
-            sessions.insert(session_id.clone(), handle);
+            sessions.insert(session_id.clone(), handle.clone());
         }
+        self.start_event_forwarder(None, session_id.clone(), handle);
         Ok(info)
     }
 
@@ -179,32 +240,69 @@ impl SerialService {
 
     /// Send raw bytes to a session.
     pub async fn send_raw(&self, session_id: &str, data: Vec<u8>) -> Result<(), String> {
+        if data.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial payload exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES
+            ));
+        }
         let handle = self.get_session(session_id).await?;
-
-        // Log if enabled
+        let deadline = write_deadline(handle.as_ref()).await;
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+        let command = SessionCommand::SendRaw {
+            data: data.clone(),
+            deadline,
+            completion: completion_tx,
+        };
+        await_command_completion(handle.as_ref(), command, completion_rx, deadline).await?;
         self.log_data(session_id, DataDirection::Tx, &data).await;
-
-        handle.send_command(SessionCommand::SendRaw(data)).await
+        Ok(())
     }
 
     /// Send a line of text to a session.
     pub async fn send_line(&self, session_id: &str, line: String) -> Result<(), String> {
+        if line.len().saturating_add(2) > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial line exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES.saturating_sub(2)
+            ));
+        }
         let handle = self.get_session(session_id).await?;
-
-        self.log_data(session_id, DataDirection::Tx, line.as_bytes())
+        let logged = line.clone();
+        let deadline = write_deadline(handle.as_ref()).await;
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+        let command = SessionCommand::SendLine {
+            line,
+            deadline,
+            completion: completion_tx,
+        };
+        await_command_completion(handle.as_ref(), command, completion_rx, deadline).await?;
+        self.log_data(session_id, DataDirection::Tx, logged.as_bytes())
             .await;
-
-        handle.send_command(SessionCommand::SendLine(line)).await
+        Ok(())
     }
 
     /// Send a character to a session.
     pub async fn send_char(&self, session_id: &str, ch: u8) -> Result<(), String> {
         let handle = self.get_session(session_id).await?;
-        handle.send_command(SessionCommand::SendChar(ch)).await
+        let deadline = write_deadline(handle.as_ref()).await;
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+        let command = SessionCommand::SendChar {
+            ch,
+            deadline,
+            completion: completion_tx,
+        };
+        await_command_completion(handle.as_ref(), command, completion_rx, deadline).await
     }
 
     /// Send a break signal.
     pub async fn send_break(&self, session_id: &str, duration_ms: u32) -> Result<(), String> {
+        if duration_ms > MAX_SERIAL_BREAK_MS {
+            return Err(format!(
+                "Serial break duration cannot exceed {} ms",
+                MAX_SERIAL_BREAK_MS
+            ));
+        }
         let handle = self.get_session(session_id).await?;
         handle
             .send_command(SessionCommand::SendBreak(duration_ms))
@@ -236,10 +334,20 @@ impl SerialService {
 
     /// Reconfigure a session on the fly.
     pub async fn reconfigure(&self, session_id: &str, config: SerialConfig) -> Result<(), String> {
+        config.validate()?;
         let handle = self.get_session(session_id).await?;
-        handle
-            .send_command(SessionCommand::Reconfigure(config))
-            .await
+        if config.port_name != handle.port_name {
+            return Err("Cannot change a serial session's port name".to_string());
+        }
+        let timeout_ms = config.write_timeout_ms.clamp(1, MAX_SERIAL_TIMEOUT_MS);
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+        let command = SessionCommand::Reconfigure {
+            config,
+            deadline,
+            completion: completion_tx,
+        };
+        await_command_completion(handle.as_ref(), command, completion_rx, deadline).await
     }
 
     /// Set line ending for a session.
@@ -301,6 +409,20 @@ impl SerialService {
         command: &str,
         timeout_ms: u64,
     ) -> Result<AtCommandResult, String> {
+        if command.is_empty()
+            || command.len() > MAX_SERIAL_MODEM_COMMAND_BYTES
+            || command.chars().any(char::is_control)
+        {
+            return Err(
+                "AT command is empty, oversized, or contains control characters".to_string(),
+            );
+        }
+        if timeout_ms == 0 || timeout_ms > MAX_SERIAL_TIMEOUT_MS {
+            return Err(format!(
+                "AT command timeout must be between 1 and {} ms",
+                MAX_SERIAL_TIMEOUT_MS
+            ));
+        }
         let handle = self.get_session(session_id).await?;
         crate::serial::modem::execute_at_command(handle.transport.as_ref(), command, timeout_ms)
             .await
@@ -340,6 +462,11 @@ impl SerialService {
         session_id: &str,
         number: &str,
     ) -> Result<AtCommandResult, String> {
+        if number.is_empty() || number.len() > 256 || number.chars().any(char::is_control) {
+            return Err(
+                "Dial string is empty, oversized, or contains control characters".to_string(),
+            );
+        }
         let handle = self.get_session(session_id).await?;
         let controller =
             ModemController::new(handle.transport.clone(), ModemProfile::default(), 60000);
@@ -380,10 +507,18 @@ impl SerialService {
     }
 
     async fn log_data(&self, session_id: &str, direction: DataDirection, data: &[u8]) {
+        if data.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return;
+        }
         let writers = self.log_writers.read().await;
         if let Some(writer) = writers.get(session_id) {
             let mut w = writer.lock().await;
-            let _ = w.log(LogEntry::new(direction, data.to_vec()));
+            if let Err(error) = w.log(LogEntry::new(direction, data.to_vec())) {
+                log::warn!(
+                    "Serial capture write failed: {}",
+                    bounded_event_text(error, MAX_SERIAL_ERROR_BYTES)
+                );
+            }
         }
     }
 
@@ -393,65 +528,110 @@ impl SerialService {
     /// Call this after `connect()`.
     pub fn start_event_forwarder(
         &self,
-        emitter: DynEventEmitter,
+        emitter: Option<DynEventEmitter>,
         session_id: String,
         handle: Arc<SerialSessionHandle>,
     ) {
+        let log_writers = self.log_writers.clone();
         tokio::spawn(async move {
             let mut event_rx = handle.event_rx.lock().await;
             while let Some(event) = event_rx.recv().await {
                 match event {
                     SessionEvent::DataReceived { data, text } => {
-                        let payload = SerialOutputEvent {
-                            session_id: session_id.clone(),
-                            data: base64::Engine::encode(
-                                &base64::engine::general_purpose::STANDARD,
-                                &data,
-                            ),
-                            text,
-                        };
-                        let _ = emitter.emit_event("serial:output", serde_json::to_value(&payload).unwrap_or_default());
+                        if let Some(writer) = log_writers.read().await.get(&session_id) {
+                            let mut writer = writer.lock().await;
+                            if let Err(error) =
+                                writer.log(LogEntry::new(DataDirection::Rx, data.clone()))
+                            {
+                                log::warn!(
+                                    "Serial capture write failed: {}",
+                                    bounded_event_text(error, MAX_SERIAL_ERROR_BYTES)
+                                );
+                            }
+                        }
+                        if let Some(emitter) = &emitter {
+                            let payload = SerialOutputEvent {
+                                session_id: session_id.clone(),
+                                data: base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    &data,
+                                ),
+                                text: bounded_event_text(text, MAX_SERIAL_PAYLOAD_BYTES),
+                            };
+                            let _ = emitter.emit_event(
+                                "serial:output",
+                                serde_json::to_value(&payload).unwrap_or_default(),
+                            );
+                        }
                     }
                     SessionEvent::Echo(data) => {
-                        let text = String::from_utf8_lossy(&data).to_string();
-                        let payload = SerialOutputEvent {
-                            session_id: session_id.clone(),
-                            data: base64::Engine::encode(
-                                &base64::engine::general_purpose::STANDARD,
-                                &data,
-                            ),
-                            text,
-                        };
-                        let _ = emitter.emit_event("serial:echo", serde_json::to_value(&payload).unwrap_or_default());
+                        if let Some(emitter) = &emitter {
+                            let text = bounded_event_text(
+                                String::from_utf8_lossy(&data).to_string(),
+                                MAX_SERIAL_PAYLOAD_BYTES,
+                            );
+                            let payload = SerialOutputEvent {
+                                session_id: session_id.clone(),
+                                data: base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    &data,
+                                ),
+                                text,
+                            };
+                            let _ = emitter.emit_event(
+                                "serial:echo",
+                                serde_json::to_value(&payload).unwrap_or_default(),
+                            );
+                        }
                     }
                     SessionEvent::Error {
                         message,
                         recoverable,
                     } => {
-                        let payload = SerialErrorEvent {
-                            session_id: session_id.clone(),
-                            message,
-                            recoverable,
-                        };
-                        let _ = emitter.emit_event("serial:error", serde_json::to_value(&payload).unwrap_or_default());
+                        if let Some(emitter) = &emitter {
+                            let payload = SerialErrorEvent {
+                                session_id: session_id.clone(),
+                                message: bounded_event_text(message, MAX_SERIAL_ERROR_BYTES),
+                                recoverable,
+                            };
+                            let _ = emitter.emit_event(
+                                "serial:error",
+                                serde_json::to_value(&payload).unwrap_or_default(),
+                            );
+                        }
                     }
                     SessionEvent::ControlLineChange(lines) => {
-                        let payload = ControlLineChangeEvent {
-                            session_id: session_id.clone(),
-                            lines,
-                        };
-                        let _ = emitter.emit_event("serial:control-lines", serde_json::to_value(&payload).unwrap_or_default());
+                        if let Some(emitter) = &emitter {
+                            let payload = ControlLineChangeEvent {
+                                session_id: session_id.clone(),
+                                lines,
+                            };
+                            let _ = emitter.emit_event(
+                                "serial:control-lines",
+                                serde_json::to_value(&payload).unwrap_or_default(),
+                            );
+                        }
                     }
                     SessionEvent::Disconnected { reason } => {
-                        let payload = SerialClosedEvent {
-                            session_id: session_id.clone(),
-                            reason,
-                        };
-                        let _ = emitter.emit_event("serial:closed", serde_json::to_value(&payload).unwrap_or_default());
+                        if let Some(emitter) = &emitter {
+                            let payload = SerialClosedEvent {
+                                session_id: session_id.clone(),
+                                reason,
+                            };
+                            let _ = emitter.emit_event(
+                                "serial:closed",
+                                serde_json::to_value(&payload).unwrap_or_default(),
+                            );
+                        }
                         break;
                     }
                     SessionEvent::StatsUpdate(stats) => {
-                        let _ = emitter.emit_event("serial:stats", serde_json::to_value(&stats).unwrap_or_default());
+                        if let Some(emitter) = &emitter {
+                            let _ = emitter.emit_event(
+                                "serial:stats",
+                                serde_json::to_value(&stats).unwrap_or_default(),
+                            );
+                        }
                     }
                 }
             }
@@ -459,29 +639,21 @@ impl SerialService {
     }
 
     /// Connect with event forwarding to the stored emitter.
-    pub async fn connect_with_events(
-        &self,
-        config: SerialConfig,
-    ) -> Result<SerialSession, String> {
-        let info = self.connect(config).await?;
-
-        if let Some(emitter) = &self.event_emitter {
-            let session_id = info.id.clone();
-            let handle = self.get_session(&session_id).await?;
-            self.start_event_forwarder(emitter.clone(), session_id, handle);
-        }
-
-        Ok(info)
+    pub async fn connect_with_events(&self, config: SerialConfig) -> Result<SerialSession, String> {
+        self.connect(config).await
     }
 
     // ── Helpers ───────────────────────────────────────────────────
 
     async fn get_session(&self, session_id: &str) -> Result<Arc<SerialSessionHandle>, String> {
+        if session_id.is_empty() || session_id.len() > MAX_SERIAL_SESSION_ID_BYTES {
+            return Err("Invalid serial session identifier".to_string());
+        }
         let sessions = self.sessions.read().await;
         sessions
             .get(session_id)
             .cloned()
-            .ok_or_else(|| format!("Session not found: {}", session_id))
+            .ok_or_else(|| "Serial session not found".to_string())
     }
 }
 

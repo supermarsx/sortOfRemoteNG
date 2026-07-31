@@ -10,6 +10,27 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 
+const SESSION_COMMAND_QUEUE_CAPACITY: usize = 32;
+const SESSION_EVENT_QUEUE_CAPACITY: usize = 64;
+const MAX_CONSECUTIVE_READ_ERRORS: u32 = 3;
+
+fn atomic_saturating_add(counter: &AtomicU64, value: u64) {
+    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(value))
+    });
+}
+
+fn bounded_error(mut message: String) -> String {
+    if message.len() > MAX_SERIAL_ERROR_BYTES {
+        let mut end = MAX_SERIAL_ERROR_BYTES;
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        message.truncate(end);
+    }
+    message
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Session commands (frontend → session)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -18,11 +39,23 @@ use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 #[derive(Debug)]
 pub enum SessionCommand {
     /// Send raw bytes to the port.
-    SendRaw(Vec<u8>),
+    SendRaw {
+        data: Vec<u8>,
+        deadline: tokio::time::Instant,
+        completion: oneshot::Sender<Result<(), String>>,
+    },
     /// Send a string with line ending appended.
-    SendLine(String),
+    SendLine {
+        line: String,
+        deadline: tokio::time::Instant,
+        completion: oneshot::Sender<Result<(), String>>,
+    },
     /// Send a single character (for interactive terminal).
-    SendChar(u8),
+    SendChar {
+        ch: u8,
+        deadline: tokio::time::Instant,
+        completion: oneshot::Sender<Result<(), String>>,
+    },
     /// Send a break signal.
     SendBreak(u32),
     /// Set DTR line.
@@ -32,7 +65,11 @@ pub enum SessionCommand {
     /// Read control lines (response via oneshot).
     ReadControlLines(oneshot::Sender<Result<ControlLines, String>>),
     /// Reconfigure the port on the fly.
-    Reconfigure(SerialConfig),
+    Reconfigure {
+        config: SerialConfig,
+        deadline: tokio::time::Instant,
+        completion: oneshot::Sender<Result<(), String>>,
+    },
     /// Change line ending.
     SetLineEnding(LineEnding),
     /// Toggle local echo.
@@ -84,8 +121,10 @@ pub struct SerialSessionHandle {
     pub event_rx: Mutex<mpsc::Receiver<SessionEvent>>,
     /// Whether the session is connected.
     pub connected: Arc<AtomicBool>,
+    /// Whether the session stopped because the transport failed.
+    pub errored: Arc<AtomicBool>,
     /// Config used to open the session.
-    pub config: RwLock<SerialConfig>,
+    pub config: Arc<RwLock<SerialConfig>>,
     /// When the session was opened.
     pub connected_at: chrono::DateTime<Utc>,
     /// Bytes received.
@@ -97,16 +136,22 @@ pub struct SerialSessionHandle {
 impl SerialSessionHandle {
     /// Build a `SerialSession` info snapshot.
     pub async fn info(&self) -> SerialSession {
-        let config = self.config.read().await;
-        let cl = self
-            .transport
-            .read_control_lines()
-            .await
-            .unwrap_or_default();
-        let state = if self.connected.load(Ordering::SeqCst) {
+        let config = self.config.read().await.clone();
+        let connected = self.connected.load(Ordering::SeqCst) && self.transport.is_open();
+        let state = if self.errored.load(Ordering::SeqCst) {
+            SessionState::Error
+        } else if connected {
             SessionState::Connected
         } else {
             SessionState::Disconnected
+        };
+        let cl = if connected {
+            self.transport
+                .read_control_lines()
+                .await
+                .unwrap_or_default()
+        } else {
+            ControlLines::default()
         };
         SerialSession {
             id: self.id.clone(),
@@ -132,6 +177,8 @@ impl SerialSessionHandle {
     /// Check whether the session is still connected.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::SeqCst)
+            && !self.errored.load(Ordering::SeqCst)
+            && self.transport.is_open()
     }
 }
 
@@ -143,25 +190,35 @@ impl SerialSessionHandle {
 struct SessionRunner {
     transport: Arc<dyn SerialTransport>,
     config: SerialConfig,
+    config_metadata: Arc<RwLock<SerialConfig>>,
     line_discipline: LineDiscipline,
     xon_xoff: Option<XonXoffController>,
     event_tx: mpsc::Sender<SessionEvent>,
     bytes_rx: Arc<AtomicU64>,
     bytes_tx: Arc<AtomicU64>,
     connected: Arc<AtomicBool>,
+    errored: Arc<AtomicBool>,
     stats: SessionStats,
+    started_at: std::time::Instant,
 }
 
 impl SessionRunner {
     fn new(
         transport: Arc<dyn SerialTransport>,
         config: SerialConfig,
+        config_metadata: Arc<RwLock<SerialConfig>>,
         event_tx: mpsc::Sender<SessionEvent>,
         bytes_rx: Arc<AtomicU64>,
         bytes_tx: Arc<AtomicU64>,
         connected: Arc<AtomicBool>,
+        errored: Arc<AtomicBool>,
     ) -> Self {
-        let line_discipline = LineDiscipline::new(config.line_ending, config.local_echo);
+        let mut line_discipline = LineDiscipline::new(config.line_ending, config.local_echo);
+        line_discipline.set_max_line_length(
+            config
+                .tx_buffer_size
+                .min(MAX_SERIAL_PAYLOAD_BYTES.saturating_sub(2)),
+        );
         let xon_xoff = if config.flow_control == FlowControl::XonXoff {
             Some(XonXoffController::new(
                 config.rx_buffer_size * 3 / 4,
@@ -174,22 +231,27 @@ impl SessionRunner {
         Self {
             transport,
             config,
+            config_metadata,
             line_discipline,
             xon_xoff,
             event_tx,
             bytes_rx,
             bytes_tx,
             connected,
+            errored,
             stats: SessionStats::default(),
+            started_at: std::time::Instant::now(),
         }
     }
 
     /// Main session loop.
     async fn run(mut self, mut cmd_rx: mpsc::Receiver<SessionCommand>) {
         let mut read_buf = vec![0u8; self.config.rx_buffer_size];
-        let read_interval = tokio::time::Duration::from_millis(self.config.read_timeout_ms.max(10));
+        let mut read_interval =
+            tokio::time::Duration::from_millis(self.config.read_timeout_ms.max(10));
         let mut control_check_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
         let mut last_control_lines = ControlLines::default();
+        let mut consecutive_read_errors = 0u32;
 
         loop {
             tokio::select! {
@@ -201,6 +263,16 @@ impl SessionRunner {
                     match self.transport.read(&mut read_buf).await {
                         Ok(0) => {},
                         Ok(n) => {
+                            if n > read_buf.len() {
+                                self.errored.store(true, Ordering::SeqCst);
+                                self.connected.store(false, Ordering::SeqCst);
+                                let _ = self.event_tx.send(SessionEvent::Error {
+                                    message: "Serial transport returned more bytes than requested".to_string(),
+                                    recoverable: false,
+                                }).await;
+                                break;
+                            }
+                            consecutive_read_errors = 0;
                             let mut data = Vec::with_capacity(n);
                             for &byte in &read_buf[..n] {
                                 // XON/XOFF filtering
@@ -213,9 +285,9 @@ impl SessionRunner {
                             }
                             if !data.is_empty() {
                                 let count = data.len() as u64;
-                                self.bytes_rx.fetch_add(count, Ordering::Relaxed);
-                                self.stats.bytes_rx += count;
-                                self.stats.frames_rx += 1;
+                                atomic_saturating_add(&self.bytes_rx, count);
+                                self.stats.bytes_rx = self.stats.bytes_rx.saturating_add(count);
+                                self.stats.frames_rx = self.stats.frames_rx.saturating_add(1);
 
                                 let text = String::from_utf8_lossy(&data).to_string();
                                 let _ = self.event_tx.send(SessionEvent::DataReceived {
@@ -225,11 +297,21 @@ impl SessionRunner {
                             }
                         }
                         Err(e) => {
-                            self.stats.errors_rx += 1;
+                            self.stats.errors_rx = self.stats.errors_rx.saturating_add(1);
+                            consecutive_read_errors = consecutive_read_errors.saturating_add(1);
+                            let recoverable =
+                                consecutive_read_errors < MAX_CONSECUTIVE_READ_ERRORS;
+                            if !recoverable {
+                                self.errored.store(true, Ordering::SeqCst);
+                                self.connected.store(false, Ordering::SeqCst);
+                            }
                             let _ = self.event_tx.send(SessionEvent::Error {
-                                message: e.clone(),
-                                recoverable: true,
+                                message: bounded_error(e),
+                                recoverable,
                             }).await;
+                            if !recoverable {
+                                break;
+                            }
                         }
                     }
                 }
@@ -237,91 +319,175 @@ impl SessionRunner {
                 // Process commands from the service
                 Some(cmd) = cmd_rx.recv() => {
                     match cmd {
-                        SessionCommand::SendRaw(data) => {
-                            match self.handle_send_raw(&data).await {
+                        SessionCommand::SendRaw {
+                            data,
+                            deadline,
+                            completion,
+                        } => {
+                            let result = self.handle_send_raw_until(&data, deadline).await;
+                            let _ = completion.send(result.clone());
+                            match result {
                                 Ok(()) if self.config.local_echo => {
                                     let _ = self.event_tx.send(SessionEvent::Echo(data)).await;
                                 }
                                 Ok(()) => {}
                                 Err(e) => {
+                                    self.stats.errors_tx = self.stats.errors_tx.saturating_add(1);
                                     let _ = self.event_tx.send(SessionEvent::Error {
-                                        message: e,
+                                        message: bounded_error(e),
                                         recoverable: true,
                                     }).await;
                                 }
                             }
                         }
-                        SessionCommand::SendLine(line) => {
+                        SessionCommand::SendLine {
+                            line,
+                            deadline,
+                            completion,
+                        } => {
                             let mut data = line.into_bytes();
                             self.line_discipline.append_line_ending(&mut data);
-                            if let Err(e) = self.handle_send_raw(&data).await {
+                            let result = self.handle_send_raw_until(&data, deadline).await;
+                            let _ = completion.send(result.clone());
+                            if let Err(e) = result {
+                                self.stats.errors_tx = self.stats.errors_tx.saturating_add(1);
                                 let _ = self.event_tx.send(SessionEvent::Error {
-                                    message: e,
+                                    message: bounded_error(e),
                                     recoverable: true,
                                 }).await;
                             }
                         }
-                        SessionCommand::SendChar(ch) => {
-                            let (completed_line, echo) = self.line_discipline.process_byte(ch);
-                            if !echo.is_empty() {
+                        SessionCommand::SendChar {
+                            ch,
+                            deadline,
+                            completion,
+                        } => {
+                            let mut echo = Vec::new();
+                            let result = if tokio::time::Instant::now() >= deadline {
+                                Err("Serial command expired before execution".to_string())
+                            } else {
+                                let (completed_line, local_echo) =
+                                    self.line_discipline.process_byte(ch);
+                                echo = local_echo;
+                                if let Some(line) = completed_line {
+                                    let mut data = line;
+                                    self.line_discipline.append_line_ending(&mut data);
+                                    self.handle_send_raw_until(&data, deadline).await
+                                } else {
+                                    Ok(())
+                                }
+                            };
+                            let _ = completion.send(result.clone());
+                            if result.is_ok() && !echo.is_empty() {
                                 let _ = self.event_tx.send(SessionEvent::Echo(echo)).await;
                             }
-                            if let Some(line) = completed_line {
-                                let mut data = line;
-                                self.line_discipline.append_line_ending(&mut data);
-                                if let Err(e) = self.handle_send_raw(&data).await {
+                            if let Err(e) = result {
+                                    self.stats.errors_tx = self.stats.errors_tx.saturating_add(1);
                                     let _ = self.event_tx.send(SessionEvent::Error {
-                                        message: e,
+                                        message: bounded_error(e),
                                         recoverable: true,
                                     }).await;
-                                }
                             }
                         }
                         SessionCommand::SendBreak(duration) => {
                             if let Err(e) = self.transport.send_break(duration).await {
+                                self.stats.errors_tx = self.stats.errors_tx.saturating_add(1);
                                 let _ = self.event_tx.send(SessionEvent::Error {
-                                    message: e,
+                                    message: bounded_error(e),
+                                    recoverable: true,
+                                }).await;
+                            } else {
+                                self.stats.break_count = self.stats.break_count.saturating_add(1);
+                            }
+                        }
+                        SessionCommand::SetDtr(state) => {
+                            if let Err(e) = self.transport.set_dtr(state).await {
+                                let _ = self.event_tx.send(SessionEvent::Error {
+                                    message: bounded_error(e),
                                     recoverable: true,
                                 }).await;
                             }
-                            self.stats.break_count += 1;
-                        }
-                        SessionCommand::SetDtr(state) => {
-                            let _ = self.transport.set_dtr(state).await;
                         }
                         SessionCommand::SetRts(state) => {
-                            let _ = self.transport.set_rts(state).await;
+                            if let Err(e) = self.transport.set_rts(state).await {
+                                let _ = self.event_tx.send(SessionEvent::Error {
+                                    message: bounded_error(e),
+                                    recoverable: true,
+                                }).await;
+                            }
                         }
                         SessionCommand::ReadControlLines(reply) => {
                             let result = self.transport.read_control_lines().await;
                             let _ = reply.send(result);
                         }
-                        SessionCommand::Reconfigure(new_config) => {
-                            if let Err(e) = self.transport.reconfigure(&new_config).await {
-                                let _ = self.event_tx.send(SessionEvent::Error {
-                                    message: format!("Reconfigure failed: {}", e),
-                                    recoverable: true,
-                                }).await;
-                            } else {
+                        SessionCommand::Reconfigure {
+                            config: new_config,
+                            deadline,
+                            completion,
+                        } => {
+                            let result = match tokio::time::timeout_at(
+                                deadline,
+                                self.transport.reconfigure(&new_config),
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(_) => Err("Serial reconfigure timed out".to_string()),
+                            };
+                            if result.is_ok() {
                                 self.config = new_config;
                                 self.line_discipline.set_line_ending(self.config.line_ending);
                                 self.line_discipline.set_local_echo(self.config.local_echo);
+                                self.line_discipline.set_max_line_length(
+                                    self.config
+                                        .tx_buffer_size
+                                        .min(MAX_SERIAL_PAYLOAD_BYTES.saturating_sub(2)),
+                                );
+                                self.xon_xoff =
+                                    if self.config.flow_control == FlowControl::XonXoff {
+                                        Some(XonXoffController::new(
+                                            self.config.rx_buffer_size.saturating_mul(3) / 4,
+                                            self.config.rx_buffer_size / 4,
+                                        ))
+                                    } else {
+                                        None
+                                    };
+                                read_buf.resize(self.config.rx_buffer_size, 0);
+                                read_interval = tokio::time::Duration::from_millis(
+                                    self.config.read_timeout_ms.max(10),
+                                );
+                                *self.config_metadata.write().await = self.config.clone();
+                            }
+                            let _ = completion.send(result.clone());
+                            if let Err(e) = result {
+                                let _ = self.event_tx.send(SessionEvent::Error {
+                                    message: bounded_error(format!("Reconfigure failed: {}", e)),
+                                    recoverable: true,
+                                }).await;
                             }
                         }
                         SessionCommand::SetLineEnding(le) => {
+                            self.config.line_ending = le;
                             self.line_discipline.set_line_ending(le);
+                            *self.config_metadata.write().await = self.config.clone();
                         }
                         SessionCommand::SetLocalEcho(echo) => {
+                            self.config.local_echo = echo;
                             self.line_discipline.set_local_echo(echo);
+                            *self.config_metadata.write().await = self.config.clone();
                         }
                         SessionCommand::Flush => {
-                            let _ = self.transport.flush().await;
+                            if let Err(e) = self.transport.flush().await {
+                                let _ = self.event_tx.send(SessionEvent::Error {
+                                    message: bounded_error(e),
+                                    recoverable: true,
+                                }).await;
+                            }
                         }
                         SessionCommand::GetStats(reply) => {
-                            let _start = self.stats.uptime_seconds;
-                            // We don't have a real start time in stats, so calculate from connected_at if needed
                             self.stats.bytes_rx = self.bytes_rx.load(Ordering::Relaxed);
                             self.stats.bytes_tx = self.bytes_tx.load(Ordering::Relaxed);
+                            self.stats.uptime_seconds = self.started_at.elapsed().as_secs();
                             let _ = reply.send(self.stats.clone());
                         }
                         SessionCommand::Disconnect => {
@@ -344,16 +510,29 @@ impl SessionRunner {
 
         // Cleanup
         self.connected.store(false, Ordering::SeqCst);
-        let _ = self.transport.close().await;
+        if self.transport.close().await.is_err() {
+            self.errored.store(true, Ordering::SeqCst);
+        }
+        let reason = if self.errored.load(Ordering::SeqCst) {
+            "Session ended after a serial transport error"
+        } else {
+            "Session ended"
+        };
         let _ = self
             .event_tx
             .send(SessionEvent::Disconnected {
-                reason: "Session ended".to_string(),
+                reason: reason.to_string(),
             })
             .await;
     }
 
     async fn handle_send_raw(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial write exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES
+            ));
+        }
         // Check XON/XOFF pause
         if let Some(ref xon_xoff) = self.xon_xoff {
             if xon_xoff.is_remote_paused() {
@@ -372,10 +551,31 @@ impl SessionRunner {
             self.transport.write(data).await?
         };
 
-        self.bytes_tx.fetch_add(n as u64, Ordering::Relaxed);
-        self.stats.bytes_tx += n as u64;
-        self.stats.frames_tx += 1;
+        if n != data.len() {
+            return Err(format!(
+                "Serial transport accepted {} of {} bytes",
+                n,
+                data.len()
+            ));
+        }
+        atomic_saturating_add(&self.bytes_tx, n as u64);
+        self.stats.bytes_tx = self.stats.bytes_tx.saturating_add(n as u64);
+        self.stats.frames_tx = self.stats.frames_tx.saturating_add(1);
         Ok(())
+    }
+
+    async fn handle_send_raw_until(
+        &mut self,
+        data: &[u8],
+        deadline: tokio::time::Instant,
+    ) -> Result<(), String> {
+        if tokio::time::Instant::now() >= deadline {
+            return Err("Serial command expired before execution".to_string());
+        }
+        match tokio::time::timeout_at(deadline, self.handle_send_raw(data)).await {
+            Ok(result) => result,
+            Err(_) => Err("Serial write timed out".to_string()),
+        }
     }
 }
 
@@ -392,15 +592,18 @@ pub async fn create_session(
     transport: Arc<dyn SerialTransport>,
     config: SerialConfig,
 ) -> Result<Arc<SerialSessionHandle>, String> {
+    config.validate()?;
     // Open the transport
     transport.open(&config).await?;
 
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(64);
-    let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(SESSION_COMMAND_QUEUE_CAPACITY);
+    let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(SESSION_EVENT_QUEUE_CAPACITY);
 
     let connected = Arc::new(AtomicBool::new(true));
+    let errored = Arc::new(AtomicBool::new(false));
     let bytes_rx = Arc::new(AtomicU64::new(0));
     let bytes_tx = Arc::new(AtomicU64::new(0));
+    let config_metadata = Arc::new(RwLock::new(config.clone()));
 
     let handle = Arc::new(SerialSessionHandle {
         id: id.clone(),
@@ -409,13 +612,23 @@ pub async fn create_session(
         cmd_tx,
         event_rx: Mutex::new(event_rx),
         connected: connected.clone(),
-        config: RwLock::new(config.clone()),
+        errored: errored.clone(),
+        config: config_metadata.clone(),
         connected_at: Utc::now(),
         bytes_rx: bytes_rx.clone(),
         bytes_tx: bytes_tx.clone(),
     });
 
-    let runner = SessionRunner::new(transport, config, event_tx, bytes_rx, bytes_tx, connected);
+    let runner = SessionRunner::new(
+        transport,
+        config,
+        config_metadata,
+        event_tx,
+        bytes_rx,
+        bytes_tx,
+        connected,
+        errored,
+    );
 
     // Spawn the session task
     tokio::spawn(async move {
@@ -461,11 +674,16 @@ mod tests {
             .await
             .unwrap();
 
+        let (completion, completed) = oneshot::channel();
         handle
-            .send_command(SessionCommand::SendRaw(b"hello".to_vec()))
+            .send_command(SessionCommand::SendRaw {
+                data: b"hello".to_vec(),
+                deadline: tokio::time::Instant::now() + tokio::time::Duration::from_secs(1),
+                completion,
+            })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        completed.await.unwrap().unwrap();
 
         let tx_data = t.drain_tx().await;
         assert_eq!(tx_data, b"hello");
@@ -497,11 +715,16 @@ mod tests {
             .await
             .unwrap();
 
+        let (completion, completed) = oneshot::channel();
         handle
-            .send_command(SessionCommand::SendRaw(b"hello".to_vec()))
+            .send_command(SessionCommand::SendRaw {
+                data: b"hello".to_vec(),
+                deadline: tokio::time::Instant::now() + tokio::time::Duration::from_secs(1),
+                completion,
+            })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        completed.await.unwrap().unwrap();
 
         // The runner emits Echo only from the successful write branch.
         assert_eq!(t.drain_tx().await, b"hello");
@@ -534,11 +757,16 @@ mod tests {
             .await
             .unwrap();
 
+        let (completion, completed) = oneshot::channel();
         handle
-            .send_command(SessionCommand::SendLine("AT".to_string()))
+            .send_command(SessionCommand::SendLine {
+                line: "AT".to_string(),
+                deadline: tokio::time::Instant::now() + tokio::time::Duration::from_secs(1),
+                completion,
+            })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        completed.await.unwrap().unwrap();
 
         let tx_data = t.drain_tx().await;
         assert_eq!(tx_data, b"AT\r\n");
@@ -661,11 +889,16 @@ mod tests {
             .await
             .unwrap();
 
+        let (completion, completed) = oneshot::channel();
         handle
-            .send_command(SessionCommand::SendRaw(b"test".to_vec()))
+            .send_command(SessionCommand::SendRaw {
+                data: b"test".to_vec(),
+                deadline: tokio::time::Instant::now() + tokio::time::Duration::from_secs(1),
+                completion,
+            })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        completed.await.unwrap().unwrap();
 
         let (tx, rx) = oneshot::channel();
         handle
