@@ -7,7 +7,7 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// Configuration for connecting to a Ceph Manager REST API endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CephConnectionConfig {
     /// Hostname or IP address of the ceph-mgr node.
     pub host: String,
@@ -16,8 +16,10 @@ pub struct CephConnectionConfig {
     /// Username for authentication.
     pub username: String,
     /// Password for authentication (used with basic auth).
+    #[serde(skip_serializing)]
     pub password: Option<String>,
     /// API token (alternative to username/password).
+    #[serde(skip_serializing)]
     pub api_token: Option<String>,
     /// Whether to use TLS (HTTPS).
     pub use_tls: bool,
@@ -25,6 +27,21 @@ pub struct CephConnectionConfig {
     pub verify_cert: bool,
     /// Request timeout in seconds.
     pub timeout_secs: u64,
+}
+
+impl std::fmt::Debug for CephConnectionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CephConnectionConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password_configured", &self.password.is_some())
+            .field("api_token_configured", &self.api_token.is_some())
+            .field("use_tls", &self.use_tls)
+            .field("verify_cert", &self.verify_cert)
+            .field("timeout_secs", &self.timeout_secs)
+            .finish()
+    }
 }
 
 impl Default for CephConnectionConfig {
@@ -43,12 +60,12 @@ impl Default for CephConnectionConfig {
 }
 
 /// An authenticated session against a Ceph cluster.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize)]
 pub struct CephSession {
     /// Unique session identifier.
     pub id: String,
     /// Connection configuration for this session.
-    pub config: CephConnectionConfig,
+    pub(crate) config: CephConnectionConfig,
     /// Ceph cluster FSID.
     pub cluster_id: Option<String>,
     /// Friendly cluster name.
@@ -56,7 +73,21 @@ pub struct CephSession {
     /// Timestamp when the session was established.
     pub connected_at: DateTime<Utc>,
     /// API token obtained after authentication.
-    pub auth_token: Option<String>,
+    #[serde(skip_serializing)]
+    pub(crate) auth_token: Option<String>,
+}
+
+impl std::fmt::Debug for CephSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CephSession")
+            .field("id", &self.id)
+            .field("config", &self.config)
+            .field("cluster_id", &self.cluster_id)
+            .field("cluster_name", &self.cluster_name)
+            .field("connected_at", &self.connected_at)
+            .field("auth_token_configured", &self.auth_token.is_some())
+            .finish()
+    }
 }
 
 // ---------------------------------------------------------------------------

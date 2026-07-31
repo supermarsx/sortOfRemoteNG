@@ -624,6 +624,6 @@ pub async fn remove_key(
         &format!("/rgw/user/{}/key?access_key={}", uid, access_key),
     )
     .await?;
-    log::info!("Removed key {} for RGW user: {}", access_key, uid);
+    log::info!("Removed a credential key for RGW user: {}", uid);
     Ok(())
 }

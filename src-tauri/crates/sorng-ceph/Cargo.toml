@@ -13,7 +13,7 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true, features = ["cookies"] }
+reqwest = { workspace = true, features = ["cookies", "stream"] }
 url = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }

@@ -35,6 +35,125 @@ pub struct CephService {
     sessions: HashMap<String, CephSession>,
 }
 
+const MAX_HOST_BYTES: usize = 253;
+const MAX_USERNAME_BYTES: usize = 1024;
+const MAX_CREDENTIAL_BYTES: usize = 64 * 1024;
+const MAX_REQUEST_TIMEOUT_SECS: u64 = 300;
+const MAX_ACTIVE_SESSIONS: usize = 64;
+const MAX_RESOURCE_IDENTIFIER_BYTES: usize = 512;
+const MAX_TEXT_FIELD_BYTES: usize = 8 * 1024;
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false)
+}
+
+fn validate_resource_identifier(value: &str, label: &str) -> Result<(), CephError> {
+    if value.is_empty()
+        || value.len() > MAX_RESOURCE_IDENTIFIER_BYTES
+        || value.trim() != value
+        || !value.is_ascii()
+        || value
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '/' | '\\' | '?' | '#' | '%'))
+    {
+        return Err(CephError::invalid_param(format!(
+            "{} is empty, oversized, non-ASCII, or contains path-control characters",
+            label
+        )));
+    }
+    Ok(())
+}
+
+fn validate_text_field(value: &str, label: &str) -> Result<(), CephError> {
+    if value.len() > MAX_TEXT_FIELD_BYTES
+        || value.chars().any(|ch| matches!(ch, '\0' | '\r' | '\n'))
+    {
+        return Err(CephError::invalid_param(format!(
+            "{} is oversized or contains invalid control characters",
+            label
+        )));
+    }
+    Ok(())
+}
+
+fn validate_connection_config(config: &CephConnectionConfig) -> Result<(), CephError> {
+    if config.host.is_empty()
+        || config.host.len() > MAX_HOST_BYTES
+        || config.host.trim() != config.host
+        || config
+            .host
+            .chars()
+            .any(|ch| ch.is_control() || ch.is_whitespace())
+        || config.host.contains("://")
+        || config
+            .host
+            .chars()
+            .any(|ch| matches!(ch, '/' | '\\' | '?' | '#' | '@'))
+    {
+        return Err(CephError::invalid_param(
+            "Ceph host must be a plain hostname or IP address",
+        ));
+    }
+    if config.port == 0 {
+        return Err(CephError::invalid_param(
+            "Ceph API port must be greater than zero",
+        ));
+    }
+    if !config.use_tls && !is_loopback_host(&config.host) {
+        return Err(CephError::invalid_param(
+            "Ceph API requires TLS for non-loopback hosts",
+        ));
+    }
+    if !config.verify_cert {
+        return Err(CephError::invalid_param(
+            "TLS certificate verification cannot be disabled: verify_cert=false requires an explicit runtime acknowledgement contract",
+        ));
+    }
+    if config.timeout_secs == 0 || config.timeout_secs > MAX_REQUEST_TIMEOUT_SECS {
+        return Err(CephError::invalid_param(format!(
+            "Request timeout must be between 1 and {} seconds",
+            MAX_REQUEST_TIMEOUT_SECS
+        )));
+    }
+    if config.username.len() > MAX_USERNAME_BYTES
+        || config.username.chars().any(|ch| ch.is_control())
+    {
+        return Err(CephError::invalid_param("Ceph username is invalid"));
+    }
+
+    let validate_secret = |secret: &str, label: &str| -> Result<(), CephError> {
+        if secret.is_empty()
+            || secret.len() > MAX_CREDENTIAL_BYTES
+            || secret.chars().any(|ch| matches!(ch, '\0' | '\r' | '\n'))
+        {
+            return Err(CephError::invalid_param(format!(
+                "{} is empty, oversized, or contains invalid control characters",
+                label
+            )));
+        }
+        Ok(())
+    };
+
+    if let Some(token) = config.api_token.as_deref() {
+        validate_secret(token, "Ceph API token")?;
+    } else if let Some(password) = config.password.as_deref() {
+        if config.username.is_empty() {
+            return Err(CephError::invalid_param(
+                "Ceph username is required for password authentication",
+            ));
+        }
+        validate_secret(password, "Ceph password")?;
+    } else {
+        return Err(CephError::auth("No authentication credentials provided"));
+    }
+
+    Ok(())
+}
+
 impl CephService {
     pub fn new() -> Self {
         Self {
@@ -47,6 +166,13 @@ impl CephService {
         &mut self,
         config: CephConnectionConfig,
     ) -> Result<CephSession, CephError> {
+        validate_connection_config(&config)?;
+        if self.sessions.len() >= MAX_ACTIVE_SESSIONS {
+            return Err(CephError::connection(
+                "Ceph session limit reached; disconnect an existing session first",
+            ));
+        }
+
         let session_id = Uuid::new_v4().to_string();
         let session = CephSession {
             id: session_id.clone(),
@@ -57,11 +183,13 @@ impl CephService {
             auth_token: config.api_token.clone(),
         };
 
-        // Validate the connection by fetching cluster health
-        let health = cluster::api_get(&session, "/health/minimal")
-            .await
-            // Sync return for fallback — will try full health on first real call
-            .or::<CephError>(Ok(Value::Null))?;
+        // A session is only registered after an authenticated health request succeeds.
+        let health = cluster::api_get(&session, "/health/minimal").await?;
+        if !health.is_object() {
+            return Err(CephError::connection(
+                "Ceph health probe returned an unexpected response",
+            ));
+        }
 
         let mut validated_session = session;
         if let Some(fsid) = health["fsid"].as_str() {
@@ -159,6 +287,7 @@ impl CephService {
     }
 
     pub async fn get_pool(&self, session_id: &str, pool_name: &str) -> Result<PoolInfo, CephError> {
+        validate_resource_identifier(pool_name, "Pool name")?;
         let session = self.get_session(session_id)?;
         pools::get_pool(&session, pool_name).await
     }
@@ -172,6 +301,7 @@ impl CephService {
         session_id: &str,
         pool: &str,
     ) -> Result<Vec<RbdImage>, CephError> {
+        validate_resource_identifier(pool, "Pool name")?;
         let session = self.get_session(session_id)?;
         rbd::list_images(&session, pool).await
     }
@@ -182,6 +312,8 @@ impl CephService {
         pool: &str,
         image_name: &str,
     ) -> Result<RbdImage, CephError> {
+        validate_resource_identifier(pool, "Pool name")?;
+        validate_resource_identifier(image_name, "Image name")?;
         let session = self.get_session(session_id)?;
         rbd::get_image(&session, pool, image_name).await
     }
@@ -200,6 +332,7 @@ impl CephService {
         session_id: &str,
         fs_name: &str,
     ) -> Result<CephFsInfo, CephError> {
+        validate_resource_identifier(fs_name, "Filesystem name")?;
         let session = self.get_session(session_id)?;
         cephfs::get_filesystem(&session, fs_name).await
     }
@@ -211,6 +344,9 @@ impl CephService {
         metadata_pool: &str,
         data_pool: &str,
     ) -> Result<CephFsInfo, CephError> {
+        validate_resource_identifier(name, "Filesystem name")?;
+        validate_resource_identifier(metadata_pool, "Metadata pool name")?;
+        validate_resource_identifier(data_pool, "Data pool name")?;
         let session = self.get_session(session_id)?;
         cephfs::create_filesystem(&session, name, metadata_pool, data_pool).await
     }
@@ -220,6 +356,7 @@ impl CephService {
         session_id: &str,
         fs_name: &str,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(fs_name, "Filesystem name")?;
         let session = self.get_session(session_id)?;
         cephfs::remove_filesystem(&session, fs_name, true).await
     }
@@ -230,6 +367,10 @@ impl CephService {
         fs_name: &str,
         group: Option<&str>,
     ) -> Result<Vec<CephFsSubvolume>, CephError> {
+        validate_resource_identifier(fs_name, "Filesystem name")?;
+        if let Some(group) = group {
+            validate_resource_identifier(group, "Subvolume group")?;
+        }
         let session = self.get_session(session_id)?;
         cephfs::list_subvolumes(&session, fs_name, group).await
     }
@@ -240,6 +381,7 @@ impl CephService {
         fs_name: &str,
         client_id: u64,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(fs_name, "Filesystem name")?;
         let session = self.get_session(session_id)?;
         cephfs::evict_client(&session, fs_name, client_id).await
     }
@@ -254,6 +396,7 @@ impl CephService {
     }
 
     pub async fn get_rgw_user(&self, session_id: &str, uid: &str) -> Result<RgwUser, CephError> {
+        validate_resource_identifier(uid, "RGW user ID")?;
         let session = self.get_session(session_id)?;
         rgw::get_user(&session, uid).await
     }
@@ -265,11 +408,17 @@ impl CephService {
         display_name: &str,
         email: Option<&str>,
     ) -> Result<RgwUser, CephError> {
+        validate_resource_identifier(uid, "RGW user ID")?;
+        validate_text_field(display_name, "RGW display name")?;
+        if let Some(email) = email {
+            validate_text_field(email, "RGW email")?;
+        }
         let session = self.get_session(session_id)?;
         rgw::create_user(&session, uid, display_name, email, None, true).await
     }
 
     pub async fn delete_rgw_user(&self, session_id: &str, uid: &str) -> Result<(), CephError> {
+        validate_resource_identifier(uid, "RGW user ID")?;
         let session = self.get_session(session_id)?;
         rgw::delete_user(&session, uid, false).await
     }
@@ -284,6 +433,7 @@ impl CephService {
         session_id: &str,
         bucket_name: &str,
     ) -> Result<RgwBucket, CephError> {
+        validate_resource_identifier(bucket_name, "RGW bucket name")?;
         let session = self.get_session(session_id)?;
         rgw::get_bucket(&session, bucket_name).await
     }
@@ -336,6 +486,7 @@ impl CephService {
         session_id: &str,
         mon_name: &str,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(mon_name, "Monitor name")?;
         let session = self.get_session(session_id)?;
         monitors::compact_monitor_store(&session, mon_name).await
     }
@@ -354,11 +505,13 @@ impl CephService {
         session_id: &str,
         mds_name: &str,
     ) -> Result<MdsPerfStats, CephError> {
+        validate_resource_identifier(mds_name, "MDS name")?;
         let session = self.get_session(session_id)?;
         mds::get_mds_perf(&session, mds_name).await
     }
 
     pub async fn failover_mds(&self, session_id: &str, mds_name: &str) -> Result<(), CephError> {
+        validate_resource_identifier(mds_name, "MDS name")?;
         let session = self.get_session(session_id)?;
         mds::failover_mds(&session, mds_name).await
     }
@@ -378,16 +531,19 @@ impl CephService {
     }
 
     pub async fn repair_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
+        validate_resource_identifier(pgid, "Placement group ID")?;
         let session = self.get_session(session_id)?;
         pg::repair_pg(&session, pgid).await
     }
 
     pub async fn scrub_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
+        validate_resource_identifier(pgid, "Placement group ID")?;
         let session = self.get_session(session_id)?;
         pg::scrub_pg(&session, pgid).await
     }
 
     pub async fn deep_scrub_pg(&self, session_id: &str, pgid: &str) -> Result<(), CephError> {
+        validate_resource_identifier(pgid, "Placement group ID")?;
         let session = self.get_session(session_id)?;
         pg::deep_scrub_pg(&session, pgid).await
     }
@@ -461,6 +617,7 @@ impl CephService {
         check_code: &str,
         duration: Option<&str>,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(check_code, "Health check code")?;
         let session = self.get_session(session_id)?;
         alerts::mute_health_check(&session, check_code, duration, false).await
     }
@@ -470,6 +627,7 @@ impl CephService {
         session_id: &str,
         check_code: &str,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(check_code, "Health check code")?;
         let session = self.get_session(session_id)?;
         alerts::unmute_health_check(&session, check_code).await
     }
@@ -484,11 +642,13 @@ impl CephService {
         session_id: &str,
         alert_id: &str,
     ) -> Result<(), CephError> {
+        validate_resource_identifier(alert_id, "Alert ID")?;
         let session = self.get_session(session_id)?;
         alerts::acknowledge_alert(&session, alert_id, None).await
     }
 
     pub async fn clear_alert(&self, session_id: &str, alert_id: &str) -> Result<(), CephError> {
+        validate_resource_identifier(alert_id, "Alert ID")?;
         let session = self.get_session(session_id)?;
         alerts::clear_alert(&session, alert_id).await
     }

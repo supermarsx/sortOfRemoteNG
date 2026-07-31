@@ -1,8 +1,12 @@
-use reqwest::Client;
+use reqwest::{Client, Response};
 use serde_json::Value;
 
 use crate::error::{CephError, CephErrorKind};
 use crate::types::*;
+
+const MAX_SUCCESS_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_ERROR_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_REQUEST_TIMEOUT_SECS: u64 = 300;
 
 /// Build the base URL for the Ceph Manager REST API from a session.
 pub fn base_url(session: &CephSession) -> String {
@@ -19,16 +23,162 @@ pub fn base_url(session: &CephSession) -> String {
 
 /// Build a configured reqwest::Client for the session.
 pub fn build_client(session: &CephSession) -> Result<Client, CephError> {
-    let mut builder =
-        Client::builder().timeout(std::time::Duration::from_secs(session.config.timeout_secs));
-
     if !session.config.verify_cert {
-        builder = builder.danger_accept_invalid_certs(true);
+        return Err(CephError::invalid_param(
+            "TLS certificate verification cannot be disabled: verify_cert=false requires an explicit runtime acknowledgement contract",
+        ));
     }
+    if session.config.timeout_secs == 0 || session.config.timeout_secs > MAX_REQUEST_TIMEOUT_SECS {
+        return Err(CephError::invalid_param(format!(
+            "Request timeout must be between 1 and {} seconds",
+            MAX_REQUEST_TIMEOUT_SECS
+        )));
+    }
+
+    let timeout = std::time::Duration::from_secs(session.config.timeout_secs);
+    let builder = Client::builder()
+        .timeout(timeout)
+        .connect_timeout(timeout.min(std::time::Duration::from_secs(10)))
+        .redirect(reqwest::redirect::Policy::none());
 
     builder
         .build()
         .map_err(|e| CephError::connection(format!("Failed to build HTTP client: {}", e)))
+}
+
+fn validate_api_path(path: &str) -> Result<(), CephError> {
+    if !path.starts_with('/')
+        || path.starts_with("//")
+        || path.len() > 8 * 1024
+        || !path.is_ascii()
+        || path.contains('\\')
+        || path.contains('#')
+        || path.chars().any(char::is_control)
+    {
+        return Err(CephError::invalid_param(
+            "Ceph API path is invalid or oversized",
+        ));
+    }
+
+    let (route, query) = path.split_once('?').unwrap_or((path, ""));
+    if route
+        .split('/')
+        .any(|segment| matches!(segment, "." | ".."))
+    {
+        return Err(CephError::invalid_param(
+            "Ceph API path contains a traversal segment",
+        ));
+    }
+
+    let bytes = path.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(CephError::invalid_param(
+                    "Ceph API path contains invalid percent encoding",
+                ));
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+
+    if !query.is_empty() {
+        if query.len() > 4 * 1024 {
+            return Err(CephError::invalid_param("Ceph API query is oversized"));
+        }
+        let mut keys = std::collections::HashSet::new();
+        let allowed = [
+            "access_key",
+            "duration",
+            "group",
+            "metric",
+            "osd",
+            "path",
+            "pool",
+            "purge-data",
+            "purge-objects",
+            "quota_type",
+            "threshold",
+            "type",
+        ];
+        let pairs: Vec<_> = url::form_urlencoded::parse(query.as_bytes()).collect();
+        if pairs.len() > 32 {
+            return Err(CephError::invalid_param(
+                "Ceph API query has too many parameters",
+            ));
+        }
+        for (key, value) in pairs {
+            if !allowed.contains(&key.as_ref())
+                || !keys.insert(key.into_owned())
+                || value.len() > 4 * 1024
+            {
+                return Err(CephError::invalid_param(
+                    "Ceph API query contains an invalid or duplicate parameter",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn build_api_url(session: &CephSession, path: &str) -> Result<reqwest::Url, CephError> {
+    validate_api_path(path)?;
+    reqwest::Url::parse(&format!("{}{}", base_url(session), path))
+        .map_err(|_| CephError::invalid_param("Ceph API URL could not be constructed safely"))
+}
+
+async fn read_limited_response(
+    mut response: Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, CephError> {
+    let status = response.status();
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(CephError::api(
+            format!(
+                "Ceph API response exceeded the {} byte safety limit",
+                max_bytes
+            ),
+            Some(status.as_u16()),
+        ));
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if chunk.len() > max_bytes.saturating_sub(body.len()) {
+            return Err(CephError::api(
+                format!(
+                    "Ceph API response exceeded the {} byte safety limit",
+                    max_bytes
+                ),
+                Some(status.as_u16()),
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+async fn read_json_response(response: Response, allow_empty: bool) -> Result<Value, CephError> {
+    let status = response.status();
+    let body = read_limited_response(response, MAX_SUCCESS_RESPONSE_BYTES).await?;
+    if body.is_empty() && allow_empty {
+        return Ok(Value::Null);
+    }
+    serde_json::from_slice(&body).map_err(|_| {
+        CephError::api(
+            "Ceph API returned a malformed JSON response",
+            Some(status.as_u16()),
+        )
+    })
 }
 
 /// Add authentication headers to a request builder.
@@ -51,102 +201,122 @@ pub fn auth_header(session: &CephSession) -> Result<String, CephError> {
 /// Perform a GET request to the Ceph REST API.
 pub async fn api_get(session: &CephSession, path: &str) -> Result<Value, CephError> {
     let client = build_client(session)?;
-    let url = format!("{}{}", base_url(session), path);
+    let url = build_api_url(session, path)?;
     let auth = auth_header(session)?;
 
     let response = client
-        .get(&url)
+        .get(url)
         .header("Authorization", &auth)
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|_| CephError::connection("Ceph API GET transport failed"))?;
 
     let status = response.status();
     if status.is_success() {
-        let body: Value = response.json().await?;
-        Ok(body)
+        read_json_response(response, false).await
     } else if status.as_u16() == 401 || status.as_u16() == 403 {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::new(CephErrorKind::AuthenticationFailed, text).with_status(status.as_u16()))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::new(
+            CephErrorKind::AuthenticationFailed,
+            "Ceph API rejected the supplied credentials",
+        )
+        .with_status(status.as_u16()))
     } else {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::api(text, Some(status.as_u16())))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::api(
+            format!("Ceph API GET returned HTTP {}", status.as_u16()),
+            Some(status.as_u16()),
+        ))
     }
 }
 
 /// Perform a POST request to the Ceph REST API.
 pub async fn api_post(session: &CephSession, path: &str, body: &Value) -> Result<Value, CephError> {
     let client = build_client(session)?;
-    let url = format!("{}{}", base_url(session), path);
+    let url = build_api_url(session, path)?;
     let auth = auth_header(session)?;
 
     let response = client
-        .post(&url)
+        .post(url)
         .header("Authorization", &auth)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
         .json(body)
         .send()
-        .await?;
+        .await
+        .map_err(|_| CephError::connection("Ceph API POST transport failed"))?;
 
     let status = response.status();
     if status.is_success() {
-        let body: Value = response.json().await.unwrap_or(Value::Null);
-        Ok(body)
+        read_json_response(response, true).await
     } else if status.as_u16() == 401 || status.as_u16() == 403 {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::new(CephErrorKind::AuthenticationFailed, text).with_status(status.as_u16()))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::new(
+            CephErrorKind::AuthenticationFailed,
+            "Ceph API rejected the supplied credentials",
+        )
+        .with_status(status.as_u16()))
     } else {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::api(text, Some(status.as_u16())))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::api(
+            format!("Ceph API POST returned HTTP {}", status.as_u16()),
+            Some(status.as_u16()),
+        ))
     }
 }
 
 /// Perform a PUT request to the Ceph REST API.
 pub async fn api_put(session: &CephSession, path: &str, body: &Value) -> Result<Value, CephError> {
     let client = build_client(session)?;
-    let url = format!("{}{}", base_url(session), path);
+    let url = build_api_url(session, path)?;
     let auth = auth_header(session)?;
 
     let response = client
-        .put(&url)
+        .put(url)
         .header("Authorization", &auth)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
         .json(body)
         .send()
-        .await?;
+        .await
+        .map_err(|_| CephError::connection("Ceph API PUT transport failed"))?;
 
     let status = response.status();
     if status.is_success() {
-        let body: Value = response.json().await.unwrap_or(Value::Null);
-        Ok(body)
+        read_json_response(response, true).await
     } else {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::api(text, Some(status.as_u16())))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::api(
+            format!("Ceph API PUT returned HTTP {}", status.as_u16()),
+            Some(status.as_u16()),
+        ))
     }
 }
 
 /// Perform a DELETE request to the Ceph REST API.
 pub async fn api_delete(session: &CephSession, path: &str) -> Result<Value, CephError> {
     let client = build_client(session)?;
-    let url = format!("{}{}", base_url(session), path);
+    let url = build_api_url(session, path)?;
     let auth = auth_header(session)?;
 
     let response = client
-        .delete(&url)
+        .delete(url)
         .header("Authorization", &auth)
         .header("Accept", "application/json")
         .send()
-        .await?;
+        .await
+        .map_err(|_| CephError::connection("Ceph API DELETE transport failed"))?;
 
     let status = response.status();
     if status.is_success() {
-        let body: Value = response.json().await.unwrap_or(Value::Null);
-        Ok(body)
+        read_json_response(response, true).await
     } else {
-        let text = response.text().await.unwrap_or_default();
-        Err(CephError::api(text, Some(status.as_u16())))
+        let _ = read_limited_response(response, MAX_ERROR_RESPONSE_BYTES).await;
+        Err(CephError::api(
+            format!("Ceph API DELETE returned HTTP {}", status.as_u16()),
+            Some(status.as_u16()),
+        ))
     }
 }
 
@@ -346,7 +516,11 @@ pub async fn set_config_option(
         "value": value,
     });
     api_put(session, &format!("/config/{}/{}", section, name), &body).await?;
-    log::info!("Set config {}/{} = {}", section, name, value);
+    log::info!(
+        "Set Ceph config option {}/{} (value redacted)",
+        section,
+        name
+    );
     Ok(())
 }
 

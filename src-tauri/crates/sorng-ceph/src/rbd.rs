@@ -5,9 +5,93 @@ use crate::cluster::{api_delete, api_get, api_post, api_put};
 use crate::error::{CephError, CephErrorKind};
 use crate::types::*;
 
+const MAX_RBD_IDENTIFIER_BYTES: usize = 255;
+const MAX_TRANSFER_PATH_BYTES: usize = 4096;
+
+fn validate_identifier(value: &str, label: &str) -> Result<(), CephError> {
+    if value.is_empty()
+        || value.len() > MAX_RBD_IDENTIFIER_BYTES
+        || value.trim() != value
+        || value.chars().any(|ch| ch.is_control())
+    {
+        return Err(CephError::invalid_param(format!(
+            "{} is blank, oversized, or contains invalid control characters",
+            label
+        )));
+    }
+    Ok(())
+}
+
+fn encode_identifier(value: &str, label: &str) -> Result<String, CephError> {
+    validate_identifier(value, label)?;
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    Ok(encoded)
+}
+
+fn image_path(pool: &str, image: &str) -> Result<String, CephError> {
+    Ok(format!(
+        "/block/image/{}%2F{}",
+        encode_identifier(pool, "Pool name")?,
+        encode_identifier(image, "Image name")?
+    ))
+}
+
+fn snapshot_path(pool: &str, image: &str, snapshot: &str) -> Result<String, CephError> {
+    Ok(format!(
+        "{}@{}",
+        image_path(pool, image)?,
+        encode_identifier(snapshot, "Snapshot name")?
+    ))
+}
+
+fn validate_transfer_path(path: &str, label: &str) -> Result<(), CephError> {
+    use std::path::Component;
+
+    if path.is_empty()
+        || path.len() > MAX_TRANSFER_PATH_BYTES
+        || path.trim() != path
+        || path.chars().any(|ch| ch.is_control())
+    {
+        return Err(CephError::invalid_param(format!(
+            "{} is blank, oversized, or contains invalid control characters",
+            label
+        )));
+    }
+
+    let candidate = std::path::Path::new(path);
+    if !candidate.is_absolute()
+        || candidate
+            .components()
+            .any(|component| component == Component::ParentDir)
+    {
+        return Err(CephError::invalid_param(format!(
+            "{} must be an absolute path without parent traversal",
+            label
+        )));
+    }
+    Ok(())
+}
+
 /// List all RBD images in a pool.
 pub async fn list_images(session: &CephSession, pool: &str) -> Result<Vec<RbdImage>, CephError> {
-    let data = api_get(session, &format!("/block/image?pool={}", pool)).await?;
+    let data = api_get(
+        session,
+        &format!(
+            "/block/image?pool={}",
+            encode_identifier(pool, "Pool name")?
+        ),
+    )
+    .await?;
     let mut images = Vec::new();
     if let Some(arr) = data.as_array() {
         for item in arr {
@@ -23,7 +107,7 @@ pub async fn get_image(
     pool: &str,
     image_name: &str,
 ) -> Result<RbdImage, CephError> {
-    let data = api_get(session, &format!("/block/image/{}%2F{}", pool, image_name)).await?;
+    let data = api_get(session, &image_path(pool, image_name)?).await?;
     Ok(parse_rbd_image(&data, pool))
 }
 
@@ -97,11 +181,23 @@ pub async fn create_image(
     session: &CephSession,
     params: &CreateRbdImageParams,
 ) -> Result<(), CephError> {
-    if params.name.is_empty() {
-        return Err(CephError::invalid_param("Image name cannot be empty"));
-    }
+    validate_identifier(&params.pool, "Pool name")?;
+    validate_identifier(&params.name, "Image name")?;
     if params.size_bytes == 0 {
         return Err(CephError::invalid_param("Image size must be > 0"));
+    }
+    if let Some(data_pool) = params.data_pool.as_deref() {
+        validate_identifier(data_pool, "Data pool name")?;
+    }
+    if let Some(features) = params.features.as_ref() {
+        if features.len() > 64 {
+            return Err(CephError::invalid_param(
+                "RBD feature list exceeds the 64 item safety limit",
+            ));
+        }
+        for feature in features {
+            validate_identifier(feature, "RBD feature")?;
+        }
     }
 
     let mut body = serde_json::json!({
@@ -138,7 +234,7 @@ pub async fn create_image(
 
 /// Delete an RBD image.
 pub async fn delete_image(session: &CephSession, pool: &str, name: &str) -> Result<(), CephError> {
-    api_delete(session, &format!("/block/image/{}%2F{}", pool, name)).await?;
+    api_delete(session, &image_path(pool, name)?).await?;
     log::info!("Deleted RBD image '{}/{}'", pool, name);
     Ok(())
 }
@@ -154,7 +250,7 @@ pub async fn resize_image(
         return Err(CephError::invalid_param("New size must be > 0"));
     }
     let body = serde_json::json!({"size": new_size});
-    api_put(session, &format!("/block/image/{}%2F{}", pool, name), &body).await?;
+    api_put(session, &image_path(pool, name)?, &body).await?;
     log::info!(
         "Resized RBD image '{}/{}' to {} bytes",
         pool,
@@ -171,16 +267,10 @@ pub async fn rename_image(
     old_name: &str,
     new_name: &str,
 ) -> Result<(), CephError> {
-    if new_name.is_empty() {
-        return Err(CephError::invalid_param("New image name cannot be empty"));
-    }
+    let source_path = image_path(pool, old_name)?;
+    validate_identifier(new_name, "New image name")?;
     let body = serde_json::json!({"new_name": new_name});
-    api_put(
-        session,
-        &format!("/block/image/{}%2F{}/rename", pool, old_name),
-        &body,
-    )
-    .await?;
+    api_put(session, &format!("{}/rename", source_path), &body).await?;
     log::info!(
         "Renamed RBD image '{}/{}' to '{}/{}'",
         pool,
@@ -199,16 +289,14 @@ pub async fn copy_image(
     dst_pool: &str,
     dst_name: &str,
 ) -> Result<(), CephError> {
+    let source_path = image_path(src_pool, src_name)?;
+    validate_identifier(dst_pool, "Destination pool name")?;
+    validate_identifier(dst_name, "Destination image name")?;
     let body = serde_json::json!({
         "dest_pool_name": dst_pool,
         "dest_image_name": dst_name,
     });
-    api_post(
-        session,
-        &format!("/block/image/{}%2F{}/copy", src_pool, src_name),
-        &body,
-    )
-    .await?;
+    api_post(session, &format!("{}/copy", source_path), &body).await?;
     log::info!(
         "Copied RBD image '{}/{}' to '{}/{}'",
         src_pool,
@@ -224,7 +312,7 @@ pub async fn flatten_image(session: &CephSession, pool: &str, name: &str) -> Res
     let body = serde_json::json!({});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}/flatten", pool, name),
+        &format!("{}/flatten", image_path(pool, name)?),
         &body,
     )
     .await?;
@@ -238,7 +326,7 @@ pub async fn list_snapshots(
     pool: &str,
     image: &str,
 ) -> Result<Vec<RbdSnapshot>, CephError> {
-    let data = api_get(session, &format!("/block/image/{}%2F{}/snap", pool, image)).await?;
+    let data = api_get(session, &format!("{}/snap", image_path(pool, image)?)).await?;
     let mut snaps = Vec::new();
     if let Some(arr) = data.as_array() {
         for item in arr {
@@ -266,13 +354,11 @@ pub async fn create_snapshot(
     image: &str,
     snap_name: &str,
 ) -> Result<(), CephError> {
-    if snap_name.is_empty() {
-        return Err(CephError::invalid_param("Snapshot name cannot be empty"));
-    }
+    validate_identifier(snap_name, "Snapshot name")?;
     let body = serde_json::json!({"snapshot_name": snap_name});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}/snap", pool, image),
+        &format!("{}/snap", image_path(pool, image)?),
         &body,
     )
     .await?;
@@ -287,11 +373,7 @@ pub async fn delete_snapshot(
     image: &str,
     snap_name: &str,
 ) -> Result<(), CephError> {
-    api_delete(
-        session,
-        &format!("/block/image/{}%2F{}@{}", pool, image, snap_name),
-    )
-    .await?;
+    api_delete(session, &snapshot_path(pool, image, snap_name)?).await?;
     log::info!("Deleted snapshot '{}' from '{}/{}'", snap_name, pool, image);
     Ok(())
 }
@@ -304,12 +386,7 @@ pub async fn protect_snapshot(
     snap_name: &str,
 ) -> Result<(), CephError> {
     let body = serde_json::json!({"is_protected": true});
-    api_put(
-        session,
-        &format!("/block/image/{}%2F{}@{}", pool, image, snap_name),
-        &body,
-    )
-    .await?;
+    api_put(session, &snapshot_path(pool, image, snap_name)?, &body).await?;
     log::info!("Protected snapshot '{}/{}@{}'", pool, image, snap_name);
     Ok(())
 }
@@ -322,12 +399,7 @@ pub async fn unprotect_snapshot(
     snap_name: &str,
 ) -> Result<(), CephError> {
     let body = serde_json::json!({"is_protected": false});
-    api_put(
-        session,
-        &format!("/block/image/{}%2F{}@{}", pool, image, snap_name),
-        &body,
-    )
-    .await?;
+    api_put(session, &snapshot_path(pool, image, snap_name)?, &body).await?;
     log::info!("Unprotected snapshot '{}/{}@{}'", pool, image, snap_name);
     Ok(())
 }
@@ -342,7 +414,7 @@ pub async fn rollback_snapshot(
     let body = serde_json::json!({});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}@{}/rollback", pool, image, snap_name),
+        &format!("{}/rollback", snapshot_path(pool, image, snap_name)?),
         &body,
     )
     .await?;
@@ -364,22 +436,14 @@ pub async fn clone_image(
     child_pool: &str,
     child_name: &str,
 ) -> Result<(), CephError> {
-    if child_name.is_empty() {
-        return Err(CephError::invalid_param("Child image name cannot be empty"));
-    }
+    let parent_path = snapshot_path(parent_pool, parent_image, parent_snap)?;
+    validate_identifier(child_pool, "Child pool name")?;
+    validate_identifier(child_name, "Child image name")?;
     let body = serde_json::json!({
         "child_pool_name": child_pool,
         "child_image_name": child_name,
     });
-    api_post(
-        session,
-        &format!(
-            "/block/image/{}%2F{}@{}/clone",
-            parent_pool, parent_image, parent_snap
-        ),
-        &body,
-    )
-    .await?;
+    api_post(session, &format!("{}/clone", parent_path), &body).await?;
     log::info!(
         "Cloned '{}/{}@{}' to '{}/{}'",
         parent_pool,
@@ -398,10 +462,15 @@ pub async fn enable_mirroring(
     image: &str,
     mode: &str,
 ) -> Result<(), CephError> {
+    if !matches!(mode, "journal" | "snapshot") {
+        return Err(CephError::invalid_param(
+            "RBD mirror mode must be 'journal' or 'snapshot'",
+        ));
+    }
     let body = serde_json::json!({"mirror_mode": mode});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}/mirror/enable", pool, image),
+        &format!("{}/mirror/enable", image_path(pool, image)?),
         &body,
     )
     .await?;
@@ -418,7 +487,7 @@ pub async fn disable_mirroring(
     let body = serde_json::json!({});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}/mirror/disable", pool, image),
+        &format!("{}/mirror/disable", image_path(pool, image)?),
         &body,
     )
     .await?;
@@ -432,11 +501,7 @@ pub async fn get_mirroring_status(
     pool: &str,
     image: &str,
 ) -> Result<RbdMirroringStatus, CephError> {
-    let data = api_get(
-        session,
-        &format!("/block/image/{}%2F{}/mirror", pool, image),
-    )
-    .await?;
+    let data = api_get(session, &format!("{}/mirror", image_path(pool, image)?)).await?;
 
     let mode = match data["mirror_mode"].as_str().unwrap_or("disabled") {
         "image" => RbdMirrorMode::Image,
@@ -477,7 +542,14 @@ pub async fn list_trash(
     session: &CephSession,
     pool: &str,
 ) -> Result<Vec<RbdTrashEntry>, CephError> {
-    let data = api_get(session, &format!("/block/image/trash?pool={}", pool)).await?;
+    let data = api_get(
+        session,
+        &format!(
+            "/block/image/trash?pool={}",
+            encode_identifier(pool, "Pool name")?
+        ),
+    )
+    .await?;
     let mut entries = Vec::new();
     if let Some(arr) = data.as_array() {
         for item in arr {
@@ -506,7 +578,7 @@ pub async fn move_to_trash(
     let body = serde_json::json!({});
     api_post(
         session,
-        &format!("/block/image/{}%2F{}/move_trash", pool, image),
+        &format!("{}/move_trash", image_path(pool, image)?),
         &body,
     )
     .await?;
@@ -521,10 +593,15 @@ pub async fn restore_from_trash(
     trash_id: &str,
     name: &str,
 ) -> Result<(), CephError> {
+    validate_identifier(name, "Restored image name")?;
     let body = serde_json::json!({"new_name": name});
     api_post(
         session,
-        &format!("/block/image/trash/{}%2F{}/restore", pool, trash_id),
+        &format!(
+            "/block/image/trash/{}%2F{}/restore",
+            encode_identifier(pool, "Pool name")?,
+            encode_identifier(trash_id, "Trash entry ID")?
+        ),
         &body,
     )
     .await?;
@@ -537,54 +614,38 @@ pub async fn restore_from_trash(
     Ok(())
 }
 
-/// Export an RBD image (stub — actual export requires direct RADOS access or rbd CLI).
+/// Exporting requires a streaming RADOS or authenticated CLI transport.
 pub async fn export_image(
     session: &CephSession,
     pool: &str,
     image: &str,
     path: &str,
 ) -> Result<(), CephError> {
-    let body = serde_json::json!({
-        "destination": path,
-    });
-    api_post(
-        session,
-        &format!("/block/image/{}%2F{}/export", pool, image),
-        &body,
-    )
-    .await
-    .map_err(|e| {
-        CephError::new(
-            CephErrorKind::RbdError,
-            format!("Export not supported via REST API, use rbd CLI: {}", e),
-        )
-    })?;
-    log::info!("Exported RBD image '{}/{}' to '{}'", pool, image, path);
-    Ok(())
+    let _ = session;
+    validate_identifier(pool, "Pool name")?;
+    validate_identifier(image, "Image name")?;
+    validate_transfer_path(path, "Export destination")?;
+    Err(CephError::new(
+        CephErrorKind::RbdError,
+        "RBD export is unavailable because the authenticated Ceph REST transport cannot stream image data; no export was started",
+    ))
 }
 
-/// Import an RBD image (stub — actual import requires direct RADOS access or rbd CLI).
+/// Importing requires a streaming RADOS or authenticated CLI transport.
 pub async fn import_image(
     session: &CephSession,
     pool: &str,
     name: &str,
     path: &str,
 ) -> Result<(), CephError> {
-    let body = serde_json::json!({
-        "source": path,
-        "image_name": name,
-        "pool_name": pool,
-    });
-    api_post(session, "/block/image/import", &body)
-        .await
-        .map_err(|e| {
-            CephError::new(
-                CephErrorKind::RbdError,
-                format!("Import not supported via REST API, use rbd CLI: {}", e),
-            )
-        })?;
-    log::info!("Imported RBD image '{}' into '{}/{}'", path, pool, name);
-    Ok(())
+    let _ = session;
+    validate_identifier(pool, "Pool name")?;
+    validate_identifier(name, "Image name")?;
+    validate_transfer_path(path, "Import source")?;
+    Err(CephError::new(
+        CephErrorKind::RbdError,
+        "RBD import is unavailable because the authenticated Ceph REST transport cannot stream image data; no import was started",
+    ))
 }
 
 use chrono::DateTime;
