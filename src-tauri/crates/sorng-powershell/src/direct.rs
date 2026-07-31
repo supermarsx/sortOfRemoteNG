@@ -92,7 +92,7 @@ impl PsDirectManager {
 
         let vm_target = sanitize_vm_target(config)?;
 
-        let cred_block = format_credential_block(&config.credential);
+        let cred_block = format_credential_block(&config.credential)?;
 
         // Build the Invoke-Command call that targets the VM
         let ps_script = format!(
@@ -163,7 +163,7 @@ impl PsDirectManager {
 
         let vm_target = sanitize_vm_target(config)?;
 
-        let cred_block = format_credential_block(&config.credential);
+        let cred_block = format_credential_block(&config.credential)?;
 
         // Create a PSSession to the VM
         let script = format!(
@@ -184,7 +184,10 @@ impl PsDirectManager {
         };
 
         if !stderr.trim().is_empty() {
-            return Err(format!("Failed to create VM session: {}", stderr.trim()));
+            return Err(format!(
+                "Failed to create VM session (remote error output omitted; {} bytes)",
+                stderr.len()
+            ));
         }
 
         let vm_session_id = uuid::Uuid::new_v4().to_string();
@@ -286,7 +289,7 @@ impl PsDirectManager {
 
         let vm_target = sanitize_vm_target(config)?;
 
-        let cred_block = format_credential_block(&config.credential);
+        let cred_block = format_credential_block(&config.credential)?;
 
         let script = format!(
             "{}\n\
@@ -307,7 +310,10 @@ impl PsDirectManager {
         };
 
         if !stderr.trim().is_empty() {
-            return Err(format!("Failed to copy file to VM: {}", stderr.trim()));
+            return Err(format!(
+                "Failed to copy file to VM (remote error output omitted; {} bytes)",
+                stderr.len()
+            ));
         }
 
         Ok(())
@@ -326,7 +332,7 @@ impl PsDirectManager {
 
         let vm_target = sanitize_vm_target(config)?;
 
-        let cred_block = format_credential_block(&config.credential);
+        let cred_block = format_credential_block(&config.credential)?;
 
         let script = format!(
             "{}\n\
@@ -347,7 +353,10 @@ impl PsDirectManager {
         };
 
         if !stderr.trim().is_empty() {
-            return Err(format!("Failed to copy file from VM: {}", stderr.trim()));
+            return Err(format!(
+                "Failed to copy file from VM (remote error output omitted; {} bytes)",
+                stderr.len()
+            ));
         }
 
         Ok(())
@@ -406,17 +415,8 @@ pub struct VmSessionInfo {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-fn format_credential_block(credential: &PsCredential) -> String {
-    format!(
-        "$secpass = ConvertTo-SecureString '{}' -AsPlainText -Force\n\
-         $cred = New-Object System.Management.Automation.PSCredential ('{}', $secpass)",
-        credential
-            .password
-            .as_deref()
-            .unwrap_or("")
-            .replace('\'', "''"),
-        credential.username.replace('\'', "''")
-    )
+fn format_credential_block(_credential: &PsCredential) -> Result<String, String> {
+    Err("PowerShell Direct credential operations are unavailable until credentials can be delivered through a structured secret channel".to_string())
 }
 
 fn build_stream_records(stdout: &str, stderr: &str) -> Vec<PsStreamRecord> {

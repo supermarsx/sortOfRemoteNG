@@ -12,6 +12,63 @@ use zeroize::Zeroizing;
 /// Session configuration operations.
 pub struct PsConfigurationManager;
 
+fn require_explicit_configuration_confirmation(operation: &str) -> Result<(), String> {
+    Err(format!(
+        "{operation} is unavailable until the API carries explicit destructive-operation authorization"
+    ))
+}
+
+async fn cleanup_unverified_https_listener(
+    ps_manager: &PsSessionManager,
+    session_id: &str,
+) -> bool {
+    let transport = match ps_manager.get_transport(session_id) {
+        Ok(transport) => transport,
+        Err(_) => return false,
+    };
+    let shell_id = match ps_manager.get_shell_id(session_id) {
+        Ok(shell_id) => shell_id,
+        Err(_) => return false,
+    };
+    let cleanup_script = Zeroizing::new(String::from(
+        r#"$ErrorActionPreference = 'Stop'
+$listeners = @(Get-ChildItem WSMan:localhostListener | Where-Object { $_.Keys -contains 'Transport=HTTPS' })
+foreach ($listener in $listeners) {
+    Remove-Item -LiteralPath $listener.PSPath -Recurse -Force
+}
+$remaining = @(Get-ChildItem WSMan:localhostListener | Where-Object { $_.Keys -contains 'Transport=HTTPS' })
+if ($remaining.Count -eq 0) {
+    Write-Output 'SORNG_HTTPS_ROLLBACK_OK'
+}"#,
+    ));
+
+    let result = {
+        let mut transport = transport.lock().await;
+        let command_id = match transport
+            .execute_ps_command(&shell_id, cleanup_script.as_str())
+            .await
+        {
+            Ok(command_id) => command_id,
+            Err(_) => return false,
+        };
+        let result = transport.receive_all_output(&shell_id, &command_id).await;
+        let _ = transport
+            .signal_command(&shell_id, &command_id, WsManSignal::TERMINATE)
+            .await;
+        result
+    };
+    drop(cleanup_script);
+
+    matches!(
+        result,
+        Ok((stdout, stderr))
+            if stderr.trim().is_empty()
+                && stdout
+                    .lines()
+                    .any(|line| line.trim() == "SORNG_HTTPS_ROLLBACK_OK")
+    )
+}
+
 impl PsConfigurationManager {
     /// Get all session configurations on a remote system.
     pub async fn get_configurations(
@@ -60,6 +117,7 @@ impl PsConfigurationManager {
         session_id: &str,
         config: &NewSessionConfigurationParams,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("register_configuration")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
         let script = build_register_configuration_script(config)?;
@@ -89,6 +147,7 @@ impl PsConfigurationManager {
         session_id: &str,
         config_name: &str,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("unregister_configuration")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -119,6 +178,7 @@ impl PsConfigurationManager {
         session_id: &str,
         config_name: &str,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("enable_configuration")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -150,6 +210,7 @@ impl PsConfigurationManager {
         session_id: &str,
         config_name: &str,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("disable_configuration")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -182,6 +243,7 @@ impl PsConfigurationManager {
         config_name: &str,
         sddl: &str,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("set_configuration_access")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -209,6 +271,7 @@ impl PsConfigurationManager {
         config_name: &str,
         params: &SetSessionConfigurationParams,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("set_configuration")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -239,12 +302,13 @@ impl PsConfigurationManager {
         ps_manager: &PsSessionManager,
         session_id: &str,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("restart_winrm")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
         let script = "Restart-Service WinRM -Force";
 
-        let (_, _stderr) = {
+        let (_, stderr) = {
             let mut t = transport.lock().await;
             let cmd_id = t.execute_ps_command(&shell_id, script).await?;
             let result = t.receive_all_output(&shell_id, &cmd_id).await?;
@@ -253,6 +317,13 @@ impl PsConfigurationManager {
                 .await;
             result
         };
+
+        if !stderr.trim().is_empty() {
+            return Err(format!(
+                "WinRM restart failed (remote error output omitted; {} bytes)",
+                stderr.len()
+            ));
+        }
 
         // Note: restarting WinRM will likely disconnect this session
         info!("WinRM restart requested on session {}", session_id);
@@ -305,35 +376,159 @@ impl PsConfigurationManager {
         cert_thumbprint: Option<&str>,
         port: Option<u16>,
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("configure_listener")?;
+        if !use_https {
+            return Err("Creating an unencrypted WinRM HTTP listener is not permitted".to_string());
+        }
+        let thumbprint = cert_thumbprint.ok_or_else(|| {
+            "Certificate thumbprint is required for an HTTPS listener".to_string()
+        })?;
+        if !matches!(thumbprint.len(), 40 | 64)
+            || !thumbprint
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+        {
+            return Err("HTTPS listener certificate thumbprint is invalid".to_string());
+        }
+
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
-
-        let port_num = port.unwrap_or(if use_https { 5986 } else { 5985 });
-        let protocol = if use_https { "HTTPS" } else { "HTTP" };
-        let script = build_configure_listener_script(use_https, cert_thumbprint, port_num)?;
-
-        let (_, stderr) = {
-            let mut t = transport.lock().await;
-            let cmd_id = t.execute_ps_command(&shell_id, script.as_str()).await?;
-            drop(script);
-            let result = t.receive_all_output(&shell_id, &cmd_id).await?;
-            let _ = t
-                .signal_command(&shell_id, &cmd_id, WsManSignal::TERMINATE)
-                .await;
-            result
+        let port_num = port.unwrap_or(5986);
+        let preflight_script = r#"$ErrorActionPreference = 'Stop'
+$existing = @(Get-ChildItem WSMan:localhostListener | Where-Object { $_.Keys -contains 'Transport=HTTPS' })
+if ($existing.Count -eq 0) {
+    Write-Output 'SORNG_HTTPS_LISTENER_ABSENT'
+} else {
+    Write-Output 'SORNG_HTTPS_LISTENER_EXISTS'
+}"#;
+        let preflight_result = {
+            let mut transport = transport.lock().await;
+            match transport
+                .execute_ps_command(&shell_id, preflight_script)
+                .await
+            {
+                Ok(command_id) => {
+                    let result = transport.receive_all_output(&shell_id, &command_id).await;
+                    let _ = transport
+                        .signal_command(&shell_id, &command_id, WsManSignal::TERMINATE)
+                        .await;
+                    result
+                }
+                Err(_) => Err("HTTPS listener preflight transport failure".to_string()),
+            }
         };
-
-        if stderr.contains("error") || stderr.contains("Error") {
+        let (preflight_stdout, preflight_stderr) = preflight_result.map_err(|_| {
+            "Could not confirm that no HTTPS listener would be replaced".to_string()
+        })?;
+        if preflight_stdout
+            .lines()
+            .any(|line| line.trim() == "SORNG_HTTPS_LISTENER_EXISTS")
+        {
+            return Err(
+                "Refusing to replace an existing HTTPS listener without a rollback contract"
+                    .to_string(),
+            );
+        }
+        if !preflight_stderr.trim().is_empty()
+            || !preflight_stdout
+                .lines()
+                .any(|line| line.trim() == "SORNG_HTTPS_LISTENER_ABSENT")
+        {
             return Err(format!(
-                "Failed to configure {} listener (remote error output omitted; {} bytes)",
-                protocol,
-                stderr.len()
+                "Could not confirm HTTPS listener preflight state (remote output omitted; {} bytes)",
+                preflight_stdout.len().saturating_add(preflight_stderr.len())
+            ));
+        }
+
+        let script = build_configure_listener_script(true, Some(thumbprint), port_num)?;
+        let creation_result = {
+            let mut transport = transport.lock().await;
+            match transport
+                .execute_ps_command(&shell_id, script.as_str())
+                .await
+            {
+                Ok(command_id) => {
+                    let result = transport.receive_all_output(&shell_id, &command_id).await;
+                    let _ = transport
+                        .signal_command(&shell_id, &command_id, WsManSignal::TERMINATE)
+                        .await;
+                    result
+                }
+                Err(_) => Err("HTTPS listener creation transport failure".to_string()),
+            }
+        };
+        drop(script);
+        let (_, creation_stderr) = match creation_result {
+            Ok(result) => result,
+            Err(_) => {
+                let cleanup_confirmed =
+                    cleanup_unverified_https_listener(ps_manager, session_id).await;
+                return Err(format!(
+                    "HTTPS listener creation result was unavailable; cleanup confirmed: {}",
+                    cleanup_confirmed
+                ));
+            }
+        };
+        if !creation_stderr.trim().is_empty() {
+            let cleanup_confirmed = cleanup_unverified_https_listener(ps_manager, session_id).await;
+            return Err(format!(
+                "HTTPS listener creation returned remote error output ({} bytes); cleanup confirmed: {}",
+                creation_stderr.len(), cleanup_confirmed
+            ));
+        }
+
+        let verify_script = Zeroizing::new(
+            r#"$ErrorActionPreference = 'Stop'
+$matches = @(Get-ChildItem WSMan:localhostListener | Where-Object {
+    if ($_.Keys -notcontains 'Transport=HTTPS') { return $false }
+    $portNode = Get-ChildItem -LiteralPath $_.PSPath | Where-Object { $_.Name -eq 'Port' } | Select-Object -First 1
+    return $null -ne $portNode -and [int]$portNode.Value -eq __SORNG_PORT__
+})
+if ($matches.Count -ne 1) { throw 'HTTPS listener count mismatch' }
+$thumbNode = Get-ChildItem -LiteralPath $matches[0].PSPath | Where-Object { $_.Name -eq 'CertificateThumbprint' } | Select-Object -First 1
+if ($null -eq $thumbNode) { throw 'HTTPS listener certificate binding missing' }
+$actualThumbprint = ([string]$thumbNode.Value) -replace 's', ''
+if ($actualThumbprint -ine '__SORNG_THUMBPRINT__') { throw 'HTTPS listener certificate binding mismatch' }
+Write-Output 'SORNG_HTTPS_BINDING_OK'"#
+                .replace("__SORNG_PORT__", &port_num.to_string())
+                .replace("__SORNG_THUMBPRINT__", thumbprint),
+        );
+        let verification_result = {
+            let mut transport = transport.lock().await;
+            match transport
+                .execute_ps_command(&shell_id, verify_script.as_str())
+                .await
+            {
+                Ok(command_id) => {
+                    let result = transport.receive_all_output(&shell_id, &command_id).await;
+                    let _ = transport
+                        .signal_command(&shell_id, &command_id, WsManSignal::TERMINATE)
+                        .await;
+                    result
+                }
+                Err(_) => Err("HTTPS listener verification transport failure".to_string()),
+            }
+        };
+        drop(verify_script);
+        let binding_verified = matches!(
+            verification_result,
+            Ok((stdout, stderr))
+                if stderr.trim().is_empty()
+                    && stdout
+                        .lines()
+                        .any(|line| line.trim() == "SORNG_HTTPS_BINDING_OK")
+        );
+        if !binding_verified {
+            let cleanup_confirmed = cleanup_unverified_https_listener(ps_manager, session_id).await;
+            return Err(format!(
+                "HTTPS listener binding verification failed; cleanup confirmed: {}",
+                cleanup_confirmed
             ));
         }
 
         info!(
-            "{} listener configured on port {} for session {}",
-            protocol, port_num, session_id
+            "HTTPS listener configured on port {} for session {}",
+            port_num, session_id
         );
         Ok(())
     }
@@ -344,6 +539,7 @@ impl PsConfigurationManager {
         session_id: &str,
         hosts: &[String],
     ) -> Result<(), String> {
+        require_explicit_configuration_confirmation("set_trusted_hosts")?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -611,12 +807,7 @@ fn build_configure_listener_script(
     cert_thumbprint: Option<&str>,
     port: u16,
 ) -> Result<Zeroizing<String>, String> {
-    let protocol = if use_https { "HTTPS" } else { "HTTP" };
-    let listener_key = ps_single_quoted_literal(&format!("Transport={protocol}"));
-    let mut script = Zeroizing::new(format!(
-        "# Remove existing listeners for this transport\n\
-         Get-ChildItem WSMan:\\localhost\\Listener | Where-Object {{ $_.Keys -contains {listener_key} }} | Remove-Item -Recurse -Force\n\n"
-    ));
+    let mut script = Zeroizing::new(String::new());
 
     if use_https {
         let thumbprint =
@@ -652,7 +843,7 @@ fn filter_configuration_errors(stderr: &str, action: &str) -> Result<(), String>
                     && !l.trim().is_empty()
             })
             .map(str::len)
-            .sum::<usize>();
+            .fold(0usize, |total, bytes| total.saturating_add(bytes));
         if error_bytes > 0 {
             return Err(format!(
                 "Failed to {} configuration (remote error output omitted; {} bytes)",

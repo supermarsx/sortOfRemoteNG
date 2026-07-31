@@ -12,6 +12,25 @@ use std::collections::HashMap;
 /// DSC operations manager.
 pub struct DscManager;
 
+fn require_safe_dsc_configuration_transport() -> Result<(), String> {
+    Err("DSC configuration mutation is unavailable until configuration content can be transported without generated here-string script text".to_string())
+}
+
+fn require_explicit_dsc_restore_authorization() -> Result<(), String> {
+    Err("DSC restore is unavailable until the API carries explicit destructive-operation authorization".to_string())
+}
+
+fn redacted_dsc_errors(stderr: &str) -> Vec<String> {
+    if stderr.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![format!(
+            "Remote DSC error output omitted ({} bytes)",
+            stderr.len()
+        )]
+    }
+}
+
 impl DscManager {
     /// Test-DscConfiguration – check if a node is in desired state.
     pub async fn test_configuration(
@@ -39,10 +58,7 @@ impl DscManager {
             result
         };
 
-        let mut errors = Vec::new();
-        if !stderr.trim().is_empty() {
-            errors.push(stderr.trim().to_string());
-        }
+        let errors = redacted_dsc_errors(&stderr);
 
         // Parse the JSON output
         let in_desired_state = stdout.trim() == "True"
@@ -95,7 +111,10 @@ impl DscManager {
         };
 
         if !stderr.trim().is_empty() {
-            warn!("Get-DscConfiguration warnings: {}", stderr.trim());
+            warn!(
+                "Get-DscConfiguration returned {} warning bytes; payload omitted",
+                stderr.len()
+            );
         }
 
         parse_dsc_resources(&stdout)
@@ -109,6 +128,7 @@ impl DscManager {
         wait: bool,
         force: bool,
     ) -> Result<DscResult, String> {
+        require_safe_dsc_configuration_transport()?;
         let session = ps_manager.get_session(session_id)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
@@ -149,8 +169,8 @@ impl DscManager {
 
             if !stderr.trim().is_empty() {
                 return Err(format!(
-                    "DSC configuration compilation failed: {}",
-                    stderr.trim()
+                    "DSC configuration compilation failed (remote error output omitted; {} bytes)",
+                    stderr.len()
                 ));
             }
         }
@@ -189,10 +209,7 @@ impl DscManager {
                 .await;
         }
 
-        let mut errors = Vec::new();
-        if !stderr.trim().is_empty() {
-            errors.push(stderr.trim().to_string());
-        }
+        let errors = redacted_dsc_errors(&stderr);
 
         let status = if errors.is_empty() {
             DscComplianceStatus::Compliant
@@ -237,8 +254,8 @@ impl DscManager {
 
         if !stderr.trim().is_empty() {
             warn!(
-                "Get-DscLocalConfigurationManager warnings: {}",
-                stderr.trim()
+                "Get-DscLocalConfigurationManager returned {} warning bytes; payload omitted",
+                stderr.len()
             );
         }
 
@@ -251,6 +268,7 @@ impl DscManager {
         ps_manager: &PsSessionManager,
         session_id: &str,
     ) -> Result<(), String> {
+        require_explicit_dsc_restore_authorization()?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -268,8 +286,8 @@ impl DscManager {
 
         if stderr.contains("error") || stderr.contains("Error") {
             return Err(format!(
-                "Restore-DscConfiguration failed: {}",
-                stderr.trim()
+                "Restore-DscConfiguration failed (remote error output omitted; {} bytes)",
+                stderr.len()
             ));
         }
 

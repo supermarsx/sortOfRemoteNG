@@ -10,6 +10,32 @@ use log::{info, warn};
 /// JEA operations manager.
 pub struct JeaManager;
 
+fn validate_jea_identifier(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+    {
+        return Err("Invalid JEA identifier".to_string());
+    }
+    Ok(())
+}
+
+fn require_safe_jea_mutation(identifier: &str) -> Result<(), String> {
+    validate_jea_identifier(identifier)?;
+    Err("JEA configuration mutation is unavailable until structured content can be transported without generated here-string script text".to_string())
+}
+
+fn require_authenticated_jea_identity(username: &str) -> Result<(), String> {
+    validate_jea_identifier(username)?;
+    Err("JEA access testing for an arbitrary identity is unavailable without authenticated impersonation".to_string())
+}
+
+fn require_explicit_jea_unregistration_confirmation() -> Result<(), String> {
+    Err("JEA endpoint removal is unavailable until the command contract carries explicit confirmation".to_string())
+}
+
 impl JeaManager {
     /// Register a JEA session configuration on a remote system.
     pub async fn register_endpoint(
@@ -17,6 +43,7 @@ impl JeaManager {
         session_id: &str,
         endpoint: &JeaEndpoint,
     ) -> Result<(), String> {
+        require_safe_jea_mutation(&endpoint.name)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -42,10 +69,7 @@ impl JeaManager {
                 .await;
 
             if !stderr.trim().is_empty() {
-                return Err(format!(
-                    "Failed to create JEA configuration file: {}",
-                    stderr.trim()
-                ));
+                return Err(format!("Failed to create JEA configuration file (remote error output omitted; {} bytes)", stderr.len()));
             }
         }
 
@@ -65,8 +89,8 @@ impl JeaManager {
 
             if stderr.contains("error") || stderr.contains("Error") {
                 return Err(format!(
-                    "Failed to register JEA endpoint: {}",
-                    stderr.trim()
+                    "Failed to register JEA endpoint (remote error output omitted; {} bytes)",
+                    stderr.len()
                 ));
             }
         }
@@ -84,6 +108,8 @@ impl JeaManager {
         session_id: &str,
         endpoint_name: &str,
     ) -> Result<(), String> {
+        require_explicit_jea_unregistration_confirmation()?;
+        validate_jea_identifier(endpoint_name)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -104,8 +130,8 @@ impl JeaManager {
 
         if stderr.contains("error") || stderr.contains("Error") {
             return Err(format!(
-                "Failed to unregister JEA endpoint: {}",
-                stderr.trim()
+                "Failed to unregister JEA endpoint (remote error output omitted; {} bytes)",
+                stderr.len()
             ));
         }
 
@@ -145,6 +171,7 @@ impl JeaManager {
         session_id: &str,
         endpoint_name: &str,
     ) -> Result<serde_json::Value, String> {
+        validate_jea_identifier(endpoint_name)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -164,7 +191,10 @@ impl JeaManager {
         };
 
         if !stderr.trim().is_empty() {
-            return Err(format!("Failed to get endpoint details: {}", stderr.trim()));
+            return Err(format!(
+                "Failed to get endpoint details (remote error output omitted; {} bytes)",
+                stderr.len()
+            ));
         }
 
         serde_json::from_str(stdout.trim())
@@ -178,6 +208,7 @@ impl JeaManager {
         role_name: &str,
         capability: &JeaRoleCapability,
     ) -> Result<String, String> {
+        require_safe_jea_mutation(role_name)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -207,8 +238,8 @@ impl JeaManager {
 
         if !stderr.trim().is_empty() {
             return Err(format!(
-                "Failed to create role capability: {}",
-                stderr.trim()
+                "Failed to create role capability (remote error output omitted; {} bytes)",
+                stderr.len()
             ));
         }
 
@@ -225,8 +256,10 @@ impl JeaManager {
         ps_manager: &PsSessionManager,
         session_id: &str,
         endpoint_name: &str,
-        _username: &str,
+        username: &str,
     ) -> Result<Vec<String>, String> {
+        validate_jea_identifier(endpoint_name)?;
+        require_authenticated_jea_identity(username)?;
         let transport = ps_manager.get_transport(session_id)?;
         let shell_id = ps_manager.get_shell_id(session_id)?;
 
@@ -248,7 +281,10 @@ impl JeaManager {
         };
 
         if !stderr.trim().is_empty() {
-            warn!("JEA endpoint test warnings: {}", stderr.trim());
+            warn!(
+                "JEA endpoint test returned {} warning bytes; payload omitted",
+                stderr.len()
+            );
         }
 
         let commands: Vec<String> = stdout
