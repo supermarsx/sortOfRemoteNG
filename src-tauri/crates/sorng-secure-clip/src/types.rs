@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Core types
@@ -72,6 +73,12 @@ pub struct ClipEntry {
     pub cleared: bool,
 }
 
+impl Drop for ClipEntry {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
+}
+
 impl ClipEntry {
     /// Create a new entry. Auto-calculates expiry based on kind + config.
     pub fn new(
@@ -132,13 +139,15 @@ impl ClipEntry {
     /// Sanitized view for the UI — value is masked.
     pub fn to_display(&self) -> ClipEntryDisplay {
         let masked = if self.kind.is_sensitive() {
-            let len = self.value.len();
-            if len == 0 {
+            let char_count = self.value.chars().count();
+            if char_count == 0 {
                 String::new()
-            } else if len <= 4 {
+            } else if char_count <= 4 {
                 "••••".to_string()
             } else {
-                format!("{}••••{}", &self.value[..1], &self.value[len - 1..])
+                let first = self.value.chars().next().unwrap_or_default();
+                let last = self.value.chars().next_back().unwrap_or_default();
+                format!("{first}••••{last}")
             }
         } else {
             self.value.clone()
@@ -302,6 +311,12 @@ pub struct CopyRequest {
     pub one_time: bool,
 }
 
+impl Drop for CopyRequest {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
+}
+
 /// A request to paste the current secret into an SSH terminal session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -327,7 +342,14 @@ fn default_typing_delay() -> u64 {
 #[serde(rename_all = "camelCase")]
 pub struct PasteToTerminalResponse {
     pub entry_id: String,
-    pub value: String,
+    pub paste_count: u32,
+    pub cleared: bool,
+}
+
+/// Internal native-only payload. This type is never serialized to the renderer.
+pub struct NativeTerminalPaste {
+    pub response: PasteToTerminalResponse,
+    pub value: Zeroizing<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════

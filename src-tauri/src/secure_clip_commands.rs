@@ -10,6 +10,14 @@ mod types {
     pub use crate::secure_clip::types::*;
 }
 
+mod ssh {
+    pub use crate::ssh::*;
+}
+
+mod auto_lock {
+    pub use crate::auto_lock::*;
+}
+
 #[allow(dead_code)]
 mod inner {
     include!("../crates/sorng-secure-clip/src/commands.rs");

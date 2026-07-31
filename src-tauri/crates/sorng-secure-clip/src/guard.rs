@@ -40,14 +40,20 @@ pub fn spawn_auto_clear_task(
         while !thread_stop.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_secs(1));
 
-            let cleared = {
+            let clear_result = {
                 let mut eng = engine.blocking_write();
                 eng.tick_auto_clear()
             };
 
-            if let Some(entry) = cleared {
-                let mut hist = history.blocking_write();
-                hist.record_clear(&entry, ClearReason::AutoClear);
+            match clear_result {
+                Ok(Some(entry)) => {
+                    let mut hist = history.blocking_write();
+                    hist.record_clear(&entry, ClearReason::AutoClear);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    log::warn!("Secure clipboard auto-clear failed: {error}");
+                }
             }
         }
     });
