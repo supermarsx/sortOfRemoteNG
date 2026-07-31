@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
-import { IndexedDbService } from '../storage/indexedDbService';
+import { invoke } from "@tauri-apps/api/core";
+import { IndexedDbService } from "../storage/indexedDbService";
 import {
   TerminalMacro,
   MacroStep,
@@ -9,19 +9,83 @@ import {
   SavedWebVideoRecording,
   SessionRecording,
   WebRecording,
-} from '../../types/recording/macroTypes';
-import { renderTerminalToGif, stripAnsi } from './gifEncoder';
+} from "../../types/recording/macroTypes";
+import { renderTerminalToGif, stripAnsi } from "./gifEncoder";
 
-const MACROS_STORAGE_KEY = 'mremote-terminal-macros';
-const RECORDINGS_STORAGE_KEY = 'mremote-session-recordings';
-const RDP_RECORDINGS_STORAGE_KEY = 'mremote-rdp-recordings';
-const WEB_RECORDINGS_STORAGE_KEY = 'mremote-web-recordings';
-const WEB_VIDEO_RECORDINGS_STORAGE_KEY = 'mremote-web-video-recordings';
+const MACROS_STORAGE_KEY = "mremote-terminal-macros";
+const RECORDINGS_STORAGE_KEY = "mremote-session-recordings";
+const RDP_RECORDINGS_STORAGE_KEY = "mremote-rdp-recordings";
+const WEB_RECORDINGS_STORAGE_KEY = "mremote-web-recordings";
+const WEB_VIDEO_RECORDINGS_STORAGE_KEY = "mremote-web-video-recordings";
+
+const SENSITIVE_HTTP_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "set-cookie",
+  "x-api-key",
+]);
+
+export function isSensitiveHttpHeaderName(headerName: string): boolean {
+  const normalized = headerName.trim().toLowerCase();
+  if (SENSITIVE_HTTP_HEADERS.has(normalized)) return true;
+
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  const segments = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  return (
+    normalized.includes("token") ||
+    normalized.includes("secret") ||
+    compact.includes("apikey") ||
+    segments.includes("key") ||
+    compact.endsWith("key")
+  );
+}
+
+function redactHeaderMap(
+  headers: Record<string, string> | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).filter(
+      ([name]) => !isSensitiveHttpHeaderName(name),
+    ),
+  );
+}
+
+export function redactWebRecordingHeaders(
+  recording: WebRecording,
+): WebRecording {
+  return {
+    ...recording,
+    entries: recording.entries.map((entry) => ({
+      ...entry,
+      request_headers: redactHeaderMap(entry.request_headers),
+      response_headers: redactHeaderMap(entry.response_headers),
+    })),
+  };
+}
+
+function hasSensitiveRecordedHeaders(recording: WebRecording): boolean {
+  return recording.entries.some(
+    (entry) =>
+      Object.keys(entry.request_headers ?? {}).some(
+        isSensitiveHttpHeaderName,
+      ) ||
+      Object.keys(entry.response_headers ?? {}).some(isSensitiveHttpHeaderName),
+  );
+}
+
+function redactSavedWebRecording(saved: SavedWebRecording): SavedWebRecording {
+  return {
+    ...saved,
+    recording: redactWebRecordingHeaders(saved.recording),
+  };
+}
 
 // ─── Macros ────────────────────────────────────────────────────────
 
 export async function loadMacros(): Promise<TerminalMacro[]> {
-  const data = await IndexedDbService.getItem<TerminalMacro[]>(MACROS_STORAGE_KEY);
+  const data =
+    await IndexedDbService.getItem<TerminalMacro[]>(MACROS_STORAGE_KEY);
   return data ?? [];
 }
 
@@ -48,11 +112,15 @@ export async function deleteMacro(id: string): Promise<void> {
 // ─── Recordings ────────────────────────────────────────────────────
 
 export async function loadRecordings(): Promise<SavedRecording[]> {
-  const data = await IndexedDbService.getItem<SavedRecording[]>(RECORDINGS_STORAGE_KEY);
+  const data = await IndexedDbService.getItem<SavedRecording[]>(
+    RECORDINGS_STORAGE_KEY,
+  );
   return data ?? [];
 }
 
-export async function saveRecordings(recordings: SavedRecording[]): Promise<void> {
+export async function saveRecordings(
+  recordings: SavedRecording[],
+): Promise<void> {
   await IndexedDbService.setItem(RECORDINGS_STORAGE_KEY, recordings);
 }
 
@@ -80,22 +148,30 @@ export async function trimRecordings(maxCount: number): Promise<void> {
   const recordings = await loadRecordings();
   if (recordings.length <= maxCount) return;
   // Sort by savedAt ascending (oldest first), keep the newest
-  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  recordings.sort(
+    (a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime(),
+  );
   await saveRecordings(recordings.slice(recordings.length - maxCount));
 }
 
 // ─── RDP Recordings ────────────────────────────────────────────────
 
 export async function loadRdpRecordings(): Promise<SavedRDPRecording[]> {
-  const data = await IndexedDbService.getItem<SavedRDPRecording[]>(RDP_RECORDINGS_STORAGE_KEY);
+  const data = await IndexedDbService.getItem<SavedRDPRecording[]>(
+    RDP_RECORDINGS_STORAGE_KEY,
+  );
   return data ?? [];
 }
 
-export async function saveRdpRecordings(recordings: SavedRDPRecording[]): Promise<void> {
+export async function saveRdpRecordings(
+  recordings: SavedRDPRecording[],
+): Promise<void> {
   await IndexedDbService.setItem(RDP_RECORDINGS_STORAGE_KEY, recordings);
 }
 
-export async function saveRdpRecording(recording: SavedRDPRecording): Promise<void> {
+export async function saveRdpRecording(
+  recording: SavedRDPRecording,
+): Promise<void> {
   const recordings = await loadRdpRecordings();
   const idx = recordings.findIndex((r) => r.id === recording.id);
   if (idx >= 0) {
@@ -115,7 +191,9 @@ export async function trimRdpRecordings(maxCount: number): Promise<void> {
   if (maxCount <= 0) return;
   const recordings = await loadRdpRecordings();
   if (recordings.length <= maxCount) return;
-  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  recordings.sort(
+    (a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime(),
+  );
   await saveRdpRecordings(recordings.slice(recordings.length - maxCount));
 }
 
@@ -137,7 +215,7 @@ export async function blobToRdpRecording(
 ): Promise<SavedRDPRecording> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -168,32 +246,50 @@ export function rdpRecordingToBlob(recording: SavedRDPRecording): Blob {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  const mimeType = recording.format === 'mp4'
-    ? 'video/mp4'
-    : recording.format === 'gif'
-      ? 'image/gif'
-      : 'video/webm';
+  const mimeType =
+    recording.format === "mp4"
+      ? "video/mp4"
+      : recording.format === "gif"
+        ? "image/gif"
+        : "video/webm";
   return new Blob([bytes], { type: mimeType });
 }
 
 // ─── Web HAR Recordings ───────────────────────────────────────────
 
 export async function loadWebRecordings(): Promise<SavedWebRecording[]> {
-  const data = await IndexedDbService.getItem<SavedWebRecording[]>(WEB_RECORDINGS_STORAGE_KEY);
-  return data ?? [];
+  const data = await IndexedDbService.getItem<SavedWebRecording[]>(
+    WEB_RECORDINGS_STORAGE_KEY,
+  );
+  if (!data) return [];
+  if (!data.some((saved) => hasSensitiveRecordedHeaders(saved.recording))) {
+    return data;
+  }
+
+  const redacted = data.map(redactSavedWebRecording);
+  await IndexedDbService.setItem(WEB_RECORDINGS_STORAGE_KEY, redacted);
+  return redacted;
 }
 
-export async function saveWebRecordings(recordings: SavedWebRecording[]): Promise<void> {
-  await IndexedDbService.setItem(WEB_RECORDINGS_STORAGE_KEY, recordings);
+export async function saveWebRecordings(
+  recordings: SavedWebRecording[],
+): Promise<void> {
+  await IndexedDbService.setItem(
+    WEB_RECORDINGS_STORAGE_KEY,
+    recordings.map(redactSavedWebRecording),
+  );
 }
 
-export async function saveWebRecording(recording: SavedWebRecording): Promise<void> {
+export async function saveWebRecording(
+  recording: SavedWebRecording,
+): Promise<void> {
   const recordings = await loadWebRecordings();
   const idx = recordings.findIndex((r) => r.id === recording.id);
+  const redacted = redactSavedWebRecording(recording);
   if (idx >= 0) {
-    recordings[idx] = recording;
+    recordings[idx] = redacted;
   } else {
-    recordings.push(recording);
+    recordings.push(redacted);
   }
   await saveWebRecordings(recordings);
 }
@@ -207,32 +303,45 @@ export async function trimWebRecordings(maxCount: number): Promise<void> {
   if (maxCount <= 0) return;
   const recordings = await loadWebRecordings();
   if (recordings.length <= maxCount) return;
-  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  recordings.sort(
+    (a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime(),
+  );
   await saveWebRecordings(recordings.slice(recordings.length - maxCount));
 }
 
 export async function exportWebRecording(
   recording: WebRecording,
-  format: 'json' | 'har',
+  format: "json" | "har",
 ): Promise<string> {
-  if (format === 'har') {
-    return await invoke<string>('export_web_recording_har', { recording });
+  const redacted = redactWebRecordingHeaders(recording);
+  if (format === "har") {
+    return await invoke<string>("export_web_recording_har", {
+      recording: redacted,
+    });
   }
-  return JSON.stringify(recording, null, 2);
+  return JSON.stringify(redacted, null, 2);
 }
 
 // ─── Web Video Recordings ─────────────────────────────────────────
 
-export async function loadWebVideoRecordings(): Promise<SavedWebVideoRecording[]> {
-  const data = await IndexedDbService.getItem<SavedWebVideoRecording[]>(WEB_VIDEO_RECORDINGS_STORAGE_KEY);
+export async function loadWebVideoRecordings(): Promise<
+  SavedWebVideoRecording[]
+> {
+  const data = await IndexedDbService.getItem<SavedWebVideoRecording[]>(
+    WEB_VIDEO_RECORDINGS_STORAGE_KEY,
+  );
   return data ?? [];
 }
 
-export async function saveWebVideoRecordings(recordings: SavedWebVideoRecording[]): Promise<void> {
+export async function saveWebVideoRecordings(
+  recordings: SavedWebVideoRecording[],
+): Promise<void> {
   await IndexedDbService.setItem(WEB_VIDEO_RECORDINGS_STORAGE_KEY, recordings);
 }
 
-export async function saveWebVideoRecording(recording: SavedWebVideoRecording): Promise<void> {
+export async function saveWebVideoRecording(
+  recording: SavedWebVideoRecording,
+): Promise<void> {
   const recordings = await loadWebVideoRecordings();
   const idx = recordings.findIndex((r) => r.id === recording.id);
   if (idx >= 0) {
@@ -252,7 +361,9 @@ export async function trimWebVideoRecordings(maxCount: number): Promise<void> {
   if (maxCount <= 0) return;
   const recordings = await loadWebVideoRecordings();
   if (recordings.length <= maxCount) return;
-  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  recordings.sort(
+    (a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime(),
+  );
   await saveWebVideoRecordings(recordings.slice(recordings.length - maxCount));
 }
 
@@ -269,7 +380,7 @@ export async function blobToWebVideoRecording(
 ): Promise<SavedWebVideoRecording> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -289,13 +400,15 @@ export async function blobToWebVideoRecording(
   };
 }
 
-export function webVideoRecordingToBlob(recording: SavedWebVideoRecording): Blob {
+export function webVideoRecordingToBlob(
+  recording: SavedWebVideoRecording,
+): Blob {
   const binary = atob(recording.data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  const mimeType = recording.format === 'mp4' ? 'video/mp4' : 'video/webm';
+  const mimeType = recording.format === "mp4" ? "video/mp4" : "video/webm";
   return new Blob([bytes], { type: mimeType });
 }
 
@@ -313,8 +426,8 @@ export async function replayMacro(
     const step = macro.steps[i];
     onStep?.(i, step);
 
-    const data = step.sendNewline ? step.command + '\n' : step.command;
-    await invoke('send_ssh_input', { sessionId, data });
+    const data = step.sendNewline ? step.command + "\n" : step.command;
+    await invoke("send_ssh_input", { sessionId, data });
 
     if (step.delayMs > 0 && i < macro.steps.length - 1) {
       await delay(step.delayMs, abortSignal);
@@ -325,10 +438,14 @@ export async function replayMacro(
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      resolve();
-    }, { once: true });
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 
@@ -336,20 +453,20 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 
 export async function exportRecording(
   recording: SessionRecording,
-  format: 'json' | 'asciicast' | 'script' | 'gif',
+  format: "json" | "asciicast" | "script" | "gif",
 ): Promise<string | Blob> {
   switch (format) {
-    case 'json':
+    case "json":
       return JSON.stringify(recording, null, 2);
-    case 'asciicast':
-      return await invoke<string>('export_recording_asciicast', { recording });
-    case 'script':
-      return await invoke<string>('export_recording_script', { recording });
-    case 'gif': {
+    case "asciicast":
+      return await invoke<string>("export_recording_asciicast", { recording });
+    case "script":
+      return await invoke<string>("export_recording_script", { recording });
+    case "gif": {
       // Strip ANSI from entries before rendering
-      const cleanedEntries = recording.entries.map(e => ({
+      const cleanedEntries = recording.entries.map((e) => ({
         ...e,
-        data: e.entry_type === 'Output' ? stripAnsi(e.data) : e.data,
+        data: e.entry_type === "Output" ? stripAnsi(e.data) : e.data,
       }));
       return renderTerminalToGif(cleanedEntries, {
         cols: recording.metadata.cols,

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { WebRecording, WebRecordingMetadata } from '../../types/recording/macroTypes';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  WebRecording,
+  WebRecordingMetadata,
+} from "../../types/recording/macroTypes";
+import { redactWebRecordingHeaders } from "../../utils/recording/macroService";
 
 export interface UseWebRecorderResult {
   isRecording: boolean;
@@ -25,26 +29,32 @@ export function useWebRecorder(): UseWebRecorderResult {
     }
   }, []);
 
-  const startPolling = useCallback((sessionId: string) => {
-    stopPolling();
-    pollRef.current = setInterval(async () => {
-      try {
-        const status = await invoke<WebRecordingMetadata | null>('get_web_recording_status', {
-          sessionId,
-        });
-        if (status) {
-          setDuration(status.duration_ms);
-          setEntryCount(status.entry_count);
-          setBytesTransferred(status.total_bytes_transferred);
-        } else {
-          setIsRecording(false);
-          stopPolling();
+  const startPolling = useCallback(
+    (sessionId: string) => {
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await invoke<WebRecordingMetadata | null>(
+            "get_web_recording_status",
+            {
+              sessionId,
+            },
+          );
+          if (status) {
+            setDuration(status.duration_ms);
+            setEntryCount(status.entry_count);
+            setBytesTransferred(status.total_bytes_transferred);
+          } else {
+            setIsRecording(false);
+            stopPolling();
+          }
+        } catch {
+          // Session may have gone away
         }
-      } catch {
-        // Session may have gone away
-      }
-    }, 1000);
-  }, [stopPolling]);
+      }, 1000);
+    },
+    [stopPolling],
+  );
 
   useEffect(() => {
     return () => stopPolling();
@@ -52,9 +62,9 @@ export function useWebRecorder(): UseWebRecorderResult {
 
   const startRecording = useCallback(
     async (sessionId: string, recordHeaders?: boolean) => {
-      await invoke('start_web_recording', {
+      await invoke("start_web_recording", {
         sessionId,
-        recordHeaders: recordHeaders ?? true,
+        recordHeaders: recordHeaders ?? false,
       });
       setIsRecording(true);
       setDuration(0);
@@ -68,10 +78,12 @@ export function useWebRecorder(): UseWebRecorderResult {
   const stopRecording = useCallback(
     async (sessionId: string): Promise<WebRecording | null> => {
       try {
-        const recording = await invoke<WebRecording>('stop_web_recording', { sessionId });
+        const recording = await invoke<WebRecording>("stop_web_recording", {
+          sessionId,
+        });
         setIsRecording(false);
         stopPolling();
-        return recording;
+        return redactWebRecordingHeaders(recording);
       } catch {
         setIsRecording(false);
         stopPolling();
@@ -81,5 +93,12 @@ export function useWebRecorder(): UseWebRecorderResult {
     [stopPolling],
   );
 
-  return { isRecording, duration, entryCount, bytesTransferred, startRecording, stopRecording };
+  return {
+    isRecording,
+    duration,
+    entryCount,
+    bytesTransferred,
+    startRecording,
+    stopRecording,
+  };
 }

@@ -231,7 +231,7 @@ pub async fn rec_start_http(
         session_id,
         host,
         target_url,
-        record_headers.unwrap_or(true),
+        record_headers.unwrap_or(false),
         tags.unwrap_or_default(),
     )
     .await
