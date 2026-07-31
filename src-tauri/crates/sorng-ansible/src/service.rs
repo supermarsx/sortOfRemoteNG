@@ -22,9 +22,10 @@ use crate::vault::VaultManager;
 pub type AnsibleServiceState = Arc<Mutex<AnsibleService>>;
 
 /// Main Ansible service managing connections and delegating operations.
+#[derive(Clone)]
 pub struct AnsibleService {
     /// Active Ansible connections keyed by a user-chosen id.
-    connections: HashMap<String, AnsibleClient>,
+    connections: HashMap<String, Arc<AnsibleClient>>,
     /// Execution history.
     history: Vec<ExecutionHistoryEntry>,
 }
@@ -51,15 +52,29 @@ impl AnsibleService {
         id: String,
         config: AnsibleConnectionConfig,
     ) -> AnsibleResult<AnsibleInfo> {
+        let (client, info) = Self::prepare_connection(&config).await?;
+        self.register_connection(id, client)?;
+        Ok(info)
+    }
+
+    /// Build and probe a client without holding the global service mutex.
+    pub async fn prepare_connection(
+        config: &AnsibleConnectionConfig,
+    ) -> AnsibleResult<(AnsibleClient, AnsibleInfo)> {
+        let client = AnsibleClient::from_config(config).await?;
+        let info = client.detect_info().await?;
+        Ok((client, info))
+    }
+
+    /// Atomically register an already validated client.
+    pub fn register_connection(&mut self, id: String, client: AnsibleClient) -> AnsibleResult<()> {
         if self.connections.contains_key(&id) {
             return Err(AnsibleError::connection(format!(
                 "Connection id '{id}' already exists; disconnect it before reconnecting"
             )));
         }
-        let client = AnsibleClient::from_config(&config).await?;
-        let info = client.detect_info().await?;
-        self.connections.insert(id, client);
-        Ok(info)
+        self.connections.insert(id, Arc::new(client));
+        Ok(())
     }
 
     /// Disconnect / remove a connection.
@@ -535,7 +550,7 @@ impl AnsibleService {
     // ── Internal helpers ─────────────────────────────────────────────
 
     fn client(&self, id: &str) -> AnsibleResult<&AnsibleClient> {
-        self.connections.get(id).ok_or_else(|| {
+        self.connections.get(id).map(AsRef::as_ref).ok_or_else(|| {
             AnsibleError::connection(format!(
                 "No Ansible connection with id '{}'. Call ansible_connect first.",
                 id
@@ -543,11 +558,11 @@ impl AnsibleService {
         })
     }
 
-    fn record_history(&mut self, result: &ExecutionResult, cmd_type: CommandType) {
+    pub(crate) fn record_history(&mut self, result: &ExecutionResult, cmd_type: CommandType) {
         self.history.push(ExecutionHistoryEntry {
             id: result.id.clone(),
+            command: Self::history_command(&cmd_type).to_string(),
             command_type: cmd_type,
-            command: result.command.clone(),
             started_at: result.started_at,
             finished_at: result.finished_at,
             status: result.status.clone(),
@@ -565,5 +580,45 @@ impl AnsibleService {
         if self.history.len() > 500 {
             self.history.drain(..self.history.len() - 500);
         }
+    }
+
+    fn history_command(cmd_type: &CommandType) -> &'static str {
+        match cmd_type {
+            CommandType::Playbook => "ansible-playbook [redacted arguments]",
+            CommandType::AdHoc => "ansible ad-hoc [redacted arguments]",
+            _ => "ansible [redacted arguments]",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn history_command_is_fixed_redacted_metadata() {
+        let secret = "deterministic-history-secret";
+        for command_type in [CommandType::Playbook, CommandType::AdHoc] {
+            let command = AnsibleService::history_command(&command_type);
+            assert!(!command.contains(secret));
+            assert!(command.contains("redacted arguments"));
+        }
+    }
+
+    #[tokio::test]
+    async fn operation_snapshot_does_not_hold_the_global_mutex() {
+        let state: AnsibleServiceState = Arc::new(Mutex::new(AnsibleService::new()));
+        let snapshot = { state.lock().await.clone() };
+        let work = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            snapshot.list_connections()
+        });
+
+        let guard = tokio::time::timeout(Duration::from_millis(20), state.lock())
+            .await
+            .expect("snapshot work must not retain the global service mutex");
+        drop(guard);
+        work.await.expect("snapshot task");
     }
 }

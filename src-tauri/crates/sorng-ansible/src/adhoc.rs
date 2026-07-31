@@ -9,6 +9,8 @@ use crate::client::AnsibleClient;
 use crate::error::AnsibleResult;
 use crate::types::*;
 
+const MAX_CONNECTION_TIMEOUT_SECS: u64 = 300;
+
 /// Ad-hoc command runner.
 pub struct AdHocManager;
 
@@ -22,10 +24,11 @@ impl AdHocManager {
         let exec_id = Uuid::new_v4().to_string();
 
         let args = Self::build_args(options);
-        let command_str = format!("ansible {}", args.join(" "));
-        debug!("Executing ad-hoc: {}", command_str);
+        let command_metadata = Self::execution_metadata(options);
+        debug!("Executing Ansible ad-hoc command with {command_metadata}");
 
-        let output = client.run_ansible(&args).await?;
+        let execution_client = client.with_environment(&options.env_vars)?;
+        let output = execution_client.run_ansible(&args).await?;
 
         let finished_at = Utc::now();
         let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
@@ -55,7 +58,7 @@ impl AdHocManager {
             stdout: output.stdout,
             stderr: output.stderr,
             exit_code: Some(output.exit_code),
-            command: command_str,
+            command: command_metadata,
         })
     }
 
@@ -281,7 +284,7 @@ impl AdHocManager {
 
         if let Some(timeout) = options.timeout_secs {
             args.push("--timeout".to_string());
-            args.push(timeout.to_string());
+            args.push(timeout.clamp(1, MAX_CONNECTION_TIMEOUT_SECS).to_string());
         }
 
         if let Some(poll) = options.poll {
@@ -315,6 +318,26 @@ impl AdHocManager {
         }
 
         args
+    }
+
+    fn execution_metadata(options: &AdHocOptions) -> String {
+        format!(
+            "ad-hoc target=[configured] module=[configured] module_args={} inventory={} extra_vars={} env={} become={} timeout={}",
+            options.module_args.is_some(),
+            if options.inventory.is_some() {
+                "configured"
+            } else {
+                "default"
+            },
+            options.extra_vars.len(),
+            options.env_vars.len(),
+            options.use_become.unwrap_or(false),
+            if options.timeout_secs.is_some() {
+                "configured"
+            } else {
+                "default"
+            },
+        )
     }
 
     // ── Output parsing ───────────────────────────────────────────────
@@ -411,5 +434,47 @@ impl AdHocManager {
         }
 
         results
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn execution_metadata_never_contains_ad_hoc_secrets() {
+        let secret = "deterministic-adhoc-secret";
+        let mut extra_vars = HashMap::new();
+        extra_vars.insert("password".to_string(), secret.to_string());
+        let mut env_vars = HashMap::new();
+        env_vars.insert("ANSIBLE_TEST_TOKEN".to_string(), secret.to_string());
+        let options = AdHocOptions {
+            pattern: format!("target-{secret}"),
+            module: format!("module-{secret}"),
+            module_args: Some(format!("password={secret}")),
+            inventory: Some(format!("inventory-{secret}")),
+            use_become: Some(true),
+            become_user: Some(format!("become-{secret}")),
+            become_method: Some("sudo".to_string()),
+            remote_user: Some(format!("remote-{secret}")),
+            private_key: Some(format!("key-{secret}")),
+            forks: Some(2),
+            extra_vars,
+            timeout_secs: Some(42),
+            poll: None,
+            background: None,
+            one_line: false,
+            tree: Some(format!("tree-{secret}")),
+            vault_password_file: Some(format!("vault-{secret}")),
+            verbosity: Some(4),
+            env_vars,
+        };
+
+        let metadata = AdHocManager::execution_metadata(&options);
+        assert!(!metadata.contains(secret));
+        assert!(metadata.contains("module_args=true"));
+        assert!(metadata.contains("extra_vars=1"));
+        assert!(metadata.contains("env=1"));
     }
 }

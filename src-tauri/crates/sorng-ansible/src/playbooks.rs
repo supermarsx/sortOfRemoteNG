@@ -13,6 +13,8 @@ use crate::client::AnsibleClient;
 use crate::error::{AnsibleError, AnsibleResult};
 use crate::types::*;
 
+const MAX_CONNECTION_TIMEOUT_SECS: u64 = 300;
+
 /// Playbook management operations.
 pub struct PlaybookManager;
 
@@ -187,8 +189,8 @@ impl PlaybookManager {
         let exec_id = Uuid::new_v4().to_string();
 
         let args = Self::build_playbook_args(options);
-        let command_str = format!("ansible-playbook {}", args.join(" "));
-        debug!("Executing: {}", command_str);
+        let command_metadata = Self::execution_metadata(options);
+        debug!("Executing Ansible playbook with {command_metadata}");
 
         let output = client.run_playbook(&args).await?;
 
@@ -217,7 +219,7 @@ impl PlaybookManager {
             stdout: output.stdout,
             stderr: output.stderr,
             exit_code: Some(output.exit_code),
-            command: command_str,
+            command: command_metadata,
         })
     }
 
@@ -339,7 +341,7 @@ impl PlaybookManager {
 
         if let Some(timeout) = options.timeout_secs {
             args.push("--timeout".to_string());
-            args.push(timeout.to_string());
+            args.push(timeout.clamp(1, MAX_CONNECTION_TIMEOUT_SECS).to_string());
         }
 
         if let Some(ref vf) = options.vault_password_file {
@@ -356,6 +358,29 @@ impl PlaybookManager {
         args.push(options.playbook_path.clone());
 
         args
+    }
+
+    fn execution_metadata(options: &PlaybookRunOptions) -> String {
+        format!(
+            "playbook=[configured] inventory={} tags={} skip_tags={} extra_vars={} extra_var_files={} check={} diff={} become={} timeout={}",
+            if options.inventory.is_some() {
+                "configured"
+            } else {
+                "default"
+            },
+            options.tags.len(),
+            options.skip_tags.len(),
+            options.extra_vars.len(),
+            options.extra_vars_files.len(),
+            options.check_mode,
+            options.diff_mode,
+            options.use_become.unwrap_or(false),
+            if options.timeout_secs.is_some() {
+                "configured"
+            } else {
+                "default"
+            },
+        )
     }
 
     // ── Output parsing ───────────────────────────────────────────────
@@ -532,5 +557,63 @@ impl PlaybookManager {
     fn extract_rule(text: &str) -> Option<String> {
         let re = Regex::new(r"\[([a-zA-Z0-9_-]+)\]").expect("valid regex literal");
         re.captures(text).map(|c| c[1].to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn execution_metadata_never_contains_playbook_secrets() {
+        let secret = "deterministic-playbook-secret";
+        let mut extra_vars = HashMap::new();
+        extra_vars.insert("password".to_string(), secret.to_string());
+        let options = PlaybookRunOptions {
+            playbook_path: format!("C:/secret/{secret}.yml"),
+            inventory: Some(format!("inventory-{secret}")),
+            limit: Some(format!("limit-{secret}")),
+            tags: vec![format!("tag-{secret}")],
+            skip_tags: vec![format!("skip-{secret}")],
+            extra_vars,
+            extra_vars_files: vec![format!("vars-{secret}.yml")],
+            forks: Some(2),
+            check_mode: true,
+            diff_mode: false,
+            start_at_task: Some(format!("task-{secret}")),
+            step: false,
+            flush_cache: false,
+            force_handlers: false,
+            use_become: Some(true),
+            become_user: Some(format!("become-{secret}")),
+            become_method: Some("sudo".to_string()),
+            remote_user: Some(format!("remote-{secret}")),
+            private_key: Some(format!("key-{secret}")),
+            ssh_common_args: Some(format!("ssh-{secret}")),
+            timeout_secs: Some(42),
+            vault_password_file: Some(format!("vault-{secret}")),
+            verbosity: Some(4),
+        };
+
+        let metadata = PlaybookManager::execution_metadata(&options);
+        assert!(!metadata.contains(secret));
+        assert!(metadata.contains("extra_vars=1"));
+        assert!(metadata.contains("extra_var_files=1"));
+    }
+
+    #[test]
+    fn connection_timeout_is_clamped() {
+        let mut options = PlaybookRunOptions::default();
+        options.playbook_path = "site.yml".to_string();
+        options.timeout_secs = Some(u64::MAX);
+        let args = PlaybookManager::build_playbook_args(&options);
+        let timeout_index = args
+            .iter()
+            .position(|argument| argument == "--timeout")
+            .expect("timeout argument");
+        assert_eq!(
+            args[timeout_index + 1],
+            MAX_CONNECTION_TIMEOUT_SECS.to_string()
+        );
     }
 }
