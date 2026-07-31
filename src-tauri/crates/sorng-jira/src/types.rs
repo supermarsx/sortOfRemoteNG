@@ -24,6 +24,9 @@ pub struct JiraConnectionConfig {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub skip_tls_verify: bool,
+    /// Runtime-only acknowledgement for this insecure connection attempt.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: bool,
     #[serde(default)]
     pub proxy_url: Option<String>,
 }

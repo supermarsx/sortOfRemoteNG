@@ -17,8 +17,20 @@ pub struct JiraClient {
 #[allow(dead_code)]
 impl JiraClient {
     pub fn from_config(cfg: &JiraConnectionConfig) -> JiraResult<Self> {
+        let effective_tls_skip = cfg.skip_tls_verify
+            && cfg
+                .host
+                .trim()
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"));
+        if effective_tls_skip != cfg.acknowledge_invalid_cert_risk {
+            return Err(JiraError::validation(
+                "TLS certificate verification bypass requires an explicit runtime acknowledgement for this connection attempt",
+            ));
+        }
+
         let mut builder = Client::builder()
-            .danger_accept_invalid_certs(cfg.skip_tls_verify)
+            .danger_accept_invalid_certs(effective_tls_skip)
             .timeout(std::time::Duration::from_secs(cfg.timeout_seconds));
         if let Some(proxy_url) = cfg
             .proxy_url

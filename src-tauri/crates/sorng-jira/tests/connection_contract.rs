@@ -1,3 +1,4 @@
+use sorng_jira::client::JiraClient;
 use sorng_jira::error::JiraErrorKind;
 use sorng_jira::service::JiraService;
 use sorng_jira::types::{JiraAuthMethod, JiraConnectionConfig};
@@ -62,6 +63,25 @@ impl MockHttpServer {
     }
 }
 
+#[test]
+fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    let mut cfg = JiraConnectionConfig {
+        name: "TLS acknowledgement contract".into(),
+        host: "https://jira.example.test".into(),
+        auth: JiraAuthMethod::Bearer {
+            token: "test-token".into(),
+        },
+        api_version: "2".into(),
+        timeout_seconds: 5,
+        skip_tls_verify: true,
+        acknowledge_invalid_cert_risk: false,
+        proxy_url: None,
+    };
+    assert!(JiraClient::from_config(&cfg).is_err());
+    cfg.acknowledge_invalid_cert_risk = true;
+    assert!(JiraClient::from_config(&cfg).is_ok());
+}
+
 fn config(server: &MockHttpServer) -> JiraConnectionConfig {
     JiraConnectionConfig {
         name: "Jira contract".into(),
@@ -73,6 +93,7 @@ fn config(server: &MockHttpServer) -> JiraConnectionConfig {
         api_version: "3".into(),
         timeout_seconds: 2,
         skip_tls_verify: false,
+        acknowledge_invalid_cert_risk: false,
         proxy_url: None,
     }
 }
