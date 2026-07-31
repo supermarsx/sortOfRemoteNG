@@ -357,11 +357,11 @@ impl RiskAnalyzer {
         let reversible = val
             .get("reversible")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+            .unwrap_or(false);
         let confirmation = val
             .get("confirmation_required")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         let safer: Vec<String> = val
             .get("safer_alternatives")
