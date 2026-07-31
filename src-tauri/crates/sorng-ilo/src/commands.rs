@@ -51,7 +51,7 @@ pub async fn ilo_connect(
         password,
         auth_method: auth,
         protocol: proto,
-        insecure: insecure.unwrap_or(true),
+        insecure: insecure.unwrap_or(false),
         timeout_secs: timeout_secs.unwrap_or(30),
         ipmi_port: ipmi_port.unwrap_or(623),
     };

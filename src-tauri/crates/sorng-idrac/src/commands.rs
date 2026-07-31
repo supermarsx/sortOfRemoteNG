@@ -43,7 +43,7 @@ pub async fn idrac_connect(
         host,
         port: port.unwrap_or(443),
         auth,
-        insecure: insecure.unwrap_or(true),
+        insecure: insecure.unwrap_or(false),
         timeout_secs: timeout_secs.unwrap_or(30),
         force_protocol: proto,
     };
