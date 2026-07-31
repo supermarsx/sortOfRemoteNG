@@ -93,6 +93,17 @@ fn sanitized_process_error(operation: &str, error: &std::io::Error) -> String {
 }
 
 #[cfg(windows)]
+fn sanitized_rasdial_error(error: &std::io::Error) -> String {
+    let reason = match error.kind() {
+        std::io::ErrorKind::NotFound => "executable was not found",
+        std::io::ErrorKind::PermissionDenied => "permission was denied",
+        std::io::ErrorKind::TimedOut => "operation timed out",
+        _ => "process operation failed",
+    };
+    format!("rasdial disconnect: {reason}")
+}
+
+#[cfg(windows)]
 async fn run_powershell(
     invocation: PowerShellInvocation,
     operation: &str,
@@ -428,16 +439,58 @@ fn encode_wide_field<const N: usize>(value: &str, label: &str) -> Result<[u16; N
 /// process argument, not interpreted by a shell.
 #[cfg(windows)]
 pub async fn rasdial_disconnect(entry_name: &str) -> Result<(), String> {
-    let binary = platform::resolve_binary("rasdial")?;
-    let output = tokio::process::Command::new(binary)
+    let binary = platform::resolve_binary("rasdial")
+        .map_err(|_| "rasdial disconnect: executable is unavailable".to_string())?;
+    let mut command = tokio::process::Command::new(binary);
+    command
         .args([entry_name, "/disconnect"])
-        .output()
-        .await
-        .map_err(|error| format!("rasdial disconnect error: {error}"))?;
-    if !output.status.success() {
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = command.spawn().map_err(|error| sanitized_rasdial_error(&error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "rasdial disconnect: stdout pipe unavailable".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "rasdial disconnect: stderr pipe unavailable".to_string())?;
+
+    let completion = async {
+        tokio::join!(
+            drain_capped_pipe(stdout),
+            drain_capped_pipe(stderr),
+            child.wait()
+        )
+    };
+    let (stdout, stderr, status) = match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        completion,
+    )
+    .await
+    {
+        Ok(completion) => completion,
+        Err(_) => {
+            let _ = child.start_kill();
+            return Err("rasdial disconnect timed out".to_string());
+        }
+    };
+
+    let stdout = stdout.map_err(|error| sanitized_rasdial_error(&error))?;
+    let stderr = stderr.map_err(|error| sanitized_rasdial_error(&error))?;
+    let status = status.map_err(|error| sanitized_rasdial_error(&error))?;
+    if stdout.exceeded_limit || stderr.exceeded_limit {
+        return Err("rasdial disconnect output exceeded the safety limit".to_string());
+    }
+    if !status.success() {
+        let exit = status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "unavailable".to_string());
         return Err(format!(
-            "rasdial disconnect failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "rasdial disconnect failed with exit code {exit}"
         ));
     }
     Ok(())
