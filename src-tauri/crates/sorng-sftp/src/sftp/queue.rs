@@ -6,6 +6,8 @@ use chrono::Utc;
 use log::info;
 use uuid::Uuid;
 
+const MAX_QUEUE_ENTRIES: usize = 512;
+
 impl SftpService {
     /// Add a transfer to the queue.
     pub async fn queue_add(
@@ -13,6 +15,9 @@ impl SftpService {
         request: SftpTransferRequest,
         priority: Option<i32>,
     ) -> Result<String, String> {
+        if self.queue.len() >= MAX_QUEUE_ENTRIES {
+            return Err("SFTP transfer queue limit reached".to_string());
+        }
         let id = Uuid::new_v4().to_string();
         let entry = QueueEntry {
             id: id.clone(),
