@@ -53,16 +53,27 @@ fn tofu_context_with_store(
     config: &PsRemotingConfig,
     store: Arc<dyn BlockingTrustStore>,
     policy_override: Option<TrustPolicy>,
-) -> TofuTlsContext {
-    TofuTlsContext {
+) -> Result<TofuTlsContext, String> {
+    let endpoint = config.try_endpoint_uri()?;
+    let parsed = url::Url::parse(&endpoint)
+        .map_err(|error| format!("Invalid WinRM TLS endpoint: {error}"))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "WinRM TLS endpoint has no host".to_string())?
+        .to_string();
+    let port = parsed
+        .port_or_known_default()
+        .ok_or_else(|| "WinRM TLS endpoint has no effective port".to_string())?;
+
+    Ok(TofuTlsContext {
         store,
-        host: config.computer_name.clone(),
-        port: config.effective_port(),
+        host,
+        port,
         policy_override,
-    }
+    })
 }
 
-fn tofu_context(config: &PsRemotingConfig) -> TofuTlsContext {
+fn tofu_context(config: &PsRemotingConfig) -> Result<TofuTlsContext, String> {
     // The legacy escape hatch was "skip if the user disabled CA *or* CN
     // checking". Preserve that exact opt-out as an explicit AlwaysTrust
     // override; otherwise defer to the store's effective/global policy (TOFU).
@@ -83,7 +94,7 @@ pub fn build_winrm_client(
     builder: reqwest::ClientBuilder,
     config: &PsRemotingConfig,
 ) -> Result<reqwest::Client, String> {
-    build_tofu_client(builder, tofu_context(config))
+    build_tofu_client(builder, tofu_context(config)?)
 }
 
 /// Build the same strict WinRM client against an explicitly supplied test
@@ -98,6 +109,6 @@ pub(crate) fn build_winrm_client_with_test_trust(
     let store: Arc<dyn BlockingTrustStore> = trust.store.clone();
     build_tofu_client(
         builder,
-        tofu_context_with_store(config, store, Some(TrustPolicy::Strict)),
+        tofu_context_with_store(config, store, Some(TrustPolicy::Strict))?,
     )
 }
