@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::provider::LlmProvider;
+use crate::response::{append_stream_chunk, limited_json, limited_text};
 use crate::types::*;
 
 /// Google Gemini provider
@@ -86,10 +87,9 @@ impl LlmProvider for GoogleProvider {
     ) -> LlmResult<ChatCompletionResponse> {
         let api_key = self.config.api_key.as_deref().unwrap_or("");
         let url = format!(
-            "{}/models/{}:generateContent?key={}",
+            "{}/models/{}:generateContent",
             self.base_url(),
-            request.model,
-            api_key
+            request.model
         );
         let start = Instant::now();
         let (system_instruction, contents) = self.build_contents(&request.messages);
@@ -120,20 +120,31 @@ impl LlmProvider for GoogleProvider {
             body["tools"] = crate::tools::tools_to_gemini(tools);
         }
 
-        let resp = self.client.post(&url).json(&body).send().await?;
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-goog-api-key", api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|_| {
+                LlmError::provider_error("Google", "request failed due to a transport error", None)
+            })?;
         let status = resp.status();
         let latency = start.elapsed().as_millis() as u64;
 
         if !status.is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            // Drain only the shared bounded body reader; provider bodies can
+            // contain echoed request details and are never exposed verbatim.
+            let _ = limited_text(resp).await;
             return Err(LlmError::provider_error(
                 "Google",
-                &err,
+                "request failed",
                 Some(status.as_u16()),
             ));
         }
 
-        let response: serde_json::Value = resp.json().await?;
+        let response: serde_json::Value = limited_json(resp).await?;
         let candidate = &response["candidates"][0];
         let parts = candidate["content"]["parts"].as_array();
 
@@ -229,7 +240,7 @@ impl LlmProvider for GoogleProvider {
 
         let resp = self.client.post(&url).json(&body).send().await?;
         if !resp.status().is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error("Google", &err, None));
         }
 
@@ -242,7 +253,10 @@ impl LlmProvider for GoogleProvider {
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if let Err(error) = append_stream_chunk(&mut buffer, &bytes) {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
                         while let Some(pos) = buffer.find("\n\n") {
                             let line = buffer[..pos].to_string();
                             buffer = buffer[pos + 2..].to_string();

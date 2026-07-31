@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::provider::LlmProvider;
+use crate::response::{append_stream_chunk, limited_json, limited_text};
 use crate::types::*;
 
 /// Cohere provider — uses its own Chat API
@@ -101,7 +102,7 @@ impl LlmProvider for CohereProvider {
         let latency = start.elapsed().as_millis() as u64;
 
         if !status.is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error(
                 "Cohere",
                 &err,
@@ -109,7 +110,7 @@ impl LlmProvider for CohereProvider {
             ));
         }
 
-        let response: serde_json::Value = resp.json().await?;
+        let response: serde_json::Value = limited_json(resp).await?;
         let text = response["text"].as_str().unwrap_or("").to_string();
 
         let tool_calls = response["tool_calls"]
@@ -187,7 +188,7 @@ impl LlmProvider for CohereProvider {
             .await?;
 
         if !resp.status().is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error("Cohere", &err, None));
         }
 
@@ -200,7 +201,10 @@ impl LlmProvider for CohereProvider {
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if let Err(error) = append_stream_chunk(&mut buffer, &bytes) {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
                         for line in buffer.split('\n').filter(|l| !l.is_empty()) {
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
                                 if val["event_type"].as_str() == Some("text-generation") {

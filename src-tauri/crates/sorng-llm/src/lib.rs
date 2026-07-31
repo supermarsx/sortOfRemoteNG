@@ -33,6 +33,7 @@ pub mod error;
 pub mod provider;
 pub mod providers;
 pub mod rate_limit;
+mod response;
 pub mod service;
 pub mod streaming;
 pub mod tokens;

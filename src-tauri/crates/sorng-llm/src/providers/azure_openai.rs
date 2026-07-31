@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::provider::LlmProvider;
+use crate::response::{append_stream_chunk, limited_json, limited_text};
 use crate::types::*;
 
 /// Azure OpenAI uses deployment-based URLs instead of model names
@@ -80,7 +81,7 @@ impl LlmProvider for AzureOpenAiProvider {
         let latency = start.elapsed().as_millis() as u64;
 
         if !status.is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error(
                 "Azure OpenAI",
                 &err,
@@ -88,7 +89,7 @@ impl LlmProvider for AzureOpenAiProvider {
             ));
         }
 
-        let response: serde_json::Value = resp.json().await?;
+        let response: serde_json::Value = limited_json(resp).await?;
         let choices: Vec<Choice> = response["choices"]
             .as_array()
             .unwrap_or(&Vec::new())
@@ -178,7 +179,7 @@ impl LlmProvider for AzureOpenAiProvider {
             .await?;
 
         if !resp.status().is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error("Azure OpenAI", &err, None));
         }
 
@@ -190,7 +191,10 @@ impl LlmProvider for AzureOpenAiProvider {
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if let Err(error) = append_stream_chunk(&mut buffer, &bytes) {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
                         while let Some(pos) = buffer.find("\n\n") {
                             let line = buffer[..pos].to_string();
                             buffer = buffer[pos + 2..].to_string();

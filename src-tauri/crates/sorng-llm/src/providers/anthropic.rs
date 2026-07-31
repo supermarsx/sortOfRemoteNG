@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::provider::LlmProvider;
+use crate::response::{append_stream_chunk, limited_json, limited_text};
 use crate::types::*;
 
 /// Anthropic Claude provider (Messages API)
@@ -120,7 +121,7 @@ impl LlmProvider for AnthropicProvider {
         let latency = start.elapsed().as_millis() as u64;
 
         if !status.is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error(
                 "Anthropic",
                 &err,
@@ -128,7 +129,7 @@ impl LlmProvider for AnthropicProvider {
             ));
         }
 
-        let response: serde_json::Value = resp.json().await?;
+        let response: serde_json::Value = limited_json(resp).await?;
 
         // Extract content + tool_use blocks
         let content_blocks = response["content"].as_array();
@@ -246,7 +247,7 @@ impl LlmProvider for AnthropicProvider {
             .await?;
 
         if !resp.status().is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error("Anthropic", &err, None));
         }
 
@@ -259,7 +260,10 @@ impl LlmProvider for AnthropicProvider {
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if let Err(error) = append_stream_chunk(&mut buffer, &bytes) {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
                         while let Some(pos) = buffer.find("\n\n") {
                             let line = buffer[..pos].to_string();
                             buffer = buffer[pos + 2..].to_string();

@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::config::ProviderConfig;
 use crate::error::{LlmError, LlmResult};
 use crate::provider::LlmProvider;
+use crate::response::{append_stream_chunk, limited_json, limited_text};
 use crate::types::*;
 
 /// OpenAI-compatible provider (also used for Groq, Together, Fireworks, etc.)
@@ -111,7 +112,7 @@ impl LlmProvider for OpenAiProvider {
         let latency = start.elapsed().as_millis() as u64;
 
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text = limited_text(resp).await.unwrap_or_default();
             let error_msg = serde_json::from_str::<serde_json::Value>(&body_text)
                 .ok()
                 .and_then(|v| v["error"]["message"].as_str().map(String::from))
@@ -123,7 +124,7 @@ impl LlmProvider for OpenAiProvider {
             ));
         }
 
-        let body: serde_json::Value = resp.json().await?;
+        let body: serde_json::Value = limited_json(resp).await?;
 
         let choices: Vec<Choice> = body["choices"]
             .as_array()
@@ -230,7 +231,7 @@ impl LlmProvider for OpenAiProvider {
 
         let resp = req_builder.send().await?;
         if !resp.status().is_success() {
-            let err_text = resp.text().await.unwrap_or_default();
+            let err_text = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error(&provider_name, &err_text, None));
         }
 
@@ -242,7 +243,10 @@ impl LlmProvider for OpenAiProvider {
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(bytes) => {
-                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        if let Err(error) = append_stream_chunk(&mut buffer, &bytes) {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
                         while let Some(pos) = buffer.find("\n\n") {
                             let line = buffer[..pos].to_string();
                             buffer = buffer[pos + 2..].to_string();
@@ -333,7 +337,7 @@ impl LlmProvider for OpenAiProvider {
         if !resp.status().is_success() {
             return Ok(Vec::new());
         }
-        let body: serde_json::Value = resp.json().await?;
+        let body: serde_json::Value = limited_json(resp).await?;
         let models = body["data"]
             .as_array()
             .unwrap_or(&Vec::new())
@@ -384,14 +388,14 @@ impl LlmProvider for OpenAiProvider {
         }
         let resp = req.send().await?;
         if !resp.status().is_success() {
-            let err = resp.text().await.unwrap_or_default();
+            let err = limited_text(resp).await.unwrap_or_default();
             return Err(LlmError::provider_error(
                 &self.config.display_name,
                 &err,
                 None,
             ));
         }
-        let body: serde_json::Value = resp.json().await?;
+        let body: serde_json::Value = limited_json(resp).await?;
         let embeddings: Vec<Vec<f32>> = body["data"]
             .as_array()
             .unwrap_or(&Vec::new())
