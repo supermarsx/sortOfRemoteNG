@@ -145,8 +145,8 @@ export function useRustDeskClient(session: ConnectionSession) {
             enable_clipboard: resolved.enableClipboard,
             enable_file_transfer: resolved.enableFileTransfer,
           },
-        }).catch((err) => {
-          console.warn("[RustDesk] failed to push session settings:", err);
+        }).catch(() => {
+          console.warn("[RustDesk] failed to push session settings");
         });
       }
       return resolved;
@@ -220,8 +220,14 @@ export function useRustDeskClient(session: ConnectionSession) {
       });
     } catch (err) {
       if (!activeRef.current) return;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[RustDesk] connection failed:", msg);
+      const msg =
+        err instanceof Error &&
+        (err.message ===
+          "RustDesk client is not installed on this system. Please install RustDesk first." ||
+          err.message === UNCONFIRMED_RUSTDESK_SESSION_MESSAGE)
+          ? err.message
+          : "RustDesk connection failed";
+      console.error("[RustDesk] connection failed");
       setErrorMessage(msg);
       setConnectionStatus("error");
       setIsConnected(false);
