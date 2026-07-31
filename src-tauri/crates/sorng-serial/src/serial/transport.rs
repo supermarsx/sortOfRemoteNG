@@ -105,8 +105,15 @@ impl SimulatedTransport {
 
     /// Inject bytes into the receive buffer (simulate incoming data).
     pub async fn inject_rx(&self, data: &[u8]) {
+        let limit = self
+            .config
+            .lock()
+            .await
+            .rx_buffer_size
+            .min(MAX_SERIAL_BUFFER_SIZE);
         let mut buf = self.rx_buf.lock().await;
-        buf.extend(data);
+        let available = limit.saturating_sub(buf.len());
+        buf.extend(data.iter().take(available).copied());
         self.rx_notify.notify_waiters();
     }
 
@@ -126,6 +133,10 @@ impl SimulatedTransport {
 #[async_trait::async_trait]
 impl SerialTransport for SimulatedTransport {
     async fn open(&self, config: &SerialConfig) -> Result<(), String> {
+        config.validate()?;
+        if config.port_name != self.name {
+            return Err("Simulated transport port does not match its configuration".to_string());
+        }
         if self.open.load(Ordering::SeqCst) {
             return Err(format!("Port {} already open", self.name));
         }
@@ -174,7 +185,22 @@ impl SerialTransport for SimulatedTransport {
         if !self.open.load(Ordering::SeqCst) {
             return Err("Port not open".to_string());
         }
+        if buf.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial write exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES
+            ));
+        }
+        let limit = self
+            .config
+            .lock()
+            .await
+            .tx_buffer_size
+            .min(MAX_SERIAL_BUFFER_SIZE);
         let mut tx = self.tx_buf.lock().await;
+        if tx.len().saturating_add(buf.len()) > limit {
+            return Err("Simulated serial transmit buffer is full".to_string());
+        }
         tx.extend(buf);
         drop(tx);
 
@@ -222,6 +248,10 @@ impl SerialTransport for SimulatedTransport {
     }
 
     async fn reconfigure(&self, config: &SerialConfig) -> Result<(), String> {
+        config.validate()?;
+        if config.port_name != self.name {
+            return Err("Cannot change the simulated transport port name".to_string());
+        }
         let mut cfg = self.config.lock().await;
         *cfg = config.clone();
         Ok(())
@@ -305,7 +335,10 @@ impl LineDiscipline {
             // Ctrl-U (kill line)
             0x15 => {
                 if self.local_echo && !self.buffer.is_empty() {
-                    for _ in 0..self.buffer.len() {
+                    let max_echo_bytes = self.max_line_length.min(MAX_SERIAL_PAYLOAD_BYTES);
+                    let erase_count = self.buffer.len().min(max_echo_bytes / 3);
+                    echo.reserve(erase_count.saturating_mul(3));
+                    for _ in 0..erase_count {
                         echo.extend_from_slice(b"\x08 \x08");
                     }
                 }
@@ -363,6 +396,7 @@ impl LineDiscipline {
 
 /// Format bytes as a hex dump string (offset + hex + ASCII).
 pub fn hex_dump(data: &[u8], offset: usize) -> String {
+    let data = &data[..data.len().min(MAX_SERIAL_PAYLOAD_BYTES)];
     let mut output = String::new();
     for (i, chunk) in data.chunks(16).enumerate() {
         let addr = offset + i * 16;
@@ -408,6 +442,7 @@ pub fn printable_char(byte: u8) -> char {
 
 /// Convert bytes to a hex string.
 pub fn bytes_to_hex(data: &[u8]) -> String {
+    let data = &data[..data.len().min(MAX_SERIAL_PAYLOAD_BYTES)];
     data.iter()
         .map(|b| format!("{:02X}", b))
         .collect::<Vec<_>>()
@@ -416,7 +451,19 @@ pub fn bytes_to_hex(data: &[u8]) -> String {
 
 /// Convert a hex string back to bytes.
 pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
+    if hex.len() > MAX_SERIAL_HEX_INPUT_BYTES {
+        return Err(format!(
+            "Hex input exceeds {} bytes",
+            MAX_SERIAL_HEX_INPUT_BYTES
+        ));
+    }
     let cleaned: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if cleaned.len() / 2 > MAX_SERIAL_PAYLOAD_BYTES {
+        return Err(format!(
+            "Decoded serial payload exceeds {} bytes",
+            MAX_SERIAL_PAYLOAD_BYTES
+        ));
+    }
     if !cleaned.len().is_multiple_of(2) {
         return Err("Odd number of hex digits".to_string());
     }
@@ -510,6 +557,18 @@ pub async fn write_with_char_delay(
     data: &[u8],
     delay_ms: u64,
 ) -> Result<usize, String> {
+    if data.len() > MAX_SERIAL_PAYLOAD_BYTES {
+        return Err(format!(
+            "Serial write exceeds {} bytes",
+            MAX_SERIAL_PAYLOAD_BYTES
+        ));
+    }
+    if delay_ms > MAX_SERIAL_CHAR_DELAY_MS {
+        return Err(format!(
+            "Inter-character delay cannot exceed {} ms",
+            MAX_SERIAL_CHAR_DELAY_MS
+        ));
+    }
     let mut total = 0;
     for byte in data {
         let n = transport.write(std::slice::from_ref(byte)).await?;
