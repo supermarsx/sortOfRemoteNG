@@ -16,6 +16,9 @@ pub struct PfsenseConnectionConfig {
     pub use_tls: bool,
     #[serde(default)]
     pub accept_invalid_certs: bool,
+    /// Runtime-only acknowledgement for this insecure connection attempt.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: bool,
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
     #[serde(default, alias = "proxyUrl")]

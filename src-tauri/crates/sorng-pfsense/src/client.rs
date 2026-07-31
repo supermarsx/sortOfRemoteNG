@@ -14,7 +14,7 @@ pub struct PfsenseClient {
 }
 
 impl PfsenseClient {
-    pub fn new(config: PfsenseConnectionConfig) -> PfsenseResult<Self> {
+    pub fn new(mut config: PfsenseConnectionConfig) -> PfsenseResult<Self> {
         if config.host.trim().is_empty() {
             return Err(PfsenseError::invalid_request("host must not be empty"));
         }
@@ -28,9 +28,16 @@ impl PfsenseClient {
                 "API key and API secret must both be provided",
             ));
         }
+        let acknowledged = std::mem::take(&mut config.acknowledge_invalid_cert_risk);
+        let effective_tls_skip = config.use_tls && config.accept_invalid_certs;
+        if effective_tls_skip != acknowledged {
+            return Err(PfsenseError::invalid_request(
+                "TLS certificate verification bypass requires an explicit runtime acknowledgement for this connection attempt",
+            ));
+        }
 
         let mut builder = HttpClient::builder()
-            .danger_accept_invalid_certs(config.accept_invalid_certs)
+            .danger_accept_invalid_certs(effective_tls_skip)
             .timeout(Duration::from_secs(config.timeout_secs));
         if let Some(proxy_url) = config
             .proxy_url

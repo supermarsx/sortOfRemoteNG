@@ -1,3 +1,4 @@
+use sorng_pfsense::client::PfsenseClient;
 use sorng_pfsense::error::PfsenseErrorKind;
 use sorng_pfsense::service::PfsenseServiceWrapper;
 use sorng_pfsense::types::PfsenseConnectionConfig;
@@ -47,6 +48,24 @@ async fn spawn_server(
     (address, task)
 }
 
+#[test]
+fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    let mut cfg = PfsenseConnectionConfig {
+        host: "pfsense.example.test".into(),
+        port: 443,
+        api_key: "test-key".into(),
+        api_secret: "test-secret".into(),
+        use_tls: true,
+        accept_invalid_certs: true,
+        acknowledge_invalid_cert_risk: false,
+        timeout_secs: 5,
+        proxy_url: None,
+    };
+    assert!(PfsenseClient::new(cfg.clone()).is_err());
+    cfg.acknowledge_invalid_cert_risk = true;
+    assert!(PfsenseClient::new(cfg).is_ok());
+}
+
 fn config(address: std::net::SocketAddr) -> PfsenseConnectionConfig {
     PfsenseConnectionConfig {
         host: address.ip().to_string(),
@@ -55,6 +74,7 @@ fn config(address: std::net::SocketAddr) -> PfsenseConnectionConfig {
         api_secret: "key-secret".into(),
         use_tls: false,
         accept_invalid_certs: false,
+        acknowledge_invalid_cert_risk: false,
         timeout_secs: 5,
         proxy_url: None,
     }
