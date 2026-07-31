@@ -3,7 +3,7 @@ publish = false
 name = "sorng-protocols"
 version.workspace = true
 edition = "2021"
-description = "VNC, Telnet, Serial, Rlogin, Raw Socket, FTP, DB, and HTTP protocols"
+description = "VNC, Telnet, Rlogin, Raw Socket, FTP, DB, and HTTP protocols"
 
 [features]
 default = []
@@ -23,7 +23,6 @@ sqlx = { workspace = true, features = ["mysql", "runtime-tokio"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }
-serialport = "4.2"
 socket2 = "0.5"
 reqwest = { workspace = true, features = ["cookies", "blocking"] }
 regex = { workspace = true }
