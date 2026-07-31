@@ -71,9 +71,22 @@ fn remove_resolved_dir<E: std::fmt::Display>(
     path: Result<PathBuf, E>,
 ) -> Result<(), String> {
     let path = path.map_err(|e| format!("Failed to resolve {label} directory: {e}"))?;
-    if path.exists() {
-        std::fs::remove_dir_all(&path)
-            .map_err(|e| format!("Failed to remove {label} directory {}: {e}", path.display()))?;
+    if !path.is_absolute() || path.parent().is_none() || path.components().count() < 3 {
+        return Err(format!("Refusing to remove unsafe {label} path"));
+    }
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!("Refusing to remove symlinked {label} directory"));
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            return Err(format!("Refusing to remove non-directory {label} path"));
+        }
+        Ok(_) => {
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| format!("Failed to remove {label} directory: {e}"))?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Failed to inspect {label} directory: {error}")),
     }
     Ok(())
 }
