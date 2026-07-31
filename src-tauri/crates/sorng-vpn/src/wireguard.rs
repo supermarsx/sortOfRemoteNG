@@ -101,21 +101,29 @@ impl WireGuardInterfaceActivityProbe for SystemWireGuardInterfaceActivityProbe {
             // The interface name is passed through the environment rather
             // than interpolated into PowerShell source.
             let powershell = crate::platform::resolve_binary("powershell")?;
-            let output = tokio::process::Command::new(powershell)
-                .args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "$ErrorActionPreference='Stop'; try { $names = @(Get-NetAdapter -ErrorAction Stop | Select-Object -ExpandProperty Name); if ($names -contains $env:SORNG_WG_INTERFACE) { exit 0 } else { exit 3 } } catch { exit 4 }",
-                ])
-                .env("SORNG_WG_INTERFACE", interface_name)
-                .output()
+            let status = tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                tokio::process::Command::new(powershell)
+                    .args([
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "$ErrorActionPreference='Stop'; try { $names = @(Get-NetAdapter -ErrorAction Stop | Select-Object -ExpandProperty Name); if ($names -contains $env:SORNG_WG_INTERFACE) { exit 0 } else { exit 3 } } catch { exit 4 }",
+                    ])
+                    .env("SORNG_WG_INTERFACE", interface_name)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .kill_on_drop(true)
+                    .status(),
+            )
                 .await
+                .map_err(|_| "Windows network-adapter query timed out".to_string())?
                 .map_err(|error| {
                     format!("Failed to query Windows network adapters: {error}")
                 })?;
 
-            return match output.status.code() {
+            return match status.code() {
                 Some(0) => Ok(true),
                 Some(3) => Ok(false),
                 _ => Err(
