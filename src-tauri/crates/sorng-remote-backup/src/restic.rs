@@ -6,7 +6,7 @@ use crate::types::{
     ResticRetention, SnapshotInfo,
 };
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{error, info};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -71,7 +71,7 @@ pub async fn init(cfg: &ResticConfig) -> Result<String, BackupError> {
     let mut args = vec!["init".to_string()];
     args.extend(build_common_args(cfg));
 
-    info!("Initializing restic repository: {}", cfg.repository);
+    info!("Initializing restic repository");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
@@ -159,7 +159,6 @@ pub async fn backup(
         let reader = BufReader::new(out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("restic: {}", line);
             stdout_buf.push_str(&line);
             stdout_buf.push('\n');
 
@@ -214,7 +213,6 @@ pub async fn backup(
         let reader = BufReader::new(err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("restic stderr: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
         }
@@ -465,7 +463,7 @@ pub async fn check(cfg: &ResticConfig, read_data: bool) -> Result<String, Backup
     }
     args.extend(build_common_args(cfg));
 
-    info!("Running restic check on {}", cfg.repository);
+    info!("Running restic repository check");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)

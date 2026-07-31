@@ -5,7 +5,7 @@ use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RsyncConfig,
 };
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use regex::Regex;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -264,7 +264,6 @@ pub async fn execute(
         let reader = BufReader::new(out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("rsync: {}", line);
             if let Some(progress) = parse_progress_line(&line, job_id) {
                 on_progress(progress);
             }
@@ -277,7 +276,6 @@ pub async fn execute(
         let reader = BufReader::new(err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            warn!("rsync stderr: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
         }

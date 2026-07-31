@@ -6,7 +6,7 @@ use crate::types::{
     RcloneSyncMode,
 };
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{error, info};
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -217,7 +217,6 @@ pub async fn execute(
         let reader = BufReader::new(out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("rclone: {}", line);
             stdout_buf.push_str(&line);
             stdout_buf.push('\n');
         }
@@ -231,7 +230,6 @@ pub async fn execute(
             if let Some(progress) = parse_progress_line(&line, job_id) {
                 on_progress(progress);
             }
-            debug!("rclone stderr: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
         }

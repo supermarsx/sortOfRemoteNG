@@ -6,7 +6,7 @@ use crate::types::{
     DuplicityBackupType, DuplicityConfig,
 };
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{error, info};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -155,7 +155,6 @@ pub async fn backup(
         let reader = BufReader::new(out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("duplicity: {}", line);
             stdout_buf.push_str(&line);
             stdout_buf.push('\n');
         }
@@ -165,7 +164,6 @@ pub async fn backup(
         let reader = BufReader::new(err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("duplicity stderr: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
 

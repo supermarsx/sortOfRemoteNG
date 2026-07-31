@@ -6,7 +6,7 @@ use crate::types::{
     SftpTransferMode,
 };
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{error, info};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -156,7 +156,6 @@ pub async fn execute(
         let reader = BufReader::new(out);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("sftp: {}", line);
             stdout_buf.push_str(&line);
             stdout_buf.push('\n');
         }
@@ -166,7 +165,6 @@ pub async fn execute(
         let reader = BufReader::new(err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("sftp stderr: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
         }

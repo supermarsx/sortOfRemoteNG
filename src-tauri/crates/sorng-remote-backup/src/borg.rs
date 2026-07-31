@@ -6,7 +6,7 @@ use crate::types::{
     BorgCompression, BorgConfig, BorgEncryption, BorgRetention, SnapshotInfo,
 };
 use chrono::Utc;
-use log::{debug, error, info};
+use log::{error, info};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -89,7 +89,7 @@ pub async fn init(cfg: &BorgConfig) -> Result<String, BackupError> {
 
     let args = vec!["init".to_string(), format!("--encryption={encryption}")];
 
-    info!("Initializing borg repository: {}", cfg.repository);
+    info!("Initializing borg repository");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
@@ -190,7 +190,6 @@ pub async fn create(
         let reader = BufReader::new(err);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            debug!("borg: {}", line);
             stderr_buf.push_str(&line);
             stderr_buf.push('\n');
 
