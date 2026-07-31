@@ -49,6 +49,7 @@ impl RemoteBackupService {
                 "at most 1000 backup jobs may be registered".into(),
             ));
         }
+        validate_job_payload(&job)?;
         if job.id.is_empty() {
             job.id = Uuid::new_v4().to_string();
         }
@@ -67,6 +68,7 @@ impl RemoteBackupService {
 
     /// Update an existing backup job.
     pub fn update_job(&mut self, job: BackupJob) -> Result<(), BackupError> {
+        validate_job_payload(&job)?;
         if !self.jobs.contains_key(&job.id) {
             return Err(BackupError::JobNotFound(job.id.clone()));
         }
@@ -296,4 +298,19 @@ async fn detect_tool_binary(name: &str) -> (bool, Option<String>, Option<String>
         }
         _ => (false, None, None),
     }
+}
+
+fn validate_job_payload(job: &BackupJob) -> Result<(), BackupError> {
+    if !job.id.is_empty() && Uuid::parse_str(&job.id).is_err() {
+        return Err(BackupError::ConfigError(
+            "backup job IDs must be UUIDs".into(),
+        ));
+    }
+    let encoded = serde_json::to_vec(job)?;
+    if encoded.len() > 1024 * 1024 {
+        return Err(BackupError::ConfigError(
+            "backup job configuration exceeds the 1 MiB safety limit".into(),
+        ));
+    }
+    Ok(())
 }
