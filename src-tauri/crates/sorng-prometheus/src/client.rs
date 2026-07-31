@@ -8,6 +8,9 @@ use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
+pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_METADATA_RESPONSE_BYTES: usize = 1024 * 1024;
+
 pub struct PrometheusClient {
     pub config: PrometheusConnectionConfig,
     http: HttpClient,
@@ -15,7 +18,13 @@ pub struct PrometheusClient {
 
 impl PrometheusClient {
     pub fn new(config: PrometheusConnectionConfig) -> PrometheusResult<Self> {
-        let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
+        let accept_invalid =
+            config.use_tls.unwrap_or(true) && config.accept_invalid_certs.unwrap_or(false);
+        if accept_invalid != config.acknowledge_invalid_cert_risk.unwrap_or(false) {
+            return Err(PrometheusError::config_error(
+                "disabling TLS certificate validation requires a runtime acknowledgement for this connection attempt",
+            ));
+        }
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .danger_accept_invalid_certs(accept_invalid);
@@ -66,16 +75,22 @@ impl PrometheusClient {
 
     // ── Generic helpers ──────────────────────────────────────────────
 
-    fn map_status_error(&self, status: u16, body: &str) -> PrometheusError {
+    fn map_status_error(&self, status: u16) -> PrometheusError {
         match status {
-            401 => PrometheusError::auth(format!("Authentication failed (HTTP 401): {body}")),
-            403 => PrometheusError::auth(format!("Access denied (HTTP 403): {body}")),
-            404 => PrometheusError::api(format!("Not found (HTTP 404): {body}")),
-            422 => {
-                PrometheusError::invalid_query(format!("Unprocessable entity (HTTP 422): {body}"))
-            }
-            503 => PrometheusError::api(format!("Service unavailable (HTTP 503): {body}")),
-            _ => PrometheusError::http(format!("HTTP {status}: {body}")),
+            401 => PrometheusError::auth("Authentication failed (HTTP 401)"),
+            403 => PrometheusError::auth("Access denied (HTTP 403)"),
+            404 => PrometheusError::api("Not found (HTTP 404)"),
+            422 => PrometheusError::invalid_query("Unprocessable entity (HTTP 422)"),
+            503 => PrometheusError::api("Service unavailable (HTTP 503)"),
+            _ => PrometheusError::http(format!("HTTP {status}")),
+        }
+    }
+
+    fn response_limit(path: &str) -> usize {
+        if path.starts_with("status/") {
+            MAX_METADATA_RESPONSE_BYTES
+        } else {
+            MAX_RESPONSE_BYTES
         }
     }
 
@@ -95,14 +110,11 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        let envelope: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("GET {url} json: {e}")))?;
-        let data = envelope.get("data").cloned().unwrap_or(envelope.clone());
+        let envelope: serde_json::Value =
+            read_response_json_limited(resp, Self::response_limit(path), "Prometheus GET").await?;
+        let data = envelope.get("data").cloned().unwrap_or(envelope);
         serde_json::from_value(data)
             .map_err(|e| PrometheusError::parse(format!("GET {url} parse data: {e}")))
     }
@@ -122,12 +134,9 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("GET {url} json: {e}")))
+        read_response_json_limited(resp, Self::response_limit(path), "Prometheus raw GET").await
     }
 
     /// GET that returns the response body as raw text.
@@ -145,12 +154,9 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.text()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("GET {url} text: {e}")))
+        read_response_text_limited(resp, Self::response_limit(path), "Prometheus text GET").await
     }
 
     /// POST with form-encoded body, parsing the `data` field from the envelope.
@@ -168,14 +174,11 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        let envelope: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("POST {url} json: {e}")))?;
-        let data = envelope.get("data").cloned().unwrap_or(envelope.clone());
+        let envelope: serde_json::Value =
+            read_response_json_limited(resp, MAX_RESPONSE_BYTES, "Prometheus POST").await?;
+        let data = envelope.get("data").cloned().unwrap_or(envelope);
         serde_json::from_value(data)
             .map_err(|e| PrometheusError::parse(format!("POST {url} parse data: {e}")))
     }
@@ -195,14 +198,11 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("POST JSON {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        let envelope: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("POST JSON {url} json: {e}")))?;
-        let data = envelope.get("data").cloned().unwrap_or(envelope.clone());
+        let envelope: serde_json::Value =
+            read_response_json_limited(resp, MAX_RESPONSE_BYTES, "Prometheus JSON POST").await?;
+        let data = envelope.get("data").cloned().unwrap_or(envelope);
         serde_json::from_value(data)
             .map_err(|e| PrometheusError::parse(format!("POST JSON {url} parse: {e}")))
     }
@@ -222,8 +222,7 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -239,8 +238,7 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -257,12 +255,9 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("GET {url} json: {e}")))
+        read_response_json_limited(resp, MAX_RESPONSE_BYTES, "Prometheus full-URL GET").await
     }
 
     /// POST JSON to a full URL.
@@ -279,12 +274,9 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("POST {url} json: {e}")))
+        read_response_json_limited(resp, MAX_RESPONSE_BYTES, "Prometheus full-URL POST").await
     }
 
     /// DELETE on a full URL.
@@ -297,8 +289,7 @@ impl PrometheusClient {
             .map_err(|e| PrometheusError::http(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -350,4 +341,54 @@ impl PrometheusClient {
     pub fn federate_url(&self) -> String {
         format!("{}/federate", self.base_url())
     }
+}
+
+pub(crate) async fn read_response_bytes_limited(
+    mut resp: reqwest::Response,
+    limit: usize,
+    context: &str,
+) -> PrometheusResult<Vec<u8>> {
+    let declared = resp.content_length();
+    if declared.is_some_and(|size| size > limit as u64) {
+        return Err(PrometheusError::parse(format!(
+            "{context} rejected: declared response exceeds {limit} bytes"
+        )));
+    }
+    let mut body = Vec::with_capacity(declared.unwrap_or(0).min(limit as u64) as usize);
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| PrometheusError::parse(format!("{context}: failed to read response: {e}")))?
+    {
+        let next_len = body.len().checked_add(chunk.len()).ok_or_else(|| {
+            PrometheusError::parse(format!("{context} rejected: response size overflow"))
+        })?;
+        if next_len > limit {
+            return Err(PrometheusError::parse(format!(
+                "{context} rejected: streamed response exceeds {limit} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+pub(crate) async fn read_response_text_limited(
+    resp: reqwest::Response,
+    limit: usize,
+    context: &str,
+) -> PrometheusResult<String> {
+    let body = read_response_bytes_limited(resp, limit, context).await?;
+    String::from_utf8(body)
+        .map_err(|e| PrometheusError::parse(format!("{context}: response is not valid UTF-8: {e}")))
+}
+
+async fn read_response_json_limited<T: DeserializeOwned>(
+    resp: reqwest::Response,
+    limit: usize,
+    context: &str,
+) -> PrometheusResult<T> {
+    let body = read_response_bytes_limited(resp, limit, context).await?;
+    serde_json::from_slice(&body)
+        .map_err(|e| PrometheusError::parse(format!("{context}: invalid JSON: {e}")))
 }

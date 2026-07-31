@@ -44,7 +44,6 @@ pub async fn prometheus_list_connections(
     Ok(state.lock().await.list_connections())
 }
 
-#[tauri::command]
 pub async fn prometheus_ping(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -140,7 +139,6 @@ pub async fn prometheus_label_values(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_exemplars(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -172,7 +170,6 @@ pub async fn prometheus_list_targets(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_list_active_targets(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -185,7 +182,6 @@ pub async fn prometheus_list_active_targets(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_list_dropped_targets(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -198,7 +194,6 @@ pub async fn prometheus_list_dropped_targets(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_get_target_metadata(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -230,7 +225,6 @@ pub async fn prometheus_list_rules(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_list_alerting_rules(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -256,7 +250,6 @@ pub async fn prometheus_list_recording_rules(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_get_rule_group(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -280,7 +273,6 @@ pub async fn prometheus_list_alerts(
     state.lock().await.list_alerts(&id).await.map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_get_alertmanagers(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -334,7 +326,6 @@ pub async fn prometheus_get_tsdb_status(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_tsdb_snapshot(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -348,7 +339,6 @@ pub async fn prometheus_tsdb_snapshot(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_tsdb_delete_series(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -365,7 +355,6 @@ pub async fn prometheus_tsdb_delete_series(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_tsdb_clean_tombstones(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -395,7 +384,6 @@ pub async fn prometheus_list_metadata(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_get_metadata(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -428,7 +416,6 @@ pub async fn prometheus_federate(
 
 // ── Recording rules ───────────────────────────────────────────────
 
-#[tauri::command]
 pub async fn prometheus_list_recording_rule_entries(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -441,7 +428,6 @@ pub async fn prometheus_list_recording_rule_entries(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_get_recording_group_rules(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -503,7 +489,6 @@ pub async fn prometheus_create_silence(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_update_silence(
     state: State<'_, PrometheusServiceState>,
     id: String,
@@ -518,7 +503,6 @@ pub async fn prometheus_update_silence(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn prometheus_expire_silence(
     state: State<'_, PrometheusServiceState>,
     id: String,

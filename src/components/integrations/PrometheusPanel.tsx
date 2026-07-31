@@ -32,7 +32,9 @@ import {
   type PrometheusManager,
 } from "../../hooks/integration/usePrometheus";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../hooks/security/useInsecureTlsAck";
 import { generateId } from "../../utils/core/id";
+import { InsecureTlsWarningModal } from "../security/InsecureTlsWarningModal";
 import type { IntegrationPanelProps } from "../../types/integrations/registry";
 import type {
   Alert,
@@ -105,6 +107,11 @@ const ConnectForm: React.FC<{
   const store = useIntegrationConfigStore();
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>(instanceId);
+  const [showTlsWarning, setShowTlsWarning] = useState(false);
+  const tlsAck = useInsecureTlsAck({
+    configId: `${savedId ?? instanceId ?? "unsaved"}:${form.host.trim()}:${form.port}`,
+    insecure: form.useTls && form.acceptInvalidCerts,
+  });
 
   // Prefill from a persisted instance (host/fields + vault secret).
   useEffect(() => {
@@ -136,19 +143,32 @@ const ConnectForm: React.FC<{
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const doConnect = useCallback(async () => {
-    const id = savedId ?? instanceId ?? generateId();
-    await mgr.connect(id, {
-      host: form.host.trim(),
-      port: form.port ? Number(form.port) : undefined,
-      use_tls: form.useTls,
-      accept_invalid_certs: form.acceptInvalidCerts,
-      username: form.authMode === "basic" ? form.username : undefined,
-      password: form.authMode === "basic" ? form.password : undefined,
-      bearer_token: form.authMode === "bearer" ? form.bearerToken : undefined,
-      timeout_secs: form.timeoutSecs ? Number(form.timeoutSecs) : undefined,
-    });
-  }, [mgr, form, savedId, instanceId]);
+  const doConnect = useCallback(
+    async (acknowledgeInvalidCertRisk = false) => {
+      const id = savedId ?? instanceId ?? generateId();
+      await mgr.connect(id, {
+        host: form.host.trim(),
+        port: form.port ? Number(form.port) : undefined,
+        use_tls: form.useTls,
+        accept_invalid_certs: form.acceptInvalidCerts,
+        acknowledge_invalid_cert_risk:
+          form.useTls && form.acceptInvalidCerts && acknowledgeInvalidCertRisk,
+        username: form.authMode === "basic" ? form.username : undefined,
+        password: form.authMode === "basic" ? form.password : undefined,
+        bearer_token: form.authMode === "bearer" ? form.bearerToken : undefined,
+        timeout_secs: form.timeoutSecs ? Number(form.timeoutSecs) : undefined,
+      });
+    },
+    [mgr, form, savedId, instanceId],
+  );
+
+  const requestConnect = useCallback(() => {
+    if (tlsAck.needsAck) {
+      setShowTlsWarning(true);
+      return;
+    }
+    void doConnect(tlsAck.acknowledged).finally(tlsAck.reset);
+  }, [doConnect, tlsAck]);
 
   const doSave = useCallback(async () => {
     const fields: Record<string, string> = {
@@ -303,7 +323,7 @@ const ConnectForm: React.FC<{
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           className={btn}
-          onClick={doConnect}
+          onClick={requestConnect}
           disabled={mgr.isConnecting || !form.host}
         >
           {mgr.isConnecting ? (
@@ -317,6 +337,18 @@ const ConnectForm: React.FC<{
           {t("integrations.prometheus.save", "Save instance")}
         </button>
       </div>
+      <InsecureTlsWarningModal
+        isOpen={showTlsWarning}
+        kind="integration"
+        endpoint={`${form.useTls ? "https" : "http"}://${form.host}:${form.port}`}
+        connectionName={form.name || "Prometheus"}
+        onCancel={() => setShowTlsWarning(false)}
+        onAcknowledge={() => {
+          tlsAck.acknowledge();
+          setShowTlsWarning(false);
+          void doConnect(true).finally(tlsAck.reset);
+        }}
+      />
     </div>
   );
 };

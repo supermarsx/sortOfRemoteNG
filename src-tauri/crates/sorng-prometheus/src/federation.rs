@@ -1,7 +1,7 @@
 // ── sorng-prometheus/src/federation.rs ───────────────────────────────────────
 //! Federation endpoint – scrape metrics from another Prometheus in text format.
 
-use crate::client::PrometheusClient;
+use crate::client::{read_response_text_limited, PrometheusClient, MAX_RESPONSE_BYTES};
 use crate::error::{PrometheusError, PrometheusResult};
 use crate::types::*;
 use log::debug;
@@ -29,16 +29,13 @@ impl FederationManager {
             .map_err(|e| PrometheusError::http(format!("federate: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
             return Err(PrometheusError::api(format!(
-                "federate HTTP {}: {body}",
+                "federate HTTP {}",
                 status.as_u16()
             )));
         }
-        let metrics = resp
-            .text()
-            .await
-            .map_err(|e| PrometheusError::parse(format!("federate text: {e}")))?;
+        let metrics =
+            read_response_text_limited(resp, MAX_RESPONSE_BYTES, "Prometheus federation").await?;
         Ok(FederationResult { metrics })
     }
 }

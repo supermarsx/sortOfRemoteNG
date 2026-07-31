@@ -18,6 +18,9 @@ pub struct PrometheusConnectionConfig {
     pub use_tls: Option<bool>,
     /// Accept self-signed certificates.
     pub accept_invalid_certs: Option<bool>,
+    /// Runtime-only acknowledgement; never persist this with a profile.
+    #[serde(default)]
+    pub acknowledge_invalid_cert_risk: Option<bool>,
     /// HTTP basic-auth username.
     pub username: Option<String>,
     /// HTTP basic-auth password.

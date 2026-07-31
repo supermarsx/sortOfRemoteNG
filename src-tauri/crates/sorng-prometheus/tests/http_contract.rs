@@ -77,6 +77,7 @@ fn config(server: &MockHttpServer) -> PrometheusConnectionConfig {
         port: Some(server.port),
         use_tls: Some(false),
         accept_invalid_certs: None,
+        acknowledge_invalid_cert_risk: None,
         username: None,
         password: None,
         bearer_token: Some("prometheus-secret".into()),

@@ -21,6 +21,8 @@ export interface PrometheusConnectionConfig {
   use_tls?: boolean;
   /** Accept self-signed certificates. */
   accept_invalid_certs?: boolean;
+  /** Runtime-only acknowledgement. Never persist this field. */
+  acknowledge_invalid_cert_risk?: boolean;
   /** HTTP basic-auth username. */
   username?: string;
   /** HTTP basic-auth password. */
