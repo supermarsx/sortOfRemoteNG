@@ -1,6 +1,5 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
 
 use super::frame_channel::DynFrameChannel;
 use super::session_state::SessionStateSnapshot;
@@ -9,7 +8,8 @@ use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-use super::network::build_tls_config;
+use super::cert_trust::ServerCertValidationMode;
+use super::network::{build_credssp_http_client, build_tls_config};
 use super::stats::RdpSessionStats;
 
 // ---- Events emitted to the frontend ----
@@ -235,12 +235,7 @@ impl RdpService {
         // connection doesn't pay the initialisation cost.
         let tls_connector = build_tls_config(true).ok();
 
-        let http_client = reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(5))
-            .pool_max_idle_per_host(2)
-            .build()
+        let http_client = build_credssp_http_client(ServerCertValidationMode::Validate)
             .ok()
             .map(Arc::new);
 
