@@ -23,7 +23,7 @@
 //! - **sorng-protocols** — VNC, Telnet, Serial, FTP, DB, HTTP, and more
 //! - **sorng-vpn** — VPN services, proxy, and connection chaining
 //! - **sorng-p2p** — P2P connectivity: STUN/TURN/ICE, NAT traversal, signaling, peer discovery
-//! - **sorng-tailscale** — Tailscale mesh networking: daemon, ACLs, MagicDNS, Funnel, Serve, SSH
+//! - **sorng-tailscale** — Tailscale mesh networking: daemon, ACLs, MagicDNS, Funnel, Serve
 //! - **sorng-zerotier** — ZeroTier networking: daemon, flow rules, self-hosted controller
 //! - **sorng-wireguard** — WireGuard tunnels: config management, key generation, routing, NAT keepalive
 //! - **sorng-cloud** — Cloud provider integrations
