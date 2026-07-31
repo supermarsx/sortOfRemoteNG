@@ -29,7 +29,7 @@ pub async fn list_shared_folders(
                 .map(|s| SharedFolder {
                     name: s.folder_id.unwrap_or_default(),
                     host_path: s.host_path.unwrap_or_default(),
-                    writable: s.flags.map(|f| f != 0).unwrap_or(true),
+                    writable: s.flags.map(|f| f != 0).unwrap_or(false),
                     enabled: true,
                 })
                 .collect());

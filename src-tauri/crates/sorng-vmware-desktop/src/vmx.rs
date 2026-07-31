@@ -368,9 +368,9 @@ pub fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
                     .cloned()
                     .unwrap_or_default(),
                 writable: s
-                    .get(&format!("{prefix}.readaccess"))
-                    .map(|v| v != "TRUE" && v != "true")
-                    .unwrap_or(true),
+                    .get(&format!("{prefix}.writeaccess"))
+                    .map(|v| v == "TRUE" || v == "true")
+                    .unwrap_or(false),
                 enabled: s
                     .get(&format!("{prefix}.enabled"))
                     .map(|v| v == "TRUE" || v == "true")
@@ -379,6 +379,36 @@ pub fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
         }
     }
     folders
+}
+
+#[cfg(test)]
+mod shared_folder_safety_tests {
+    use super::parse_shared_folders;
+    use std::collections::HashMap;
+
+    fn base_settings() -> HashMap<String, String> {
+        HashMap::from([
+            ("sharedfolder.maxnum".into(), "1".into()),
+            ("sharedfolder0.present".into(), "TRUE".into()),
+            ("sharedfolder0.guestname".into(), "documents".into()),
+            ("sharedfolder0.hostpath".into(), "/srv/documents".into()),
+        ])
+    }
+
+    #[test]
+    fn vmx_share_without_write_access_is_read_only() {
+        let folders = parse_shared_folders(&base_settings());
+        assert_eq!(folders.len(), 1);
+        assert!(!folders[0].writable);
+    }
+
+    #[test]
+    fn vmx_share_is_writable_only_when_write_access_is_true() {
+        let mut settings = base_settings();
+        settings.insert("sharedfolder0.writeaccess".into(), "TRUE".into());
+        let folders = parse_shared_folders(&settings);
+        assert!(folders[0].writable);
+    }
 }
 
 fn parse_usb_controllers(s: &HashMap<String, String>) -> Vec<String> {
