@@ -106,7 +106,7 @@ const emptyConnect: ConnectState = {
   port: "443",
   username: "",
   password: "",
-  insecure: true,
+  insecure: false,
   timeoutSecs: "30",
   name: "",
 };
@@ -131,7 +131,7 @@ const ConnectForm: React.FC<{
       host: inst.host ?? "",
       port: inst.fields?.port ?? "443",
       username: inst.fields?.username ?? "",
-      insecure: inst.fields?.insecure !== "false",
+      insecure: inst.fields?.insecure === "true",
       timeoutSecs: inst.fields?.timeoutSecs ?? "30",
     }));
     store.readSecret(inst).then((secret) => {

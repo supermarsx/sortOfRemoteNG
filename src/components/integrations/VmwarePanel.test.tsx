@@ -99,7 +99,7 @@ describe("VmwarePanel", () => {
             username: "administrator@vsphere.local",
             password: "hunter2",
             port: 443,
-            insecure: true,
+            insecure: false,
             timeoutSecs: 30,
             proxyUrl: null,
           }),
