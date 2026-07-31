@@ -178,7 +178,8 @@ export function useRecordingManager(isOpen: boolean) {
   const handlePlayRdp = useCallback((rec: SavedRDPRecording) => {
     const blob = macroService.rdpRecordingToBlob(rec);
     const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }, []);
 
   const handleDeleteAllRdp = useCallback(async () => {
