@@ -13,3 +13,4 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
+sorng-ssh = { path = "../sorng-ssh" }

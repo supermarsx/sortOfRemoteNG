@@ -11216,6 +11216,7 @@ dependencies = [
  "chrono",
  "log",
  "regex",
+ "sorng-ssh",
  "serde",
  "serde_json",
  "tokio",
