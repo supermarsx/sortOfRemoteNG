@@ -4,11 +4,13 @@
 // frontend can invoke.  They follow the project convention of returning
 // `Result<T, String>` and accepting `tauri::State<ArdServiceState>`.
 
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use chrono::Utc;
 use tauri::ipc::{Channel, InvokeResponseBody};
+use tauri_plugin_fs::FsExt;
 use uuid::Uuid;
 
 use super::session_runner::{self, SessionConfig};
@@ -315,15 +317,75 @@ pub async fn set_ard_curtain_mode(
 
 // ── File Transfer ────────────────────────────────────────────────────────
 
+fn require_absolute_local_path(path: &Path) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("selected local file path must be absolute".to_string());
+    }
+    Ok(())
+}
+
+fn require_local_scope_grant(_path: &Path, is_allowed: bool) -> Result<(), String> {
+    if !is_allowed {
+        return Err("local file path was not granted by the native file picker".to_string());
+    }
+    Ok(())
+}
+
+fn validate_local_transfer_path(path: &Path, must_exist: bool) -> Result<(), String> {
+    if must_exist {
+        let metadata =
+            std::fs::symlink_metadata(path).map_err(|e| format!("inspect upload source: {e}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("upload source must be a regular, non-symlink file".to_string());
+        }
+        if metadata.len() > session_runner::MAX_FILE_TRANSFER_BYTES {
+            return Err(format!(
+                "upload source exceeds the {}-byte safety limit",
+                session_runner::MAX_FILE_TRANSFER_BYTES
+            ));
+        }
+    } else {
+        let parent = path
+            .parent()
+            .ok_or_else(|| "download destination has no parent directory".to_string())?;
+        let metadata = std::fs::symlink_metadata(parent)
+            .map_err(|e| format!("inspect download destination directory: {e}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err("download destination parent must be a regular directory".to_string());
+        }
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("download destination must be a regular, non-symlink file".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn require_scoped_local_path(
+    app: &tauri::AppHandle,
+    path: &Path,
+    must_exist: bool,
+) -> Result<(), String> {
+    require_absolute_local_path(path)?;
+    let scope = app
+        .try_fs_scope()
+        .ok_or_else(|| "filesystem scope is unavailable; refusing local file access".to_string())?;
+    require_local_scope_grant(path, scope.is_allowed(path))?;
+    validate_local_transfer_path(path, must_exist)
+}
+
 /// Upload a file to the remote Mac.
 #[tauri::command]
 pub async fn upload_ard_file(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ArdServiceState>,
     session_id: Option<String>,
     connection_id: Option<String>,
     local_path: String,
     remote_path: String,
 ) -> Result<(), String> {
+    require_scoped_local_path(&app, Path::new(&local_path), true)?;
     let service = state.lock().await;
     let id = resolve_session_id(&service, session_id.as_deref(), connection_id.as_deref())
         .ok_or("No matching ARD session found")?;
@@ -341,12 +403,14 @@ pub async fn upload_ard_file(
 /// Download a file from the remote Mac.
 #[tauri::command]
 pub async fn download_ard_file(
+    app: tauri::AppHandle,
     state: tauri::State<'_, ArdServiceState>,
     session_id: Option<String>,
     connection_id: Option<String>,
     remote_path: String,
     local_path: String,
 ) -> Result<(), String> {
+    require_scoped_local_path(&app, Path::new(&local_path), false)?;
     let service = state.lock().await;
     let id = resolve_session_id(&service, session_id.as_deref(), connection_id.as_deref())
         .ok_or("No matching ARD session found")?;
@@ -582,12 +646,110 @@ pub struct ArdStatsSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_PATH_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
+    struct PathTestDir(PathBuf);
+
+    impl PathTestDir {
+        fn new() -> Self {
+            let sequence = NEXT_PATH_FIXTURE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sorng-ard-path-security-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("create ARD path-security fixture");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for PathTestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn runtime_capability_command_never_accepts_apple_account_passwords() {
         let capabilities = ArdRuntimeCapabilities::current();
         assert!(!capabilities.embedded_rfb.accepts_apple_account_credentials);
         assert!(!capabilities.apple_account_native.accepts_password);
+    }
+
+    #[test]
+    fn traversal_and_ungranted_paths_are_rejected_without_disclosure() {
+        let traversal = Path::new("..").join("local-vault-secret.bin");
+        let error = require_absolute_local_path(&traversal).unwrap_err();
+        assert_eq!(error, "selected local file path must be absolute");
+        assert!(!error.contains("vault-secret"));
+
+        let ungranted = std::env::temp_dir()
+            .join("granted")
+            .join("..")
+            .join("ssh-private-key");
+        let error = require_local_scope_grant(&ungranted, false).unwrap_err();
+        assert_eq!(
+            error,
+            "local file path was not granted by the native file picker"
+        );
+        assert!(!error.contains("ssh-private-key"));
+    }
+
+    #[test]
+    fn oversized_sparse_upload_is_rejected_before_transfer() {
+        let fixture = PathTestDir::new();
+        let path = fixture.path().join("oversized-upload.bin");
+        let file = fs::File::create(&path).expect("create sparse ARD upload fixture");
+        file.set_len(session_runner::MAX_FILE_TRANSFER_BYTES + 1)
+            .expect("size sparse ARD upload fixture");
+
+        let error = validate_local_transfer_path(&path, true).unwrap_err();
+        assert!(error.contains(&format!(
+            "{}-byte safety limit",
+            session_runner::MAX_FILE_TRANSFER_BYTES
+        )));
+    }
+
+    #[test]
+    fn directory_cannot_be_used_as_upload_source() {
+        let fixture = PathTestDir::new();
+        let error = validate_local_transfer_path(fixture.path(), true).unwrap_err();
+        assert_eq!(error, "upload source must be a regular, non-symlink file");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_upload_and_symlinked_download_parent_are_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = PathTestDir::new();
+        let upload_target = fixture.path().join("outside-upload-secret.bin");
+        fs::write(&upload_target, b"secret").expect("write ARD symlink target");
+        let upload_link = fixture.path().join("selected-upload.bin");
+        symlink(&upload_target, &upload_link).expect("create ARD upload symlink fixture");
+        assert_eq!(
+            validate_local_transfer_path(&upload_link, true).unwrap_err(),
+            "upload source must be a regular, non-symlink file"
+        );
+
+        let real_parent = fixture.path().join("outside-download-directory");
+        fs::create_dir(&real_parent).expect("create ARD download target directory");
+        let linked_parent = fixture.path().join("selected-download-directory");
+        symlink(&real_parent, &linked_parent).expect("create ARD directory symlink fixture");
+        let destination = linked_parent.join("download.bin");
+        assert_eq!(
+            validate_local_transfer_path(&destination, false).unwrap_err(),
+            "download destination parent must be a regular directory"
+        );
     }
 
     #[cfg(not(target_os = "macos"))]
