@@ -81,8 +81,7 @@ impl McApiClient {
         }
 
         let resp = self.send_action("adduser", payload).await?;
-        let result = McApiClient::extract_result(&resp).unwrap_or_else(|| "User added".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge user creation")
     }
 
     /// Edit a user account.
@@ -121,9 +120,7 @@ impl McApiClient {
         }
 
         let resp = self.send_action("edituser", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "User updated".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge the user update")
     }
 
     /// Remove a user account.
@@ -143,9 +140,7 @@ impl McApiClient {
         payload.insert("userid".to_string(), json!(uid));
 
         let resp = self.send_action("deleteuser", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "User removed".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge user removal")
     }
 
     /// Get info about the currently logged-in user.
@@ -192,8 +187,18 @@ impl McApiClient {
         payload.insert("remove".to_string(), json!([token_name]));
 
         let resp = self.send_action("loginTokens", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "Token removed".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge token removal")
     }
+}
+
+fn acknowledged_result(
+    response: &serde_json::Value,
+    error: &'static str,
+) -> MeshCentralResult<String> {
+    if !McApiClient::is_success(response) {
+        return Err(crate::meshcentral::error::MeshCentralError::ServerError(
+            error.to_string(),
+        ));
+    }
+    Ok(McApiClient::extract_result(response).unwrap_or_else(|| "success".to_string()))
 }

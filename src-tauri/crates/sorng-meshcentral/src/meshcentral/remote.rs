@@ -1,7 +1,7 @@
 //! Remote command execution — run shell commands on devices.
 
 use crate::meshcentral::api_client::McApiClient;
-use crate::meshcentral::error::MeshCentralResult;
+use crate::meshcentral::error::{MeshCentralError, MeshCentralResult};
 use crate::meshcentral::types::*;
 use serde_json::json;
 
@@ -12,56 +12,11 @@ impl McApiClient {
     /// The `run_as_user` option runs the command as the logged-in user on Windows.
     /// The `powershell` option runs the command in PowerShell instead of cmd on Windows.
     pub async fn run_commands(&self, cmd: &McRunCommand) -> MeshCentralResult<McCommandResult> {
-        let mut payload = serde_json::Map::new();
-
-        payload.insert("nodeids".to_string(), json!([cmd.device_id]));
-        let cmd_type = if cmd.powershell { 2 } else { 1 };
-        payload.insert("type".to_string(), json!(cmd_type));
-        payload.insert("cmds".to_string(), json!(cmd.command));
-
-        if cmd.powershell {
-            payload.insert("runAsUser".to_string(), json!(0));
-        } else if cmd.run_as_user {
-            payload.insert("runAsUser".to_string(), json!(1));
-        }
-        if cmd.run_as_user_only {
-            payload.insert("runAsUser".to_string(), json!(2));
-        }
-
-        if cmd.reply {
-            let reply_id = format!("cmd_{}", uuid::Uuid::new_v4());
-            payload.insert("reply".to_string(), json!(reply_id));
-        }
-
-        let resp = self.send_action("runcommands", payload).await?;
-
-        let success = McApiClient::is_success(&resp);
-        let result_text = resp
-            .get("result")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let error_text = if !success {
-            Some(
-                resp.get("error")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Command failed")
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-
-        Ok(McCommandResult {
-            command_id: uuid::Uuid::new_v4().to_string(),
-            device_id: cmd.device_id.clone(),
-            result: result_text,
-            error: error_text,
-            exit_code: resp
-                .get("exitCode")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32),
-            execution_time_ms: None,
-        })
+        let _ = cmd;
+        Err(MeshCentralError::ServerError(
+            "Remote command execution is unavailable until the MeshCentral control WebSocket can verify command completion"
+                .to_string(),
+        ))
     }
 
     /// Run a shell command on a single device (convenience wrapper).
@@ -105,6 +60,11 @@ impl McApiClient {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        if url.is_empty() || url.len() > 8192 {
+            return Err(MeshCentralError::ServerError(
+                "MeshCentral did not return a valid relay URL".to_string(),
+            ));
+        }
 
         let public_id = resp
             .get("sessionid")
@@ -152,9 +112,12 @@ impl McApiClient {
         let mut payload = serde_json::Map::new();
         payload.insert("nodeids".to_string(), json!([device_id]));
         let resp = self.send_action("wakedevices", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "Wake request sent".to_string());
-        Ok(result)
+        if !McApiClient::is_success(&resp) {
+            return Err(MeshCentralError::ServerError(
+                "MeshCentral did not acknowledge the wake request".to_string(),
+            ));
+        }
+        Ok(McApiClient::extract_result(&resp).unwrap_or_else(|| "success".to_string()))
     }
 
     /// Get the auth cookie for setting up a relay tunnel.
@@ -167,6 +130,11 @@ impl McApiClient {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        if cookie.is_empty() || cookie.len() > 8192 {
+            return Err(MeshCentralError::ServerError(
+                "MeshCentral did not return a valid relay cookie".to_string(),
+            ));
+        }
         Ok(cookie)
     }
 }

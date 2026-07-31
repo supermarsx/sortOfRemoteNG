@@ -200,9 +200,7 @@ impl McApiClient {
         }
 
         let resp = self.send_action("changeDeviceMesh", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "Device moved".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge the device move")
     }
 
     /// Add a user to a device with specific rights.
@@ -219,9 +217,7 @@ impl McApiClient {
         payload.insert("rights".to_string(), json!(rights));
 
         let resp = self.send_action("adddeviceuser", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User added to device".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge device access")
     }
 
     /// Remove a user from a device.
@@ -237,10 +233,21 @@ impl McApiClient {
         payload.insert("remove".to_string(), json!(true));
 
         let resp = self.send_action("adddeviceuser", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User removed from device".to_string());
-        Ok(result)
+        acknowledged_result(
+            &resp,
+            "MeshCentral did not acknowledge device-access removal",
+        )
     }
+}
+
+fn acknowledged_result(
+    response: &serde_json::Value,
+    error: &'static str,
+) -> MeshCentralResult<String> {
+    if !McApiClient::is_success(response) {
+        return Err(MeshCentralError::ServerError(error.to_string()));
+    }
+    Ok(McApiClient::extract_result(response).unwrap_or_else(|| "success".to_string()))
 }
 
 /// Check if a device matches a text filter.

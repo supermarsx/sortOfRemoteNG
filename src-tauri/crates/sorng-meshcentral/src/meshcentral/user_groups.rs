@@ -42,9 +42,7 @@ impl McApiClient {
         }
 
         let resp = self.send_action("createusergroup", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "User group created".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge user-group creation")
     }
 
     /// Remove a user group.
@@ -64,9 +62,7 @@ impl McApiClient {
         payload.insert("ugrpid".to_string(), json!(ugrpid));
 
         let resp = self.send_action("deleteusergroup", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "User group removed".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge user-group removal")
     }
 
     /// Add an entity (user, device, or device group) to a user group.
@@ -90,9 +86,10 @@ impl McApiClient {
             payload.insert("usernames".to_string(), json!([username]));
 
             let resp = self.send_action("addusertousergroup", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "User added to user group".to_string());
-            Ok(result)
+            acknowledged_result(
+                &resp,
+                "MeshCentral did not acknowledge user-group membership",
+            )
         } else if id.starts_with("mesh/") {
             // Add device group to user group
             let r = rights.unwrap_or(0);
@@ -101,9 +98,7 @@ impl McApiClient {
             payload.insert("meshadmin".to_string(), json!(r));
 
             let resp = self.send_action("addmeshuser", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Device group added to user group".to_string());
-            Ok(result)
+            acknowledged_result(&resp, "MeshCentral did not acknowledge group membership")
         } else if id.starts_with("node/") {
             // Add device to user group
             let r = rights.unwrap_or(0);
@@ -112,9 +107,7 @@ impl McApiClient {
             payload.insert("rights".to_string(), json!(r));
 
             let resp = self.send_action("adddeviceuser", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Device added to user group".to_string());
-            Ok(result)
+            acknowledged_result(&resp, "MeshCentral did not acknowledge device membership")
         } else {
             Err(MeshCentralError::InvalidParameter(format!(
                 "Unknown entity type for id: {}. Must start with user/, mesh/, or node/",
@@ -136,17 +129,13 @@ impl McApiClient {
             payload.insert("userid".to_string(), json!(id));
 
             let resp = self.send_action("removeuserfromusergroup", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "User removed from user group".to_string());
-            Ok(result)
+            acknowledged_result(&resp, "MeshCentral did not acknowledge membership removal")
         } else if id.starts_with("mesh/") {
             payload.insert("meshid".to_string(), json!(id));
             payload.insert("userid".to_string(), json!(group_id));
 
             let resp = self.send_action("removemeshuser", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Device group removed from user group".to_string());
-            Ok(result)
+            acknowledged_result(&resp, "MeshCentral did not acknowledge group removal")
         } else if id.starts_with("node/") {
             payload.insert("nodeid".to_string(), json!(id));
             payload.insert("userids".to_string(), json!([group_id]));
@@ -154,9 +143,7 @@ impl McApiClient {
             payload.insert("remove".to_string(), json!(true));
 
             let resp = self.send_action("adddeviceuser", payload).await?;
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Device removed from user group".to_string());
-            Ok(result)
+            acknowledged_result(&resp, "MeshCentral did not acknowledge device removal")
         } else {
             Err(MeshCentralError::InvalidParameter(format!(
                 "Unknown entity type for id: {}",
@@ -190,4 +177,14 @@ impl McApiClient {
 
         Ok(count)
     }
+}
+
+fn acknowledged_result(
+    response: &serde_json::Value,
+    error: &'static str,
+) -> MeshCentralResult<String> {
+    if !McApiClient::is_success(response) {
+        return Err(MeshCentralError::ServerError(error.to_string()));
+    }
+    Ok(McApiClient::extract_result(response).unwrap_or_else(|| "success".to_string()))
 }

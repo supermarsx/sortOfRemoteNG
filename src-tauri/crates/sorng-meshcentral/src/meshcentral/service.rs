@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+const MAX_ACTIVE_SESSIONS: usize = 64;
+
 /// Thread-safe state managed by Tauri.
 pub type MeshCentralServiceState = Arc<Mutex<MeshCentralService>>;
 
@@ -33,7 +35,11 @@ impl MeshCentralService {
 
     /// Connect to a MeshCentral server.
     pub async fn connect(&mut self, config: McConnectionConfig) -> MeshCentralResult<McSession> {
-        info!("MeshCentral connecting to {}", config.server_url);
+        if self.sessions.len() >= MAX_ACTIVE_SESSIONS {
+            return Err(MeshCentralError::InvalidParameter(
+                "MeshCentral session limit reached".to_string(),
+            ));
+        }
 
         // Extract username from auth config before borrowing config
         let username = match &config.auth {
@@ -44,12 +50,10 @@ impl MeshCentralService {
             }
         };
         let domain = config.domain.clone();
-        let server_url = config.server_url.clone();
-
         let client = McApiClient::new(&config)?;
 
         // Verify connection by fetching server info
-        let server_info = client.server_info().await.ok();
+        let server_info = client.server_info().await?;
 
         let session = McSession {
             id: uuid::Uuid::new_v4().to_string(),
@@ -58,16 +62,13 @@ impl MeshCentralService {
             domain,
             connected_at: chrono::Utc::now(),
             authenticated: true,
-            server_info: server_info.clone(),
+            server_info: Some(server_info),
         };
 
         self.sessions
             .insert(session.id.clone(), (session.clone(), client));
 
-        info!(
-            "MeshCentral session {} established for {}",
-            session.id, server_url
-        );
+        info!("MeshCentral session {} established", session.id);
         Ok(session)
     }
 
@@ -105,10 +106,7 @@ impl MeshCentralService {
     /// Ping a session to verify it is still alive.
     pub async fn ping(&mut self, session_id: &str) -> MeshCentralResult<bool> {
         let (_, client) = self.get_client(session_id)?;
-        match client.ping().await {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        client.ping().await
     }
 
     // ─── Internal helper ─────────────────────────────────────────

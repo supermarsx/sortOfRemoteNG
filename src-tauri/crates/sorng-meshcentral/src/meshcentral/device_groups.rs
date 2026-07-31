@@ -57,9 +57,10 @@ impl McApiClient {
         if let Some(meshid) = resp.get("meshid").and_then(|v| v.as_str()) {
             Ok(meshid.to_string())
         } else {
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Device group created".to_string());
-            Ok(result)
+            acknowledged_result(
+                &resp,
+                "MeshCentral did not return a device-group identifier",
+            )
         }
     }
 
@@ -101,9 +102,10 @@ impl McApiClient {
         }
 
         let resp = self.send_action("editmesh", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Device group updated".to_string());
-        Ok(result)
+        acknowledged_result(
+            &resp,
+            "MeshCentral did not acknowledge the device-group update",
+        )
     }
 
     /// Remove a device group.
@@ -125,9 +127,10 @@ impl McApiClient {
         }
 
         let resp = self.send_action("deletemesh", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Device group removed".to_string());
-        Ok(result)
+        acknowledged_result(
+            &resp,
+            "MeshCentral did not acknowledge device-group removal",
+        )
     }
 
     /// List users of a device group with their rights.
@@ -180,9 +183,10 @@ impl McApiClient {
         }
 
         let resp = self.send_action("addmeshuser", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User added to device group".to_string());
-        Ok(result)
+        acknowledged_result(
+            &resp,
+            "MeshCentral did not acknowledge the group membership change",
+        )
     }
 
     /// Remove a user from a device group.
@@ -206,8 +210,19 @@ impl McApiClient {
         }
 
         let resp = self.send_action("removemeshuser", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "User removed from device group".to_string());
-        Ok(result)
+        acknowledged_result(
+            &resp,
+            "MeshCentral did not acknowledge the group membership removal",
+        )
     }
+}
+
+fn acknowledged_result(
+    response: &serde_json::Value,
+    error: &'static str,
+) -> MeshCentralResult<String> {
+    if !McApiClient::is_success(response) {
+        return Err(MeshCentralError::ServerError(error.to_string()));
+    }
+    Ok(McApiClient::extract_result(response).unwrap_or_else(|| "success".to_string()))
 }

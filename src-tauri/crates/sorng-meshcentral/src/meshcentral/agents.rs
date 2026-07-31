@@ -79,9 +79,7 @@ impl McApiClient {
         }
 
         let resp = self.send_action("inviteAgent", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| format!("Invite email sent to {}", invite.email));
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge the invite email")
     }
 
     /// Generate an invitation link for agent installation.
@@ -114,9 +112,9 @@ impl McApiClient {
             .to_string();
 
         if url.is_empty() {
-            let result = McApiClient::extract_result(&resp)
-                .unwrap_or_else(|| "Invite link generated".to_string());
-            Ok(result)
+            Err(crate::meshcentral::error::MeshCentralError::ServerError(
+                "MeshCentral did not return an invitation URL".to_string(),
+            ))
         } else {
             Ok(url)
         }
@@ -185,9 +183,7 @@ impl McApiClient {
         payload.insert("type".to_string(), json!("pong"));
 
         let resp = self.send_action("msg", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Agent check-in requested".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge the agent check-in")
     }
 
     /// Request an agent update on a device.
@@ -196,8 +192,18 @@ impl McApiClient {
         payload.insert("nodeids".to_string(), json!([device_id]));
 
         let resp = self.send_action("updateagents", payload).await?;
-        let result = McApiClient::extract_result(&resp)
-            .unwrap_or_else(|| "Agent update requested".to_string());
-        Ok(result)
+        acknowledged_result(&resp, "MeshCentral did not acknowledge the agent update")
     }
+}
+
+fn acknowledged_result(
+    response: &serde_json::Value,
+    error: &'static str,
+) -> MeshCentralResult<String> {
+    if !McApiClient::is_success(response) {
+        return Err(crate::meshcentral::error::MeshCentralError::ServerError(
+            error.to_string(),
+        ));
+    }
+    Ok(McApiClient::extract_result(response).unwrap_or_else(|| "success".to_string()))
 }

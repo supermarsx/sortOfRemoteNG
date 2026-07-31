@@ -114,9 +114,12 @@ impl McApiClient {
         payload.insert("publicid".to_string(), json!(share_id));
 
         let resp = self.send_action("removeDeviceShare", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "Share removed".to_string());
-        Ok(result)
+        if !McApiClient::is_success(&resp) {
+            return Err(crate::meshcentral::error::MeshCentralError::ServerError(
+                "MeshCentral did not acknowledge share removal".to_string(),
+            ));
+        }
+        Ok(McApiClient::extract_result(&resp).unwrap_or_else(|| "success".to_string()))
     }
 
     /// Remove all shares for a device.

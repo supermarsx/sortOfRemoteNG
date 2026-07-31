@@ -5,7 +5,7 @@
 //! 2. Login token → `x-meshauth` header with token credentials
 //! 3. Login key → `auth` query parameter (cookie encoding)
 
-use crate::meshcentral::error::MeshCentralResult;
+use crate::meshcentral::error::{MeshCentralError, MeshCentralResult};
 use crate::meshcentral::types::McAuthConfig;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
@@ -22,6 +22,11 @@ pub fn build_auth(
             password,
             token,
         } => {
+            validate_credential("username", username, 256)?;
+            validate_credential("password", password, 4096)?;
+            if let Some(token) = token {
+                validate_credential("second factor", token, 4096)?;
+            }
             let user_b64 = BASE64.encode(username.as_bytes());
             let pass_b64 = BASE64.encode(password.as_bytes());
             let header = if let Some(tok) = token {
@@ -36,27 +41,30 @@ pub fn build_auth(
             token_user,
             token_pass,
         } => {
+            validate_credential("token user", token_user, 256)?;
+            validate_credential("token secret", token_pass, 4096)?;
             let user_b64 = BASE64.encode(token_user.as_bytes());
             let pass_b64 = BASE64.encode(token_pass.as_bytes());
             let header = format!("{},{}", user_b64, pass_b64);
             Ok((Some(header), None))
         }
         McAuthConfig::LoginKey {
-            key_hex,
+            key_hex: _,
             username: _,
-        } => {
-            // Login keys are 80 bytes (160 hex chars).
-            // They get passed as the `auth` query parameter.
-            if key_hex.len() == 160 {
-                // For a proper login key we would AES-GCM encode a cookie.
-                // For now we pass it directly as the auth parameter.
-                Ok((None, Some(key_hex.clone())))
-            } else {
-                // Treat as a pre-encoded login cookie.
-                Ok((None, Some(key_hex.clone())))
-            }
-        }
+        } => Err(MeshCentralError::InvalidParameter(
+            "Login-key authentication is unavailable until encrypted MeshCentral cookie encoding is implemented"
+                .to_string(),
+        )),
     }
+}
+
+fn validate_credential(label: &str, value: &str, max_len: usize) -> MeshCentralResult<()> {
+    if value.is_empty() || value.len() > max_len || value.chars().any(char::is_control) {
+        return Err(MeshCentralError::InvalidParameter(format!(
+            "Invalid {label}"
+        )));
+    }
+    Ok(())
 }
 
 /// Parse site admin rights from a string like `full`, `none`, or

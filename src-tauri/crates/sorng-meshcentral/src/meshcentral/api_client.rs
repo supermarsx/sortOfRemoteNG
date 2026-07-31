@@ -11,10 +11,15 @@
 use crate::meshcentral::auth;
 use crate::meshcentral::error::{MeshCentralError, MeshCentralResult};
 use crate::meshcentral::types::*;
-use log::{debug, info, warn};
+use log::debug;
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
+use url::Url;
+
+const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+const MAX_JSON_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES: usize = 256 * 1024 * 1024;
 
 /// Low-level HTTP transport for MeshCentral API calls.
 pub struct McApiClient {
@@ -31,28 +36,56 @@ pub struct McApiClient {
 impl McApiClient {
     /// Build a new API client from connection configuration.
     pub fn new(config: &McConnectionConfig) -> MeshCentralResult<Self> {
-        let mut url = config.server_url.trim_end_matches('/').to_string();
-        if !url.starts_with("http://") && !url.starts_with("https://") {
-            url = format!("https://{}", url);
+        if !config.verify_tls {
+            return Err(MeshCentralError::InvalidParameter(
+                "TLS certificate verification cannot be disabled: verify_tls=false requires an explicit runtime acknowledgement contract".to_string(),
+            ));
         }
-
-        let timeout = Duration::from_secs(config.timeout_secs);
+        let supplied = config.server_url.trim();
+        if supplied.is_empty() || supplied.len() > 8192 {
+            return Err(MeshCentralError::InvalidParameter(
+                "Invalid MeshCentral server URL".to_string(),
+            ));
+        }
+        let normalized = if supplied.contains("://") {
+            supplied.to_string()
+        } else {
+            format!("https://{supplied}")
+        };
+        let mut parsed = Url::parse(&normalized).map_err(|_| {
+            MeshCentralError::InvalidParameter("Invalid MeshCentral server URL".to_string())
+        })?;
+        if parsed.scheme() != "https"
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.fragment().is_some()
+        {
+            return Err(MeshCentralError::InvalidParameter(
+                "MeshCentral requires an HTTPS URL without credentials or fragments".to_string(),
+            ));
+        }
+        parsed.set_query(None);
+        let url = parsed.as_str().trim_end_matches('/').to_string();
+        let timeout = Duration::from_secs(config.timeout_secs.clamp(1, 300));
 
         let mut builder = Client::builder()
             .timeout(timeout)
-            .danger_accept_invalid_certs(!config.verify_tls);
+            .connect_timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
+            .https_only(true)
+            .user_agent("SortOfRemoteNG-MeshCentral/1");
 
         if let Some(ref proxy_url) = config.proxy {
-            let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| MeshCentralError::InvalidParameter(format!("Invalid proxy: {}", e)))?;
+            let proxy = reqwest::Proxy::all(proxy_url).map_err(|_| {
+                MeshCentralError::InvalidParameter("Invalid proxy configuration".to_string())
+            })?;
             builder = builder.proxy(proxy);
         }
 
         let client = builder.build()?;
 
         let (auth_header, auth_cookie) = auth::build_auth(&config.auth, &config.domain)?;
-
-        info!("MeshCentral API client created for {}", url);
 
         Ok(McApiClient {
             client,
@@ -94,36 +127,38 @@ impl McApiClient {
             "responseid".to_string(),
             Value::String("meshctrl".to_string()),
         );
+        let encoded = serde_json::to_vec(&payload)?;
+        if encoded.len() > MAX_REQUEST_BYTES {
+            return Err(MeshCentralError::InvalidParameter(
+                "MeshCentral request exceeds the 8 MiB limit".to_string(),
+            ));
+        }
 
         let url = self.control_url();
-        debug!("MeshCentral API → {} action={}", url, action);
+        debug!("MeshCentral API action={}", action);
 
         let resp = self
             .authenticated_request(reqwest::Method::POST, &url)
-            .json(&payload)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(encoded)
             .send()
             .await?;
 
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            warn!("MeshCentral API error {}: {}", status, body);
-
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(MeshCentralError::AuthenticationFailed(body));
+                return Err(MeshCentralError::AuthenticationFailed(
+                    "MeshCentral rejected the supplied credentials".to_string(),
+                ));
             }
             return Err(MeshCentralError::ServerError(format!(
-                "HTTP {} — {}",
-                status, body
+                "MeshCentral returned HTTP {}",
+                status
             )));
         }
 
-        let body: Value = resp.json().await?;
-        debug!(
-            "MeshCentral API ← {}",
-            serde_json::to_string(&body).unwrap_or_default()
-        );
-        Ok(body)
+        let body = Self::read_limited(resp, MAX_JSON_RESPONSE_BYTES).await?;
+        serde_json::from_slice(&body).map_err(Into::into)
     }
 
     /// Send an action and wait for a specific response action.
@@ -139,6 +174,7 @@ impl McApiClient {
 
     /// Perform a raw GET request to a server endpoint.
     pub async fn get(&self, path: &str) -> MeshCentralResult<reqwest::Response> {
+        Self::validate_path(path)?;
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .authenticated_request(reqwest::Method::GET, &url)
@@ -152,35 +188,41 @@ impl McApiClient {
         let resp = self.get(path).await?;
         let status = resp.status();
         if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
             return Err(MeshCentralError::ServerError(format!(
-                "HTTP {} — {}",
-                status, text
+                "MeshCentral returned HTTP {}",
+                status
             )));
         }
-        let body: Value = resp.json().await?;
-        Ok(body)
+        let body = Self::read_limited(resp, MAX_JSON_RESPONSE_BYTES).await?;
+        serde_json::from_slice(&body).map_err(Into::into)
     }
 
     /// Perform a raw POST request.
     pub async fn post_json(&self, path: &str, body: &Value) -> MeshCentralResult<Value> {
+        Self::validate_path(path)?;
+        let encoded = serde_json::to_vec(body)?;
+        if encoded.len() > MAX_REQUEST_BYTES {
+            return Err(MeshCentralError::InvalidParameter(
+                "MeshCentral request exceeds the 8 MiB limit".to_string(),
+            ));
+        }
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .authenticated_request(reqwest::Method::POST, &url)
-            .json(body)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(encoded)
             .send()
             .await?;
 
         let status = resp.status();
         if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
             return Err(MeshCentralError::ServerError(format!(
-                "HTTP {} — {}",
-                status, text
+                "MeshCentral returned HTTP {}",
+                status
             )));
         }
-        let body: Value = resp.json().await?;
-        Ok(body)
+        let body = Self::read_limited(resp, MAX_JSON_RESPONSE_BYTES).await?;
+        serde_json::from_slice(&body).map_err(Into::into)
     }
 
     /// Download bytes from a path (e.g. agent download).
@@ -193,11 +235,7 @@ impl McApiClient {
                 status
             )));
         }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| MeshCentralError::NetworkError(e.to_string()))?;
-        Ok(bytes.to_vec())
+        Self::read_limited(resp, MAX_DOWNLOAD_BYTES).await
     }
 
     /// Get server information.
@@ -247,10 +285,54 @@ impl McApiClient {
     /// Helper: check if the response indicates success.
     pub(crate) fn is_success(resp: &Value) -> bool {
         if let Some(result) = Self::extract_result(resp) {
-            result.to_lowercase().contains("ok") || result.to_lowercase().contains("success")
+            let result = result.trim().to_ascii_lowercase();
+            result == "ok" || result == "success"
         } else {
-            // No explicit result field means it might be successful with data
-            true
+            resp.get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
         }
+    }
+
+    fn validate_path(path: &str) -> MeshCentralResult<()> {
+        if !path.starts_with('/')
+            || path.starts_with("//")
+            || path.len() > 8192
+            || path.chars().any(char::is_control)
+        {
+            return Err(MeshCentralError::InvalidParameter(
+                "Invalid MeshCentral API path".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn read_limited(
+        mut response: reqwest::Response,
+        limit: usize,
+    ) -> MeshCentralResult<Vec<u8>> {
+        if response
+            .content_length()
+            .is_some_and(|length| length > limit as u64)
+        {
+            return Err(MeshCentralError::ServerError(
+                "MeshCentral response exceeded the configured limit".to_string(),
+            ));
+        }
+        let mut bytes = Vec::with_capacity(
+            response
+                .content_length()
+                .unwrap_or(16 * 1024)
+                .min(limit as u64) as usize,
+        );
+        while let Some(chunk) = response.chunk().await? {
+            if bytes.len().saturating_add(chunk.len()) > limit {
+                return Err(MeshCentralError::ServerError(
+                    "MeshCentral response exceeded the configured limit".to_string(),
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     }
 }

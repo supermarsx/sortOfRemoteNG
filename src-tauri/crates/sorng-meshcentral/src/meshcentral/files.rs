@@ -3,9 +3,10 @@
 use crate::meshcentral::api_client::McApiClient;
 use crate::meshcentral::error::{MeshCentralError, MeshCentralResult};
 use crate::meshcentral::types::*;
-use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+const MAX_TRACKED_TRANSFERS: usize = 1024;
 
 /// Shared file transfer progress tracker.
 #[derive(Debug, Clone)]
@@ -37,6 +38,17 @@ impl McFileTransferTracker {
             status: McTransferStatus::Pending,
         };
         if let Ok(mut map) = self.transfers.lock() {
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                map.retain(|_, transfer| {
+                    matches!(
+                        transfer.status,
+                        McTransferStatus::Pending | McTransferStatus::InProgress
+                    )
+                });
+            }
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                return;
+            }
             map.insert(transfer_id.to_string(), progress);
         }
     }
@@ -48,7 +60,8 @@ impl McFileTransferTracker {
                 p.status = McTransferStatus::InProgress;
                 if let Some(total) = p.total_bytes {
                     if total > 0 {
-                        p.percent = Some((bytes as f64 / total as f64) * 100.0);
+                        p.bytes_transferred = bytes.min(total);
+                        p.percent = Some((p.bytes_transferred as f64 / total as f64) * 100.0);
                     }
                 }
             }
@@ -140,100 +153,22 @@ impl McApiClient {
     /// In the real implementation, this opens a WebSocket tunnel to the agent.
     /// This method prepares the upload request and returns transfer metadata.
     pub async fn upload_file(&self, upload: &McFileUpload) -> MeshCentralResult<String> {
-        // Validate the file exists locally
-        let metadata = tokio::fs::metadata(&upload.local_path).await.map_err(|e| {
-            MeshCentralError::FileTransferFailed(format!(
-                "Cannot read local file '{}': {}",
-                upload.local_path, e
-            ))
-        })?;
-
-        if !metadata.is_file() {
-            return Err(MeshCentralError::FileTransferFailed(format!(
-                "'{}' is not a file",
-                upload.local_path
-            )));
-        }
-
-        let transfer_id = uuid::Uuid::new_v4().to_string();
-
-        // Read the file content
-        let file_data = tokio::fs::read(&upload.local_path).await.map_err(|e| {
-            MeshCentralError::FileTransferFailed(format!(
-                "Failed to read file '{}': {}",
-                upload.local_path, e
-            ))
-        })?;
-
-        // Create the file transfer relay request
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(upload.device_id));
-        payload.insert("protocol".to_string(), json!(5)); // 5 = files
-        payload.insert("name".to_string(), json!(format!("upload_{}", transfer_id)));
-
-        // Initiate relay tunnel for file transfer
-        let resp = self.send_action("msg", payload).await?;
-
-        let success = McApiClient::is_success(&resp);
-        if !success {
-            return Err(MeshCentralError::FileTransferFailed(
-                "Failed to initiate file transfer tunnel".to_string(),
-            ));
-        }
-
-        // In a full implementation, the relay WebSocket would be used to:
-        // 1. Send a "upload" command specifying remote_path
-        // 2. Stream file data in chunks
-        // 3. Close the transfer
-
-        log::info!(
-            "File upload initiated: {} ({} bytes) -> {}:{}",
-            upload.local_path,
-            file_data.len(),
-            upload.device_id,
-            upload.remote_path
-        );
-
-        Ok(transfer_id)
+        let _ = upload;
+        Err(MeshCentralError::FileTransferFailed(
+            "MeshCentral upload is unavailable until the relay WebSocket can stream and acknowledge file data"
+                .to_string(),
+        ))
     }
 
     /// Download a file from a device.
     ///
     /// Returns a transfer ID that can be used to track progress.
     pub async fn download_file(&self, download: &McFileDownload) -> MeshCentralResult<String> {
-        let transfer_id = uuid::Uuid::new_v4().to_string();
-
-        // Create the file transfer relay request
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(download.device_id));
-        payload.insert("protocol".to_string(), json!(5)); // 5 = files
-        payload.insert(
-            "name".to_string(),
-            json!(format!("download_{}", transfer_id)),
-        );
-
-        let resp = self.send_action("msg", payload).await?;
-
-        let success = McApiClient::is_success(&resp);
-        if !success {
-            return Err(MeshCentralError::FileTransferFailed(
-                "Failed to initiate file download tunnel".to_string(),
-            ));
-        }
-
-        // In a full implementation, the relay WebSocket would be used to:
-        // 1. Send a "download" command specifying remote_path
-        // 2. Receive file data in chunks
-        // 3. Write to local_path
-
-        log::info!(
-            "File download initiated: {}:{} -> {}",
-            download.device_id,
-            download.remote_path,
-            download.local_path
-        );
-
-        Ok(transfer_id)
+        let _ = download;
+        Err(MeshCentralError::FileTransferFailed(
+            "MeshCentral download is unavailable until the relay WebSocket can stream and verify file data"
+                .to_string(),
+        ))
     }
 
     /// List files in a directory on a remote device.
@@ -242,13 +177,11 @@ impl McApiClient {
         node_id: &str,
         path: &str,
     ) -> MeshCentralResult<serde_json::Value> {
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(node_id));
-        payload.insert("protocol".to_string(), json!(5));
-        payload.insert("path".to_string(), json!(path));
-
-        let resp = self.send_action("msg", payload).await?;
-        Ok(resp)
+        let _ = (node_id, path);
+        Err(MeshCentralError::FileTransferFailed(
+            "Remote file listing is unavailable without the MeshCentral file-relay WebSocket"
+                .to_string(),
+        ))
     }
 
     /// Create a directory on a remote device.
@@ -257,16 +190,11 @@ impl McApiClient {
         node_id: &str,
         path: &str,
     ) -> MeshCentralResult<String> {
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(node_id));
-        payload.insert("protocol".to_string(), json!(5));
-        payload.insert("path".to_string(), json!(path));
-        payload.insert("fileop".to_string(), json!("createfolder"));
-
-        let resp = self.send_action("msg", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "Directory created".to_string());
-        Ok(result)
+        let _ = (node_id, path);
+        Err(MeshCentralError::FileTransferFailed(
+            "Remote directory creation is unavailable without verified file-relay completion"
+                .to_string(),
+        ))
     }
 
     /// Delete a file or directory on a remote device.
@@ -277,20 +205,10 @@ impl McApiClient {
         files: &[String],
         recursive: bool,
     ) -> MeshCentralResult<String> {
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(node_id));
-        payload.insert("protocol".to_string(), json!(5));
-        payload.insert("path".to_string(), json!(path));
-        payload.insert("fileop".to_string(), json!("delete"));
-        payload.insert("delfiles".to_string(), json!(files));
-        if recursive {
-            payload.insert("rec".to_string(), json!(true));
-        }
-
-        let resp = self.send_action("msg", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "File(s) deleted".to_string());
-        Ok(result)
+        let _ = (node_id, path, files, recursive);
+        Err(MeshCentralError::FileTransferFailed(
+            "Remote deletion is unavailable without verified file-relay completion".to_string(),
+        ))
     }
 
     /// Rename a file on a remote device.
@@ -301,17 +219,9 @@ impl McApiClient {
         old_name: &str,
         new_name: &str,
     ) -> MeshCentralResult<String> {
-        let mut payload = serde_json::Map::new();
-        payload.insert("nodeid".to_string(), json!(node_id));
-        payload.insert("protocol".to_string(), json!(5));
-        payload.insert("path".to_string(), json!(path));
-        payload.insert("fileop".to_string(), json!("rename"));
-        payload.insert("oldname".to_string(), json!(old_name));
-        payload.insert("newname".to_string(), json!(new_name));
-
-        let resp = self.send_action("msg", payload).await?;
-        let result =
-            McApiClient::extract_result(&resp).unwrap_or_else(|| "File renamed".to_string());
-        Ok(result)
+        let _ = (node_id, path, old_name, new_name);
+        Err(MeshCentralError::FileTransferFailed(
+            "Remote rename is unavailable without verified file-relay completion".to_string(),
+        ))
     }
 }
