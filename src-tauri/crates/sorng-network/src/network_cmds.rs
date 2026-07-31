@@ -674,195 +674,555 @@ pub async fn detect_icmp_blockade(
     })
 }
 
-/// Check TLS/SSL handshake for a host
+const MAX_TLS_HOST_BYTES: usize = 253;
+const MAX_TLS_PROCESS_STREAM_BYTES: usize = 8 * 1024;
+const MAX_TLS_DIAGNOSTIC_CHARS: usize = 1_536;
+
+struct BoundedTlsCommandOutput {
+    success: bool,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    truncated: bool,
+}
+
+fn canonical_tls_host(input: &str) -> Result<String, String> {
+    if input.is_empty() || input.len() > MAX_TLS_HOST_BYTES {
+        return Err("TLS host must contain between 1 and 253 ASCII bytes".to_string());
+    }
+    if input.trim() != input || !input.is_ascii() {
+        return Err("TLS host must be a canonical ASCII DNS name or IP address".to_string());
+    }
+
+    if let Ok(ip) = input.parse::<std::net::IpAddr>() {
+        return Ok(ip.to_string());
+    }
+
+    if input.contains(':')
+        || input.starts_with('.')
+        || input.ends_with('.')
+        || input
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        return Err("TLS host is not a valid canonical DNS name or IP address".to_string());
+    }
+
+    for label in input.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("TLS host contains an invalid DNS label".to_string());
+        }
+    }
+
+    Ok(input.to_ascii_lowercase())
+}
+
+fn validated_tls_port(port: Option<u16>) -> Result<u16, String> {
+    let port = port.unwrap_or(443);
+    if port == 0 {
+        return Err("TLS port must be between 1 and 65535".to_string());
+    }
+    Ok(port)
+}
+
+fn sanitize_tls_diagnostic(value: &str, max_chars: usize) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(max_chars)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn failed_tls_check(start: &std::time::Instant, error: impl Into<String>) -> TlsCheckResult {
+    TlsCheckResult {
+        tls_supported: false,
+        tls_version: None,
+        certificate_valid: false,
+        certificate_subject: None,
+        certificate_issuer: None,
+        certificate_expiry: None,
+        handshake_time_ms: start.elapsed().as_millis() as u64,
+        error: Some(error.into()),
+    }
+}
+
+async fn read_bounded_tls_stream<R>(mut reader: R, limit: usize) -> std::io::Result<(Vec<u8>, bool)>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut retained = Vec::with_capacity(limit.min(1024));
+    let mut buffer = [0u8; 1024];
+    let mut truncated = false;
+    loop {
+        let count = reader.read(&mut buffer).await?;
+        if count == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(retained.len());
+        let keep = remaining.min(count);
+        retained.extend_from_slice(&buffer[..keep]);
+        truncated |= keep < count;
+    }
+    Ok((retained, truncated))
+}
+
+async fn run_bounded_tls_command(
+    mut command: Command,
+    timeout_duration: Duration,
+) -> Result<BoundedTlsCommandOutput, String> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("TLS check failed: {}", error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "TLS check failed to capture standard output".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "TLS check failed to capture standard error".to_string())?;
+
+    let collect = async move {
+        let (status, stdout, stderr) = tokio::join!(
+            child.wait(),
+            read_bounded_tls_stream(stdout, MAX_TLS_PROCESS_STREAM_BYTES),
+            read_bounded_tls_stream(stderr, MAX_TLS_PROCESS_STREAM_BYTES),
+        );
+        let status = status.map_err(|error| format!("TLS check failed: {}", error))?;
+        let (stdout, stdout_truncated) =
+            stdout.map_err(|error| format!("TLS output read failed: {}", error))?;
+        let (stderr, stderr_truncated) =
+            stderr.map_err(|error| format!("TLS error output read failed: {}", error))?;
+        Ok(BoundedTlsCommandOutput {
+            success: status.success(),
+            stdout,
+            stderr,
+            truncated: stdout_truncated || stderr_truncated,
+        })
+    };
+
+    timeout(timeout_duration, collect)
+        .await
+        .map_err(|_| "TLS check timed out".to_string())?
+}
+
+/// Check TLS/SSL handshake and platform trust for a canonical DNS name or IP.
 #[tauri::command]
 pub async fn check_tls(host: String, port: Option<u16>) -> Result<TlsCheckResult, String> {
-    let port = port.unwrap_or(443);
+    let host = canonical_tls_host(&host)?;
+    let port = validated_tls_port(port)?;
     let start = std::time::Instant::now();
 
-    // Use openssl s_client or similar for TLS check
     #[cfg(target_os = "windows")]
     {
-        // Try PowerShell TLS check
-        let script = format!(
-            r#"
-            try {{
-                $tcp = New-Object System.Net.Sockets.TcpClient
-                $tcp.Connect('{}', {})
-                $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, ({{$true}}))
-                $ssl.AuthenticateAsClient('{}')
-                $cert = $ssl.RemoteCertificate
-                $cert2 = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($cert)
-                @{{
-                    TlsVersion = $ssl.SslProtocol.ToString()
-                    Subject = $cert2.Subject
-                    Issuer = $cert2.Issuer
-                    Expiry = $cert2.NotAfter.ToString('o')
-                    Valid = ($cert2.NotAfter -gt (Get-Date))
-                }} | ConvertTo-Json
-                $ssl.Close()
-                $tcp.Close()
-            }} catch {{
-                @{{ Error = $_.Exception.Message }} | ConvertTo-Json
-            }}
-            "#,
-            host, port, host
-        );
+        // The script is constant. Untrusted endpoint values are passed through the
+        // child environment and parsed as data, never interpolated as PowerShell.
+        const SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+function Limit-Text {
+    param([AllowNull()][object]$Value, [int]$Maximum = 512)
+    if ($null -eq $Value) { return $null }
+    $text = [string]$Value
+    $text = $text -replace '[\x00-\x1f\x7f]', ' '
+    if ($text.Length -gt $Maximum) { return $text.Substring(0, $Maximum) }
+    return $text
+}
 
-        let mut cmd = Command::new("powershell");
-        cmd.arg("-NoProfile")
-            .arg("-Command")
-            .arg(&script)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+$tcp = $null
+$ssl = $null
+try {
+    $hostName = [Environment]::GetEnvironmentVariable('SORNG_TLS_HOST', 'Process')
+    $portText = [Environment]::GetEnvironmentVariable('SORNG_TLS_PORT', 'Process')
+    [UInt16]$portNumber = 0
+    if ([string]::IsNullOrWhiteSpace($hostName) -or
+        -not [UInt16]::TryParse($portText, [ref]$portNumber) -or
+        $portNumber -eq 0) {
+        throw 'TLS endpoint input is invalid.'
+    }
 
-        match timeout(Duration::from_secs(10), cmd.output()).await {
-            Ok(Ok(output)) => {
-                let elapsed = start.elapsed().as_millis() as u64;
-                let stdout = String::from_utf8_lossy(&output.stdout);
+    $script:policyErrors = [System.Net.Security.SslPolicyErrors]::None
+    $script:chainStatuses = @()
+    $script:certificatePresented = $false
+    $script:certificateSubject = $null
+    $script:certificateIssuer = $null
+    $script:certificateExpiry = $null
+    $script:certificateNotBefore = $null
+    $script:authenticationError = $null
 
-                // Try to parse JSON response
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                    if let Some(err) = json.get("Error").and_then(|e| e.as_str()) {
-                        return Ok(TlsCheckResult {
-                            tls_supported: false,
-                            tls_version: None,
-                            certificate_valid: false,
-                            certificate_subject: None,
-                            certificate_issuer: None,
-                            certificate_expiry: None,
-                            handshake_time_ms: elapsed,
-                            error: Some(err.to_string()),
-                        });
-                    }
-
-                    return Ok(TlsCheckResult {
-                        tls_supported: true,
-                        tls_version: json
-                            .get("TlsVersion")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        certificate_valid: json
-                            .get("Valid")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false),
-                        certificate_subject: json
-                            .get("Subject")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        certificate_issuer: json
-                            .get("Issuer")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        certificate_expiry: json
-                            .get("Expiry")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        handshake_time_ms: elapsed,
-                        error: None,
-                    });
-                }
-
-                Ok(TlsCheckResult {
-                    tls_supported: false,
-                    tls_version: None,
-                    certificate_valid: false,
-                    certificate_subject: None,
-                    certificate_issuer: None,
-                    certificate_expiry: None,
-                    handshake_time_ms: elapsed,
-                    error: Some("Failed to parse TLS response".to_string()),
-                })
-            }
-            Ok(Err(e)) => Ok(TlsCheckResult {
-                tls_supported: false,
-                tls_version: None,
-                certificate_valid: false,
-                certificate_subject: None,
-                certificate_issuer: None,
-                certificate_expiry: None,
-                handshake_time_ms: start.elapsed().as_millis() as u64,
-                error: Some(format!("TLS check failed: {}", e)),
-            }),
-            Err(_) => Ok(TlsCheckResult {
-                tls_supported: false,
-                tls_version: None,
-                certificate_valid: false,
-                certificate_subject: None,
-                certificate_issuer: None,
-                certificate_expiry: None,
-                handshake_time_ms: start.elapsed().as_millis() as u64,
-                error: Some("TLS check timed out".to_string()),
-            }),
+    $validationCallback = {
+        param($sender, $certificate, $chain, $sslPolicyErrors)
+        $script:policyErrors = $sslPolicyErrors
+        if ($null -ne $certificate) {
+            $script:certificatePresented = $true
+            $certificate2 = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($certificate)
+            $script:certificateSubject = Limit-Text $certificate2.Subject
+            $script:certificateIssuer = Limit-Text $certificate2.Issuer
+            $script:certificateExpiry = $certificate2.NotAfter.ToUniversalTime()
+            $script:certificateNotBefore = $certificate2.NotBefore.ToUniversalTime()
         }
+        if ($null -ne $chain) {
+            $script:chainStatuses = @(
+                $chain.ChainStatus |
+                    Where-Object {
+                        $_.Status -ne [System.Security.Cryptography.X509Certificates.X509ChainStatusFlags]::NoError
+                    } |
+                    ForEach-Object {
+                        Limit-Text ('{0}: {1}' -f $_.Status, $_.StatusInformation) 256
+                    }
+            )
+        }
+        return ($sslPolicyErrors -eq [System.Net.Security.SslPolicyErrors]::None)
+    }
+
+    $tcp = [System.Net.Sockets.TcpClient]::new()
+    $connectTask = $tcp.ConnectAsync($hostName, $portNumber)
+    if (-not $connectTask.Wait([TimeSpan]::FromSeconds(5))) {
+        throw 'TCP connection timed out.'
+    }
+    $ssl = [System.Net.Security.SslStream]::new(
+        $tcp.GetStream(),
+        $false,
+        $validationCallback
+    )
+
+    $authenticated = $false
+    try {
+        $ssl.AuthenticateAsClient($hostName)
+        $authenticated = $ssl.IsAuthenticated
+    } catch {
+        $script:authenticationError = Limit-Text $_.Exception.Message
+    }
+
+    $nameMismatch = [System.Net.Security.SslPolicyErrors]::RemoteCertificateNameMismatch
+    $chainErrors = [System.Net.Security.SslPolicyErrors]::RemoteCertificateChainErrors
+    $nameValid = $script:certificatePresented -and (($script:policyErrors -band $nameMismatch) -eq 0)
+    $chainValid = $script:certificatePresented -and
+        (($script:policyErrors -band $chainErrors) -eq 0) -and
+        $script:chainStatuses.Count -eq 0
+    $now = [DateTime]::UtcNow
+    $timeValid = $script:certificatePresented -and
+        $script:certificateNotBefore -le $now -and
+        $script:certificateExpiry -ge $now
+    $valid = $authenticated -and
+        $script:policyErrors -eq [System.Net.Security.SslPolicyErrors]::None -and
+        $nameValid -and $chainValid -and $timeValid
+
+    $issues = @()
+    if ($script:policyErrors -ne [System.Net.Security.SslPolicyErrors]::None) {
+        $issues += 'SslPolicyErrors: ' + $script:policyErrors.ToString()
+    }
+    if (-not $nameValid) { $issues += 'Certificate name validation failed' }
+    if (-not $chainValid) {
+        $chainSummary = if ($script:chainStatuses.Count -gt 0) {
+            $script:chainStatuses -join ', '
+        } else {
+            'no valid certificate chain'
+        }
+        $issues += 'Certificate chain validation failed: ' + $chainSummary
+    }
+    if (-not $timeValid) { $issues += 'Certificate time validation failed' }
+    if (-not $authenticated -and $script:authenticationError) {
+        $issues += 'TLS authentication failed: ' + $script:authenticationError
+    }
+
+    [ordered]@{
+        TlsSupported = ($script:certificatePresented -or $authenticated)
+        HandshakeSucceeded = $authenticated
+        TlsVersion = if ($authenticated) { $ssl.SslProtocol.ToString() } else { $null }
+        Subject = $script:certificateSubject
+        Issuer = $script:certificateIssuer
+        Expiry = if ($script:certificateExpiry) { $script:certificateExpiry.ToString('o') } else { $null }
+        Valid = $valid
+        PolicyErrors = $script:policyErrors.ToString()
+        NameValid = $nameValid
+        ChainValid = $chainValid
+        TimeValid = $timeValid
+        ChainStatus = Limit-Text ($script:chainStatuses -join ', ') 1024
+        Error = if ($issues.Count -gt 0) { Limit-Text ($issues -join '; ') 1536 } else { $null }
+    } | ConvertTo-Json -Compress -Depth 3
+} catch {
+    [ordered]@{
+        TlsSupported = $false
+        HandshakeSucceeded = $false
+        TlsVersion = $null
+        Subject = $null
+        Issuer = $null
+        Expiry = $null
+        Valid = $false
+        PolicyErrors = 'Unknown'
+        NameValid = $false
+        ChainValid = $false
+        TimeValid = $false
+        ChainStatus = $null
+        Error = Limit-Text $_.Exception.Message 1536
+    } | ConvertTo-Json -Compress -Depth 3
+} finally {
+    if ($null -ne $ssl) { $ssl.Dispose() }
+    if ($null -ne $tcp) { $tcp.Dispose() }
+}
+"#;
+
+        let mut command = Command::new("powershell");
+        command
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(SCRIPT)
+            .env("SORNG_TLS_HOST", &host)
+            .env("SORNG_TLS_PORT", port.to_string());
+
+        let output = match run_bounded_tls_command(command, Duration::from_secs(10)).await {
+            Ok(output) => output,
+            Err(error) => return Ok(failed_tls_check(&start, error)),
+        };
+        if output.truncated {
+            return Ok(failed_tls_check(
+                &start,
+                "TLS diagnostic output exceeded the safety limit",
+            ));
+        }
+        if !output.success {
+            return Ok(failed_tls_check(&start, "TLS diagnostic process failed"));
+        }
+
+        let json = match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+            Ok(json) => json,
+            Err(_) => {
+                return Ok(failed_tls_check(
+                    &start,
+                    "Failed to parse bounded TLS response",
+                ))
+            }
+        };
+        let tls_supported = json
+            .get("TlsSupported")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let handshake_succeeded = json
+            .get("HandshakeSucceeded")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let policy_errors = json
+            .get("PolicyErrors")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Unknown");
+        let name_valid = json
+            .get("NameValid")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let chain_valid = json
+            .get("ChainValid")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let time_valid = json
+            .get("TimeValid")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let certificate_valid = handshake_succeeded
+            && policy_errors == "None"
+            && name_valid
+            && chain_valid
+            && time_valid
+            && json
+                .get("Valid")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+
+        let mut issues = Vec::new();
+        if let Some(error) = json.get("Error").and_then(|value| value.as_str()) {
+            let error = sanitize_tls_diagnostic(error, MAX_TLS_DIAGNOSTIC_CHARS);
+            if !error.is_empty() {
+                issues.push(error);
+            }
+        }
+        if !certificate_valid && issues.is_empty() {
+            issues.push(format!(
+                "Certificate validation failed (policy: {}; name valid: {}; chain valid: {}; time valid: {})",
+                sanitize_tls_diagnostic(policy_errors, 128),
+                name_valid,
+                chain_valid,
+                time_valid
+            ));
+        }
+
+        Ok(TlsCheckResult {
+            tls_supported,
+            tls_version: json
+                .get("TlsVersion")
+                .and_then(|value| value.as_str())
+                .map(|value| sanitize_tls_diagnostic(value, 64)),
+            certificate_valid,
+            certificate_subject: json
+                .get("Subject")
+                .and_then(|value| value.as_str())
+                .map(|value| sanitize_tls_diagnostic(value, 512)),
+            certificate_issuer: json
+                .get("Issuer")
+                .and_then(|value| value.as_str())
+                .map(|value| sanitize_tls_diagnostic(value, 512)),
+            certificate_expiry: json
+                .get("Expiry")
+                .and_then(|value| value.as_str())
+                .map(|value| sanitize_tls_diagnostic(value, 64)),
+            handshake_time_ms: start.elapsed().as_millis() as u64,
+            error: if issues.is_empty() {
+                None
+            } else {
+                Some(sanitize_tls_diagnostic(
+                    &issues.join("; "),
+                    MAX_TLS_DIAGNOSTIC_CHARS,
+                ))
+            },
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Use openssl s_client on Unix
-        let mut cmd = Command::new("timeout");
-        cmd.arg("10")
-            .arg("openssl")
+        let endpoint = match host.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V6(_)) => format!("[{}]:{}", host, port),
+            _ => format!("{}:{}", host, port),
+        };
+        let mut command = Command::new("openssl");
+        command
             .arg("s_client")
             .arg("-connect")
-            .arg(format!("{}:{}", host, port))
-            .arg("-servername")
-            .arg(&host)
+            .arg(endpoint)
             .arg("-brief")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        match cmd.output().await {
-            Ok(output) => {
-                let elapsed = start.elapsed().as_millis() as u64;
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let combined = format!("{}\n{}", stdout, stderr);
-
-                let tls_supported = combined.contains("CONNECTION ESTABLISHED")
-                    || combined.contains("Verification:")
-                    || output.status.success();
-
-                // Extract TLS version
-                let tls_version = if combined.contains("TLSv1.3") {
-                    Some("TLS 1.3".to_string())
-                } else if combined.contains("TLSv1.2") {
-                    Some("TLS 1.2".to_string())
-                } else if combined.contains("TLSv1.1") {
-                    Some("TLS 1.1".to_string())
-                } else if combined.contains("TLSv1") {
-                    Some("TLS 1.0".to_string())
-                } else {
-                    None
-                };
-
-                Ok(TlsCheckResult {
-                    tls_supported,
-                    tls_version,
-                    certificate_valid: combined.contains("Verification: OK"),
-                    certificate_subject: None,
-                    certificate_issuer: None,
-                    certificate_expiry: None,
-                    handshake_time_ms: elapsed,
-                    error: if !tls_supported {
-                        Some("TLS connection failed".to_string())
-                    } else {
-                        None
-                    },
-                })
-            }
-            Err(e) => Ok(TlsCheckResult {
-                tls_supported: false,
-                tls_version: None,
-                certificate_valid: false,
-                certificate_subject: None,
-                certificate_issuer: None,
-                certificate_expiry: None,
-                handshake_time_ms: start.elapsed().as_millis() as u64,
-                error: Some(format!("TLS check failed: {}", e)),
-            }),
+            .arg("-verify_return_error");
+        if host.parse::<std::net::IpAddr>().is_ok() {
+            command.arg("-verify_ip").arg(&host);
+        } else {
+            command
+                .arg("-verify_hostname")
+                .arg(&host)
+                .arg("-servername")
+                .arg(&host);
         }
+
+        let output = match run_bounded_tls_command(command, Duration::from_secs(10)).await {
+            Ok(output) => output,
+            Err(error) => return Ok(failed_tls_check(&start, error)),
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{}\n{}", stdout, stderr);
+        let tls_supported = combined.contains("CONNECTION ESTABLISHED")
+            || combined.contains("Protocol version:")
+            || combined.contains("Verification:");
+        let tls_version = if combined.contains("TLSv1.3") {
+            Some("TLS 1.3".to_string())
+        } else if combined.contains("TLSv1.2") {
+            Some("TLS 1.2".to_string())
+        } else if combined.contains("TLSv1.1") {
+            Some("TLS 1.1".to_string())
+        } else if combined.contains("TLSv1") {
+            Some("TLS 1.0".to_string())
+        } else {
+            None
+        };
+        let certificate_valid =
+            !output.truncated && output.success && combined.contains("Verification: OK");
+
+        let error = if output.truncated {
+            Some("TLS diagnostic output exceeded the safety limit".to_string())
+        } else if certificate_valid {
+            None
+        } else {
+            let diagnostic = combined
+                .lines()
+                .find(|line| {
+                    let lower = line.to_ascii_lowercase();
+                    lower.contains("verify error")
+                        || lower.contains("verification error")
+                        || lower.contains("certificate verify failed")
+                        || lower.contains("connect:")
+                })
+                .map(|line| sanitize_tls_diagnostic(line, 512))
+                .filter(|line| !line.is_empty())
+                .unwrap_or_else(|| {
+                    if tls_supported {
+                        "TLS certificate chain or endpoint name validation failed".to_string()
+                    } else {
+                        "TLS connection failed".to_string()
+                    }
+                });
+            Some(diagnostic)
+        };
+
+        Ok(TlsCheckResult {
+            tls_supported,
+            tls_version,
+            certificate_valid,
+            certificate_subject: None,
+            certificate_issuer: None,
+            certificate_expiry: None,
+            handshake_time_ms: start.elapsed().as_millis() as u64,
+            error,
+        })
+    }
+}
+
+#[cfg(test)]
+mod check_tls_input_tests {
+    use super::{canonical_tls_host, validated_tls_port};
+
+    #[test]
+    fn canonicalizes_valid_dns_and_ip_hosts() {
+        assert_eq!(
+            canonical_tls_host("API.Example.COM").unwrap(),
+            "api.example.com"
+        );
+        assert_eq!(canonical_tls_host("192.0.2.10").unwrap(), "192.0.2.10");
+        assert_eq!(canonical_tls_host("2001:0db8::1").unwrap(), "2001:db8::1");
+    }
+
+    #[test]
+    fn rejects_noncanonical_or_injection_shaped_hosts() {
+        for host in [
+            "",
+            " example.com",
+            "example.com ",
+            "https://example.com",
+            "example.com.",
+            "*.example.com",
+            "bad_label.example",
+            "-bad.example",
+            "bad-.example",
+            "example.com'; Write-Output owned; '",
+            "999.999.999.999",
+        ] {
+            assert!(canonical_tls_host(host).is_err(), "{host}");
+        }
+        assert!(canonical_tls_host(&"a".repeat(254)).is_err());
+    }
+
+    #[test]
+    fn validates_tls_port_range() {
+        assert_eq!(validated_tls_port(None).unwrap(), 443);
+        assert_eq!(validated_tls_port(Some(1)).unwrap(), 1);
+        assert_eq!(validated_tls_port(Some(u16::MAX)).unwrap(), u16::MAX);
+        assert!(validated_tls_port(Some(0)).is_err());
     }
 }
 
@@ -1401,4 +1761,3 @@ pub async fn detect_proxy_leakage(
         overall_status,
     })
 }
-
