@@ -7,6 +7,8 @@ use crate::session::PsSessionManager;
 use crate::transport::WinRmTransport;
 use crate::types::*;
 
+const MAX_DIAGNOSTIC_RESPONSE_BYTES: usize = 256 * 1024;
+
 /// PowerShell Remoting diagnostic operations.
 pub struct PsDiagnosticsManager;
 
@@ -655,9 +657,39 @@ async fn test_wsman_identify(config: &PsRemotingConfig) -> DiagnosticCheck {
         .send()
         .await
     {
-        Ok(resp) => {
+        Ok(mut resp) => {
             let status = resp.status().as_u16();
-            let body = resp.text().await.unwrap_or_default();
+            let mut body_bytes = Vec::new();
+            loop {
+                match resp.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if body_bytes.len().saturating_add(chunk.len())
+                            > MAX_DIAGNOSTIC_RESPONSE_BYTES
+                        {
+                            return DiagnosticCheck {
+                                name: "WS-Man Identify".to_string(),
+                                passed: false,
+                                message: "WS-Man identify response exceeded the safety limit"
+                                    .to_string(),
+                                severity: DiagnosticSeverity::Warning,
+                                duration_ms: Some(start.elapsed().as_millis() as u64),
+                            };
+                        }
+                        body_bytes.extend_from_slice(&chunk);
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        return DiagnosticCheck {
+                            name: "WS-Man Identify".to_string(),
+                            passed: false,
+                            message: "Failed to read WS-Man identify response".to_string(),
+                            severity: DiagnosticSeverity::Warning,
+                            duration_ms: Some(start.elapsed().as_millis() as u64),
+                        };
+                    }
+                }
+            }
+            let body = String::from_utf8_lossy(&body_bytes).into_owned();
             let elapsed = start.elapsed().as_millis() as u64;
 
             let passed = body.contains("IdentifyResponse")
