@@ -5,10 +5,39 @@ use opkssh_commands::inner as opkssh_inner_commands;
 use sorng_encryption::commands as encryption_commands;
 use sorng_probes::commands as probe_commands;
 
+mod runtime_capability_commands {
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RuntimeCapabilities {
+        pub cloud: bool,
+        pub ops: bool,
+        pub rdp: bool,
+        pub serial: bool,
+        pub mysql: bool,
+        pub postgresql: bool,
+    }
+
+    #[tauri::command]
+    pub fn get_runtime_capabilities() -> RuntimeCapabilities {
+        RuntimeCapabilities {
+            cloud: cfg!(feature = "cloud"),
+            ops: cfg!(feature = "ops"),
+            rdp: cfg!(feature = "rdp"),
+            serial: cfg!(any(
+                feature = "protocol-serial",
+                feature = "protocol-serial-dynamic"
+            )),
+            mysql: cfg!(feature = "db-mysql"),
+            postgresql: cfg!(feature = "db-postgres"),
+        }
+    }
+}
+
 pub fn is_command(command: &str) -> bool {
     matches!(
         command,
         "greet"
+            | "get_runtime_capabilities"
             | "open_url_external"
             | "get_launch_args"
             | "get_system_memory_info"
@@ -1306,6 +1335,7 @@ define_command_group!(
     GROUP_A_COMMANDS,
     [
         app_shell_commands::greet,
+        runtime_capability_commands::get_runtime_capabilities,
         // DevTools command is registered ONLY in debug builds. In a release
         // (`--release`) build `open_devtools` is not part of the IPC handler,
         // so it cannot be invoked even though the function still exists as an
@@ -2801,6 +2831,12 @@ mod tests {
         GROUP_G_COMMANDS, GROUP_H_COMMANDS, GROUP_I_COMMANDS, GROUP_J_COMMANDS,
     };
     use std::collections::HashSet;
+
+    #[test]
+    fn runtime_capabilities_are_always_recognized_and_registered() {
+        assert!(is_command("get_runtime_capabilities"));
+        assert!(GROUP_A_COMMANDS.contains(&"get_runtime_capabilities"));
+    }
 
     #[test]
     fn app_data_compare_and_swap_is_recognized_and_registered() {
