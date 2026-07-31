@@ -10,7 +10,9 @@ pub type CloudflareServiceState = Arc<Mutex<CloudflareService>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudflareConnectionConfig {
+    #[serde(default, skip_serializing)]
     pub api_token: String,
+    #[serde(default, skip_serializing)]
     pub api_key: Option<String>,
     pub email: Option<String>,
     pub account_id: Option<String>,

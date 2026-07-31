@@ -10,6 +10,7 @@ pub type VercelServiceState = Arc<Mutex<VercelService>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VercelConnectionConfig {
+    #[serde(default, skip_serializing)]
     pub token: String,
     pub team_id: Option<String>,
     pub api_version: Option<String>,
@@ -49,6 +50,7 @@ pub struct VercelProject {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VercelEnvVar {
     pub key: String,
+    #[serde(default, skip_serializing)]
     pub value: String,
     pub target: Vec<String>, // ["production", "preview", "development"]
     pub r#type: String,      // "encrypted" or "plain"

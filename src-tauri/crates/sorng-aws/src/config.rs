@@ -249,10 +249,13 @@ pub struct AwsConnectionConfig {
     /// AWS region to connect to.
     pub region: String,
     /// IAM access key ID.
+    #[serde(default, skip_serializing)]
     pub access_key_id: String,
     /// IAM secret access key.
+    #[serde(default, skip_serializing)]
     pub secret_access_key: String,
     /// Optional STS session token (for temporary credentials).
+    #[serde(default, skip_serializing)]
     pub session_token: Option<String>,
     /// Named profile to use (overrides static credentials if set).
     pub profile_name: Option<String>,
@@ -261,12 +264,14 @@ pub struct AwsConnectionConfig {
     /// MFA device serial number.
     pub mfa_serial: Option<String>,
     /// Current MFA TOTP code.
+    #[serde(default, skip_serializing)]
     pub mfa_code: Option<String>,
     /// Custom endpoint URL (for LocalStack, MinIO, etc.).
     pub endpoint_url: Option<String>,
     /// Session duration in seconds (default: 3600).
     pub session_duration: Option<u32>,
     /// External ID for cross-account access.
+    #[serde(default, skip_serializing)]
     pub external_id: Option<String>,
     /// Tags to apply to the session.
     pub tags: Option<HashMap<String, String>>,
