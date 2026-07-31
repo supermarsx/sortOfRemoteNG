@@ -197,7 +197,10 @@ impl ProcessManager {
         transport: &mut WmiTransport,
         params: &CreateProcessParams,
     ) -> Result<CreateProcessResult, String> {
-        info!("Creating remote process: {}", params.command_line);
+        info!(
+            "Creating remote process (command length: {} bytes)",
+            params.command_line.len()
+        );
 
         let mut method_params = HashMap::new();
         method_params.insert("CommandLine".to_string(), params.command_line.clone());
