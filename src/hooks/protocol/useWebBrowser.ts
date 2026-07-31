@@ -21,17 +21,52 @@ import {
   type CertIdentity,
   type TrustVerifyResult,
 } from "../../utils/auth/trustStore";
-import { stripSchemePrefix } from "../../utils/connection/sanitizeHostname";
+import { parseCanonicalWebAuthority } from "../../utils/connection/sanitizeHostname";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
    ═══════════════════════════════════════════════════════════════ */
 
-interface ProxyMediatorResponse {
+export interface ProxyMediatorResponse {
   local_port: number;
   session_id: string;
   proxy_url: string;
+}
+
+const PROTECTED_PROXY_HOST_RE = /^p[0-9a-f]{32}\.localhost$/u;
+
+export function validateProtectedProxyUrl(
+  response: ProxyMediatorResponse,
+): string {
+  if (
+    !Number.isInteger(response.local_port) ||
+    response.local_port < 1 ||
+    response.local_port > 65535 ||
+    !response.session_id
+  ) {
+    throw new Error("Backend returned an invalid proxy session.");
+  }
+
+  let proxyUrl: URL;
+  try {
+    proxyUrl = new URL(response.proxy_url);
+  } catch {
+    throw new Error("Backend returned an invalid protected proxy URL.");
+  }
+  if (
+    proxyUrl.protocol !== "http:" ||
+    proxyUrl.username ||
+    proxyUrl.password ||
+    !PROTECTED_PROXY_HOST_RE.test(proxyUrl.hostname) ||
+    proxyUrl.port !== String(response.local_port) ||
+    proxyUrl.pathname !== "/" ||
+    proxyUrl.search ||
+    proxyUrl.hash
+  ) {
+    throw new Error("Backend returned an unsafe protected proxy URL.");
+  }
+  return proxyUrl.toString();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -46,10 +81,57 @@ export function useWebBrowser(session: ConnectionSession) {
     state.connections,
     session.connectionId,
   );
-  const normalizedHostname = useMemo(
-    () => stripSchemePrefix(session.hostname),
-    [session.hostname],
-  );
+  const targetResolution = useMemo(() => {
+    const protocol = session.protocol === "https" ? "https" : "http";
+    const defaultPort = protocol === "https" ? 443 : 80;
+    try {
+      const authority = parseCanonicalWebAuthority(session.hostname);
+      if (authority.sourceScheme && authority.sourceScheme !== protocol) {
+        throw new Error(
+          `Saved hostname uses ${authority.sourceScheme}, but this session requires ${protocol}.`,
+        );
+      }
+      const configuredPort = connection?.port || undefined;
+      if (
+        authority.port &&
+        configuredPort &&
+        authority.port !== configuredPort
+      ) {
+        throw new Error(
+          "Saved hostname port conflicts with the connection port.",
+        );
+      }
+      const port = configuredPort ?? authority.port ?? defaultPort;
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error("Saved connection contains an invalid web port.");
+      }
+
+      const target = new URL(`${protocol}://${authority.hostname}/`);
+      target.port = port === defaultPort ? "" : String(port);
+      if (
+        target.username ||
+        target.password ||
+        target.hostname !== authority.hostname
+      ) {
+        throw new Error("Saved web hostname did not resolve canonically.");
+      }
+      return {
+        error: null,
+        hostname: authority.hostname,
+        url: target.toString(),
+      };
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Saved web hostname is invalid.",
+        hostname: "",
+        url: "",
+      };
+    }
+  }, [connection?.port, session.hostname, session.protocol]);
+  const normalizedHostname = targetResolution.hostname;
 
   // ── Derived auth ────────────────────────────────────────────
   const resolvedCreds = useMemo<{
@@ -76,18 +158,8 @@ export function useWebBrowser(session: ConnectionSession) {
   const hasAuth = resolvedCreds !== null;
 
   const buildTargetUrl = useCallback(() => {
-    const protocol = session.protocol === "https" ? "https" : "http";
-    const defaultPort = session.protocol === "https" ? 443 : 80;
-    const port = connection?.port || defaultPort;
-    const portSuffix = port === defaultPort ? "" : `:${port}`;
-    // P8: defensively strip any leading scheme on the hostname so
-    // an old or imported connection whose hostname carries
-    // `http://` doesn't produce `http://http://...` here. The
-    // editor also sanitises at input time (GeneralSection.tsx) so
-    // new connections never reach this point un-cleaned — this
-    // belt is for existing data + .mremoteng/.royal imports.
-    return `${protocol}://${normalizedHostname}${portSuffix}/`;
-  }, [connection, session.protocol, normalizedHostname]);
+    return targetResolution.url;
+  }, [targetResolution.url]);
 
   const markSessionConnected = useCallback(() => {
     if (session.status === "connected") return;
@@ -116,10 +188,12 @@ export function useWebBrowser(session: ConnectionSession) {
   );
 
   // ── State ───────────────────────────────────────────────────
-  const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
+  const [currentUrl, setCurrentUrl] = useState(targetResolution.url);
   const [inputUrl, setInputUrl] = useState(currentUrl);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(!targetResolution.error);
+  const [loadError, setLoadError] = useState<string>(
+    targetResolution.error ?? "",
+  );
   const [isSecure, setIsSecure] = useState(session.protocol === "https");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -308,7 +382,7 @@ export function useWebBrowser(session: ConnectionSession) {
         return true;
       }
       const connId = connection?.id;
-      const result = verifyIdentity(
+      const result = await verifyIdentity(
         normalizedHostname,
         port,
         "https",
@@ -322,7 +396,7 @@ export function useWebBrowser(session: ConnectionSession) {
         return true;
       }
       if (result.status === "first-use" && policy === "tofu") {
-        trustIdentity(
+        await trustIdentity(
           normalizedHostname,
           port,
           "https",
@@ -336,6 +410,7 @@ export function useWebBrowser(session: ConnectionSession) {
       }
       if (
         result.status === "mismatch" ||
+        result.status === "expired" ||
         policy === "always-ask" ||
         policy === "strict"
       ) {
@@ -351,7 +426,7 @@ export function useWebBrowser(session: ConnectionSession) {
           setTrustPrompt(result);
         });
       }
-      return true;
+      return false;
     } catch (err) {
       debugLog("WebBrowser", "Failed to fetch HTTPS cert info", { err });
       return true;
@@ -365,17 +440,27 @@ export function useWebBrowser(session: ConnectionSession) {
     settings.tlsTrustPolicy,
   ]);
 
-  const handleTrustAccept = useCallback(() => {
+  const handleTrustAccept = useCallback(async () => {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
-      trustIdentity(
-        normalizedHostname,
-        port,
-        "https",
-        certIdentity,
-        true,
-        connection?.id,
-      );
+      try {
+        await trustIdentity(
+          normalizedHostname,
+          port,
+          "https",
+          certIdentity,
+          true,
+          connection?.id,
+        );
+      } catch (err) {
+        debugLog("WebBrowser", "Failed to persist HTTPS trust decision", {
+          err,
+        });
+        setTrustPrompt(null);
+        trustResolveRef.current?.(false);
+        trustResolveRef.current = null;
+        return;
+      }
     }
     // Persist the user's accepted fingerprint so the next `navigateToUrl`
     // can pass a cert pin to the proxy. The proxy must not disable TLS
@@ -459,7 +544,35 @@ export function useWebBrowser(session: ConnectionSession) {
         clearTimeout(loadTimeoutRef.current);
         loadTimeoutRef.current = null;
       }
-      if (url.startsWith("https://")) {
+      let urlObj: URL;
+      try {
+        if (!targetResolution.url) {
+          throw new Error(
+            targetResolution.error ?? "Saved web hostname is invalid.",
+          );
+        }
+        urlObj = new URL(url);
+        const configuredTarget = new URL(targetResolution.url);
+        if (
+          (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") ||
+          urlObj.username ||
+          urlObj.password ||
+          urlObj.origin !== configuredTarget.origin ||
+          urlObj.hostname !== targetResolution.hostname
+        ) {
+          throw new Error(
+            "Navigation must stay on the saved connection's canonical web authority.",
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Invalid web navigation.";
+        setIsLoading(false);
+        setLoadError(message);
+        markSessionError(message);
+        return;
+      }
+      if (urlObj.protocol === "https:") {
         const trusted = await fetchAndVerifyCert();
         if (!trusted) return;
         if (gen !== navGenRef.current) return;
@@ -491,7 +604,6 @@ export function useWebBrowser(session: ConnectionSession) {
         // one of them is non-empty, so no-auth connections still work
         // exactly as before — just through a one-hop loopback mediator.
         debugLog("WebBrowser", "Routing through proxy", { url, hasAuth });
-        const urlObj = new URL(url);
         const targetOrigin = urlObj.origin + "/";
         const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
         if (proxySessionIdRef.current && proxyUrlRef.current) {
@@ -563,8 +675,9 @@ export function useWebBrowser(session: ConnectionSession) {
             }).catch(() => {});
             return;
           }
+          const protectedProxyUrl = validateProtectedProxyUrl(response);
           proxySessionIdRef.current = response.session_id;
-          proxyUrlRef.current = response.proxy_url;
+          proxyUrlRef.current = protectedProxyUrl;
           if (
             settings.webRecording?.autoRecordWebSessions &&
             response.session_id
@@ -572,14 +685,14 @@ export function useWebBrowser(session: ConnectionSession) {
             try {
               await webRecorder.startRecording(
                 response.session_id,
-                settings.webRecording?.recordHeaders ?? true,
+                settings.webRecording?.recordHeaders ?? false,
               );
             } catch (err) {
               console.error("Auto-record failed:", err);
             }
           }
           if (iframeRef.current) {
-            const proxyBase = response.proxy_url.replace(/\/+$/, "");
+            const proxyBase = protectedProxyUrl.replace(/\/+$/, "");
             iframeRef.current.src = proxyBase + pagePath;
           }
         }
@@ -615,6 +728,7 @@ export function useWebBrowser(session: ConnectionSession) {
       hasAuth,
       resolvedCreds,
       connection,
+      targetResolution,
       stopProxy,
       readThemeTokens,
       historyIndex,
@@ -722,15 +836,16 @@ export function useWebBrowser(session: ConnectionSession) {
                 "restart_proxy_session",
                 { sessionId: sid },
               );
+              const protectedProxyUrl = validateProtectedProxyUrl(resp);
               proxySessionIdRef.current = resp.session_id;
-              proxyUrlRef.current = resp.proxy_url;
+              proxyUrlRef.current = protectedProxyUrl;
               autoRestartCountRef.current += 1;
               setProxyAlive(true);
               if (iframeRef.current) {
                 const urlObj = new URL(currentUrl);
                 const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
                 iframeRef.current.src =
-                  resp.proxy_url.replace(/\/+$/, "") + pagePath;
+                  protectedProxyUrl.replace(/\/+$/, "") + pagePath;
               }
               debugLog("WebBrowser", "Proxy auto-restarted successfully", {
                 newSessionId: resp.session_id,
@@ -775,13 +890,15 @@ export function useWebBrowser(session: ConnectionSession) {
         "restart_proxy_session",
         { sessionId: sid },
       );
+      const protectedProxyUrl = validateProtectedProxyUrl(resp);
       proxySessionIdRef.current = resp.session_id;
-      proxyUrlRef.current = resp.proxy_url;
+      proxyUrlRef.current = protectedProxyUrl;
       setProxyAlive(true);
       if (iframeRef.current) {
         const urlObj = new URL(currentUrl);
         const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-        iframeRef.current.src = resp.proxy_url.replace(/\/+$/, "") + pagePath;
+        iframeRef.current.src =
+          protectedProxyUrl.replace(/\/+$/, "") + pagePath;
       }
     } catch {
       proxySessionIdRef.current = "";
@@ -1183,7 +1300,7 @@ export function useWebBrowser(session: ConnectionSession) {
     try {
       await webRecorder.startRecording(
         sid,
-        settings.webRecording?.recordHeaders ?? true,
+        settings.webRecording?.recordHeaders ?? false,
       );
     } catch (err) {
       console.error("Failed to start web recording:", err);

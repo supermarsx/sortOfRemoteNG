@@ -75,7 +75,6 @@ pub async fn http_post(
     service.fetch(config).await
 }
 
-
 fn proxy_client_builder(
     verify_ssl: bool,
     accepted_cert_fingerprint: Option<&str>,
@@ -105,6 +104,126 @@ fn proxy_client_builder(
         .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))
 }
 
+fn validate_proxy_target_url(target_url: &str) -> Result<reqwest::Url, String> {
+    if target_url.is_empty()
+        || target_url.trim() != target_url
+        || target_url
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err("Proxy target URL cannot contain whitespace or control characters".into());
+    }
+    if target_url.contains('%') || target_url.contains('\\') {
+        return Err("Proxy target URL contains an ambiguous encoded authority".into());
+    }
+
+    let parsed =
+        reqwest::Url::parse(target_url).map_err(|_| "Proxy target URL is invalid".to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("Proxy target URL must use http or https".into());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Proxy target URL cannot contain user information".into());
+    }
+    if parsed.host_str().is_none() {
+        return Err("Proxy target URL must contain a hostname".into());
+    }
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("Proxy target URL must contain only a canonical authority".into());
+    }
+    if parsed.port() == Some(0) {
+        return Err("Proxy target URL contains an invalid port".into());
+    }
+
+    let canonical = format!("{}/", parsed.origin().ascii_serialization());
+    reqwest::Url::parse(&canonical)
+        .map_err(|_| "Proxy target URL could not be canonicalized".to_string())
+}
+
+struct ProtectedProxyEndpoint {
+    authority: String,
+    origin: String,
+    url: String,
+}
+
+fn protected_proxy_endpoint(local_port: u16) -> ProtectedProxyEndpoint {
+    // UUID v4 is sourced from the OS CSPRNG. Its 122 random bits form a valid,
+    // unguessable DNS label required in Host on every proxy request.
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    let authority = format!("p{}.localhost:{}", token, local_port);
+    let origin = format!("http://{}", authority);
+    ProtectedProxyEndpoint {
+        url: format!("{}/", origin),
+        authority,
+        origin,
+    }
+}
+
+#[cfg(test)]
+mod proxy_target_validation_tests {
+    use super::{protected_proxy_endpoint, validate_proxy_target_url};
+
+    #[test]
+    fn accepts_and_canonicalizes_safe_web_authorities() {
+        for (input, expected) in [
+            ("http://example.com", "http://example.com/"),
+            ("https://192.0.2.10:8443/", "https://192.0.2.10:8443/"),
+            ("https://[2001:db8::1]:8443/", "https://[2001:db8::1]:8443/"),
+        ] {
+            assert_eq!(
+                validate_proxy_target_url(input)
+                    .expect("safe authority should validate")
+                    .as_str(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_or_ambiguous_proxy_targets() {
+        for input in [
+            "http://device.local@attacker.test/",
+            "http://user:secret@device.local/",
+            "http://device.local/admin",
+            "http://device.local/?admin=1",
+            "http://device.local/#admin",
+            " http://device.local/",
+            "http://device.local/\n",
+            "http://device%40attacker.test/",
+            "http://device.local\\@attacker.test/",
+            "http://device.local:0/",
+            "http://device.local:65536/",
+            "http://device.local:invalid/",
+            "http://2001:db8::1/",
+            "ftp://device.local/",
+        ] {
+            assert!(
+                validate_proxy_target_url(input).is_err(),
+                "unsafe proxy target unexpectedly passed: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn creates_distinct_unguessable_localhost_authorities() {
+        let first = protected_proxy_endpoint(43123);
+        let second = protected_proxy_endpoint(43123);
+
+        assert_ne!(first.authority, second.authority);
+        assert!(first.url.starts_with("http://p"));
+        assert!(first.url.ends_with(".localhost:43123/"));
+        let label = first
+            .authority
+            .split('.')
+            .next()
+            .expect("protected proxy has a host label");
+        assert_eq!(label.len(), 33);
+        assert_eq!(&label[..1], "p");
+        assert!(label[1..].chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!first.url.contains("127.0.0.1"));
+    }
+}
+
 /// Start a basic auth proxy mediator.
 ///
 /// Spawns a local TCP server on `127.0.0.1:0` (OS auto-assigns a free port)
@@ -117,8 +236,10 @@ pub async fn start_basic_auth_proxy(
     _service: tauri::State<'_, HttpServiceState>,
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
+    let validated_target = validate_proxy_target_url(&config.target_url)?;
     let session_id = uuid::Uuid::new_v4().to_string();
-    let target_url = config.target_url.clone();
+    let target_url = validated_target.as_str().to_string();
+    let target_origin = validated_target.origin().ascii_serialization();
     let verify_ssl = config.verify_ssl;
     let accepted_cert_fingerprint = config.accepted_cert_fingerprint.clone();
     let min_tls = config.min_tls_version.clone();
@@ -144,26 +265,9 @@ pub async fn start_basic_auth_proxy(
         }
     }
 
-    // Extract origin (scheme://host:port) for URL rewriting in responses.
-    let target_origin = {
-        if let Some(scheme_end) = target_url.find("://") {
-            let after_scheme = &target_url[scheme_end + 3..];
-            match after_scheme.find('/') {
-                Some(i) => target_url[..scheme_end + 3 + i].to_string(),
-                None => target_url.clone(),
-            }
-        } else {
-            target_url.clone()
-        }
-    };
-
     // Build an async reqwest client for this session with connection keep-alive
     // and reasonable timeouts to avoid stale-connection errors.
-    let client = proxy_client_builder(
-        verify_ssl,
-        accepted_cert_fingerprint.as_deref(),
-        &min_tls,
-    )?;
+    let client = proxy_client_builder(verify_ssl, accepted_cert_fingerprint.as_deref(), &min_tls)?;
 
     // Bind to a random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -173,6 +277,7 @@ pub async fn start_basic_auth_proxy(
         .local_addr()
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
+    let protected_endpoint = protected_proxy_endpoint(local_port);
 
     let request_count = Arc::new(AtomicU64::new(0));
     let error_count = Arc::new(AtomicU64::new(0));
@@ -199,6 +304,8 @@ pub async fn start_basic_auth_proxy(
         pending_nonce: Arc::new(std::sync::RwLock::new(None)),
         theme: Arc::new(std::sync::RwLock::new(theme_tokens)),
         target_origin: target_origin.clone(),
+        proxy_authority: protected_endpoint.authority.clone(),
+        proxy_origin: protected_endpoint.origin.clone(),
         // t20: arm web auto-login for this session per the connection's opt-in
         // flag. Separate nonce slot from themed-auth's `pending_nonce`.
         auto_login_armed: Arc::new(AtomicBool::new(config.http_auto_login)),
@@ -229,6 +336,10 @@ pub async fn start_basic_auth_proxy(
             axum::routing::get(crate::http::autologin_cred_handler),
         )
         .fallback(axum_proxy_handler)
+        .layer(axum::middleware::from_fn_with_state(
+            proxy_state.clone(),
+            crate::http::enforce_proxy_access,
+        ))
         .with_state(proxy_state);
 
     // Shutdown channel.
@@ -271,7 +382,7 @@ pub async fn start_basic_auth_proxy(
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: session_id.clone(),
-        proxy_url: format!("http://127.0.0.1:{}/", local_port),
+        proxy_url: protected_endpoint.url,
     })
 }
 
@@ -446,7 +557,16 @@ pub async fn restart_proxy_session(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
     // Extract the config from the existing (dead) session entry.
-    let (target_url, username, password, target_origin, connection_id, verify_ssl, accepted_cert_fingerprint, min_tls) = {
+    let (
+        target_url,
+        username,
+        password,
+        target_origin,
+        connection_id,
+        verify_ssl,
+        accepted_cert_fingerprint,
+        min_tls,
+    ) = {
         let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
         let entry = mgr
             .sessions
@@ -475,11 +595,7 @@ pub async fn restart_proxy_session(
     }
 
     // Build a fresh reqwest client.
-    let client = proxy_client_builder(
-        verify_ssl,
-        accepted_cert_fingerprint.as_deref(),
-        &min_tls,
-    )?;
+    let client = proxy_client_builder(verify_ssl, accepted_cert_fingerprint.as_deref(), &min_tls)?;
 
     // Bind to a new random free port.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -489,6 +605,7 @@ pub async fn restart_proxy_session(
         .local_addr()
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
+    let protected_endpoint = protected_proxy_endpoint(local_port);
 
     let new_session_id = uuid::Uuid::new_v4().to_string();
     let request_count = Arc::new(AtomicU64::new(0));
@@ -510,6 +627,8 @@ pub async fn restart_proxy_session(
             crate::theme_tokens::ThemeTokens::dark_default(),
         )),
         target_origin: target_origin.clone(),
+        proxy_authority: protected_endpoint.authority.clone(),
+        proxy_origin: protected_endpoint.origin.clone(),
         // t20: a restart recovers a dead session that has already passed its
         // connect-time auto-login (creds were dispensed once and the session is
         // disarmed). Restart starts DISARMED — re-arming only happens on a
@@ -538,6 +657,10 @@ pub async fn restart_proxy_session(
             axum::routing::get(crate::http::autologin_cred_handler),
         )
         .fallback(axum_proxy_handler)
+        .layer(axum::middleware::from_fn_with_state(
+            proxy_state.clone(),
+            crate::http::enforce_proxy_access,
+        ))
         .with_state(proxy_state);
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -578,7 +701,7 @@ pub async fn restart_proxy_session(
     Ok(ProxyMediatorResponse {
         local_port,
         session_id: new_session_id,
-        proxy_url: format!("http://127.0.0.1:{}/", local_port),
+        proxy_url: protected_endpoint.url,
     })
 }
 
@@ -1036,7 +1159,7 @@ pub fn start_web_recording(
             connection_id,
             host,
             entries: Vec::new(),
-            record_headers: record_headers.unwrap_or(true),
+            record_headers: record_headers.unwrap_or(false),
         },
     );
 
@@ -1109,6 +1232,77 @@ pub fn get_web_recording_status(
     }))
 }
 
+const MAX_RECORDING_HEADERS_SCANNED: usize = 512;
+const MAX_RECORDING_HEADERS: usize = 128;
+const MAX_RECORDING_HEADER_NAME_BYTES: usize = 256;
+const MAX_RECORDING_HEADER_VALUE_BYTES: usize = 8 * 1024;
+
+fn is_sensitive_recording_header(name: &str) -> bool {
+    let canonical = name.to_ascii_lowercase().replace('_', "-");
+
+    matches!(
+        canonical.as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "set-cookie"
+            | "api-key"
+            | "apikey"
+            | "token"
+            | "secret"
+            | "password"
+            | "credential"
+    ) || canonical.ends_with("-api-key")
+        || canonical.ends_with("-token")
+        || canonical.ends_with("-secret")
+        || canonical.ends_with("-password")
+        || canonical.ends_with("-credential")
+}
+
+fn is_valid_recording_header_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_RECORDING_HEADER_NAME_BYTES
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+}
+
+fn sanitize_recording_header_value(value: &str) -> String {
+    let mut sanitized = String::with_capacity(value.len().min(MAX_RECORDING_HEADER_VALUE_BYTES));
+
+    for character in value.chars() {
+        let character = if character.is_control() {
+            ' '
+        } else {
+            character
+        };
+        if sanitized.len() + character.len_utf8() > MAX_RECORDING_HEADER_VALUE_BYTES {
+            break;
+        }
+        sanitized.push(character);
+    }
+
+    sanitized
+}
+
+fn redact_recording_headers<'a, I>(headers: I) -> Vec<(String, String)>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+{
+    headers
+        .into_iter()
+        .take(MAX_RECORDING_HEADERS_SCANNED)
+        .filter_map(|(name, value)| {
+            if !is_valid_recording_header_name(name) || is_sensitive_recording_header(name) {
+                return None;
+            }
+
+            Some((name.to_string(), sanitize_recording_header_value(value)))
+        })
+        .take(MAX_RECORDING_HEADERS)
+        .collect()
+}
+
 #[tauri::command]
 pub fn export_web_recording_har(recording: WebRecording) -> Result<String, String> {
     // HAR 1.2 format
@@ -1116,6 +1310,16 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
         .entries
         .iter()
         .map(|e| {
+            let request_headers = redact_recording_headers(
+                e.request_headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            );
+            let response_headers = redact_recording_headers(
+                e.response_headers
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            );
             serde_json::json!({
                 "startedDateTime": recording.metadata.start_time,
                 "time": e.duration_ms,
@@ -1123,7 +1327,7 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
                     "method": e.method,
                     "url": e.url,
                     "httpVersion": "HTTP/1.1",
-                    "headers": e.request_headers.iter().map(|(k, v)| {
+                    "headers": request_headers.iter().map(|(k, v)| {
                         serde_json::json!({"name": k, "value": v})
                     }).collect::<Vec<_>>(),
                     "queryString": [],
@@ -1134,7 +1338,7 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
                     "status": e.status,
                     "statusText": "",
                     "httpVersion": "HTTP/1.1",
-                    "headers": e.response_headers.iter().map(|(k, v)| {
+                    "headers": response_headers.iter().map(|(k, v)| {
                         serde_json::json!({"name": k, "value": v})
                     }).collect::<Vec<_>>(),
                     "content": {
@@ -1168,4 +1372,128 @@ pub fn export_web_recording_har(recording: WebRecording) -> Result<String, Strin
     });
 
     serde_json::to_string_pretty(&har).map_err(|e| format!("JSON serialization failed: {}", e))
+}
+
+#[cfg(test)]
+mod web_recording_export_tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn har_export_omits_sensitive_headers_and_keeps_diagnostics() {
+        let recording = WebRecording {
+            metadata: WebRecordingMetadata {
+                session_id: "session-1".into(),
+                start_time: "2026-07-30T12:00:00Z".into(),
+                end_time: Some("2026-07-30T12:00:01Z".into()),
+                host: "example.test".into(),
+                target_url: "https://example.test".into(),
+                duration_ms: 10,
+                entry_count: 1,
+                total_bytes_transferred: 12,
+            },
+            entries: vec![WebRecordingEntry {
+                timestamp_ms: 0,
+                method: "GET".into(),
+                url: "https://example.test/api".into(),
+                request_headers: HashMap::from([
+                    ("Authorization".into(), "Bearer request-secret".into()),
+                    ("x-auth-token".into(), "request-token".into()),
+                    ("Content-Type".into(), "application/json".into()),
+                    ("X-Request-ID".into(), "request-123".into()),
+                ]),
+                request_body_size: 0,
+                status: 200,
+                response_headers: HashMap::from([
+                    ("SET-cookie".into(), "session=response-secret".into()),
+                    ("X-API-KEY".into(), "response-key".into()),
+                    ("Cache-Control".into(), "no-store".into()),
+                    ("Server-Timing".into(), "db;dur=4".into()),
+                ]),
+                response_body_size: 12,
+                content_type: Some("application/json".into()),
+                duration_ms: 10,
+                error: None,
+            }],
+        };
+
+        let har = export_web_recording_har(recording).expect("HAR export should succeed");
+        let value: serde_json::Value =
+            serde_json::from_str(&har).expect("HAR export should be valid JSON");
+        let request_names: HashSet<String> = value["log"]["entries"][0]["request"]["headers"]
+            .as_array()
+            .expect("request headers should be an array")
+            .iter()
+            .filter_map(|header| header["name"].as_str())
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        let response_names: HashSet<String> = value["log"]["entries"][0]["response"]["headers"]
+            .as_array()
+            .expect("response headers should be an array")
+            .iter()
+            .filter_map(|header| header["name"].as_str())
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+
+        assert_eq!(
+            request_names,
+            HashSet::from(["content-type".into(), "x-request-id".into()])
+        );
+        assert_eq!(
+            response_names,
+            HashSet::from(["cache-control".into(), "server-timing".into()])
+        );
+        assert!(!har.contains("request-secret"));
+        assert!(!har.contains("request-token"));
+        assert!(!har.contains("response-secret"));
+        assert!(!har.contains("response-key"));
+    }
+
+    #[test]
+    fn recording_header_redaction_is_case_insensitive_and_bounded() {
+        let long_value = "é".repeat(MAX_RECORDING_HEADER_VALUE_BYTES);
+        let headers = [
+            ("Proxy-Authorization", "Basic proxy-secret"),
+            ("COOKIE", "session=cookie-secret"),
+            ("set-cookie", "session=response-secret"),
+            ("X_GOOG_API_KEY", "api-secret"),
+            ("x-amz-security-token", "token-secret"),
+            ("x-client-secret", "client-secret"),
+            ("X-Trace-ID", "trace-123"),
+            ("Server-Timing", long_value.as_str()),
+            ("Invalid Header", "must-not-survive"),
+        ];
+
+        let redacted = redact_recording_headers(headers);
+        let names: HashSet<String> = redacted
+            .iter()
+            .map(|(name, _)| name.to_ascii_lowercase())
+            .collect();
+
+        assert_eq!(
+            names,
+            HashSet::from(["x-trace-id".into(), "server-timing".into()])
+        );
+        let server_timing = redacted
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("server-timing"))
+            .expect("non-sensitive metadata should be retained");
+        assert!(server_timing.1.len() <= MAX_RECORDING_HEADER_VALUE_BYTES);
+        assert!(server_timing.1.is_char_boundary(server_timing.1.len()));
+    }
+
+    #[test]
+    fn recording_header_redaction_caps_exported_header_count() {
+        let headers: Vec<(String, String)> = (0..(MAX_RECORDING_HEADERS + 32))
+            .map(|index| (format!("X-Metadata-{index}"), "safe".into()))
+            .collect();
+
+        let redacted = redact_recording_headers(
+            headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        );
+
+        assert_eq!(redacted.len(), MAX_RECORDING_HEADERS);
+    }
 }

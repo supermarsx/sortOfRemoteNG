@@ -546,9 +546,10 @@ pub struct ProxyMediatorResponse {
 /// Proxy session tracking using a local TCP server (axum on 127.0.0.1:0).
 ///
 /// Each proxy session spawns a lightweight HTTP server on a random port.
-/// The iframe loads from `http://127.0.0.1:{port}/` and every sub-resource
-/// request (CSS, JS, images, fonts) is forwarded to the target URL with
-/// authentication headers automatically injected. This approach works with
+/// The iframe loads through a per-session, unguessable
+/// `http://p{token}.localhost:{port}/` authority. Every request must carry that
+/// exact Host (and same-origin Origin when present) before any sub-resource
+/// request is forwarded with authentication headers. This approach works with
 /// all WebView2 versions (unlike custom URI scheme handlers which require
 /// ICoreWebView2_22 for iframe support).
 /// Tracks active proxy mediator sessions so they can be stopped.
@@ -667,6 +668,79 @@ pub fn active_web_recordings() -> &'static std::sync::Mutex<HashMap<String, WebR
     INSTANCE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn is_sensitive_recording_header(header_name: &str) -> bool {
+    let normalized = header_name.trim().to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "authorization" | "cookie" | "proxy-authorization" | "set-cookie" | "x-api-key"
+    ) {
+        return true;
+    }
+
+    let compact: String = normalized
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect();
+    normalized.contains("token")
+        || normalized.contains("secret")
+        || compact.contains("apikey")
+        || normalized
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|segment| segment == "key")
+        || compact.ends_with("key")
+}
+
+pub(crate) fn redact_recording_headers<I>(headers: I) -> HashMap<String, String>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    headers
+        .into_iter()
+        .filter(|(name, _)| !is_sensitive_recording_header(name))
+        .collect()
+}
+
+#[cfg(test)]
+mod recording_header_redaction_tests {
+    use super::*;
+
+    #[test]
+    fn redaction_is_case_insensitive_and_preserves_diagnostics() {
+        let headers = HashMap::from([
+            ("COOKIE".to_string(), "session=secret".to_string()),
+            ("Set-Cookie".to_string(), "session=secret".to_string()),
+            ("Authorization".to_string(), "Bearer secret".to_string()),
+            (
+                "pRoXy-AuThOrIzAtIoN".to_string(),
+                "Basic secret".to_string(),
+            ),
+            ("X-API-Key".to_string(), "api-secret".to_string()),
+            ("X-Auth-Token".to_string(), "token-secret".to_string()),
+            ("X-Client-Secret".to_string(), "client-secret".to_string()),
+            ("X-Signing-Key".to_string(), "signing-secret".to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+            ("X-Request-ID".to_string(), "request-123".to_string()),
+            ("Server-Timing".to_string(), "db;dur=4".to_string()),
+        ]);
+
+        let redacted = redact_recording_headers(headers);
+
+        assert_eq!(redacted.len(), 3);
+        assert_eq!(
+            redacted.get("Content-Type").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(
+            redacted.get("X-Request-ID").map(String::as_str),
+            Some("request-123")
+        );
+        assert_eq!(
+            redacted.get("Server-Timing").map(String::as_str),
+            Some("db;dur=4")
+        );
+    }
+}
+
 // -----------------------------------------------------------------------
 // Axum proxy handler — shared state passed to every request handler
 // -----------------------------------------------------------------------
@@ -697,6 +771,10 @@ pub struct AxumProxyState {
     /// changes themes mid-session without restarting the proxy.
     pub theme: Arc<std::sync::RwLock<crate::theme_tokens::ThemeTokens>>,
     pub target_origin: String,
+    /// Credential-bearing loopback authority. Its random host label is never
+    /// stored in manager/status DTOs or forwarded upstream.
+    pub proxy_authority: String,
+    pub proxy_origin: String,
     /// t20 web auto-login: armed when `config.http_auto_login` is set for this
     /// session. Disarmed after the first credential hand-out (single-shot — a
     /// re-rendered login-error page cannot loop the proxy into re-dispensing).
@@ -716,6 +794,103 @@ pub struct AxumProxyState {
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,
     pub global_sessions: ProxySessionManagerState,
     pub app: tauri::AppHandle,
+}
+
+fn proxy_request_headers_are_authorized(
+    headers: &axum::http::HeaderMap,
+    expected_authority: &str,
+    expected_origin: &str,
+) -> bool {
+    let host_matches = headers
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value == expected_authority)
+        .unwrap_or(false);
+    if !host_matches {
+        return false;
+    }
+
+    headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value == expected_origin)
+        .unwrap_or(true)
+}
+
+/// Reject requests that do not know this session's random loopback host before
+/// auth routes, auto-login routes, or the upstream fallback can run.
+pub async fn enforce_proxy_access(
+    axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if !proxy_request_headers_are_authorized(
+        request.headers(),
+        &state.proxy_authority,
+        &state.proxy_origin,
+    ) {
+        return axum::http::Response::builder()
+            .status(axum::http::StatusCode::FORBIDDEN)
+            .header("Cache-Control", "no-store")
+            .body(axum::body::Body::from("Forbidden"))
+            .expect("static forbidden proxy response is valid");
+    }
+    next.run(request).await
+}
+
+#[cfg(test)]
+mod proxy_access_guard_tests {
+    use super::proxy_request_headers_are_authorized;
+    use axum::http::header::{HOST, ORIGIN};
+    use axum::http::{HeaderMap, HeaderValue};
+
+    const AUTHORITY: &str = "p0123456789abcdef0123456789abcdef.localhost:43123";
+    const ORIGIN_VALUE: &str = "http://p0123456789abcdef0123456789abcdef.localhost:43123";
+
+    fn headers(host: Option<&'static str>, origin: Option<&'static str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(host) = host {
+            headers.insert(HOST, HeaderValue::from_static(host));
+        }
+        if let Some(origin) = origin {
+            headers.insert(ORIGIN, HeaderValue::from_static(origin));
+        }
+        headers
+    }
+
+    #[test]
+    fn accepts_exact_host_with_absent_or_same_proxy_origin() {
+        assert!(proxy_request_headers_are_authorized(
+            &headers(Some(AUTHORITY), None),
+            AUTHORITY,
+            ORIGIN_VALUE,
+        ));
+        assert!(proxy_request_headers_are_authorized(
+            &headers(Some(AUTHORITY), Some(ORIGIN_VALUE)),
+            AUTHORITY,
+            ORIGIN_VALUE,
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_or_wrong_host_and_hostile_origins() {
+        for headers in [
+            headers(None, None),
+            headers(Some("127.0.0.1:43123"), None),
+            headers(
+                Some("pffffffffffffffffffffffffffffffff.localhost:43123"),
+                None,
+            ),
+            headers(Some(AUTHORITY), Some("https://attacker.test")),
+            headers(Some(AUTHORITY), Some("null")),
+        ] {
+            assert!(!proxy_request_headers_are_authorized(
+                &headers,
+                AUTHORITY,
+                ORIGIN_VALUE,
+            ));
+        }
+    }
 }
 
 /// Axum fallback handler — proxies every request to the target server.
@@ -767,10 +942,11 @@ pub async fn axum_proxy_handler(
         {
             continue;
         }
-        // Rewrite Referer/Origin that point to the local proxy back to target.
+        // Rewrite Referer/Origin that point to this authenticated local proxy
+        // back to the target. The random proxy authority is never forwarded.
         if k == "referer" || k == "origin" {
             if let Ok(v) = value.to_str() {
-                if v.contains("127.0.0.1") {
+                if v == state.proxy_origin || v.starts_with(&format!("{}/", state.proxy_origin)) {
                     fwd_headers.push((
                         key.as_str().to_string(),
                         format!("{}/", state.target_origin),
@@ -999,24 +1175,23 @@ pub async fn axum_proxy_handler(
                     if let Ok(mut recordings) = active_web_recordings().lock() {
                         if let Some(rec_state) = recordings.get_mut(&state.session_id) {
                             let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
-                            let mut response_headers: HashMap<String, String> = HashMap::new();
-                            if rec_state.record_headers {
-                                for (k, v) in resp_hdrs.iter() {
-                                    if let Ok(s) = v.to_str() {
-                                        response_headers
-                                            .insert(k.as_str().to_string(), s.to_string());
-                                    }
-                                }
-                            }
+                            let response_headers = if rec_state.record_headers {
+                                redact_recording_headers(resp_hdrs.iter().filter_map(|(k, v)| {
+                                    v.to_str()
+                                        .ok()
+                                        .map(|s| (k.as_str().to_string(), s.to_string()))
+                                }))
+                            } else {
+                                HashMap::new()
+                            };
                             rec_state.entries.push(WebRecordingEntry {
                                 timestamp_ms,
                                 method: method_str.clone(),
                                 url: full_url.clone(),
                                 request_headers: if rec_state.record_headers {
-                                    fwd_headers
-                                        .iter()
-                                        .map(|(k, v)| (k.clone(), v.clone()))
-                                        .collect()
+                                    redact_recording_headers(
+                                        fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
+                                    )
                                 } else {
                                     HashMap::new()
                                 },
@@ -1045,21 +1220,19 @@ pub async fn axum_proxy_handler(
                 if let Some(rec_state) = recordings.get_mut(&state.session_id) {
                     let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
                     let req_headers = if rec_state.record_headers {
-                        fwd_headers
-                            .iter()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect()
+                        redact_recording_headers(
+                            fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
+                        )
                     } else {
                         HashMap::new()
                     };
                     let resp_headers_map = if rec_state.record_headers {
-                        let mut h = HashMap::new();
-                        for (key, value) in resp_hdrs.iter() {
-                            if let Ok(v) = value.to_str() {
-                                h.insert(key.as_str().to_string(), v.to_string());
-                            }
-                        }
-                        h
+                        redact_recording_headers(resp_hdrs.iter().filter_map(|(key, value)| {
+                            value
+                                .to_str()
+                                .ok()
+                                .map(|v| (key.as_str().to_string(), v.to_string()))
+                        }))
                     } else {
                         HashMap::new()
                     };
@@ -1151,6 +1324,8 @@ pub async fn axum_proxy_handler(
                     || k == "x-frame-options"
                     || k == "content-security-policy"
                     || k == "content-security-policy-report-only"
+                    || k == "access-control-allow-origin"
+                    || k == "access-control-allow-credentials"
                 {
                     continue;
                 }
@@ -1162,7 +1337,8 @@ pub async fn axum_proxy_handler(
                 builder = builder.header("Content-Type", ct.as_str());
             }
             builder = builder.header("Content-Length", final_body.len().to_string());
-            builder = builder.header("Access-Control-Allow-Origin", "*");
+            builder = builder.header("Access-Control-Allow-Origin", state.proxy_origin.as_str());
+            builder = builder.header("Access-Control-Allow-Credentials", "true");
 
             builder.body(Body::from(final_body)).unwrap_or_else(|_| {
                 Response::builder()
@@ -1213,10 +1389,9 @@ pub async fn axum_proxy_handler(
                         method: method_str.clone(),
                         url: full_url.clone(),
                         request_headers: if rec_state.record_headers {
-                            fwd_headers
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect()
+                            redact_recording_headers(
+                                fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())),
+                            )
                         } else {
                             HashMap::new()
                         },

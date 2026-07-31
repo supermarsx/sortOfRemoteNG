@@ -58,7 +58,10 @@ const ContentArea: React.FC<SectionProps> = ({ mgr }) => (
         className="w-full h-full border-0"
         title={mgr.session.name}
         onLoad={mgr.handleIframeLoad}
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+        // Cookie-backed managed UIs require same-origin behavior. The proxy
+        // origin is deliberately excluded from Tauri capabilities, while
+        // popups and downloads stay blocked until mediated handlers exist.
+        sandbox="allow-same-origin allow-scripts allow-forms"
       />
     )}
   </div>

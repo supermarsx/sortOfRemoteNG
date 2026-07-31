@@ -198,3 +198,148 @@ export function sanitizeHostname(raw: string): SanitizedHostname {
 export function stripSchemePrefix(raw: string): string {
   return sanitizeHostname(raw).hostname;
 }
+
+export interface CanonicalWebAuthority {
+  hostname: string;
+  port?: number;
+  sourceScheme?: "http" | "https";
+}
+
+const WEB_SCHEME_PREFIX_RE = /^([a-z][a-z0-9+.-]*):\/\//iu;
+const AUTHORITY_WHITESPACE_OR_CONTROL_RE = {
+  test(value: string): boolean {
+    return Array.from(value).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x20 || codePoint === 0x7f;
+    });
+  },
+};
+const DNS_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/iu;
+
+/**
+ * Parse a saved web hostname as one canonical URL authority.
+ *
+ * Unlike the permissive editor sanitiser above, this is a credential boundary:
+ * it rejects path/query/fragment data, userinfo, encoded delimiter ambiguity,
+ * whitespace, invalid ports, and non-canonical host spellings before a saved
+ * credential can be attached to a proxy request.
+ */
+export function parseCanonicalWebAuthority(raw: string): CanonicalWebAuthority {
+  if (!raw) {
+    throw new Error("Web hostname is required.");
+  }
+  if (raw !== raw.trim() || AUTHORITY_WHITESPACE_OR_CONTROL_RE.test(raw)) {
+    throw new Error(
+      "Web hostname cannot contain whitespace or control characters.",
+    );
+  }
+  if (raw.includes("%")) {
+    throw new Error(
+      "Web hostname cannot contain encoded authority delimiters.",
+    );
+  }
+
+  let authority = raw;
+  let sourceScheme: "http" | "https" | undefined;
+  const schemeMatch = raw.match(WEB_SCHEME_PREFIX_RE);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    if (scheme !== "http" && scheme !== "https") {
+      throw new Error("Web hostname only supports http or https URL prefixes.");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new Error("Web hostname is not a valid URL authority.");
+    }
+    if (parsed.username || parsed.password) {
+      throw new Error("Web hostname cannot contain user information.");
+    }
+    if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+      throw new Error(
+        "Web hostname cannot contain a path, query, or fragment.",
+      );
+    }
+    authority = parsed.host;
+    sourceScheme = scheme;
+  } else if (/[@/\\?#]/u.test(authority)) {
+    throw new Error(
+      "Web hostname cannot contain user information, a path, query, or fragment.",
+    );
+  }
+
+  const explicitPortMatch = authority.startsWith("[")
+    ? authority.match(/^\[[^\]]+\]:(\d+)$/u)
+    : authority.match(/^[^:]+:(\d+)$/u);
+  const explicitPort = explicitPortMatch
+    ? Number(explicitPortMatch[1])
+    : undefined;
+  if (
+    explicitPort !== undefined &&
+    (!Number.isInteger(explicitPort) ||
+      explicitPort < 1 ||
+      explicitPort > 65535)
+  ) {
+    throw new Error("Web hostname contains an invalid port.");
+  }
+
+  let parsedAuthority: URL;
+  try {
+    parsedAuthority = new URL(`http://${authority}/`);
+  } catch {
+    throw new Error("Web hostname is not a valid URL authority.");
+  }
+  if (parsedAuthority.username || parsedAuthority.password) {
+    throw new Error("Web hostname cannot contain user information.");
+  }
+  if (
+    parsedAuthority.pathname !== "/" ||
+    parsedAuthority.search ||
+    parsedAuthority.hash
+  ) {
+    throw new Error("Web hostname cannot contain a path, query, or fragment.");
+  }
+
+  const hostname = parsedAuthority.hostname;
+  if (!hostname) {
+    throw new Error("Web hostname is required.");
+  }
+  const canonicalAuthority =
+    explicitPort !== undefined && !parsedAuthority.port
+      ? `${hostname}:${explicitPort}`
+      : parsedAuthority.host;
+  if (authority.toLowerCase() !== canonicalAuthority.toLowerCase()) {
+    throw new Error("Web hostname must use a canonical authority spelling.");
+  }
+
+  const isBracketedIpv6 = hostname.startsWith("[") && hostname.endsWith("]");
+  if (!isBracketedIpv6) {
+    const dnsHostname = hostname.endsWith(".")
+      ? hostname.slice(0, -1)
+      : hostname;
+    if (
+      dnsHostname.length === 0 ||
+      dnsHostname.length > 253 ||
+      dnsHostname.split(".").some((label) => !DNS_LABEL_RE.test(label))
+    ) {
+      throw new Error("Web hostname is not a canonical DNS or IPv4 address.");
+    }
+  }
+
+  const port =
+    explicitPort ??
+    (parsedAuthority.port ? Number(parsedAuthority.port) : undefined);
+  if (
+    port !== undefined &&
+    (!Number.isInteger(port) || port < 1 || port > 65535)
+  ) {
+    throw new Error("Web hostname contains an invalid port.");
+  }
+
+  return {
+    hostname,
+    port,
+    sourceScheme,
+  };
+}

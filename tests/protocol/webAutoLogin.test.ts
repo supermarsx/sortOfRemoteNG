@@ -64,7 +64,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(),
 }));
 
-import { useWebBrowser } from "../../src/hooks/protocol/useWebBrowser";
+import {
+  useWebBrowser,
+  validateProtectedProxyUrl,
+} from "../../src/hooks/protocol/useWebBrowser";
 import type { ConnectionSession } from "../../src/types/connection/connection";
 
 const mockInvoke = vi.mocked(invoke);
@@ -98,7 +101,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
     mockInvoke.mockResolvedValue({
       local_port: 9000,
       session_id: "proxy-1",
-      proxy_url: "http://127.0.0.1:9000",
+      proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
     });
   });
 
@@ -211,7 +214,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       hostname: "https://admin.example.test",
     };
     mockResolveEffectiveTrustPolicy.mockReturnValue("tofu");
-    mockVerifyIdentity.mockReturnValue({ status: "trusted" });
+    mockVerifyIdentity.mockResolvedValue({ status: "trusted" });
     mockInvoke.mockImplementation(async (cmd) => {
       if (cmd === "get_tls_certificate_info") {
         return {
@@ -243,7 +246,7 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       return {
         local_port: 9000,
         session_id: "proxy-1",
-        proxy_url: "http://127.0.0.1:9000",
+        proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
       };
     });
 
@@ -264,5 +267,61 @@ describe("useWebBrowser — web auto-login invoke mapping (t20)", () => {
       "conn-1",
     );
     expect(lastProxyConfig()?.target_url).toBe("https://admin.example.test/");
+  });
+
+  it("rejects authority injection before saved credentials reach the proxy", async () => {
+    connections.push({
+      id: "conn-1",
+      name: "Imported device",
+      hostname: "device.local@attacker.test",
+      protocol: "http",
+      username: "admin",
+      password: "devpass",
+      httpVerifySsl: true,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const poisonedSession: ConnectionSession = {
+      ...session,
+      hostname: "device.local@attacker.test",
+    };
+
+    const { result } = renderHook(() => useWebBrowser(poisonedSession));
+    await act(async () => {
+      await result.current.navigateToUrl(result.current.buildTargetUrl());
+    });
+
+    expect(result.current.buildTargetUrl()).toBe("");
+    expect(result.current.loadError).toContain("user information");
+    expect(
+      mockInvoke.mock.calls.some(
+        ([command]) => command === "start_basic_auth_proxy",
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts only server-protected localhost proxy URLs", () => {
+    const protectedResponse = {
+      local_port: 9000,
+      session_id: "proxy-1",
+      proxy_url: "http://p0123456789abcdef0123456789abcdef.localhost:9000/",
+    };
+    expect(validateProtectedProxyUrl(protectedResponse)).toBe(
+      protectedResponse.proxy_url,
+    );
+
+    for (const proxy_url of [
+      "http://127.0.0.1:9000/",
+      "http://localhost:9000/",
+      "http://pffffffffffffffffffffffffffffffff.localhost:9001/",
+      "http://user@p0123456789abcdef0123456789abcdef.localhost:9000/",
+      "http://p0123456789abcdef0123456789abcdef.localhost:9000/path",
+      "http://p0123456789abcdef0123456789abcdef.localhost:9000/?token=leak",
+    ]) {
+      expect(() =>
+        validateProtectedProxyUrl({ ...protectedResponse, proxy_url }),
+      ).toThrow();
+    }
   });
 });

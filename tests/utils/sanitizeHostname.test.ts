@@ -12,6 +12,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  parseCanonicalWebAuthority,
   sanitizeHostname,
   stripSchemePrefix,
 } from "../../src/utils/connection/sanitizeHostname";
@@ -193,5 +194,48 @@ describe("stripSchemePrefix", () => {
     // This is the exact shape the buildTargetUrl bug used to hit.
     const hostname = stripSchemePrefix("http://example.com");
     expect(`http://${hostname}/`).toBe("http://example.com/");
+  });
+});
+
+describe("parseCanonicalWebAuthority", () => {
+  it.each([
+    ["example.com", { hostname: "example.com" }],
+    ["EXAMPLE.COM", { hostname: "example.com" }],
+    ["example.com:80", { hostname: "example.com", port: 80 }],
+    ["192.0.2.10:8443", { hostname: "192.0.2.10", port: 8443 }],
+    ["[2001:db8::1]", { hostname: "[2001:db8::1]" }],
+    ["[2001:db8::1]:80", { hostname: "[2001:db8::1]", port: 80 }],
+    [
+      "https://[2001:db8::1]:8443",
+      {
+        hostname: "[2001:db8::1]",
+        port: 8443,
+        sourceScheme: "https",
+      },
+    ],
+  ])("accepts canonical authority %s", (input, expected) => {
+    expect(parseCanonicalWebAuthority(input as string)).toEqual(expected);
+  });
+
+  it.each([
+    "device.local@attacker.test",
+    "http://user:secret@device.local",
+    "device.local/admin",
+    "device.local?admin=1",
+    "device.local#admin",
+    " device.local",
+    "device.local ",
+    "device.local\n",
+    "device%40attacker.test",
+    "device%2540attacker.test",
+    "device.local%2f@attacker.test",
+    "device.local\\@attacker.test",
+    "device.local:0",
+    "device.local:65536",
+    "device.local:invalid",
+    "2001:db8::1",
+    "ftp://device.local",
+  ])("rejects unsafe or ambiguous authority %s", (input) => {
+    expect(() => parseCanonicalWebAuthority(input)).toThrow();
   });
 });
