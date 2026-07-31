@@ -80,6 +80,12 @@ export function useLxdConnection() {
     async (
       config: LxdConnectionConfig,
     ): Promise<LxdConnectionSummary | null> => {
+      let acknowledgementAvailable =
+        config.acknowledge_invalid_cert_risk === true;
+      const reconnectConfig = {
+        ...config,
+        acknowledge_invalid_cert_risk: false,
+      };
       try {
         return await trackConnect(
           "lxd:global",
@@ -87,8 +93,13 @@ export function useLxdConnection() {
             setIsLoading(true);
             setError(null);
             try {
+              const attemptConfig = {
+                ...reconnectConfig,
+                acknowledge_invalid_cert_risk: acknowledgementAvailable,
+              };
+              acknowledgementAvailable = false;
               const result = await lxdConnectionApi.connect(
-                withGlobalHttpProxy(config, "camel"),
+                withGlobalHttpProxy(attemptConfig, "camel"),
               );
               if (!result.connected) {
                 throw new Error("LXD backend did not establish a connection");

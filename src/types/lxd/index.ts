@@ -28,6 +28,8 @@ export interface LxdConnectionConfig {
   oidcToken?: string;
   /** Skip TLS verification (self-signed certs). */
   skipTlsVerify: boolean;
+  /** Runtime-only acknowledgement for one insecure connection attempt. */
+  acknowledge_invalid_cert_risk?: boolean;
   /** Target project (default `"default"`). */
   project: string;
   /** Request timeout in seconds. */

@@ -23,6 +23,8 @@ import {
 } from "../../../types/lxd";
 import { useLxdConnection } from "../../../hooks/integration/lxd/useLxdConnection";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { lxdCategories, type LxdCategoryDescriptor } from "./registry";
 
 type AuthMethod = "tls" | "oidc";
@@ -73,6 +75,17 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
+  const effectiveTlsSkip =
+    config.skipTlsVerify && /^https:\/\//i.test(config.url.trim());
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: instanceId ?? `lxd:${config.url.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Hydrate the form from a saved instance (non-secret fields + vault secret).
   useEffect(() => {
@@ -151,15 +164,34 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
     return { ...config, oidcToken: undefined };
   }, [config, authMethod]);
 
-  const handleConnect = useCallback(async () => {
-    const err = validate();
-    if (err) {
-      setFormError(err);
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      const err = validate();
+      if (err) {
+        setFormError(err);
+        resetTlsAck();
+        return;
+      }
+      setFormError(null);
+      try {
+        await conn.connect({
+          ...effectiveConfig,
+          acknowledge_invalid_cert_risk: effectiveTlsSkip && acknowledged,
+        });
+      } finally {
+        resetTlsAck();
+      }
+    },
+    [validate, conn, effectiveConfig, effectiveTlsSkip, resetTlsAck],
+  );
+
+  const handleConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
       return;
     }
-    setFormError(null);
-    await conn.connect(effectiveConfig);
-  }, [validate, conn, effectiveConfig]);
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const handleSave = useCallback(async () => {
     const err = validate();
@@ -214,6 +246,22 @@ export const LxdPanel: React.FC<IntegrationPanelProps> = ({ instanceId }) => {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={config.url.trim() || "LXD endpoint"}
+        connectionName={name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <div className="flex items-center gap-2">
