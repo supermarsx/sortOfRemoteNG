@@ -56,7 +56,7 @@ pub async fn exec_soft(host: &OsDetectHost, program: &str, args: &[&str]) -> Str
 
 /// Check if a command is available on the host.
 pub async fn has_command(host: &OsDetectHost, cmd: &str) -> bool {
-    let (_, _, code) = exec(host, "sh", &["-c", &format!("command -v {cmd}")])
+    let (_, _, code) = exec(host, "sh", &["-c", "command -v \"$1\"", "sh", cmd])
         .await
         .unwrap_or_default();
     code == 0
