@@ -22,9 +22,9 @@
 //! The exchange itself is driven by the runspace pool — see
 //! [`crate::runspace::RunspacePool::request_session_key`].
 
-use aes::Aes256;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::Aes256;
 use rand::RngCore;
 use rsa::traits::PublicKeyParts;
 use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
@@ -109,9 +109,10 @@ impl ClientSessionKey {
     /// 32-byte AES key.
     pub fn decrypt_session_key(&self, ciphertext: &[u8]) -> Result<[u8; 32]> {
         let padding = Oaep::new::<Sha1>();
+        let mut rng = rand::thread_rng();
         let decrypted = self
             .private
-            .decrypt(padding, ciphertext)
+            .decrypt_blinded(&mut rng, padding, ciphertext)
             .map_err(|e| PsrpError::protocol(format!("session key unwrap: {e}")))?;
         if decrypted.len() != 32 {
             return Err(PsrpError::protocol(format!(
