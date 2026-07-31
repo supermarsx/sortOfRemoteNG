@@ -24,6 +24,11 @@ pub struct RabbitApiClient {
 impl RabbitApiClient {
     /// Create a new client from a connection configuration.
     pub fn new(config: &RabbitConnectionConfig) -> Result<Self, RabbitError> {
+        if !config.verify_cert {
+            return Err(RabbitError::connection_failed(
+                "TLS certificate verification cannot be disabled: verify_cert=false requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let scheme = if config.use_tls { "https" } else { "http" };
         let base_url = format!(
             "{}://{}:{}/api",
@@ -39,7 +44,7 @@ impl RabbitApiClient {
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .timeout(Duration::from_secs(config.timeout))
-            .danger_accept_invalid_certs(!config.verify_cert)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| RabbitError::connection_failed(e.to_string()))?;
 

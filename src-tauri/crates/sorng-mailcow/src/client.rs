@@ -21,9 +21,14 @@ pub struct MailcowClient {
 impl MailcowClient {
     /// Build a new client from the supplied config.
     pub fn new(config: MailcowConnectionConfig) -> MailcowResult<Self> {
+        if config.tls_skip_verify {
+            return Err(MailcowError::connection(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(config.tls_skip_verify);
+            .redirect(reqwest::redirect::Policy::none());
         if let Some(proxy_url) = config
             .proxy_url
             .as_deref()

@@ -30,12 +30,17 @@ pub struct SynoClient {
 impl SynoClient {
     /// Create a new client from config.
     pub fn new(config: &SynologyConfig) -> SynologyResult<Self> {
+        if config.insecure {
+            return Err(SynologyError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let scheme = if config.use_https { "https" } else { "http" };
         let base_url = format!("{scheme}://{}:{}", config.host, config.port);
 
         let http = Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
             .timeout(Duration::from_secs(config.timeout_secs))
+            .redirect(reqwest::redirect::Policy::none())
             .cookie_store(true)
             .build()?;
 

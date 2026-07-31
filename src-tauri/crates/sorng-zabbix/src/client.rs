@@ -23,10 +23,14 @@ type ZabbixResult<T> = Result<T, ZabbixError>;
 impl ZabbixClient {
     /// Create a new client, authenticate, and detect the API version.
     pub async fn new(config: &ZabbixConnectionConfig) -> ZabbixResult<Self> {
-        let skip_verify = config.tls_skip_verify.unwrap_or(false);
+        if config.tls_skip_verify.unwrap_or(false) {
+            return Err(ZabbixError::ConnectionFailed(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract".to_string(),
+            ));
+        }
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(30))
-            .danger_accept_invalid_certs(skip_verify)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| ZabbixError::ConnectionFailed(format!("http build: {e}")))?;
 

@@ -19,6 +19,11 @@ pub struct RoundcubeClient {
 
 impl RoundcubeClient {
     pub fn new(mut config: RoundcubeConnectionConfig) -> RoundcubeResult<Self> {
+        if config.tls_skip_verify.unwrap_or(false) {
+            return Err(RoundcubeError::connection(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         config.base_url = Self::validate_base_url(&config.base_url)?;
         let timeout_secs = config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
         if timeout_secs == 0 {
@@ -29,7 +34,7 @@ impl RoundcubeClient {
 
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(timeout_secs))
-            .danger_accept_invalid_certs(config.tls_skip_verify.unwrap_or(false))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| RoundcubeError::connection(format!("http client build: {e}")))?;
         Ok(Self {
