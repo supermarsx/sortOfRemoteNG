@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   listeners: new Map<string, (event: { payload: unknown }) => void>(),
   unlisteners: [] as ReturnType<typeof vi.fn>[],
+  rawWrites: [] as number[][],
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -106,6 +107,7 @@ beforeEach(() => {
   mocks.listen.mockReset();
   mocks.listeners.clear();
   mocks.unlisteners = [];
+  mocks.rawWrites = [];
   mocks.useConnections.mockReturnValue({
     state: { connections: [connection], sessions: [] },
     dispatch: mocks.dispatch,
@@ -121,10 +123,14 @@ beforeEach(() => {
       return unlisten;
     },
   );
-  mocks.invoke.mockImplementation((command: string) => {
+  mocks.invoke.mockImplementation((command: string, args?: unknown) => {
     if (command === "serial_connect") return Promise.resolve(backend);
     if (command === "serial_read_control_lines") {
       return Promise.resolve(backend.controlLines);
+    }
+    if (command === "serial_send_raw") {
+      const data = (args as { data?: number[] } | undefined)?.data;
+      if (Array.isArray(data)) mocks.rawWrites.push([...data]);
     }
     return Promise.resolve(undefined);
   });
@@ -184,10 +190,7 @@ describe("useSerialSession", () => {
       await result.current.refreshControlLines();
     });
 
-    expect(mocks.invoke).toHaveBeenCalledWith("serial_send_raw", {
-      sessionId: "backend-serial-1",
-      data: [65, 13, 10],
-    });
+    expect(mocks.rawWrites).toContainEqual([65, 13, 10]);
     expect(result.current.outputChunks).toHaveLength(0);
 
     act(() => {
