@@ -14,6 +14,9 @@ use crate::telnet::protocol::TelnetFrame;
 use crate::telnet::protocol::{DO, DONT, IAC, SB, SE, WILL, WONT};
 use crate::telnet::types::TelnetCommand;
 
+const MAX_SUBNEGOTIATION_BYTES: usize = 64 * 1024;
+const MAX_DECODE_INPUT_BYTES: usize = 1024 * 1024;
+
 /// Parser state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum State {
@@ -39,6 +42,7 @@ pub struct TelnetCodec {
     state: State,
     /// Accumulated data bytes (flushed when an IAC or end-of-buffer is hit).
     data_buf: Vec<u8>,
+    violation: Option<&'static str>,
 }
 
 impl TelnetCodec {
@@ -46,12 +50,18 @@ impl TelnetCodec {
         Self {
             state: State::Data,
             data_buf: Vec::with_capacity(1024),
+            violation: None,
         }
     }
 
     /// Decode a chunk of bytes from the network.
     /// Returns zero or more parsed frames.
     pub fn decode(&mut self, input: &[u8]) -> Vec<TelnetFrame> {
+        if input.len() > MAX_DECODE_INPUT_BYTES {
+            self.violation = Some("Telnet input chunk exceeded the size limit");
+            return Vec::new();
+        }
+
         let mut frames = Vec::new();
 
         for &byte in input {
@@ -109,6 +119,9 @@ impl TelnetCodec {
                 State::SubNegotiation { option, mut buf } => {
                     if byte == IAC {
                         self.state = State::SubNegotiationIac { option, buf };
+                    } else if buf.len() >= MAX_SUBNEGOTIATION_BYTES {
+                        self.violation = Some("Telnet sub-negotiation exceeded the size limit");
+                        self.state = State::Data;
                     } else {
                         buf.push(byte);
                         self.state = State::SubNegotiation { option, buf };
@@ -122,8 +135,14 @@ impl TelnetCodec {
                         }
                         IAC => {
                             // Escaped IAC inside sub-negotiation.
-                            buf.push(IAC);
-                            self.state = State::SubNegotiation { option, buf };
+                            if buf.len() >= MAX_SUBNEGOTIATION_BYTES {
+                                self.violation =
+                                    Some("Telnet sub-negotiation exceeded the size limit");
+                                self.state = State::Data;
+                            } else {
+                                buf.push(IAC);
+                                self.state = State::SubNegotiation { option, buf };
+                            }
                         }
                         _ => {
                             // Erroneous byte after IAC inside SB – recover
@@ -155,6 +174,11 @@ impl TelnetCodec {
         frames
     }
 
+    /// Return and clear the latest fatal protocol violation.
+    pub fn take_violation(&mut self) -> Option<&'static str> {
+        self.violation.take()
+    }
+
     /// Push accumulated data bytes as a `Data` frame.
     fn flush_data(&mut self, frames: &mut Vec<TelnetFrame>) {
         if !self.data_buf.is_empty() {
@@ -167,6 +191,7 @@ impl TelnetCodec {
     pub fn reset(&mut self) {
         self.state = State::Data;
         self.data_buf.clear();
+        self.violation = None;
     }
 }
 
