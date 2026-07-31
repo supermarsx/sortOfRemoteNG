@@ -15,7 +15,8 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 use crate::client::{
-    encode_dav_path, proppatch_favorite_body, proppatch_tags_body, NextcloudClient,
+    encode_dav_path, proppatch_favorite_body, proppatch_tags_body, read_response_text_limited,
+    NextcloudClient, MAX_RESPONSE_BYTES,
 };
 use crate::types::*;
 use sha2::{Digest, Sha256};
@@ -104,17 +105,25 @@ pub async fn chunked_upload_start(
     let upload_dir = format!("{}/{}", client.uploads_base(), session_id);
 
     // MKCOL to create the chunked-upload directory
-    let http = reqwest::Client::new();
-    let req = http
-        .request(reqwest::Method::from_bytes(b"MKCOL").expect("valid HTTP method"), &upload_dir)
-        .basic_auth(client.username(), Some(&String::new()))
+    let req = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"MKCOL").expect("valid HTTP method"),
+            &upload_dir,
+        )?
         .header("OCS-APIRequest", "true");
 
     // We use a direct call here because uploads_base already returns an absolute URL
-    let _resp = req
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("MKCOL upload dir: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!(
+            "chunked upload initialization failed with HTTP {}",
+            status
+        ));
+    }
 
     Ok(ChunkedUploadSession {
         session_id,
@@ -145,10 +154,8 @@ pub async fn chunked_upload_append(
         chunk_name
     );
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .put(&chunk_url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(reqwest::Method::PUT, &chunk_url)?
         .header("OCS-APIRequest", "true")
         .body(chunk_data)
         .send()
@@ -157,8 +164,10 @@ pub async fn chunked_upload_append(
 
     let status = resp.status();
     if !status.is_success() && status != reqwest::StatusCode::CREATED {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("chunk upload {} → {}: {}", chunk_url, status, text));
+        return Err(format!(
+            "chunk upload {} failed with HTTP {}",
+            chunk_url, status
+        ));
     }
 
     session.bytes_uploaded += chunk_size;
@@ -178,10 +187,11 @@ pub async fn chunked_upload_finish(
         encode_dav_path(&session.remote_path)
     );
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .request(reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"), &src_url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"),
+            &src_url,
+        )?
         .header("Destination", &dst_url)
         .header("Overwrite", "T")
         .header("OCS-APIRequest", "true")
@@ -197,8 +207,10 @@ pub async fn chunked_upload_finish(
         session.complete = true;
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("chunked finish {} → {}: {}", src_url, status, text))
+        Err(format!(
+            "chunked finish {} failed with HTTP {}",
+            src_url, status
+        ))
     }
 }
 
@@ -220,10 +232,11 @@ pub async fn list_versions(
   </d:prop>
 </d:propfind>"#;
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .request(reqwest::Method::from_bytes(b"PROPFIND").expect("valid HTTP method"), &url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"PROPFIND").expect("valid HTTP method"),
+            &url,
+        )?
         .header("Depth", "1")
         .header("Content-Type", "application/xml; charset=utf-8")
         .header("OCS-APIRequest", "true")
@@ -233,9 +246,10 @@ pub async fn list_versions(
         .map_err(|e| format!("list versions: {}", e))?;
 
     let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
 
     if status == reqwest::StatusCode::MULTI_STATUS || status.is_success() {
+        let text =
+            read_response_text_limited(resp, MAX_RESPONSE_BYTES, "versions PROPFIND").await?;
         let resources = crate::client::parse_multistatus_xml(&text)?;
         // Skip the first entry (the versions folder itself)
         let versions = resources
@@ -251,7 +265,7 @@ pub async fn list_versions(
             .collect();
         Ok(versions)
     } else {
-        Err(format!("list versions {} → {}: {}", url, status, text))
+        Err(format!("list versions {} failed with HTTP {}", url, status))
     }
 }
 
@@ -268,10 +282,11 @@ pub async fn restore_version(
         client.username()
     );
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .request(reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"), &src_url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"),
+            &src_url,
+        )?
         .header("Destination", &dst_url)
         .header("OCS-APIRequest", "true")
         .send()
@@ -285,10 +300,9 @@ pub async fn restore_version(
     {
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
         Err(format!(
-            "restore version {} → {}: {}",
-            src_url, status, text
+            "restore version {} failed with HTTP {}",
+            src_url, status
         ))
     }
 }
@@ -347,10 +361,11 @@ pub async fn restore_trash_item(
         encode_dav_path(destination_path)
     );
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .request(reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"), &src_url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"MOVE").expect("valid HTTP method"),
+            &src_url,
+        )?
         .header("Destination", &dst_url)
         .header("Overwrite", "F")
         .header("OCS-APIRequest", "true")
@@ -365,8 +380,10 @@ pub async fn restore_trash_item(
     {
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("restore trash {} → {}: {}", src_url, status, text))
+        Err(format!(
+            "restore trash {} failed with HTTP {}",
+            src_url, status
+        ))
     }
 }
 
@@ -381,10 +398,8 @@ pub async fn delete_trash_item(
         encode_dav_path(trash_item_name)
     );
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .delete(&url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(reqwest::Method::DELETE, &url)?
         .header("OCS-APIRequest", "true")
         .send()
         .await
@@ -394,8 +409,10 @@ pub async fn delete_trash_item(
     if status.is_success() || status == reqwest::StatusCode::NO_CONTENT {
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("delete trash item {} → {}: {}", url, status, text))
+        Err(format!(
+            "delete trash item {} failed with HTTP {}",
+            url, status
+        ))
     }
 }
 
@@ -403,10 +420,8 @@ pub async fn delete_trash_item(
 pub async fn empty_trash(client: &NextcloudClient) -> Result<(), String> {
     let url = client.trashbin_base();
 
-    let http = reqwest::Client::new();
-    let resp = http
-        .delete(&url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(reqwest::Method::DELETE, &url)?
         .header("OCS-APIRequest", "true")
         .send()
         .await
@@ -416,8 +431,7 @@ pub async fn empty_trash(client: &NextcloudClient) -> Result<(), String> {
     if status.is_success() || status == reqwest::StatusCode::NO_CONTENT {
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("empty trash {} → {}: {}", url, status, text))
+        Err(format!("empty trash {} failed with HTTP {}", url, status))
     }
 }
 
@@ -588,10 +602,11 @@ async fn propfind_raw(
     depth: &str,
     body: &str,
 ) -> Result<Vec<DavResource>, String> {
-    let http = reqwest::Client::new();
-    let resp = http
-        .request(reqwest::Method::from_bytes(b"PROPFIND").expect("valid HTTP method"), url)
-        .basic_auth(client.username(), Some(&String::new()))
+    let resp = client
+        .authenticated_webdav_request(
+            reqwest::Method::from_bytes(b"PROPFIND").expect("valid HTTP method"),
+            url,
+        )?
         .header("Depth", depth)
         .header("Content-Type", "application/xml; charset=utf-8")
         .header("OCS-APIRequest", "true")
@@ -601,12 +616,13 @@ async fn propfind_raw(
         .map_err(|e| format!("PROPFIND: {}", e))?;
 
     let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
 
     if status == reqwest::StatusCode::MULTI_STATUS || status.is_success() {
+        let text =
+            read_response_text_limited(resp, MAX_RESPONSE_BYTES, "raw PROPFIND response").await?;
         crate::client::parse_multistatus_xml(&text)
     } else {
-        Err(format!("PROPFIND {} → {}: {}", url, status, text))
+        Err(format!("PROPFIND {} failed with HTTP {}", url, status))
     }
 }
 

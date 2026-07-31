@@ -10,7 +10,7 @@
 //  • Create folder hierarchy
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::client::NextcloudClient;
+use crate::client::{NextcloudClient, MAX_COLLECTION_ITEMS};
 use crate::types::*;
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -81,11 +81,21 @@ pub async fn list_folder_recursive(
 
     while let Some(dir) = queue.pop() {
         let result = list_folder(client, &dir).await?;
+        if all.len().saturating_add(result.children.len()) > MAX_COLLECTION_ITEMS {
+            return Err(format!(
+                "recursive folder listing rejected: more than {MAX_COLLECTION_ITEMS} entries"
+            ));
+        }
         for child in &result.children {
             if child.resource_type == DavResourceType::Folder {
                 // Extract path from href for queuing
                 let child_path = dav_href_to_path(&child.href, client.username());
                 queue.push(child_path);
+                if queue.len().saturating_add(all.len()) > MAX_COLLECTION_ITEMS {
+                    return Err(format!(
+                        "recursive folder listing rejected: more than {MAX_COLLECTION_ITEMS} entries"
+                    ));
+                }
             }
         }
         all.extend(result.children);

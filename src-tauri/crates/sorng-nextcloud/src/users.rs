@@ -5,7 +5,9 @@
 // external storages, notifications.
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::client::NextcloudClient;
+use crate::client::{
+    read_response_json_limited, NextcloudClient, MAX_COLLECTION_ITEMS, MAX_METADATA_RESPONSE_BYTES,
+};
 use crate::types::*;
 
 // ── Current User ─────────────────────────────────────────────────────────────
@@ -60,7 +62,13 @@ pub async fn list_users(
     }
 
     let resp: OcsResponse<UsersData> = client.ocs_get(&url).await?;
-    Ok(resp.ocs.data.users)
+    let users = resp.ocs.data.users;
+    if users.len() > MAX_COLLECTION_ITEMS {
+        return Err(format!(
+            "user list rejected: more than {MAX_COLLECTION_ITEMS} entries"
+        ));
+    }
+    Ok(users)
 }
 
 /// List all groups (requires admin privileges).
@@ -90,7 +98,13 @@ pub async fn list_groups(
     }
 
     let resp: OcsResponse<GroupsData> = client.ocs_get(&url).await?;
-    Ok(resp.ocs.data.groups)
+    let groups = resp.ocs.data.groups;
+    if groups.len() > MAX_COLLECTION_ITEMS {
+        return Err(format!(
+            "group list rejected: more than {MAX_COLLECTION_ITEMS} entries"
+        ));
+    }
+    Ok(groups)
 }
 
 // ── Server Capabilities ──────────────────────────────────────────────────────
@@ -147,13 +161,10 @@ pub async fn get_server_status(base_url: &str) -> Result<ServerStatus, String> {
 
     let status = resp.status();
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("status.php {} → {}: {}", url, status, text));
+        return Err(format!("status.php {} failed with HTTP {}", url, status));
     }
 
-    resp.json::<ServerStatus>()
-        .await
-        .map_err(|e| format!("parse status.php: {}", e))
+    read_response_json_limited(resp, MAX_METADATA_RESPONSE_BYTES, "Nextcloud server status").await
 }
 
 /// Check if the server is in maintenance mode.

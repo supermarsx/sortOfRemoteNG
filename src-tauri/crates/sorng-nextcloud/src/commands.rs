@@ -27,20 +27,34 @@ fn get_client(state: &State<'_, NextcloudServiceState>) -> Result<NextcloudClien
     let server = svc
         .server_url
         .as_deref()
+        .filter(|value| !value.trim().is_empty())
         .ok_or("Nextcloud server URL not configured")?;
 
     match svc.auth_method {
         AuthMethod::AppPassword => {
-            let user = svc.username.as_deref().ok_or("Username not configured")?;
+            let user = svc
+                .username
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or("Username not configured")?;
             let pass = svc
                 .app_password
                 .as_deref()
+                .filter(|value| !value.is_empty())
                 .ok_or("App password not configured")?;
             Ok(NextcloudClient::with_credentials(server, user, pass))
         }
         AuthMethod::OAuth2 => {
-            let token = svc.bearer_token.as_deref().ok_or("Bearer token not set")?;
-            Ok(NextcloudClient::with_bearer(server, token))
+            let token = svc
+                .bearer_token
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or("Bearer token not set")?;
+            Ok(NextcloudClient::with_bearer_for_user(
+                server,
+                svc.username.as_deref().unwrap_or_default(),
+                token,
+            ))
         }
         AuthMethod::None => Err("Not connected to Nextcloud".to_string()),
     }
@@ -211,6 +225,13 @@ pub async fn nextcloud_exchange_oauth2_code(
 
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     svc.bearer_token = Some(resp.access_token.clone());
+    if let Some(user_id) = resp
+        .user_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        svc.username = Some(user_id.to_string());
+    }
     svc.oauth2_refresh_token = resp.refresh_token.clone();
     if let Some(exp) = resp.expires_in {
         svc.oauth2_token_expires_at =

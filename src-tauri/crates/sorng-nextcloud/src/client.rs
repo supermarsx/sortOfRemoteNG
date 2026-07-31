@@ -14,6 +14,9 @@ use reqwest::{header, Client, Method, RequestBuilder, Response, StatusCode};
 
 const MAX_RETRIES: u32 = 4;
 const INITIAL_BACKOFF_MS: u64 = 500;
+pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_METADATA_RESPONSE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_COLLECTION_ITEMS: usize = 50_000;
 
 /// Low-level Nextcloud HTTP client.
 #[derive(Debug, Clone)]
@@ -59,10 +62,14 @@ impl NextcloudClient {
     }
 
     pub fn with_bearer(base_url: &str, token: &str) -> Self {
+        Self::with_bearer_for_user(base_url, "", token)
+    }
+
+    pub fn with_bearer_for_user(base_url: &str, username: &str, token: &str) -> Self {
         Self {
             http: Client::new(),
             base_url: base_url.trim_end_matches('/').to_string(),
-            username: String::new(),
+            username: username.to_string(),
             password: String::new(),
             bearer_token: Some(token.to_string()),
         }
@@ -101,7 +108,14 @@ impl NextcloudClient {
     }
 
     pub fn is_configured(&self) -> bool {
-        !self.base_url.is_empty() && (!self.username.is_empty() || self.bearer_token.is_some())
+        if self.base_url.trim().is_empty() {
+            return false;
+        }
+
+        match self.bearer_token.as_deref() {
+            Some(token) => !token.trim().is_empty(),
+            None => !self.username.trim().is_empty() && !self.password.is_empty(),
+        }
     }
 
     pub fn auth_method(&self) -> AuthMethod {
@@ -174,6 +188,31 @@ impl NextcloudClient {
         }
     }
 
+    pub(crate) fn authenticated_webdav_request(
+        &self,
+        method: Method,
+        url: &str,
+    ) -> Result<RequestBuilder, String> {
+        if self.base_url.trim().is_empty() {
+            return Err("Nextcloud server URL not configured".to_string());
+        }
+        if self.username.trim().is_empty() {
+            return Err("Nextcloud username not configured for WebDAV".to_string());
+        }
+
+        match self.bearer_token.as_deref() {
+            Some(token) if token.trim().is_empty() => {
+                return Err("Nextcloud bearer token not configured".to_string());
+            }
+            None if self.password.is_empty() => {
+                return Err("Nextcloud app password not configured".to_string());
+            }
+            _ => {}
+        }
+
+        Ok(self.apply_auth(self.http.request(method, url)))
+    }
+
     // ── WebDAV methods ───────────────────────────────────────────────────
 
     /// Send a PROPFIND and parse the multistatus XML into `DavResource` items.
@@ -189,7 +228,10 @@ impl NextcloudClient {
 
         let req = self
             .http
-            .request(Method::from_bytes(b"PROPFIND").expect("valid HTTP method"), &url)
+            .request(
+                Method::from_bytes(b"PROPFIND").expect("valid HTTP method"),
+                &url,
+            )
             .header("Depth", depth.as_str())
             .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
             .header("OCS-APIRequest", "true")
@@ -197,12 +239,13 @@ impl NextcloudClient {
 
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| format!("read body: {}", e))?;
 
         if status == StatusCode::MULTI_STATUS || status.is_success() {
+            let text =
+                read_response_text_limited(resp, MAX_RESPONSE_BYTES, "PROPFIND response").await?;
             parse_multistatus_xml(&text)
         } else {
-            Err(format!("PROPFIND {} → {}: {}", url, status, text))
+            Err(format!("PROPFIND {} failed with HTTP {}", url, status))
         }
     }
 
@@ -211,7 +254,10 @@ impl NextcloudClient {
         let url = format!("{}/{}", self.dav_base(), encode_dav_path(path));
         let req = self
             .http
-            .request(Method::from_bytes(b"MKCOL").expect("valid HTTP method"), &url)
+            .request(
+                Method::from_bytes(b"MKCOL").expect("valid HTTP method"),
+                &url,
+            )
             .header("OCS-APIRequest", "true");
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         check_dav_success(resp, "MKCOL").await
@@ -246,8 +292,7 @@ impl NextcloudClient {
         {
             Ok(())
         } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("PUT {} → {}: {}", url, status, text))
+            Err(format!("PUT {} failed with HTTP {}", url, status))
         }
     }
 
@@ -258,13 +303,9 @@ impl NextcloudClient {
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
         if status.is_success() {
-            resp.bytes()
-                .await
-                .map(|b| b.to_vec())
-                .map_err(|e| format!("read bytes: {}", e))
+            read_response_bytes_limited(resp, MAX_RESPONSE_BYTES, "WebDAV download").await
         } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("GET {} → {}: {}", url, status, text))
+            Err(format!("GET {} failed with HTTP {}", url, status))
         }
     }
 
@@ -282,7 +323,10 @@ impl NextcloudClient {
         let dst_url = format!("{}/{}", self.dav_base(), encode_dav_path(to));
         let req = self
             .http
-            .request(Method::from_bytes(b"MOVE").expect("valid HTTP method"), &src_url)
+            .request(
+                Method::from_bytes(b"MOVE").expect("valid HTTP method"),
+                &src_url,
+            )
             .header("Destination", &dst_url)
             .header("Overwrite", if overwrite { "T" } else { "F" })
             .header("OCS-APIRequest", "true");
@@ -296,7 +340,10 @@ impl NextcloudClient {
         let dst_url = format!("{}/{}", self.dav_base(), encode_dav_path(to));
         let req = self
             .http
-            .request(Method::from_bytes(b"COPY").expect("valid HTTP method"), &src_url)
+            .request(
+                Method::from_bytes(b"COPY").expect("valid HTTP method"),
+                &src_url,
+            )
             .header("Destination", &dst_url)
             .header("Overwrite", if overwrite { "T" } else { "F" })
             .header("OCS-APIRequest", "true");
@@ -309,7 +356,10 @@ impl NextcloudClient {
         let url = format!("{}/{}", self.dav_base(), encode_dav_path(path));
         let req = self
             .http
-            .request(Method::from_bytes(b"PROPPATCH").expect("valid HTTP method"), &url)
+            .request(
+                Method::from_bytes(b"PROPPATCH").expect("valid HTTP method"),
+                &url,
+            )
             .header(header::CONTENT_TYPE, "application/xml; charset=utf-8")
             .header("OCS-APIRequest", "true")
             .body(body.to_string());
@@ -318,8 +368,7 @@ impl NextcloudClient {
         if status == StatusCode::MULTI_STATUS || status.is_success() {
             Ok(())
         } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("PROPPATCH {} → {}: {}", url, status, text))
+            Err(format!("PROPPATCH {} failed with HTTP {}", url, status))
         }
     }
 
@@ -401,12 +450,14 @@ impl NextcloudClient {
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
         if status.is_success() {
-            resp.json::<T>()
-                .await
-                .map_err(|e| format!("json parse: {}", e))
+            read_response_json_limited(
+                resp,
+                MAX_METADATA_RESPONSE_BYTES,
+                "Nextcloud metadata response",
+            )
+            .await
         } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("GET {} → {}: {}", url, status, text))
+            Err(format!("GET {} failed with HTTP {}", url, status))
         }
     }
 
@@ -416,12 +467,9 @@ impl NextcloudClient {
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
         if status.is_success() {
-            resp.bytes()
-                .await
-                .map(|b| b.to_vec())
-                .map_err(|e| format!("read bytes: {}", e))
+            read_response_bytes_limited(resp, MAX_RESPONSE_BYTES, "Nextcloud binary response").await
         } else {
-            Err(format!("GET bytes {} → {}", url, status))
+            Err(format!("GET bytes {} failed with HTTP {}", url, status))
         }
     }
 
@@ -440,12 +488,9 @@ impl NextcloudClient {
         let resp = self.send_with_retry(self.apply_auth(req)).await?;
         let status = resp.status();
         if status.is_success() {
-            resp.json::<R>()
-                .await
-                .map_err(|e| format!("json parse: {}", e))
+            read_response_json_limited(resp, MAX_RESPONSE_BYTES, "Nextcloud JSON response").await
         } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("POST {} → {}: {}", url, status, text))
+            Err(format!("POST {} failed with HTTP {}", url, status))
         }
     }
 
@@ -573,9 +618,58 @@ async fn check_dav_success(resp: Response, method: &str) -> Result<(), String> {
     {
         Ok(())
     } else {
-        let text = resp.text().await.unwrap_or_default();
-        Err(format!("{} → {}: {}", method, status, text))
+        Err(format!("{} failed with HTTP {}", method, status))
     }
+}
+
+pub(crate) async fn read_response_bytes_limited(
+    mut resp: Response,
+    limit: usize,
+    context: &str,
+) -> Result<Vec<u8>, String> {
+    let declared = resp.content_length();
+    if declared.is_some_and(|size| size > limit as u64) {
+        return Err(format!(
+            "{context} rejected: declared response exceeds {limit} bytes"
+        ));
+    }
+
+    let mut body = Vec::with_capacity(declared.unwrap_or(0).min(limit as u64) as usize);
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("{context}: failed to read response: {e}"))?
+    {
+        let next_len = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| format!("{context} rejected: response size overflow"))?;
+        if next_len > limit {
+            return Err(format!(
+                "{context} rejected: streamed response exceeds {limit} bytes"
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+pub(crate) async fn read_response_text_limited(
+    resp: Response,
+    limit: usize,
+    context: &str,
+) -> Result<String, String> {
+    let body = read_response_bytes_limited(resp, limit, context).await?;
+    String::from_utf8(body).map_err(|e| format!("{context}: response is not valid UTF-8: {e}"))
+}
+
+pub(crate) async fn read_response_json_limited<T: serde::de::DeserializeOwned>(
+    resp: Response,
+    limit: usize,
+    context: &str,
+) -> Result<T, String> {
+    let body = read_response_bytes_limited(resp, limit, context).await?;
+    serde_json::from_slice(&body).map_err(|e| format!("{context}: invalid JSON: {e}"))
 }
 
 /// Parse an OCS JSON response.
@@ -583,22 +677,10 @@ async fn parse_ocs_json<T: serde::de::DeserializeOwned>(
     resp: Response,
 ) -> Result<OcsResponse<T>, String> {
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("read body: {}", e))?;
-
     if status.is_success() {
-        serde_json::from_str::<OcsResponse<T>>(&text).map_err(|e| {
-            format!(
-                "OCS JSON parse error: {} – body: {}",
-                e,
-                &text[..text.len().min(500)]
-            )
-        })
+        read_response_json_limited(resp, MAX_RESPONSE_BYTES, "OCS JSON response").await
     } else {
-        Err(format!(
-            "OCS request failed {}: {}",
-            status,
-            &text[..text.len().min(500)]
-        ))
+        Err(format!("OCS request failed with HTTP {}", status))
     }
 }
 

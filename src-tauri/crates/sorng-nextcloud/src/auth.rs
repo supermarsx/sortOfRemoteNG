@@ -8,7 +8,7 @@
 //  • Credential lifecycle helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::client::NextcloudClient;
+use crate::client::{read_response_json_limited, NextcloudClient, MAX_METADATA_RESPONSE_BYTES};
 use crate::types::*;
 use log::{debug, info};
 
@@ -29,14 +29,15 @@ pub async fn start_login_flow_v2(base_url: &str) -> Result<LoginFlowV2State, Str
 
     let status = resp.status();
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("login flow v2 init {} → {}: {}", url, status, text));
+        return Err(format!(
+            "login flow v2 init {} failed with HTTP {}",
+            url, status
+        ));
     }
 
-    let init: LoginFlowV2Init = resp
-        .json()
-        .await
-        .map_err(|e| format!("parse login flow v2 response: {}", e))?;
+    let init: LoginFlowV2Init =
+        read_response_json_limited(resp, MAX_METADATA_RESPONSE_BYTES, "login flow v2 response")
+            .await?;
 
     Ok(LoginFlowV2State {
         login_url: init.login,
@@ -66,14 +67,15 @@ pub async fn poll_login_flow_v2(
     }
 
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("login flow v2 poll failed {}: {}", status, text));
+        return Err(format!("login flow v2 poll failed with HTTP {}", status));
     }
 
-    let creds: LoginFlowV2Credentials = resp
-        .json()
-        .await
-        .map_err(|e| format!("parse login flow v2 credentials: {}", e))?;
+    let creds: LoginFlowV2Credentials = read_response_json_limited(
+        resp,
+        MAX_METADATA_RESPONSE_BYTES,
+        "login flow v2 credentials",
+    )
+    .await?;
 
     info!(
         "Login Flow v2 completed – server={}, user={}",
@@ -161,16 +163,13 @@ pub async fn exchange_oauth2_code(
 
     let status = resp.status();
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
         return Err(format!(
-            "oauth2 token exchange {} → {}: {}",
-            url, status, text
+            "oauth2 token exchange {} failed with HTTP {}",
+            url, status
         ));
     }
 
-    resp.json::<OAuthTokenResponse>()
-        .await
-        .map_err(|e| format!("parse oauth2 token: {}", e))
+    read_response_json_limited(resp, MAX_METADATA_RESPONSE_BYTES, "OAuth token response").await
 }
 
 /// Refresh an OAuth 2 access token.
@@ -200,13 +199,13 @@ pub async fn refresh_oauth2_token(
 
     let status = resp.status();
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("oauth2 refresh {} → {}: {}", url, status, text));
+        return Err(format!(
+            "oauth2 refresh {} failed with HTTP {}",
+            url, status
+        ));
     }
 
-    resp.json::<OAuthTokenResponse>()
-        .await
-        .map_err(|e| format!("parse refreshed token: {}", e))
+    read_response_json_limited(resp, MAX_METADATA_RESPONSE_BYTES, "OAuth refresh response").await
 }
 
 // ── App password validation ──────────────────────────────────────────────────
