@@ -41,7 +41,6 @@ impl CupsSession {
         let timeout = std::time::Duration::from_secs(config.timeout_secs);
         let client = reqwest::Client::builder()
             .timeout(timeout)
-            .danger_accept_invalid_certs(!config.use_tls)
             .build()
             .map_err(|e| CupsError::connection_failed(format!("HTTP client init: {e}")))?;
         Ok(Self { config, client })
