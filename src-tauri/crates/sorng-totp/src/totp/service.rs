@@ -384,15 +384,24 @@ impl TotpService {
         })
     }
 
-    /// Save vault as encrypted JSON (if password set) or plain JSON.
+    /// Save the vault as encrypted JSON.
+    ///
+    /// A password must be configured before serialisation so callers can never
+    /// receive a plaintext representation containing TOTP secrets.
     pub fn save_vault(&self) -> Result<String, TotpError> {
         self.require_unlocked()?;
+        let password = self
+            .vault_password
+            .as_deref()
+            .filter(|password| !password.is_empty())
+            .ok_or_else(|| {
+                TotpError::new(
+                    TotpErrorKind::VaultLocked,
+                    "Vault password required before saving",
+                )
+            })?;
         let json = self.vault.to_json()?;
-        if let Some(ref pw) = self.vault_password {
-            crypto::encrypt_vault(&json, pw)
-        } else {
-            Ok(json)
-        }
+        crypto::encrypt_vault(&json, password)
     }
 
     /// Load vault from JSON (auto-detects encrypted vs plain).
@@ -572,23 +581,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_and_load_plaintext() {
+    async fn save_without_password_fails_closed_and_redacts_secrets() {
         let mut svc = new_svc().await;
-        svc.add_entry(TotpEntry::new("a", "AAAA")).unwrap();
-        let json = svc.save_vault().unwrap();
+        svc.add_entry(TotpEntry::new(
+            "sensitive-account-label",
+            "JBSWY3DPEHPK3PXP",
+        ))
+        .unwrap();
 
-        let mut svc2 = new_svc().await;
-        svc2.load_vault(&json, None).unwrap();
-        assert_eq!(svc2.vault.entry_count(), 1);
+        let error = svc.save_vault().unwrap_err();
+        assert_eq!(error.kind, TotpErrorKind::VaultLocked);
+        assert_eq!(error.message, "Vault password required before saving");
+        assert!(error.detail.is_none());
+        let rendered = error.to_string();
+        assert!(!rendered.contains("sensitive-account-label"));
+        assert!(!rendered.contains("JBSWY3DPEHPK3PXP"));
     }
 
     #[tokio::test]
     async fn save_and_load_encrypted() {
         let mut svc = new_svc().await;
         svc.set_password("test-pw-123!");
-        svc.add_entry(TotpEntry::new("a", "AAAA")).unwrap();
+        svc.add_entry(TotpEntry::new("a", "JBSWY3DPEHPK3PXP"))
+            .unwrap();
         let enc = svc.save_vault().unwrap();
         assert!(enc.contains("ciphertext"));
+        assert!(!enc.contains("JBSWY3DPEHPK3PXP"));
 
         let mut svc2 = new_svc().await;
         svc2.load_vault(&enc, Some("test-pw-123!")).unwrap();
