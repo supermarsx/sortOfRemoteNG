@@ -12864,6 +12864,7 @@ dependencies = [
 name = "sorng-vnc"
 version = "26.1.0"
 dependencies = [
+ "sorng-ssh",
  "aes 0.8.4",
  "byteorder",
  "bytes",
