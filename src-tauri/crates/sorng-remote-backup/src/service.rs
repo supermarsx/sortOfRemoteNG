@@ -44,10 +44,20 @@ impl RemoteBackupService {
 
     /// Add a new backup job.
     pub fn add_job(&mut self, mut job: BackupJob) -> Result<String, BackupError> {
+        if self.jobs.len() >= 1000 {
+            return Err(BackupError::ConfigError(
+                "at most 1000 backup jobs may be registered".into(),
+            ));
+        }
         if job.id.is_empty() {
             job.id = Uuid::new_v4().to_string();
         }
         let id = job.id.clone();
+        if self.jobs.contains_key(&id) {
+            return Err(BackupError::ConfigError(format!(
+                "backup job ID {id} is already registered"
+            )));
+        }
         job.created_at = Utc::now();
         job.updated_at = Utc::now();
         info!("Adding backup job: {} ({})", job.name, id);
