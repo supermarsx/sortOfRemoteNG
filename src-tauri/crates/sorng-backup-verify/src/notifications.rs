@@ -163,38 +163,22 @@ impl NotificationDispatcher {
             };
         }
 
-        // Build a simple email body
-        let subject = format!(
-            "[Backup] {} — {}",
-            notification.event, notification.severity
-        );
-        let _body = format!(
-            "Event: {}\nSeverity: {}\nMessage: {}\nTime: {}\nPolicy: {}\nJob: {}",
+        // Configuration is present, but there is no SMTP transport in this
+        // crate yet. Do not construct or log the payload, recipient addresses,
+        // credentials, or endpoint details, and never report a simulated send.
+        let _ = smtp;
+        warn!(
+            "Email dispatch rejected: transport unavailable (recipients={}, event={}, severity={}, message_bytes={})",
+            recipients.len(),
             notification.event,
             notification.severity,
-            notification.message,
-            notification.timestamp,
-            notification.policy_id.as_deref().unwrap_or("N/A"),
-            notification.job_id.as_deref().unwrap_or("N/A"),
+            notification.message.len()
         );
 
-        info!(
-            "Email: {} -> {} recipients via {}:{}",
-            subject,
-            recipients.len(),
-            smtp.host,
-            smtp.port
-        );
-
-        // Actual SMTP send would go here. We record success for local dispatch.
         DispatchResult {
             channel: NotifyChannel::Email,
-            success: true,
-            message: format!(
-                "Email queued to {} recipients: {}",
-                recipients.len(),
-                subject
-            ),
+            success: false,
+            message: "Email transport is not implemented; no message was sent".into(),
             sent_at: Utc::now(),
         }
     }
@@ -218,22 +202,21 @@ impl NotificationDispatcher {
             };
         }
 
-        let _payload = serde_json::json!({
-            "event": notification.event.to_string(),
-            "severity": notification.severity.to_string(),
-            "message": notification.message,
-            "timestamp": notification.timestamp.to_rfc3339(),
-            "policy_id": notification.policy_id,
-            "job_id": notification.job_id,
-        });
+        // No HTTP client is wired here. Avoid constructing or logging the
+        // payload and endpoint URLs, and fail closed rather than simulating a
+        // successful delivery.
+        warn!(
+            "Webhook dispatch rejected: transport unavailable (targets={}, event={}, severity={}, message_bytes={})",
+            urls.len(),
+            notification.event,
+            notification.severity,
+            notification.message.len()
+        );
 
-        info!("Webhook: posting to {} URLs", urls.len());
-
-        // Actual HTTP POST would go here.
         DispatchResult {
             channel: NotifyChannel::Webhook,
-            success: true,
-            message: format!("Webhook dispatched to {} URLs", urls.len()),
+            success: false,
+            message: "Webhook transport is not implemented; no request was sent".into(),
             sent_at: Utc::now(),
         }
     }
@@ -266,20 +249,18 @@ impl NotificationDispatcher {
             FindingSeverity::Info => 6,
         };
 
-        let msg = format!(
-            "<{}> {} sorng-backup-verify: {} — {}",
+        let _ = target;
+        warn!(
+            "Syslog dispatch rejected: transport unavailable (severity_code={}, event={}, message_bytes={}, target redacted)",
             severity_code,
-            notification.timestamp.to_rfc3339(),
             notification.event,
-            notification.message
+            notification.message.len()
         );
-
-        info!("Syslog -> {}: {}", target, msg);
 
         DispatchResult {
             channel: NotifyChannel::Syslog,
-            success: true,
-            message: format!("Syslog sent to {}", target),
+            success: false,
+            message: "Syslog transport is not implemented; no message was sent".into(),
             sent_at: Utc::now(),
         }
     }
@@ -304,15 +285,18 @@ impl NotificationDispatcher {
             }
         };
 
-        info!(
-            "SNMP trap -> {}: {} ({})",
-            target, notification.event, notification.severity
+        let _ = target;
+        warn!(
+            "SNMP dispatch rejected: transport unavailable (event={}, severity={}, message_bytes={}, target redacted)",
+            notification.event,
+            notification.severity,
+            notification.message.len()
         );
 
         DispatchResult {
             channel: NotifyChannel::Snmp,
-            success: true,
-            message: format!("SNMP trap sent to {}", target),
+            success: false,
+            message: "SNMP transport is not implemented; no trap was sent".into(),
             sent_at: Utc::now(),
         }
     }
