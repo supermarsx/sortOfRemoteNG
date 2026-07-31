@@ -767,15 +767,16 @@ mod t57_secret_hardening_tests {
 
     #[test]
     fn public_summary_excludes_secret_and_disconnect_clears_all_credentials() {
-        let mut service = AzureService::new();
+        let state = AzureService::new();
+        let mut service = state.try_lock().unwrap();
         let credentials = AzureCredentials {
             tenant_id: "tenant-a".into(),
             client_id: "client-a".into(),
             client_secret: AZURE_SENTINEL.into(),
             subscription_id: "subscription-a".into(),
+            ..Default::default()
         };
-        service.client.set_credentials(credentials.clone());
-        service.credentials = Some(credentials);
+        service.set_credentials(credentials);
 
         let serialized = serde_json::to_string(&service.connection_summary())
             .expect("Azure public connection summary should serialize");
