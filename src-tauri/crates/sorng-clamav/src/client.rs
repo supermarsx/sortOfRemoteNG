@@ -121,7 +121,7 @@ impl ClamavClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> ClamavResult<SshOutput> {
-        debug!("CLAMAV SSH [{}]: {}", self.config.host, command);
+        debug!("Executing ClamAV SSH command on {}", self.config.host);
         let stdout = self
             .ssh
             .execute(

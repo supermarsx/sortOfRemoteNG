@@ -92,7 +92,7 @@ impl DovecotClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> DovecotResult<SshOutput> {
-        debug!("DOVECOT SSH [{}]: {}", self.config.host, command);
+        debug!("Executing Dovecot SSH command on {}", self.config.host);
         let stdout = self
             .ssh
             .execute(

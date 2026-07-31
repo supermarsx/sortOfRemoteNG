@@ -77,7 +77,7 @@ impl PostfixClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> PostfixResult<SshOutput> {
-        debug!("POSTFIX SSH [{}]: {}", self.config.host, command);
+        debug!("Executing Postfix SSH command on {}", self.config.host);
         #[cfg(test)]
         if let Some(scripted_ssh) = &self.scripted_ssh {
             let stdout = scripted_ssh.execute(command).map_err(PostfixError::ssh)?;

@@ -80,7 +80,7 @@ impl OpendkimClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> OpendkimResult<SshOutput> {
-        debug!("OPENDKIM SSH [{}]: {}", self.config.host, command);
+        debug!("Executing OpenDKIM SSH command on {}", self.config.host);
         #[cfg(test)]
         if let Some(scripted_ssh) = &self.scripted_ssh {
             let stdout = scripted_ssh.execute(command).map_err(OpendkimError::ssh)?;

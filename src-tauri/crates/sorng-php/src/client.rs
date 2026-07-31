@@ -95,7 +95,7 @@ impl PhpClient {
     // ── SSH command execution stub ───────────────────────────────────
 
     pub async fn exec_ssh(&self, command: &str) -> PhpResult<SshOutput> {
-        debug!("PHP SSH [{}]: {}", self.config.host, command);
+        debug!("Executing PHP SSH command on {}", self.config.host);
         let stdout = self
             .ssh
             .execute(

@@ -109,7 +109,7 @@ impl HaproxyClient {
     }
 
     pub async fn exec_ssh(&self, command: &str) -> HaproxyResult<SshOutput> {
-        debug!("HAPROXY SSH [{}]: {}", self.config.host, command);
+        debug!("Executing HAProxy SSH command on {}", self.config.host);
         let stdout = self
             .ssh
             .execute(

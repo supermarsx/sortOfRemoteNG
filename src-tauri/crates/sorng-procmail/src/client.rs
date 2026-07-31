@@ -90,7 +90,7 @@ impl ProcmailClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> ProcmailResult<SshOutput> {
-        debug!("PROCMAIL SSH [{}]: {}", self.config.host, command);
+        debug!("Executing Procmail SSH command on {}", self.config.host);
         #[cfg(test)]
         if let Some(scripted_ssh) = &self.scripted_ssh {
             let stdout = scripted_ssh.execute(command).map_err(ProcmailError::ssh)?;

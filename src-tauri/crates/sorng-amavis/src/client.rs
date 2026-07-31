@@ -64,7 +64,7 @@ impl AmavisClient {
 
     /// Execute a command via SSH and return the output.
     pub async fn ssh_exec(&self, command: &str) -> AmavisResult<SshOutput> {
-        debug!("AMAVIS SSH [{}]: {}", self.config.host, command);
+        debug!("Executing Amavis SSH command on {}", self.config.host);
 
         let stdout = self
             .ssh

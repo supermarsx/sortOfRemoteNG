@@ -124,7 +124,7 @@ impl NginxClient {
     // We model them as async methods returning structured types.
 
     pub async fn exec_ssh(&self, command: &str) -> NginxResult<SshOutput> {
-        debug!("NGX SSH [{}]: {}", self.config.host, command);
+        debug!("Executing Nginx SSH command on {}", self.config.host);
         let stdout = self
             .ssh
             .execute(
