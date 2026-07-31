@@ -100,14 +100,12 @@ impl RenewalScheduler {
     pub fn record_attempt(&mut self, attempt: RenewalAttempt) {
         // Emit events based on result
         match attempt.result {
-            RenewalResult::Success => {
-                if self.config.notify_on_renewal {
-                    self.events.push(LetsEncryptEvent::CertificateRenewed {
-                        certificate_id: attempt.certificate_id.clone(),
-                        domains: Vec::new(), // Filled in by the caller
-                        renewal_count: 0,
-                    });
-                }
+            RenewalResult::Success if self.config.notify_on_renewal => {
+                self.events.push(LetsEncryptEvent::CertificateRenewed {
+                    certificate_id: attempt.certificate_id.clone(),
+                    domains: Vec::new(), // Filled in by the caller
+                    renewal_count: 0,
+                });
             }
             RenewalResult::Failed if self.config.notify_on_failure => {
                 self.events.push(LetsEncryptEvent::RenewalFailed {
