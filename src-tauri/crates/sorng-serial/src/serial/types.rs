@@ -209,6 +209,22 @@ pub struct ControlLines {
     pub dcd: bool,
 }
 
+pub const MAX_SERIAL_PORT_NAME_BYTES: usize = 512;
+pub const MAX_SERIAL_LABEL_BYTES: usize = 512;
+pub const MIN_SERIAL_BAUD_RATE: u32 = 50;
+pub const MAX_SERIAL_BAUD_RATE: u32 = 4_000_000;
+pub const MIN_SERIAL_BUFFER_SIZE: usize = 64;
+pub const MAX_SERIAL_BUFFER_SIZE: usize = 1024 * 1024;
+pub const MAX_SERIAL_TIMEOUT_MS: u64 = 5 * 60 * 1000;
+pub const MAX_SERIAL_CHAR_DELAY_MS: u64 = 60 * 1000;
+pub const MAX_SERIAL_PAYLOAD_BYTES: usize = 1024 * 1024;
+pub const MAX_SERIAL_HEX_INPUT_BYTES: usize = MAX_SERIAL_PAYLOAD_BYTES * 3;
+pub const MAX_SERIAL_ERROR_BYTES: usize = 4096;
+pub const MAX_SERIAL_SESSION_ID_BYTES: usize = 128;
+pub const MAX_SERIAL_BREAK_MS: u32 = 60 * 1000;
+pub const MAX_SERIAL_MODEM_COMMAND_BYTES: usize = 4096;
+pub const MAX_SERIAL_MODEM_RESPONSE_BYTES: usize = 1024 * 1024;
+
 /// Complete serial port configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -317,6 +333,69 @@ impl Default for SerialConfig {
 }
 
 impl SerialConfig {
+    /// Validate all resource-affecting fields before opening a device or
+    /// allocating session buffers.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.port_name.trim().is_empty() {
+            return Err("Serial port name cannot be empty".to_string());
+        }
+        if self.port_name.len() > MAX_SERIAL_PORT_NAME_BYTES {
+            return Err(format!(
+                "Serial port name exceeds {} bytes",
+                MAX_SERIAL_PORT_NAME_BYTES
+            ));
+        }
+        if self.port_name.chars().any(char::is_control) {
+            return Err("Serial port name contains control characters".to_string());
+        }
+
+        let baud = self.baud_rate.value();
+        if !(MIN_SERIAL_BAUD_RATE..=MAX_SERIAL_BAUD_RATE).contains(&baud) {
+            return Err(format!(
+                "Baud rate must be between {} and {}",
+                MIN_SERIAL_BAUD_RATE, MAX_SERIAL_BAUD_RATE
+            ));
+        }
+
+        for (name, value) in [
+            ("receive", self.rx_buffer_size),
+            ("transmit", self.tx_buffer_size),
+        ] {
+            if !(MIN_SERIAL_BUFFER_SIZE..=MAX_SERIAL_BUFFER_SIZE).contains(&value) {
+                return Err(format!(
+                    "Serial {} buffer must be between {} and {} bytes",
+                    name, MIN_SERIAL_BUFFER_SIZE, MAX_SERIAL_BUFFER_SIZE
+                ));
+            }
+        }
+
+        if self.read_timeout_ms > MAX_SERIAL_TIMEOUT_MS
+            || self.write_timeout_ms > MAX_SERIAL_TIMEOUT_MS
+        {
+            return Err(format!(
+                "Serial timeouts cannot exceed {} ms",
+                MAX_SERIAL_TIMEOUT_MS
+            ));
+        }
+        if self.char_delay_ms > MAX_SERIAL_CHAR_DELAY_MS {
+            return Err(format!(
+                "Inter-character delay cannot exceed {} ms",
+                MAX_SERIAL_CHAR_DELAY_MS
+            ));
+        }
+        if self
+            .label
+            .as_ref()
+            .is_some_and(|label| label.len() > MAX_SERIAL_LABEL_BYTES)
+        {
+            return Err(format!(
+                "Serial label exceeds {} bytes",
+                MAX_SERIAL_LABEL_BYTES
+            ));
+        }
+        Ok(())
+    }
+
     /// Shorthand notation (e.g. "9600-8N1").
     pub fn shorthand(&self) -> String {
         format!(
