@@ -8,6 +8,10 @@ use std::mem::size_of;
 #[cfg(windows)]
 use std::ptr::{null, null_mut};
 #[cfg(windows)]
+use std::process::Stdio;
+#[cfg(windows)]
+use tokio::io::{AsyncRead, AsyncReadExt};
+#[cfg(windows)]
 use windows_sys::Win32::NetworkManagement::Rras::{RasDialW, RasHangUpW, RASDIALPARAMSW};
 #[cfg(windows)]
 use zeroize::{Zeroize, Zeroizing};
@@ -34,6 +38,8 @@ const SET_IPSEC_POLICY_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Set-VpnC
 const SET_ROUTING_MODE_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; $split = $env:SORNG_VPN_SPLIT_TUNNELING -eq 'true'; Set-VpnConnection -Name $env:SORNG_VPN_ENTRY_NAME -SplitTunneling $split -Force";
 #[cfg(windows)]
 const ADD_ROUTE_SCRIPT: &str = "$ErrorActionPreference = 'Stop'; Add-VpnConnectionRoute -ConnectionName $env:SORNG_VPN_ENTRY_NAME -DestinationPrefix $env:SORNG_VPN_DESTINATION_PREFIX -PassThru:$false";
+#[cfg(windows)]
+const POWERSHELL_OUTPUT_LIMIT_BYTES: usize = 64 * 1024;
 
 #[cfg(windows)]
 #[derive(Debug)]
@@ -43,11 +49,56 @@ struct PowerShellInvocation {
 }
 
 #[cfg(windows)]
+struct CappedPipeOutput {
+    retained: Vec<u8>,
+    exceeded_limit: bool,
+}
+
+#[cfg(windows)]
+async fn drain_capped_pipe<R>(mut reader: R) -> std::io::Result<CappedPipeOutput>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut retained = Vec::with_capacity(POWERSHELL_OUTPUT_LIMIT_BYTES);
+    let mut exceeded_limit = false;
+    let mut buffer = [0_u8; 8 * 1024];
+
+    loop {
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+
+        let remaining = POWERSHELL_OUTPUT_LIMIT_BYTES.saturating_sub(retained.len());
+        let retain = read.min(remaining);
+        retained.extend_from_slice(&buffer[..retain]);
+        exceeded_limit |= read > retain;
+    }
+
+    Ok(CappedPipeOutput {
+        retained,
+        exceeded_limit,
+    })
+}
+
+#[cfg(windows)]
+fn sanitized_process_error(operation: &str, error: &std::io::Error) -> String {
+    let reason = match error.kind() {
+        std::io::ErrorKind::NotFound => "executable was not found",
+        std::io::ErrorKind::PermissionDenied => "permission was denied",
+        std::io::ErrorKind::TimedOut => "operation timed out",
+        _ => "process operation failed",
+    };
+    format!("PowerShell {operation}: {reason}")
+}
+
+#[cfg(windows)]
 async fn run_powershell(
     invocation: PowerShellInvocation,
     operation: &str,
 ) -> Result<std::process::Output, String> {
-    let binary = platform::resolve_binary("powershell")?;
+    let binary = platform::resolve_binary("powershell")
+        .map_err(|_| format!("PowerShell {operation}: executable is unavailable"))?;
     let mut command = tokio::process::Command::new(binary);
     command.args([
         "-NoProfile",
@@ -58,17 +109,66 @@ async fn run_powershell(
     for (key, value) in invocation.environment {
         command.env(key, value);
     }
-    let output = command
-        .output()
-        .await
-        .map_err(|error| format!("PowerShell {operation} error: {error}"))?;
-    if !output.status.success() {
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| sanitized_process_error(operation, &error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("PowerShell {operation}: stdout pipe unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("PowerShell {operation}: stderr pipe unavailable"))?;
+
+    let completion = async {
+        tokio::join!(
+            drain_capped_pipe(stdout),
+            drain_capped_pipe(stderr),
+            child.wait()
+        )
+    };
+    let (stdout, stderr, status) = match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        completion,
+    )
+    .await
+    {
+        Ok(completion) => completion,
+        Err(_) => {
+            let _ = child.start_kill();
+            return Err(format!("PowerShell {operation} timed out"));
+        }
+    };
+
+    let stdout = stdout.map_err(|error| sanitized_process_error(operation, &error))?;
+    let stderr = stderr.map_err(|error| sanitized_process_error(operation, &error))?;
+    let status = status.map_err(|error| sanitized_process_error(operation, &error))?;
+
+    if stdout.exceeded_limit || stderr.exceeded_limit {
         return Err(format!(
-            "PowerShell {operation} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "PowerShell {operation} output exceeded the safety limit"
         ));
     }
-    Ok(output)
+    if !status.success() {
+        let exit = status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "unavailable".to_string());
+        return Err(format!(
+            "PowerShell {operation} failed with exit code {exit}"
+        ));
+    }
+    Ok(std::process::Output {
+        status,
+        stdout: stdout.retained,
+        stderr: stderr.retained,
+    })
 }
 
 #[cfg(windows)]
