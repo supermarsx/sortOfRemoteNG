@@ -1,8 +1,5 @@
 use super::service::RustDeskService;
 use super::types::*;
-use chrono::Utc;
-use std::process::Stdio;
-use uuid::Uuid;
 
 /// File transfer operations via RustDesk.
 impl RustDeskService {
@@ -19,73 +16,17 @@ impl RustDeskService {
         password: Option<&str>,
         use_relay: bool,
     ) -> Result<String, String> {
-        // Look up the session to get the remote_id
-        let remote_id = self
-            .connections
-            .get(session_id)
-            .map(|r| r.session.remote_id.clone())
-            .ok_or_else(|| format!("Session {} not found", session_id))?;
-
-        let transfer_id = Uuid::new_v4().to_string();
-
-        let transfer = RustDeskFileTransfer {
-            id: transfer_id.clone(),
-            session_id: session_id.to_string(),
-            direction: direction.clone(),
-            local_path: local_path.to_string(),
-            remote_path: remote_path.to_string(),
-            file_name: file_name.to_string(),
-            total_bytes,
-            transferred_bytes: 0,
-            status: FileTransferStatus::Queued,
-            started_at: Utc::now(),
-            completed_at: None,
-            error: None,
-        };
-
-        self.file_transfers.insert(transfer_id.clone(), transfer);
-
-        // Start the RustDesk file-transfer process via CLI
-        let binary = self
-            .binary_path()
-            .ok_or_else(|| "RustDesk binary not found".to_string())?
-            .to_string();
-
-        let mut remote = remote_id.clone();
-        if use_relay && !remote.ends_with("/r") {
-            remote.push_str("/r");
-        }
-
-        let mut args = vec!["--file-transfer".to_string(), remote];
-
-        if let Some(pw) = password {
-            args.push("--password".to_string());
-            args.push(pw.to_string());
-        }
-
-        let _child = tokio::process::Command::new(&binary)
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to start file transfer: {}", e))?;
-
-        // Update status to in-progress
-        if let Some(t) = self.file_transfers.get_mut(&transfer_id) {
-            t.status = FileTransferStatus::InProgress;
-        }
-
-        log::info!(
-            "Started file transfer {} ({:?}) to {} : {} -> {}",
-            transfer_id,
-            direction,
-            remote_id,
+        let _ = (
+            session_id,
             local_path,
             remote_path,
+            file_name,
+            total_bytes,
+            direction,
+            password,
+            use_relay,
         );
-
-        Ok(transfer_id)
+        Err("Automated RustDesk file transfer is unavailable: the CLI only opens an interactive transfer UI and cannot prove the requested path operation or completion".to_string())
     }
 
     /// Upload a local file to a remote peer (convenience wrapper).
@@ -155,10 +96,13 @@ impl RustDeskService {
     /// Estimate the progress of a file transfer as a percentage (0-100).
     pub fn transfer_progress(&self, transfer_id: &str) -> Option<f64> {
         self.file_transfers.get(transfer_id).map(|t| {
-            if t.total_bytes == 0 {
+            if t.status == FileTransferStatus::Completed {
                 100.0
+            } else if t.total_bytes == 0 {
+                0.0
             } else {
-                (t.transferred_bytes as f64 / t.total_bytes as f64) * 100.0
+                ((t.transferred_bytes.min(t.total_bytes) as f64 / t.total_bytes as f64) * 100.0)
+                    .clamp(0.0, 100.0)
             }
         })
     }
@@ -170,26 +114,24 @@ impl RustDeskService {
         session_id: &str,
         remote_path: &str,
     ) -> Result<Vec<RemoteFileEntry>, String> {
-        // Check there's an active session
-        let _session = self
+        if remote_path.trim().is_empty()
+            || remote_path.len() > 8 * 1024
+            || remote_path.chars().any(char::is_control)
+        {
+            return Err(
+                "Remote path is empty, too long, or contains control characters".to_string(),
+            );
+        }
+        let session = self
             .get_session(session_id)
             .ok_or_else(|| format!("No active session {}", session_id))?;
-
-        log::info!(
-            "Listing remote files on session {} at path {}",
-            session_id,
-            remote_path,
-        );
-
-        // Stub: the real implementation would query the remote file system
-        Ok(vec![RemoteFileEntry {
-            name: ".".to_string(),
-            path: remote_path.to_string(),
-            is_dir: true,
-            size: 0,
-            modified: Some(Utc::now().to_rfc3339()),
-            permissions: None,
-        }])
+        if !session.connected {
+            return Err("RustDesk session has no verified connected state".to_string());
+        }
+        Err(
+            "Remote RustDesk file listing is unavailable without native protocol integration"
+                .to_string(),
+        )
     }
 
     /// Get transfer statistics: total, active, completed, failed, cancelled.
