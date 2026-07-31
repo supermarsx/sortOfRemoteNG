@@ -3,7 +3,7 @@
 //! Credential management, PIN operations, and device info for
 //! the FIDO2 applet via `ykman fido`.
 
-use crate::detect::run_ykman;
+use crate::detect::{run_ykman, run_ykman_with_secret_prompts};
 use crate::types::*;
 use log::info;
 
@@ -76,12 +76,9 @@ pub async fn list_credentials(
     serial: Option<u32>,
     pin: &str,
 ) -> Result<Vec<Fido2Credential>, String> {
-    let output = run_ykman(
-        ykman,
-        serial,
-        &["fido", "credentials", "list", "--pin", pin],
-    )
-    .await?;
+    let output =
+        run_ykman_with_secret_prompts(ykman, serial, &["fido", "credentials", "list"], &[pin])
+            .await?;
 
     Ok(parse_credentials(&output))
 }
@@ -166,18 +163,11 @@ pub async fn delete_credential(
     credential_id: &str,
     pin: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &[
-            "fido",
-            "credentials",
-            "delete",
-            credential_id,
-            "--pin",
-            pin,
-            "-f",
-        ],
+        &["fido", "credentials", "delete", credential_id, "-f"],
+        &[pin],
     )
     .await?;
     info!("Deleted FIDO2 credential {}", credential_id);
@@ -188,12 +178,8 @@ pub async fn delete_credential(
 
 /// Set the initial FIDO2 PIN (when no PIN has been set).
 pub async fn set_pin(ykman: &str, serial: Option<u32>, new_pin: &str) -> Result<bool, String> {
-    run_ykman(
-        ykman,
-        serial,
-        &["fido", "access", "change-pin", "-n", new_pin],
-    )
-    .await?;
+    run_ykman_with_secret_prompts(ykman, serial, &["fido", "access", "change-pin"], &[new_pin])
+        .await?;
     info!("FIDO2 PIN set");
     Ok(true)
 }
@@ -205,10 +191,11 @@ pub async fn change_pin(
     old_pin: &str,
     new_pin: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["fido", "access", "change-pin", "-P", old_pin, "-n", new_pin],
+        &["fido", "access", "change-pin"],
+        &[old_pin, new_pin],
     )
     .await?;
     info!("FIDO2 PIN changed");
@@ -270,13 +257,8 @@ pub async fn reset_fido(ykman: &str, serial: Option<u32>) -> Result<bool, String
 
 /// Verify a FIDO2 PIN is correct (by attempting a benign operation).
 pub async fn verify_pin(ykman: &str, serial: Option<u32>, pin: &str) -> Result<bool, String> {
-    let result = run_ykman(
-        ykman,
-        serial,
-        &["fido", "credentials", "list", "--pin", pin],
-    )
-    .await;
-    Ok(result.is_ok())
+    run_ykman_with_secret_prompts(ykman, serial, &["fido", "access", "verify-pin"], &[pin]).await?;
+    Ok(true)
 }
 
 /// Set the minimum PIN length.
@@ -287,18 +269,11 @@ pub async fn set_min_pin_length(
     pin: &str,
 ) -> Result<bool, String> {
     let len_str = length.to_string();
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &[
-            "fido",
-            "config",
-            "set-min-pin-length",
-            &len_str,
-            "--pin",
-            pin,
-            "-f",
-        ],
+        &["fido", "access", "set-min-length", &len_str],
+        &[pin],
     )
     .await?;
     info!("FIDO2 min PIN length set to {}", length);
@@ -312,19 +287,27 @@ pub async fn toggle_always_uv(
     enable: bool,
     pin: &str,
 ) -> Result<bool, String> {
-    let flag = if enable { "--enable" } else { "--disable" };
-    run_ykman(
+    let current = get_fido2_info(ykman, serial)
+        .await?
+        .options
+        .into_iter()
+        .find(|(key, _)| {
+            let key = key.to_ascii_lowercase();
+            key.contains("always") && key.contains("verification")
+        })
+        .map(|(_, value)| value)
+        .ok_or_else(|| {
+            "YubiKey did not report the current always-UV state; refusing a blind toggle"
+                .to_string()
+        })?;
+    if current == enable {
+        return Ok(true);
+    }
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &[
-            "fido",
-            "config",
-            "toggle-always-uv",
-            flag,
-            "--pin",
-            pin,
-            "-f",
-        ],
+        &["fido", "config", "toggle-always-uv"],
+        &[pin],
     )
     .await?;
     info!("FIDO2 always-UV toggled to {}", enable);
@@ -333,12 +316,8 @@ pub async fn toggle_always_uv(
 
 /// Force a PIN change on next use.
 pub async fn force_pin_change(ykman: &str, serial: Option<u32>, pin: &str) -> Result<bool, String> {
-    run_ykman(
-        ykman,
-        serial,
-        &["fido", "config", "force-pin-change", "--pin", pin, "-f"],
-    )
-    .await?;
+    run_ykman_with_secret_prompts(ykman, serial, &["fido", "access", "force-change"], &[pin])
+        .await?;
     info!("FIDO2 force PIN change set");
     Ok(true)
 }
@@ -363,32 +342,12 @@ pub async fn get_large_blob(
     credential_id: &str,
     pin: &str,
 ) -> Result<Option<Vec<u8>>, String> {
-    let result = run_ykman(
-        ykman,
-        serial,
-        &[
-            "fido",
-            "credentials",
-            "large-blob",
-            "get",
-            credential_id,
-            "--pin",
-            pin,
-        ],
+    let _ = (ykman, serial, credential_id, pin);
+    Err(
+        "The installed ykman CLI contract does not expose FIDO large-blob retrieval; \
+         refusing to report an unsupported operation as an empty value"
+            .to_string(),
     )
-    .await;
-
-    match result {
-        Ok(data) => {
-            let trimmed = data.trim();
-            if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(trimmed.as_bytes().to_vec()))
-            }
-        }
-        Err(_) => Ok(None),
-    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 //! Configure OTP slots (Yubico OTP, challenge-response, static
 //! password, HOTP) via `ykman otp`.
 
-use crate::detect::run_ykman;
+use crate::detect::{run_ykman, run_ykman_with_secret_prompts};
 use crate::types::*;
 use log::info;
 
@@ -85,19 +85,20 @@ pub async fn configure_yubico_otp(
     private_id: Option<&str>,
     key: Option<&str>,
 ) -> Result<bool, String> {
-    let mut args = vec!["otp", "yubiotp", slot.ykman_arg(), "-f"];
+    let mut args = vec!["otp", "yubiotp", slot.ykman_arg()];
+    let mut prompt_values = Vec::new();
 
     if let Some(pid) = public_id {
         args.extend_from_slice(&["--public-id", pid]);
     }
     if let Some(pvid) = private_id {
-        args.extend_from_slice(&["--private-id", pvid]);
+        prompt_values.push(pvid);
     }
     if let Some(k) = key {
-        args.extend_from_slice(&["--key", k]);
+        prompt_values.push(k);
     }
     if public_id.is_none() {
-        args.push("--generate-public-id");
+        args.push("--serial-public-id");
     }
     if private_id.is_none() {
         args.push("--generate-private-id");
@@ -106,7 +107,13 @@ pub async fn configure_yubico_otp(
         args.push("--generate-key");
     }
 
-    run_ykman(ykman, serial, &args).await?;
+    if prompt_values.is_empty() {
+        args.push("-f");
+        run_ykman(ykman, serial, &args).await?;
+    } else {
+        prompt_values.push("y");
+        run_ykman_with_secret_prompts(ykman, serial, &args, &prompt_values).await?;
+    }
     info!("Configured Yubico OTP on slot {}", slot);
     Ok(true)
 }
@@ -119,18 +126,22 @@ pub async fn configure_challenge_response(
     key: Option<&str>,
     require_touch: bool,
 ) -> Result<bool, String> {
-    let mut args = vec!["otp", "chalresp", slot.ykman_arg(), "-f"];
+    let mut args = vec!["otp", "chalresp", slot.ykman_arg()];
 
     if let Some(k) = key {
-        args.push(k);
+        if require_touch {
+            args.push("--touch");
+        }
+        run_ykman_with_secret_prompts(ykman, serial, &args, &[k, "y"]).await?;
     } else {
         args.push("--generate");
-    }
-    if require_touch {
-        args.push("--touch");
+        if require_touch {
+            args.push("--touch");
+        }
+        args.push("-f");
+        run_ykman(ykman, serial, &args).await?;
     }
 
-    run_ykman(ykman, serial, &args).await?;
     info!("Configured challenge-response on slot {}", slot);
     Ok(true)
 }
@@ -143,17 +154,15 @@ pub async fn configure_static_password(
     password: &str,
     keyboard_layout: &str,
 ) -> Result<bool, String> {
-    let args = vec![
+    let args = [
         "otp",
         "static",
         slot.ykman_arg(),
-        password,
         "--keyboard-layout",
         keyboard_layout,
-        "-f",
     ];
 
-    run_ykman(ykman, serial, &args).await?;
+    run_ykman_with_secret_prompts(ykman, serial, &args, &[password, "y"]).await?;
     info!("Configured static password on slot {}", slot);
     Ok(true)
 }
@@ -167,17 +176,9 @@ pub async fn configure_hotp(
     digits: u8,
 ) -> Result<bool, String> {
     let digits_str = digits.to_string();
-    let args = vec![
-        "otp",
-        "hotp",
-        slot.ykman_arg(),
-        key,
-        "-d",
-        &digits_str,
-        "-f",
-    ];
+    let args = ["otp", "hotp", slot.ykman_arg(), "-d", &digits_str];
 
-    run_ykman(ykman, serial, &args).await?;
+    run_ykman_with_secret_prompts(ykman, serial, &args, &[key, "y"]).await?;
     info!("Configured HOTP on slot {}", slot);
     Ok(true)
 }

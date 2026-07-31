@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use zeroize::Zeroize;
 
 // ── Form Factor ─────────────────────────────────────────────────────
 
@@ -823,6 +824,12 @@ pub struct OathCode {
     pub valid_to: u64,
     /// Whether touch was required.
     pub touch_required: bool,
+}
+
+impl Drop for OathCode {
+    fn drop(&mut self) {
+        self.code.zeroize();
+    }
 }
 
 // ── OTP Types ───────────────────────────────────────────────────────

@@ -3,9 +3,9 @@
 //! Key generation, certificate management, signing, PIN/PUK lifecycle,
 //! and attestation for all PIV slots via `ykman piv`.
 
-use crate::detect::run_ykman;
+use crate::detect::{run_ykman, run_ykman_with_secret_prompts, run_ykman_with_sensitive_stdin};
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -228,7 +228,7 @@ pub async fn generate_key(
         "PEM",
     ];
 
-    let output = run_ykman(ykman, serial, &args).await?;
+    run_ykman(ykman, serial, &args).await?;
     info!(
         "Generated {} key in PIV slot {}",
         algorithm.ykman_arg(),
@@ -244,8 +244,6 @@ pub async fn generate_key(
         origin: KeyOrigin::Generated,
         ..Default::default()
     };
-
-    debug!("generate_key output: {}", output);
 
     Ok(info)
 }
@@ -346,21 +344,13 @@ pub async fn import_certificate(
     slot: &PivSlot,
     pem: &str,
 ) -> Result<bool, String> {
-    // Write PEM to a temp file, then import
-    let tmp = std::env::temp_dir().join(format!("yk_import_{}.pem", uuid::Uuid::new_v4()));
-    tokio::fs::write(&tmp, pem)
-        .await
-        .map_err(|e| format!("Failed to write temp cert: {}", e))?;
-
-    let tmp_str = tmp.to_string_lossy().to_string();
-    let result = run_ykman(
+    let result = run_ykman_with_sensitive_stdin(
         ykman,
         serial,
-        &["piv", "certificates", "import", slot.hex_id(), &tmp_str],
+        &["piv", "certificates", "import", slot.hex_id(), "-"],
+        pem.as_bytes(),
     )
     .await;
-
-    let _ = tokio::fs::remove_file(&tmp).await;
 
     result.map(|_| {
         info!("Imported certificate into slot {}", slot.hex_id());
@@ -377,13 +367,7 @@ pub async fn import_key(
     pin_policy: &PinPolicy,
     touch_policy: &TouchPolicy,
 ) -> Result<bool, String> {
-    let tmp = std::env::temp_dir().join(format!("yk_key_{}.pem", uuid::Uuid::new_v4()));
-    tokio::fs::write(&tmp, key_pem)
-        .await
-        .map_err(|e| format!("Failed to write temp key: {}", e))?;
-
-    let tmp_str = tmp.to_string_lossy().to_string();
-    let result = run_ykman(
+    let result = run_ykman_with_sensitive_stdin(
         ykman,
         serial,
         &[
@@ -391,16 +375,15 @@ pub async fn import_key(
             "keys",
             "import",
             slot.hex_id(),
-            &tmp_str,
+            "-",
             "--pin-policy",
             pin_policy.ykman_arg(),
             "--touch-policy",
             touch_policy.ykman_arg(),
         ],
+        key_pem.as_bytes(),
     )
     .await;
-
-    let _ = tokio::fs::remove_file(&tmp).await;
 
     result.map(|_| {
         info!("Imported key into slot {}", slot.hex_id());
@@ -518,10 +501,11 @@ pub async fn change_pin(
     old_pin: &str,
     new_pin: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["piv", "access", "change-pin", "-P", old_pin, "-n", new_pin],
+        &["piv", "access", "change-pin"],
+        &[old_pin, new_pin],
     )
     .await?;
     info!("PIV PIN changed");
@@ -535,10 +519,11 @@ pub async fn change_puk(
     old_puk: &str,
     new_puk: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["piv", "access", "change-puk", "-p", old_puk, "-n", new_puk],
+        &["piv", "access", "change-puk"],
+        &[old_puk, new_puk],
     )
     .await?;
     info!("PIV PUK changed");
@@ -554,25 +539,11 @@ pub async fn change_management_key(
     key_type: &ManagementKeyType,
     protect: bool,
 ) -> Result<bool, String> {
-    let mut args = vec![
-        "piv",
-        "access",
-        "change-management-key",
-        "-n",
-        new_key,
-        "-a",
-        key_type.ykman_arg(),
-    ];
-    if let Some(old) = old_key {
-        args.extend_from_slice(&["-m", old]);
-    }
-    if protect {
-        args.push("--protect");
-    }
-
-    run_ykman(ykman, serial, &args).await?;
-    info!("PIV management key changed");
-    Ok(true)
+    let _ = (ykman, serial, old_key, new_key, key_type, protect);
+    Err(
+        "PIV management-key rotation is unavailable through ykman because its prompt sequence can depend on device PIN state; refusing to expose keys in process arguments"
+            .to_string(),
+    )
 }
 
 /// Unblock the PIV PIN with PUK.
@@ -582,10 +553,11 @@ pub async fn unblock_pin(
     puk: &str,
     new_pin: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["piv", "access", "unblock-pin", "-p", puk, "-n", new_pin],
+        &["piv", "access", "unblock-pin"],
+        &[puk, new_pin],
     )
     .await?;
     info!("PIV PIN unblocked");

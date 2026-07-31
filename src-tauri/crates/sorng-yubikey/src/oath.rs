@@ -3,9 +3,38 @@
 //! Add, remove, rename, and calculate one-time passwords stored on
 //! the YubiKey OATH applet via `ykman oath`.
 
-use crate::detect::run_ykman;
+use crate::detect::{run_ykman, run_ykman_with_secret_prompts};
 use crate::types::*;
 use log::info;
+use zeroize::Zeroize;
+
+async fn require_unprotected_oath(ykman: &str, serial: Option<u32>) -> Result<(), String> {
+    let mut info = run_ykman(ykman, serial, &["oath", "info"]).await?;
+    let normalized = info.to_ascii_lowercase();
+    let password_protected = normalized.lines().any(|line| {
+        line.contains("password")
+            && (line.contains("enabled")
+                || line.contains("protected")
+                || line.contains("locked")
+                || line.contains("set")
+                || line.contains("true"))
+    });
+    info.zeroize();
+    if password_protected {
+        return Err(
+            "The OATH applet is already password protected; this API has no safe current-password \
+             parameter and refuses the operation"
+                .to_string(),
+        );
+    }
+
+    // A benign account-list probe prevents an account secret or proposed new
+    // password from being consumed as an unlock prompt on output variants that
+    // do not expose protection state through `oath info`.
+    let mut probe = run_ykman(ykman, serial, &["oath", "accounts", "list"]).await?;
+    probe.zeroize();
+    Ok(())
+}
 
 // ── Account Listing ─────────────────────────────────────────────────
 
@@ -14,7 +43,7 @@ pub async fn list_accounts(ykman: &str, serial: Option<u32>) -> Result<Vec<OathA
     let output = run_ykman(
         ykman,
         serial,
-        &["oath", "accounts", "list", "-H", "-o", "-p"],
+        &["oath", "accounts", "list", "-H", "-o", "-P"],
     )
     .await?;
     Ok(parse_account_list(&output))
@@ -105,6 +134,7 @@ pub async fn add_account(
     period: u32,
     touch: bool,
 ) -> Result<bool, String> {
+    require_unprotected_oath(ykman, serial).await?;
     let digits_str = digits.to_string();
     let period_str = period.to_string();
     let mut args = vec![
@@ -120,7 +150,7 @@ pub async fn add_account(
     ];
 
     if *oath_type == OathType::Totp {
-        args.extend_from_slice(&["-p", &period_str]);
+        args.extend_from_slice(&["-P", &period_str]);
     }
 
     if !issuer.is_empty() {
@@ -131,11 +161,10 @@ pub async fn add_account(
         args.push("-t");
     }
 
-    // Name and secret
+    // The secret is supplied through ykman's piped prompt, never argv.
     args.push(name);
-    args.push(secret);
 
-    run_ykman(ykman, serial, &args).await?;
+    run_ykman_with_secret_prompts(ykman, serial, &args, &[secret]).await?;
     info!("Added OATH account {}:{}", issuer, name);
     Ok(true)
 }
@@ -188,21 +217,19 @@ pub async fn calculate(
     serial: Option<u32>,
     credential_id: &str,
 ) -> Result<OathCode, String> {
-    let output = run_ykman(ykman, serial, &["oath", "accounts", "code", credential_id]).await?;
-
-    // Output format: "Issuer:Name  123456"
-    let code = output
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.rsplitn(2, char::is_whitespace).collect();
-            if !parts.is_empty() {
-                Some(parts[0].trim().to_string())
-            } else {
-                None
-            }
-        })
-        .next()
-        .unwrap_or_default();
+    let mut output = run_ykman(
+        ykman,
+        serial,
+        &["oath", "accounts", "code", "--single", credential_id],
+    )
+    .await?;
+    let candidate = output.trim();
+    if !(6..=8).contains(&candidate.len()) || !candidate.bytes().all(|byte| byte.is_ascii_digit()) {
+        output.zeroize();
+        return Err("YubiKey returned an invalid or unavailable OATH code".to_string());
+    }
+    let code = candidate.to_string();
+    output.zeroize();
 
     let now = chrono::Utc::now().timestamp() as u64;
     let period = 30u64;
@@ -221,7 +248,7 @@ pub async fn calculate_all(
     ykman: &str,
     serial: Option<u32>,
 ) -> Result<Vec<(OathAccount, OathCode)>, String> {
-    let output = run_ykman(ykman, serial, &["oath", "accounts", "code"]).await?;
+    let mut output = run_ykman(ykman, serial, &["oath", "accounts", "code"]).await?;
 
     let now = chrono::Utc::now().timestamp() as u64;
     let period = 30u64;
@@ -242,6 +269,14 @@ pub async fn calculate_all(
         }
         let code_str = parts[0].trim();
         let id_str = parts[1].trim();
+        if !(6..=8).contains(&code_str.len()) || !code_str.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            output.zeroize();
+            return Err(
+                "Not all OATH accounts produced a valid code; refusing a partial result"
+                    .to_string(),
+            );
+        }
 
         let (issuer, name) = if let Some((i, n)) = id_str.split_once(':') {
             (i.to_string(), n.to_string())
@@ -270,6 +305,7 @@ pub async fn calculate_all(
         results.push((account, code));
     }
 
+    output.zeroize();
     Ok(results)
 }
 
@@ -281,16 +317,26 @@ pub async fn set_password(
     serial: Option<u32>,
     password: &str,
 ) -> Result<bool, String> {
-    run_ykman(ykman, serial, &["oath", "access", "change", "-n", password]).await?;
+    require_unprotected_oath(ykman, serial).await?;
+    run_ykman_with_secret_prompts(
+        ykman,
+        serial,
+        &["oath", "access", "change"],
+        &[password, password],
+    )
+    .await?;
     info!("OATH password set");
     Ok(true)
 }
 
 /// Remove the OATH applet password.
 pub async fn remove_password(ykman: &str, serial: Option<u32>) -> Result<bool, String> {
-    run_ykman(ykman, serial, &["oath", "access", "change", "-c", "-f"]).await?;
-    info!("OATH password removed");
-    Ok(true)
+    let _ = (ykman, serial);
+    Err(
+        "Removing OATH protection requires the current password; the current API does not accept \
+         it and will not expose it through process arguments"
+            .to_string(),
+    )
 }
 
 /// Reset the OATH applet (deletes all accounts and password).

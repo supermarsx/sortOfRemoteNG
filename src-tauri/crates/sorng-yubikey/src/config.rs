@@ -3,7 +3,7 @@
 //! Manage USB/NFC interface enable/disable, auto-eject, challenge-
 //! response timeout, and configuration lock via `ykman config`.
 
-use crate::detect::run_ykman;
+use crate::detect::{run_ykman, run_ykman_with_secret_prompts};
 use crate::types::*;
 use log::info;
 
@@ -166,10 +166,11 @@ pub async fn lock_config(
     serial: Option<u32>,
     lock_code: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["config", "set-lock-code", "-n", lock_code, "-f"],
+        &["config", "set-lock-code", "-f"],
+        &[lock_code],
     )
     .await?;
     info!("Configuration locked");
@@ -182,10 +183,11 @@ pub async fn unlock_config(
     serial: Option<u32>,
     lock_code: &str,
 ) -> Result<bool, String> {
-    run_ykman(
+    run_ykman_with_secret_prompts(
         ykman,
         serial,
-        &["config", "set-lock-code", "--clear", "-l", lock_code, "-f"],
+        &["config", "set-lock-code", "--clear", "-f"],
+        &[lock_code],
     )
     .await?;
     info!("Configuration unlocked");

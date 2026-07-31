@@ -5,6 +5,17 @@
 
 use crate::types::*;
 use log::{debug, info, warn};
+use std::io;
+use std::process::Stdio;
+use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+
+const YKMAN_TIMEOUT: Duration = Duration::from_secs(120);
+const YKMAN_STDIN_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_YKMAN_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PROMPT_VALUE_BYTES: usize = 16 * 1024;
+const MAX_PROMPT_INPUT_BYTES: usize = 64 * 1024;
+const MAX_SENSITIVE_STDIN_BYTES: usize = 1024 * 1024;
 
 /// Common install locations for `ykman` on various platforms.
 const YKMAN_SEARCH_PATHS: &[&str] = &[
@@ -62,6 +73,104 @@ pub(crate) async fn run_ykman(
     serial: Option<u32>,
     args: &[&str],
 ) -> Result<String, String> {
+    run_ykman_inner(ykman, serial, args, None).await
+}
+
+/// Run a `ykman` command and answer its interactive prompts over stdin.
+///
+/// `ykman`'s prompt wrapper explicitly reads one line at a time when stdin is
+/// piped. Keeping secret values out of the argument vector prevents them from
+/// being exposed through process inspection.
+pub(crate) async fn run_ykman_with_secret_prompts(
+    ykman: &str,
+    serial: Option<u32>,
+    args: &[&str],
+    prompt_values: &[&str],
+) -> Result<String, String> {
+    if prompt_values.is_empty() {
+        return Err("Refusing to start ykman without required secret input".to_string());
+    }
+
+    let mut input = Vec::new();
+    for value in prompt_values {
+        let bytes = value.as_bytes();
+        if value.trim().is_empty() {
+            input.fill(0);
+            return Err("Refusing to pass a blank secret value to ykman".to_string());
+        }
+        if bytes.len() > MAX_PROMPT_VALUE_BYTES {
+            input.fill(0);
+            return Err("Refusing oversized secret input for ykman".to_string());
+        }
+        if bytes
+            .iter()
+            .any(|byte| matches!(*byte, b'\r' | b'\n' | b'\0'))
+        {
+            input.fill(0);
+            return Err("Refusing secret input containing a line break or NUL byte".to_string());
+        }
+        let new_len = input
+            .len()
+            .checked_add(bytes.len() + 1)
+            .ok_or_else(|| "Secret input size overflow".to_string())?;
+        if new_len > MAX_PROMPT_INPUT_BYTES {
+            input.fill(0);
+            return Err("Refusing oversized aggregate secret input for ykman".to_string());
+        }
+        input.extend_from_slice(bytes);
+        input.push(b'\n');
+    }
+
+    run_ykman_inner(ykman, serial, args, Some(input)).await
+}
+
+/// Run a `ykman` command with a sensitive file payload on stdin.
+pub(crate) async fn run_ykman_with_sensitive_stdin(
+    ykman: &str,
+    serial: Option<u32>,
+    args: &[&str],
+    payload: &[u8],
+) -> Result<String, String> {
+    if payload.is_empty() {
+        return Err("Refusing to pass an empty sensitive payload to ykman".to_string());
+    }
+    if payload.len() > MAX_SENSITIVE_STDIN_BYTES {
+        return Err("Refusing oversized sensitive payload for ykman".to_string());
+    }
+
+    run_ykman_inner(ykman, serial, args, Some(payload.to_vec())).await
+}
+
+async fn read_bounded<R>(reader: R) -> io::Result<Vec<u8>>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut limited = reader.take((MAX_YKMAN_OUTPUT_BYTES + 1) as u64);
+    limited.read_to_end(&mut output).await?;
+    if output.len() > MAX_YKMAN_OUTPUT_BYTES {
+        output.fill(0);
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "ykman output exceeded the configured limit",
+        ));
+    }
+    Ok(output)
+}
+
+async fn run_ykman_inner(
+    ykman: &str,
+    serial: Option<u32>,
+    args: &[&str],
+    mut secret_stdin: Option<Vec<u8>>,
+) -> Result<String, String> {
+    if ykman.trim().is_empty() {
+        if let Some(input) = secret_stdin.as_mut() {
+            input.fill(0);
+        }
+        return Err("Refusing to run an empty ykman executable path".to_string());
+    }
+
     let mut cmd = tokio::process::Command::new(ykman);
 
     // Target a specific device by serial
@@ -70,30 +179,117 @@ pub(crate) async fn run_ykman(
     }
 
     cmd.args(args);
-
-    debug!("Running ykman {:?}", cmd);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ykman: {}", e))?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    cmd.stdin(if secret_stdin.is_some() {
+        Stdio::piped()
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Err(format!(
-            "ykman command failed (exit {}): {}{}",
-            output.status.code().unwrap_or(-1),
-            stderr,
-            if stdout.is_empty() {
-                String::new()
-            } else {
-                format!("\nstdout: {}", stdout)
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true);
+
+    debug!("Starting bounded ykman operation");
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            if let Some(input) = secret_stdin.as_mut() {
+                input.fill(0);
             }
-        ))
+            return Err(format!("Failed to start ykman: {}", error));
+        }
+    };
+
+    if let Some(mut input) = secret_stdin.take() {
+        let Some(mut stdin) = child.stdin.take() else {
+            input.fill(0);
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err("Failed to open protected stdin for ykman".to_string());
+        };
+
+        let write_result = tokio::time::timeout(YKMAN_STDIN_TIMEOUT, async {
+            stdin.write_all(&input).await?;
+            stdin.shutdown().await
+        })
+        .await;
+        input.fill(0);
+
+        match write_result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err(format!(
+                    "Failed to send protected input to ykman: {}",
+                    error
+                ));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err("Timed out sending protected input to ykman".to_string());
+            }
+        }
     }
+
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return Err("Failed to capture ykman stdout".to_string());
+    };
+    let Some(stderr) = child.stderr.take() else {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return Err("Failed to capture ykman stderr".to_string());
+    };
+
+    let execution =
+        async { tokio::try_join!(read_bounded(stdout), read_bounded(stderr), child.wait()) };
+
+    let (mut stdout, mut stderr, status) =
+        match tokio::time::timeout(YKMAN_TIMEOUT, execution).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err(format!(
+                    "Failed while running bounded ykman command: {}",
+                    error
+                ));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err("ykman operation timed out".to_string());
+            }
+        };
+
+    if !status.success() {
+        let failure_text = String::from_utf8_lossy(&stderr).to_ascii_lowercase();
+        let oath_password_required = args.first() == Some(&"oath")
+            && (failure_text.contains("password")
+                || failure_text.contains("locked")
+                || failure_text.contains("authentication required"));
+        stdout.fill(0);
+        stderr.fill(0);
+        if oath_password_required {
+            return Err(
+                "The OATH applet is password protected; this operation requires a protected \
+                 password input that the current API does not accept"
+                    .to_string(),
+            );
+        }
+        return Err(format!(
+            "ykman operation failed (exit {}); command output was suppressed",
+            status.code().unwrap_or(-1)
+        ));
+    }
+
+    stderr.fill(0);
+    let result = String::from_utf8_lossy(&stdout).to_string();
+    stdout.fill(0);
+    Ok(result)
 }
 
 /// List all connected YubiKey serial numbers.
