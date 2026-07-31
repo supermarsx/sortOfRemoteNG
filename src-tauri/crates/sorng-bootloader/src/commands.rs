@@ -14,8 +14,49 @@ use super::uefi;
 
 type CmdResult<T> = Result<T, String>;
 
+const MAX_BOOTLOADER_CONFIG_BYTES: usize = 256 * 1024;
+
 fn map_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
+}
+
+fn require_bounded_bootloader_content(label: &str, bytes: usize) -> CmdResult<()> {
+    if bytes > MAX_BOOTLOADER_CONFIG_BYTES {
+        return Err(format!(
+            "{label} exceeds the {MAX_BOOTLOADER_CONFIG_BYTES}-byte safety limit"
+        ));
+    }
+    Ok(())
+}
+
+fn privileged_operation_disabled<T>(operation: &str) -> CmdResult<T> {
+    Err(format!(
+        "{operation} is disabled until a reauthentication-backed one-time operation token is implemented"
+    ))
+}
+
+#[cfg(test)]
+mod security_contract_tests {
+    use super::{
+        privileged_operation_disabled, require_bounded_bootloader_content,
+        MAX_BOOTLOADER_CONFIG_BYTES,
+    };
+
+    #[test]
+    fn rejects_oversized_bootloader_content() {
+        assert!(require_bounded_bootloader_content(
+            "bootloader configuration",
+            MAX_BOOTLOADER_CONFIG_BYTES + 1,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn privileged_operations_fail_closed_without_an_operation_token() {
+        let error = privileged_operation_disabled::<()>("test operation")
+            .expect_err("privileged operation must fail closed");
+        assert!(error.contains("reauthentication-backed one-time operation token"));
+    }
 }
 
 // ── Host CRUD ─────────────────────────────────────────────────────
@@ -177,9 +218,8 @@ pub async fn boot_install_grub(
     host_id: String,
     device: String,
 ) -> CmdResult<String> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    grub::install_grub(host, &device).await.map_err(map_err)
+    drop((state, host_id, device));
+    privileged_operation_disabled("GRUB installation")
 }
 
 #[tauri::command]
@@ -198,11 +238,9 @@ pub async fn boot_set_custom_entries(
     host_id: String,
     content: String,
 ) -> CmdResult<()> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    grub::set_custom_entries(host, &content)
-        .await
-        .map_err(map_err)
+    require_bounded_bootloader_content("GRUB custom entries", content.len())?;
+    drop((state, host_id, content));
+    privileged_operation_disabled("GRUB custom-entry replacement")
 }
 
 #[tauri::command]
@@ -257,11 +295,21 @@ pub async fn boot_set_sd_config(
     host_id: String,
     config_json: SystemdBootConfig,
 ) -> CmdResult<()> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    systemd_boot::set_boot_config(host, &config_json)
-        .await
-        .map_err(map_err)
+    let content_bytes = config_json
+        .default_entry
+        .as_deref()
+        .map(str::len)
+        .unwrap_or_default()
+        .saturating_add(
+            config_json
+                .console_mode
+                .as_deref()
+                .map(str::len)
+                .unwrap_or_default(),
+        );
+    require_bounded_bootloader_content("systemd-boot configuration", content_bytes)?;
+    drop((state, host_id, config_json));
+    privileged_operation_disabled("systemd-boot configuration replacement")
 }
 
 #[tauri::command]
@@ -293,11 +341,8 @@ pub async fn boot_delete_sd_entry(
     host_id: String,
     id: String,
 ) -> CmdResult<()> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    systemd_boot::delete_boot_entry(host, &id)
-        .await
-        .map_err(map_err)
+    drop((state, host_id, id));
+    privileged_operation_disabled("systemd-boot entry deletion")
 }
 
 #[tauri::command]
@@ -378,11 +423,8 @@ pub async fn boot_delete_uefi_entry(
     host_id: String,
     boot_num: String,
 ) -> CmdResult<()> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    uefi::delete_uefi_entry(host, &boot_num)
-        .await
-        .map_err(map_err)
+    drop((state, host_id, boot_num));
+    privileged_operation_disabled("UEFI boot entry deletion")
 }
 
 #[tauri::command]
@@ -391,9 +433,8 @@ pub async fn boot_set_next_boot(
     host_id: String,
     boot_num: String,
 ) -> CmdResult<()> {
-    let svc = state.lock().await;
-    let host = svc.get_host(&host_id).map_err(map_err)?;
-    uefi::set_next_boot(host, &boot_num).await.map_err(map_err)
+    drop((state, host_id, boot_num));
+    privileged_operation_disabled("UEFI next-boot mutation")
 }
 
 #[tauri::command]
