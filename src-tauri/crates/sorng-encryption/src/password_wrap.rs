@@ -106,6 +106,8 @@ impl Argon2Params {
 pub enum WrapError {
     #[error("dek.enc is shorter than the {0}-byte expected layout")]
     Truncated(usize),
+    #[error("dek.enc has trailing data: expected {expected} bytes, got {actual}")]
+    TrailingData { expected: usize, actual: usize },
     #[error("missing SORNG magic prefix in dek.enc")]
     MissingMagic,
     #[error("unsupported wrapped-DEK version: {0}")]
@@ -169,6 +171,12 @@ pub fn wrap(
 pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError> {
     if file_bytes.len() < FILE_LEN {
         return Err(WrapError::Truncated(FILE_LEN));
+    }
+    if file_bytes.len() > FILE_LEN {
+        return Err(WrapError::TrailingData {
+            expected: FILE_LEN,
+            actual: file_bytes.len(),
+        });
     }
     if &file_bytes[0..6] != MAGIC {
         return Err(WrapError::MissingMagic);
@@ -279,6 +287,20 @@ mod tests {
                 "cut={cut} should reject as truncated"
             );
         }
+    }
+
+    #[test]
+    fn trailing_data_is_rejected() {
+        let dek = MasterDek::generate();
+        let mut blob = wrap("p", &dek, Argon2Params::OWASP).unwrap();
+        blob.push(0);
+        assert!(matches!(
+            unwrap("p", &blob),
+            Err(WrapError::TrailingData {
+                expected: FILE_LEN,
+                actual
+            }) if actual == FILE_LEN + 1
+        ));
     }
 
     #[test]
