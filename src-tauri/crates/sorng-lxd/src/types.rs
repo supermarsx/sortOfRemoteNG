@@ -133,6 +133,9 @@ pub struct LxdConnectionConfig {
     /// Skip TLS verification (self-signed certs)
     #[serde(default)]
     pub skip_tls_verify: bool,
+    /// Runtime-only acknowledgement for this insecure connection attempt.
+    #[serde(default, skip_serializing, rename = "acknowledge_invalid_cert_risk")]
+    pub acknowledge_invalid_cert_risk: bool,
     /// Target project (default: "default")
     #[serde(default = "default_project")]
     pub project: String,
@@ -160,6 +163,7 @@ impl Default for LxdConnectionConfig {
             trust_password: None,
             oidc_token: None,
             skip_tls_verify: false,
+            acknowledge_invalid_cert_risk: false,
             project: default_project(),
             timeout_secs: default_timeout(),
             proxy_url: None,

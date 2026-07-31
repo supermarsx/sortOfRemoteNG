@@ -30,12 +30,20 @@ pub struct LxdClient {
 }
 
 impl LxdClient {
-    pub fn new(config: LxdConnectionConfig) -> LxdResult<Self> {
+    pub fn new(mut config: LxdConnectionConfig) -> LxdResult<Self> {
         let parsed_url = url::Url::parse(config.url.trim())
             .map_err(|e| LxdError::validation(format!("invalid server URL: {e}")))?;
         if !matches!(parsed_url.scheme(), "http" | "https") {
             return Err(LxdError::validation(
                 "server URL must use the http or https scheme",
+            ));
+        }
+        let acknowledged = std::mem::take(&mut config.acknowledge_invalid_cert_risk);
+        let effective_tls_skip =
+            config.skip_tls_verify && parsed_url.scheme().eq_ignore_ascii_case("https");
+        if effective_tls_skip != acknowledged {
+            return Err(LxdError::validation(
+                "TLS certificate verification bypass requires an explicit runtime acknowledgement for this connection attempt",
             ));
         }
         if config.timeout_secs == 0 {
@@ -51,7 +59,7 @@ impl LxdClient {
 
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(config.skip_tls_verify);
+            .danger_accept_invalid_certs(effective_tls_skip);
 
         // mTLS identity
         if let (Some(cert_pem), Some(key_pem)) = (&config.client_cert_pem, &config.client_key_pem) {

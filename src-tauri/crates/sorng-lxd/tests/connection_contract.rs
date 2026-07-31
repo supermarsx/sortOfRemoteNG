@@ -1,3 +1,4 @@
+use sorng_lxd::client::LxdClient;
 use sorng_lxd::service::LxdService;
 use sorng_lxd::types::{LxdConnectionConfig, LxdErrorKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -46,6 +47,54 @@ async fn spawn_server(
         }
     });
     (address, task)
+}
+
+#[test]
+fn secure_tls_defaults_build_without_an_acknowledgement() {
+    let cfg = LxdConnectionConfig {
+        url: "https://lxd.example.test:8443".into(),
+        skip_tls_verify: false,
+        acknowledge_invalid_cert_risk: false,
+        ..LxdConnectionConfig::default()
+    };
+
+    assert!(LxdClient::new(cfg).is_ok());
+}
+
+#[test]
+fn insecure_tls_requires_an_exact_matching_runtime_acknowledgement() {
+    let missing_acknowledgement = LxdConnectionConfig {
+        url: "https://lxd.example.test:8443".into(),
+        skip_tls_verify: true,
+        acknowledge_invalid_cert_risk: false,
+        ..LxdConnectionConfig::default()
+    };
+    assert!(LxdClient::new(missing_acknowledgement).is_err());
+
+    let acknowledgement_without_bypass = LxdConnectionConfig {
+        url: "https://lxd.example.test:8443".into(),
+        skip_tls_verify: false,
+        acknowledge_invalid_cert_risk: true,
+        ..LxdConnectionConfig::default()
+    };
+    assert!(LxdClient::new(acknowledgement_without_bypass).is_err());
+}
+
+#[test]
+fn insecure_tls_acknowledgement_is_consumed_after_one_client_build() {
+    let acknowledged = LxdConnectionConfig {
+        url: "https://lxd.example.test:8443".into(),
+        skip_tls_verify: true,
+        acknowledge_invalid_cert_risk: true,
+        ..LxdConnectionConfig::default()
+    };
+
+    let client = match LxdClient::new(acknowledged) {
+        Ok(client) => client,
+        Err(error) => panic!("matching acknowledgement should build the client: {error}"),
+    };
+    assert!(!client.config.acknowledge_invalid_cert_risk);
+    assert!(LxdClient::new(client.config).is_err());
 }
 
 fn config(address: std::net::SocketAddr) -> LxdConnectionConfig {
