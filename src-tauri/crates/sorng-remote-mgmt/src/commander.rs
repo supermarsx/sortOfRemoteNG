@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 pub type CommanderServiceState = Arc<Mutex<CommanderService>>;
 
@@ -113,15 +112,12 @@ pub enum TransferStatus {
 
 pub struct CommanderService {
     sessions: HashMap<String, CommanderSession>,
-    #[allow(dead_code)]
-    active_transfers: HashMap<String, CommanderFileTransfer>,
 }
 
 impl CommanderService {
     pub fn new() -> CommanderServiceState {
         Arc::new(Mutex::new(CommanderService {
             sessions: HashMap::new(),
-            active_transfers: HashMap::new(),
         }))
     }
 
@@ -129,22 +125,11 @@ impl CommanderService {
         &mut self,
         config: CommanderConnectionConfig,
     ) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
-
-        // For now, simulate commander connection
-        // In a real implementation, this would establish actual command connections
-        let session = CommanderSession {
-            id: session_id.clone(),
-            host: config.host.clone(),
-            port: config.port,
-            protocol: config.protocol.clone(),
-            connected_at: Utc::now(),
-            authenticated: true, // Assume auth succeeds for now
-            status: CommanderStatus::Connected,
-        };
-
-        self.sessions.insert(session_id.clone(), session);
-        Ok(session_id)
+        let _ = config;
+        Err(
+            "Commander transport is not implemented; refusing to create a simulated authenticated session"
+                .to_string(),
+        )
     }
 
     pub async fn disconnect_commander(&mut self, session_id: &str) -> Result<(), String> {
@@ -152,198 +137,76 @@ impl CommanderService {
             session.status = CommanderStatus::Disconnected;
             Ok(())
         } else {
-            Err(format!("Commander session {} not found", session_id))
+            Err("Commander session not found".to_string())
         }
     }
 
     pub async fn execute_commander_command(
         &self,
-        session_id: &str,
+        _session_id: &str,
         _command: CommanderCommand,
     ) -> Result<String, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, simulate command execution
-            // In a real implementation, this would execute actual commands
-            let command_id = Uuid::new_v4().to_string();
-
-            // Simulate some processing time
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-            Ok(command_id)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander command execution is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_commander_command_result(
         &self,
-        session_id: &str,
-        command_id: &str,
+        _session_id: &str,
+        _command_id: &str,
     ) -> Result<CommanderCommandResult, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, return mock command result
-            // In a real implementation, this would query actual command results
-            let started_at = Utc::now() - chrono::Duration::seconds(2);
-            let finished_at = Utc::now();
-
-            let result = CommanderCommandResult {
-                command_id: command_id.to_string(),
-                session_id: session_id.to_string(),
-                stdout: "Command executed successfully\nOutput line 1\nOutput line 2".to_string(),
-                stderr: "".to_string(),
-                exit_code: Some(0),
-                execution_time_ms: 150,
-                started_at,
-                finished_at,
-            };
-
-            Ok(result)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander command results are unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn upload_commander_file(
         &self,
-        session_id: &str,
-        local_path: String,
-        remote_path: String,
+        _session_id: &str,
+        _local_path: String,
+        _remote_path: String,
     ) -> Result<String, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, simulate file upload
-            // In a real implementation, this would perform actual file uploads
-            let transfer_id = Uuid::new_v4().to_string();
-
-            let _transfer = CommanderFileTransfer {
-                id: transfer_id.clone(),
-                session_id: session_id.to_string(),
-                direction: TransferDirection::Upload,
-                local_path,
-                remote_path,
-                total_size: 1024, // Mock size
-                transferred_size: 1024,
-                status: TransferStatus::Completed,
-                started_at: Utc::now(),
-            };
-
-            Ok(transfer_id)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander file upload is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn download_commander_file(
         &self,
-        session_id: &str,
-        remote_path: String,
-        local_path: String,
+        _session_id: &str,
+        _remote_path: String,
+        _local_path: String,
     ) -> Result<String, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, simulate file download
-            // In a real implementation, this would perform actual file downloads
-            let transfer_id = Uuid::new_v4().to_string();
-
-            let _transfer = CommanderFileTransfer {
-                id: transfer_id.clone(),
-                session_id: session_id.to_string(),
-                direction: TransferDirection::Download,
-                local_path,
-                remote_path,
-                total_size: 2048, // Mock size
-                transferred_size: 2048,
-                status: TransferStatus::Completed,
-                started_at: Utc::now(),
-            };
-
-            Ok(transfer_id)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander file download is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_commander_file_transfer(
         &self,
-        session_id: &str,
-        transfer_id: &str,
+        _session_id: &str,
+        _transfer_id: &str,
     ) -> Result<CommanderFileTransfer, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, return mock transfer status
-            // In a real implementation, this would query actual transfer status
-            let transfer = CommanderFileTransfer {
-                id: transfer_id.to_string(),
-                session_id: session_id.to_string(),
-                direction: TransferDirection::Upload,
-                local_path: "/local/file.txt".to_string(),
-                remote_path: "/remote/file.txt".to_string(),
-                total_size: 1024,
-                transferred_size: 1024,
-                status: TransferStatus::Completed,
-                started_at: Utc::now() - chrono::Duration::seconds(5),
-            };
-
-            Ok(transfer)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander file-transfer status is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn list_commander_directory(
         &self,
-        session_id: &str,
+        _session_id: &str,
         _path: String,
     ) -> Result<Vec<serde_json::Value>, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, return mock directory listing
-            // In a real implementation, this would list actual remote directories
-            let files = vec![
-                serde_json::json!({
-                    "name": "file1.txt",
-                    "type": "file",
-                    "size": 1024,
-                    "modified": Utc::now().to_rfc3339()
-                }),
-                serde_json::json!({
-                    "name": "dir1",
-                    "type": "directory",
-                    "size": 0,
-                    "modified": Utc::now().to_rfc3339()
-                }),
-            ];
-
-            Ok(files)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander directory listing is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_commander_session(&self, session_id: &str) -> Option<CommanderSession> {
@@ -363,36 +226,17 @@ impl CommanderService {
             session.status = status;
             Ok(())
         } else {
-            Err(format!("Commander session {} not found", session_id))
+            Err("Commander session not found".to_string())
         }
     }
 
     pub async fn get_commander_system_info(
         &self,
-        session_id: &str,
+        _session_id: &str,
     ) -> Result<serde_json::Value, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Commander session {} not found", session_id))?;
-
-        if let CommanderStatus::Connected = &session.status {
-            // For now, return mock system info
-            // In a real implementation, this would query actual system information
-            let info = serde_json::json!({
-                "hostname": session.host,
-                "platform": "linux",
-                "architecture": "x86_64",
-                "os_version": "Ubuntu 22.04",
-                "cpu_count": 4,
-                "memory_total": 8589934592i64, // 8GB
-                "disk_total": 107374182400i64 // 100GB
-            });
-
-            Ok(info)
-        } else {
-            Err(format!("Commander session {} is not connected", session_id))
-        }
+        Err(
+            "Commander system information is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 }
-

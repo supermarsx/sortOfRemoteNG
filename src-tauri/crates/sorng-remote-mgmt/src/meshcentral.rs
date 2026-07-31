@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 pub type MeshCentralServiceState = Arc<Mutex<MeshCentralService>>;
 
@@ -92,148 +91,61 @@ impl MeshCentralService {
         &mut self,
         config: MeshCentralConnectionConfig,
     ) -> Result<String, String> {
-        let session_id = Uuid::new_v4().to_string();
-
-        // For now, simulate MeshCentral connection
-        // In a real implementation, this would connect to actual MeshCentral server
-        let session = MeshCentralSession {
-            id: session_id.clone(),
-            server_url: config.server_url.clone(),
-            username: config.username.clone(),
-            connected_at: Utc::now(),
-            authenticated: true,
-            server_info: Some(MeshCentralServerInfo {
-                version: "1.0.0".to_string(),
-                hostname: "meshcentral.example.com".to_string(),
-                platform: "linux".to_string(),
-                total_devices: 150,
-                online_devices: 120,
-            }),
-        };
-
-        self.sessions.insert(session_id.clone(), session);
-        Ok(session_id)
+        let _ = config;
+        Err(
+            "MeshCentral transport is not implemented; refusing to create a simulated authenticated session"
+                .to_string(),
+        )
     }
 
     pub async fn disconnect_meshcentral(&mut self, session_id: &str) -> Result<(), String> {
         if self.sessions.remove(session_id).is_some() {
             Ok(())
         } else {
-            Err(format!("MeshCentral session {} not found", session_id))
+            Err("MeshCentral session not found".to_string())
         }
     }
 
     pub async fn get_meshcentral_devices(
         &self,
-        session_id: &str,
+        _session_id: &str,
     ) -> Result<Vec<MeshCentralDevice>, String> {
-        let _session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
-
-        // For now, return mock devices
-        // In a real implementation, this would query the MeshCentral API
-        let devices = vec![
-            MeshCentralDevice {
-                id: "device1".to_string(),
-                name: "Workstation-001".to_string(),
-                hostname: "ws001.company.com".to_string(),
-                ip: "192.168.1.100".to_string(),
-                platform: "windows".to_string(),
-                agent_version: "1.0.0".to_string(),
-                last_seen: Utc::now(),
-                online: true,
-                group_ids: vec!["group1".to_string()],
-            },
-            MeshCentralDevice {
-                id: "device2".to_string(),
-                name: "Server-001".to_string(),
-                hostname: "srv001.company.com".to_string(),
-                ip: "192.168.1.200".to_string(),
-                platform: "linux".to_string(),
-                agent_version: "1.0.0".to_string(),
-                last_seen: Utc::now() - chrono::Duration::minutes(5),
-                online: true,
-                group_ids: vec!["group2".to_string()],
-            },
-        ];
-
-        Ok(devices)
+        Err(
+            "MeshCentral device discovery is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_meshcentral_groups(
         &self,
-        session_id: &str,
+        _session_id: &str,
     ) -> Result<Vec<MeshCentralGroup>, String> {
-        let _session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
-
-        // For now, return mock groups
-        let groups = vec![
-            MeshCentralGroup {
-                id: "group1".to_string(),
-                name: "Workstations".to_string(),
-                description: Some("User workstations".to_string()),
-                device_count: 50,
-                parent_id: None,
-            },
-            MeshCentralGroup {
-                id: "group2".to_string(),
-                name: "Servers".to_string(),
-                description: Some("Server systems".to_string()),
-                device_count: 25,
-                parent_id: None,
-            },
-        ];
-
-        Ok(groups)
+        Err(
+            "MeshCentral group discovery is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn execute_meshcentral_command(
         &self,
-        session_id: &str,
+        _session_id: &str,
         _command: MeshCentralCommand,
     ) -> Result<String, String> {
-        let _session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
-
-        // For now, simulate command execution
-        // In a real implementation, this would send command to MeshCentral API
-        let command_id = Uuid::new_v4().to_string();
-
-        // Simulate some processing time
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        Ok(command_id)
+        Err(
+            "MeshCentral command execution is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_meshcentral_command_result(
         &self,
-        session_id: &str,
-        command_id: &str,
+        _session_id: &str,
+        _command_id: &str,
     ) -> Result<MeshCentralCommandResult, String> {
-        let _session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
-
-        // For now, return mock command result
-        // In a real implementation, this would query command status from MeshCentral API
-        let result = MeshCentralCommandResult {
-            command_id: command_id.to_string(),
-            device_id: "device1".to_string(),
-            output: "Command executed successfully\nOutput line 1\nOutput line 2".to_string(),
-            error_output: "".to_string(),
-            exit_code: Some(0),
-            execution_time_ms: 150,
-        };
-
-        Ok(result)
+        Err(
+            "MeshCentral command results are unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 
     pub async fn get_meshcentral_session(&self, session_id: &str) -> Option<MeshCentralSession> {
@@ -246,17 +158,11 @@ impl MeshCentralService {
 
     pub async fn get_meshcentral_server_info(
         &self,
-        session_id: &str,
+        _session_id: &str,
     ) -> Result<MeshCentralServerInfo, String> {
-        let session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
-
-        session
-            .server_info
-            .clone()
-            .ok_or_else(|| "Server info not available".to_string())
+        Err(
+            "MeshCentral server information is unavailable because the transport is not implemented"
+                .to_string(),
+        )
     }
 }
-
