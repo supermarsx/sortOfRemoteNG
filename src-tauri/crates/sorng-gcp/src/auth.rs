@@ -143,8 +143,7 @@ impl TokenManager {
 
         if !response.status().is_success() {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("Token exchange failed (HTTP {}): {}", status, body));
+            return Err(format!("Token exchange failed (HTTP {})", status));
         }
 
         #[derive(Deserialize)]
