@@ -277,5 +277,11 @@ pub async fn serial_hex_to_bytes(hex: String) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 pub async fn serial_bytes_to_hex(data: Vec<u8>) -> Result<String, String> {
+    if data.len() > MAX_SERIAL_PAYLOAD_BYTES {
+        return Err(format!(
+            "Serial payload exceeds {} bytes",
+            MAX_SERIAL_PAYLOAD_BYTES
+        ));
+    }
     Ok(super::transport::bytes_to_hex(&data))
 }
