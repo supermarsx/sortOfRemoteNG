@@ -4,44 +4,37 @@ use crate::error::Fail2banError;
 use crate::types::{ActionDef, Fail2banHost};
 use std::collections::HashMap;
 
-/// Validate a config name (action) — must be alphanumeric, hyphen, underscore only.
-fn validate_config_name(name: &str) -> Result<(), Fail2banError> {
-    if name.is_empty() || name.len() > 128 {
-        return Err(Fail2banError::ConfigError("Action name must be 1-128 characters".into()));
-    }
-    if !name.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_')) {
-        return Err(Fail2banError::ConfigError("Action name contains invalid characters".into()));
-    }
-    Ok(())
-}
-
 /// List available action names by scanning action.d directory.
 pub async fn list_actions(host: &Fail2banHost) -> Result<Vec<String>, Fail2banError> {
-    let cmd = "ls /etc/fail2ban/action.d/*.conf 2>/dev/null | sed 's|.*/||;s|\\.conf$||' | sort";
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(cmd);
-        command.output().await
-    } else {
-        tokio::process::Command::new("sh")
-            .args(["-c", cmd])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("list actions: {e}")))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    Ok(stdout
+    let output = crate::client::exec_program(
+        host,
+        host.use_sudo,
+        "find",
+        &[
+            "/etc/fail2ban/action.d",
+            "-maxdepth",
+            "1",
+            "-type",
+            "f",
+            "-name",
+            "*.conf",
+            "-print",
+        ],
+        "list actions",
+    )
+    .await?;
+    let output = crate::client::require_success("list actions", output)?;
+    let mut names: Vec<String> = output
+        .stdout
         .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+        .filter_map(|line| line.trim().rsplit('/').next())
+        .filter_map(|name| name.strip_suffix(".conf"))
+        .filter(|name| crate::client::validate_safe_name(name, "action name").is_ok())
+        .map(str::to_string)
+        .collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// Read an action configuration file and parse it into an ActionDef.
@@ -49,33 +42,15 @@ pub async fn read_action(
     host: &Fail2banHost,
     action_name: &str,
 ) -> Result<ActionDef, Fail2banError> {
-    validate_config_name(action_name)?;
+    crate::client::validate_safe_name(action_name, "action name")?;
     let path = format!("/etc/fail2ban/action.d/{action_name}.conf");
-    let cmd = format!("cat {path}");
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(&cmd);
-        command.output().await
-    } else {
-        tokio::process::Command::new("sh")
-            .args(["-c", &cmd])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("read action: {e}")))?;
-
-    if !output.status.success() {
+    let output =
+        crate::client::exec_program(host, host.use_sudo, "cat", &["--", &path], "read action")
+            .await?;
+    if output.exit_code != 0 {
         return Err(Fail2banError::ActionNotFound(action_name.to_string()));
     }
-
-    let content = String::from_utf8_lossy(&output.stdout);
-    parse_action_conf(action_name, &content, &path)
+    parse_action_conf(action_name, &output.stdout, &path)
 }
 
 /// List actions associated with a specific jail.
@@ -84,6 +59,7 @@ pub async fn actions_for_jail(
     jail_name: &str,
 ) -> Result<Vec<String>, Fail2banError> {
     use crate::client;
+    client::validate_safe_name(jail_name, "jail name")?;
     let (output, _stderr, _code) = client::exec(host, &["get", jail_name, "actions"]).await?;
 
     // Output: "The jail <name> has the following actions:\niptables-multiport\nsendmail"
@@ -104,6 +80,8 @@ pub async fn action_properties(
     action_name: &str,
 ) -> Result<HashMap<String, String>, Fail2banError> {
     use crate::client;
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_safe_name(action_name, "action name")?;
 
     let properties = [
         "actionstart",

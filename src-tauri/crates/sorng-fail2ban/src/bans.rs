@@ -7,6 +7,8 @@ use log::info;
 
 /// Ban an IP in a specific jail.
 pub async fn ban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail, "jail name")?;
+    client::validate_ip_or_host(ip)?;
     let (stdout, stderr, code) = client::exec(host, &["set", jail, "banip", ip]).await?;
 
     if code != 0 {
@@ -29,6 +31,8 @@ pub async fn ban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), Fai
 
 /// Unban an IP from a specific jail.
 pub async fn unban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail, "jail name")?;
+    client::validate_ip_or_host(ip)?;
     let (stdout, stderr, code) = client::exec(host, &["set", jail, "unbanip", ip]).await?;
 
     if code != 0 {
@@ -51,6 +55,7 @@ pub async fn unban_ip(host: &Fail2banHost, jail: &str, ip: &str) -> Result<(), F
 
 /// Unban an IP from all jails.
 pub async fn unban_ip_all(host: &Fail2banHost, ip: &str) -> Result<Vec<String>, Fail2banError> {
+    client::validate_ip_or_host(ip)?;
     // Try the global unban first (fail2ban 0.10+)
     let (_stdout, _stderr, code) = client::exec(host, &["unban", ip]).await?;
 
@@ -78,6 +83,7 @@ pub async fn unban_ip_all(host: &Fail2banHost, ip: &str) -> Result<Vec<String>, 
 
 /// List all currently banned IPs in a jail.
 pub async fn list_banned(host: &Fail2banHost, jail: &str) -> Result<Vec<BanRecord>, Fail2banError> {
+    client::validate_safe_name(jail, "jail name")?;
     // Get jail status — banned IPs are in the output
     let jail_info = crate::jails::jail_status(host, jail).await?;
 
@@ -134,6 +140,7 @@ pub async fn ban_ip_with_time(
 
 /// Check if an IP is currently banned in any jail.
 pub async fn is_banned(host: &Fail2banHost, ip: &str) -> Result<Vec<String>, Fail2banError> {
+    client::validate_ip_or_host(ip)?;
     let all_bans = list_all_banned(host).await?;
     let jails: Vec<String> = all_bans
         .iter()

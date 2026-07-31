@@ -13,6 +13,7 @@ pub async fn list_jails(host: &Fail2banHost) -> Result<Vec<String>, Fail2banErro
 
 /// Get detailed status of a specific jail.
 pub async fn jail_status(host: &Fail2banHost, jail_name: &str) -> Result<Jail, Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
     let stdout = client::exec_ok(host, &["status", jail_name]).await?;
     parse_jail_status(jail_name, &stdout)
 }
@@ -58,6 +59,7 @@ pub async fn all_jail_statuses(host: &Fail2banHost) -> Result<Vec<Jail>, Fail2ba
 
 /// Start a jail.
 pub async fn start_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
     client::exec_ok(host, &["start", jail_name]).await?;
     info!("Started jail: {jail_name}");
     Ok(())
@@ -65,6 +67,7 @@ pub async fn start_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail
 
 /// Stop a jail.
 pub async fn stop_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
     client::exec_ok(host, &["stop", jail_name]).await?;
     info!("Stopped jail: {jail_name}");
     Ok(())
@@ -72,6 +75,7 @@ pub async fn stop_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2
 
 /// Restart a jail (stop + start).
 pub async fn restart_jail(host: &Fail2banHost, jail_name: &str) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
     // Some fail2ban versions support direct restart, try that first
     match client::exec(host, &["restart", jail_name]).await {
         Ok((_, _, 0)) => {
@@ -92,6 +96,8 @@ pub async fn get_jail_setting(
     jail_name: &str,
     setting: &str,
 ) -> Result<String, Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_safe_name(setting, "setting name")?;
     client::exec_ok(host, &["get", jail_name, setting])
         .await
         .map(|s| s.trim().to_string())
@@ -104,6 +110,9 @@ pub async fn set_jail_setting(
     setting: &str,
     value: &str,
 ) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_safe_name(setting, "setting name")?;
+    client::validate_argument(value, "setting value")?;
     client::exec_ok(host, &["set", jail_name, setting, value]).await?;
     info!("Set {jail_name}.{setting} = {value}");
     Ok(())

@@ -26,6 +26,7 @@ impl Fail2banService {
 
     /// Register a new host.
     pub fn add_host(&mut self, host: Fail2banHost) -> Result<(), Fail2banError> {
+        crate::client::validate_host_config(&host)?;
         if self.hosts.contains_key(&host.id) {
             return Err(Fail2banError::ConfigError(format!(
                 "Host {} already exists",
@@ -38,6 +39,7 @@ impl Fail2banService {
 
     /// Update an existing host.
     pub fn update_host(&mut self, host: Fail2banHost) -> Result<(), Fail2banError> {
+        crate::client::validate_host_config(&host)?;
         if !self.hosts.contains_key(&host.id) {
             return Err(Fail2banError::HostNotFound(host.id.clone()));
         }
@@ -49,24 +51,29 @@ impl Fail2banService {
     pub fn remove_host(&mut self, host_id: &str) -> Result<Fail2banHost, Fail2banError> {
         self.hosts
             .remove(host_id)
+            .map(|host| host.redacted())
             .ok_or_else(|| Fail2banError::HostNotFound(host_id.to_string()))
     }
 
-    /// Get a host by ID.
-    pub fn get_host(&self, host_id: &str) -> Result<&Fail2banHost, Fail2banError> {
+    fn stored_host(&self, host_id: &str) -> Result<&Fail2banHost, Fail2banError> {
         self.hosts
             .get(host_id)
             .ok_or_else(|| Fail2banError::HostNotFound(host_id.to_string()))
     }
 
+    /// Get a secret-free host view by ID.
+    pub fn get_host(&self, host_id: &str) -> Result<Fail2banHost, Fail2banError> {
+        self.stored_host(host_id).map(Fail2banHost::redacted)
+    }
+
     /// Clone a host by ID (for use outside the lock).
     pub fn clone_host(&self, host_id: &str) -> Result<Fail2banHost, Fail2banError> {
-        self.get_host(host_id).cloned()
+        self.stored_host(host_id).cloned()
     }
 
     /// List all registered hosts.
     pub fn list_hosts(&self) -> Vec<Fail2banHost> {
-        self.hosts.values().cloned().collect()
+        self.hosts.values().map(Fail2banHost::redacted).collect()
     }
 
     /// List hosts filtered by tags.
@@ -74,7 +81,7 @@ impl Fail2banService {
         self.hosts
             .values()
             .filter(|h| h.tags.iter().any(|t| t == tag))
-            .cloned()
+            .map(Fail2banHost::redacted)
             .collect()
     }
 }

@@ -10,6 +10,7 @@ pub async fn list_ignored(
     host: &Fail2banHost,
     jail_name: &str,
 ) -> Result<Vec<String>, Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
     let (output, _stderr, _code) = client::exec(host, &["get", jail_name, "ignoreip"]).await?;
 
     // Output varies:
@@ -46,7 +47,8 @@ pub async fn add_ignored(
     jail_name: &str,
     ip: &str,
 ) -> Result<(), Fail2banError> {
-    validate_ip_or_cidr(ip)?;
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_ip_or_host(ip)?;
 
     // Check if already ignored
     let current = list_ignored(host, jail_name).await?;
@@ -69,6 +71,8 @@ pub async fn remove_ignored(
     jail_name: &str,
     ip: &str,
 ) -> Result<(), Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_ip_or_host(ip)?;
     client::exec_ok(host, &["set", jail_name, "delignoreip", ip]).await?;
     info!(
         "Removed {} from ignore list for jail {} on {}",
@@ -85,7 +89,7 @@ pub async fn set_ignored(
 ) -> Result<(), Fail2banError> {
     // Validate all first
     for ip in ips {
-        validate_ip_or_cidr(ip)?;
+        client::validate_ip_or_host(ip)?;
     }
 
     // Get current list
@@ -117,7 +121,7 @@ pub async fn add_ignored_all_jails(
     host: &Fail2banHost,
     ip: &str,
 ) -> Result<Vec<String>, Fail2banError> {
-    validate_ip_or_cidr(ip)?;
+    client::validate_ip_or_host(ip)?;
 
     let jails = crate::jails::list_jails(host).await?;
     let mut affected = Vec::new();
@@ -150,6 +154,7 @@ pub async fn remove_ignored_all_jails(
     host: &Fail2banHost,
     ip: &str,
 ) -> Result<Vec<String>, Fail2banError> {
+    client::validate_ip_or_host(ip)?;
     let jails = crate::jails::list_jails(host).await?;
     let mut affected = Vec::new();
 
@@ -176,6 +181,8 @@ pub async fn is_ignored(
     jail_name: &str,
     ip: &str,
 ) -> Result<bool, Fail2banError> {
+    client::validate_safe_name(jail_name, "jail name")?;
+    client::validate_ip_or_host(ip)?;
     let list = list_ignored(host, jail_name).await?;
     Ok(list.iter().any(|existing| existing == ip))
 }
@@ -185,6 +192,7 @@ pub async fn find_ip_in_ignores(
     host: &Fail2banHost,
     ip: &str,
 ) -> Result<Vec<String>, Fail2banError> {
+    client::validate_ip_or_host(ip)?;
     let jails = crate::jails::list_jails(host).await?;
     let mut found_in = Vec::new();
 
@@ -195,33 +203,4 @@ pub async fn find_ip_in_ignores(
     }
 
     Ok(found_in)
-}
-
-// ─── Validation ─────────────────────────────────────────────────────
-
-/// Validate that a string is a plausible IP address or CIDR notation.
-fn validate_ip_or_cidr(ip: &str) -> Result<(), Fail2banError> {
-    let re = regex::Regex::new(
-        r"(?x)
-        ^(?:
-            # IPv4
-            \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?
-            |
-            # IPv6
-            [0-9a-fA-F:]+(?:/\d{1,3})?
-            |
-            # Domain (fail2ban also supports DNS names)
-            [a-zA-Z0-9][a-zA-Z0-9\-\.]+[a-zA-Z0-9]
-        )$
-        ",
-    )
-    .map_err(|e| Fail2banError::Other(format!("regex error: {e}")))?;
-
-    if !re.is_match(ip) {
-        return Err(Fail2banError::ConfigError(format!(
-            "Invalid IP/CIDR/hostname: {ip}"
-        )));
-    }
-
-    Ok(())
 }

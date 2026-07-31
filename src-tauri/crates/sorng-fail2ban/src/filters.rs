@@ -4,70 +4,37 @@ use crate::error::Fail2banError;
 use crate::types::{Fail2banHost, FilterRule};
 use std::collections::HashMap;
 
-/// Validate a config name (filter or action) — must be alphanumeric, hyphen, underscore only.
-fn validate_config_name(name: &str, kind: &str) -> Result<(), Fail2banError> {
-    if name.is_empty() || name.len() > 128 {
-        return Err(Fail2banError::ConfigError(format!("{kind} name must be 1-128 characters")));
-    }
-    if !name.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_')) {
-        return Err(Fail2banError::ConfigError(format!("{kind} name contains invalid characters")));
-    }
-    Ok(())
-}
-
-/// Validate a file path argument — must be absolute, no traversal, no shell metacharacters.
-fn validate_file_path(path: &str, name: &str) -> Result<(), Fail2banError> {
-    if !path.starts_with('/') {
-        return Err(Fail2banError::ConfigError(format!("{name} must be an absolute path")));
-    }
-    if path.contains("..") {
-        return Err(Fail2banError::ConfigError(format!("{name} must not contain '..'")));
-    }
-    if !path.chars().all(|c| c.is_alphanumeric() || matches!(c, '/' | '-' | '_' | '.')) {
-        return Err(Fail2banError::ConfigError(format!("{name} contains invalid characters")));
-    }
-    Ok(())
-}
-
-/// Validate a shell argument that will be placed in single quotes.
-fn validate_shell_arg(value: &str, name: &str) -> Result<(), Fail2banError> {
-    if value.is_empty() {
-        return Err(Fail2banError::ConfigError(format!("{name} cannot be empty")));
-    }
-    const BLOCKED: &[char] = &['\'', '"', ';', '`', '$', '|', '&', '\n', '\r', '\0'];
-    if value.chars().any(|c| BLOCKED.contains(&c)) {
-        return Err(Fail2banError::ConfigError(format!("{name} contains invalid characters")));
-    }
-    Ok(())
-}
-
 /// List available filter names by scanning filter.d directory.
 pub async fn list_filters(host: &Fail2banHost) -> Result<Vec<String>, Fail2banError> {
-    let cmd = "ls /etc/fail2ban/filter.d/*.conf 2>/dev/null | sed 's|.*/||;s|\\.conf$||' | sort";
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(cmd);
-        command.output().await
-    } else {
-        tokio::process::Command::new("sh")
-            .args(["-c", cmd])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("list filters: {e}")))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    Ok(stdout
+    let output = crate::client::exec_program(
+        host,
+        host.use_sudo,
+        "find",
+        &[
+            "/etc/fail2ban/filter.d",
+            "-maxdepth",
+            "1",
+            "-type",
+            "f",
+            "-name",
+            "*.conf",
+            "-print",
+        ],
+        "list filters",
+    )
+    .await?;
+    let output = crate::client::require_success("list filters", output)?;
+    let mut names: Vec<String> = output
+        .stdout
         .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+        .filter_map(|line| line.trim().rsplit('/').next())
+        .filter_map(|name| name.strip_suffix(".conf"))
+        .filter(|name| crate::client::validate_safe_name(name, "filter name").is_ok())
+        .map(str::to_string)
+        .collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// Read a filter configuration file.
@@ -75,33 +42,15 @@ pub async fn read_filter(
     host: &Fail2banHost,
     filter_name: &str,
 ) -> Result<FilterRule, Fail2banError> {
-    validate_config_name(filter_name, "Filter")?;
+    crate::client::validate_safe_name(filter_name, "filter name")?;
     let path = format!("/etc/fail2ban/filter.d/{filter_name}.conf");
-    let cmd = format!("cat {path}");
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(&cmd);
-        command.output().await
-    } else {
-        tokio::process::Command::new("sh")
-            .args(["-c", &cmd])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("read filter: {e}")))?;
-
-    if !output.status.success() {
+    let output =
+        crate::client::exec_program(host, host.use_sudo, "cat", &["--", &path], "read filter")
+            .await?;
+    if output.exit_code != 0 {
         return Err(Fail2banError::FilterNotFound(filter_name.to_string()));
     }
-
-    let content = String::from_utf8_lossy(&output.stdout);
-    parse_filter_conf(filter_name, &content, &path)
+    parse_filter_conf(filter_name, &output.stdout, &path)
 }
 
 /// Test a filter's regex against a log file.
@@ -112,48 +61,19 @@ pub async fn test_filter(
     log_file: &str,
     filter_name: &str,
 ) -> Result<FilterTestResult, Fail2banError> {
-    validate_config_name(filter_name, "Filter")?;
-    validate_file_path(log_file, "Log file")?;
-    let tool = "fail2ban-regex";
-    let args_str = format!("{log_file} /etc/fail2ban/filter.d/{filter_name}.conf");
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let remote_cmd = if host.use_sudo {
-            format!("sudo {tool} {args_str}")
-        } else {
-            format!("{tool} {args_str}")
-        };
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(&remote_cmd);
-        command.output().await
-    } else if host.use_sudo {
-        tokio::process::Command::new("sudo")
-            .args([
-                tool,
-                log_file,
-                &format!("/etc/fail2ban/filter.d/{filter_name}.conf"),
-            ])
-            .output()
-            .await
-    } else {
-        tokio::process::Command::new(tool)
-            .args([
-                log_file,
-                &format!("/etc/fail2ban/filter.d/{filter_name}.conf"),
-            ])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("test filter: {e}")))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    parse_regex_test_output(&stdout, &stderr)
+    crate::client::validate_safe_name(filter_name, "filter name")?;
+    crate::client::validate_absolute_path(log_file, "log file")?;
+    let filter_path = format!("/etc/fail2ban/filter.d/{filter_name}.conf");
+    let output = crate::client::exec_program(
+        host,
+        host.use_sudo,
+        "fail2ban-regex",
+        &[log_file, &filter_path],
+        "test filter",
+    )
+    .await?;
+    let output = crate::client::require_success("test filter", output)?;
+    parse_regex_test_output(&output.stdout, &output.stderr)
 }
 
 /// Test a custom regex against a log sample.
@@ -162,40 +82,18 @@ pub async fn test_regex(
     log_file: &str,
     regex: &str,
 ) -> Result<FilterTestResult, Fail2banError> {
-    validate_file_path(log_file, "Log file")?;
-    validate_shell_arg(regex, "Regex pattern")?;
-    let tool = "fail2ban-regex";
-
-    let output = if let Some(ssh) = &host.ssh {
-        let ssh_args = ssh.ssh_command();
-        let remote_cmd = if host.use_sudo {
-            format!("sudo {tool} {log_file} '{regex}'")
-        } else {
-            format!("{tool} {log_file} '{regex}'")
-        };
-        let mut command = tokio::process::Command::new(&ssh_args[0]);
-        for arg in &ssh_args[1..] {
-            command.arg(arg);
-        }
-        command.arg(&remote_cmd);
-        command.output().await
-    } else if host.use_sudo {
-        tokio::process::Command::new("sudo")
-            .args([tool, log_file, regex])
-            .output()
-            .await
-    } else {
-        tokio::process::Command::new(tool)
-            .args([log_file, regex])
-            .output()
-            .await
-    };
-
-    let output = output.map_err(|e| Fail2banError::ProcessError(format!("test regex: {e}")))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    parse_regex_test_output(&stdout, &stderr)
+    crate::client::validate_absolute_path(log_file, "log file")?;
+    crate::client::validate_argument(regex, "regex pattern")?;
+    let output = crate::client::exec_program(
+        host,
+        host.use_sudo,
+        "fail2ban-regex",
+        &[log_file, regex],
+        "test regex",
+    )
+    .await?;
+    let output = crate::client::require_success("test regex", output)?;
+    parse_regex_test_output(&output.stdout, &output.stderr)
 }
 
 // ─── Types ──────────────────────────────────────────────────────────

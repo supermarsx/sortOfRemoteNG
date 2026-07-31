@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 // ─── Jail ───────────────────────────────────────────────────────────
 
@@ -205,13 +206,15 @@ pub struct BannedIpSummary {
 // ─── SSH Connection ─────────────────────────────────────────────────
 
 /// SSH connection configuration for reaching the fail2ban host.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SshConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default, skip_serializing)]
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    #[serde(default, skip_serializing)]
     pub private_key_passphrase: Option<String>,
     /// Extra SSH options (-o key=value)
     #[serde(default)]
@@ -220,24 +223,22 @@ pub struct SshConfig {
     pub connect_timeout: Option<u64>,
 }
 
-impl SshConfig {
-    /// Build SSH command prefix for remote command execution.
-    pub fn ssh_command(&self) -> Vec<String> {
-        let mut args = vec!["ssh".to_string(), "-p".to_string(), self.port.to_string()];
-        if let Some(key) = &self.private_key_path {
-            args.push("-i".into());
-            args.push(key.clone());
-        }
-        if let Some(timeout) = self.connect_timeout {
-            args.push("-o".into());
-            args.push(format!("ConnectTimeout={timeout}"));
-        }
-        for (k, v) in &self.ssh_options {
-            args.push("-o".into());
-            args.push(format!("{k}={v}"));
-        }
-        args.push(format!("{}@{}", self.username, self.host));
-        args
+impl fmt::Debug for SshConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SshConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("private_key_path", &self.private_key_path)
+            .field(
+                "private_key_passphrase",
+                &self.private_key_passphrase.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("ssh_options", &self.ssh_options)
+            .field("connect_timeout", &self.connect_timeout)
+            .finish()
     }
 }
 
@@ -259,4 +260,62 @@ pub struct Fail2banHost {
     /// Tags for grouping
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+impl Fail2banHost {
+    pub fn redacted(&self) -> Self {
+        let mut host = self.clone();
+        if let Some(ssh) = &mut host.ssh {
+            ssh.password = None;
+            ssh.private_key_passphrase = None;
+        }
+        host
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn host_with_secrets() -> Fail2banHost {
+        Fail2banHost {
+            id: "host-1".into(),
+            name: "example".into(),
+            description: None,
+            ssh: Some(SshConfig {
+                host: "server.example".into(),
+                port: 22,
+                username: "operator".into(),
+                password: Some("password-value".into()),
+                private_key_path: Some("/home/operator/.ssh/id_ed25519".into()),
+                private_key_passphrase: Some("passphrase-value".into()),
+                ssh_options: HashMap::new(),
+                connect_timeout: Some(5),
+            }),
+            use_sudo: true,
+            client_binary: None,
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn credentials_are_absent_from_serialization_and_debug_output() {
+        let host = host_with_secrets();
+        let serialized = serde_json::to_string(&host).unwrap();
+        let debug = format!("{host:?}");
+        for secret in ["password-value", "passphrase-value"] {
+            assert!(!serialized.contains(secret));
+            assert!(!debug.contains(secret));
+        }
+        assert!(!serialized.contains("password"));
+        assert!(!serialized.contains("private_key_passphrase"));
+    }
+
+    #[test]
+    fn public_host_view_drops_credentials() {
+        let host = host_with_secrets().redacted();
+        let ssh = host.ssh.unwrap();
+        assert!(ssh.password.is_none());
+        assert!(ssh.private_key_passphrase.is_none());
+    }
 }

@@ -48,7 +48,7 @@ pub async fn f2b_get_host(
     state: State<'_, Fail2banServiceState>,
     host_id: String,
 ) -> Result<Fail2banHost, String> {
-    state.lock().await.clone_host(&host_id).map_err(err_str)
+    state.lock().await.get_host(&host_id).map_err(err_str)
 }
 
 // ─── Connection / Server ────────────────────────────────────────────
