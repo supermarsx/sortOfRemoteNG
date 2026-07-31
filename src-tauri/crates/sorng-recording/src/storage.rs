@@ -63,8 +63,9 @@ pub fn durable_write(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
     use std::io::Write;
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| RecordingError::StorageError(format!("mkdir {}: {}", parent.display(), e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                RecordingError::StorageError(format!("mkdir {}: {}", parent.display(), e))
+            })?;
         }
     }
     let tmp = durable_temp_sibling(path);
@@ -93,6 +94,64 @@ pub fn durable_write(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
     }
     durable_sync_parent_dir(path);
     Ok(())
+}
+
+const PLAINTEXT_CLEANUP_ERROR: &str =
+    "encrypted recording was retained, but plaintext cleanup failed";
+const RECORDING_DELETE_ERROR: &str = "recording deletion failed; encrypted data was retained";
+
+fn remove_optional_path_with(
+    path: &Path,
+    remove: &mut impl FnMut(&Path) -> std::io::Result<()>,
+    opaque_error: &'static str,
+) -> RecordingResult<()> {
+    match remove(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(RecordingError::StorageError(opaque_error.to_string())),
+    }
+}
+
+fn remove_plaintext_after_encryption_with(
+    path: &Path,
+    remove: &mut impl FnMut(&Path) -> std::io::Result<()>,
+) -> RecordingResult<()> {
+    remove_optional_path_with(path, remove, PLAINTEXT_CLEANUP_ERROR)
+}
+
+fn remove_plaintext_after_encryption(path: &Path) -> RecordingResult<()> {
+    remove_plaintext_after_encryption_with(path, &mut |candidate: &Path| {
+        std::fs::remove_file(candidate)
+    })
+}
+
+fn delete_encrypted_variants_with(
+    plain: &Path,
+    encrypted: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> RecordingResult<()> {
+    // Plaintext is attempted first. Any failure returns before touching the
+    // ciphertext, guaranteeing that an explicit deletion failure retains a
+    // recoverable encrypted copy.
+    remove_optional_path_with(plain, &mut remove, RECORDING_DELETE_ERROR)?;
+    remove_optional_path_with(encrypted, &mut remove, RECORDING_DELETE_ERROR)
+}
+
+fn delete_encrypted_json_variants_with(
+    plain: &Path,
+    encrypted: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> RecordingResult<()> {
+    // Legacy migration backups are plaintext too. Delete both plaintext
+    // variants before touching the ciphertext so any failure retains a
+    // recoverable encrypted copy.
+    remove_optional_path_with(plain, &mut remove, RECORDING_DELETE_ERROR)?;
+    remove_optional_path_with(
+        &plaintext_backup_path(plain),
+        &mut remove,
+        RECORDING_DELETE_ERROR,
+    )?;
+    remove_optional_path_with(encrypted, &mut remove, RECORDING_DELETE_ERROR)
 }
 
 /// Resolve the storage root.  If the config has a custom dir use it,
@@ -404,8 +463,7 @@ pub fn write_export_bytes(path: &Path, data: &[u8]) -> RecordingResult<()> {
 // ═══════════════════════════════════════════════════════════════════════
 
 use sorng_encryption::artifacts::{
-    macros as macros_codec, recording_media as media_codec,
-    recording_meta as meta_codec,
+    macros as macros_codec, recording_media as media_codec, recording_meta as meta_codec,
 };
 use sorng_encryption::envelope::{MasterKeyStorage, SALT_LEN};
 use sorng_encryption::password_wrap::Argon2Params;
@@ -424,6 +482,15 @@ fn macro_enc_path(root: &Path, id: &str) -> PathBuf {
 }
 fn macro_plain_path(root: &Path, id: &str) -> PathBuf {
     macros_dir(root).join(format!("{}.json", id))
+}
+
+fn plaintext_backup_path(plain: &Path) -> PathBuf {
+    plain.with_extension("json.v0.bak")
+}
+
+fn remove_stale_plaintext_variants(plain: &Path) -> RecordingResult<()> {
+    remove_plaintext_after_encryption(plain)?;
+    remove_plaintext_after_encryption(&plaintext_backup_path(plain))
 }
 
 /// Save an envelope, picking the format from the encryption state.
@@ -459,11 +526,10 @@ pub async fn save_envelope_dispatched(
         .map_err(|e| RecordingError::StorageError(format!("encrypt envelope: {}", e)))?;
         let enc_path = envelope_enc_path(root, &envelope.id);
         durable_write(&enc_path, &blob)?;
-        // Sweep the stale plaintext shadow if it exists.
+        // A successful encrypted save guarantees that neither the live
+        // plaintext nor an old migration backup remains.
         let plain = envelope_plain_path(root, &envelope.id);
-        if plain.exists() {
-            let _ = std::fs::remove_file(&plain);
-        }
+        remove_stale_plaintext_variants(&plain)?;
         Ok(())
     } else {
         save_envelope(root, envelope)
@@ -575,8 +641,7 @@ pub async fn load_all_envelopes_dispatched(
     // Second pass: drop any plaintext entry whose id also has an `.enc`
     // (we may have inserted plaintext before seeing the `.enc` due to
     // readdir order).
-    let mut out: Vec<SavedRecordingEnvelope> =
-        by_id.into_iter().map(|(_, (_, env))| env).collect();
+    let mut out: Vec<SavedRecordingEnvelope> = by_id.into_iter().map(|(_, (_, env))| env).collect();
     out.sort_by_key(|envelope| std::cmp::Reverse(envelope.saved_at));
     Ok(out)
 }
@@ -585,15 +650,9 @@ pub async fn load_all_envelopes_dispatched(
 pub fn delete_envelope_all_variants(root: &Path, id: &str) -> RecordingResult<()> {
     let plain = envelope_plain_path(root, id);
     let enc = envelope_enc_path(root, id);
-    if plain.exists() {
-        std::fs::remove_file(&plain)
-            .map_err(|e| RecordingError::StorageError(format!("delete plain: {}", e)))?;
-    }
-    if enc.exists() {
-        std::fs::remove_file(&enc)
-            .map_err(|e| RecordingError::StorageError(format!("delete enc: {}", e)))?;
-    }
-    Ok(())
+    delete_encrypted_json_variants_with(&plain, &enc, |candidate: &Path| {
+        std::fs::remove_file(candidate)
+    })
 }
 
 // ── Macros ─────────────────────────────────────────────────────────────
@@ -626,9 +685,7 @@ pub async fn save_macro_dispatched(
         let enc_path = macro_enc_path(root, &macro_rec.id);
         durable_write(&enc_path, &blob)?;
         let plain = macro_plain_path(root, &macro_rec.id);
-        if plain.exists() {
-            let _ = std::fs::remove_file(&plain);
-        }
+        remove_stale_plaintext_variants(&plain)?;
         Ok(())
     } else {
         save_macro(root, macro_rec)
@@ -708,15 +765,9 @@ pub async fn load_all_macros_dispatched(
 pub fn delete_macro_all_variants(root: &Path, macro_id: &str) -> RecordingResult<()> {
     let plain = macro_plain_path(root, macro_id);
     let enc = macro_enc_path(root, macro_id);
-    if plain.exists() {
-        std::fs::remove_file(&plain)
-            .map_err(|e| RecordingError::StorageError(format!("delete plain macro: {}", e)))?;
-    }
-    if enc.exists() {
-        std::fs::remove_file(&enc)
-            .map_err(|e| RecordingError::StorageError(format!("delete enc macro: {}", e)))?;
-    }
-    Ok(())
+    delete_encrypted_json_variants_with(&plain, &enc, |candidate: &Path| {
+        std::fs::remove_file(candidate)
+    })
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -794,9 +845,7 @@ pub async fn save_media_blob_dispatched(
         let enc_path = media_enc_path(root, basename);
         durable_write(&enc_path, &blob)?;
         let plain = media_plain_path(root, basename);
-        if plain.exists() {
-            let _ = std::fs::remove_file(&plain);
-        }
+        remove_plaintext_after_encryption(&plain)?;
         Ok(())
     } else {
         let plain = media_plain_path(root, basename);
@@ -950,9 +999,8 @@ pub async fn rewrite_envelope_with(
     from: &EncryptionState,
     to: &EncryptionState,
 ) -> RecordingResult<u64> {
-    let bytes = std::fs::read(path).map_err(|e| {
-        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
-    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", path.display(), e)))?;
     let value = meta_codec::read(from, &bytes)
         .await
         .map_err(|e| RecordingError::StorageError(format!("decrypt: {}", e)))?
@@ -976,9 +1024,8 @@ pub async fn rewrite_macro_with(
     from: &EncryptionState,
     to: &EncryptionState,
 ) -> RecordingResult<u64> {
-    let bytes = std::fs::read(path).map_err(|e| {
-        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
-    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", path.display(), e)))?;
     let value = macros_codec::read(from, &bytes)
         .await
         .map_err(|e| RecordingError::StorageError(format!("decrypt: {}", e)))?
@@ -1005,9 +1052,8 @@ pub async fn rewrite_media_with(
     from: &EncryptionState,
     to: &EncryptionState,
 ) -> RecordingResult<u64> {
-    let bytes = std::fs::read(path).map_err(|e| {
-        RecordingError::StorageError(format!("read {}: {}", path.display(), e))
-    })?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| RecordingError::StorageError(format!("read {}: {}", path.display(), e)))?;
     let plaintext = media_codec::read_all(from, &bytes)
         .await
         .map_err(|e| RecordingError::StorageError(format!("decrypt media: {}", e)))?;
@@ -1029,15 +1075,9 @@ fn atomic_write_path(path: &Path, bytes: &[u8]) -> RecordingResult<()> {
 pub fn delete_media_all_variants(root: &Path, basename: &str) -> RecordingResult<()> {
     let plain = media_plain_path(root, basename);
     let enc = media_enc_path(root, basename);
-    if plain.exists() {
-        std::fs::remove_file(&plain)
-            .map_err(|e| RecordingError::StorageError(format!("delete plain media: {}", e)))?;
-    }
-    if enc.exists() {
-        std::fs::remove_file(&enc)
-            .map_err(|e| RecordingError::StorageError(format!("delete enc media: {}", e)))?;
-    }
-    Ok(())
+    delete_encrypted_variants_with(&plain, &enc, |candidate: &Path| {
+        std::fs::remove_file(candidate)
+    })
 }
 
 /// Export a media buffer to an arbitrary path (used by the
@@ -1182,8 +1222,7 @@ pub async fn read_terminal_snapshot(
         }
     };
 
-    let is_envelope =
-        bytes.len() >= 6 && &bytes[..6] == sorng_encryption::envelope::MAGIC;
+    let is_envelope = bytes.len() >= 6 && &bytes[..6] == sorng_encryption::envelope::MAGIC;
     let value: serde_json::Value = if is_envelope {
         let state = enc.ok_or_else(|| {
             RecordingError::StorageError(
@@ -1289,9 +1328,9 @@ pub struct NoopProgress;
 impl MigrationProgress for NoopProgress {}
 
 /// One-shot migration of all `<id>.json` envelopes under `<root>`'s
-/// recordings dir to `<id>.json.enc`. Each source file is archived to
-/// `<id>.json.v0.bak` before being deleted, mirroring the settings-
-/// migration safety net. Returns `(migrated, skipped)` counts.
+/// recordings dir to `<id>.json.enc`. A temporary plaintext rollback
+/// sibling may be used during conversion, but success guarantees that it
+/// has been removed. Returns `(migrated, skipped)` counts.
 ///
 /// Thin wrapper around
 /// [`migrate_all_envelopes_to_encrypted_with_progress`] using
@@ -1374,12 +1413,15 @@ pub async fn migrate_all_envelopes_to_encrypted_with_progress(
                 continue;
             }
         };
-        // Archive the plaintext first so the sweep that
-        // `save_envelope_dispatched` performs has nothing to remove and
-        // the rollback file persists on disk.
+        // Move aside first so the original remains recoverable until the
+        // ciphertext is durably committed. The encrypted save and the
+        // explicit cleanup below guarantee no plaintext backup survives a
+        // successful migration.
         let bak = path.with_extension("json.v0.bak");
         let _ = std::fs::rename(&path, &bak);
         save_envelope_dispatched(root, &envelope, enc).await?;
+        remove_plaintext_after_encryption(&path)?;
+        remove_plaintext_after_encryption(&bak)?;
         migrated += 1;
         progress.step(MigrationStage::Envelopes, i + 1, total, &name, false);
     }
@@ -1460,6 +1502,8 @@ pub async fn migrate_all_macros_to_encrypted_with_progress(
         let bak = path.with_extension("json.v0.bak");
         let _ = std::fs::rename(&path, &bak);
         save_macro_dispatched(root, &m, enc).await?;
+        remove_plaintext_after_encryption(&path)?;
+        remove_plaintext_after_encryption(&bak)?;
         migrated += 1;
         progress.step(MigrationStage::Macros, i + 1, total, &name, false);
     }
@@ -1519,7 +1563,9 @@ mod enc_dispatch_tests {
         ensure_dirs(tmp.path()).unwrap();
         let enc = unlocked().await;
         let env = fixture_envelope("a");
-        save_envelope_dispatched(tmp.path(), &env, &enc).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &enc)
+            .await
+            .unwrap();
         assert!(envelope_enc_path(tmp.path(), "a").exists());
         assert!(!envelope_plain_path(tmp.path(), "a").exists());
     }
@@ -1530,7 +1576,9 @@ mod enc_dispatch_tests {
         ensure_dirs(tmp.path()).unwrap();
         let locked = EncryptionState::new();
         let env = fixture_envelope("b");
-        save_envelope_dispatched(tmp.path(), &env, &locked).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &locked)
+            .await
+            .unwrap();
         assert!(!envelope_enc_path(tmp.path(), "b").exists());
         assert!(envelope_plain_path(tmp.path(), "b").exists());
     }
@@ -1542,7 +1590,9 @@ mod enc_dispatch_tests {
         let env = fixture_envelope("c");
         save_envelope(tmp.path(), &env).unwrap();
         let enc = unlocked().await;
-        save_envelope_dispatched(tmp.path(), &env, &enc).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &enc)
+            .await
+            .unwrap();
         assert!(envelope_enc_path(tmp.path(), "c").exists());
         assert!(!envelope_plain_path(tmp.path(), "c").exists());
     }
@@ -1571,9 +1621,16 @@ mod enc_dispatch_tests {
         .unwrap();
         std::fs::write(envelope_enc_path(tmp.path(), "d"), &blob).unwrap();
         // Re-plant the plaintext (in case sweep would have removed it):
-        save_envelope(tmp.path(), &{ let mut e = env.clone(); e.size_bytes = 1; e }).unwrap();
+        save_envelope(tmp.path(), &{
+            let mut e = env.clone();
+            e.size_bytes = 1;
+            e
+        })
+        .unwrap();
 
-        let list = load_all_envelopes_dispatched(tmp.path(), &enc).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &enc)
+            .await
+            .unwrap();
         assert_eq!(list.len(), 1, "deduped to one entry");
         assert_eq!(list[0].id, "d");
         assert_eq!(list[0].size_bytes, 99, ".enc must win over .json");
@@ -1586,11 +1643,15 @@ mod enc_dispatch_tests {
         let unlocked = unlocked().await;
         let env_a = fixture_envelope("a");
         let env_b = fixture_envelope("b");
-        save_envelope_dispatched(tmp.path(), &env_a, &unlocked).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env_a, &unlocked)
+            .await
+            .unwrap();
         save_envelope(tmp.path(), &env_b).unwrap(); // remaining plaintext
 
         let locked = EncryptionState::new();
-        let list = load_all_envelopes_dispatched(tmp.path(), &locked).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &locked)
+            .await
+            .unwrap();
         // Encrypted entry is skipped under locked state, plaintext survives.
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "b");
@@ -1603,7 +1664,9 @@ mod enc_dispatch_tests {
         let env = fixture_envelope("z");
         let enc = unlocked().await;
         save_envelope(tmp.path(), &env).unwrap();
-        save_envelope_dispatched(tmp.path(), &env, &enc).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &enc)
+            .await
+            .unwrap();
         // Re-plant a plaintext that the sweep would have removed.
         save_envelope(tmp.path(), &env).unwrap();
         delete_envelope_all_variants(tmp.path(), "z").unwrap();
@@ -1619,18 +1682,23 @@ mod enc_dispatch_tests {
             save_envelope(tmp.path(), &fixture_envelope(id)).unwrap();
         }
         let enc = unlocked().await;
-        let (migrated, skipped) =
-            migrate_all_envelopes_to_encrypted(tmp.path(), &enc).await.unwrap();
+        let (migrated, skipped) = migrate_all_envelopes_to_encrypted(tmp.path(), &enc)
+            .await
+            .unwrap();
         assert_eq!(migrated, 3);
         assert_eq!(skipped, 0);
         for id in ["a", "b", "c"] {
-            assert!(envelope_enc_path(tmp.path(), id).exists());
-            assert!(!envelope_plain_path(tmp.path(), id).exists());
-            assert!(tmp.path().join(format!("recordings/{}.json.v0.bak", id)).exists());
+            let encrypted = envelope_enc_path(tmp.path(), id);
+            let plaintext = envelope_plain_path(tmp.path(), id);
+            assert!(encrypted.exists());
+            assert!(!plaintext.exists());
+            assert!(!plaintext_backup_path(&plaintext).exists());
+
+            let loaded = load_envelope_dispatched(tmp.path(), id, &enc)
+                .await
+                .unwrap();
+            assert_eq!(loaded.id, id);
         }
-        // Round-trip a single one through the dispatched read.
-        let loaded = load_envelope_dispatched(tmp.path(), "b", &enc).await.unwrap();
-        assert_eq!(loaded.id, "b");
     }
 
     #[tokio::test]
@@ -1690,7 +1758,9 @@ mod enc_dispatch_tests {
         let pre = load_media_blob_dispatched(tmp.path(), "session.webm", &state_b).await;
         assert!(pre.is_err());
 
-        rewrite_media_with(&media_path, &state_a, &state_b).await.unwrap();
+        rewrite_media_with(&media_path, &state_a, &state_b)
+            .await
+            .unwrap();
 
         let post = load_media_blob_dispatched(tmp.path(), "session.webm", &state_b)
             .await
@@ -1706,16 +1776,22 @@ mod enc_dispatch_tests {
         ensure_dirs(tmp.path()).unwrap();
         let state_a = unlocked().await;
         let m = fixture_macro("rotm");
-        save_macro_dispatched(tmp.path(), &m, &state_a).await.unwrap();
+        save_macro_dispatched(tmp.path(), &m, &state_a)
+            .await
+            .unwrap();
         let macro_path = macro_enc_path(tmp.path(), "rotm");
 
         let state_b = sorng_encryption::EncryptionState::new();
         state_b
             .install(sorng_encryption::MasterDek::from_bytes(&[13u8; 32]).unwrap())
             .await;
-        rewrite_macro_with(&macro_path, &state_a, &state_b).await.unwrap();
+        rewrite_macro_with(&macro_path, &state_a, &state_b)
+            .await
+            .unwrap();
 
-        let list = load_all_macros_dispatched(tmp.path(), &state_b).await.unwrap();
+        let list = load_all_macros_dispatched(tmp.path(), &state_b)
+            .await
+            .unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "rotm");
     }
@@ -1731,8 +1807,12 @@ mod enc_dispatch_tests {
         save_envelope_dispatched(tmp.path(), &fixture_envelope("e1"), &state_a)
             .await
             .unwrap();
-        save_media_blob_dispatched(tmp.path(), "m1.webm", b"x", &state_a).await.unwrap();
-        save_macro_dispatched(tmp.path(), &fixture_macro("mac1"), &state_a).await.unwrap();
+        save_media_blob_dispatched(tmp.path(), "m1.webm", b"x", &state_a)
+            .await
+            .unwrap();
+        save_macro_dispatched(tmp.path(), &fixture_macro("mac1"), &state_a)
+            .await
+            .unwrap();
         assert_eq!(list_encrypted_envelope_paths(tmp.path()).len(), 1);
         assert_eq!(list_encrypted_media_paths(tmp.path()).len(), 1);
         assert_eq!(list_encrypted_macro_paths(tmp.path()).len(), 1);
@@ -1814,13 +1894,10 @@ mod enc_dispatch_tests {
         }
         let enc = unlocked().await;
         let reporter = RecordingReporter::new(usize::MAX);
-        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
-            tmp.path(),
-            &enc,
-            &reporter,
-        )
-        .await
-        .unwrap();
+        let (migrated, skipped) =
+            migrate_all_envelopes_to_encrypted_with_progress(tmp.path(), &enc, &reporter)
+                .await
+                .unwrap();
         assert_eq!(migrated, 4);
         assert_eq!(skipped, 0);
         let totals = reporter.totals.lock().unwrap();
@@ -1849,13 +1926,10 @@ mod enc_dispatch_tests {
         .unwrap();
         let enc = unlocked().await;
         let reporter = RecordingReporter::new(usize::MAX);
-        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
-            tmp.path(),
-            &enc,
-            &reporter,
-        )
-        .await
-        .unwrap();
+        let (migrated, skipped) =
+            migrate_all_envelopes_to_encrypted_with_progress(tmp.path(), &enc, &reporter)
+                .await
+                .unwrap();
         assert_eq!(migrated, 1);
         assert_eq!(skipped, 1);
         let events = reporter.events.lock().unwrap();
@@ -1874,13 +1948,10 @@ mod enc_dispatch_tests {
         }
         let enc = unlocked().await;
         let reporter = RecordingReporter::new(2);
-        let (migrated, skipped) = migrate_all_envelopes_to_encrypted_with_progress(
-            tmp.path(),
-            &enc,
-            &reporter,
-        )
-        .await
-        .unwrap();
+        let (migrated, skipped) =
+            migrate_all_envelopes_to_encrypted_with_progress(tmp.path(), &enc, &reporter)
+                .await
+                .unwrap();
         // The first two files must be fully committed.
         assert_eq!(migrated, 2);
         assert_eq!(skipped, 0);
@@ -1889,10 +1960,7 @@ mod enc_dispatch_tests {
         // *uncommitted* ids proves the loop never started them.
         let remaining_plaintext = std::fs::read_dir(recordings_dir(tmp.path()))
             .unwrap()
-            .filter_map(|e| {
-                e.ok()
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-            })
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
             .filter(|n| n.ends_with(".json") && !n.ends_with(ENC_SUFFIX))
             .count();
         // Three uncancelled .json files remain on disk untouched.
@@ -1907,13 +1975,9 @@ mod enc_dispatch_tests {
         let tmp = tempdir().unwrap();
         let enc = unlocked().await;
         let reporter = RecordingReporter::new(usize::MAX);
-        let (m, s) = migrate_all_envelopes_to_encrypted_with_progress(
-            tmp.path(),
-            &enc,
-            &reporter,
-        )
-        .await
-        .unwrap();
+        let (m, s) = migrate_all_envelopes_to_encrypted_with_progress(tmp.path(), &enc, &reporter)
+            .await
+            .unwrap();
         assert_eq!((m, s), (0, 0));
         let totals = reporter.totals.lock().unwrap();
         assert_eq!(*totals, vec![(MigrationStage::Envelopes, 0)]);
@@ -1987,15 +2051,9 @@ mod enc_dispatch_tests {
             .await
             .unwrap();
         // Read chunk index 2 — corresponds to bytes 131072..196608.
-        let chunk = read_media_chunk_dispatched(
-            tmp.path(),
-            "scrub.webm",
-            2,
-            64 * 1024,
-            &enc,
-        )
-        .await
-        .unwrap();
+        let chunk = read_media_chunk_dispatched(tmp.path(), "scrub.webm", 2, 64 * 1024, &enc)
+            .await
+            .unwrap();
         assert_eq!(chunk.len(), 64 * 1024);
         let expected_start = 64 * 1024 * 2;
         assert_eq!(chunk[0], bytes[expected_start]);
@@ -2061,7 +2119,9 @@ mod enc_dispatch_tests {
         let tmp = tempdir().unwrap();
         let dest = tmp.path().join("portable.webm");
         let bytes = media_fixture(4096);
-        write_exported_media(&dest, &bytes, None, false).await.unwrap();
+        write_exported_media(&dest, &bytes, None, false)
+            .await
+            .unwrap();
         let on_disk = std::fs::read(&dest).unwrap();
         assert_eq!(on_disk, bytes);
         assert!(!is_encrypted_media_blob(&on_disk));
@@ -2116,10 +2176,7 @@ mod enc_dispatch_tests {
         let enc = unlocked().await;
         let env = fixture_envelope("autocreate");
         let result = save_envelope_dispatched(&nested_root, &env, &enc).await;
-        assert!(
-            result.is_ok(),
-            "writer should auto-mkdir, got: {result:?}"
-        );
+        assert!(result.is_ok(), "writer should auto-mkdir, got: {result:?}");
         // The recordings subdir now exists with the .enc file inside.
         assert!(nested_root.join("recordings").exists());
         assert!(envelope_enc_path(&nested_root, "autocreate").exists());
@@ -2134,14 +2191,12 @@ mod enc_dispatch_tests {
         let tmp = tempdir().unwrap();
         ensure_dirs(tmp.path()).unwrap();
         let garbage: Vec<u8> = (0..500u32).map(|i| ((i * 251 + 17) % 256) as u8).collect();
-        std::fs::write(
-            recordings_dir(tmp.path()).join("garbage.json"),
-            &garbage,
-        )
-        .unwrap();
+        std::fs::write(recordings_dir(tmp.path()).join("garbage.json"), &garbage).unwrap();
 
         let enc = unlocked().await;
-        let list = load_all_envelopes_dispatched(tmp.path(), &enc).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &enc)
+            .await
+            .unwrap();
         assert_eq!(
             list.len(),
             0,
@@ -2154,7 +2209,9 @@ mod enc_dispatch_tests {
         // No recordings dir → empty list, per documented contract.
         let tmp = tempdir().unwrap();
         let enc = unlocked().await;
-        let list = load_all_envelopes_dispatched(tmp.path(), &enc).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &enc)
+            .await
+            .unwrap();
         assert!(list.is_empty());
 
         // load_envelope_dispatched against a missing id surfaces an
@@ -2176,18 +2233,21 @@ mod enc_dispatch_tests {
         let enc = unlocked().await;
         let id = "leftover";
         let stale_tmp = recordings_dir(tmp.path()).join(format!("{}.json.enc.tmp", id));
-        let stale_rotating = recordings_dir(tmp.path())
-            .join(format!("{}.json.enc.rotating", id));
+        let stale_rotating = recordings_dir(tmp.path()).join(format!("{}.json.enc.rotating", id));
         std::fs::write(&stale_tmp, b"prior-crash artefact").unwrap();
         std::fs::write(&stale_rotating, b"prior-rotation artefact").unwrap();
 
         let env = fixture_envelope(id);
-        save_envelope_dispatched(tmp.path(), &env, &enc).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &enc)
+            .await
+            .unwrap();
 
         // The canonical .enc file holds the new content.
         assert!(envelope_enc_path(tmp.path(), id).exists());
         // The round-trip read confirms it's the freshly written one.
-        let loaded = load_envelope_dispatched(tmp.path(), id, &enc).await.unwrap();
+        let loaded = load_envelope_dispatched(tmp.path(), id, &enc)
+            .await
+            .unwrap();
         assert_eq!(loaded.id, id);
     }
 
@@ -2201,12 +2261,17 @@ mod enc_dispatch_tests {
         ensure_dirs(tmp.path()).unwrap();
         let state_a = unlocked_with_bytes([1u8; 32]).await;
         let env = fixture_envelope("evict-meta");
-        save_envelope_dispatched(tmp.path(), &env, &state_a).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &state_a)
+            .await
+            .unwrap();
 
         let state_b = unlocked_with_bytes([2u8; 32]).await;
         // load_envelope_dispatched surfaces the decrypt error.
         let result = load_envelope_dispatched(tmp.path(), "evict-meta", &state_b).await;
-        assert!(result.is_err(), "wrong-key load must error, got: {result:?}");
+        assert!(
+            result.is_err(),
+            "wrong-key load must error, got: {result:?}"
+        );
         let err = result.unwrap_err();
         let msg = format!("{}", err).to_lowercase();
         assert!(
@@ -2218,7 +2283,9 @@ mod enc_dispatch_tests {
         );
 
         // The listing silently skips and returns an empty list.
-        let list = load_all_envelopes_dispatched(tmp.path(), &state_b).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &state_b)
+            .await
+            .unwrap();
         assert_eq!(
             list.len(),
             0,
@@ -2234,14 +2301,18 @@ mod enc_dispatch_tests {
         ensure_dirs(tmp.path()).unwrap();
         let state_a = unlocked_with_bytes([4u8; 32]).await;
         let env = fixture_envelope("evict-meta-ok");
-        save_envelope_dispatched(tmp.path(), &env, &state_a).await.unwrap();
+        save_envelope_dispatched(tmp.path(), &env, &state_a)
+            .await
+            .unwrap();
 
         let state_b = unlocked_with_bytes([4u8; 32]).await;
         let loaded = load_envelope_dispatched(tmp.path(), "evict-meta-ok", &state_b)
             .await
             .unwrap();
         assert_eq!(loaded.id, "evict-meta-ok");
-        let list = load_all_envelopes_dispatched(tmp.path(), &state_b).await.unwrap();
+        let list = load_all_envelopes_dispatched(tmp.path(), &state_b)
+            .await
+            .unwrap();
         assert_eq!(list.len(), 1);
     }
 
@@ -2307,5 +2378,122 @@ mod enc_dispatch_tests {
         bytes_media[6] = 2;
         bytes_media[7] = 2; // kind = chunked-stream
         assert!(is_encrypted_media_blob(&bytes_media));
+    }
+
+    #[test]
+    fn plaintext_cleanup_failure_is_opaque_and_preserves_ciphertext() {
+        let tmp = tempdir().unwrap();
+        let plain = tmp.path().join("session.json");
+        let encrypted = tmp.path().join("session.json.enc");
+        std::fs::write(&plain, b"secret").unwrap();
+        std::fs::write(&encrypted, b"recoverable ciphertext").unwrap();
+
+        let err = remove_plaintext_after_encryption_with(&plain, &mut |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "sensitive filesystem detail",
+            ))
+        })
+        .unwrap_err();
+
+        let RecordingError::StorageError(message) = err else {
+            panic!("expected storage error");
+        };
+        assert_eq!(message, PLAINTEXT_CLEANUP_ERROR);
+        assert!(!message.contains("sensitive"));
+        assert!(encrypted.exists());
+    }
+
+    #[test]
+    fn delete_failure_is_opaque_and_preserves_ciphertext() {
+        let tmp = tempdir().unwrap();
+        let plain = tmp.path().join("session.json");
+        let encrypted = tmp.path().join("session.json.enc");
+        std::fs::write(&plain, b"secret").unwrap();
+        std::fs::write(&encrypted, b"recoverable ciphertext").unwrap();
+
+        let err = delete_encrypted_variants_with(&plain, &encrypted, |path| {
+            if path == plain.as_path() {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "sensitive filesystem detail",
+                ))
+            } else {
+                std::fs::remove_file(path)
+            }
+        })
+        .unwrap_err();
+
+        let RecordingError::StorageError(message) = err else {
+            panic!("expected storage error");
+        };
+        assert_eq!(message, RECORDING_DELETE_ERROR);
+        assert!(!message.contains("sensitive"));
+        assert!(encrypted.exists());
+    }
+
+    #[test]
+    fn legacy_backup_delete_failure_is_opaque_and_preserves_ciphertext() {
+        let tmp = tempdir().unwrap();
+        let plain = tmp.path().join("session.json");
+        let backup = plaintext_backup_path(&plain);
+        let encrypted = tmp.path().join("session.json.enc");
+        std::fs::write(&plain, b"secret").unwrap();
+        std::fs::write(&backup, b"legacy secret").unwrap();
+        std::fs::write(&encrypted, b"recoverable ciphertext").unwrap();
+
+        let err = delete_encrypted_json_variants_with(&plain, &encrypted, |path| {
+            if path == backup.as_path() {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "sensitive filesystem detail",
+                ))
+            } else {
+                std::fs::remove_file(path)
+            }
+        })
+        .unwrap_err();
+
+        let RecordingError::StorageError(message) = err else {
+            panic!("expected storage error");
+        };
+        assert_eq!(message, RECORDING_DELETE_ERROR);
+        assert!(!message.contains("sensitive"));
+        assert!(backup.exists());
+        assert!(encrypted.exists());
+    }
+
+    #[tokio::test]
+    async fn encrypted_saves_remove_live_and_backup_plaintext() {
+        let tmp = tempdir().unwrap();
+        ensure_dirs(tmp.path()).unwrap();
+        let enc = unlocked().await;
+
+        let envelope = fixture_envelope("cleanup-envelope");
+        let envelope_plain = envelope_plain_path(tmp.path(), &envelope.id);
+        std::fs::write(&envelope_plain, b"stale").unwrap();
+        std::fs::write(plaintext_backup_path(&envelope_plain), b"stale backup").unwrap();
+        save_envelope_dispatched(tmp.path(), &envelope, &enc)
+            .await
+            .unwrap();
+        assert!(!envelope_plain.exists());
+        assert!(!plaintext_backup_path(&envelope_plain).exists());
+
+        let macro_rec = fixture_macro("cleanup-macro");
+        let macro_plain = macro_plain_path(tmp.path(), &macro_rec.id);
+        std::fs::write(&macro_plain, b"stale").unwrap();
+        std::fs::write(plaintext_backup_path(&macro_plain), b"stale backup").unwrap();
+        save_macro_dispatched(tmp.path(), &macro_rec, &enc)
+            .await
+            .unwrap();
+        assert!(!macro_plain.exists());
+        assert!(!plaintext_backup_path(&macro_plain).exists());
+
+        let media_plain = media_plain_path(tmp.path(), "cleanup.webm");
+        std::fs::write(&media_plain, b"stale").unwrap();
+        save_media_blob_dispatched(tmp.path(), "cleanup.webm", b"media", &enc)
+            .await
+            .unwrap();
+        assert!(!media_plain.exists());
     }
 }
