@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -15,6 +14,7 @@ pub type RustDeskServiceState = Arc<Mutex<RustDeskService>>;
 pub struct RustDeskSession {
     pub id: String,
     pub remote_id: String,
+    #[serde(skip_serializing)]
     pub password: Option<String>,
     pub connected: bool,
     pub quality: String,
@@ -48,6 +48,36 @@ pub struct RustDeskService {
     rustdesk_path: Option<String>,
 }
 
+const RUSTDESK_ARGV_SECRET_ERROR: &str =
+    "Saved-password RustDesk launch is disabled because this client only accepts the password in the OS-visible process argument list. Launch without a stored password and authenticate in the RustDesk window.";
+
+fn validate_rustdesk_target(remote_id: &str) -> Result<String, String> {
+    let remote_id = remote_id.trim();
+    if remote_id.is_empty()
+        || remote_id.len() > 256
+        || remote_id.starts_with('-')
+        || remote_id.starts_with('/')
+        || remote_id.chars().any(char::is_control)
+    {
+        return Err(
+            "RustDesk target is empty, option-like, too long, or contains control characters"
+                .to_string(),
+        );
+    }
+    Ok(remote_id.to_string())
+}
+
+fn build_rustdesk_launch_args(remote_id: &str, has_password: bool) -> Result<Vec<String>, String> {
+    if has_password {
+        return Err(RUSTDESK_ARGV_SECRET_ERROR.to_string());
+    }
+    Ok(vec![
+        "--connect".to_string(),
+        validate_rustdesk_target(remote_id)?,
+        "--view-only".to_string(),
+    ])
+}
+
 impl RustDeskService {
     pub fn new() -> RustDeskServiceState {
         Arc::new(Mutex::new(RustDeskService {
@@ -67,18 +97,8 @@ impl RustDeskService {
         ];
 
         for path in possible_paths {
-            if std::path::Path::new(path).exists() {
+            if std::path::Path::new(path).is_file() {
                 return Some(path.to_string());
-            }
-        }
-
-        // Try to find in PATH
-        if let Ok(output) = std::process::Command::new("which").arg("rustdesk").output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some(path);
-                }
             }
         }
 
@@ -86,6 +106,7 @@ impl RustDeskService {
     }
 
     pub async fn connect_rustdesk(&mut self, config: RustDeskConfig) -> Result<String, String> {
+        let args = build_rustdesk_launch_args(&config.remote_id, config.password.is_some())?;
         let session_id = Uuid::new_v4().to_string();
 
         // Check if RustDesk is installed
@@ -100,8 +121,8 @@ impl RustDeskService {
         // Create session info
         let session = RustDeskSession {
             id: session_id.clone(),
-            remote_id: config.remote_id.clone(),
-            password: config.password.clone(),
+            remote_id: validate_rustdesk_target(&config.remote_id)?,
+            password: None,
             connected: false,
             quality: config.quality.unwrap_or_else(|| "balanced".to_string()),
             view_only: config.view_only.unwrap_or(false),
@@ -112,12 +133,9 @@ impl RustDeskService {
 
         // Spawn RustDesk process
         let rustdesk_path_clone = rustdesk_path.clone();
-        let remote_id = config.remote_id.clone();
-        let password = config.password.clone();
 
         let handle = task::spawn(async move {
-            Self::run_rustdesk_connection(rustdesk_path_clone, remote_id, password, shutdown_rx)
-                .await;
+            Self::run_rustdesk_connection(rustdesk_path_clone, args, shutdown_rx).await;
         });
 
         let connection = RustDeskConnection {
@@ -134,85 +152,27 @@ impl RustDeskService {
 
     async fn run_rustdesk_connection(
         rustdesk_path: String,
-        remote_id: String,
-        password: Option<String>,
+        args: Vec<String>,
         mut shutdown_rx: mpsc::Receiver<()>,
     ) {
-        let mut args = vec!["--connect", &remote_id];
-
-        if let Some(pwd) = &password {
-            args.push("--password");
-            args.push(pwd);
-        }
-
-        // Add additional connection options
-        args.push("--view-only"); // Start in view-only mode, can be changed later
-
         match Command::new(&rustdesk_path)
             .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
         {
             Ok(mut child) => {
-                println!("RustDesk process started for remote ID: {}", remote_id);
-
-                // Monitor the process
-                let stdout = child.stdout.take();
-                let stderr = child.stderr.take();
-
-                // Spawn tasks to monitor output
-                if let Some(stdout) = stdout {
-                    let remote_id_clone = remote_id.clone();
-                    task::spawn(async move {
-                        let mut reader = BufReader::new(stdout);
-                        let mut line = String::new();
-                        while let Ok(bytes_read) = reader.read_line(&mut line).await {
-                            if bytes_read == 0 {
-                                break;
-                            }
-                            println!("RustDesk [{}]: {}", remote_id_clone, line.trim_end());
-                            line.clear();
-                        }
-                    });
-                }
-
-                if let Some(stderr) = stderr {
-                    let remote_id_clone = remote_id.clone();
-                    task::spawn(async move {
-                        let mut reader = BufReader::new(stderr);
-                        let mut line = String::new();
-                        while let Ok(bytes_read) = reader.read_line(&mut line).await {
-                            if bytes_read == 0 {
-                                break;
-                            }
-                            eprintln!("RustDesk [{}]: {}", remote_id_clone, line.trim_end());
-                            line.clear();
-                        }
-                    });
-                }
-
                 // Wait for either shutdown signal or process completion
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
-                        println!("Shutting down RustDesk connection to {}", remote_id);
                         let _ = child.kill().await;
                     }
                     status = child.wait() => {
-                        match status {
-                            Ok(exit_status) => {
-                                println!("RustDesk process for {} exited with: {:?}", remote_id, exit_status);
-                            }
-                            Err(e) => {
-                                eprintln!("Error waiting for RustDesk process: {}", e);
-                            }
-                        }
+                        let _ = status;
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("Failed to start RustDesk process: {}", e);
-            }
+            Err(_) => {}
         }
     }
 
@@ -336,6 +296,49 @@ impl RustDeskService {
             }
             _ => Err("Failed to get RustDesk version".to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod process_safety_tests {
+    use super::*;
+
+    #[test]
+    fn password_bearing_launches_fail_before_argv_construction() {
+        let error = build_rustdesk_launch_args("123456789", true)
+            .expect_err("password must never enter argv");
+        assert_eq!(error, RUSTDESK_ARGV_SECRET_ERROR);
+        assert!(!error.contains("password-sentinel"));
+    }
+
+    #[test]
+    fn passwordless_launch_uses_literal_non_option_target() {
+        assert_eq!(
+            build_rustdesk_launch_args("123 456 789", false)
+                .expect("spaces are safe inside one argv element"),
+            vec!["--connect", "123 456 789", "--view-only"]
+        );
+        for target in ["--password", "/option", "123\n456", ""] {
+            assert!(build_rustdesk_launch_args(target, false).is_err());
+        }
+    }
+
+    #[test]
+    fn serialized_session_never_contains_a_password() {
+        let sentinel = "rustdesk-password-sentinel";
+        let session = RustDeskSession {
+            id: "session-1".to_string(),
+            remote_id: "123456789".to_string(),
+            password: Some(sentinel.to_string()),
+            connected: false,
+            quality: "balanced".to_string(),
+            view_only: true,
+            enable_audio: true,
+            enable_clipboard: true,
+            enable_file_transfer: false,
+        };
+        let serialized = serde_json::to_string(&session).expect("serialize session");
+        assert!(!serialized.contains(sentinel));
     }
 }
 
