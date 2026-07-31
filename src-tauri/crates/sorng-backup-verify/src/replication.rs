@@ -10,6 +10,8 @@ use crate::types::{
     CatalogEntry, ReplicationState, ReplicationStatus, ReplicationTarget, VerificationStatus,
 };
 
+const MAX_REPLICATION_EVENTS: usize = 10_000;
+
 // ─── Replication events ─────────────────────────────────────────────────────
 
 /// A logged replication event.
@@ -137,34 +139,33 @@ impl ReplicationManager {
             status.error_message = None;
         }
 
-        // Simulate the replication transfer
-        let bytes = entry.size_bytes;
-        let _dest_path = format!("{}/{}", target.path, entry.id);
-
-        // For local-path targets we can actually copy; for remote targets we
-        // simulate.  Here we always record the event.
+        let reason = format!(
+            "Replication transport for target '{}' is not implemented; no data was copied",
+            target.name
+        );
         let event = ReplicationEvent {
             id: event_id.clone(),
             target_id: target_id.to_string(),
             entry_id: entry.id.clone(),
             started_at: Utc::now(),
             completed_at: Some(Utc::now()),
-            bytes_transferred: bytes,
-            status: ReplicationState::InSync,
-            error_message: None,
+            bytes_transferred: 0,
+            status: ReplicationState::Error,
+            error_message: Some(reason.clone()),
         };
 
-        // Update status
         if let Some(status) = self.status.get_mut(target_id) {
-            status.state = ReplicationState::InSync;
-            status.last_sync = Some(Utc::now());
-            status.lag_bytes = 0;
-            status.lag_secs = 0;
-            status.transfer_speed_bps = if bytes > 0 { bytes * 8 } else { 0 };
+            status.state = ReplicationState::Error;
+            status.error_message = Some(reason.clone());
+            status.lag_bytes = entry.size_bytes;
+            status.transfer_speed_bps = 0;
         }
 
+        if self.events.len() >= MAX_REPLICATION_EVENTS {
+            self.events.remove(0);
+        }
         self.events.push(event);
-        Ok(event_id)
+        Err(BackupVerifyError::replication_error(reason))
     }
 
     /// Check the replication status for a target.
@@ -270,8 +271,6 @@ impl ReplicationManager {
                 .compute_manifest_path(source_path, "sha256")?;
             result.files_checked = source_manifest.entries.len() as u64;
 
-            // For remote targets we simulate a pass; for local paths we can
-            // actually compare.
             let replica_path_str = format!("{}/{}", target.path, entry.id);
             let replica_path = Path::new(&replica_path_str);
 
@@ -298,20 +297,14 @@ impl ReplicationManager {
                     }
                 }
             } else {
-                // Remote or non-existent local replica — report based on status
+                // A status flag is not cryptographic evidence. Never report a
+                // remote or missing replica as verified without reading it.
                 let status = self.check_replication_status(target_id)?;
-                if status.state == ReplicationState::InSync {
-                    result.status = VerificationStatus::Passed;
-                    result
-                        .details
-                        .push("Replica reports InSync (remote verification unavailable)".into());
-                } else {
-                    result.status = VerificationStatus::Warning;
-                    result.details.push(format!(
-                        "Replica state is {:?}; cannot verify remotely",
-                        status.state
-                    ));
-                }
+                result.status = VerificationStatus::Warning;
+                result.details.push(format!(
+                    "Replica state is {:?}; remote content was not verified",
+                    status.state
+                ));
             }
         } else {
             // Single-file source
@@ -331,14 +324,11 @@ impl ReplicationManager {
                 }
             } else {
                 let status = self.check_replication_status(target_id)?;
-                result.status = if status.state == ReplicationState::InSync {
-                    VerificationStatus::Passed
-                } else {
-                    VerificationStatus::Warning
-                };
-                result
-                    .details
-                    .push("Replica file not locally accessible".into());
+                result.status = VerificationStatus::Warning;
+                result.details.push(format!(
+                    "Replica file not locally accessible; state {:?} is not verification evidence",
+                    status.state
+                ));
             }
         }
 
