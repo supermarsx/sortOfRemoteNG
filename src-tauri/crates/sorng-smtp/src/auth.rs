@@ -12,6 +12,11 @@ use crate::types::*;
 /// Automatically selects the best mechanism based on server capabilities
 /// unless `creds.method` is explicitly set.
 pub async fn authenticate(client: &mut SmtpClient, creds: &SmtpCredentials) -> SmtpResult<()> {
+    if !client.is_tls_active() {
+        return Err(SmtpError::tls(
+            "SMTP authentication requires a verified TLS connection",
+        ));
+    }
     let method = select_auth_method(client, creds)?;
     debug!("Authenticating with {}", method);
 
@@ -62,16 +67,17 @@ fn select_auth_method(client: &SmtpClient, creds: &SmtpCredentials) -> SmtpResul
 async fn auth_plain(client: &mut SmtpClient, creds: &SmtpCredentials) -> SmtpResult<()> {
     let payload = format!("\0{}\0{}", creds.username, creds.password);
     let encoded = base64::engine::general_purpose::STANDARD.encode(payload.as_bytes());
-    let reply = client.command(&format!("AUTH PLAIN {}", encoded)).await?;
+    let reply = client
+        .sensitive_command(&format!("AUTH PLAIN {}", encoded))
+        .await?;
 
     if reply.is_positive() {
         client.set_authenticated(true);
         Ok(())
     } else {
         Err(SmtpError::auth(format!(
-            "AUTH PLAIN failed: {} {}",
-            reply.code,
-            reply.text()
+            "AUTH PLAIN failed with SMTP status {}",
+            reply.code
         )))
     }
 }
@@ -91,27 +97,25 @@ async fn auth_login(client: &mut SmtpClient, creds: &SmtpCredentials) -> SmtpRes
 
     // Server sends 334 VXNlcm5hbWU6 (base64 "Username:")
     let user_b64 = base64::engine::general_purpose::STANDARD.encode(creds.username.as_bytes());
-    let reply = client.command(&user_b64).await?;
+    let reply = client.sensitive_command(&user_b64).await?;
     if !reply.is_intermediate() && !reply.is_positive() {
         return Err(SmtpError::auth(format!(
-            "AUTH LOGIN username rejected: {} {}",
-            reply.code,
-            reply.text()
+            "AUTH LOGIN username rejected with SMTP status {}",
+            reply.code
         )));
     }
 
     // Server sends 334 UGFzc3dvcmQ6 (base64 "Password:")
     let pass_b64 = base64::engine::general_purpose::STANDARD.encode(creds.password.as_bytes());
-    let reply = client.command(&pass_b64).await?;
+    let reply = client.sensitive_command(&pass_b64).await?;
 
     if reply.is_positive() {
         client.set_authenticated(true);
         Ok(())
     } else {
         Err(SmtpError::auth(format!(
-            "AUTH LOGIN password rejected: {} {}",
-            reply.code,
-            reply.text()
+            "AUTH LOGIN password rejected with SMTP status {}",
+            reply.code
         )))
     }
 }
@@ -141,16 +145,15 @@ async fn auth_cram_md5(client: &mut SmtpClient, creds: &SmtpCredentials) -> Smtp
     // Response = base64(username + " " + hex(digest))
     let response = format!("{} {}", creds.username, digest);
     let encoded = base64::engine::general_purpose::STANDARD.encode(response.as_bytes());
-    let reply = client.command(&encoded).await?;
+    let reply = client.sensitive_command(&encoded).await?;
 
     if reply.is_positive() {
         client.set_authenticated(true);
         Ok(())
     } else {
         Err(SmtpError::auth(format!(
-            "AUTH CRAM-MD5 failed: {} {}",
-            reply.code,
-            reply.text()
+            "AUTH CRAM-MD5 failed with SMTP status {}",
+            reply.code
         )))
     }
 }
@@ -179,16 +182,17 @@ async fn auth_xoauth2(client: &mut SmtpClient, creds: &SmtpCredentials) -> SmtpR
     // Format: "user=" + user + "\x01" + "auth=Bearer " + token + "\x01\x01"
     let sasl = format!("user={}\x01auth=Bearer {}\x01\x01", creds.username, token);
     let encoded = base64::engine::general_purpose::STANDARD.encode(sasl.as_bytes());
-    let reply = client.command(&format!("AUTH XOAUTH2 {}", encoded)).await?;
+    let reply = client
+        .sensitive_command(&format!("AUTH XOAUTH2 {}", encoded))
+        .await?;
 
     if reply.is_positive() {
         client.set_authenticated(true);
         Ok(())
     } else {
         Err(SmtpError::auth(format!(
-            "AUTH XOAUTH2 failed: {} {}",
-            reply.code,
-            reply.text()
+            "AUTH XOAUTH2 failed with SMTP status {}",
+            reply.code
         )))
     }
 }

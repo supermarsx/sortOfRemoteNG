@@ -326,21 +326,42 @@ impl SmtpClient {
 
     /// Mark as authenticated (called by auth module after successful auth).
     pub fn set_authenticated(&mut self, auth: bool) {
-        self.authenticated = auth;
+        self.authenticated = auth && self.tls_active;
     }
 
     // ── Low-level I/O ───────────────────────────────────────────
 
     /// Send a command and read the reply.
     pub async fn command(&mut self, cmd: &str) -> SmtpResult<SmtpReply> {
-        debug!("C: {}", cmd);
+        debug!(
+            "SMTP command: {}",
+            cmd.split_ascii_whitespace().next().unwrap_or("<payload>")
+        );
         self.write_raw(format!("{}\r\n", cmd).as_bytes()).await?;
         self.flush().await?;
         self.read_reply().await
     }
 
+    /// Send an authentication payload without writing the payload or response
+    /// contents to protocol logs.
+    pub async fn sensitive_command(&mut self, cmd: &str) -> SmtpResult<SmtpReply> {
+        if !self.tls_active {
+            return Err(SmtpError::tls(
+                "Refusing to send authentication data without verified TLS",
+            ));
+        }
+        debug!("SMTP command: <redacted-auth-payload>");
+        self.write_raw(format!("{}\r\n", cmd).as_bytes()).await?;
+        self.flush().await?;
+        self.read_reply_inner(false).await
+    }
+
     /// Read a complete SMTP reply (may be multi-line).
     pub async fn read_reply(&mut self) -> SmtpResult<SmtpReply> {
+        self.read_reply_inner(true).await
+    }
+
+    async fn read_reply_inner(&mut self, log_response: bool) -> SmtpResult<SmtpReply> {
         let stream = self
             .stream
             .as_mut()
@@ -360,7 +381,9 @@ impl SmtpClient {
                 return Err(SmtpError::io("Connection closed by server"));
             }
             full_response.push_str(&line);
-            debug!("S: {}", line.trim_end());
+            if log_response {
+                debug!("S: {}", line.trim_end());
+            }
 
             // Check if this is the final line (code followed by space, not dash)
             if line.len() >= 4 && line.as_bytes()[3] == b' ' {
