@@ -19,10 +19,15 @@ impl FreeIpaClient {
     pub fn new(config: FreeIpaConnectionConfig) -> FreeIpaResult<Self> {
         let timeout = config.timeout_secs.unwrap_or(30);
         let verify = config.verify_ssl.unwrap_or(true);
+        if !verify {
+            return Err(FreeIpaError::connection(
+                "TLS certificate verification cannot be disabled: verify_ssl=false requires an explicit runtime acknowledgement contract",
+            ));
+        }
 
         let http = Client::builder()
             .timeout(Duration::from_secs(timeout))
-            .danger_accept_invalid_certs(!verify)
+            .redirect(reqwest::redirect::Policy::none())
             .cookie_store(true)
             .build()
             .map_err(|e| FreeIpaError::connection(format!("Failed to build HTTP client: {e}")))?;

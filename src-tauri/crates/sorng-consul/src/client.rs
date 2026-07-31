@@ -17,9 +17,14 @@ pub struct ConsulClient {
 
 impl ConsulClient {
     pub fn new(config: ConsulConnectionConfig) -> ConsulResult<Self> {
+        if config.tls_skip_verify.unwrap_or(false) {
+            return Err(ConsulError::connection(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-            .danger_accept_invalid_certs(config.tls_skip_verify.unwrap_or(false))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| ConsulError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })

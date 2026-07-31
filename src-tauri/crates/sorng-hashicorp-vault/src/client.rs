@@ -45,9 +45,14 @@ struct VaultListData {
 
 impl VaultClient {
     pub fn new(config: &VaultConnectionConfig) -> VaultResult<Self> {
+        if config.tls_skip_verify {
+            return Err(VaultError::connection_failed(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(30))
-            .danger_accept_invalid_certs(config.tls_skip_verify)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| VaultError::connection_failed(format!("http client build: {e}")))?;
 

@@ -16,19 +16,14 @@ pub struct CicdClient {
 
 impl CicdClient {
     pub fn new(config: CicdConnectionConfig) -> CicdResult<Self> {
-        let tls_skip_verify = config.tls_skip_verify.unwrap_or(false);
-        if tls_skip_verify {
-            tracing::warn!(
-                security_event = "insecure_tls",
-                component = "cicd",
-                provider = ?config.provider,
-                base_url = %config.base_url,
-                "TLS verification disabled (tls_skip_verify=true) for CICD client"
-            );
+        if config.tls_skip_verify.unwrap_or(false) {
+            return Err(CicdError::connection(
+                "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract",
+            ));
         }
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-            .danger_accept_invalid_certs(tls_skip_verify)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| CicdError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })
@@ -267,7 +262,6 @@ impl CicdClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracing_test::traced_test;
 
     fn insecure_config() -> CicdConnectionConfig {
         CicdConnectionConfig {
@@ -283,20 +277,22 @@ mod tests {
         }
     }
 
-    #[traced_test]
     #[test]
-    fn warn_fires_when_tls_skip_verify_enabled() {
-        let _ = CicdClient::new(insecure_config()).expect("client builds");
-        assert!(logs_contain("TLS verification disabled"));
-        assert!(logs_contain("tls_skip_verify=true"));
+    fn rejects_tls_skip_verify_without_runtime_acknowledgement() {
+        let error = match CicdClient::new(insecure_config()) {
+            Ok(_) => panic!("insecure TLS configuration must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.message,
+            "TLS certificate verification cannot be disabled: tls_skip_verify=true requires an explicit runtime acknowledgement contract"
+        );
     }
 
-    #[traced_test]
     #[test]
-    fn warn_silent_when_tls_skip_verify_disabled() {
+    fn accepts_verified_tls_configuration() {
         let mut cfg = insecure_config();
         cfg.tls_skip_verify = Some(false);
         let _ = CicdClient::new(cfg).expect("client builds");
-        assert!(!logs_contain("TLS verification disabled"));
     }
 }
