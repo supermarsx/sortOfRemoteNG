@@ -132,5 +132,8 @@ pub async fn backup_evaluate_retention(
     entries: Vec<RetentionEntry>,
     policy: super::types::RetentionPolicy,
 ) -> Result<RetentionResult, String> {
+    if entries.len() > 10_000 {
+        return Err("retention evaluation accepts at most 10000 entries".into());
+    }
     super::retention::evaluate(&entries, &policy).map_err(err_str)
 }

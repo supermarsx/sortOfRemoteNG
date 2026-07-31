@@ -31,6 +31,11 @@ pub fn evaluate(
     entries: &[RetentionEntry],
     policy: &RetentionPolicy,
 ) -> Result<RetentionResult, BackupError> {
+    if entries.len() > 10_000 {
+        return Err(BackupError::RetentionError(
+            "retention evaluation accepts at most 10000 entries".into(),
+        ));
+    }
     if entries.is_empty() {
         return Ok(RetentionResult {
             keep: Vec::new(),
