@@ -7,8 +7,150 @@ use crate::scp::SCP_TRANSFER_PROGRESS;
 use chrono::Utc;
 use log::{info, warn};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+const MAX_TRANSFER_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
+const MAX_TRANSFER_RETRIES: u32 = 5;
+const MAX_RETRY_DELAY_MS: u64 = 30_000;
+const MAX_TRACKED_TRANSFERS: usize = 512;
+
+fn validate_transfer_request(request: &ScpTransferRequest) -> Result<(), String> {
+    checked_chunk_size(request.chunk_size)?;
+    crate::scp::service::validate_remote_path(&request.remote_path, false)?;
+    if request.local_path.is_empty()
+        || request.local_path.len() > 32_768
+        || request
+            .local_path
+            .chars()
+            .any(|c| c == '\0' || c.is_control())
+        || request.retry_count > MAX_TRANSFER_RETRIES
+        || request.retry_delay_ms > MAX_RETRY_DELAY_MS
+    {
+        return Err("SCP transfer request contains an invalid path or retry value".to_string());
+    }
+    Ok(())
+}
+
+fn checked_chunk_size(chunk_size: u64) -> Result<usize, String> {
+    if chunk_size == 0 || chunk_size > MAX_TRANSFER_CHUNK_SIZE {
+        return Err(format!(
+            "Transfer chunk size must be between 1 and {} bytes",
+            MAX_TRANSFER_CHUNK_SIZE
+        ));
+    }
+    usize::try_from(chunk_size).map_err(|_| "Transfer chunk size is unsupported".to_string())
+}
+
+fn regular_local_upload(path: &str) -> Result<std::fs::Metadata, String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("Cannot inspect local file '{}': {}", path, e))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("Refusing to upload local symlink '{}'", path));
+    }
+    if !metadata.is_file() {
+        return Err(format!(
+            "Local upload source '{}' is not a regular file",
+            path
+        ));
+    }
+    Ok(metadata)
+}
+
+fn reject_local_symlink(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
+            "Refusing to write through local symlink '{}'",
+            path.display()
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Cannot inspect local destination '{}': {}",
+            path.display(),
+            error
+        )),
+    }
+}
+
+fn staging_path(destination: &Path, transfer_id: &str) -> Result<PathBuf, String> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Local download destination must have a valid file name".to_string())?;
+    Ok(parent.join(format!(".{}.sorng-part-{}", name, transfer_id)))
+}
+
+struct PartialDownloadGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl PartialDownloadGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PartialDownloadGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn commit_staged_download(
+    staging: &Path,
+    destination: &Path,
+    transfer_id: &str,
+    overwrite: bool,
+) -> Result<(), String> {
+    reject_local_symlink(destination)?;
+    if !destination.exists() {
+        return std::fs::rename(staging, destination).map_err(|e| {
+            format!(
+                "Failed to commit download '{}': {}",
+                destination.display(),
+                e
+            )
+        });
+    }
+    if !overwrite {
+        return Err(format!(
+            "Local destination '{}' appeared during transfer; overwrite is disabled",
+            destination.display()
+        ));
+    }
+
+    let backup = destination.with_extension(format!("sorng-old-{}", transfer_id));
+    std::fs::rename(destination, &backup).map_err(|e| {
+        format!(
+            "Failed to protect existing destination '{}': {}",
+            destination.display(),
+            e
+        )
+    })?;
+    if let Err(error) = std::fs::rename(staging, destination) {
+        let rollback = std::fs::rename(&backup, destination);
+        return Err(match rollback {
+            Ok(()) => format!("Failed to commit download; original restored: {}", error),
+            Err(rollback_error) => format!(
+                "Failed to commit download and restore original '{}': {}; rollback: {}",
+                destination.display(),
+                error,
+                rollback_error
+            ),
+        });
+    }
+    let _ = std::fs::remove_file(backup);
+    Ok(())
+}
 
 impl ScpService {
     // ── SCP Upload ───────────────────────────────────────────────────────────
@@ -17,12 +159,12 @@ impl ScpService {
         &mut self,
         request: ScpTransferRequest,
     ) -> Result<ScpTransferResult, String> {
+        validate_transfer_request(&request)?;
         let transfer_id = Uuid::new_v4().to_string();
         let started = Utc::now();
 
         // Validate local file
-        let metadata = std::fs::metadata(&request.local_path)
-            .map_err(|e| format!("Cannot read local file '{}': {}", request.local_path, e))?;
+        let metadata = regular_local_upload(&request.local_path)?;
         let total_bytes = metadata.len();
 
         // Optionally create parent directories on remote
@@ -64,7 +206,21 @@ impl ScpService {
             files_completed: 0,
         };
 
-        if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+        {
+            let mut map = SCP_TRANSFER_PROGRESS
+                .lock()
+                .map_err(|_| "SCP transfer progress state is unavailable".to_string())?;
+            map.retain(|_, item| {
+                !matches!(
+                    &item.status,
+                    ScpTransferStatus::Completed
+                        | ScpTransferStatus::Failed
+                        | ScpTransferStatus::Cancelled
+                )
+            });
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                return Err("Too many active SCP transfers".to_string());
+            }
             map.insert(transfer_id.clone(), progress);
         }
 
@@ -77,9 +233,11 @@ impl ScpService {
                     transfer_id, attempt, request.retry_count
                 );
                 tokio::time::sleep(std::time::Duration::from_millis(request.retry_delay_ms)).await;
-                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                    if let Some(p) = map.get_mut(&transfer_id) {
-                        p.retry_attempt = attempt;
+                {
+                    if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                        if let Some(p) = map.get_mut(&transfer_id) {
+                            p.retry_attempt = attempt;
+                        }
                     }
                 }
             }
@@ -96,8 +254,8 @@ impl ScpService {
                         ) {
                             Ok(hash) => Some(hash),
                             Err(e) => {
-                                warn!("Checksum verification failed: {}", e);
-                                None
+                                last_error = Some(format!("SCP upload checksum failed: {e}"));
+                                continue;
                             }
                         }
                     } else {
@@ -195,7 +353,7 @@ impl ScpService {
         let mut local_file = std::fs::File::open(&request.local_path)
             .map_err(|e| format!("Cannot open '{}': {}", request.local_path, e))?;
 
-        let chunk_size = request.chunk_size as usize;
+        let chunk_size = checked_chunk_size(request.chunk_size)?;
         let mut buffer = vec![0u8; chunk_size];
         let mut transferred: u64 = 0;
         let start = std::time::Instant::now();
@@ -223,20 +381,22 @@ impl ScpService {
                 None
             };
 
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(transfer_id) {
-                    // Check for cancellation
-                    if p.status == ScpTransferStatus::Cancelled {
-                        return Err("Transfer cancelled by user".into());
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(transfer_id) {
+                        // Check for cancellation
+                        if p.status == ScpTransferStatus::Cancelled {
+                            return Err("Transfer cancelled by user".into());
+                        }
+                        p.transferred_bytes = transferred;
+                        p.percent = if total_bytes > 0 {
+                            (transferred as f64 / total_bytes as f64) * 100.0
+                        } else {
+                            100.0
+                        };
+                        p.speed_bytes_per_sec = speed;
+                        p.eta_secs = eta;
                     }
-                    p.transferred_bytes = transferred;
-                    p.percent = if total_bytes > 0 {
-                        (transferred as f64 / total_bytes as f64) * 100.0
-                    } else {
-                        100.0
-                    };
-                    p.speed_bytes_per_sec = speed;
-                    p.eta_secs = eta;
                 }
             }
         }
@@ -254,6 +414,19 @@ impl ScpService {
         channel
             .wait_close()
             .map_err(|e| format!("Failed waiting for close: {}", e))?;
+        let exit_status = channel
+            .exit_status()
+            .map_err(|e| format!("Failed to read SCP completion status: {e}"))?;
+        if exit_status != 0 {
+            return Err(format!(
+                "Remote SCP receiver exited with status {exit_status}"
+            ));
+        }
+        if transferred != total_bytes {
+            return Err(format!(
+                "SCP upload sent {transferred} bytes; expected {total_bytes}"
+            ));
+        }
 
         info!(
             "SCP uploaded {} bytes to {}",
@@ -268,6 +441,7 @@ impl ScpService {
         &mut self,
         request: ScpTransferRequest,
     ) -> Result<ScpTransferResult, String> {
+        validate_transfer_request(&request)?;
         let transfer_id = Uuid::new_v4().to_string();
         let started = Utc::now();
 
@@ -281,7 +455,9 @@ impl ScpService {
         }
 
         // Check overwrite
-        if !request.overwrite && Path::new(&request.local_path).exists() {
+        let destination = Path::new(&request.local_path);
+        reject_local_symlink(destination)?;
+        if !request.overwrite && destination.exists() {
             return Err(format!(
                 "Local file '{}' already exists and overwrite is disabled",
                 request.local_path
@@ -309,7 +485,21 @@ impl ScpService {
             files_completed: 0,
         };
 
-        if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+        {
+            let mut map = SCP_TRANSFER_PROGRESS
+                .lock()
+                .map_err(|_| "SCP transfer progress state is unavailable".to_string())?;
+            map.retain(|_, item| {
+                !matches!(
+                    &item.status,
+                    ScpTransferStatus::Completed
+                        | ScpTransferStatus::Failed
+                        | ScpTransferStatus::Cancelled
+                )
+            });
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                return Err("Too many active SCP transfers".to_string());
+            }
             map.insert(transfer_id.clone(), progress);
         }
 
@@ -322,9 +512,11 @@ impl ScpService {
                     transfer_id, attempt, request.retry_count
                 );
                 tokio::time::sleep(std::time::Duration::from_millis(request.retry_delay_ms)).await;
-                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                    if let Some(p) = map.get_mut(&transfer_id) {
-                        p.retry_attempt = attempt;
+                {
+                    if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                        if let Some(p) = map.get_mut(&transfer_id) {
+                            p.retry_attempt = attempt;
+                        }
                     }
                 }
             }
@@ -341,8 +533,8 @@ impl ScpService {
                         ) {
                             Ok(hash) => Some(hash),
                             Err(e) => {
-                                warn!("Checksum verification failed: {}", e);
-                                None
+                                last_error = Some(format!("SCP download checksum failed: {e}"));
+                                continue;
                             }
                         }
                     } else {
@@ -404,6 +596,11 @@ impl ScpService {
         transfer_id: &str,
         request: &ScpTransferRequest,
     ) -> Result<u64, String> {
+        let expected_checksum = if request.verify_checksum {
+            Some(self.remote_checksum(&request.session_id, &request.remote_path)?)
+        } else {
+            None
+        };
         let session = self.get_session(&request.session_id)?;
         let remote_path = Path::new(&request.remote_path);
 
@@ -415,17 +612,23 @@ impl ScpService {
         let total_bytes = stat.size();
 
         // Update progress with known total
-        if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-            if let Some(p) = map.get_mut(transfer_id) {
-                p.total_bytes = total_bytes;
+        {
+            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                if let Some(p) = map.get_mut(transfer_id) {
+                    p.total_bytes = total_bytes;
+                }
             }
         }
 
-        // Open local file for writing
-        let mut local_file = std::fs::File::create(&request.local_path)
+        let staged_path = staging_path(Path::new(&request.local_path), transfer_id)?;
+        let mut partial_guard = PartialDownloadGuard::new(staged_path.clone());
+        let mut local_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staged_path)
             .map_err(|e| format!("Cannot create '{}': {}", request.local_path, e))?;
 
-        let chunk_size = request.chunk_size as usize;
+        let chunk_size = checked_chunk_size(request.chunk_size)?;
         let mut buffer = vec![0u8; chunk_size];
         let mut transferred: u64 = 0;
         let start = std::time::Instant::now();
@@ -453,22 +656,21 @@ impl ScpService {
                 None
             };
 
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(transfer_id) {
-                    if p.status == ScpTransferStatus::Cancelled {
-                        // Clean up partial file on cancel
-                        drop(local_file);
-                        let _ = std::fs::remove_file(&request.local_path);
-                        return Err("Transfer cancelled by user".into());
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(transfer_id) {
+                        if p.status == ScpTransferStatus::Cancelled {
+                            return Err("Transfer cancelled by user".into());
+                        }
+                        p.transferred_bytes = transferred;
+                        p.percent = if total_bytes > 0 {
+                            (transferred as f64 / total_bytes as f64) * 100.0
+                        } else {
+                            100.0
+                        };
+                        p.speed_bytes_per_sec = speed;
+                        p.eta_secs = eta;
                     }
-                    p.transferred_bytes = transferred;
-                    p.percent = if total_bytes > 0 {
-                        (transferred as f64 / total_bytes as f64) * 100.0
-                    } else {
-                        100.0
-                    };
-                    p.speed_bytes_per_sec = speed;
-                    p.eta_secs = eta;
                 }
             }
 
@@ -482,12 +684,50 @@ impl ScpService {
         local_file
             .flush()
             .map_err(|e| format!("Flush error: {}", e))?;
-
-        // Close the channel
-        channel.send_eof().ok();
-        channel.wait_eof().ok();
-        channel.close().ok();
-        channel.wait_close().ok();
+        if transferred != total_bytes {
+            return Err(format!(
+                "SCP download ended at {} bytes; expected {}",
+                transferred, total_bytes
+            ));
+        }
+        drop(local_file);
+        channel
+            .send_eof()
+            .map_err(|e| format!("Failed to send SCP download EOF: {e}"))?;
+        channel
+            .wait_eof()
+            .map_err(|e| format!("Failed waiting for SCP download EOF: {e}"))?;
+        channel
+            .close()
+            .map_err(|e| format!("Failed to close SCP download channel: {e}"))?;
+        channel
+            .wait_close()
+            .map_err(|e| format!("Failed waiting for SCP download close: {e}"))?;
+        let exit_status = channel
+            .exit_status()
+            .map_err(|e| format!("Failed to read SCP sender status: {e}"))?;
+        if exit_status != 0 {
+            return Err(format!(
+                "Remote SCP sender exited with status {exit_status}"
+            ));
+        }
+        if let Some(expected) = expected_checksum {
+            let actual = ScpService::local_checksum(
+                staged_path
+                    .to_str()
+                    .ok_or_else(|| "Local staging path is not valid UTF-8".to_string())?,
+            )?;
+            if actual != expected {
+                return Err("SCP download checksum mismatch; staged file was discarded".to_string());
+            }
+        }
+        commit_staged_download(
+            &staged_path,
+            Path::new(&request.local_path),
+            transfer_id,
+            request.overwrite,
+        )?;
+        partial_guard.disarm();
 
         // Preserve times if requested
         if request.preserve_times {
@@ -583,7 +823,10 @@ impl ScpService {
                     || p.status == ScpTransferStatus::Pending
                 {
                     p.status = ScpTransferStatus::Cancelled;
-                    return Ok(());
+                    return Err(
+                        "SCP cancellation was requested, but transport shutdown and partial-file cleanup are not yet confirmed"
+                            .to_string(),
+                    );
                 }
                 return Err(format!("Cannot cancel transfer in {:?} state", p.status));
             }
@@ -677,5 +920,12 @@ mod tests {
         let status = ScpTransferStatus::InProgress;
         let json = serde_json::to_string(&status).unwrap();
         assert_eq!(json, "\"inProgress\"");
+    }
+
+    #[test]
+    fn test_transfer_chunk_bounds() {
+        assert!(checked_chunk_size(0).is_err());
+        assert!(checked_chunk_size(MAX_TRANSFER_CHUNK_SIZE + 1).is_err());
+        assert_eq!(checked_chunk_size(64 * 1024).unwrap(), 64 * 1024);
     }
 }

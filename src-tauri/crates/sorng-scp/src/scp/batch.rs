@@ -175,8 +175,10 @@ impl ScpService {
             files_completed: 0,
         };
 
-        if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-            map.insert(transfer_id.clone(), progress);
+        {
+            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                map.insert(transfer_id.clone(), progress);
+            }
         }
 
         // Create remote base directory
@@ -210,12 +212,15 @@ impl ScpService {
         // Upload each file
         for file_entry in &file_entries {
             // Check for cancellation
-            if let Ok(map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get(&transfer_id) {
-                    if p.status == ScpTransferStatus::Cancelled {
-                        break;
-                    }
-                }
+            let cancelled = {
+                SCP_TRANSFER_PROGRESS
+                    .lock()
+                    .ok()
+                    .and_then(|map| map.get(&transfer_id).map(|p| p.status.clone()))
+                    == Some(ScpTransferStatus::Cancelled)
+            };
+            if cancelled {
+                break;
             }
 
             let relative = file_entry
@@ -230,9 +235,11 @@ impl ScpService {
             let local_file = file_entry.path().to_string_lossy().to_string();
 
             // Update current file in progress
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(&transfer_id) {
-                    p.current_file = Some(local_file.clone());
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(&transfer_id) {
+                        p.current_file = Some(local_file.clone());
+                    }
                 }
             }
 
@@ -271,17 +278,19 @@ impl ScpService {
             }
 
             // Update progress
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(&transfer_id) {
-                    p.files_completed = files_transferred + files_failed + files_skipped;
-                    p.transferred_bytes = total_bytes;
-                    p.percent = if files_total > 0 {
-                        ((files_transferred + files_failed + files_skipped) as f64
-                            / files_total as f64)
-                            * 100.0
-                    } else {
-                        100.0
-                    };
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(&transfer_id) {
+                        p.files_completed = files_transferred + files_failed + files_skipped;
+                        p.transferred_bytes = total_bytes;
+                        p.percent = if files_total > 0 {
+                            ((files_transferred + files_failed + files_skipped) as f64
+                                / files_total as f64)
+                                * 100.0
+                        } else {
+                            100.0
+                        };
+                    }
                 }
             }
         }
@@ -391,8 +400,10 @@ impl ScpService {
             files_completed: 0,
         };
 
-        if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-            map.insert(transfer_id.clone(), progress);
+        {
+            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                map.insert(transfer_id.clone(), progress);
+            }
         }
 
         // Create local directory structure
@@ -413,12 +424,15 @@ impl ScpService {
         // Download each file
         for (remote_file, _, _) in &file_entries {
             // Check cancellation
-            if let Ok(map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get(&transfer_id) {
-                    if p.status == ScpTransferStatus::Cancelled {
-                        break;
-                    }
-                }
+            let cancelled = {
+                SCP_TRANSFER_PROGRESS
+                    .lock()
+                    .ok()
+                    .and_then(|map| map.get(&transfer_id).map(|p| p.status.clone()))
+                    == Some(ScpTransferStatus::Cancelled)
+            };
+            if cancelled {
+                break;
             }
 
             let relative = remote_file
@@ -431,9 +445,11 @@ impl ScpService {
                 .to_string();
 
             // Update current in progress
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(&transfer_id) {
-                    p.current_file = Some(remote_file.clone());
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(&transfer_id) {
+                        p.current_file = Some(remote_file.clone());
+                    }
                 }
             }
 
@@ -475,17 +491,19 @@ impl ScpService {
             }
 
             // Update progress
-            if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
-                if let Some(p) = map.get_mut(&transfer_id) {
-                    p.files_completed = files_transferred + files_failed + files_skipped;
-                    p.transferred_bytes = total_bytes;
-                    p.percent = if files_total > 0 {
-                        ((files_transferred + files_failed + files_skipped) as f64
-                            / files_total as f64)
-                            * 100.0
-                    } else {
-                        100.0
-                    };
+            {
+                if let Ok(mut map) = SCP_TRANSFER_PROGRESS.lock() {
+                    if let Some(p) = map.get_mut(&transfer_id) {
+                        p.files_completed = files_transferred + files_failed + files_skipped;
+                        p.transferred_bytes = total_bytes;
+                        p.percent = if files_total > 0 {
+                            ((files_transferred + files_failed + files_skipped) as f64
+                                / files_total as f64)
+                                * 100.0
+                        } else {
+                            100.0
+                        };
+                    }
                 }
             }
         }

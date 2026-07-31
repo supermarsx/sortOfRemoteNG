@@ -319,7 +319,7 @@ pub async fn scp_queue_clear_done(state: tauri::State<'_, ScpServiceState>) -> R
 #[tauri::command]
 pub async fn scp_queue_clear_all(state: tauri::State<'_, ScpServiceState>) -> Result<u32, String> {
     let mut svc = state.lock().await;
-    Ok(svc.queue_clear_all())
+    svc.queue_clear_all()
 }
 
 #[tauri::command]

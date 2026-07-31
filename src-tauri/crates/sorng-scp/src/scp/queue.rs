@@ -6,6 +6,8 @@ use chrono::Utc;
 use log::info;
 use uuid::Uuid;
 
+const MAX_QUEUE_ENTRIES: usize = 512;
+
 impl ScpService {
     // ── Queue management ─────────────────────────────────────────────────────
 
@@ -19,6 +21,10 @@ impl ScpService {
         file_mode: Option<i32>,
         priority: Option<u32>,
     ) -> Result<ScpQueueEntry, String> {
+        if self.queue.len() >= MAX_QUEUE_ENTRIES {
+            return Err("SCP transfer queue limit reached".to_string());
+        }
+        crate::scp::service::validate_remote_path(&remote_path, false)?;
         let entry = ScpQueueEntry {
             id: Uuid::new_v4().to_string(),
             session_id,
@@ -222,11 +228,21 @@ impl ScpService {
     }
 
     /// Clear all entries (including in-progress will be marked cancelled).
-    pub fn queue_clear_all(&mut self) -> u32 {
+    pub fn queue_clear_all(&mut self) -> Result<u32, String> {
+        if self
+            .queue
+            .iter()
+            .any(|entry| entry.status == ScpQueueStatus::InProgress)
+        {
+            return Err(
+                "Cannot clear the SCP queue while a transfer is in progress; cleanup is not confirmed"
+                    .to_string(),
+            );
+        }
         let count = self.queue.len() as u32;
         self.queue.clear();
         self.queue_running = false;
-        count
+        Ok(count)
     }
 
     /// Set priority on a queue entry.
@@ -533,7 +549,7 @@ mod tests {
         )
         .unwrap();
 
-        let count = svc.queue_clear_all();
+        let count = svc.queue_clear_all().unwrap();
         assert_eq!(count, 2);
         assert!(svc.queue.is_empty());
     }

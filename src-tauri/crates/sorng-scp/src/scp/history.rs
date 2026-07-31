@@ -56,7 +56,7 @@ impl ScpService {
                 history.iter().collect()
             };
 
-            let limit = limit.unwrap_or(100);
+            let limit = limit.unwrap_or(100).min(MAX_HISTORY_SIZE);
             filtered.reverse();
             filtered.into_iter().take(limit).cloned().collect()
         } else {

@@ -14,6 +14,45 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+const MAX_REMOTE_COMMAND_OUTPUT: usize = 1024 * 1024;
+const MAX_REMOTE_LIST_ENTRIES: usize = 10_000;
+const MAX_SCP_SESSIONS: usize = 32;
+const MAX_SCP_TIMEOUT_SECS: u64 = 120;
+
+pub(crate) fn validate_remote_path(path: &str, allow_root: bool) -> Result<(), String> {
+    if path.len() > 4096
+        || !path.starts_with('/')
+        || (!allow_root && path == "/")
+        || path.contains('\\')
+        || path.chars().any(|c| c == '\0' || c.is_control())
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+    {
+        return Err(
+            "SCP remote path must be a bounded absolute POSIX path without traversal".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn read_channel_bounded(channel: &mut ssh2::Channel, limit: usize) -> Result<String, String> {
+    let mut retained = Vec::with_capacity(limit.min(8192));
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = channel
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to read remote command output: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(retained.len());
+        retained.extend_from_slice(&buffer[..count.min(remaining)]);
+    }
+    if retained.len() == limit {
+        return Err("Remote command output exceeded the supported limit".to_string());
+    }
+    String::from_utf8(retained).map_err(|_| "Remote command output was not valid UTF-8".to_string())
+}
+
 // ── Host-key verification ───────────────────────────────────────────────────
 
 /// Serialises in-process trust-on-first-use updates. Persistence uses an
@@ -429,6 +468,15 @@ impl ScpService {
 
     /// Establish an SSH session for SCP transfers.
     pub async fn connect(&mut self, config: ScpConnectionConfig) -> Result<ScpSessionInfo, String> {
+        if self.sessions.len() >= MAX_SCP_SESSIONS {
+            return Err("SCP session limit reached; disconnect an existing session".to_string());
+        }
+        if !(1..=MAX_SCP_TIMEOUT_SECS).contains(&config.timeout_secs) {
+            return Err(format!(
+                "SCP timeout must be between 1 and {} seconds",
+                MAX_SCP_TIMEOUT_SECS
+            ));
+        }
         normalized_network_host(&config.host)?;
         let addr = display_endpoint(&config.host, config.port);
         info!("SCP connecting to {}", addr);
@@ -443,6 +491,9 @@ impl ScpService {
         // SSH handshake
         let mut session =
             Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+        session.set_timeout(
+            u32::try_from(config.timeout_secs.saturating_mul(1000)).unwrap_or(u32::MAX),
+        );
 
         if config.compress {
             session.set_compress(true);
@@ -946,8 +997,7 @@ impl ScpService {
     fn probe_remote_home(&self, session: &Session) -> Option<String> {
         let mut channel = session.channel_session().ok()?;
         channel.exec("echo $HOME").ok()?;
-        let mut output = String::new();
-        std::io::Read::read_to_string(&mut channel, &mut output).ok()?;
+        let output = read_channel_bounded(&mut channel, 4096).ok()?;
         channel.wait_close().ok()?;
         let trimmed = output.trim().to_string();
         if trimmed.is_empty() {
@@ -972,12 +1022,20 @@ impl ScpService {
 
         channel
             .exec(command)
-            .map_err(|e| format!("Failed to execute command '{}': {}", command, e))?;
+            .map_err(|e| format!("Failed to execute remote file operation: {}", e))?;
 
-        let mut output = String::new();
-        std::io::Read::read_to_string(&mut channel, &mut output)
-            .map_err(|e| format!("Failed to read command output: {}", e))?;
-        channel.wait_close().ok();
+        let output = read_channel_bounded(&mut channel, MAX_REMOTE_COMMAND_OUTPUT)?;
+        channel
+            .wait_close()
+            .map_err(|e| format!("Failed waiting for remote operation completion: {e}"))?;
+        let status = channel
+            .exit_status()
+            .map_err(|e| format!("Failed to obtain remote operation status: {e}"))?;
+        if status != 0 {
+            return Err(format!(
+                "Remote file operation failed with exit status {status}"
+            ));
+        }
 
         Ok(output.trim().to_string())
     }
@@ -986,26 +1044,22 @@ impl ScpService {
 
     /// Check if a remote path exists.
     pub fn remote_exists(&self, session_id: &str, path: &str) -> Result<bool, String> {
-        let result = self.exec_remote(
+        validate_remote_path(path, true)?;
+        let output = self.exec_remote(
             session_id,
             &format!("test -e {} && echo yes || echo no", shell_escape(path)),
-        );
-        match result {
-            Ok(output) => Ok(output.trim() == "yes"),
-            Err(_) => Ok(false),
-        }
+        )?;
+        Ok(output.trim() == "yes")
     }
 
     /// Check if a remote path is a directory.
     pub fn remote_is_dir(&self, session_id: &str, path: &str) -> Result<bool, String> {
-        let result = self.exec_remote(
+        validate_remote_path(path, true)?;
+        let output = self.exec_remote(
             session_id,
             &format!("test -d {} && echo yes || echo no", shell_escape(path)),
-        );
-        match result {
-            Ok(output) => Ok(output.trim() == "yes"),
-            Err(_) => Ok(false),
-        }
+        )?;
+        Ok(output.trim() == "yes")
     }
 
     /// Get the size of a remote file.
@@ -1026,18 +1080,21 @@ impl ScpService {
 
     /// Create remote directories recursively.
     pub fn remote_mkdir_p(&self, session_id: &str, path: &str) -> Result<(), String> {
+        validate_remote_path(path, false)?;
         self.exec_remote(session_id, &format!("mkdir -p {}", shell_escape(path)))?;
         Ok(())
     }
 
     /// Delete a remote file.
     pub fn remote_rm(&self, session_id: &str, path: &str) -> Result<(), String> {
+        validate_remote_path(path, false)?;
         self.exec_remote(session_id, &format!("rm -f {}", shell_escape(path)))?;
         Ok(())
     }
 
     /// Delete a remote directory recursively.
     pub fn remote_rm_rf(&self, session_id: &str, path: &str) -> Result<(), String> {
+        validate_remote_path(path, false)?;
         self.exec_remote(session_id, &format!("rm -rf {}", shell_escape(path)))?;
         Ok(())
     }
@@ -1048,6 +1105,7 @@ impl ScpService {
         session_id: &str,
         path: &str,
     ) -> Result<Vec<ScpRemoteDirEntry>, String> {
+        validate_remote_path(path, true)?;
         let output = self.exec_remote(
             session_id,
             &format!(
@@ -1059,6 +1117,11 @@ impl ScpService {
 
         let mut entries = Vec::new();
         for line in output.lines().skip(1) {
+            if entries.len() >= MAX_REMOTE_LIST_ENTRIES {
+                return Err(
+                    "Remote directory listing exceeded the supported entry limit".to_string(),
+                );
+            }
             // skip "total ..." line
             if line.starts_with("total ") {
                 continue;
