@@ -9,6 +9,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 /// HTTP client for a single etcd cluster connection.
 pub struct EtcdClient {
     pub config: EtcdConnectionConfig,
@@ -32,7 +34,7 @@ impl EtcdClient {
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|e| EtcdError::connection(format!("http client build: {e}")))?;
+            .map_err(|_| EtcdError::connection("failed to build HTTP client"))?;
 
         let mut client = Self {
             auth_token: config.auth_token.clone(),
@@ -76,12 +78,28 @@ impl EtcdClient {
             "password": password,
         });
         let url = self.url("/v3/auth/authenticate");
-        let resp = self.http.post(&url).json(&body).send().await?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(EtcdError::auth(format!("Authentication failed: {text}")));
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Self::transport_error("authentication request", &e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(EtcdError::auth(format!(
+                "authentication failed with HTTP {}",
+                status.as_u16()
+            )));
         }
-        let val: serde_json::Value = resp.json().await?;
+        let response_body = Self::read_bounded_body(resp).await?;
+        let val: serde_json::Value = serde_json::from_slice(&response_body).map_err(|e| {
+            EtcdError::internal(format!(
+                "invalid authentication JSON response at line {}, column {}",
+                e.line(),
+                e.column()
+            ))
+        })?;
         val["token"]
             .as_str()
             .map(|s| s.to_string())
@@ -96,52 +114,102 @@ impl EtcdClient {
         body: &B,
     ) -> EtcdResult<T> {
         let url = self.url(path);
-        debug!("ETCD POST {url}");
+        debug!("ETCD POST");
         let resp = self
             .apply_auth(self.http.post(&url))
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_response(resp).await
     }
 
     pub async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> EtcdResult<T> {
         let url = self.url(path);
-        debug!("ETCD POST {url}");
+        debug!("ETCD POST");
         let resp = self
             .apply_auth(self.http.post(&url))
             .json(&serde_json::json!({}))
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_response(resp).await
+    }
+
+    fn transport_error(operation: &str, error: &reqwest::Error) -> EtcdError {
+        if error.is_timeout() {
+            EtcdError::timeout(format!("{operation}: timed out"))
+        } else {
+            let reason = if error.is_connect() {
+                "connection failed"
+            } else {
+                "transport failed"
+            };
+            EtcdError::connection(format!("{operation}: {reason}"))
+        }
+    }
+
+    async fn read_bounded_body(mut resp: reqwest::Response) -> EtcdResult<Vec<u8>> {
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+        {
+            return Err(EtcdError::internal(format!(
+                "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+            )));
+        }
+
+        let capacity = resp
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_RESPONSE_BODY_BYTES as u64) as usize;
+        let mut body = Vec::with_capacity(capacity);
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| Self::transport_error("response body", &e))?
+        {
+            let remaining = (MAX_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if body.len() > MAX_RESPONSE_BODY_BYTES {
+                return Err(EtcdError::internal(format!(
+                    "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                )));
+            }
+        }
+        Ok(body)
     }
 
     async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> EtcdResult<T> {
         let status = resp.status();
         if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(self.map_http_error(status.as_u16(), &text));
+            return Err(self.map_http_error(status.as_u16()));
         }
-        let body = resp.text().await?;
-        serde_json::from_str(&body)
-            .map_err(|e| EtcdError::internal(format!("Failed to parse response: {e}")))
+        let body = Self::read_bounded_body(resp).await?;
+        serde_json::from_slice(&body).map_err(|e| {
+            EtcdError::internal(format!(
+                "invalid JSON response at line {}, column {}",
+                e.line(),
+                e.column()
+            ))
+        })
     }
 
-    fn map_http_error(&self, status: u16, body: &str) -> EtcdError {
+    fn map_http_error(&self, status: u16) -> EtcdError {
         match status {
-            401 => EtcdError::auth(format!("Unauthorized: {body}")),
-            403 => EtcdError::permission_denied(format!("Forbidden: {body}")),
-            408 => EtcdError::timeout(format!("Request timeout: {body}")),
+            401 => EtcdError::auth("Unauthorized"),
+            403 => EtcdError::permission_denied("Forbidden"),
+            408 => EtcdError::timeout("Request timeout"),
             413 => EtcdError::new(
                 crate::error::EtcdErrorKind::RequestTooLarge,
-                format!("Request too large: {body}"),
+                "Request too large",
             ),
             429 => EtcdError::new(
                 crate::error::EtcdErrorKind::TooManyRequests,
-                format!("Rate limited: {body}"),
+                "Rate limited",
             ),
-            503 => EtcdError::cluster_unavailable(format!("Cluster unavailable: {body}")),
-            _ => EtcdError::internal(format!("HTTP {status}: {body}")),
+            503 => EtcdError::cluster_unavailable("Cluster unavailable"),
+            _ => EtcdError::internal(format!("HTTP {status}")),
         }
     }
 

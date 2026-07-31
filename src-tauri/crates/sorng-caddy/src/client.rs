@@ -9,6 +9,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct CaddyClient {
     pub config: CaddyConnectionConfig,
     http: HttpClient,
@@ -31,12 +33,12 @@ impl CaddyClient {
             .filter(|s| !s.is_empty())
         {
             let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| CaddyError::connection(format!("invalid proxy URL: {e}")))?;
+                .map_err(|_| CaddyError::connection("invalid proxy URL"))?;
             builder = builder.proxy(proxy);
         }
         let http = builder
             .build()
-            .map_err(|e| CaddyError::connection(format!("http client build: {e}")))?;
+            .map_err(|_| CaddyError::connection("failed to build HTTP client"))?;
         Ok(Self { config, http })
     }
 
@@ -66,41 +68,39 @@ impl CaddyClient {
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> CaddyResult<T> {
         let url = self.url(path);
-        debug!("CADDY GET {url}");
+        debug!("CADDY GET");
         let resp = self
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         self.handle_response(resp).await
     }
 
     pub async fn get_raw(&self, path: &str) -> CaddyResult<String> {
         let url = self.url(path);
-        debug!("CADDY GET (raw) {url}");
+        debug!("CADDY GET (raw)");
         let resp = self
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.text()
-            .await
-            .map_err(|e| CaddyError::parse(format!("body: {e}")))
+        let body = Self::read_bounded_body(resp).await?;
+        Ok(String::from_utf8_lossy(&body).into_owned())
     }
 
     pub async fn get_optional<T: DeserializeOwned>(&self, path: &str) -> CaddyResult<Option<T>> {
         let url = self.url(path);
-        debug!("CADDY GET (optional) {url}");
+        debug!("CADDY GET (optional)");
         let resp = self
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         if resp.status().as_u16() == 404 {
             return Ok(None);
         }
@@ -114,34 +114,33 @@ impl CaddyClient {
         body: &B,
     ) -> CaddyResult<T> {
         let url = self.url(path);
-        debug!("CADDY POST {url}");
+        debug!("CADDY POST");
         let resp = self
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_response(resp).await
     }
 
     pub async fn post_no_body(&self, path: &str) -> CaddyResult<()> {
         let url = self.url(path);
-        debug!("CADDY POST (no body) {url}");
+        debug!("CADDY POST (no body)");
         let resp = self
             .apply_auth(self.http.post(&url))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn put<B: Serialize>(&self, path: &str, body: &B) -> CaddyResult<()> {
         let url = self.url(path);
-        debug!("CADDY PUT {url}");
+        debug!("CADDY PUT");
         let resp = self
             .apply_auth(
                 self.http
@@ -151,43 +150,40 @@ impl CaddyClient {
             )
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("PUT {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("PUT request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn patch<B: Serialize>(&self, path: &str, body: &B) -> CaddyResult<()> {
         let url = self.url(path);
-        debug!("CADDY PATCH {url}");
+        debug!("CADDY PATCH");
         let resp = self
             .apply_auth(self.http.patch(&url).json(body))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("PATCH {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("PATCH request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn delete(&self, path: &str) -> CaddyResult<()> {
         let url = self.url(path);
-        debug!("CADDY DELETE {url}");
+        debug!("CADDY DELETE");
         let resp = self
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("DELETE request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -202,7 +198,7 @@ impl CaddyClient {
     /// POST /load — replace entire config (Caddyfile or JSON)
     pub async fn load_config(&self, config: &serde_json::Value) -> CaddyResult<()> {
         let url = self.url("/load");
-        debug!("CADDY POST /load");
+        debug!("CADDY POST load");
         let resp = self
             .apply_auth(
                 self.http
@@ -212,11 +208,10 @@ impl CaddyClient {
             )
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("POST /load: {e}")))?;
+            .map_err(|e| Self::transport_error("load request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -224,7 +219,7 @@ impl CaddyClient {
     /// POST /adapt — adapt a Caddyfile to JSON
     pub async fn adapt_caddyfile(&self, caddyfile: &str) -> CaddyResult<CaddyfileAdaptResult> {
         let url = self.url("/adapt");
-        debug!("CADDY POST /adapt");
+        debug!("CADDY POST adapt");
         let resp = self
             .apply_auth(
                 self.http
@@ -234,7 +229,7 @@ impl CaddyClient {
             )
             .send()
             .await
-            .map_err(|e| CaddyError::connection(format!("POST /adapt: {e}")))?;
+            .map_err(|e| Self::transport_error("adapt request", &e))?;
         self.handle_response(resp).await
     }
 
@@ -259,23 +254,67 @@ impl CaddyClient {
 
     // ── Response handling ────────────────────────────────────────────
 
+    fn transport_error(operation: &str, error: &reqwest::Error) -> CaddyError {
+        let reason = if error.is_timeout() {
+            "timed out"
+        } else if error.is_connect() {
+            "connection failed"
+        } else {
+            "transport failed"
+        };
+        CaddyError::connection(format!("{operation}: {reason}"))
+    }
+
+    async fn read_bounded_body(mut resp: reqwest::Response) -> CaddyResult<Vec<u8>> {
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+        {
+            return Err(CaddyError::parse(format!(
+                "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+            )));
+        }
+
+        let capacity = resp
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_RESPONSE_BODY_BYTES as u64) as usize;
+        let mut body = Vec::with_capacity(capacity);
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| Self::transport_error("response body", &e))?
+        {
+            let remaining = (MAX_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if body.len() > MAX_RESPONSE_BODY_BYTES {
+                return Err(CaddyError::parse(format!(
+                    "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                )));
+            }
+        }
+        Ok(body)
+    }
+
     async fn handle_response<T: DeserializeOwned>(
         &self,
         resp: reqwest::Response,
     ) -> CaddyResult<T> {
         let status = resp.status();
-        let body_text = resp
-            .text()
-            .await
-            .map_err(|e| CaddyError::parse(format!("read body: {e}")))?;
         if !status.is_success() {
-            return Err(self.map_status_error(status.as_u16(), &body_text));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        serde_json::from_str(&body_text)
-            .map_err(|e| CaddyError::parse(format!("json: {e}\nBody: {body_text}")))
+        let body = Self::read_bounded_body(resp).await?;
+        serde_json::from_slice(&body).map_err(|e| {
+            CaddyError::parse(format!(
+                "invalid JSON response at line {}, column {}",
+                e.line(),
+                e.column()
+            ))
+        })
     }
 
-    fn map_status_error(&self, status: u16, body: &str) -> CaddyError {
+    fn map_status_error(&self, status: u16) -> CaddyError {
         let kind = match status {
             401 | 403 => CaddyErrorKind::AuthenticationFailed,
             404 => CaddyErrorKind::RouteNotFound,
@@ -284,7 +323,7 @@ impl CaddyClient {
         };
         CaddyError {
             kind,
-            message: format!("HTTP {status}: {body}"),
+            message: format!("HTTP {status}"),
         }
     }
 }

@@ -9,6 +9,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct CicdClient {
     pub config: CicdConnectionConfig,
     http: HttpClient,
@@ -25,7 +27,7 @@ impl CicdClient {
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|e| CicdError::connection(format!("http client build: {e}")))?;
+            .map_err(|_| CicdError::connection("failed to build HTTP client"))?;
         Ok(Self { config, http })
     }
 
@@ -78,31 +80,29 @@ impl CicdClient {
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> CicdResult<T> {
         let url = self.url(path);
-        debug!("CICD GET {url}");
+        debug!("CICD GET");
         let resp = self
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         self.handle_response(resp).await
     }
 
     pub async fn get_raw(&self, path: &str) -> CicdResult<String> {
         let url = self.url(path);
-        debug!("CICD GET (raw) {url}");
+        debug!("CICD GET (raw)");
         let resp = self
             .apply_auth(self.http.get(&url))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("GET {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.text()
-            .await
-            .map_err(|e| CicdError::parse(format!("body: {e}")))
+        let body = Self::read_bounded_body(resp).await?;
+        Ok(String::from_utf8_lossy(&body).into_owned())
     }
 
     pub async fn post<B: Serialize, T: DeserializeOwned>(
@@ -111,50 +111,48 @@ impl CicdClient {
         body: &B,
     ) -> CicdResult<T> {
         let url = self.url(path);
-        debug!("CICD POST {url}");
+        debug!("CICD POST");
         let resp = self
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_response(resp).await
     }
 
     pub async fn post_empty(&self, path: &str) -> CicdResult<()> {
         let url = self.url(path);
-        debug!("CICD POST (empty) {url}");
+        debug!("CICD POST (empty)");
         let resp = self
             .apply_auth(self.http.post(&url))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn post_empty_with_body<B: Serialize>(&self, path: &str, body: &B) -> CicdResult<()> {
         let url = self.url(path);
-        debug!("CICD POST (no response) {url}");
+        debug!("CICD POST (no response)");
         let resp = self
             .apply_auth(self.http.post(&url).json(body))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("POST {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn put<B: Serialize>(&self, path: &str, body: &B) -> CicdResult<()> {
         let url = self.url(path);
-        debug!("CICD PUT {url}");
+        debug!("CICD PUT");
         let resp = self
             .apply_auth(
                 self.http
@@ -164,27 +162,25 @@ impl CicdClient {
             )
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("PUT {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("PUT request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
 
     pub async fn delete(&self, path: &str) -> CicdResult<()> {
         let url = self.url(path);
-        debug!("CICD DELETE {url}");
+        debug!("CICD DELETE");
         let resp = self
             .apply_auth(self.http.delete(&url))
             .send()
             .await
-            .map_err(|e| CicdError::connection(format!("DELETE {url}: {e}")))?;
+            .map_err(|e| Self::transport_error("DELETE request", &e))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
         Ok(())
     }
@@ -229,20 +225,64 @@ impl CicdClient {
 
     // ── Response handling ────────────────────────────────────────────
 
-    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> CicdResult<T> {
-        let status = resp.status();
-        let body_text = resp
-            .text()
-            .await
-            .map_err(|e| CicdError::parse(format!("read body: {e}")))?;
-        if !status.is_success() {
-            return Err(self.map_status_error(status.as_u16(), &body_text));
-        }
-        serde_json::from_str(&body_text)
-            .map_err(|e| CicdError::parse(format!("json: {e}\nBody: {body_text}")))
+    fn transport_error(operation: &str, error: &reqwest::Error) -> CicdError {
+        let reason = if error.is_timeout() {
+            "timed out"
+        } else if error.is_connect() {
+            "connection failed"
+        } else {
+            "transport failed"
+        };
+        CicdError::connection(format!("{operation}: {reason}"))
     }
 
-    fn map_status_error(&self, status: u16, body: &str) -> CicdError {
+    async fn read_bounded_body(mut resp: reqwest::Response) -> CicdResult<Vec<u8>> {
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+        {
+            return Err(CicdError::parse(format!(
+                "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+            )));
+        }
+
+        let capacity = resp
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_RESPONSE_BODY_BYTES as u64) as usize;
+        let mut body = Vec::with_capacity(capacity);
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| Self::transport_error("response body", &e))?
+        {
+            let remaining = (MAX_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if body.len() > MAX_RESPONSE_BODY_BYTES {
+                return Err(CicdError::parse(format!(
+                    "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                )));
+            }
+        }
+        Ok(body)
+    }
+
+    async fn handle_response<T: DeserializeOwned>(&self, resp: reqwest::Response) -> CicdResult<T> {
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(self.map_status_error(status.as_u16()));
+        }
+        let body = Self::read_bounded_body(resp).await?;
+        serde_json::from_slice(&body).map_err(|e| {
+            CicdError::parse(format!(
+                "invalid JSON response at line {}, column {}",
+                e.line(),
+                e.column()
+            ))
+        })
+    }
+
+    fn map_status_error(&self, status: u16) -> CicdError {
         let kind = match status {
             401 => CicdErrorKind::AuthenticationFailed,
             403 => CicdErrorKind::PermissionDenied,
@@ -254,7 +294,7 @@ impl CicdClient {
         };
         CicdError {
             kind,
-            message: format!("HTTP {status}: {body}"),
+            message: format!("HTTP {status}"),
         }
     }
 }
