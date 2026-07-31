@@ -1,6 +1,13 @@
 use crate::lastpass::crypto;
 use crate::lastpass::types::{Account, LastPassError, VaultBlob};
 
+const MAX_VAULT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const MAX_FIELD_BYTES: usize = 4 * 1024 * 1024;
+const MAX_FIELDS_PER_CHUNK: usize = 128;
+const MAX_ACCOUNTS: usize = 50_000;
+const MAX_FOLDERS: usize = 50_000;
+
 /// Parse a vault blob into decrypted accounts.
 ///
 /// The LastPass vault blob is a binary format consisting of chunks.
@@ -8,6 +15,11 @@ use crate::lastpass::types::{Account, LastPassError, VaultBlob};
 /// Account data is in ACCT chunks, folder data is in various other chunks.
 pub fn parse_vault(blob: &VaultBlob, key: &[u8]) -> Result<Vec<Account>, LastPassError> {
     let data = &blob.data;
+    if data.len() > MAX_VAULT_BYTES {
+        return Err(LastPassError::vault_parse_error(
+            "Vault exceeds the configured safety limit",
+        ));
+    }
     let mut accounts = Vec::new();
     let mut pos = 0;
 
@@ -18,19 +30,33 @@ pub fn parse_vault(blob: &VaultBlob, key: &[u8]) -> Result<Vec<Account>, LastPas
                 as usize;
         pos += 8;
 
-        if pos + chunk_size > data.len() {
-            break;
+        if chunk_size > MAX_CHUNK_BYTES
+            || pos
+                .checked_add(chunk_size)
+                .map_or(true, |end| end > data.len())
+        {
+            return Err(LastPassError::vault_parse_error(
+                "Vault contains an invalid chunk",
+            ));
         }
 
         let chunk_data = &data[pos..pos + chunk_size];
         pos += chunk_size;
 
         if chunk_id == b"ACCT" {
-            match parse_account_chunk(chunk_data, key) {
-                Ok(account) => accounts.push(account),
-                Err(_) => continue, // skip unparseable accounts
+            if accounts.len() >= MAX_ACCOUNTS {
+                return Err(LastPassError::vault_parse_error(
+                    "Vault account count exceeds the safety limit",
+                ));
             }
+            accounts.push(parse_account_chunk(chunk_data, key)?);
         }
+    }
+
+    if pos != data.len() && data[pos..].iter().any(|byte| *byte != 0) {
+        return Err(LastPassError::vault_parse_error(
+            "Vault contains trailing malformed data",
+        ));
     }
 
     Ok(accounts)
@@ -130,12 +156,23 @@ fn parse_chunk_fields(data: &[u8]) -> Result<Vec<Vec<u8>>, LastPassError> {
             u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         pos += 4;
 
-        if pos + size > data.len() {
-            break;
+        if fields.len() >= MAX_FIELDS_PER_CHUNK
+            || size > MAX_FIELD_BYTES
+            || pos.checked_add(size).map_or(true, |end| end > data.len())
+        {
+            return Err(LastPassError::vault_parse_error(
+                "Vault item contains an invalid field",
+            ));
         }
 
         fields.push(data[pos..pos + size].to_vec());
         pos += size;
+    }
+
+    if pos != data.len() {
+        return Err(LastPassError::vault_parse_error(
+            "Vault item contains malformed trailing data",
+        ));
     }
 
     Ok(fields)
@@ -145,6 +182,11 @@ fn parse_chunk_fields(data: &[u8]) -> Result<Vec<Vec<u8>>, LastPassError> {
 fn decrypt_chunk_field(data: &[u8], key: &[u8]) -> Result<String, LastPassError> {
     if data.is_empty() {
         return Ok(String::new());
+    }
+    if data.len() > MAX_FIELD_BYTES {
+        return Err(LastPassError::vault_parse_error(
+            "Vault field exceeds the safety limit",
+        ));
     }
 
     // If the first byte is '!' and length > 32, it's AES-CBC
@@ -168,6 +210,11 @@ fn decrypt_chunk_field(data: &[u8], key: &[u8]) -> Result<String, LastPassError>
 /// Extract folders from the vault blob.
 pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, LastPassError> {
     let data = &blob.data;
+    if data.len() > MAX_VAULT_BYTES {
+        return Err(LastPassError::vault_parse_error(
+            "Vault exceeds the configured safety limit",
+        ));
+    }
     let mut folders = Vec::new();
     let mut pos = 0;
 
@@ -178,8 +225,14 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
                 as usize;
         pos += 8;
 
-        if pos + chunk_size > data.len() {
-            break;
+        if chunk_size > MAX_CHUNK_BYTES
+            || pos
+                .checked_add(chunk_size)
+                .map_or(true, |end| end > data.len())
+        {
+            return Err(LastPassError::vault_parse_error(
+                "Vault contains an invalid folder chunk",
+            ));
         }
 
         let chunk_data = &data[pos..pos + chunk_size];
@@ -193,6 +246,11 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
                     .unwrap_or_default();
                 let is_shared = false;
                 if !name.is_empty() {
+                    if folders.len() >= MAX_FOLDERS {
+                        return Err(LastPassError::vault_parse_error(
+                            "Vault folder count exceeds the safety limit",
+                        ));
+                    }
                     folders.push(FolderEntry { name, is_shared });
                 }
             }
@@ -207,6 +265,11 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
                     .map(|f| decrypt_chunk_field(f, key).unwrap_or_default())
                     .unwrap_or_default();
                 if !name.is_empty() {
+                    if folders.len() >= MAX_FOLDERS {
+                        return Err(LastPassError::vault_parse_error(
+                            "Vault folder count exceeds the safety limit",
+                        ));
+                    }
                     folders.push(FolderEntry {
                         name,
                         is_shared: true,

@@ -1,5 +1,6 @@
 use super::service::LastPassServiceState;
 use super::types::*;
+use zeroize::Zeroize;
 
 #[tauri::command]
 pub async fn lp_configure(
@@ -13,13 +14,17 @@ pub async fn lp_configure(
 #[tauri::command]
 pub async fn lp_login(
     state: tauri::State<'_, LastPassServiceState>,
-    master_password: String,
-    otp: Option<String>,
+    mut master_password: String,
+    mut otp: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.login(&master_password, otp.as_deref())
+    let result = svc
+        .login(&master_password, otp.as_deref())
         .await
-        .map_err(|e| e.message)
+        .map_err(|e| e.message);
+    master_password.zeroize();
+    otp.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -194,12 +199,16 @@ pub async fn lp_export_json(
 #[tauri::command]
 pub async fn lp_import_csv(
     state: tauri::State<'_, LastPassServiceState>,
-    csv_data: String,
+    mut csv_data: String,
     format: ImportFormat,
 ) -> Result<ImportResult, String> {
-    let svc = state.lock().await;
-    let (_, result) = svc.import_csv(&csv_data, format).map_err(|e| e.message)?;
-    Ok(result)
+    let mut svc = state.lock().await;
+    let result = svc
+        .import_csv(&csv_data, format)
+        .await
+        .map_err(|e| e.message);
+    csv_data.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -218,16 +227,22 @@ pub async fn lp_generate_passphrase(
     separator: Option<String>,
 ) -> Result<String, String> {
     let svc = state.lock().await;
-    Ok(svc.generate_passphrase(word_count, separator.as_deref()))
+    svc.generate_passphrase(word_count, separator.as_deref())
+        .map_err(|e| e.message)
 }
 
 #[tauri::command]
 pub async fn lp_check_password_strength(
     state: tauri::State<'_, LastPassServiceState>,
-    password: String,
+    mut password: String,
 ) -> Result<(f64, String), String> {
+    if password.len() > 4096 {
+        password.zeroize();
+        return Err("Password exceeds the supported safety limit".to_string());
+    }
     let svc = state.lock().await;
     let (entropy, rating) = svc.check_password_strength(&password);
+    password.zeroize();
     Ok((entropy, rating.to_string()))
 }
 

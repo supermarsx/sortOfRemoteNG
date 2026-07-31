@@ -11,6 +11,14 @@ use crate::lastpass::vault_parser;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+const MAX_RESULT_ACCOUNTS: usize = 50_000;
+const MAX_ID_BYTES: usize = 256;
+const MAX_NAME_BYTES: usize = 4096;
+const MAX_URL_BYTES: usize = 16 * 1024;
+const MAX_USERNAME_BYTES: usize = 16 * 1024;
+const MAX_NOTES_BYTES: usize = 4 * 1024 * 1024;
+const MAX_GROUP_BYTES: usize = 4096;
+
 pub type LastPassServiceState = Arc<Mutex<LastPassService>>;
 
 pub struct LastPassService {
@@ -44,10 +52,34 @@ impl LastPassService {
 
     // ─── Configuration ───────────────────────────────────────────
 
-    pub fn configure(&mut self, config: LastPassConfig) -> Result<(), LastPassError> {
-        if config.username.is_empty() {
+    pub fn configure(&mut self, mut config: LastPassConfig) -> Result<(), LastPassError> {
+        if self.is_logged_in() {
+            return Err(LastPassError::config_error(
+                "Log out before changing LastPass configuration",
+            ));
+        }
+        config.username = config.username.trim().to_string();
+        config.server_url = config.server_url.trim().to_string();
+        if config.username.is_empty()
+            || config.username.len() > 320
+            || config.username.chars().any(|ch| ch.is_control())
+        {
             return Err(LastPassError::config_error("Username (email) is required"));
         }
+        if !config.verify_tls
+            || !(5..=60).contains(&config.timeout_secs)
+            || (config.iterations != 1 && !(10_000..=5_000_000).contains(&config.iterations))
+            || config.trusted_device_id.as_ref().is_some_and(|id| {
+                id.is_empty()
+                    || id.len() > 256
+                    || id.chars().any(|ch| ch.is_control() || ch.is_whitespace())
+            })
+        {
+            return Err(LastPassError::config_error(
+                "LastPass configuration is outside the supported safety limits",
+            ));
+        }
+        let _ = LastPassApiClient::new(&config)?;
         self.config = Some(config);
         Ok(())
     }
@@ -78,6 +110,9 @@ impl LastPassService {
         master_password: &str,
         otp: Option<&str>,
     ) -> Result<(), LastPassError> {
+        if self.is_logged_in() {
+            return Err(LastPassError::auth_failed("Already logged in to LastPass"));
+        }
         let config = self
             .config
             .as_ref()
@@ -159,13 +194,16 @@ impl LastPassService {
         let accounts = self.get_cached_accounts()?;
 
         if let Some(params) = params {
-            Ok(items::filter_accounts(accounts, &params))
+            validate_optional_text("folder", params.folder.as_deref(), MAX_GROUP_BYTES)?;
+            validate_optional_text("search", params.search.as_deref(), 1024)?;
+            enforce_result_limit(items::filter_accounts(accounts, &params))
         } else {
-            Ok(accounts.clone())
+            enforce_result_limit(accounts.clone())
         }
     }
 
     pub async fn get_account(&mut self, id: &str) -> Result<Account, LastPassError> {
+        validate_identifier(id)?;
         self.ensure_vault().await?;
         let accounts = self.get_cached_accounts()?;
         items::find_account_by_id(accounts, id)
@@ -174,21 +212,24 @@ impl LastPassService {
     }
 
     pub async fn search_accounts(&mut self, query: &str) -> Result<Vec<Account>, LastPassError> {
+        validate_text("search query", query, 1024, false, false)?;
         self.ensure_vault().await?;
         let accounts = self.get_cached_accounts()?;
-        Ok(items::find_accounts_by_name(accounts, query))
+        enforce_result_limit(items::find_accounts_by_name(accounts, query))
     }
 
     pub async fn search_by_url(&mut self, url: &str) -> Result<Vec<Account>, LastPassError> {
+        validate_text("URL search", url, MAX_URL_BYTES, false, false)?;
         self.ensure_vault().await?;
         let accounts = self.get_cached_accounts()?;
-        Ok(items::find_accounts_by_url(accounts, url))
+        enforce_result_limit(items::find_accounts_by_url(accounts, url))
     }
 
     pub async fn create_account(
         &mut self,
         request: CreateAccountRequest,
     ) -> Result<String, LastPassError> {
+        validate_create_request(&request)?;
         let client = self
             .client
             .as_ref()
@@ -225,6 +266,7 @@ impl LastPassService {
         &mut self,
         request: UpdateAccountRequest,
     ) -> Result<(), LastPassError> {
+        validate_update_request(&request)?;
         self.ensure_vault().await?;
 
         let encryption_key = self
@@ -267,6 +309,7 @@ impl LastPassService {
     }
 
     pub async fn delete_account(&mut self, id: &str) -> Result<(), LastPassError> {
+        validate_identifier(id)?;
         let client = self
             .client
             .as_ref()
@@ -278,6 +321,7 @@ impl LastPassService {
     }
 
     pub async fn toggle_favorite(&mut self, id: &str, favorite: bool) -> Result<(), LastPassError> {
+        validate_identifier(id)?;
         let client = self
             .client
             .as_ref()
@@ -289,6 +333,8 @@ impl LastPassService {
     }
 
     pub async fn move_account(&mut self, id: &str, new_group: &str) -> Result<(), LastPassError> {
+        validate_identifier(id)?;
+        validate_text("folder", new_group, MAX_GROUP_BYTES, false, true)?;
         let client = self
             .client
             .as_ref()
@@ -302,7 +348,7 @@ impl LastPassService {
     pub async fn get_favorites(&mut self) -> Result<Vec<Account>, LastPassError> {
         self.ensure_vault().await?;
         let accounts = self.get_cached_accounts()?;
-        Ok(items::get_favorites(accounts))
+        enforce_result_limit(items::get_favorites(accounts))
     }
 
     pub async fn get_duplicates(&mut self) -> Result<Vec<Vec<Account>>, LastPassError> {
@@ -331,14 +377,11 @@ impl LastPassService {
     }
 
     pub async fn create_folder(&mut self, name: &str, shared: bool) -> Result<(), LastPassError> {
-        let client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| LastPassError::auth_failed("Not logged in"))?;
-
-        client.create_folder(name, shared).await?;
-        self.invalidate_cache();
-        Ok(())
+        let _ = (name, shared);
+        Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            "Empty-folder creation is not supported by the verified LastPass API flow",
+        ))
     }
 
     // ─── Security ────────────────────────────────────────────────
@@ -354,7 +397,7 @@ impl LastPassService {
     pub async fn export_csv(&mut self) -> Result<ExportResult, LastPassError> {
         self.ensure_vault().await?;
         let accounts = self.get_cached_accounts()?;
-        Ok(import_export::export_csv(accounts))
+        import_export::export_csv(accounts)
     }
 
     pub async fn export_json(&mut self) -> Result<ExportResult, LastPassError> {
@@ -363,16 +406,63 @@ impl LastPassService {
         import_export::export_json(accounts)
     }
 
-    pub fn import_csv(
-        &self,
+    pub async fn import_csv(
+        &mut self,
         csv_data: &str,
         format: ImportFormat,
-    ) -> Result<(Vec<Account>, ImportResult), LastPassError> {
-        match format {
+    ) -> Result<ImportResult, LastPassError> {
+        let (accounts, mut result) = match format {
             ImportFormat::LastPassCsv => import_export::import_lastpass_csv(csv_data),
             ImportFormat::ChromeCsv => import_export::import_chrome_csv(csv_data),
-            _ => import_export::import_generic_csv(csv_data),
+            ImportFormat::GenericCsv => import_export::import_generic_csv(csv_data),
+            _ => Err(LastPassError::new(
+                LastPassErrorKind::BadRequest,
+                "Selected LastPass import format is not implemented",
+            )),
+        }?;
+        result.imported = 0;
+        result.skipped = 0;
+        result.errors.clear();
+
+        for (index, mut account) in accounts.into_iter().enumerate() {
+            if account.favorite
+                || account.totp_secret.is_some()
+                || !account.custom_fields.is_empty()
+            {
+                result.skipped = result.skipped.saturating_add(1);
+                if result.errors.len() < 100 {
+                    result.errors.push(format!(
+                        "Record {} uses fields that cannot be safely persisted",
+                        index + 1
+                    ));
+                }
+                continue;
+            }
+            let request = CreateAccountRequest {
+                name: std::mem::take(&mut account.name),
+                url: std::mem::take(&mut account.url),
+                username: std::mem::take(&mut account.username),
+                password: std::mem::take(&mut account.password),
+                notes: Some(std::mem::take(&mut account.notes)),
+                group: Some(std::mem::take(&mut account.group)),
+                favorite: None,
+                auto_login: None,
+                totp_secret: None,
+                custom_fields: None,
+            };
+            match self.create_account(request).await {
+                Ok(_) => result.imported = result.imported.saturating_add(1),
+                Err(_) => {
+                    result.skipped = result.skipped.saturating_add(1);
+                    if result.errors.len() < 100 {
+                        result
+                            .errors
+                            .push(format!("Record {} was rejected by LastPass", index + 1));
+                    }
+                }
+            }
         }
+        Ok(result)
     }
 
     // ─── Password Generation ─────────────────────────────────────
@@ -385,7 +475,11 @@ impl LastPassService {
         password_gen::generate_password(&config)
     }
 
-    pub fn generate_passphrase(&self, word_count: Option<u32>, separator: Option<&str>) -> String {
+    pub fn generate_passphrase(
+        &self,
+        word_count: Option<u32>,
+        separator: Option<&str>,
+    ) -> Result<String, LastPassError> {
         password_gen::generate_passphrase(word_count.unwrap_or(4), separator.unwrap_or("-"))
     }
 
@@ -409,6 +503,113 @@ impl LastPassService {
             accounts_by_group: by_group,
         })
     }
+}
+
+fn validate_text(
+    label: &str,
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+    allow_newlines: bool,
+) -> Result<(), LastPassError> {
+    if (!allow_empty && value.trim().is_empty())
+        || value.len() > max_bytes
+        || value.chars().any(|ch| {
+            ch == '\0' || (ch.is_control() && !(allow_newlines && matches!(ch, '\n' | '\r' | '\t')))
+        })
+    {
+        return Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            format!("{} is outside the supported safety limits", label),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_text(
+    label: &str,
+    value: Option<&str>,
+    max_bytes: usize,
+) -> Result<(), LastPassError> {
+    if let Some(value) = value {
+        validate_text(label, value, max_bytes, true, false)?;
+    }
+    Ok(())
+}
+
+fn validate_identifier(id: &str) -> Result<(), LastPassError> {
+    if id.is_empty()
+        || id.len() > MAX_ID_BYTES
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+    {
+        return Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            "Invalid LastPass item identifier",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_create_request(request: &CreateAccountRequest) -> Result<(), LastPassError> {
+    validate_text("name", &request.name, MAX_NAME_BYTES, false, false)?;
+    validate_text("URL", &request.url, MAX_URL_BYTES, true, false)?;
+    validate_text(
+        "username",
+        &request.username,
+        MAX_USERNAME_BYTES,
+        true,
+        false,
+    )?;
+    validate_text("password", &request.password, MAX_NOTES_BYTES, true, false)?;
+    validate_optional_text("notes", request.notes.as_deref(), MAX_NOTES_BYTES)?;
+    validate_optional_text("folder", request.group.as_deref(), MAX_GROUP_BYTES)?;
+    if request.favorite.unwrap_or(false)
+        || request.auto_login.unwrap_or(false)
+        || request.totp_secret.is_some()
+        || request
+            .custom_fields
+            .as_ref()
+            .is_some_and(|fields| !fields.is_empty())
+    {
+        return Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            "Favorite, auto-login, TOTP, and custom fields are not supported by the verified create flow",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_update_request(request: &UpdateAccountRequest) -> Result<(), LastPassError> {
+    validate_identifier(&request.id)?;
+    validate_optional_text("name", request.name.as_deref(), MAX_NAME_BYTES)?;
+    validate_optional_text("URL", request.url.as_deref(), MAX_URL_BYTES)?;
+    validate_optional_text("username", request.username.as_deref(), MAX_USERNAME_BYTES)?;
+    validate_optional_text("password", request.password.as_deref(), MAX_NOTES_BYTES)?;
+    validate_optional_text("notes", request.notes.as_deref(), MAX_NOTES_BYTES)?;
+    validate_optional_text("folder", request.group.as_deref(), MAX_GROUP_BYTES)?;
+    if request.favorite.is_some()
+        || request.auto_login.is_some()
+        || request.totp_secret.is_some()
+        || request.custom_fields.is_some()
+    {
+        return Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            "Favorite, auto-login, TOTP, and custom fields require dedicated verified update flows",
+        ));
+    }
+    Ok(())
+}
+
+fn enforce_result_limit(accounts: Vec<Account>) -> Result<Vec<Account>, LastPassError> {
+    if accounts.len() > MAX_RESULT_ACCOUNTS {
+        return Err(LastPassError::new(
+            LastPassErrorKind::BadRequest,
+            "Account result exceeds the configured safety limit",
+        ));
+    }
+    Ok(accounts)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

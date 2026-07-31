@@ -1,10 +1,15 @@
 use crate::lastpass::types::{Account, ExportFormat, ExportResult, ImportResult, LastPassError};
 
+pub const MAX_IMPORT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_IMPORT_RECORDS: usize = 500;
+const MAX_CSV_LINE_BYTES: usize = 256 * 1024;
+const MAX_EXPORT_BYTES: usize = 64 * 1024 * 1024;
+
 /// Export accounts to CSV format.
-pub fn export_csv(accounts: &[Account]) -> ExportResult {
+pub fn export_csv(accounts: &[Account]) -> Result<ExportResult, LastPassError> {
     let mut csv = String::from("url,username,password,totp,extra,name,grouping,fav\n");
     for account in accounts {
-        csv.push_str(&format!(
+        let row = format!(
             "{},{},{},{},{},{},{},{}\n",
             csv_escape(&account.url),
             csv_escape(&account.username),
@@ -14,20 +19,33 @@ pub fn export_csv(accounts: &[Account]) -> ExportResult {
             csv_escape(&account.name),
             csv_escape(&account.group),
             if account.favorite { "1" } else { "0" }
-        ));
+        );
+        if csv.len().saturating_add(row.len()) > MAX_EXPORT_BYTES {
+            return Err(LastPassError::new(
+                crate::lastpass::types::LastPassErrorKind::BadRequest,
+                "CSV export exceeds the configured safety limit",
+            ));
+        }
+        csv.push_str(&row);
     }
 
-    ExportResult {
+    Ok(ExportResult {
         format: ExportFormat::Csv,
         total_items: accounts.len() as u64,
         data: csv,
-    }
+    })
 }
 
 /// Export accounts to JSON format.
 pub fn export_json(accounts: &[Account]) -> Result<ExportResult, LastPassError> {
     let json = serde_json::to_string_pretty(accounts)
         .map_err(|e| LastPassError::parse_error(format!("JSON serialization failed: {}", e)))?;
+    if json.len() > MAX_EXPORT_BYTES {
+        return Err(LastPassError::new(
+            crate::lastpass::types::LastPassErrorKind::BadRequest,
+            "JSON export exceeds the configured safety limit",
+        ));
+    }
 
     Ok(ExportResult {
         format: ExportFormat::Json,
@@ -38,6 +56,7 @@ pub fn export_json(accounts: &[Account]) -> Result<ExportResult, LastPassError> 
 
 /// Import accounts from LastPass CSV format.
 pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult), LastPassError> {
+    validate_csv_input(csv_data)?;
     let mut accounts = Vec::new();
     let mut result = ImportResult {
         total_records: 0,
@@ -106,6 +125,7 @@ pub fn import_lastpass_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult
 
 /// Import accounts from Chrome CSV format (url, username, password, note).
 pub fn import_chrome_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult), LastPassError> {
+    validate_csv_input(csv_data)?;
     let mut accounts = Vec::new();
     let mut result = ImportResult {
         total_records: 0,
@@ -188,11 +208,41 @@ pub fn import_generic_csv(csv_data: &str) -> Result<(Vec<Account>, ImportResult)
 
 /// Escape a value for CSV output.
 fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
+    let guarded = if value
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| matches!(*byte, b'=' | b'+' | b'-' | b'@'))
+    {
+        format!("'{}", value)
     } else {
         value.to_string()
+    };
+    if guarded.contains(',')
+        || guarded.contains('"')
+        || guarded.bytes().any(|byte| matches!(byte, b'\n' | b'\r'))
+    {
+        format!("\"{}\"", guarded.replace('"', "\"\""))
+    } else {
+        guarded
     }
+}
+
+fn validate_csv_input(csv_data: &str) -> Result<(), LastPassError> {
+    if csv_data.is_empty() || csv_data.len() > MAX_IMPORT_BYTES {
+        return Err(LastPassError::parse_error(
+            "CSV input is empty or exceeds the configured safety limit",
+        ));
+    }
+    let mut records = 0usize;
+    for line in csv_data.lines() {
+        records = records.saturating_add(1);
+        if records > MAX_IMPORT_RECORDS + 1 || line.len() > MAX_CSV_LINE_BYTES {
+            return Err(LastPassError::parse_error(
+                "CSV input exceeds the configured record or line limit",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Parse a CSV line handling quoted fields.

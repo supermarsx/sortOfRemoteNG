@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use zeroize::Zeroize;
 
 // ─── Error types ─────────────────────────────────────────────────────
 
@@ -144,14 +145,11 @@ impl From<LastPassError> for String {
 impl From<reqwest::Error> for LastPassError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Self::new(
-                LastPassErrorKind::Timeout,
-                format!("Request timed out: {}", e),
-            )
+            Self::new(LastPassErrorKind::Timeout, "LastPass request timed out")
         } else if e.is_connect() {
-            Self::connection_error(format!("Connection failed: {}", e))
+            Self::connection_error("Could not connect to LastPass")
         } else {
-            Self::server_error(format!("HTTP error: {}", e))
+            Self::server_error("LastPass HTTP request failed")
         }
     }
 }
@@ -189,7 +187,7 @@ impl Default for LastPassConfig {
 
 // ─── Session ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct LastPassSession {
     pub session_id: String,
     pub token: String,
@@ -202,7 +200,7 @@ pub struct LastPassSession {
 
 // ─── Vault Account (Item) ────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Account {
     pub id: String,
     pub name: String,
@@ -223,7 +221,7 @@ pub struct Account {
     pub custom_fields: Vec<CustomField>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CustomField {
     pub name: String,
     pub value: String,
@@ -244,7 +242,7 @@ pub enum CustomFieldType {
 
 // ─── Create / Update ────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CreateAccountRequest {
     pub name: String,
     pub url: String,
@@ -258,7 +256,7 @@ pub struct CreateAccountRequest {
     pub custom_fields: Option<Vec<CustomField>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct UpdateAccountRequest {
     pub id: String,
     pub name: Option<String>,
@@ -307,7 +305,7 @@ pub struct SharedFolderMember {
 
 // ─── Secure Note ─────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SecureNote {
     pub id: String,
     pub name: String,
@@ -342,7 +340,7 @@ pub enum SecureNoteType {
 
 // ─── Identity (Form Fill) ────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Identity {
     pub id: String,
     pub title: Option<String>,
@@ -496,7 +494,7 @@ pub struct ImportResult {
     pub errors: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ExportResult {
     pub format: ExportFormat,
     pub total_items: u64,
@@ -575,4 +573,108 @@ pub struct AccountListParams {
     pub folder: Option<String>,
     pub search: Option<String>,
     pub favorites_only: bool,
+}
+
+impl Drop for LastPassSession {
+    fn drop(&mut self) {
+        self.session_id.zeroize();
+        self.token.zeroize();
+        self.uid.zeroize();
+        self.private_key.zeroize();
+        self.encryption_key.zeroize();
+    }
+}
+
+impl Drop for Account {
+    fn drop(&mut self) {
+        self.id.zeroize();
+        self.name.zeroize();
+        self.url.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.notes.zeroize();
+        self.group.zeroize();
+        self.folder_id.zeroize();
+        self.realm.zeroize();
+        self.totp_secret.zeroize();
+    }
+}
+
+impl Drop for CustomField {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.value.zeroize();
+    }
+}
+
+impl Drop for CreateAccountRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.url.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.notes.zeroize();
+        self.group.zeroize();
+        self.totp_secret.zeroize();
+    }
+}
+
+impl Drop for UpdateAccountRequest {
+    fn drop(&mut self) {
+        self.id.zeroize();
+        self.name.zeroize();
+        self.url.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.notes.zeroize();
+        self.group.zeroize();
+        self.totp_secret.zeroize();
+    }
+}
+
+impl Drop for SecureNote {
+    fn drop(&mut self) {
+        self.id.zeroize();
+        self.name.zeroize();
+        self.content.zeroize();
+        self.folder.zeroize();
+    }
+}
+
+impl Drop for Identity {
+    fn drop(&mut self) {
+        self.id.zeroize();
+        self.title.zeroize();
+        self.first_name.zeroize();
+        self.middle_name.zeroize();
+        self.last_name.zeroize();
+        self.email.zeroize();
+        self.phone.zeroize();
+        self.mobile_phone.zeroize();
+        self.address1.zeroize();
+        self.address2.zeroize();
+        self.city.zeroize();
+        self.state.zeroize();
+        self.zip.zeroize();
+        self.country.zeroize();
+        self.company.zeroize();
+        self.username.zeroize();
+        self.birthday.zeroize();
+        self.gender.zeroize();
+        self.ssn.zeroize();
+        self.timezone.zeroize();
+        self.notes.zeroize();
+    }
+}
+
+impl Drop for ExportResult {
+    fn drop(&mut self) {
+        self.data.zeroize();
+    }
+}
+
+impl Drop for VaultBlob {
+    fn drop(&mut self) {
+        self.data.zeroize();
+    }
 }

@@ -59,13 +59,14 @@ pub fn find_accounts_by_name(accounts: &[Account], name: &str) -> Vec<Account> {
 
 /// Get all duplicate passwords (accounts that share the same password).
 pub fn find_duplicate_passwords(accounts: &[Account]) -> Vec<Vec<Account>> {
+    use sha2::{Digest, Sha256};
     use std::collections::HashMap;
 
-    let mut by_password: HashMap<String, Vec<Account>> = HashMap::new();
+    let mut by_password: HashMap<[u8; 32], Vec<Account>> = HashMap::new();
     for account in accounts {
         if !account.password.is_empty() {
             by_password
-                .entry(account.password.clone())
+                .entry(Sha256::digest(account.password.as_bytes()).into())
                 .or_default()
                 .push(account.clone());
         }

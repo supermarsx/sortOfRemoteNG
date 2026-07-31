@@ -24,6 +24,7 @@ pbkdf2 = "0.12"
 aes = "0.8"
 cbc = "0.1"
 hex = { workspace = true }
+zeroize = "1.8"
 
 [dev-dependencies]
 serde_json = { workspace = true }

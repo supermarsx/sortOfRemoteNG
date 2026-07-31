@@ -1,4 +1,7 @@
 use crate::lastpass::types::LastPassError;
+use zeroize::Zeroize;
+
+const MAX_CRYPTO_INPUT_BYTES: usize = 4 * 1024 * 1024;
 
 /// Derive the encryption key from the master password using PBKDF2-SHA256.
 ///
@@ -9,6 +12,17 @@ pub fn derive_key(password: &str, email: &str, iterations: u32) -> Result<Vec<u8
     use hmac::Hmac;
     use pbkdf2::pbkdf2;
     use sha2::{Digest, Sha256};
+
+    if password.is_empty()
+        || password.len() > 4096
+        || email.is_empty()
+        || email.len() > 320
+        || (iterations != 1 && !(10_000..=5_000_000).contains(&iterations))
+    {
+        return Err(LastPassError::decryption_error(
+            "Unsafe key derivation parameters",
+        ));
+    }
 
     if iterations == 1 {
         let mut hasher = Sha256::new();
@@ -37,10 +51,24 @@ pub fn derive_key(password: &str, email: &str, iterations: u32) -> Result<Vec<u8
 /// Protocol:
 /// - If iterations == 1: login_hash = hex(SHA256(hex(key) + password))
 /// - If iterations > 1: login_hash = hex(PBKDF2_SHA256(key, password, 1, 32))
-pub fn compute_login_hash(key: &[u8], password: &str, iterations: u32) -> Result<String, LastPassError> {
+pub fn compute_login_hash(
+    key: &[u8],
+    password: &str,
+    iterations: u32,
+) -> Result<String, LastPassError> {
     use hmac::Hmac;
     use pbkdf2::pbkdf2;
     use sha2::{Digest, Sha256};
+
+    if key.len() != 32
+        || password.is_empty()
+        || password.len() > 4096
+        || (iterations != 1 && !(10_000..=5_000_000).contains(&iterations))
+    {
+        return Err(LastPassError::encryption_error(
+            "Unsafe login hash parameters",
+        ));
+    }
 
     if iterations == 1 {
         let hex_key = hex::encode(key);
@@ -64,6 +92,11 @@ pub fn decrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
 
     type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
+    if data.len() > MAX_CRYPTO_INPUT_BYTES {
+        return Err(LastPassError::decryption_error(
+            "Encrypted field exceeds the safety limit",
+        ));
+    }
     if key.len() != 32 {
         return Err(LastPassError::decryption_error(
             "Key must be 32 bytes for AES-256",
@@ -77,13 +110,14 @@ pub fn decrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
     let decryptor = Aes256CbcDec::new_from_slices(key, iv)
         .map_err(|e| LastPassError::decryption_error(format!("Failed to init AES-CBC: {}", e)))?;
 
-    let plaintext = decryptor
+    let plaintext_len = decryptor
         .decrypt_padded_mut::<Pkcs7>(&mut buf)
-        .map_err(|e| {
-            LastPassError::decryption_error(format!("AES-CBC decryption failed: {}", e))
-        })?;
+        .map_err(|_| LastPassError::decryption_error("AES-CBC decryption failed"))?
+        .len();
 
-    Ok(plaintext.to_vec())
+    let plaintext = buf[..plaintext_len].to_vec();
+    buf.zeroize();
+    Ok(plaintext)
 }
 
 /// Decrypt an AES-256-ECB encrypted blob with a given key.
@@ -91,6 +125,11 @@ pub fn decrypt_aes_ecb(data: &[u8], key: &[u8]) -> Result<Vec<u8>, LastPassError
     use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
     use aes::Aes256;
 
+    if data.len() > MAX_CRYPTO_INPUT_BYTES {
+        return Err(LastPassError::decryption_error(
+            "Encrypted field exceeds the safety limit",
+        ));
+    }
     if key.len() != 32 {
         return Err(LastPassError::decryption_error(
             "Key must be 32 bytes for AES-256",
@@ -120,7 +159,13 @@ pub fn decrypt_aes_ecb(data: &[u8], key: &[u8]) -> Result<Vec<u8>, LastPassError
                 .all(|&b| b == last_byte);
             if valid_padding {
                 result.truncate(result.len() - pad_len);
+            } else {
+                result.zeroize();
+                return Err(LastPassError::decryption_error("Invalid AES-ECB padding"));
             }
+        } else {
+            result.zeroize();
+            return Err(LastPassError::decryption_error("Invalid AES-ECB padding"));
         }
     }
 
@@ -136,6 +181,11 @@ pub fn encrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
 
     type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 
+    if data.len() > MAX_CRYPTO_INPUT_BYTES {
+        return Err(LastPassError::encryption_error(
+            "Plaintext field exceeds the safety limit",
+        ));
+    }
     if key.len() != 32 {
         return Err(LastPassError::encryption_error(
             "Key must be 32 bytes for AES-256",
@@ -152,13 +202,14 @@ pub fn encrypt_aes_cbc(data: &[u8], key: &[u8], iv: &[u8]) -> Result<Vec<u8>, La
     let mut buf = vec![0u8; padded_len];
     buf[..data.len()].copy_from_slice(data);
 
-    let ciphertext = encryptor
+    let ciphertext_len = encryptor
         .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
-        .map_err(|e| {
-            LastPassError::encryption_error(format!("AES-CBC encryption failed: {}", e))
-        })?;
+        .map_err(|_| LastPassError::encryption_error("AES-CBC encryption failed"))?
+        .len();
 
-    Ok(ciphertext.to_vec())
+    let ciphertext = buf[..ciphertext_len].to_vec();
+    buf.zeroize();
+    Ok(ciphertext)
 }
 
 /// Decrypt a field that is either base64-encoded AES-CBC (with ! prefix) or hex AES-ECB.
@@ -166,6 +217,11 @@ pub fn decrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
 
+    if data.len() > MAX_CRYPTO_INPUT_BYTES * 2 {
+        return Err(LastPassError::decryption_error(
+            "Encrypted field exceeds the safety limit",
+        ));
+    }
     if data.is_empty() {
         return Ok(String::new());
     }
@@ -178,25 +234,23 @@ pub fn decrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
         }
         let iv = STANDARD
             .decode(parts[0])
-            .map_err(|e| LastPassError::decryption_error(format!("Invalid IV base64: {}", e)))?;
-        let ciphertext = STANDARD.decode(parts[1]).map_err(|e| {
-            LastPassError::decryption_error(format!("Invalid ciphertext base64: {}", e))
-        })?;
+            .map_err(|_| LastPassError::decryption_error("Invalid IV base64"))?;
+        let ciphertext = STANDARD
+            .decode(parts[1])
+            .map_err(|_| LastPassError::decryption_error("Invalid ciphertext base64"))?;
         let plaintext = decrypt_aes_cbc(&ciphertext, key, &iv)?;
-        String::from_utf8(plaintext).map_err(|e| {
-            LastPassError::decryption_error(format!("Invalid UTF-8 after decrypt: {}", e))
-        })
+        String::from_utf8(plaintext)
+            .map_err(|_| LastPassError::decryption_error("Invalid UTF-8 after decrypt"))
     } else {
         // AES-256-ECB with hex encoding
-        let data_bytes = hex::decode(data)
-            .map_err(|e| LastPassError::decryption_error(format!("Invalid hex: {}", e)))?;
+        let data_bytes =
+            hex::decode(data).map_err(|_| LastPassError::decryption_error("Invalid hex"))?;
         if data_bytes.is_empty() {
             return Ok(String::new());
         }
         let plaintext = decrypt_aes_ecb(&data_bytes, key)?;
-        String::from_utf8(plaintext).map_err(|e| {
-            LastPassError::decryption_error(format!("Invalid UTF-8 after ECB decrypt: {}", e))
-        })
+        String::from_utf8(plaintext)
+            .map_err(|_| LastPassError::decryption_error("Invalid UTF-8 after ECB decrypt"))
     }
 }
 
