@@ -16,5 +16,6 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
+zeroize = { workspace = true }
 libloading = "0.8"
 sorng-opkssh-vendor = { path = "../sorng-opkssh-vendor", optional = true }

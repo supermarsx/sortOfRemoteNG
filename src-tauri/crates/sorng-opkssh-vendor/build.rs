@@ -46,7 +46,7 @@ fn main() {
     }
 
     if target.as_deref().is_some_and(|triple| triple.contains("msvc")) {
-        emit_stub_runtime("OPKSSH vendor bridge is not wired for MSVC targets yet");
+        emit_stub_runtime_metadata();
         return;
     }
 
@@ -313,6 +313,10 @@ fn emit_platform_link_libs() {
 
 fn emit_stub_runtime(reason: &str) {
     println!("cargo:warning={reason}");
+    emit_stub_runtime_metadata();
+}
+
+fn emit_stub_runtime_metadata() {
     println!("cargo:rustc-env={EMBEDDED_RUNTIME_ENV}=0");
     println!("cargo:rustc-env={CHECKOUT_USED_ENV}=");
 }
