@@ -148,10 +148,7 @@ pub struct UdpAccelConfig {
 impl UdpAccelConfig {
     /// Build a config from the server-announced [`UdpAccelServerInfo`]
     /// and a locally-chosen keepalive interval.
-    pub fn from_server_info(
-        info: &UdpAccelServerInfo,
-        keepalive_interval: Duration,
-    ) -> Self {
+    pub fn from_server_info(info: &UdpAccelServerInfo, keepalive_interval: Duration) -> Self {
         Self {
             peer_addr: SocketAddr::new(info.server_ip, info.server_port),
             common_key: info.server_key_v1,
@@ -374,9 +371,7 @@ pub fn parse_v1_packet(
     // Padding lives between `cur` (end of data) and `tail_start`.
     // We don't inspect padding — but `cur` must be <= `tail_start`.
     if cur > tail_start {
-        return Err(UdpAccelError::FramingError(
-            "data + trailer overlap".into(),
-        ));
+        return Err(UdpAccelError::FramingError("data + trailer overlap".into()));
     }
     let verify = &body[tail_start..];
     if verify.iter().any(|&b| b != 0) {
@@ -406,7 +401,9 @@ async fn bind_client_socket(peer_addr: SocketAddr) -> Result<UdpSocket, UdpAccel
     } else {
         "0.0.0.0:0".parse().unwrap()
     };
-    UdpSocket::bind(local).await.map_err(UdpAccelError::BindFailed)
+    UdpSocket::bind(local)
+        .await
+        .map_err(UdpAccelError::BindFailed)
 }
 
 /// Handle on a running [`run_udp_accel`] task group.
@@ -482,10 +479,8 @@ where
     let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<UdpAccelError>(4);
 
     // Channels between device + UDP tasks.
-    let (dev_to_udp_tx, mut dev_to_udp_rx) =
-        tokio::sync::mpsc::channel::<Vec<u8>>(128);
-    let (udp_to_dev_tx, mut udp_to_dev_rx) =
-        tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    let (dev_to_udp_tx, mut dev_to_udp_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    let (udp_to_dev_tx, mut udp_to_dev_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(128);
 
     // Device owner — bridges read/write halves to channels.
     let mut device = device;
@@ -711,8 +706,7 @@ mod tests {
             true,
         )
         .expect("build");
-        let parsed =
-            parse_v1_packet(&pkt, &TEST_KEY, 0xDEAD_BEEF, true).expect("parse");
+        let parsed = parse_v1_packet(&pkt, &TEST_KEY, 0xDEAD_BEEF, true).expect("parse");
         assert_eq!(parsed.cookie, 0xDEAD_BEEF);
         assert_eq!(parsed.my_tick, 100);
         assert_eq!(parsed.your_tick, 50);
@@ -750,8 +744,7 @@ mod tests {
     #[test]
     fn parse_rejects_short_packet() {
         let tiny = vec![0u8; 10];
-        let err =
-            parse_v1_packet(&tiny, &TEST_KEY, 1, true).expect_err("short");
+        let err = parse_v1_packet(&tiny, &TEST_KEY, 1, true).expect_err("short");
         assert!(matches!(err, UdpAccelError::FramingError(_)));
     }
 
@@ -833,7 +826,7 @@ mod tests {
             peer_addr: peer,
             common_key: TEST_KEY,
             your_cookie: 0xAAAA_AAAA, // server expects this on our sends
-            my_cookie: 0xBBBB_BBBB, // we expect this on server's sends
+            my_cookie: 0xBBBB_BBBB,   // we expect this on server's sends
             use_encryption: true,
             keepalive_interval: Duration::from_millis(50),
             rx_buf_size: UDP_ACCEL_TMP_BUF_SIZE,
@@ -863,7 +856,9 @@ mod tests {
         let cfg = make_test_config(server_addr).await;
         let (dev, mut handle) = MpscDevice::new_pair(16, "udp-test");
         let (_ext_tx, ext_rx) = watch::channel(false);
-        let h = run_udp_accel(cfg.clone(), dev, ext_rx).await.expect("spawn");
+        let h = run_udp_accel(cfg.clone(), dev, ext_rx)
+            .await
+            .expect("spawn");
 
         // Client just bound — give it a moment, then push a keepalive
         // (empty payload) from the client so the server learns its
@@ -914,7 +909,9 @@ mod tests {
 
         let (dev, handle) = MpscDevice::new_pair(16, "udp-test-out");
         let (_ext_tx, ext_rx) = watch::channel(false);
-        let h = run_udp_accel(cfg.clone(), dev, ext_rx).await.expect("spawn");
+        let h = run_udp_accel(cfg.clone(), dev, ext_rx)
+            .await
+            .expect("spawn");
 
         // Inject a frame on the TAP side.
         handle.tx.send(b"from-tap-eth".to_vec()).await.unwrap();
@@ -925,18 +922,15 @@ mod tests {
         let deadline = tokio::time::Instant::now() + Duration::from_millis(800);
         let mut seen = None;
         while tokio::time::Instant::now() < deadline {
-            let (n, _) = match tokio::time::timeout(
-                Duration::from_millis(200),
-                server.recv_from(&mut buf),
-            )
-            .await
-            {
-                Ok(Ok(r)) => r,
-                _ => continue,
-            };
+            let (n, _) =
+                match tokio::time::timeout(Duration::from_millis(200), server.recv_from(&mut buf))
+                    .await
+                {
+                    Ok(Ok(r)) => r,
+                    _ => continue,
+                };
             let parsed =
-                parse_v1_packet(&buf[..n], &TEST_KEY, cfg.your_cookie, true)
-                    .expect("parse");
+                parse_v1_packet(&buf[..n], &TEST_KEY, cfg.your_cookie, true).expect("parse");
             if !parsed.data.is_empty() {
                 seen = Some(parsed.data);
                 break;
@@ -977,7 +971,9 @@ mod tests {
         let cfg = make_test_config(server_addr).await;
         let (dev, mut handle) = MpscDevice::new_pair(8, "garbage-test");
         let (_ext_tx, ext_rx) = watch::channel(false);
-        let h = run_udp_accel(cfg.clone(), dev, ext_rx).await.expect("spawn");
+        let h = run_udp_accel(cfg.clone(), dev, ext_rx)
+            .await
+            .expect("spawn");
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         let mut tmp = [0u8; UDP_ACCEL_TMP_BUF_SIZE];

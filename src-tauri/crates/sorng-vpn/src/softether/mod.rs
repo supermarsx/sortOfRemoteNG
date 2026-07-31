@@ -513,10 +513,7 @@ impl SoftEtherService {
         // (Fast-RC4 / Null directional ciphers are applied by the UDP
         // path inside `udp_accel` when `enable_udp_accel` is set).
         let dp_config = supervisor::DataplaneConfig::default();
-        match self
-            .spawn_dataplane(connection_id, device, dp_config)
-            .await
-        {
+        match self.spawn_dataplane(connection_id, device, dp_config).await {
             Ok(()) => {
                 // `spawn_dataplane` already set status=Connected and
                 // emitted the "connected" event. `local_ip` is assigned
@@ -2652,7 +2649,10 @@ mod tests {
         let mut svc = state.lock().await;
 
         let id = svc
-            .create_connection("teardown".into(), connect_test_config("vpn.example.com", 443))
+            .create_connection(
+                "teardown".into(),
+                connect_test_config("vpn.example.com", 443),
+            )
             .await
             .expect("create");
 
@@ -2719,8 +2719,13 @@ mod tests {
         cfg.auth_type = Some("Password".into());
         cfg.start_dataplane = Some(true);
 
-        let id = svc.create_connection("live".into(), cfg).await.expect("create");
-        svc.connect(&id).await.expect("connect should establish a tunnel");
+        let id = svc
+            .create_connection("live".into(), cfg)
+            .await
+            .expect("create");
+        svc.connect(&id)
+            .await
+            .expect("connect should establish a tunnel");
         match svc.get_status(&id).await.expect("status") {
             SoftEtherStatus::Connected => {}
             other => panic!("expected Connected against live hub, got {:?}", other),

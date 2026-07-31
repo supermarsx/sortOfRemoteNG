@@ -476,7 +476,10 @@ mod tests {
         if let CipherState::Rc4(rc4) = &mut sk.client_to_server {
             rc4.apply_keystream(&mut got);
         } else {
-            panic!("expected Rc4 for client_to_server, got {:?}", sk.client_to_server);
+            panic!(
+                "expected Rc4 for client_to_server, got {:?}",
+                sk.client_to_server
+            );
         }
         reference_c2s.apply_keystream(&mut want);
         assert_eq!(got, want, "C2S stream must be seeded by the server's bytes");
@@ -491,7 +494,10 @@ mod tests {
             panic!("expected Rc4 for server_to_client");
         }
         reference_s2c.apply_keystream(&mut want2);
-        assert_eq!(got2, want2, "S2C stream must be seeded by the server's bytes");
+        assert_eq!(
+            got2, want2,
+            "S2C stream must be seeded by the server's bytes"
+        );
 
         // And the two directions must diverge (distinct server keys).
         assert_ne!(got, got2, "C2S and S2C keystreams must differ");

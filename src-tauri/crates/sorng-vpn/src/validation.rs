@@ -39,7 +39,9 @@ pub fn validate_path_safe(path: &str) -> Result<&str, String> {
     if path.contains('\0') {
         return Err("Null bytes not allowed in path".to_string());
     }
-    let dangerous_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '>', '<', '!', '~'];
+    let dangerous_chars = [
+        ';', '|', '&', '$', '`', '(', ')', '{', '}', '>', '<', '!', '~',
+    ];
     for ch in dangerous_chars {
         if path.contains(ch) {
             return Err(format!(
@@ -193,8 +195,14 @@ mod tests {
 
     #[test]
     fn sanitize_system_name_works() {
-        assert_eq!(sanitize_system_name("My VPN Connection!", 20), "My_VPN_Connection_");
-        assert_eq!(sanitize_system_name("a".repeat(100).as_str(), 10), "aaaaaaaaaa");
+        assert_eq!(
+            sanitize_system_name("My VPN Connection!", 20),
+            "My_VPN_Connection_"
+        );
+        assert_eq!(
+            sanitize_system_name("a".repeat(100).as_str(), 10),
+            "aaaaaaaaaa"
+        );
         assert_eq!(sanitize_system_name("", 20), "unnamed");
         assert_eq!(sanitize_system_name("valid-name_01", 20), "valid-name_01");
     }

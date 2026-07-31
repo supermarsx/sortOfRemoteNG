@@ -813,7 +813,9 @@ mod tests {
         handle.tx.send(b"hello-from-tap".to_vec()).await.unwrap();
 
         // Read one record off the server side.
-        let frames = read_one_record(&mut server_side).await.expect("server read");
+        let frames = read_one_record(&mut server_side)
+            .await
+            .expect("server read");
         assert_eq!(frames, vec![eth(b"hello-from-tap")]);
 
         sup.shutdown().await.expect("shutdown");
@@ -953,12 +955,7 @@ mod tests {
         let (sup, mut server_side, mut handle) = setup_supervisor(test_config()).await;
 
         // Batch: [eth, KA, eth]
-        let wire = encode_plain(&[
-            eth(b"first"),
-            DataFrame::KeepAlive,
-            eth(b"third"),
-        ])
-        .unwrap();
+        let wire = encode_plain(&[eth(b"first"), DataFrame::KeepAlive, eth(b"third")]).unwrap();
         server_side.write_all(&wire).await.unwrap();
         server_side.flush().await.unwrap();
 
@@ -1039,9 +1036,10 @@ mod tests {
     #[test]
     fn is_transient_covers_each_variant() {
         use std::io;
-        assert!(DataplaneSupervisorError::Tls(
-            io::Error::new(io::ErrorKind::UnexpectedEof, "eof")
-        ).is_transient());
+        assert!(
+            DataplaneSupervisorError::Tls(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"))
+                .is_transient()
+        );
         assert!(DataplaneSupervisorError::KeepaliveTimeout.is_transient());
         assert!(DataplaneSupervisorError::Device(DeviceError::Closed).is_transient());
         assert!(
@@ -1049,12 +1047,16 @@ mod tests {
         );
         // Fatal: framing / permission / driver / panic.
         assert!(!DataplaneSupervisorError::Dataplane(DataplaneError::Truncated).is_transient());
-        assert!(!DataplaneSupervisorError::Device(
-            DeviceError::PermissionDenied("root required".into())
-        ).is_transient());
-        assert!(!DataplaneSupervisorError::Device(
-            DeviceError::DriverMissing("wintun.dll".into())
-        ).is_transient());
+        assert!(
+            !DataplaneSupervisorError::Device(DeviceError::PermissionDenied(
+                "root required".into()
+            ))
+            .is_transient()
+        );
+        assert!(
+            !DataplaneSupervisorError::Device(DeviceError::DriverMissing("wintun.dll".into()))
+                .is_transient()
+        );
         assert!(!DataplaneSupervisorError::TaskPanicked("boom".into()).is_transient());
         assert!(!DataplaneSupervisorError::Shutdown.is_transient());
     }
@@ -1129,9 +1131,7 @@ mod tests {
         let (sup, _server_side, _handle) = setup_supervisor(test_config()).await;
         let res = tokio::time::timeout(
             Duration::from_millis(200),
-            &mut Box::pin(async {
-                std::future::pending::<()>().await
-            }),
+            &mut Box::pin(async { std::future::pending::<()>().await }),
         )
         .await;
         assert!(res.is_err());

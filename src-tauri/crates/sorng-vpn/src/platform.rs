@@ -32,10 +32,7 @@ pub fn resolve_binary(name: &str) -> Result<PathBuf, String> {
 
     // 3. Return descriptive error
     let install_hint = install_hint_for(name);
-    Err(format!(
-        "'{}' not found in PATH. {}",
-        name, install_hint
-    ))
+    Err(format!("'{}' not found in PATH. {}", name, install_hint))
 }
 
 /// Returns a user-facing install hint for a given binary name.
@@ -74,9 +71,9 @@ fn resolve_windows_binary(name: &str) -> Option<PathBuf> {
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
 
     let candidates: Vec<PathBuf> = match name {
-        "tailscale" | "tailscale.exe" => vec![
-            PathBuf::from(&program_files).join("Tailscale").join("tailscale.exe"),
-        ],
+        "tailscale" | "tailscale.exe" => vec![PathBuf::from(&program_files)
+            .join("Tailscale")
+            .join("tailscale.exe")],
         "zerotier-cli" | "zerotier-cli.bat" => vec![
             PathBuf::from(&program_files)
                 .join("ZeroTier")
@@ -88,34 +85,38 @@ fn resolve_windows_binary(name: &str) -> Option<PathBuf> {
                 .join("zerotier-cli.bat"),
         ],
         "openvpn" | "openvpn.exe" => vec![
-            PathBuf::from(&program_files).join("OpenVPN").join("bin").join("openvpn.exe"),
-            PathBuf::from(&program_files_x86).join("OpenVPN").join("bin").join("openvpn.exe"),
+            PathBuf::from(&program_files)
+                .join("OpenVPN")
+                .join("bin")
+                .join("openvpn.exe"),
+            PathBuf::from(&program_files_x86)
+                .join("OpenVPN")
+                .join("bin")
+                .join("openvpn.exe"),
         ],
-        "wireguard" | "wireguard.exe" => vec![
-            PathBuf::from(&program_files).join("WireGuard").join("wireguard.exe"),
-        ],
-        "wg" | "wg.exe" => vec![
-            PathBuf::from(&program_files).join("WireGuard").join("wg.exe"),
-        ],
-        "ss-local" | "ss-local.exe" => vec![
-            PathBuf::from(&program_files).join("Shadowsocks").join("ss-local.exe"),
-        ],
-        "certutil" | "certutil.exe" => vec![
-            PathBuf::from(&system_root).join("System32").join("certutil.exe"),
-        ],
-        "rasdial" | "rasdial.exe" => vec![
-            PathBuf::from(&system_root).join("System32").join("rasdial.exe"),
-        ],
-        "powershell" | "powershell.exe" => vec![
-            PathBuf::from(&system_root)
-                .join("System32")
-                .join("WindowsPowerShell")
-                .join("v1.0")
-                .join("powershell.exe"),
-        ],
-        "netsh" | "netsh.exe" => vec![
-            PathBuf::from(&system_root).join("System32").join("netsh.exe"),
-        ],
+        "wireguard" | "wireguard.exe" => vec![PathBuf::from(&program_files)
+            .join("WireGuard")
+            .join("wireguard.exe")],
+        "wg" | "wg.exe" => vec![PathBuf::from(&program_files)
+            .join("WireGuard")
+            .join("wg.exe")],
+        "ss-local" | "ss-local.exe" => vec![PathBuf::from(&program_files)
+            .join("Shadowsocks")
+            .join("ss-local.exe")],
+        "certutil" | "certutil.exe" => vec![PathBuf::from(&system_root)
+            .join("System32")
+            .join("certutil.exe")],
+        "rasdial" | "rasdial.exe" => vec![PathBuf::from(&system_root)
+            .join("System32")
+            .join("rasdial.exe")],
+        "powershell" | "powershell.exe" => vec![PathBuf::from(&system_root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe")],
+        "netsh" | "netsh.exe" => vec![PathBuf::from(&system_root)
+            .join("System32")
+            .join("netsh.exe")],
         _ => vec![],
     };
 

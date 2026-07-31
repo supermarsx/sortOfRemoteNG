@@ -236,11 +236,7 @@ impl Pack {
         self.push_value(name, Value::Int64(value))
     }
 
-    pub fn add_data(
-        &mut self,
-        name: &str,
-        value: impl Into<Vec<u8>>,
-    ) -> Result<(), PackError> {
+    pub fn add_data(&mut self, name: &str, value: impl Into<Vec<u8>>) -> Result<(), PackError> {
         self.push_value(name, Value::Data(value.into()))
     }
 
@@ -248,11 +244,7 @@ impl Pack {
         self.push_value(name, Value::Str(value.into()))
     }
 
-    pub fn add_unistr(
-        &mut self,
-        name: &str,
-        value: impl Into<String>,
-    ) -> Result<(), PackError> {
+    pub fn add_unistr(&mut self, name: &str, value: impl Into<String>) -> Result<(), PackError> {
         self.push_value(name, Value::UniStr(value.into()))
     }
 
@@ -345,7 +337,8 @@ impl Pack {
     }
 
     fn first_value(&self, name: &str) -> Option<&Value> {
-        self.find_index(name).and_then(|i| self.elements[i].values.first())
+        self.find_index(name)
+            .and_then(|i| self.elements[i].values.first())
     }
 
     // --- codec -----------------------------------------------------------
@@ -709,7 +702,10 @@ mod tests {
     #[test]
     fn empty_name_errors() {
         let mut p = Pack::new();
-        assert!(matches!(p.add_int("", 1).unwrap_err(), PackError::EmptyName));
+        assert!(matches!(
+            p.add_int("", 1).unwrap_err(),
+            PackError::EmptyName
+        ));
     }
 
     // 5. UTF-8 round-trip for non-ASCII strings in both Str and UniStr
@@ -720,7 +716,10 @@ mod tests {
         p.add_unistr("uni", "Ωμέγα — naïve façade — 한글").unwrap();
         let decoded = Pack::from_bytes(&p.to_bytes().unwrap()).unwrap();
         assert_eq!(decoded.get_str("greeting"), Some("日本語 — café ☕"));
-        assert_eq!(decoded.get_unistr("uni"), Some("Ωμέγα — naïve façade — 한글"));
+        assert_eq!(
+            decoded.get_unistr("uni"),
+            Some("Ωμέγα — naïve façade — 한글")
+        );
     }
 
     // 6. Truncated input → Truncated error
@@ -1007,8 +1006,7 @@ mod tests {
     // variant, so we can drive the encoder deterministically.
     fn pack_from_pairs(pairs: Vec<(String, Vec<Value>)>) -> Pack {
         let mut p = Pack::new();
-        let mut seen_names: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
         for (name, vals) in pairs {
             if name.is_empty() || name.len() > MAX_ELEMENT_NAME_LEN {
                 continue;

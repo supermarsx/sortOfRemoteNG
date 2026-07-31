@@ -109,7 +109,9 @@ pub struct TapDevice {
 
 impl std::fmt::Debug for TapDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TapDevice").field("name", &self.name).finish()
+        f.debug_struct("TapDevice")
+            .field("name", &self.name)
+            .finish()
     }
 }
 
@@ -223,8 +225,7 @@ impl TapDevice {
 
         let (frame_tx, frame_rx) =
             tokio::sync::mpsc::channel::<Result<Vec<u8>, DeviceError>>(TAP_CHANNEL_CAPACITY);
-        let (out_tx, mut out_rx) =
-            tokio::sync::mpsc::channel::<Vec<u8>>(TAP_CHANNEL_CAPACITY);
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(TAP_CHANNEL_CAPACITY);
 
         // Reader thread: blocking read() in a loop, push each frame.
         let reader_dev = device.clone();
@@ -248,10 +249,7 @@ impl TapDevice {
                         break;
                     }
                     Ok(n) => {
-                        if frame_tx
-                            .blocking_send(Ok(buf[..n].to_vec()))
-                            .is_err()
-                        {
+                        if frame_tx.blocking_send(Ok(buf[..n].to_vec())).is_err() {
                             break;
                         }
                     }
@@ -311,11 +309,7 @@ trait BlockingPacketIo: Send + Sync + 'static {
 /// and return the wired-up [`TapDevice`]. Mirrors the Linux worker model
 /// so all three platforms share the async bridge and shutdown semantics.
 #[cfg(any(target_os = "windows", target_os = "macos"))]
-fn spawn_blocking_workers<D: BlockingPacketIo>(
-    device: D,
-    name: String,
-    l2: bool,
-) -> TapDevice {
+fn spawn_blocking_workers<D: BlockingPacketIo>(device: D, name: String, l2: bool) -> TapDevice {
     use std::sync::atomic::Ordering;
 
     let device = std::sync::Arc::new(device);
@@ -444,13 +438,7 @@ mod windows_tap {
         unsafe {
             let mut root: HKEY = std::ptr::null_mut();
             let key_w = wide(ADAPTER_KEY);
-            let rc = RegOpenKeyExW(
-                HKEY_LOCAL_MACHINE,
-                key_w.as_ptr(),
-                0,
-                KEY_READ,
-                &mut root,
-            );
+            let rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, key_w.as_ptr(), 0, KEY_READ, &mut root);
             if rc != 0 {
                 return Err(std::io::Error::from_raw_os_error(rc as i32));
             }
@@ -569,7 +557,9 @@ mod windows_tap {
                 );
                 if handle == INVALID_HANDLE_VALUE || handle.is_null() {
                     let err = GetLastError();
-                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(err as i32)));
+                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(
+                        err as i32,
+                    )));
                 }
 
                 // Bring the virtual Ethernet link up.
@@ -589,7 +579,9 @@ mod windows_tap {
                 if ok == FALSE {
                     let err = GetLastError();
                     CloseHandle(handle);
-                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(err as i32)));
+                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(
+                        err as i32,
+                    )));
                 }
 
                 let read_event = CreateEventW(
@@ -598,12 +590,13 @@ mod windows_tap {
                     0, // initially non-signaled
                     std::ptr::null(),
                 );
-                let write_event =
-                    CreateEventW(std::ptr::null(), 1, 0, std::ptr::null());
+                let write_event = CreateEventW(std::ptr::null(), 1, 0, std::ptr::null());
                 if read_event.is_null() || write_event.is_null() {
                     let err = GetLastError();
                     CloseHandle(handle);
-                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(err as i32)));
+                    return Err(DeviceError::Io(std::io::Error::from_raw_os_error(
+                        err as i32,
+                    )));
                 }
 
                 Ok(TapWindowsHandle {
@@ -735,9 +728,10 @@ impl TapDevice {
                 ))
             })?;
 
-            let guid = guids.into_iter().next().ok_or_else(|| {
-                DeviceError::DriverMissing(windows_tap::driver_missing_message())
-            })?;
+            let guid = guids
+                .into_iter()
+                .next()
+                .ok_or_else(|| DeviceError::DriverMissing(windows_tap::driver_missing_message()))?;
 
             let handle = windows_tap::TapWindowsHandle::open(&guid)?;
             let name = req.unwrap_or_else(|| format!("tap-windows:{}", guid));
@@ -883,10 +877,9 @@ mod macos_utun {
         let err = std::io::Error::last_os_error();
         match err.raw_os_error() {
             // EPERM / EACCES — utun open needs root.
-            Some(1) | Some(13) => DeviceError::PermissionDenied(format!(
-                "{}: utun open requires root: {}",
-                ctx, err
-            )),
+            Some(1) | Some(13) => {
+                DeviceError::PermissionDenied(format!("{}: utun open requires root: {}", ctx, err))
+            }
             // ENOENT / ENXIO — utun control unavailable.
             Some(2) | Some(6) => {
                 DeviceError::DriverMissing(format!("{}: utun unavailable: {}", ctx, err))

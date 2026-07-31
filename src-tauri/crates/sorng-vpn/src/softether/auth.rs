@@ -875,8 +875,10 @@ mod tests {
         let mut p = build_welcome_pack("SID-fast", "CID-fast", &session_key, 7, 1);
         p.add_int("use_encrypt", 1).unwrap();
         p.add_int("use_fast_rc4", 1).unwrap();
-        p.add_data("rc4_key_client_to_server", c2s.to_vec()).unwrap();
-        p.add_data("rc4_key_server_to_client", s2c.to_vec()).unwrap();
+        p.add_data("rc4_key_client_to_server", c2s.to_vec())
+            .unwrap();
+        p.add_data("rc4_key_server_to_client", s2c.to_vec())
+            .unwrap();
 
         let r = parse_auth_response(&p).expect("welcome parses");
         assert!(r.use_encrypt);
