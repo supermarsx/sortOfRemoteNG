@@ -402,11 +402,7 @@ fn parse_lscpu(stdout: &str) -> CpuInfo {
                     cores_physical = Some(cores_per_socket);
                 }
                 "CPU(s)" => cores_logical = val.parse().ok(),
-                "CPU max MHz" | "CPU MHz" => {
-                    if freq.is_none() {
-                        freq = val.parse().ok();
-                    }
-                }
+                "CPU max MHz" | "CPU MHz" if freq.is_none() => freq = val.parse().ok(),
                 "Vendor ID" => vendor = Some(val.to_string()),
                 "Architecture" => arch = parse_architecture(val),
                 "Flags" => flags = val.split_whitespace().map(|s| s.to_string()).collect(),
@@ -456,36 +452,14 @@ fn parse_proc_cpuinfo(content: &str) -> CpuInfo {
             let val = val.trim();
             match key {
                 "processor" => processor_count += 1,
-                "model name" => {
-                    if model.is_empty() {
-                        model = val.to_string();
-                    }
+                "model name" if model.is_empty() => model = val.to_string(),
+                "vendor_id" if vendor.is_none() => vendor = Some(val.to_string()),
+                "cpu MHz" if freq.is_none() => freq = val.parse().ok(),
+                "flags" if flags.is_empty() => {
+                    flags = val.split_whitespace().map(|s| s.to_string()).collect();
                 }
-                "vendor_id" => {
-                    if vendor.is_none() {
-                        vendor = Some(val.to_string());
-                    }
-                }
-                "cpu MHz" => {
-                    if freq.is_none() {
-                        freq = val.parse().ok();
-                    }
-                }
-                "flags" => {
-                    if flags.is_empty() {
-                        flags = val.split_whitespace().map(|s| s.to_string()).collect();
-                    }
-                }
-                "microcode" => {
-                    if microcode.is_none() {
-                        microcode = Some(val.to_string());
-                    }
-                }
-                "cache size" => {
-                    if cache_size.is_none() {
-                        cache_size = Some(val.to_string());
-                    }
-                }
+                "microcode" if microcode.is_none() => microcode = Some(val.to_string()),
+                "cache size" if cache_size.is_none() => cache_size = Some(val.to_string()),
                 "core id" => {
                     core_ids.insert(val.to_string());
                 }
