@@ -106,12 +106,11 @@ pub async fn apache_delete_vhost(
     id: String,
     name: String,
 ) -> CmdResult<()> {
-    state
-        .lock()
-        .await
-        .delete_vhost(&id, &name)
-        .await
-        .map_err(map_err)
+    drop((state, id, name));
+    Err(
+        "Apache virtual-host deletion is disabled until a reauthentication-backed one-time operation token is implemented"
+            .to_string(),
+    )
 }
 
 #[tauri::command]
