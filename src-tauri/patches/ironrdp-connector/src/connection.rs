@@ -6,7 +6,7 @@ use std::sync::Arc;
 use ironrdp_core::{decode, encode_vec, Encode, WriteBuf};
 use ironrdp_pdu::x224::X224;
 use ironrdp_pdu::{gcc, mcs, nego, rdp, PduHint};
-use ironrdp_svc::{StaticChannelSet, StaticVirtualChannel, SvcClientProcessor};
+use ironrdp_svc::{StaticChannelSet, SvcClientProcessor};
 use tracing::{debug, error, info, warn};
 
 use crate::channel_connection::{ChannelConnectionSequence, ChannelConnectionState};
@@ -367,8 +367,7 @@ impl Sequence for ClientConnector {
             ClientConnectorState::BasicSettingsExchangeSendInitial { selected_protocol } => {
                 debug!("Basic Settings Exchange");
 
-                let client_gcc_blocks =
-                    create_gcc_blocks(&self.config, selected_protocol, self.static_channels.values())?;
+                let client_gcc_blocks = create_gcc_blocks(&self.config, selected_protocol, &self.static_channels)?;
 
                 let connect_initial =
                     mcs::ConnectInitial::with_gcc_blocks(client_gcc_blocks).map_err(ConnectorError::decode)?;
@@ -647,10 +646,10 @@ pub fn encode_send_data_request<T: Encode>(
     Ok(written)
 }
 
-fn create_gcc_blocks<'a>(
+fn create_gcc_blocks(
     config: &Config,
     selected_protocol: nego::SecurityProtocol,
-    static_channels: impl Iterator<Item = &'a StaticVirtualChannel>,
+    static_channels: &StaticChannelSet,
 ) -> ConnectorResult<gcc::ClientGccBlocks> {
     use ironrdp_pdu::gcc::{
         ClientCoreData, ClientCoreOptionalData, ClientEarlyCapabilityFlags, ClientGccBlocks, ClientNetworkData,
@@ -674,6 +673,7 @@ fn create_gcc_blocks<'a>(
     };
 
     let channels = static_channels
+        .values()
         .map(|svc| {
             let mut def = ironrdp_svc::make_channel_definition(svc);
             // Match mstsc: INITIALIZED + ENCRYPT_RDP + COMPRESS_RDP
