@@ -58,7 +58,7 @@ impl ReplayBuffer {
             events: self
                 .events
                 .iter()
-                .filter(|(event, _)| after_sequence.is_none_or(|after| event.sequence > after))
+                .filter(|(event, _)| after_sequence.map_or(true, |after| event.sequence > after))
                 .map(|(event, _)| event.clone())
                 .collect(),
         }
