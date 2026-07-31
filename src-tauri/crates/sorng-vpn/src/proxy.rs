@@ -48,67 +48,6 @@ use tokio::time::{timeout, Duration};
 
 use crate::platform;
 
-// ── QUIC certificate verification bypass for self-signed / dev servers ──────
-
-/// Dummy certificate verifier that treats any certificate as valid.
-///
-/// **WARNING**: This is vulnerable to MITM attacks and should only be used for
-/// development, testing, or when connecting to servers with self-signed
-/// certificates where the user has explicitly opted in.
-#[derive(Debug)]
-struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
-
-impl SkipServerVerification {
-    fn new() -> Arc<Self> {
-        Arc::new(Self(Arc::new(rustls::crypto::ring::default_provider())))
-    }
-}
-
-impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
-}
-
 /// Type alias for the proxy service state wrapped in an Arc<Mutex<>> for thread-safe access.
 pub type ProxyServiceState = Arc<Mutex<ProxyService>>;
 
@@ -186,6 +125,150 @@ pub struct ProxyConfig {
 
     /// Shadowsocks plugin configuration
     pub shadowsocks_plugin: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QuicTrustPolicy {
+    NativeRoots,
+    NativeRootsWithCustomCertificate(String),
+}
+
+const MAX_QUIC_CERTIFICATE_FILE_BYTES: u64 = 1024 * 1024;
+
+impl QuicTrustPolicy {
+    fn verifies_server_identity(&self) -> bool {
+        true
+    }
+}
+
+fn select_quic_trust_policy(config: &ProxyConfig) -> Result<QuicTrustPolicy, String> {
+    match config.quic_cert_file.as_deref().map(str::trim) {
+        None => Ok(QuicTrustPolicy::NativeRoots),
+        Some("") => Err("QUIC certificate file path cannot be empty".to_string()),
+        Some(path) => Ok(QuicTrustPolicy::NativeRootsWithCustomCertificate(
+            path.to_string(),
+        )),
+    }
+}
+
+fn load_quic_certificate_file(
+    path: &str,
+) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("Failed to inspect QUIC certificate file: {e}"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("QUIC certificate path must be a regular non-symlink file".to_string());
+    }
+    if metadata.len() > MAX_QUIC_CERTIFICATE_FILE_BYTES {
+        return Err("QUIC certificate file exceeds the 1 MiB safety limit".to_string());
+    }
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to open QUIC certificate file: {e}"))?;
+    let mut reader = std::io::Read::take(file, MAX_QUIC_CERTIFICATE_FILE_BYTES + 1);
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    std::io::Read::read_to_end(&mut reader, &mut bytes)
+        .map_err(|e| format!("Failed to read QUIC certificate file: {e}"))?;
+    if bytes.len() as u64 > MAX_QUIC_CERTIFICATE_FILE_BYTES {
+        return Err("QUIC certificate file changed and exceeded the 1 MiB safety limit".to_string());
+    }
+    let pem_marker = b"-----BEGIN CERTIFICATE-----";
+
+    let certificates = if bytes
+        .windows(pem_marker.len())
+        .any(|window| window == pem_marker)
+    {
+        rustls_pemfile::certs(&mut std::io::Cursor::new(bytes))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse QUIC certificate file: {e}"))?
+    } else {
+        vec![rustls::pki_types::CertificateDer::from(bytes)]
+    };
+
+    if certificates.is_empty() {
+        return Err("QUIC certificate file contains no certificates".to_string());
+    }
+
+    Ok(certificates)
+}
+
+fn build_quic_tls_config(config: &ProxyConfig) -> Result<rustls::ClientConfig, String> {
+    let policy = select_quic_trust_policy(config)?;
+    debug_assert!(policy.verifies_server_identity());
+
+    let mut roots = rustls::RootCertStore::empty();
+    let native = rustls_native_certs::load_native_certs();
+    for cert in native.certs {
+        let _ = roots.add(cert);
+    }
+
+    if let QuicTrustPolicy::NativeRootsWithCustomCertificate(path) = policy {
+        for cert in load_quic_certificate_file(&path)? {
+            roots
+                .add(cert)
+                .map_err(|e| format!("Invalid QUIC certificate in '{path}': {e}"))?;
+        }
+    }
+
+    if roots.is_empty() {
+        return Err("No trusted certificates are available for QUIC".to_string());
+    }
+
+    Ok(rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth())
+}
+
+#[cfg(test)]
+mod quic_tls_policy_tests {
+    use super::{select_quic_trust_policy, ProxyConfig, QuicTrustPolicy};
+
+    fn quic_config(certificate_file: Option<&str>) -> ProxyConfig {
+        ProxyConfig {
+            proxy_type: "quic".to_string(),
+            host: "quic.example.com".to_string(),
+            port: 443,
+            username: None,
+            password: None,
+            ssh_key_file: None,
+            ssh_key_passphrase: None,
+            ssh_host_key_verification: None,
+            ssh_known_hosts_file: None,
+            tunnel_domain: None,
+            tunnel_key: None,
+            tunnel_method: None,
+            custom_headers: None,
+            websocket_path: None,
+            quic_cert_file: certificate_file.map(str::to_string),
+            shadowsocks_method: None,
+            shadowsocks_plugin: None,
+        }
+    }
+
+    #[test]
+    fn quic_defaults_to_native_identity_verification() {
+        let policy = select_quic_trust_policy(&quic_config(None)).unwrap();
+
+        assert_eq!(policy, QuicTrustPolicy::NativeRoots);
+        assert!(policy.verifies_server_identity());
+    }
+
+    #[test]
+    fn quic_custom_certificate_extends_trust_instead_of_disabling_verification() {
+        let policy = select_quic_trust_policy(&quic_config(Some(" private-ca.pem "))).unwrap();
+
+        assert_eq!(
+            policy,
+            QuicTrustPolicy::NativeRootsWithCustomCertificate("private-ca.pem".to_string())
+        );
+        assert!(policy.verifies_server_identity());
+    }
+
+    #[test]
+    fn quic_rejects_an_empty_custom_certificate_path() {
+        let error = select_quic_trust_policy(&quic_config(Some("   "))).unwrap_err();
+
+        assert_eq!(error, "QUIC certificate file path cannot be empty");
+    }
 }
 
 /// Represents an individual proxy connection.
@@ -1017,12 +1100,10 @@ impl ProxyService {
         let _target_host = connection.target_host.clone();
         let _target_port = connection.target_port;
 
-        // Build a rustls ClientConfig that skips certificate verification
-        // (self-signed / dev certs). QUIC mandates TLS 1.3.
-        let crypto = rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(SkipServerVerification::new())
-            .with_no_client_auth();
+        // QUIC mandates TLS 1.3. The default policy verifies the server name and
+        // certificate chain against native roots. A configured certificate file
+        // extends that root store; it never disables identity verification.
+        let crypto = build_quic_tls_config(&connection.proxy_config)?;
 
         let quic_client_config = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
             .map_err(|e| format!("QUIC crypto config error: {}", e))?;
