@@ -1,16 +1,20 @@
 import {
-  INTEGRATION_PROTOCOL_PREFIX,
   MAX_SESSION_VPN_LEASE_BINDINGS,
-  isIntegrationConnectionProtocol,
   type ConnectionSession,
-  type IntegrationConnectionSettings,
-  type IntegrationProviderFields,
   type SessionVpnLeaseBinding,
   type SessionVpnLeaseCleanupProof,
   type SessionVpnLeaseCleanupQuarantine,
   type SessionVpnLeaseReleaseTombstone,
 } from "../../types/connection/connection";
-import { sanitizeIntegrationProviderFields } from "../integrations/providerFieldSanitizer";
+
+export const MAX_PERSISTED_SESSIONS = 128;
+export const MAX_PERSISTED_SESSION_STORAGE_CHARS = 2_097_152;
+const MAX_SESSION_ID_CHARS = 256;
+const MAX_SESSION_NAME_CHARS = 512;
+const MAX_SESSION_PROTOCOL_CHARS = 64;
+const MAX_SESSION_HOSTNAME_CHARS = 2_048;
+const MAX_SESSION_GROUP_CHARS = 256;
+const MAX_TIMESTAMP_CHARS = 64;
 
 const SESSION_STATUSES = new Set<ConnectionSession["status"]>([
   "connecting",
@@ -27,7 +31,6 @@ export interface PersistedConnectionSession {
   protocol: string;
   hostname: string;
   status: ConnectionSession["status"];
-  integration?: IntegrationConnectionSettings;
   backendSessionId?: string;
   shellId?: string;
   vpnLeaseOwnerId?: string;
@@ -39,7 +42,6 @@ export interface PersistedConnectionSession {
   lifecycleActorGeneration?: number;
   lifecycleWriterId?: string;
   zoomLevel?: number;
-  layout?: ConnectionSession["layout"];
   group?: string;
   startTime?: string;
   lastActivity?: string;
@@ -50,112 +52,9 @@ export type PersistedSessionParseResult =
   | { valid: false; reason: string };
 
 const nonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0;
-
-const parseStringRecord = (
-  value: unknown,
-): Record<string, string> | undefined => {
-  if (value === undefined) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const entries = Object.entries(value);
-  if (!entries.every(([key, entry]) => key && typeof entry === "string")) {
-    return undefined;
-  }
-  return Object.fromEntries(entries);
-};
-
-const parseProviderFields = (
-  value: unknown,
-): IntegrationProviderFields | undefined => {
-  if (value === undefined) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-  const entries = Object.entries(value);
-  if (
-    !entries.every(
-      ([key, entry]) =>
-        key &&
-        (entry === null ||
-          typeof entry === "string" ||
-          typeof entry === "number" ||
-          typeof entry === "boolean"),
-    )
-  ) {
-    return undefined;
-  }
-  // Provider metadata is intentionally extensible, but it is still persisted
-  // in sessionStorage. Strip structurally injected secret-shaped keys at this
-  // final serialization/parser boundary, including case/separator variants.
-  return sanitizeIntegrationProviderFields(
-    Object.fromEntries(entries) as IntegrationProviderFields,
-  );
-};
-
-const parseIntegrationSettings = (
-  value: unknown,
-  protocol: string,
-): IntegrationConnectionSettings | null | undefined => {
-  if (value === undefined) return undefined;
-  if (!isIntegrationConnectionProtocol(protocol)) return null;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const expectedKey = protocol.slice(INTEGRATION_PROTOCOL_PREFIX.length);
-  if (!nonEmptyString(raw.descriptorKey) || raw.descriptorKey !== expectedKey) {
-    return null;
-  }
-  const optionalStrings = [
-    "descriptorLabel",
-    "category",
-    "instanceId",
-    "instanceName",
-    "credentialRefId",
-    "host",
-    "baseUrl",
-    "username",
-  ] as const;
-  if (
-    optionalStrings.some(
-      (key) => raw[key] !== undefined && typeof raw[key] !== "string",
-    ) ||
-    (raw.tlsVerify !== undefined && typeof raw.tlsVerify !== "boolean") ||
-    (raw.timeout !== undefined &&
-      (typeof raw.timeout !== "number" ||
-        !Number.isFinite(raw.timeout) ||
-        raw.timeout <= 0))
-  ) {
-    return null;
-  }
-  const credentialRefIds = parseStringRecord(raw.credentialRefIds);
-  const providerFields = parseProviderFields(raw.providerFields);
-  if (!credentialRefIds || !providerFields) return null;
-
-  return {
-    descriptorKey: raw.descriptorKey,
-    ...(typeof raw.descriptorLabel === "string"
-      ? { descriptorLabel: raw.descriptorLabel }
-      : {}),
-    ...(typeof raw.category === "string" ? { category: raw.category } : {}),
-    ...(typeof raw.instanceId === "string"
-      ? { instanceId: raw.instanceId }
-      : {}),
-    ...(typeof raw.instanceName === "string"
-      ? { instanceName: raw.instanceName }
-      : {}),
-    ...(typeof raw.credentialRefId === "string"
-      ? { credentialRefId: raw.credentialRefId }
-      : {}),
-    ...(Object.keys(credentialRefIds).length > 0 ? { credentialRefIds } : {}),
-    ...(typeof raw.host === "string" ? { host: raw.host } : {}),
-    ...(typeof raw.baseUrl === "string" ? { baseUrl: raw.baseUrl } : {}),
-    ...(typeof raw.username === "string" ? { username: raw.username } : {}),
-    ...(typeof raw.tlsVerify === "boolean" ? { tlsVerify: raw.tlsVerify } : {}),
-    ...(typeof raw.timeout === "number" ? { timeout: raw.timeout } : {}),
-    ...(Object.keys(providerFields).length > 0 ? { providerFields } : {}),
-  };
-};
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= MAX_SESSION_NAME_CHARS;
 
 const parseOwnerIds = (value: unknown): string[] | undefined => {
   if (value === undefined) return [];
@@ -299,28 +198,30 @@ export const parsePersistedConnectionSession = (
   const raw = value as Record<string, unknown>;
   if (
     !nonEmptyString(raw.id) ||
+    raw.id.length > MAX_SESSION_ID_CHARS ||
     !nonEmptyString(raw.connectionId) ||
+    raw.connectionId.length > MAX_SESSION_ID_CHARS ||
     !nonEmptyString(raw.name) ||
+    raw.name.length > MAX_SESSION_NAME_CHARS ||
     !nonEmptyString(raw.protocol) ||
+    raw.protocol.length > MAX_SESSION_PROTOCOL_CHARS ||
     typeof raw.hostname !== "string" ||
+    raw.hostname.length > MAX_SESSION_HOSTNAME_CHARS ||
     !SESSION_STATUSES.has(raw.status as ConnectionSession["status"])
   ) {
     return { valid: false, reason: "Saved session identity is invalid." };
   }
-  const integration = parseIntegrationSettings(raw.integration, raw.protocol);
-  if (integration === null) {
-    return {
-      valid: false,
-      reason: "Saved integration session settings are invalid.",
-    };
-  }
   if (
     raw.backendSessionId !== undefined &&
-    !nonEmptyString(raw.backendSessionId)
+    (!nonEmptyString(raw.backendSessionId) ||
+      raw.backendSessionId.length > MAX_SESSION_ID_CHARS)
   ) {
     return { valid: false, reason: "Saved backend session ID is invalid." };
   }
-  if (raw.shellId !== undefined && !nonEmptyString(raw.shellId)) {
+  if (
+    raw.shellId !== undefined &&
+    (!nonEmptyString(raw.shellId) || raw.shellId.length > MAX_SESSION_ID_CHARS)
+  ) {
     return { valid: false, reason: "Saved shell ID is invalid." };
   }
   if (raw.shellId !== undefined && raw.backendSessionId === undefined) {
@@ -348,6 +249,17 @@ export const parsePersistedConnectionSession = (
     return {
       valid: false,
       reason: `Saved VPN ownership exceeds the ${MAX_SESSION_VPN_LEASE_BINDINGS}-binding safety limit or is malformed.`,
+    };
+  }
+  const ownershipEntryCount =
+    ownerIds.length +
+    bindings.length +
+    releaseTombstones.length +
+    cleanupQuarantine.proofs.length;
+  if (ownershipEntryCount > MAX_SESSION_VPN_LEASE_BINDINGS) {
+    return {
+      valid: false,
+      reason: `Saved VPN ownership exceeds the aggregate ${MAX_SESSION_VPN_LEASE_BINDINGS}-entry safety limit.`,
     };
   }
   const releaseKeys = new Set(
@@ -499,6 +411,35 @@ export const parsePersistedConnectionSession = (
       reason: "Saved lifecycle provenance is incomplete.",
     };
   }
+  if (
+    raw.zoomLevel !== undefined &&
+    (typeof raw.zoomLevel !== "number" ||
+      !Number.isFinite(raw.zoomLevel) ||
+      raw.zoomLevel < 0.25 ||
+      raw.zoomLevel > 5)
+  ) {
+    return { valid: false, reason: "Saved zoom level is invalid." };
+  }
+  if (
+    raw.group !== undefined &&
+    (typeof raw.group !== "string" ||
+      raw.group.length > MAX_SESSION_GROUP_CHARS)
+  ) {
+    return { valid: false, reason: "Saved session group is invalid." };
+  }
+  for (const [label, timestamp] of [
+    ["start time", raw.startTime],
+    ["last activity", raw.lastActivity],
+  ] as const) {
+    if (
+      timestamp !== undefined &&
+      (typeof timestamp !== "string" ||
+        timestamp.length > MAX_TIMESTAMP_CHARS ||
+        !Number.isFinite(Date.parse(timestamp)))
+    ) {
+      return { valid: false, reason: `Saved session ${label} is invalid.` };
+    }
+  }
 
   return {
     valid: true,
@@ -508,8 +449,8 @@ export const parsePersistedConnectionSession = (
       name: raw.name,
       protocol: raw.protocol,
       hostname: raw.hostname as string,
-      status: raw.status as ConnectionSession["status"],
-      ...(integration ? { integration } : {}),
+      // A persisted snapshot proves reconnection intent, never live transport.
+      status: "disconnected",
       ...(nonEmptyString(raw.backendSessionId)
         ? { backendSessionId: raw.backendSessionId }
         : {}),
@@ -538,9 +479,6 @@ export const parsePersistedConnectionSession = (
       ...(typeof raw.zoomLevel === "number"
         ? { zoomLevel: raw.zoomLevel }
         : {}),
-      ...(raw.layout && typeof raw.layout === "object"
-        ? { layout: raw.layout as ConnectionSession["layout"] }
-        : {}),
       ...(typeof raw.group === "string" ? { group: raw.group } : {}),
       ...(typeof raw.startTime === "string"
         ? { startTime: raw.startTime }
@@ -555,26 +493,28 @@ export const parsePersistedConnectionSession = (
 export const serializePersistedConnectionSession = (
   session: ConnectionSession,
 ): PersistedConnectionSession => {
-  // Explicitly reduce launch-time settings to the persisted allow-list before
-  // constructing anything that a caller may JSON-stringify. Structural typing
-  // does not remove authToken/apiKey/password/providerSecrets at runtime.
-  const integration = parseIntegrationSettings(
-    session.integration,
-    session.protocol,
-  );
-  if (integration === null) {
-    throw new Error("Session integration settings are invalid.");
-  }
+  const hasVpnRecoveryEvidence =
+    (session.vpnLeaseBindings?.length ?? 0) > 0 ||
+    (session.vpnLeaseReleaseTombstones?.length ?? 0) > 0 ||
+    (session.vpnLeaseCleanupQuarantine?.proofs.length ?? 0) > 0 ||
+    session.vpnLeaseCleanupQuarantine?.proofIncomplete === true;
   const parsed = parsePersistedConnectionSession({
     id: session.id,
     connectionId: session.connectionId,
     name: session.name,
     protocol: session.protocol,
     hostname: session.hostname,
-    status: session.status,
-    integration,
-    backendSessionId: session.backendSessionId,
-    shellId: session.shellId,
+    // Do not claim that a live transport survives a renderer reload.
+    status: "disconnected",
+    backendSessionId:
+      hasVpnRecoveryEvidence &&
+      (session.protocol === "ssh" || session.protocol === "rdp")
+        ? session.backendSessionId
+        : undefined,
+    shellId:
+      hasVpnRecoveryEvidence && session.protocol === "ssh"
+        ? session.shellId
+        : undefined,
     vpnLeaseOwnerId: session.vpnLeaseOwnerId,
     vpnLeaseOwnerIds: session.vpnLeaseOwnerIds,
     vpnLeaseBindings: session.vpnLeaseBindings,
@@ -584,7 +524,6 @@ export const serializePersistedConnectionSession = (
     lifecycleActorGeneration: session.lifecycleActorGeneration,
     lifecycleWriterId: session.lifecycleWriterId,
     zoomLevel: session.zoomLevel,
-    layout: session.layout,
     group: session.group,
     startTime:
       session.startTime instanceof Date

@@ -666,6 +666,33 @@ describe("useSessionManager settings effects", () => {
     });
   });
 
+  it("restores sessions with the connection's canonical protocol", async () => {
+    const connection = makeConnection({ protocol: "ssh" });
+    const { result } = renderHook(() => useSessionManager());
+
+    await act(async () => {
+      await result.current.restoreSession(
+        {
+          id: "restored-noncanonical-ssh",
+          connectionId: connection.id,
+          name: connection.name,
+          protocol: " SSH " as never,
+          hostname: connection.hostname,
+          status: "connected",
+        },
+        connection,
+      );
+    });
+
+    expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+      type: "ADD_SESSION",
+      payload: expect.objectContaining({
+        id: "restored-noncanonical-ssh",
+        protocol: "ssh",
+      }),
+    });
+  });
+
   it("restores an integration tab truthfully disconnected without starting a backend transport", async () => {
     const connection = makeConnection({
       id: "grafana-connection",
@@ -692,7 +719,6 @@ describe("useSessionManager settings effects", () => {
           protocol: connection.protocol,
           hostname: connection.hostname,
           status: "connected",
-          integration: connection.integration,
         },
         connection,
       );
@@ -857,7 +883,7 @@ describe("useSessionManager settings effects", () => {
       type: "ADD_SESSION",
       payload: expect.objectContaining({
         id: "restored-vpn-session",
-        backendSessionId: "backend-restored",
+        backendSessionId: undefined,
         vpnLeaseOwnerId: "owner-restored",
         vpnLeaseOwnerIds: ["owner-restored"],
         vpnLeaseBindings: [

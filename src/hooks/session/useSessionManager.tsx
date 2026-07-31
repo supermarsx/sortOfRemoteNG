@@ -1411,13 +1411,14 @@ export const useSessionManager = () => {
   ) => {
     const settings = settingsManager.getSettings();
     const cleanupQuarantined = hasSessionVpnCleanupQuarantine(sessionData);
+    const restoredProtocol = connection.protocol;
 
     // Check if session already exists (avoid duplicates)
     const existingSession = state.sessions.find(
       (s) =>
         s.id === sessionData.id ||
         (s.connectionId === sessionData.connectionId &&
-          s.protocol === sessionData.protocol &&
+          s.protocol === restoredProtocol &&
           s.status !== "disconnected" &&
           s.status !== "error"),
     );
@@ -1430,23 +1431,25 @@ export const useSessionManager = () => {
     const restoredSession: ConnectionSession = {
       id: sessionData.id,
       connectionId: sessionData.connectionId,
-      name: sessionData.name || connection.name,
+      name: connection.name,
       status: cleanupQuarantined ? "error" : "disconnected",
       startTime: sessionData.startTime
         ? new Date(sessionData.startTime)
         : new Date(),
-      protocol: sessionData.protocol as Connection["protocol"],
-      hostname: sessionData.hostname,
+      protocol: restoredProtocol,
+      hostname: connection.hostname,
       reconnectAttempts: 0,
       maxReconnectAttempts: resolveConnectionRetryAttempts(
         connection.retryAttempts,
         settings.retryAttempts,
       ),
-      backendSessionId: sessionData.backendSessionId,
-      integration: isIntegrationConnectionProtocol(sessionData.protocol)
-        ? (sessionData.integration ?? connection.integration)
+      backendSessionId: cleanupQuarantined
+        ? sessionData.backendSessionId
         : undefined,
-      shellId: sessionData.shellId,
+      integration: isIntegrationConnectionProtocol(restoredProtocol)
+        ? connection.integration
+        : undefined,
+      shellId: cleanupQuarantined ? sessionData.shellId : undefined,
       vpnLeaseOwnerId: sessionData.vpnLeaseOwnerId,
       vpnLeaseOwnerIds: sessionData.vpnLeaseOwnerIds,
       vpnLeaseBindings: sessionData.vpnLeaseBindings,
@@ -1459,7 +1462,6 @@ export const useSessionManager = () => {
       lifecycleActorGeneration: (sessionData.lifecycleActorGeneration ?? 0) + 1,
       lifecycleWriterId: "main",
       zoomLevel: sessionData.zoomLevel,
-      layout: sessionData.layout,
       group: sessionData.group,
       lastActivity: sessionData.lastActivity
         ? new Date(sessionData.lastActivity)

@@ -72,7 +72,7 @@ const makeIntegrationSession = (): ConnectionSession => ({
 });
 
 describe("session reload persistence", () => {
-  it("round-trips only allow-listed integration metadata and vault references", () => {
+  it("does not persist integration metadata or vault references", () => {
     const serialized = serializePersistedConnectionSession(
       makeIntegrationSession(),
     );
@@ -80,34 +80,16 @@ describe("session reload persistence", () => {
     const parsed = parsePersistedConnectionSession(JSON.parse(json));
 
     expect(json).not.toContain("do-not-persist");
-    expect(serialized.integration).toEqual({
-      descriptorKey: "grafana",
-      descriptorLabel: "Grafana",
-      category: "Monitoring",
-      instanceId: "grafana-instance-1",
-      instanceName: "Production",
-      credentialRefId: "vault-primary",
-      credentialRefIds: {
-        apiKey: "vault-api-key",
-        password: "vault-password",
-      },
-      host: "grafana.example",
-      baseUrl: "https://grafana.example",
-      username: "operator",
-      tlsVerify: true,
-      timeout: 30,
-      providerFields: {
-        organizationId: 42,
-        useServiceAccount: true,
-      },
-    });
-    expect(parsed).toEqual({
-      valid: true,
-      session: expect.objectContaining({
-        status: "disconnected",
-        integration: serialized.integration,
-      }),
-    });
+    expect(json).not.toContain("grafana-instance-1");
+    expect(json).not.toContain("vault-primary");
+    expect(json).not.toContain("organizationId");
+    expect(serialized).not.toHaveProperty("integration");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) {
+      throw new Error(parsed.reason);
+    }
+    expect(parsed.session.status).toBe("disconnected");
+    expect(parsed.session).not.toHaveProperty("integration");
   });
 
   it("strips nested provider-field secrets while preserving legitimate Exchange metadata", () => {
@@ -146,49 +128,43 @@ describe("session reload persistence", () => {
     const json = JSON.stringify(serialized);
 
     expect(json).not.toContain("nested-");
-    expect(serialized.integration?.providerFields).toEqual({
-      environment: "hybrid",
-      tenantId: "tenant-1",
-      clientId: "client-1",
-      onlineUsername: "admin@example.test",
-      organization: "example.test",
-      server: "exchange.example.test",
-      onPremUsername: "EXAMPLE\\admin",
-      port: "443",
-      useSsl: true,
-      authMethod: "oauth",
-      skipCertCheck: false,
-      timeoutSecs: "30",
-    });
+    expect(json).not.toContain("providerFields");
+    expect(json).not.toContain("tenant-1");
+    expect(json).not.toContain("client-1");
+    expect(json).not.toContain("exchange.example.test");
+    expect(serialized).not.toHaveProperty("integration");
   });
 
-  it("rejects integration settings whose descriptor does not match the protocol", () => {
+  it("drops injected legacy and live integration settings", () => {
     const serialized = serializePersistedConnectionSession(
       makeIntegrationSession(),
     );
 
-    expect(
-      parsePersistedConnectionSession({
-        ...serialized,
-        integration: {
-          ...serialized.integration,
-          descriptorKey: "netbox",
+    const parsed = parsePersistedConnectionSession({
+      ...serialized,
+      integration: {
+        descriptorKey: "netbox",
+        providerFields: {
+          apiKey: "legacy-secret",
         },
-      }),
-    ).toEqual({
-      valid: false,
-      reason: expect.stringMatching(/integration session settings/i),
+      },
     });
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) {
+      throw new Error(parsed.reason);
+    }
+    expect(parsed.session).not.toHaveProperty("integration");
+    expect(JSON.stringify(parsed.session)).not.toContain("legacy-secret");
 
-    expect(() =>
-      serializePersistedConnectionSession({
-        ...makeIntegrationSession(),
-        integration: {
-          ...makeIntegrationSession().integration!,
-          descriptorKey: "netbox",
-        },
-      }),
-    ).toThrow(/integration settings are invalid/i);
+    const mismatched = serializePersistedConnectionSession({
+      ...makeIntegrationSession(),
+      integration: {
+        ...makeIntegrationSession().integration!,
+        descriptorKey: "netbox",
+      },
+    });
+    expect(mismatched).not.toHaveProperty("integration");
+    expect(JSON.stringify(mismatched)).not.toContain("netbox");
   });
 
   it("round-trips exact VPN ownership and lifecycle revision", () => {
