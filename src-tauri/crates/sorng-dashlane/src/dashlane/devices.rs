@@ -1,5 +1,6 @@
 use crate::dashlane::api_client::DashlaneApiClient;
 use crate::dashlane::types::{DashlaneError, RegisteredDevice};
+use sha2::{Digest, Sha256};
 use std::cmp::Reverse;
 
 /// List all registered devices.
@@ -9,13 +10,16 @@ pub async fn list_devices(
     let infos = client.list_devices().await?;
     let devices = infos
         .into_iter()
-        .map(|info| RegisteredDevice {
-            id: info.device_access_key.clone(),
-            name: info.device_name,
-            platform: Some(info.platform),
-            created_at: info.created_at,
-            last_active: info.last_active,
-            is_current: false, // caller must set this
+        .map(|mut info| {
+            let id = device_id_for_access_key(&info.device_access_key);
+            RegisteredDevice {
+                id,
+                name: std::mem::take(&mut info.device_name),
+                platform: Some(std::mem::take(&mut info.platform)),
+                created_at: info.created_at.take(),
+                last_active: info.last_active.take(),
+                is_current: false,
+            }
         })
         .collect();
     Ok(devices)
@@ -31,9 +35,22 @@ pub async fn deregister_device(
 
 /// Find the current device by device access key.
 pub fn identify_current_device(devices: &mut [RegisteredDevice], current_device_id: &str) {
+    let current_device_id = device_id_for_access_key(current_device_id);
+    identify_current_device_by_id(devices, &current_device_id);
+}
+
+pub(crate) fn identify_current_device_by_id(
+    devices: &mut [RegisteredDevice],
+    current_device_id: &str,
+) {
     for device in devices.iter_mut() {
         device.is_current = device.id == current_device_id;
     }
+}
+
+pub(crate) fn device_id_for_access_key(device_access_key: &str) -> String {
+    let digest = Sha256::digest(device_access_key.as_bytes());
+    hex::encode(&digest[..16])
 }
 
 /// Get only active devices (non-empty last_active).

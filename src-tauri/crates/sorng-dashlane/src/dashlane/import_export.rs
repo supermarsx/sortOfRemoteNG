@@ -3,38 +3,53 @@ use crate::dashlane::types::{
     SecureNote,
 };
 
-/// Export credentials to CSV format.
+const MAX_EXPORT_ITEMS: usize = 10_000;
+const MAX_EXPORT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_FIELD_BYTES: usize = 64 * 1024;
+
 pub fn export_csv(credentials: &[DashlaneCredential]) -> Result<ExportResult, DashlaneError> {
-    let mut lines = Vec::new();
-    lines.push("title,url,username,username2,password,note,category,otpsecret".to_string());
-
-    for cred in credentials {
-        lines.push(format!(
-            "{},{},{},{},{},{},{},{}",
-            csv_escape(&cred.title),
-            csv_escape(&cred.url),
-            csv_escape(&cred.login),
-            csv_escape(cred.secondary_login.as_deref().unwrap_or("")),
-            csv_escape(&cred.password),
-            csv_escape(cred.notes.as_deref().unwrap_or("")),
-            csv_escape(cred.category.as_deref().unwrap_or("")),
-            csv_escape(cred.otp_secret.as_deref().unwrap_or("")),
-        ));
+    validate_credentials(credentials)?;
+    let mut data = String::from("title,url,username,username2,password,note,category,otpsecret\n");
+    for credential in credentials {
+        let fields = [
+            credential.title.as_str(),
+            credential.url.as_str(),
+            credential.login.as_str(),
+            credential.secondary_login.as_deref().unwrap_or(""),
+            credential.password.as_str(),
+            credential.notes.as_deref().unwrap_or(""),
+            credential.category.as_deref().unwrap_or(""),
+            credential.otp_secret.as_deref().unwrap_or(""),
+        ];
+        for (index, field) in fields.iter().enumerate() {
+            if index > 0 {
+                data.push(',');
+            }
+            data.push_str(&csv_escape(field));
+        }
+        data.push('\n');
+        if data.len() > MAX_EXPORT_BYTES {
+            return Err(DashlaneError::ExportFailed(
+                "Export exceeds the allowed size".into(),
+            ));
+        }
     }
-
-    let content = lines.join("\n");
     Ok(ExportResult {
         format: ExportFormat::Csv,
-        data: content,
+        data,
         item_count: credentials.len(),
     })
 }
 
-/// Export credentials to JSON format.
 pub fn export_json(credentials: &[DashlaneCredential]) -> Result<ExportResult, DashlaneError> {
-    let data = serde_json::to_string_pretty(credentials)
-        .map_err(|e| DashlaneError::ExportFailed(e.to_string()))?;
-
+    validate_credentials(credentials)?;
+    let data = serde_json::to_string(credentials)
+        .map_err(|_| DashlaneError::ExportFailed("Could not serialize export".into()))?;
+    if data.len() > MAX_EXPORT_BYTES {
+        return Err(DashlaneError::ExportFailed(
+            "Export exceeds the allowed size".into(),
+        ));
+    }
     Ok(ExportResult {
         format: ExportFormat::Json,
         data,
@@ -42,165 +57,44 @@ pub fn export_json(credentials: &[DashlaneCredential]) -> Result<ExportResult, D
     })
 }
 
-/// Import credentials from Dashlane CSV export.
-pub fn import_dashlane_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    let mut credentials = Vec::new();
-    let mut errors = Vec::new();
-    let lines: Vec<&str> = csv_content.lines().collect();
-
-    if lines.is_empty() {
-        return Ok(ImportResult {
-            source: ImportSource::DashlaneCsv,
-            imported_count: 0,
-            skipped_count: 0,
-            errors,
-        });
-    }
-
-    // Skip header
-    for (idx, line) in lines.iter().skip(1).enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match parse_csv_line(line) {
-            Ok(fields) if fields.len() >= 5 => {
-                let now = chrono::Utc::now().to_rfc3339();
-                credentials.push(DashlaneCredential {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    title: fields.first().cloned().unwrap_or_default(),
-                    url: fields.get(1).cloned().unwrap_or_default(),
-                    login: fields.get(2).cloned().unwrap_or_default(),
-                    secondary_login: fields.get(3).cloned().filter(|s| !s.is_empty()),
-                    password: fields.get(4).cloned().unwrap_or_default(),
-                    notes: fields.get(5).cloned().filter(|s| !s.is_empty()),
-                    category: fields.get(6).cloned().filter(|s| !s.is_empty()),
-                    auto_login: false,
-                    auto_protect: false,
-                    otp_secret: fields.get(7).cloned().filter(|s| !s.is_empty()),
-                    otp_url: None,
-                    linked_services: Vec::new(),
-                    created_at: Some(now.clone()),
-                    modified_at: Some(now),
-                    last_used_at: None,
-                    password_strength: None,
-                    compromised: false,
-                    reused: false,
-                });
-            }
-            Ok(_) => {
-                errors.push(format!("Line {}: insufficient columns", idx + 2));
-            }
-            Err(e) => {
-                errors.push(format!("Line {}: {}", idx + 2, e));
-            }
-        }
-    }
-
-    let imported_count = credentials.len();
-    Ok(ImportResult {
-        source: ImportSource::DashlaneCsv,
-        imported_count,
-        skipped_count: errors.len(),
-        errors,
-    })
+pub fn import_dashlane_csv(_csv_content: &str) -> Result<ImportResult, DashlaneError> {
+    Err(import_unavailable(ImportSource::DashlaneCsv))
 }
 
-/// Import from 1Password CSV.
-pub fn import_1password_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(
-        csv_content,
-        ImportSource::OnePasswordCsv,
-        &["Title", "Url", "Username", "Password", "Notes"],
-    )
+pub fn import_1password_csv(_csv_content: &str) -> Result<ImportResult, DashlaneError> {
+    Err(import_unavailable(ImportSource::OnePasswordCsv))
 }
 
-/// Import from LastPass CSV.
-pub fn import_lastpass_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(
-        csv_content,
-        ImportSource::LastPassCsv,
-        &["name", "url", "username", "password", "extra"],
-    )
+pub fn import_lastpass_csv(_csv_content: &str) -> Result<ImportResult, DashlaneError> {
+    Err(import_unavailable(ImportSource::LastPassCsv))
 }
 
-/// Import from Chrome CSV.
-pub fn import_chrome_csv(csv_content: &str) -> Result<ImportResult, DashlaneError> {
-    import_generic_csv(
-        csv_content,
-        ImportSource::ChromeCsv,
-        &["name", "url", "username", "password", "note"],
-    )
+pub fn import_chrome_csv(_csv_content: &str) -> Result<ImportResult, DashlaneError> {
+    Err(import_unavailable(ImportSource::ChromeCsv))
 }
 
-/// Generic CSV import with column mapping.
-fn import_generic_csv(
-    csv_content: &str,
-    source: ImportSource,
-    _expected_headers: &[&str],
-) -> Result<ImportResult, DashlaneError> {
-    let mut credentials = Vec::new();
-    let mut errors = Vec::new();
-    let lines: Vec<&str> = csv_content.lines().collect();
-
-    if lines.is_empty() {
-        return Ok(ImportResult {
-            source,
-            imported_count: 0,
-            skipped_count: 0,
-            errors,
-        });
-    }
-
-    for (idx, line) in lines.iter().skip(1).enumerate() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match parse_csv_line(line) {
-            Ok(fields) if fields.len() >= 4 => {
-                let now = chrono::Utc::now().to_rfc3339();
-                credentials.push(DashlaneCredential {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    title: fields.first().cloned().unwrap_or_default(),
-                    url: fields.get(1).cloned().unwrap_or_default(),
-                    login: fields.get(2).cloned().unwrap_or_default(),
-                    secondary_login: None,
-                    password: fields.get(3).cloned().unwrap_or_default(),
-                    notes: fields.get(4).cloned().filter(|s| !s.is_empty()),
-                    category: None,
-                    auto_login: false,
-                    auto_protect: false,
-                    otp_secret: None,
-                    otp_url: None,
-                    linked_services: Vec::new(),
-                    created_at: Some(now.clone()),
-                    modified_at: Some(now),
-                    last_used_at: None,
-                    password_strength: None,
-                    compromised: false,
-                    reused: false,
-                });
-            }
-            Ok(_) => errors.push(format!("Line {}: insufficient columns", idx + 2)),
-            Err(e) => errors.push(format!("Line {}: {}", idx + 2, e)),
-        }
-    }
-
-    let imported_count = credentials.len();
-    Ok(ImportResult {
-        source,
-        imported_count,
-        skipped_count: errors.len(),
-        errors,
-    })
-}
-
-/// Export secure notes to JSON.
 pub fn export_notes_json(notes: &[SecureNote]) -> Result<ExportResult, DashlaneError> {
-    let data = serde_json::to_string_pretty(notes)
-        .map_err(|e| DashlaneError::ExportFailed(e.to_string()))?;
-
+    if notes.len() > MAX_EXPORT_ITEMS
+        || notes.iter().any(|note| {
+            note.title.len() > MAX_FIELD_BYTES
+                || note.content.len() > MAX_FIELD_BYTES
+                || note
+                    .category
+                    .as_ref()
+                    .is_some_and(|value| value.len() > MAX_FIELD_BYTES)
+        })
+    {
+        return Err(DashlaneError::ExportFailed(
+            "Notes export exceeds the allowed size".into(),
+        ));
+    }
+    let data = serde_json::to_string(notes)
+        .map_err(|_| DashlaneError::ExportFailed("Could not serialize export".into()))?;
+    if data.len() > MAX_EXPORT_BYTES {
+        return Err(DashlaneError::ExportFailed(
+            "Export exceeds the allowed size".into(),
+        ));
+    }
     Ok(ExportResult {
         format: ExportFormat::Json,
         data,
@@ -208,42 +102,52 @@ pub fn export_notes_json(notes: &[SecureNote]) -> Result<ExportResult, DashlaneE
     })
 }
 
-fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_string()
+fn validate_credentials(credentials: &[DashlaneCredential]) -> Result<(), DashlaneError> {
+    if credentials.len() > MAX_EXPORT_ITEMS {
+        return Err(DashlaneError::ExportFailed(
+            "Too many credentials to export".into(),
+        ));
     }
+    if credentials.iter().any(|credential| {
+        [
+            credential.title.as_str(),
+            credential.url.as_str(),
+            credential.login.as_str(),
+            credential.secondary_login.as_deref().unwrap_or(""),
+            credential.password.as_str(),
+            credential.notes.as_deref().unwrap_or(""),
+            credential.category.as_deref().unwrap_or(""),
+            credential.otp_secret.as_deref().unwrap_or(""),
+        ]
+        .iter()
+        .any(|field| field.len() > MAX_FIELD_BYTES)
+    }) {
+        return Err(DashlaneError::ExportFailed(
+            "Credential field exceeds the allowed size".into(),
+        ));
+    }
+    Ok(())
 }
 
-fn parse_csv_line(line: &str) -> Result<Vec<String>, DashlaneError> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if in_quotes {
-            if ch == '"' {
-                if chars.peek() == Some(&'"') {
-                    chars.next();
-                    current.push('"');
-                } else {
-                    in_quotes = false;
-                }
-            } else {
-                current.push(ch);
-            }
-        } else if ch == '"' {
-            in_quotes = true;
-        } else if ch == ',' {
-            fields.push(current.clone());
-            current.clear();
-        } else {
-            current.push(ch);
-        }
+fn csv_escape(value: &str) -> String {
+    let formula_risk = matches!(
+        value.trim_start().chars().next(),
+        Some('=' | '+' | '-' | '@' | '\t' | '\r')
+    );
+    let mut safe = if formula_risk {
+        format!("'{}", value)
+    } else {
+        value.to_string()
+    };
+    if safe.contains(',') || safe.contains('"') || safe.contains('\n') || safe.contains('\r') {
+        safe = format!("\"{}\"", safe.replace('"', "\"\""));
     }
-    fields.push(current);
+    safe
+}
 
-    Ok(fields)
+fn import_unavailable(source: ImportSource) -> DashlaneError {
+    DashlaneError::unsupported(format!(
+        "{:?} import is unavailable because vault persistence is not implemented",
+        source
+    ))
 }

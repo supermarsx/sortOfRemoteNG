@@ -111,20 +111,20 @@ pub fn find_duplicates(credentials: &[DashlaneCredential]) -> Vec<Vec<DashlaneCr
 }
 
 /// Prepare a new credential from a create request.
-pub fn prepare_credential(req: &CreateCredentialRequest) -> DashlaneCredential {
+pub fn prepare_credential(mut req: CreateCredentialRequest) -> DashlaneCredential {
     let now = chrono::Utc::now().to_rfc3339();
     DashlaneCredential {
         id: uuid::Uuid::new_v4().to_string(),
-        title: req.title.clone(),
-        url: req.url.clone().unwrap_or_default(),
-        login: req.login.clone(),
-        secondary_login: req.secondary_login.clone(),
-        password: req.password.clone(),
-        notes: req.notes.clone(),
-        category: req.category.clone(),
+        title: std::mem::take(&mut req.title),
+        url: req.url.take().unwrap_or_default(),
+        login: std::mem::take(&mut req.login),
+        secondary_login: req.secondary_login.take(),
+        password: std::mem::take(&mut req.password),
+        notes: req.notes.take(),
+        category: req.category.take(),
         auto_login: req.auto_login.unwrap_or(false),
         auto_protect: req.auto_protect.unwrap_or(false),
-        otp_secret: req.otp_secret.clone(),
+        otp_secret: req.otp_secret.take(),
         otp_url: None,
         linked_services: Vec::new(),
         created_at: Some(now.clone()),
@@ -139,28 +139,31 @@ pub fn prepare_credential(req: &CreateCredentialRequest) -> DashlaneCredential {
 /// Apply an update request to an existing credential.
 pub fn apply_update(
     credential: &mut DashlaneCredential,
-    req: &UpdateCredentialRequest,
+    mut req: UpdateCredentialRequest,
 ) -> Result<(), DashlaneError> {
-    if let Some(ref title) = req.title {
-        credential.title = title.clone();
+    if let Some(title) = req.title.take() {
+        credential.title = title;
     }
-    if let Some(ref url) = req.url {
-        credential.url = url.clone();
+    if let Some(url) = req.url.take() {
+        credential.url = url;
     }
-    if let Some(ref login) = req.login {
-        credential.login = login.clone();
+    if let Some(login) = req.login.take() {
+        credential.login = login;
     }
-    if let Some(ref password) = req.password {
-        credential.password = password.clone();
+    if let Some(password) = req.password.take() {
+        credential.password = password;
     }
-    if let Some(ref notes) = req.notes {
-        credential.notes = Some(notes.clone());
+    if let Some(notes) = req.notes.take() {
+        credential.notes = Some(notes);
     }
-    if let Some(ref category) = req.category {
-        credential.category = Some(category.clone());
+    if let Some(category) = req.category.take() {
+        credential.category = Some(category);
     }
     if let Some(auto_login) = req.auto_login {
         credential.auto_login = auto_login;
+    }
+    if let Some(otp_secret) = req.otp_secret.take() {
+        credential.otp_secret = Some(otp_secret);
     }
     credential.modified_at = Some(chrono::Utc::now().to_rfc3339());
     Ok(())

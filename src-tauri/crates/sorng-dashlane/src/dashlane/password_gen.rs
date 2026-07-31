@@ -4,7 +4,13 @@ use crate::dashlane::types::{DashlaneError, PasswordGenConfig};
 pub fn generate_password(config: &PasswordGenConfig) -> Result<String, DashlaneError> {
     use rand::Rng;
 
-    let length = config.length.unwrap_or(16).clamp(4, 128) as usize;
+    let requested_length = config.length.unwrap_or(16);
+    if !(4..=128).contains(&requested_length) {
+        return Err(DashlaneError::InvalidConfig(
+            "Password length must be between 4 and 128".into(),
+        ));
+    }
+    let length = requested_length as usize;
     let use_lowercase = config.lowercase.unwrap_or(true);
     let use_uppercase = config.uppercase.unwrap_or(true);
     let use_digits = config.digits.unwrap_or(true);
@@ -50,7 +56,7 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, DashlaneE
     }
 
     let charset: Vec<char> = charset.chars().collect();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::OsRng;
     let mut password = String::with_capacity(length);
 
     // Guarantee at least one character from each enabled set
@@ -93,9 +99,14 @@ pub fn generate_password(config: &PasswordGenConfig) -> Result<String, DashlaneE
 pub fn generate_pronounceable(length: usize) -> Result<String, DashlaneError> {
     use rand::Rng;
 
+    if !(4..=128).contains(&length) {
+        return Err(DashlaneError::InvalidConfig(
+            "Pronounceable password length must be between 4 and 128".into(),
+        ));
+    }
     let consonants: Vec<char> = "bcdfghjklmnpqrstvwxyz".chars().collect();
     let vowels: Vec<char> = "aeiou".chars().collect();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rngs::OsRng;
     let mut password = String::with_capacity(length);
 
     for i in 0..length {
@@ -113,14 +124,10 @@ pub fn generate_pronounceable(length: usize) -> Result<String, DashlaneError> {
         chars[idx] = chars[idx].to_uppercase().next().unwrap_or(chars[idx]);
     }
 
-    // Add a digit and symbol
-    if length >= 4 {
-        let digit = (rng.gen_range(0..10u8) + b'0') as char;
-        let symbols: Vec<char> = "!@#$%&*".chars().collect();
-        let symbol = symbols[rng.gen_range(0..symbols.len())];
-        chars.push(digit);
-        chars.push(symbol);
-    }
+    let digit = (rng.gen_range(0..10u8) + b'0') as char;
+    let symbols: Vec<char> = "!@#$%&*".chars().collect();
+    chars[length - 2] = digit;
+    chars[length - 1] = symbols[rng.gen_range(0..symbols.len())];
 
     Ok(chars.into_iter().collect())
 }
@@ -133,7 +140,15 @@ pub fn generate_passphrase(
 ) -> Result<String, DashlaneError> {
     use rand::Rng;
 
-    let words = vec![
+    if !(3..=12).contains(&word_count)
+        || separator.len() > 16
+        || separator.chars().any(char::is_control)
+    {
+        return Err(DashlaneError::InvalidConfig(
+            "Passphrase requires 3-12 words and a short printable separator".into(),
+        ));
+    }
+    let words = [
         "apple", "brave", "coral", "delta", "eagle", "flame", "grape", "honey", "ivory", "joker",
         "karma", "lemon", "maple", "noble", "ocean", "pearl", "quest", "river", "stone", "tiger",
         "unity", "vivid", "whale", "xenon", "yacht", "zebra", "amber", "blaze", "cloud", "dream",
@@ -143,8 +158,8 @@ pub fn generate_passphrase(
         "kiosk", "lyric", "moose", "ninja",
     ];
 
-    let mut rng = rand::thread_rng();
-    let count = word_count.clamp(3, 12);
+    let mut rng = rand::rngs::OsRng;
+    let count = word_count;
 
     let selected: Vec<String> = (0..count)
         .map(|_| {

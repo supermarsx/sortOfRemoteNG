@@ -21,3 +21,4 @@ rand = { workspace = true }
 hmac = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
+zeroize = "1"

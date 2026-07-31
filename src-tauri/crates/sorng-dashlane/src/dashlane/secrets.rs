@@ -23,23 +23,24 @@ pub fn find_secret_by_id<'a>(
 }
 
 /// Search secrets by query string.
-pub fn search_secrets(secrets: &[DashlaneSecret], query: &str) -> Vec<DashlaneSecret> {
+pub fn search_secrets<'a>(secrets: &'a [DashlaneSecret], query: &str) -> Vec<&'a DashlaneSecret> {
     let lower = query.to_lowercase();
     secrets
         .iter()
         .filter(|s| {
             s.title.to_lowercase().contains(&lower) || s.content.to_lowercase().contains(&lower)
         })
-        .cloned()
         .collect()
 }
 
 /// Filter secrets by category.
-pub fn filter_by_category(secrets: &[DashlaneSecret], category: &str) -> Vec<DashlaneSecret> {
+pub fn filter_by_category<'a>(
+    secrets: &'a [DashlaneSecret],
+    category: &str,
+) -> Vec<&'a DashlaneSecret> {
     secrets
         .iter()
         .filter(|s| s.category.as_deref() == Some(category))
-        .cloned()
         .collect()
 }
 

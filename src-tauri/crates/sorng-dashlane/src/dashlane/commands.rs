@@ -1,4 +1,5 @@
 use tauri::State;
+use zeroize::Zeroize;
 
 use super::service::DashlaneServiceState;
 use super::types::*;
@@ -17,22 +18,28 @@ pub async fn dl_configure(
 #[tauri::command]
 pub async fn dl_login(
     state: State<'_, DashlaneServiceState>,
-    master_password: String,
+    mut master_password: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.login(&master_password).await.map_err(|e| e.to_string())
+    let result = svc.login(&master_password).await.map_err(|e| e.to_string());
+    master_password.zeroize();
+    result
 }
 
 #[tauri::command]
 pub async fn dl_login_with_token(
     state: State<'_, DashlaneServiceState>,
-    master_password: String,
-    token: String,
+    mut master_password: String,
+    mut token: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.login_with_token(&master_password, &token)
+    let result = svc
+        .login_with_token(&master_password, &token)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    master_password.zeroize();
+    token.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -92,22 +99,31 @@ pub async fn dl_search_by_url(
 #[tauri::command]
 pub async fn dl_create_credential(
     state: State<'_, DashlaneServiceState>,
-    req: CreateCredentialRequest,
+    mut req: CreateCredentialRequest,
 ) -> Result<DashlaneCredential, String> {
     let mut svc = state.lock().await;
-    svc.create_credential(req).await.map_err(|e| e.to_string())
+    let result = svc.create_credential(&req).await.map_err(|e| e.to_string());
+    req.password.zeroize();
+    req.notes.zeroize();
+    req.otp_secret.zeroize();
+    result
 }
 
 #[tauri::command]
 pub async fn dl_update_credential(
     state: State<'_, DashlaneServiceState>,
     id: String,
-    req: UpdateCredentialRequest,
+    mut req: UpdateCredentialRequest,
 ) -> Result<DashlaneCredential, String> {
     let mut svc = state.lock().await;
-    svc.update_credential(&id, req)
+    let result = svc
+        .update_credential(&id, &req)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    req.password.zeroize();
+    req.notes.zeroize();
+    req.otp_secret.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -169,14 +185,17 @@ pub async fn dl_search_notes(
 pub async fn dl_create_note(
     state: State<'_, DashlaneServiceState>,
     title: String,
-    content: String,
+    mut content: String,
     category: Option<String>,
     secured: bool,
 ) -> Result<SecureNote, String> {
     let mut svc = state.lock().await;
-    svc.create_note(title, content, category, secured)
+    let result = svc
+        .create_note(title, &content, category, secured)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    content.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -226,13 +245,16 @@ pub async fn dl_list_secrets(
 pub async fn dl_create_secret(
     state: State<'_, DashlaneServiceState>,
     title: String,
-    content: String,
+    mut content: String,
     category: Option<String>,
 ) -> Result<DashlaneSecret, String> {
     let mut svc = state.lock().await;
-    svc.create_secret(title, content, category)
+    let result = svc
+        .create_secret(title, &content, category)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    content.zeroize();
+    result
 }
 
 // --- Devices ---
@@ -346,10 +368,14 @@ pub async fn dl_generate_passphrase(
 #[tauri::command]
 pub async fn dl_check_password_strength(
     state: State<'_, DashlaneServiceState>,
-    password: String,
+    mut password: String,
 ) -> Result<(u32, String), String> {
     let svc = state.lock().await;
-    Ok(svc.check_password_strength(&password))
+    let result = svc
+        .check_password_strength(&password)
+        .map_err(|e| e.to_string());
+    password.zeroize();
+    result
 }
 
 // --- Import/Export ---
@@ -371,12 +397,15 @@ pub async fn dl_export_json(
 #[tauri::command]
 pub async fn dl_import_csv(
     state: State<'_, DashlaneServiceState>,
-    csv_content: String,
+    mut csv_content: String,
     source: ImportSource,
 ) -> Result<ImportResult, String> {
     let mut svc = state.lock().await;
-    svc.import_csv(&csv_content, source)
-        .map_err(|e| e.to_string())
+    let result = svc
+        .import_csv(&csv_content, source)
+        .map_err(|e| e.to_string());
+    csv_content.zeroize();
+    result
 }
 
 // --- Stats ---

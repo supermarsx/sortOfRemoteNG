@@ -4,12 +4,15 @@ use tokio::sync::Mutex;
 use crate::dashlane::api_client::DashlaneApiClient;
 use crate::dashlane::types::*;
 use crate::dashlane::vault::{parse_vault_transactions, VaultData};
-use crate::dashlane::{
-    auth, dark_web, devices, identities, import_export, items, notes, password_gen,
-    password_health, secrets, sharing,
-};
+use crate::dashlane::{auth, devices, items, password_gen, password_health};
 
 pub type DashlaneServiceState = Arc<Mutex<DashlaneService>>;
+
+const MAX_ID_BYTES: usize = 256;
+const MAX_QUERY_BYTES: usize = 2_048;
+const MAX_SECRET_BYTES: usize = 64 * 1024;
+const MAX_RESULTS: usize = 1_000;
+const MAX_CATEGORIES: usize = 256;
 
 pub struct DashlaneService {
     config: Option<DashlaneConfig>,
@@ -17,11 +20,6 @@ pub struct DashlaneService {
     client: Option<DashlaneApiClient>,
     vault_data: Option<VaultData>,
     vault_fetched_at: Option<std::time::Instant>,
-    secure_notes: Vec<SecureNote>,
-    identities_list: Vec<DashlaneIdentity>,
-    secrets_list: Vec<DashlaneSecret>,
-    sharing_groups: Vec<SharingGroup>,
-    dark_web_alerts: Vec<DarkWebAlert>,
 }
 
 impl Default for DashlaneService {
@@ -38,28 +36,38 @@ impl DashlaneService {
             client: None,
             vault_data: None,
             vault_fetched_at: None,
-            secure_notes: Vec::new(),
-            identities_list: Vec::new(),
-            secrets_list: Vec::new(),
-            sharing_groups: Vec::new(),
-            dark_web_alerts: Vec::new(),
         }
     }
 
     pub fn configure(&mut self, config: DashlaneConfig) -> Result<(), DashlaneError> {
-        if config.email.is_empty() {
-            return Err(DashlaneError::InvalidConfig("Email is required".into()));
+        validate_text("Email", &config.email, 320, false)?;
+        if config.email.trim() != config.email
+            || !config.email.contains('@')
+            || config.email.chars().any(char::is_control)
+        {
+            return Err(DashlaneError::InvalidConfig("Invalid email address".into()));
         }
-        self.client = Some(DashlaneApiClient::new(&config)?);
+        validate_text("Device name", &config.device_name, 128, false)?;
+        if config.cli_path.is_some() {
+            return Err(DashlaneError::unsupported(
+                "Dashlane CLI integration is not implemented",
+            ));
+        }
+
+        let client = DashlaneApiClient::new(&config)?;
+        self.session = None;
+        self.vault_data = None;
+        self.vault_fetched_at = None;
+        self.client = Some(client);
         self.config = Some(config);
         Ok(())
     }
 
     pub async fn login(&mut self, master_password: &str) -> Result<(), DashlaneError> {
-        let config = self.config.clone().ok_or(DashlaneError::NotConfigured)?;
+        validate_text("Master password", master_password, MAX_SECRET_BYTES, false)?;
+        let config = self.config.as_ref().ok_or(DashlaneError::NotConfigured)?;
         let client = self.client.as_mut().ok_or(DashlaneError::NotConfigured)?;
-        let session = auth::login(client, &config, master_password, None).await?;
-        self.session = Some(session);
+        self.session = Some(auth::login(client, config, master_password, None).await?);
         Ok(())
     }
 
@@ -68,285 +76,289 @@ impl DashlaneService {
         master_password: &str,
         token: &str,
     ) -> Result<(), DashlaneError> {
-        let config = self.config.clone().ok_or(DashlaneError::NotConfigured)?;
+        validate_text("Master password", master_password, MAX_SECRET_BYTES, false)?;
+        validate_text("Verification token", token, 512, false)?;
+        let config = self.config.as_ref().ok_or(DashlaneError::NotConfigured)?;
         let client = self.client.as_mut().ok_or(DashlaneError::NotConfigured)?;
-
-        // Complete device registration with token
-        client
-            .complete_device_registration(&config.email, token)
-            .await?;
-
-        // Now authenticate
-        let session = auth::login(client, &config, master_password, Some(token)).await?;
-        self.session = Some(session);
+        self.session = Some(auth::login(client, config, master_password, Some(token)).await?);
         Ok(())
     }
 
     pub async fn logout(&mut self) -> Result<(), DashlaneError> {
-        if let Some(ref mut client) = self.client {
-            let _ = auth::logout(client).await;
+        if let Some(client) = self.client.as_mut() {
+            auth::logout(client).await?;
         }
         self.session = None;
         self.vault_data = None;
         self.vault_fetched_at = None;
-        self.secure_notes.clear();
-        self.identities_list.clear();
-        self.secrets_list.clear();
         Ok(())
     }
 
     pub fn is_authenticated(&self) -> bool {
         self.session.is_some()
+            && self
+                .client
+                .as_ref()
+                .is_some_and(|client| client.has_session())
+    }
+
+    fn require_session(&self) -> Result<&DashlaneSession, DashlaneError> {
+        let session = auth::validate_session(&self.session)?;
+        if !self
+            .client
+            .as_ref()
+            .is_some_and(|client| client.has_session())
+        {
+            return Err(DashlaneError::auth_failed("Dashlane session is incomplete"));
+        }
+        Ok(session)
     }
 
     async fn ensure_vault(&mut self) -> Result<(), DashlaneError> {
-        let cache_ttl = std::time::Duration::from_secs(300); // 5 min
-        let needs_refresh = match self.vault_fetched_at {
-            Some(t) => t.elapsed() > cache_ttl,
-            None => true,
-        };
+        self.require_session()?;
+        let needs_refresh = self.vault_fetched_at.map_or(true, |fetched| {
+            fetched.elapsed() > std::time::Duration::from_secs(300)
+        });
 
         if needs_refresh || self.vault_data.is_none() {
             let client = self.client.as_ref().ok_or(DashlaneError::NotConfigured)?;
             let response = client.get_latest_content().await?;
-            let transactions = response.transactions.unwrap_or_default();
-
-            let data = parse_vault_transactions(&transactions, &[])?;
-            self.secure_notes = data.secure_notes.clone();
+            let transactions = response.transactions.ok_or_else(|| {
+                DashlaneError::parse_error("Dashlane response omitted transactions")
+            })?;
+            let key = &self
+                .session
+                .as_ref()
+                .ok_or(DashlaneError::SessionExpired)?
+                .encryption_key;
+            let data = parse_vault_transactions(&transactions, key)?;
             self.vault_data = Some(data);
             self.vault_fetched_at = Some(std::time::Instant::now());
         }
-
         Ok(())
     }
 
-    // --- Credentials ---
-
     pub async fn list_credentials(
         &mut self,
-        filter: Option<CredentialFilter>,
+        mut filter: Option<CredentialFilter>,
     ) -> Result<Vec<DashlaneCredential>, DashlaneError> {
+        if let Some(value) = filter.as_mut() {
+            validate_filter(value)?;
+            value.limit = Some(value.limit.unwrap_or(MAX_RESULTS).min(MAX_RESULTS));
+        }
         self.ensure_vault().await?;
         let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        match filter {
-            Some(f) => Ok(items::filter_credentials(&data.credentials, &f)),
-            None => Ok(data.credentials.clone()),
-        }
+        let mut result = match filter {
+            Some(value) => items::filter_credentials(&data.credentials, &value),
+            None => data.credentials.clone(),
+        };
+        result.truncate(MAX_RESULTS);
+        Ok(result)
     }
 
     pub async fn get_credential(&mut self, id: &str) -> Result<DashlaneCredential, DashlaneError> {
+        validate_id(id)?;
         self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        items::find_by_id(&data.credentials, id)
-            .cloned()
-            .ok_or_else(|| DashlaneError::NotFound(format!("Credential {}", id)))
+        items::find_by_id(
+            &self
+                .vault_data
+                .as_ref()
+                .ok_or(DashlaneError::VaultLocked)?
+                .credentials,
+            id,
+        )
+        .cloned()
+        .ok_or_else(|| DashlaneError::NotFound("Credential not found".into()))
     }
 
     pub async fn search_credentials(
         &mut self,
         query: &str,
     ) -> Result<Vec<DashlaneCredential>, DashlaneError> {
-        let filter = CredentialFilter {
+        validate_text("Query", query, MAX_QUERY_BYTES, false)?;
+        self.list_credentials(Some(CredentialFilter {
             query: Some(query.to_string()),
+            limit: Some(MAX_RESULTS),
             ..Default::default()
-        };
-        self.list_credentials(Some(filter)).await
+        }))
+        .await
     }
 
     pub async fn search_by_url(
         &mut self,
-        url: &str,
+        value: &str,
     ) -> Result<Vec<DashlaneCredential>, DashlaneError> {
+        validate_text("URL", value, MAX_QUERY_BYTES, false)?;
+        let parsed =
+            url::Url::parse(value).map_err(|_| DashlaneError::BadRequest("Invalid URL".into()))?;
+        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+            return Err(DashlaneError::BadRequest("Invalid URL".into()));
+        }
         self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        Ok(items::find_by_url(&data.credentials, url))
+        let mut result = items::find_by_url(
+            &self
+                .vault_data
+                .as_ref()
+                .ok_or(DashlaneError::VaultLocked)?
+                .credentials,
+            value,
+        );
+        result.truncate(MAX_RESULTS);
+        Ok(result)
     }
 
     pub async fn create_credential(
         &mut self,
-        req: CreateCredentialRequest,
+        _req: &CreateCredentialRequest,
     ) -> Result<DashlaneCredential, DashlaneError> {
-        let cred = items::prepare_credential(&req);
-        if let Some(ref mut data) = self.vault_data {
-            data.credentials.push(cred.clone());
-        }
-        Ok(cred)
+        Err(remote_mutation_unavailable())
     }
 
     pub async fn update_credential(
         &mut self,
-        id: &str,
-        req: UpdateCredentialRequest,
+        _id: &str,
+        _req: &UpdateCredentialRequest,
     ) -> Result<DashlaneCredential, DashlaneError> {
-        let data = self.vault_data.as_mut().ok_or(DashlaneError::VaultLocked)?;
-        let cred = data
-            .credentials
-            .iter_mut()
-            .find(|c| c.id == id)
-            .ok_or_else(|| DashlaneError::NotFound(format!("Credential {}", id)))?;
-        items::apply_update(cred, &req)?;
-        Ok(cred.clone())
+        Err(remote_mutation_unavailable())
     }
 
-    pub async fn delete_credential(&mut self, id: &str) -> Result<(), DashlaneError> {
-        let data = self.vault_data.as_mut().ok_or(DashlaneError::VaultLocked)?;
-        let len_before = data.credentials.len();
-        data.credentials.retain(|c| c.id != id);
-        if data.credentials.len() == len_before {
-            return Err(DashlaneError::NotFound(format!("Credential {}", id)));
-        }
-        Ok(())
+    pub async fn delete_credential(&mut self, _id: &str) -> Result<(), DashlaneError> {
+        Err(remote_mutation_unavailable())
     }
 
     pub async fn find_duplicate_passwords(
         &mut self,
     ) -> Result<Vec<Vec<DashlaneCredential>>, DashlaneError> {
         self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        Ok(items::find_duplicates(&data.credentials))
+        let mut groups = items::find_duplicates(
+            &self
+                .vault_data
+                .as_ref()
+                .ok_or(DashlaneError::VaultLocked)?
+                .credentials,
+        );
+        groups.truncate(MAX_RESULTS);
+        for group in &mut groups {
+            group.truncate(MAX_RESULTS);
+        }
+        Ok(groups)
     }
 
     pub async fn get_categories(&mut self) -> Result<Vec<String>, DashlaneError> {
         self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        Ok(items::get_categories(&data.credentials))
+        let mut categories = items::get_categories(
+            &self
+                .vault_data
+                .as_ref()
+                .ok_or(DashlaneError::VaultLocked)?
+                .credentials,
+        );
+        categories.truncate(MAX_CATEGORIES);
+        Ok(categories)
     }
-
-    // --- Secure Notes ---
 
     pub async fn list_notes(&mut self) -> Result<Vec<SecureNote>, DashlaneError> {
-        self.ensure_vault().await?;
-        Ok(self.secure_notes.clone())
+        Err(remote_read_unavailable("secure notes"))
     }
 
-    pub async fn get_note(&self, id: &str) -> Result<SecureNote, DashlaneError> {
-        notes::find_note_by_id(&self.secure_notes, id)
-            .cloned()
-            .ok_or_else(|| DashlaneError::NotFound(format!("Note {}", id)))
+    pub async fn get_note(&self, _id: &str) -> Result<SecureNote, DashlaneError> {
+        Err(remote_read_unavailable("secure notes"))
     }
 
-    pub async fn search_notes(&self, query: &str) -> Result<Vec<SecureNote>, DashlaneError> {
-        Ok(notes::search_notes(&self.secure_notes, query))
+    pub async fn search_notes(&self, _query: &str) -> Result<Vec<SecureNote>, DashlaneError> {
+        Err(remote_read_unavailable("secure notes"))
     }
 
     pub async fn create_note(
         &mut self,
-        title: String,
-        content: String,
-        category: Option<String>,
-        secured: bool,
+        _title: String,
+        _content: &str,
+        _category: Option<String>,
+        _secured: bool,
     ) -> Result<SecureNote, DashlaneError> {
-        let note = notes::create_note(title, content, category, secured, None);
-        self.secure_notes.push(note.clone());
-        Ok(note)
+        Err(remote_mutation_unavailable())
     }
 
-    pub async fn delete_note(&mut self, id: &str) -> Result<(), DashlaneError> {
-        let len_before = self.secure_notes.len();
-        self.secure_notes.retain(|n| n.id != id);
-        if self.secure_notes.len() == len_before {
-            return Err(DashlaneError::NotFound(format!("Note {}", id)));
-        }
-        Ok(())
+    pub async fn delete_note(&mut self, _id: &str) -> Result<(), DashlaneError> {
+        Err(remote_mutation_unavailable())
     }
-
-    // --- Identities ---
 
     pub async fn list_identities(&self) -> Result<Vec<DashlaneIdentity>, DashlaneError> {
-        Ok(self.identities_list.clone())
+        Err(remote_read_unavailable("identities"))
     }
 
     pub async fn create_identity(
         &mut self,
-        first_name: String,
-        last_name: String,
-        email: Option<String>,
-        phone: Option<String>,
+        _first_name: String,
+        _last_name: String,
+        _email: Option<String>,
+        _phone: Option<String>,
     ) -> Result<DashlaneIdentity, DashlaneError> {
-        let identity = identities::create_identity(first_name, last_name, email, phone);
-        self.identities_list.push(identity.clone());
-        Ok(identity)
+        Err(remote_mutation_unavailable())
     }
 
-    // --- Secrets ---
-
     pub async fn list_secrets(&self) -> Result<Vec<DashlaneSecret>, DashlaneError> {
-        Ok(self.secrets_list.clone())
+        Err(remote_read_unavailable("secrets"))
     }
 
     pub async fn create_secret(
         &mut self,
-        title: String,
-        content: String,
-        category: Option<String>,
+        _title: String,
+        _content: &str,
+        _category: Option<String>,
     ) -> Result<DashlaneSecret, DashlaneError> {
-        let secret = secrets::create_secret(title, content, category);
-        self.secrets_list.push(secret.clone());
-        Ok(secret)
+        Err(remote_mutation_unavailable())
     }
-
-    // --- Devices ---
 
     pub async fn list_devices(&mut self) -> Result<Vec<RegisteredDevice>, DashlaneError> {
+        let session = self.require_session()?;
+        let current_device_id = devices::device_id_for_access_key(&session.device_access_key);
         let client = self.client.as_ref().ok_or(DashlaneError::NotConfigured)?;
-        let mut devs = devices::list_devices(client).await?;
-        if let Some(ref session) = self.session {
-            devices::identify_current_device(&mut devs, &session.device_access_key);
-        }
-        Ok(devs)
+        let mut result = devices::list_devices(client).await?;
+        devices::identify_current_device_by_id(&mut result, &current_device_id);
+        result.truncate(512);
+        Ok(result)
     }
 
-    pub async fn deregister_device(&self, device_id: &str) -> Result<(), DashlaneError> {
-        let client = self.client.as_ref().ok_or(DashlaneError::NotConfigured)?;
-        devices::deregister_device(client, device_id).await
+    pub async fn deregister_device(&self, _device_id: &str) -> Result<(), DashlaneError> {
+        Err(remote_mutation_unavailable())
     }
-
-    // --- Sharing ---
 
     pub async fn list_sharing_groups(&self) -> Result<Vec<SharingGroup>, DashlaneError> {
-        Ok(self.sharing_groups.clone())
+        Err(remote_read_unavailable("sharing groups"))
     }
 
     pub async fn create_sharing_group(
         &mut self,
-        name: String,
-        owner_id: String,
-        owner_name: String,
+        _name: String,
+        _owner_id: String,
+        _owner_name: String,
     ) -> Result<SharingGroup, DashlaneError> {
-        let group = sharing::create_sharing_group(name, owner_id, owner_name);
-        self.sharing_groups.push(group.clone());
-        Ok(group)
+        Err(remote_mutation_unavailable())
     }
 
-    // --- Dark Web ---
-
     pub async fn get_dark_web_alerts(&self) -> Result<Vec<DarkWebAlert>, DashlaneError> {
-        Ok(self.dark_web_alerts.clone())
+        Err(remote_read_unavailable("dark web alerts"))
     }
 
     pub async fn get_active_dark_web_alerts(&self) -> Result<Vec<DarkWebAlert>, DashlaneError> {
-        Ok(dark_web::get_active_alerts(&self.dark_web_alerts))
+        Err(remote_read_unavailable("dark web alerts"))
     }
 
-    pub async fn dismiss_dark_web_alert(&mut self, id: &str) -> Result<(), DashlaneError> {
-        let alert = self
-            .dark_web_alerts
-            .iter_mut()
-            .find(|a| a.id == id)
-            .ok_or_else(|| DashlaneError::NotFound(format!("Alert {}", id)))?;
-        dark_web::mark_resolved(alert);
-        Ok(())
+    pub async fn dismiss_dark_web_alert(&mut self, _id: &str) -> Result<(), DashlaneError> {
+        Err(remote_mutation_unavailable())
     }
-
-    // --- Password Health ---
 
     pub async fn get_password_health(&mut self) -> Result<PasswordHealthScore, DashlaneError> {
         self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        Ok(password_health::analyze_password_health(&data.credentials))
+        Ok(password_health::analyze_password_health(
+            &self
+                .vault_data
+                .as_ref()
+                .ok_or(DashlaneError::VaultLocked)?
+                .credentials,
+        ))
     }
-
-    // --- Password Generation ---
 
     pub fn generate_password(&self, config: PasswordGenConfig) -> Result<String, DashlaneError> {
         password_gen::generate_password(&config)
@@ -361,56 +373,107 @@ impl DashlaneService {
         password_gen::generate_passphrase(word_count, separator, capitalize)
     }
 
-    pub fn check_password_strength(&self, password: &str) -> (u32, String) {
-        let score = password_health::assess_password_strength(password);
-        let rating = password_gen::rate_strength(password);
-        (score, rating)
+    pub fn check_password_strength(&self, password: &str) -> Result<(u32, String), DashlaneError> {
+        validate_text("Password", password, MAX_SECRET_BYTES, true)?;
+        Ok((
+            password_health::assess_password_strength(password),
+            password_gen::rate_strength(password),
+        ))
     }
 
-    // --- Import/Export ---
-
     pub async fn export_csv(&mut self) -> Result<ExportResult, DashlaneError> {
-        self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        import_export::export_csv(&data.credentials)
+        Err(DashlaneError::unsupported(
+            "Secret-bearing in-memory export is disabled",
+        ))
     }
 
     pub async fn export_json(&mut self) -> Result<ExportResult, DashlaneError> {
-        self.ensure_vault().await?;
-        let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-        import_export::export_json(&data.credentials)
+        Err(DashlaneError::unsupported(
+            "Secret-bearing in-memory export is disabled",
+        ))
     }
 
     pub fn import_csv(
         &mut self,
-        csv_content: &str,
-        source: ImportSource,
+        _csv_content: &str,
+        _source: ImportSource,
     ) -> Result<ImportResult, DashlaneError> {
-        match source {
-            ImportSource::DashlaneCsv => import_export::import_dashlane_csv(csv_content),
-            ImportSource::LastPassCsv => import_export::import_lastpass_csv(csv_content),
-            ImportSource::OnePasswordCsv => import_export::import_1password_csv(csv_content),
-            ImportSource::ChromeCsv => import_export::import_chrome_csv(csv_content),
-            _ => Err(DashlaneError::InvalidConfig(format!(
-                "Unsupported import source: {:?}",
-                source
-            ))),
-        }
+        Err(DashlaneError::unsupported(
+            "Dashlane import persistence is not implemented",
+        ))
     }
-
-    // --- Stats ---
 
     pub async fn get_stats(&mut self) -> Result<VaultStats, DashlaneError> {
         self.ensure_vault().await?;
         let data = self.vault_data.as_ref().ok_or(DashlaneError::VaultLocked)?;
-
+        let mut categories = items::count_by_category(&data.credentials);
+        categories.truncate(MAX_CATEGORIES);
         Ok(VaultStats {
             total_credentials: data.credentials.len(),
-            total_notes: self.secure_notes.len(),
+            total_notes: data.secure_notes.len(),
             total_identities: data.identities_count as usize,
             total_credit_cards: data.credit_cards_count as usize,
             total_bank_accounts: data.bank_accounts_count as usize,
-            categories: items::count_by_category(&data.credentials),
+            categories,
         })
     }
+}
+
+fn validate_text(
+    label: &str,
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+) -> Result<(), DashlaneError> {
+    if (!allow_empty && value.is_empty())
+        || value.len() > max_bytes
+        || value.chars().any(char::is_control)
+    {
+        return Err(DashlaneError::BadRequest(format!("Invalid {}", label)));
+    }
+    Ok(())
+}
+
+fn validate_id(value: &str) -> Result<(), DashlaneError> {
+    validate_text("identifier", value, MAX_ID_BYTES, false)?;
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err(DashlaneError::BadRequest("Invalid identifier".into()));
+    }
+    Ok(())
+}
+
+fn validate_filter(filter: &CredentialFilter) -> Result<(), DashlaneError> {
+    if let Some(query) = filter.query.as_deref() {
+        validate_text("query", query, MAX_QUERY_BYTES, true)?;
+    }
+    if let Some(category) = filter.category.as_deref() {
+        validate_text("category", category, 128, false)?;
+    }
+    if filter.limit.is_some_and(|limit| limit > MAX_RESULTS) {
+        return Err(DashlaneError::BadRequest(
+            "Result limit is too large".into(),
+        ));
+    }
+    if let Some(sort) = filter.sort_by.as_deref() {
+        if !matches!(sort, "title" | "url" | "modified" | "last_used") {
+            return Err(DashlaneError::BadRequest("Invalid sort field".into()));
+        }
+    }
+    Ok(())
+}
+
+fn remote_mutation_unavailable() -> DashlaneError {
+    DashlaneError::unsupported(
+        "Dashlane mutation is unavailable until authenticated encrypted sync is implemented",
+    )
+}
+
+fn remote_read_unavailable(resource: &str) -> DashlaneError {
+    DashlaneError::unsupported(format!(
+        "Dashlane {} are unavailable until authenticated vault decryption is implemented",
+        resource
+    ))
 }

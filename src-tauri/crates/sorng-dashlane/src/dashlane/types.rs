@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use zeroize::Zeroize;
 
 // ─── Error types ─────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ pub enum DashlaneError {
     ExportFailed(String),
     ImportFailed(String),
     BadRequest(String),
+    Unsupported(String),
     Unknown(String),
 }
 
@@ -70,6 +72,9 @@ impl DashlaneError {
     pub fn sync_error(msg: impl Into<String>) -> Self {
         Self::SyncError(msg.into())
     }
+    pub fn unsupported(msg: impl Into<String>) -> Self {
+        Self::Unsupported(msg.into())
+    }
     /// No-op compatibility shim (status code is embedded in message).
     pub fn with_status(self, _code: u16) -> Self {
         self
@@ -101,6 +106,7 @@ impl fmt::Display for DashlaneError {
             Self::ExportFailed(msg) => write!(f, "Export failed: {}", msg),
             Self::ImportFailed(msg) => write!(f, "Import failed: {}", msg),
             Self::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            Self::Unsupported(msg) => write!(f, "Unsupported: {}", msg),
             Self::Unknown(msg) => write!(f, "Unknown error: {}", msg),
         }
     }
@@ -117,11 +123,11 @@ impl From<DashlaneError> for String {
 impl From<reqwest::Error> for DashlaneError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_timeout() {
-            Self::Timeout(format!("Request timed out: {}", e))
+            Self::Timeout("Dashlane request timed out".into())
         } else if e.is_connect() {
-            Self::ConnectionError(format!("Connection failed: {}", e))
+            Self::ConnectionError("Could not connect to Dashlane".into())
         } else {
-            Self::ServerError(format!("HTTP error: {}", e))
+            Self::ServerError("Dashlane HTTP request failed".into())
         }
     }
 }
@@ -156,7 +162,6 @@ impl Default for DashlaneConfig {
 
 // ─── Session ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashlaneSession {
     pub device_access_key: String,
     pub device_secret_key: String,
@@ -164,6 +169,25 @@ pub struct DashlaneSession {
     pub server_key: Option<String>,
     pub encryption_key: Vec<u8>,
     pub logged_in_at: String,
+}
+
+impl fmt::Debug for DashlaneSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DashlaneSession")
+            .field("login", &self.login)
+            .field("logged_in_at", &self.logged_in_at)
+            .field("secrets", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Drop for DashlaneSession {
+    fn drop(&mut self) {
+        self.device_access_key.zeroize();
+        self.device_secret_key.zeroize();
+        self.server_key.zeroize();
+        self.encryption_key.zeroize();
+    }
 }
 
 // ─── Vault Item Categories ───────────────────────────────────────────
@@ -190,7 +214,7 @@ pub enum ItemCategory {
 
 // ─── Credential ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DashlaneCredential {
     pub id: String,
     pub title: String,
@@ -215,7 +239,7 @@ pub struct DashlaneCredential {
 
 // ─── CRUD Requests ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateCredentialRequest {
     pub title: String,
     pub url: Option<String>,
@@ -229,7 +253,15 @@ pub struct CreateCredentialRequest {
     pub otp_secret: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Drop for CreateCredentialRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+        self.notes.zeroize();
+        self.otp_secret.zeroize();
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct UpdateCredentialRequest {
     pub id: String,
     pub title: Option<String>,
@@ -242,9 +274,17 @@ pub struct UpdateCredentialRequest {
     pub otp_secret: Option<String>,
 }
 
+impl Drop for UpdateCredentialRequest {
+    fn drop(&mut self) {
+        self.password.zeroize();
+        self.notes.zeroize();
+        self.otp_secret.zeroize();
+    }
+}
+
 // ─── Secure Note ─────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SecureNote {
     pub id: String,
     pub title: String,
@@ -296,7 +336,7 @@ pub struct DashlaneAddress {
 
 // ─── Payment ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CreditCard {
     pub id: String,
     pub name: String,
@@ -312,7 +352,7 @@ pub struct CreditCard {
     pub modified_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BankAccount {
     pub id: String,
     pub bank_name: String,
@@ -431,7 +471,7 @@ pub struct PasswordHealthDetail {
 
 // ─── Secrets (Environment Variables) ─────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DashlaneSecret {
     pub id: String,
     pub title: String,
@@ -473,7 +513,7 @@ pub enum ExportFormat {
     Json,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ExportResult {
     pub format: ExportFormat,
     pub data: String,
@@ -553,7 +593,7 @@ impl<T> CacheEntry<T> {
     pub fn is_expired(&self) -> bool {
         let elapsed = chrono::Utc::now()
             .signed_duration_since(self.fetched_at)
-            .num_seconds() as u64;
-        elapsed > self.ttl_seconds
+            .num_seconds();
+        elapsed >= 0 && elapsed as u64 > self.ttl_seconds
     }
 }

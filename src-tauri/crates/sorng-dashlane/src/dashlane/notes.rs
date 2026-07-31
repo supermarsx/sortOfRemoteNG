@@ -1,14 +1,13 @@
 use crate::dashlane::types::{NoteColor, SecureNote};
 
 /// Filter secure notes by query string.
-pub fn search_notes(notes: &[SecureNote], query: &str) -> Vec<SecureNote> {
+pub fn search_notes<'a>(notes: &'a [SecureNote], query: &str) -> Vec<&'a SecureNote> {
     let lower = query.to_lowercase();
     notes
         .iter()
         .filter(|n| {
             n.title.to_lowercase().contains(&lower) || n.content.to_lowercase().contains(&lower)
         })
-        .cloned()
         .collect()
 }
 
@@ -18,17 +17,16 @@ pub fn find_note_by_id<'a>(notes: &'a [SecureNote], id: &str) -> Option<&'a Secu
 }
 
 /// Filter notes by category.
-pub fn filter_by_category(notes: &[SecureNote], category: &str) -> Vec<SecureNote> {
+pub fn filter_by_category<'a>(notes: &'a [SecureNote], category: &str) -> Vec<&'a SecureNote> {
     notes
         .iter()
         .filter(|n| n.category.as_deref() == Some(category))
-        .cloned()
         .collect()
 }
 
 /// Get only secured (protected) notes.
-pub fn get_secured_notes(notes: &[SecureNote]) -> Vec<SecureNote> {
-    notes.iter().filter(|n| n.secured).cloned().collect()
+pub fn get_secured_notes(notes: &[SecureNote]) -> Vec<&SecureNote> {
+    notes.iter().filter(|n| n.secured).collect()
 }
 
 /// Create a new secure note.
