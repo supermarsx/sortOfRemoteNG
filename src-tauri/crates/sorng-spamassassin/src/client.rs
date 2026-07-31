@@ -6,22 +6,52 @@ use crate::error::{SpamAssassinError, SpamAssassinResult};
 use crate::types::*;
 use log::debug;
 use reqwest::Client as HttpClient;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
 use std::time::Duration;
+
+const MAX_SSH_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SSH_ERROR_BYTES: usize = 64 * 1024;
 
 /// SpamAssassin management client – connects via SSH to manage SpamAssassin remotely.
 pub struct SpamAssassinClient {
     pub config: SpamAssassinConnectionConfig,
     #[allow(dead_code)]
     http: HttpClient,
+    ssh: IntegrationSshSession,
 }
 
 impl SpamAssassinClient {
-    pub fn new(config: SpamAssassinConnectionConfig) -> SpamAssassinResult<Self> {
+    pub fn new(mut config: SpamAssassinConnectionConfig) -> SpamAssassinResult<Self> {
+        config.host = config.host.trim().to_string();
+        if config.host.is_empty() {
+            return Err(SpamAssassinError::connection_failed(
+                "SSH host cannot be empty",
+            ));
+        }
+
+        if let Some(user) = config.ssh_user.as_mut() {
+            *user = user.trim().to_string();
+            if user.is_empty() {
+                return Err(SpamAssassinError::connection_failed(
+                    "SSH user cannot be empty",
+                ));
+            }
+        }
+
         let http = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .build()
             .map_err(|e| SpamAssassinError::connection_failed(format!("http client build: {e}")))?;
-        Ok(Self { config, http })
+        let ssh = IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30).max(1),
+        });
+
+        Ok(Self { config, http, ssh })
     }
 
     // ── Paths ────────────────────────────────────────────────────────
@@ -65,69 +95,42 @@ impl SpamAssassinClient {
             .unwrap_or("/etc/spamassassin/local.cf")
     }
 
-    // ── SSH command execution stub ───────────────────────────────────
-    //
-    // In practice these would call through the app's SSH infrastructure.
-    // We model them as async methods returning structured types.
+    // ── SSH command execution ────────────────────────────────────────
 
     pub async fn exec_ssh(&self, command: &str) -> SpamAssassinResult<SshOutput> {
-        debug!("SPAMASSASSIN SSH [{}]: {}", self.config.host, command);
+        debug!("Executing SpamAssassin SSH command on {}", self.config.host);
 
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let output = self
+            .ssh
+            .execute(
+                command,
+                Some(
+                    self.config
+                        .timeout_secs
+                        .unwrap_or(30)
+                        .max(1)
+                        .saturating_mul(1000),
+                ),
+            )
             .await
-            .map_err(|e| SpamAssassinError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(|error| {
+                SpamAssassinError::ssh(redact_and_bound_error(
+                    error,
+                    &[self.config.ssh_password.as_deref()],
+                ))
+            })?;
+
+        if output.len() > MAX_SSH_OUTPUT_BYTES {
+            return Err(SpamAssassinError::ssh(format!(
+                "SSH command output exceeded the {} byte limit",
+                MAX_SSH_OUTPUT_BYTES
+            )));
+        }
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout: output,
+            stderr: String::new(),
+            exit_code: 0,
         })
     }
 
@@ -175,23 +178,26 @@ impl SpamAssassinClient {
 
     pub async fn version(&self) -> SpamAssassinResult<String> {
         let out = self
-            .exec_ssh(&format!("{} --version 2>&1", self.spamc_bin()))
+            .exec_ssh(&format!(
+                "{} --version 2>&1",
+                shell_escape(self.spamc_bin())
+            ))
             .await?;
         Ok(out.stdout.trim().to_string())
     }
 
     pub async fn spamc(&self, args: &str) -> SpamAssassinResult<SshOutput> {
-        let cmd = format!("{} {}", self.spamc_bin(), args);
+        let cmd = format!("{} {}", shell_escape(self.spamc_bin()), args);
         self.exec_ssh(&cmd).await
     }
 
     pub async fn sa_update(&self, args: &str) -> SpamAssassinResult<SshOutput> {
-        let cmd = format!("sudo {} {}", self.sa_update_bin(), args);
+        let cmd = format!("sudo {} {}", shell_escape(self.sa_update_bin()), args);
         self.exec_ssh(&cmd).await
     }
 
     pub async fn sa_learn(&self, args: &str) -> SpamAssassinResult<SshOutput> {
-        let cmd = format!("sudo {} {}", self.sa_learn_bin(), args);
+        let cmd = format!("sudo {} {}", shell_escape(self.sa_learn_bin()), args);
         self.exec_ssh(&cmd).await
     }
 
@@ -213,4 +219,29 @@ impl SpamAssassinClient {
 
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn redact_and_bound_error(mut error: String, secrets: &[Option<&str>]) -> String {
+    for secret in secrets.iter().filter_map(|value| *value) {
+        if !secret.is_empty() {
+            error = error.replace(secret, "[REDACTED]");
+            error = error.replace(&shell_escape(secret), "[REDACTED]");
+        }
+    }
+
+    truncate_utf8(error, MAX_SSH_ERROR_BYTES)
+}
+
+fn truncate_utf8(mut value: String, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value;
+    }
+
+    let mut boundary = max_bytes;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
+    value.push_str(" [truncated]");
+    value
 }
