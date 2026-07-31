@@ -224,7 +224,13 @@ mod e2e {
             }
 
             let settings = json!({ "restApi": rest });
-            let config = ApiRuntimeConfig::resolve_with_env(&settings, tmp.path(), |_| None);
+            let config = ApiRuntimeConfig::resolve_with_env_and_secrets(
+                &settings,
+                tmp.path(),
+                |key| (key == "SORNG_ALLOW_UNAUTHENTICATED_REST_API").then(|| "1".to_string()),
+                Some("integration-api-key-0123456789abcdef"),
+                Some("0123456789abcdef0123456789abcdef"),
+            );
             // The server binds a concrete loopback port here (no random port).
             assert_eq!(config.bind_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
             let api_key = config.api_key.clone();
