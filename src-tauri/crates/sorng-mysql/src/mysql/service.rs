@@ -103,17 +103,22 @@ impl MysqlService {
             return Err(MysqlError::invalid("WHERE clause cannot be empty"));
         }
         if clause.contains(';') {
-            return Err(MysqlError::invalid("WHERE clause must not contain semicolons"));
+            return Err(MysqlError::invalid(
+                "WHERE clause must not contain semicolons",
+            ));
         }
         if clause.contains("--") || clause.contains("/*") {
-            return Err(MysqlError::invalid("WHERE clause must not contain SQL comments"));
+            return Err(MysqlError::invalid(
+                "WHERE clause must not contain SQL comments",
+            ));
         }
         let upper = clause.to_uppercase();
         for kw in ["UNION", "DROP", "ALTER", "CREATE", "INSERT", "EXEC", "XP_"] {
             if upper.split_whitespace().any(|w| w == kw) || upper.contains(&format!(" {} ", kw)) {
-                return Err(MysqlError::invalid(
-                    format!("WHERE clause must not contain {}", kw),
-                ));
+                return Err(MysqlError::invalid(format!(
+                    "WHERE clause must not contain {}",
+                    kw
+                )));
             }
         }
         Ok(())
@@ -244,17 +249,17 @@ impl MysqlService {
 
         // Authenticate
         if let Some(ref key) = tun.ssh_private_key {
-            let tmp = std::env::temp_dir().join(format!("sorng_ssh_{}", std::process::id()));
-            std::fs::write(&tmp, key)
-                .map_err(|e| MysqlError::tunnel(format!("Write temp key: {}", e)))?;
-            let res = sess.userauth_pubkey_file(
+            const MAX_PRIVATE_KEY_BYTES: usize = 1024 * 1024;
+            if key.len() > MAX_PRIVATE_KEY_BYTES {
+                return Err(MysqlError::tunnel("SSH private key exceeds 1 MiB"));
+            }
+            sess.userauth_pubkey_memory(
                 &tun.ssh_username,
                 None,
-                &tmp,
+                key,
                 tun.ssh_passphrase.as_deref(),
-            );
-            let _ = std::fs::remove_file(&tmp);
-            res.map_err(|e| MysqlError::tunnel(format!("SSH key auth: {}", e)))?;
+            )
+            .map_err(|e| MysqlError::tunnel(format!("SSH key auth: {}", e)))?;
         } else if let Some(ref pw) = tun.ssh_password {
             sess.userauth_password(&tun.ssh_username, pw)
                 .map_err(|e| MysqlError::tunnel(format!("SSH password auth: {}", e)))?;
@@ -392,7 +397,9 @@ impl MysqlService {
         sql: &str,
     ) -> Result<Vec<ExplainRow>, MysqlError> {
         if sql.contains(';') {
-            return Err(MysqlError::invalid("EXPLAIN query must not contain semicolons"));
+            return Err(MysqlError::invalid(
+                "EXPLAIN query must not contain semicolons",
+            ));
         }
         let pool = self.pool_for(session_id)?.clone();
         let explain_sql = format!("EXPLAIN {}", sql);
@@ -975,7 +982,10 @@ impl MysqlService {
         host: &str,
     ) -> Result<Vec<String>, MysqlError> {
         Self::validate_sql_identifier(user)?;
-        if !host.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '%')) {
+        if !host
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '%'))
+        {
             return Err(MysqlError::invalid("Invalid host identifier"));
         }
         let sql = format!(
