@@ -266,9 +266,32 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const hasLoadedRef = useRef(false);
   // Track if this is the first render to skip auto-save on mount
   const isInitialMountRef = useRef(true);
+  const mountedRef = useRef(true);
   // Stable live snapshot used by logging and persistence callbacks.
+  const stateRef = useRef(state);
   const connectionsRef = useRef(state.connections);
+  const [persistence, setPersistence] = useState({
+    dirty: false,
+    saving: false,
+    error: null as string | null,
+  });
+  const dirtyRevisionRef = useRef(0);
+  const persistedRevisionRef = useRef(0);
+  const pendingSnapshotRef = useRef<{
+    revision: number;
+    data: StorageData;
+  } | null>(null);
+
+  stateRef.current = state;
   connectionsRef.current = state.connections;
+
+  const markPersistenceDirty = useCallback(() => {
+    dirtyRevisionRef.current += 1;
+    setPersistence((current) => ({
+      ...current,
+      dirty: true,
+    }));
+  }, []);
 
   // Wrap dispatch to add action logging.
   // Logging is wrapped in try-catch so a logging failure never blocks state updates.
@@ -358,9 +381,24 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Action logging failed:", logErr);
       }
 
+      const currentState = stateRef.current;
+      const nextState = connectionReducer(currentState, action);
+      stateRef.current = nextState;
+      connectionsRef.current = nextState.connections;
+      tabGroupsRef.current = nextState.tabGroups;
+
+      if (
+        hasLoadedRef.current &&
+        databaseManager.getCurrentDatabase() &&
+        (nextState.connections !== currentState.connections ||
+          nextState.tabGroups !== currentState.tabGroups)
+      ) {
+        markPersistenceDirty();
+      }
+
       baseDispatch(action);
     },
-    [settingsManager],
+    [databaseManager, markPersistenceDirty, settingsManager],
   );
 
   // Use refs so saveData has a stable identity and doesn't cause effect re-runs
@@ -372,21 +410,116 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // path is bypassed.
   const tabGroupSavePendingRef = useRef(false);
 
-  const saveData = useCallback(async () => {
-    try {
-      const data: StorageData = {
-        connections: connectionsRef.current,
-        settings: {},
-        timestamp: Date.now(),
-        tabGroups: tabGroupsRef.current,
-      };
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveLoopRef = useRef<Promise<void> | null>(null);
 
-      await databaseManager.saveCurrentDatabaseData(data);
-    } catch (error) {
-      console.error("Failed to save data:", error);
-      throw error;
+  const buildStorageSnapshot = useCallback(
+    (): StorageData => ({
+      connections: connectionsRef.current,
+      settings: {},
+      timestamp: Date.now(),
+      tabGroups: tabGroupsRef.current,
+    }),
+    [],
+  );
+
+  const flushPendingSave = useCallback(async (): Promise<void> => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
     }
-  }, [databaseManager]);
+
+    if (
+      !hasLoadedRef.current ||
+      !databaseManager.getCurrentDatabase() ||
+      dirtyRevisionRef.current <= persistedRevisionRef.current
+    ) {
+      return;
+    }
+
+    if (saveLoopRef.current) {
+      return saveLoopRef.current;
+    }
+
+    const saveLoop = (async () => {
+      while (dirtyRevisionRef.current > persistedRevisionRef.current) {
+        const targetRevision = dirtyRevisionRef.current;
+        const retainedSnapshot = pendingSnapshotRef.current;
+        const snapshot =
+          retainedSnapshot?.revision === targetRevision
+            ? retainedSnapshot
+            : {
+                revision: targetRevision,
+                data: buildStorageSnapshot(),
+              };
+        pendingSnapshotRef.current = snapshot;
+
+        if (mountedRef.current) {
+          setPersistence({
+            dirty: true,
+            saving: true,
+            error: null,
+          });
+        }
+
+        try {
+          await databaseManager.saveCurrentDatabaseData(snapshot.data);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (mountedRef.current) {
+            setPersistence({
+              dirty: true,
+              saving: false,
+              error: message,
+            });
+          }
+          console.error("Failed to save data:", error);
+          throw error;
+        }
+
+        persistedRevisionRef.current = targetRevision;
+        if (pendingSnapshotRef.current === snapshot) {
+          pendingSnapshotRef.current = null;
+        }
+
+        const isDirty = dirtyRevisionRef.current > persistedRevisionRef.current;
+        if (mountedRef.current) {
+          setPersistence({
+            dirty: isDirty,
+            saving: isDirty,
+            error: null,
+          });
+        }
+      }
+    })();
+
+    saveLoopRef.current = saveLoop;
+    try {
+      await saveLoop;
+    } finally {
+      if (saveLoopRef.current === saveLoop) {
+        saveLoopRef.current = null;
+      }
+    }
+  }, [buildStorageSnapshot, databaseManager]);
+
+  const saveData = useCallback(async () => {
+    if (!hasLoadedRef.current || !databaseManager.getCurrentDatabase()) {
+      return;
+    }
+
+    markPersistenceDirty();
+    await flushPendingSave();
+  }, [databaseManager, flushPendingSave, markPersistenceDirty]);
+
+  const dispatchAndFlush = useCallback(
+    async (action: ConnectionAction) => {
+      dispatch(action);
+      await flushPendingSave();
+    },
+    [dispatch, flushPendingSave],
+  );
 
   const loadData = useCallback(async () => {
     try {
@@ -416,56 +549,57 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             updatedAt: toValidDate(conn.updatedAt, "updatedAt", conn.id),
           } as Connection),
         );
+        const tabGroups = Array.isArray(data.tabGroups) ? data.tabGroups : [];
+        stateRef.current = {
+          ...stateRef.current,
+          connections,
+          tabGroups,
+        };
+        connectionsRef.current = connections;
+        tabGroupsRef.current = tabGroups;
         baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
-        if (Array.isArray(data.tabGroups)) {
-          baseDispatch({ type: "SET_TAB_GROUPS", payload: data.tabGroups });
-        } else {
-          baseDispatch({ type: "SET_TAB_GROUPS", payload: [] });
-        }
+        baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
       }
       // Mark as loaded after successfully loading data
       hasLoadedRef.current = true;
+      dirtyRevisionRef.current = 0;
+      persistedRevisionRef.current = 0;
+      pendingSnapshotRef.current = null;
+      setPersistence({
+        dirty: false,
+        saving: false,
+        error: null,
+      });
     } catch (error) {
       console.error("Failed to load data:", error);
       throw error;
     }
   }, [databaseManager]);
 
-  // Debounced auto-save: coalesces rapid connection changes into a single write
-  // to prevent race conditions from concurrent saveData() calls causing data loss.
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isSavingRef = useRef(false);
-  const pendingSaveRef = useRef(false);
-
+  // Debounced auto-save: coalesces rapid connection changes into a single write.
   const debouncedSave = useCallback(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(async () => {
-      // Serialize saves: if one is in-flight, mark pending and retry after it finishes
-      if (isSavingRef.current) {
-        pendingSaveRef.current = true;
-        return;
-      }
-      isSavingRef.current = true;
-      try {
-        await saveData();
-      } catch (err) {
-        console.error(err);
-      } finally {
-        isSavingRef.current = false;
-        if (pendingSaveRef.current) {
-          pendingSaveRef.current = false;
-          debouncedSave();
-        }
-      }
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void flushPendingSave().catch(() => {
+        // flushPendingSave records, logs, and retains the failed snapshot.
+      });
     }, 500);
-  }, [saveData]);
+  }, [flushPendingSave]);
 
-  // Cleanup timer on unmount
+  // React cleanup cannot be awaited, so start the same durable flush used by
+  // the awaited native close path instead of discarding the debounce.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      mountedRef.current = false;
+      void flushPendingSave().catch(() => {
+        // The failed snapshot remains retained for an explicit retry.
+      });
     };
-  }, []);
+  }, [flushPendingSave]);
 
   // Auto-save whenever connections or tab groups change.
   // BUT only after data has been loaded to prevent overwriting on mount/HMR.
@@ -484,15 +618,33 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    debouncedSave();
+    if (dirtyRevisionRef.current > persistedRevisionRef.current) {
+      debouncedSave();
+    }
     tabGroupSavePendingRef.current = false;
-    // saveData/debouncedSave are stable (depend only on databaseManager) — safe to omit from lint
+    // debouncedSave is stable (depends only on the database manager) — safe to omit from lint
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.connections, state.tabGroups, databaseManager]);
 
   const contextValue = useMemo(
-    () => ({ state, dispatch, saveData, loadData }),
-    [state, dispatch, saveData, loadData],
+    () => ({
+      state,
+      dispatch,
+      dispatchAndFlush,
+      persistence,
+      saveData,
+      flushPendingSave,
+      loadData,
+    }),
+    [
+      state,
+      dispatch,
+      dispatchAndFlush,
+      persistence,
+      saveData,
+      flushPendingSave,
+      loadData,
+    ],
   );
 
   return (

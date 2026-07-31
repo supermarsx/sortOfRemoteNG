@@ -335,7 +335,9 @@ function ConnectionRow({
             </button>
           )}
           <button
-            onClick={() => mgr.duplicateConnection(connection)}
+            onClick={() =>
+              void mgr.duplicateConnection(connection).catch(() => undefined)
+            }
             className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
             title={t("connections.clone")}
             data-testid="row-clone"
@@ -344,7 +346,9 @@ function ConnectionRow({
           </button>
           <button
             onClick={() =>
-              mgr.duplicateConnection(connection, { includeCredentials: true })
+              void mgr
+                .duplicateConnection(connection, { includeCredentials: true })
+                .catch(() => undefined)
             }
             className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
             title={t("connections.cloneWithCredentials")}
@@ -353,7 +357,7 @@ function ConnectionRow({
             <KeyRound size={14} />
           </button>
           <button
-            onClick={() => mgr.deleteConnection(connection.id)}
+            onClick={() => void mgr.deleteConnection(connection.id)}
             className="p-1.5 hover:bg-error/20 rounded-lg text-[var(--color-textMuted)] hover:text-error transition-colors"
             title={t("common.delete", "Delete")}
           >
@@ -580,7 +584,7 @@ function DeleteConfirmDialog({ mgr }: { mgr: BulkConnectionEditorMgr }) {
             {t("dialogs.cancel", "Cancel")}
           </button>
           <button
-            onClick={mgr.deleteSelected}
+            onClick={() => void mgr.deleteSelected()}
             className="px-4 py-2 bg-error hover:bg-error/80 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2"
           >
             <Trash2 size={14} />

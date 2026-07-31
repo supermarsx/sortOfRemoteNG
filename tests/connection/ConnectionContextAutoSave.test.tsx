@@ -1,16 +1,16 @@
-import React from 'react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-import { ConnectionProvider } from '../../src/contexts/ConnectionContext';
-import { useConnections } from '../../src/contexts/useConnections';
-import { DatabaseManager } from '../../src/utils/connection/databaseManager';
-import { IndexedDbService } from '../../src/utils/storage/indexedDbService';
-import { openDB } from 'idb';
-import { Connection } from '../../src/types/connection/connection';
-import { StorageData } from '../../src/utils/storage/storage';
+import React from "react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { useConnections } from "../../src/contexts/useConnections";
+import { DatabaseManager } from "../../src/utils/connection/databaseManager";
+import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
+import { openDB } from "idb";
+import { Connection } from "../../src/types/connection/connection";
+import { StorageData } from "../../src/utils/storage/storage";
 
-const DB_NAME = 'mremote-keyval';
-const STORE_NAME = 'keyval';
+const DB_NAME = "mremote-keyval";
+const STORE_NAME = "keyval";
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <ConnectionProvider>{children}</ConnectionProvider>;
@@ -28,7 +28,7 @@ async function flushSave() {
   });
 }
 
-describe('ConnectionProvider auto-save', () => {
+describe("ConnectionProvider auto-save", () => {
   let manager: DatabaseManager;
   let collectionId: string;
 
@@ -39,7 +39,7 @@ describe('ConnectionProvider auto-save', () => {
     await db.clear(STORE_NAME);
     DatabaseManager.resetInstance();
     manager = DatabaseManager.getInstance();
-    const col = await manager.createDatabase('Test');
+    const col = await manager.createDatabase("Test");
     await manager.selectDatabase(col.id);
     collectionId = col.id;
   });
@@ -48,7 +48,7 @@ describe('ConnectionProvider auto-save', () => {
     vi.useRealTimers();
   });
 
-  it('writes empty list after deleting all connections', async () => {
+  it("writes empty list after deleting all connections", async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
     // Must call loadData first to enable auto-save
@@ -57,10 +57,10 @@ describe('ConnectionProvider auto-save', () => {
     });
 
     const conn: Connection = {
-      id: 'c1',
-      name: 'c1',
-      protocol: 'ssh',
-      hostname: 'host',
+      id: "c1",
+      name: "c1",
+      protocol: "ssh",
+      hostname: "host",
       port: 22,
       isGroup: false,
       createdAt: new Date().toISOString(),
@@ -68,29 +68,29 @@ describe('ConnectionProvider auto-save', () => {
     } as Connection;
 
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn] });
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
 
     await flushSave();
 
     let stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-database-${collectionId}`
+      `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toHaveLength(1);
 
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [] });
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [] });
     });
 
     await flushSave();
 
     stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-database-${collectionId}`
+      `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toEqual([]);
   });
 
-  it('auto-saves after updating a connection', async () => {
+  it("auto-saves after updating a connection", async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
     await act(async () => {
@@ -98,10 +98,10 @@ describe('ConnectionProvider auto-save', () => {
     });
 
     const conn: Connection = {
-      id: 'u1',
-      name: 'original',
-      protocol: 'ssh',
-      hostname: 'host',
+      id: "u1",
+      name: "original",
+      protocol: "ssh",
+      hostname: "host",
       port: 22,
       isGroup: false,
       createdAt: new Date().toISOString(),
@@ -109,24 +109,24 @@ describe('ConnectionProvider auto-save', () => {
     } as Connection;
 
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn] });
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
     await flushSave();
 
-    const updated = { ...conn, name: 'renamed' };
+    const updated = { ...conn, name: "renamed" };
     await act(async () => {
-      result.current.dispatch({ type: 'UPDATE_CONNECTION', payload: updated });
+      result.current.dispatch({ type: "UPDATE_CONNECTION", payload: updated });
     });
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-database-${collectionId}`
+      `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toHaveLength(1);
-    expect(stored!.connections[0].name).toBe('renamed');
+    expect(stored!.connections[0].name).toBe("renamed");
   });
 
-  it('auto-saves after adding a connection', async () => {
+  it("auto-saves after adding a connection", async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
     await act(async () => {
@@ -134,10 +134,10 @@ describe('ConnectionProvider auto-save', () => {
     });
 
     const conn: Connection = {
-      id: 'a1',
-      name: 'added',
-      protocol: 'rdp',
-      hostname: 'newhost',
+      id: "a1",
+      name: "added",
+      protocol: "rdp",
+      hostname: "newhost",
       port: 3389,
       isGroup: false,
       createdAt: new Date().toISOString(),
@@ -145,18 +145,18 @@ describe('ConnectionProvider auto-save', () => {
     } as Connection;
 
     await act(async () => {
-      result.current.dispatch({ type: 'ADD_CONNECTION', payload: conn });
+      result.current.dispatch({ type: "ADD_CONNECTION", payload: conn });
     });
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-database-${collectionId}`
+      `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toHaveLength(1);
-    expect(stored!.connections[0].id).toBe('a1');
+    expect(stored!.connections[0].id).toBe("a1");
   });
 
-  it('persists the latest state after multiple rapid updates', async () => {
+  it("persists the latest state after multiple rapid updates", async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
     await act(async () => {
@@ -164,20 +164,20 @@ describe('ConnectionProvider auto-save', () => {
     });
 
     const conn1: Connection = {
-      id: 'r1',
-      name: 'first',
-      protocol: 'ssh',
-      hostname: 'h1',
+      id: "r1",
+      name: "first",
+      protocol: "ssh",
+      hostname: "h1",
       port: 22,
       isGroup: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     } as Connection;
     const conn2: Connection = {
-      id: 'r2',
-      name: 'second',
-      protocol: 'rdp',
-      hostname: 'h2',
+      id: "r2",
+      name: "second",
+      protocol: "rdp",
+      hostname: "h2",
       port: 3389,
       isGroup: false,
       createdAt: new Date().toISOString(),
@@ -185,37 +185,74 @@ describe('ConnectionProvider auto-save', () => {
     } as Connection;
 
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn1] });
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn1] });
     });
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn1, conn2] });
+      result.current.dispatch({
+        type: "SET_CONNECTIONS",
+        payload: [conn1, conn2],
+      });
     });
     await flushSave();
 
     const stored = await IndexedDbService.getItem<StorageData>(
-      `mremote-database-${collectionId}`
+      `mremote-database-${collectionId}`,
     );
     expect(stored!.connections).toHaveLength(2);
   });
 
-  it('auto-save handles errors gracefully', async () => {
+  it("flushes pending changes immediately without waiting for debounce", async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
     await act(async () => {
       await result.current.loadData();
     });
 
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const saveSpy = vi.spyOn(
-      DatabaseManager.getInstance(),
-      'saveCurrentDatabaseData' as any,
-    ).mockRejectedValueOnce(new Error('DB write failed'));
+    const conn: Connection = {
+      id: "immediate",
+      name: "immediate",
+      protocol: "ssh",
+      hostname: "host",
+      port: 22,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Connection;
+
+    act(() => {
+      result.current.dispatch({ type: "ADD_CONNECTION", payload: conn });
+    });
+
+    expect(result.current.persistence.dirty).toBe(true);
+
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${collectionId}`,
+    );
+    expect(stored!.connections).toHaveLength(1);
+    expect(stored!.connections[0].id).toBe("immediate");
+    expect(result.current.persistence).toEqual({
+      dirty: false,
+      saving: false,
+      error: null,
+    });
+  });
+
+  it("offers an awaited durable dispatch contract for destructive actions", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
 
     const conn: Connection = {
-      id: 'e1',
-      name: 'err',
-      protocol: 'ssh',
-      hostname: 'host',
+      id: "delete-me",
+      name: "delete me",
+      protocol: "ssh",
+      hostname: "host",
       port: 22,
       isGroup: false,
       createdAt: new Date().toISOString(),
@@ -223,10 +260,71 @@ describe('ConnectionProvider auto-save', () => {
     } as Connection;
 
     await act(async () => {
-      result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [conn] });
+      await result.current.dispatchAndFlush({
+        type: "SET_CONNECTIONS",
+        payload: [conn],
+      });
+      await result.current.dispatchAndFlush({
+        type: "DELETE_CONNECTION",
+        payload: "delete-me",
+      });
+    });
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${collectionId}`,
+    );
+    expect(stored!.connections).toHaveLength(0);
+    expect(result.current.persistence.dirty).toBe(false);
+  });
+
+  it("retains failed snapshots as dirty and retries them explicitly", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData();
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const saveSpy = vi
+      .spyOn(DatabaseManager.getInstance(), "saveCurrentDatabaseData" as any)
+      .mockRejectedValueOnce(new Error("DB write failed"));
+
+    const conn: Connection = {
+      id: "e1",
+      name: "err",
+      protocol: "ssh",
+      hostname: "host",
+      port: 22,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Connection;
+
+    await act(async () => {
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [conn] });
     });
     await flushSave();
 
+    expect(result.current.persistence).toEqual({
+      dirty: true,
+      saving: false,
+      error: "DB write failed",
+    });
+
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${collectionId}`,
+    );
+    expect(stored!.connections).toHaveLength(1);
+    expect(stored!.connections[0].id).toBe("e1");
+    expect(result.current.persistence).toEqual({
+      dirty: false,
+      saving: false,
+      error: null,
+    });
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();

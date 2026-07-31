@@ -1,25 +1,31 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Connection } from '../../types/connection/connection';
-import { useConnections } from '../../contexts/useConnections';
-import { useToastContext } from '../../contexts/ToastContext';
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { Connection } from "../../types/connection/connection";
+import { useConnections } from "../../contexts/useConnections";
+import { useToastContext } from "../../contexts/ToastContext";
 
-type EditableField = 'name' | 'hostname' | 'port' | 'username';
+type EditableField = "name" | "hostname" | "port" | "username";
 
 export function useBulkConnectionEditor(
   isOpen: boolean,
   onClose: () => void,
   onEditConnection?: (connection: Connection) => void,
 ) {
-  const { state, dispatch } = useConnections();
+  const { state, dispatch, dispatchAndFlush, flushPendingSave } =
+    useConnections();
   const { t } = useTranslation();
   const { toast } = useToastContext();
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
-  const [editValue, setEditValue] = useState<string>('');
-  const [sortField, setSortField] = useState<'name' | 'protocol' | 'hostname' | 'favorite'>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [editingCell, setEditingCell] = useState<{
+    id: string;
+    field: EditableField;
+  } | null>(null);
+  const [editValue, setEditValue] = useState<string>("");
+  const [sortField, setSortField] = useState<
+    "name" | "protocol" | "hostname" | "favorite"
+  >("name");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showFavoritesFirst, setShowFavoritesFirst] = useState(true);
 
@@ -45,34 +51,34 @@ export function useBulkConnectionEditor(
         if (a.favorite && !b.favorite) return -1;
         if (!a.favorite && b.favorite) return 1;
       }
-      if (sortField === 'favorite') {
+      if (sortField === "favorite") {
         const aFav = a.favorite ? 1 : 0;
         const bFav = b.favorite ? 1 : 0;
-        return sortDirection === 'asc' ? bFav - aFav : aFav - bFav;
+        return sortDirection === "asc" ? bFav - aFav : aFav - bFav;
       }
-      const aVal = a[sortField] || '';
-      const bVal = b[sortField] || '';
+      const aVal = a[sortField] || "";
+      const bVal = b[sortField] || "";
       const cmp = String(aVal).localeCompare(String(bVal));
-      return sortDirection === 'asc' ? cmp : -cmp;
+      return sortDirection === "asc" ? cmp : -cmp;
     });
 
     return [...result];
   }, [connections, searchTerm, sortField, sortDirection, showFavoritesFirst]);
 
   const selectionState = useMemo(() => {
-    if (selectedIds.size === 0) return 'none' as const;
-    if (selectedIds.size === filteredConnections.length) return 'all' as const;
-    return 'partial' as const;
+    if (selectedIds.size === 0) return "none" as const;
+    if (selectedIds.size === filteredConnections.length) return "all" as const;
+    return "partial" as const;
   }, [selectedIds.size, filteredConnections.length]);
 
   // Sort
   const toggleSort = useCallback(
-    (field: 'name' | 'protocol' | 'hostname' | 'favorite') => {
+    (field: "name" | "protocol" | "hostname" | "favorite") => {
       if (sortField === field) {
-        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
       } else {
         setSortField(field);
-        setSortDirection('asc');
+        setSortDirection("asc");
       }
     },
     [sortField],
@@ -102,27 +108,36 @@ export function useBulkConnectionEditor(
     const connection = connections.find((c) => c.id === editingCell.id);
     if (!connection) return;
 
-    const updates: Partial<Connection> = { updatedAt: new Date().toISOString() };
-    if (editingCell.field === 'port') {
+    const updates: Partial<Connection> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (editingCell.field === "port") {
       updates.port = parseInt(editValue) || connection.port;
     } else {
       updates[editingCell.field] = editValue;
     }
 
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, ...updates } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, ...updates },
+    });
     setEditingCell(null);
-    setEditValue('');
+    setEditValue("");
   }, [editingCell, editValue, connections, dispatch]);
 
   const cancelEdit = useCallback(() => {
     setEditingCell(null);
-    setEditValue('');
+    setEditValue("");
   }, []);
 
   const handleDoubleClick = useCallback(
-    (connectionId: string, field: EditableField, currentValue: string | number | undefined) => {
+    (
+      connectionId: string,
+      field: EditableField,
+      currentValue: string | number | undefined,
+    ) => {
       setEditingCell({ id: connectionId, field });
-      setEditValue(String(currentValue || ''));
+      setEditValue(String(currentValue || ""));
     },
     [],
   );
@@ -131,8 +146,12 @@ export function useBulkConnectionEditor(
   const toggleFavorite = useCallback(
     (connection: Connection) => {
       dispatch({
-        type: 'UPDATE_CONNECTION',
-        payload: { ...connection, favorite: !connection.favorite, updatedAt: new Date().toISOString() },
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...connection,
+          favorite: !connection.favorite,
+          updatedAt: new Date().toISOString(),
+        },
       });
     },
     [dispatch],
@@ -144,8 +163,12 @@ export function useBulkConnectionEditor(
         const connection = connections.find((c) => c.id === id);
         if (connection) {
           dispatch({
-            type: 'UPDATE_CONNECTION',
-            payload: { ...connection, favorite, updatedAt: new Date().toISOString() },
+            type: "UPDATE_CONNECTION",
+            payload: {
+              ...connection,
+              favorite,
+              updatedAt: new Date().toISOString(),
+            },
           });
         }
       });
@@ -161,22 +184,22 @@ export function useBulkConnectionEditor(
     ): Promise<Connection | undefined> => {
       try {
         const includeCredentials = options?.includeCredentials ?? false;
-        const { invoke } = await import('@tauri-apps/api/core');
-        const cloned = await invoke<Connection>('clone_connection', {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const cloned = await invoke<Connection>("clone_connection", {
           connection,
           newName: null,
           includeCredentials,
         });
-        dispatch({ type: 'ADD_CONNECTION', payload: cloned });
-        toast.success(t('connections.cloned'));
+        await dispatchAndFlush({ type: "ADD_CONNECTION", payload: cloned });
+        toast.success(t("connections.cloned"));
         return cloned;
       } catch (e) {
-        console.error('clone_connection failed', e);
-        toast.error(t('connections.cloneFailed'));
+        console.error("clone_connection failed", e);
+        toast.error(t("connections.cloneFailed"));
         throw e;
       }
     },
-    [dispatch, t, toast],
+    [dispatchAndFlush, t, toast],
   );
 
   const duplicateSelected = useCallback(
@@ -198,29 +221,55 @@ export function useBulkConnectionEditor(
 
   // Delete
   const deleteConnection = useCallback(
-    (id: string) => {
-      dispatch({ type: 'DELETE_CONNECTION', payload: id });
+    async (id: string): Promise<boolean> => {
+      try {
+        await dispatchAndFlush({ type: "DELETE_CONNECTION", payload: id });
+        return true;
+      } catch (error) {
+        console.error("Failed to persist connection deletion:", error);
+        toast.error(
+          t(
+            "connections.deletePersistenceFailed",
+            "The deletion could not be saved. Retry after storage is available.",
+          ),
+        );
+        return false;
+      }
     },
-    [dispatch],
+    [dispatchAndFlush, t, toast],
   );
 
-  const deleteSelected = useCallback(() => {
-    selectedIds.forEach((id) => {
-      dispatch({ type: 'DELETE_CONNECTION', payload: id });
+  const deleteSelected = useCallback(async (): Promise<boolean> => {
+    const ids = [...selectedIds];
+    ids.forEach((id) => {
+      dispatch({ type: "DELETE_CONNECTION", payload: id });
     });
-    setSelectedIds(new Set());
-    setShowDeleteConfirm(false);
-  }, [selectedIds, dispatch]);
+    try {
+      await flushPendingSave();
+      setSelectedIds(new Set());
+      setShowDeleteConfirm(false);
+      return true;
+    } catch (error) {
+      console.error("Failed to persist bulk connection deletion:", error);
+      toast.error(
+        t(
+          "connections.deletePersistenceFailed",
+          "The deletion could not be saved. Retry after storage is available.",
+        ),
+      );
+      return false;
+    }
+  }, [selectedIds, dispatch, flushPendingSave, t, toast]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!isOpen) return;
-      if (e.key === 'Escape' && editingCell) {
+      if (e.key === "Escape" && editingCell) {
         cancelEdit();
       }
-      if (e.key === 'Enter' && editingCell) saveEdit();
-      if (e.key === 'Tab' && editingCell) {
+      if (e.key === "Enter" && editingCell) saveEdit();
+      if (e.key === "Tab" && editingCell) {
         e.preventDefault();
         saveEdit();
       }
@@ -229,8 +278,8 @@ export function useBulkConnectionEditor(
   );
 
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
   const handleEditInFullEditor = useCallback(
@@ -279,4 +328,6 @@ export function useBulkConnectionEditor(
   };
 }
 
-export type BulkConnectionEditorMgr = ReturnType<typeof useBulkConnectionEditor>;
+export type BulkConnectionEditorMgr = ReturnType<
+  typeof useBulkConnectionEditor
+>;

@@ -62,10 +62,19 @@ export type ConnectionAction =
   | { type: "REMOVE_TAB_GROUP"; payload: string }
   | { type: "SET_TAB_GROUPS"; payload: TabGroup[] };
 
+export interface ConnectionPersistenceState {
+  dirty: boolean;
+  saving: boolean;
+  error: string | null;
+}
+
 export interface ConnectionContextType {
   state: ConnectionState;
   dispatch: React.Dispatch<ConnectionAction>;
+  dispatchAndFlush: (action: ConnectionAction) => Promise<void>;
+  persistence: ConnectionPersistenceState;
   saveData: () => Promise<void>;
+  flushPendingSave: () => Promise<void>;
   loadData: () => Promise<void>;
 }
 

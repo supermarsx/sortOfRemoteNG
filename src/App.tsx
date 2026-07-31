@@ -98,7 +98,8 @@ const AppDialogs = dynamic(
  */
 const AppContent: React.FC = () => {
   const { t } = useTranslation();
-  const { state, dispatch, loadData, saveData } = useConnections();
+  const { state, dispatch, loadData, saveData, flushPendingSave } =
+    useConnections();
   const sessionFullscreen = useSessionFullscreenController();
   const isSessionFullscreen = sessionFullscreen?.activeSessionId != null;
   const settingsManager = SettingsManager.getInstance();
@@ -828,21 +829,49 @@ const AppContent: React.FC = () => {
       return out;
     };
 
-    const performDelete = (ids: string[], summaryNoun: string) => {
+    const performDelete = async (
+      ids: string[],
+      summaryNoun: string,
+    ): Promise<boolean> => {
       for (const id of ids) {
         dispatch({ type: "DELETE_CONNECTION", payload: id });
         statusChecker.stopChecking(id);
       }
-      settingsManager.logAction(
-        "info",
-        `${summaryNoun} deleted`,
-        connection.id,
-        ids.length === 1
-          ? `${summaryNoun} "${connection.name}" deleted`
-          : `${summaryNoun} "${connection.name}" + ${ids.length - 1} item(s) deleted`,
-        undefined,
-        connection.name,
-      );
+      try {
+        await flushPendingSave();
+        settingsManager.logAction(
+          "info",
+          `${summaryNoun} deleted`,
+          connection.id,
+          ids.length === 1
+            ? `${summaryNoun} "${connection.name}" deleted`
+            : `${summaryNoun} "${connection.name}" + ${ids.length - 1} item(s) deleted`,
+          undefined,
+          connection.name,
+        );
+        return true;
+      } catch (error) {
+        console.error(
+          `Failed to persist ${summaryNoun.toLowerCase()} deletion:`,
+          error,
+        );
+        settingsManager.logAction(
+          "error",
+          `${summaryNoun} deletion not persisted`,
+          connection.id,
+          error instanceof Error ? error.message : String(error),
+          undefined,
+          connection.name,
+        );
+        showAlert(
+          t(
+            "dialogs.deletePersistenceFailed",
+            '"{{name}}" was removed from this view, but the deletion could not be saved. Retry after storage is available.',
+            { name: connection.name },
+          ) as string,
+        );
+        return false;
+      }
     };
 
     // ── Folder with descendants — the 3-button cascade dialog. ──
@@ -865,7 +894,7 @@ const AppContent: React.FC = () => {
           cascadeMessage,
           // Primary (danger) — cascade delete folder + everything inside.
           () => {
-            performDelete([connection.id, ...descendants], noun);
+            void performDelete([connection.id, ...descendants], noun);
           },
           // Cancel — no-op.
           undefined,
@@ -902,15 +931,17 @@ const AppContent: React.FC = () => {
                     payload: { ...child, parentId: connection.parentId },
                   });
                 }
-                performDelete([connection.id], noun);
-                settingsManager.logAction(
-                  "info",
-                  "Folder reparented",
-                  connection.id,
-                  `Moved ${directChildren.length} child item(s) from "${connection.name}" to ${reparentTarget}, then deleted the folder`,
-                  undefined,
-                  connection.name,
-                );
+                void performDelete([connection.id], noun).then((persisted) => {
+                  if (!persisted) return;
+                  settingsManager.logAction(
+                    "info",
+                    "Folder reparented",
+                    connection.id,
+                    `Moved ${directChildren.length} child item(s) from "${connection.name}" to ${reparentTarget}, then deleted the folder`,
+                    undefined,
+                    connection.name,
+                  );
+                });
               },
             },
           },
@@ -927,10 +958,10 @@ const AppContent: React.FC = () => {
       : null;
 
     if (!confirmMessage) {
-      performDelete([connection.id], noun);
+      void performDelete([connection.id], noun);
     } else {
       showConfirm(confirmMessage, () => {
-        performDelete([connection.id], noun);
+        void performDelete([connection.id], noun);
       });
     }
   };
@@ -1346,6 +1377,19 @@ const AppContent: React.FC = () => {
     const performClose = async () => {
       if (closingMainRef.current) return;
       closingMainRef.current = true;
+
+      try {
+        await flushPendingSave();
+      } catch (error) {
+        console.error(
+          "Failed to persist pending connection changes before close:",
+          error,
+        );
+        closingMainRef.current = false;
+        await cancelMainWindowClose();
+        return;
+      }
+
       await confirmMainWindowClose();
       try {
         const windows = await getAllWindows();
@@ -1434,6 +1478,7 @@ const AppContent: React.FC = () => {
   }, [
     cancelMainWindowClose,
     confirmMainWindowClose,
+    flushPendingSave,
     requestMainWindowClose,
     settingsManager,
     state.sessions.length,

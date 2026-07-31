@@ -24,7 +24,7 @@ export function useConnectionTree(
   onConnect: (connection: Connection) => void,
   enableReorder: boolean,
 ) {
-  const { state, dispatch } = useConnections();
+  const { state, dispatch, dispatchAndFlush } = useConnections();
   const { settings } = useSettings();
   const { t } = useTranslation();
   const { toast } = useToastContext();
@@ -168,16 +168,16 @@ export function useConnectionTree(
           newName: null,
           includeCredentials,
         });
-        dispatch({ type: "ADD_CONNECTION", payload: cloned });
+        await dispatchAndFlush({ type: "ADD_CONNECTION", payload: cloned });
         toast.success(t("connections.cloned"));
         return cloned;
       } catch (e) {
         console.error("clone_connection failed", e);
         toast.error(t("connections.cloneFailed"));
-        throw e;
+        return undefined;
       }
     },
-    [dispatch, t, toast],
+    [dispatchAndFlush, t, toast],
   );
 
   const handleDuplicateWithCredentials = useCallback(
