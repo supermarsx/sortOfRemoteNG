@@ -1,31 +1,157 @@
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
+use std::io::Read;
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::error::PortKnockError;
 use crate::types::*;
 
-/// Validates hostname/IP for safe use in shell commands.
-fn validate_host(host: &str) -> Result<(), PortKnockError> {
-    if host.is_empty() {
+const MAX_HOST_LENGTH: usize = 253;
+const MAX_SOCKET_ADDRESSES: usize = 16;
+const MAX_NETWORK_TIMEOUT_MS: u64 = 30_000;
+
+/// Validate renderer-provided hosts before DNS resolution or command generation.
+pub fn validate_host(host: &str) -> Result<(), PortKnockError> {
+    if host.is_empty() || host.len() > MAX_HOST_LENGTH || host.trim() != host {
         return Err(PortKnockError::ConfigError(
-            "Host cannot be empty".to_string(),
+            "Host is empty, too long, or contains surrounding whitespace".to_string(),
         ));
     }
-    // Only allow hostname-safe characters: alphanumeric, dots, hyphens, colons (IPv6)
-    if !host
-        .chars()
-        .all(|c| c.is_alphanumeric() || ".-:[]".contains(c))
+
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    if unbracketed.parse::<IpAddr>().is_ok() {
+        return Ok(());
+    }
+
+    if host.starts_with('[')
+        || host.ends_with(']')
+        || host.ends_with('.')
+        || host.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
     {
         return Err(PortKnockError::ConfigError(
-            "Invalid hostname: contains unsafe characters".to_string(),
+            "Host must be a canonical IP address or DNS hostname".to_string(),
         ));
     }
     Ok(())
 }
 
-/// Port knock client that sends TCP/UDP knock packets via SSH command execution.
+/// Validate renderer-provided network ports before use.
+pub fn validate_port(port: u16) -> Result<(), PortKnockError> {
+    if port == 0 {
+        return Err(PortKnockError::ConfigError(
+            "Port must be between 1 and 65535".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_target(host: &str, port: u16) -> Result<Vec<SocketAddr>, PortKnockError> {
+    validate_host(host)?;
+    validate_port(port)?;
+    let lookup_host = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    let addresses: Vec<_> = (lookup_host, port)
+        .to_socket_addrs()
+        .map_err(|error| PortKnockError::IoError(format!("Host resolution failed: {error}")))?
+        .take(MAX_SOCKET_ADDRESSES)
+        .collect();
+    if addresses.is_empty() {
+        return Err(PortKnockError::IoError(
+            "Host resolution returned no addresses".to_string(),
+        ));
+    }
+    Ok(addresses)
+}
+
+fn bounded_timeout(timeout_ms: u64) -> Duration {
+    Duration::from_millis(timeout_ms.clamp(1, MAX_NETWORK_TIMEOUT_MS))
+}
+
+fn connect_tcp(host: &str, port: u16, timeout: Duration) -> Result<TcpStream, PortKnockError> {
+    let addresses = resolve_target(host, port)?;
+    let started = Instant::now();
+    let mut last_error = None;
+    for address in addresses {
+        let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+            break;
+        };
+        match TcpStream::connect_timeout(&address, remaining) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(PortKnockError::IoError(format!(
+        "TCP connection failed: {}",
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "operation timed out".to_string())
+    )))
+}
+
+fn send_tcp_knock(host: &str, port: u16, timeout: Duration) -> Result<(), PortKnockError> {
+    let address = resolve_target(host, port)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| PortKnockError::IoError("No target address available".to_string()))?;
+    match TcpStream::connect_timeout(&address, timeout) {
+        Ok(_) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::TimedOut
+                    | std::io::ErrorKind::WouldBlock
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(PortKnockError::IoError(format!(
+            "TCP knock could not be sent: {error}"
+        ))),
+    }
+}
+
+fn send_udp_knock(host: &str, port: u16, timeout: Duration) -> Result<(), PortKnockError> {
+    let address = resolve_target(host, port)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| PortKnockError::IoError("No target address available".to_string()))?;
+    let bind_address = if address.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    };
+    let socket = UdpSocket::bind(bind_address)
+        .map_err(|error| PortKnockError::IoError(format!("UDP bind failed: {error}")))?;
+    socket
+        .set_write_timeout(Some(timeout))
+        .map_err(|error| PortKnockError::IoError(format!("UDP timeout setup failed: {error}")))?;
+    socket
+        .connect(address)
+        .map_err(|error| PortKnockError::IoError(format!("UDP connect failed: {error}")))?;
+    socket
+        .send(&[])
+        .map_err(|error| PortKnockError::IoError(format!("UDP knock failed: {error}")))?;
+    Ok(())
+}
+
+/// Port knock client that sends bounded TCP/UDP packets without a command shell.
 pub struct KnockClient {
     /// Default timeout for individual knock steps in milliseconds.
     pub default_step_timeout_ms: u64,
@@ -159,40 +285,24 @@ impl KnockClient {
         })
     }
 
-    /// Execute a single knock step by building and running an SSH command
-    /// for either TCP SYN or UDP knock.
+    /// Execute a single bounded TCP SYN or UDP knock without invoking a shell.
     pub fn execute_knock_step(
         &self,
         host: &str,
         step: &KnockStep,
     ) -> Result<KnockStepResult, PortKnockError> {
         validate_host(host)?;
+        validate_port(step.port)?;
         let start = std::time::Instant::now();
-
-        let cmd = self.build_knock_command(host, step);
-        debug!("Knock command for {}:{}: {}", host, step.port, cmd);
-
-        // Execute the knock command via subprocess
-        let output = std::process::Command::new("bash")
-            .arg("-c")
-            .arg(&cmd)
-            .output()
-            .map_err(|e| {
-                PortKnockError::SshCommandFailed(format!("Failed to spawn knock command: {}", e))
-            })?;
+        let timeout = bounded_timeout(self.default_step_timeout_ms);
+        let attempt = match step.protocol {
+            KnockProtocol::Tcp => send_tcp_knock(host, step.port, timeout),
+            KnockProtocol::Udp => send_udp_knock(host, step.port, timeout),
+        };
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
-
-        // For knock packets, a connection-refused or timeout is expected — the important
-        // thing is that the packet was sent. We only consider it a failure if the
-        // command couldn't execute at all (e.g., bash not found).
-        let success = output.status.code().is_some();
-        let error = if !success {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Some(stderr.to_string())
-        } else {
-            None
-        };
+        let success = attempt.is_ok();
+        let error = attempt.err().map(|error| error.to_string());
 
         Ok(KnockStepResult {
             step_index: 0, // caller should set the correct index contextually
@@ -216,48 +326,19 @@ impl KnockClient {
             warn!("Port verification rejected: invalid host '{}'", host);
             return false;
         }
-        let timeout_secs = (timeout_ms as f64 / 1000.0).ceil() as u64;
-
-        let cmd = match protocol {
-            KnockProtocol::Tcp => {
-                format!(
-                    "bash -c 'timeout {} bash -c \"echo > /dev/tcp/{}/{}\" 2>/dev/null && echo OPEN || echo CLOSED'",
-                    timeout_secs, host, port
-                )
-            }
-            KnockProtocol::Udp => {
-                format!(
-                    "bash -c 'echo \"\" | nc -u -w{} {} {} 2>/dev/null && echo OPEN || echo CLOSED'",
-                    timeout_secs, host, port
-                )
-            }
+        let timeout = bounded_timeout(timeout_ms);
+        let is_open = match protocol {
+            KnockProtocol::Tcp => connect_tcp(host, port, timeout).is_ok(),
+            KnockProtocol::Udp => send_udp_knock(host, port, timeout).is_ok(),
         };
-
-        debug!("Verify port command: {}", cmd);
-
-        let output = std::process::Command::new("bash")
-            .arg("-c")
-            .arg(&cmd)
-            .output();
-
-        match output {
-            Ok(out) => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let is_open = stdout.trim().contains("OPEN");
-                debug!(
-                    "Port verification {}:{} ({}): {}",
-                    host,
-                    port,
-                    protocol,
-                    if is_open { "OPEN" } else { "CLOSED" }
-                );
-                is_open
-            }
-            Err(e) => {
-                warn!("Port verification failed for {}:{}: {}", host, port, e);
-                false
-            }
-        }
+        debug!(
+            "Port verification {}:{} ({}): {}",
+            host,
+            port,
+            protocol,
+            if is_open { "OPEN" } else { "CLOSED" }
+        );
+        is_open
     }
 
     /// Perform a full port scan returning detailed results including banner grab.
@@ -268,58 +349,27 @@ impl KnockClient {
         protocol: KnockProtocol,
     ) -> Result<PortScanResult, PortKnockError> {
         validate_host(host)?;
+        validate_port(port)?;
         let start = std::time::Instant::now();
-
-        // First check if the port is open
-        let state_cmd = match protocol {
-            KnockProtocol::Tcp => {
-                format!(
-                    "bash -c 'timeout 5 bash -c \"echo > /dev/tcp/{}/{}\" 2>/dev/null && echo OPEN || echo CLOSED'",
-                    host, port
-                )
-            }
-            KnockProtocol::Udp => {
-                format!(
-                    "bash -c 'echo \"\" | nc -u -w2 {} {} 2>/dev/null && echo OPEN || echo CLOSED'",
-                    host, port
-                )
-            }
-        };
-
-        let state_output = std::process::Command::new("bash")
-            .arg("-c")
-            .arg(&state_cmd)
-            .output()
-            .map_err(|e| PortKnockError::IoError(format!("Failed to run scan command: {}", e)))?;
-
-        let stdout = String::from_utf8_lossy(&state_output.stdout);
-        let state = if stdout.trim().contains("OPEN") {
-            PortState::Open
-        } else if state_output.status.success() {
-            PortState::Closed
-        } else {
-            PortState::Filtered
+        let (state, mut tcp_stream) = match protocol {
+            KnockProtocol::Tcp => match connect_tcp(host, port, bounded_timeout(5_000)) {
+                Ok(stream) => (PortState::Open, Some(stream)),
+                Err(_) => (PortState::Closed, None),
+            },
+            KnockProtocol::Udp => match send_udp_knock(host, port, bounded_timeout(2_000)) {
+                Ok(()) => (PortState::Open, None),
+                Err(_) => (PortState::Filtered, None),
+            },
         };
 
         // Banner grab for open TCP ports
         let banner = if state == PortState::Open && protocol == KnockProtocol::Tcp {
-            let banner_cmd = format!(
-                "bash -c 'echo \"\" | nc -w3 {} {} 2>/dev/null | head -c 256'",
-                host, port
-            );
-            let banner_output = std::process::Command::new("bash")
-                .arg("-c")
-                .arg(&banner_cmd)
-                .output()
-                .ok();
-
-            banner_output.and_then(|o| {
-                let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if b.is_empty() {
-                    None
-                } else {
-                    Some(b)
-                }
+            tcp_stream.as_mut().and_then(|stream| {
+                let _ = stream.set_read_timeout(Some(bounded_timeout(3_000)));
+                let mut bytes = [0_u8; 256];
+                let read = stream.read(&mut bytes).ok()?;
+                let text = String::from_utf8_lossy(&bytes[..read]).trim().to_string();
+                (!text.is_empty()).then_some(text)
             })
         } else {
             None
@@ -516,29 +566,6 @@ impl KnockClient {
             failed,
             total_elapsed_ms,
         })
-    }
-
-    // ─── Private helpers ───────────────────────────────────────────
-
-    /// Build the shell command string for a single knock step.
-    fn build_knock_command(&self, host: &str, step: &KnockStep) -> String {
-        match step.protocol {
-            KnockProtocol::Tcp => {
-                // Use bash /dev/tcp for a lightweight TCP SYN knock
-                // The timeout ensures we don't hang; connection-refused is expected.
-                format!(
-                    "timeout 2 bash -c 'echo \"\" > /dev/tcp/{}/{} 2>/dev/null' ; true",
-                    host, step.port
-                )
-            }
-            KnockProtocol::Udp => {
-                // Use netcat for UDP knock
-                format!(
-                    "echo \"\" | nc -u -w1 {} {} 2>/dev/null ; true",
-                    host, step.port
-                )
-            }
-        }
     }
 }
 
