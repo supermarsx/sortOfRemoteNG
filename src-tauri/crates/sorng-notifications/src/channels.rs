@@ -137,12 +137,11 @@ pub async fn deliver_notification(
             )
             .await
         }
-        ChannelConfig::Generic { adapter_id, config } => {
-            info!(
-                "generic channel '{}' delivery requested (config: {})",
-                adapter_id, config
-            );
-            Ok(())
+        ChannelConfig::Generic { .. } => {
+            warn!("generic channel delivery is unsupported and was not attempted");
+            Err(NotificationError::ConfigError(
+                "generic notification adapters are unsupported and were not executed".to_string(),
+            ))
         }
     }
 }
@@ -156,7 +155,11 @@ fn deliver_in_app(
     title: &str,
     body: &str,
 ) -> Result<(), NotificationError> {
-    info!("in-app notification: [{}] {}", title, body);
+    info!(
+        "in-app notification queued (title_bytes={}, body_bytes={})",
+        title.len(),
+        body.len()
+    );
     Ok(())
 }
 
@@ -169,7 +172,11 @@ fn deliver_desktop(
     title: &str,
     body: &str,
 ) -> Result<(), NotificationError> {
-    info!("desktop notification: [{}] {}", title, body);
+    info!(
+        "desktop notification queued (title_bytes={}, body_bytes={})",
+        title.len(),
+        body.len()
+    );
     Ok(())
 }
 
@@ -202,12 +209,7 @@ async fn deliver_webhook(
         .to_string()
     };
 
-    let http_method = match method.unwrap_or("POST").to_uppercase().as_str() {
-        "GET" => reqwest::Method::GET,
-        "PUT" => reqwest::Method::PUT,
-        "PATCH" => reqwest::Method::PATCH,
-        _ => reqwest::Method::POST,
-    };
+    let http_method = parse_webhook_method(method)?;
 
     let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(10_000));
     let retries = retry_count.unwrap_or(1).max(1);
@@ -215,52 +217,99 @@ async fn deliver_webhook(
     let mut last_err = String::new();
 
     for attempt in 0..retries {
-        let mut req = client
-            .request(http_method.clone(), url)
-            .timeout(timeout)
-            .header("Content-Type", "application/json")
-            .body(payload.clone());
+        let req = build_webhook_request(
+            &client,
+            url,
+            &http_method,
+            headers,
+            &payload,
+            timeout,
+            secret,
+        )?;
 
-        if let Some(hdrs) = headers {
-            for (k, v) in hdrs {
-                req = req.header(k.as_str(), v.as_str());
-            }
-        }
-
-        if let Some(sec) = secret {
-            let signature = compute_hmac_hex(sec, &payload);
-            req = req.header("X-Signature", signature);
-        }
-
-        match req.send().await {
+        match client.execute(req).await {
             Ok(resp) if resp.status().is_success() => {
-                info!("webhook delivered to {} (attempt {})", url, attempt + 1);
+                info!("webhook delivered (attempt {})", attempt + 1);
                 return Ok(());
             }
             Ok(resp) => {
                 last_err = format!("HTTP {}", resp.status());
-                warn!(
-                    "webhook attempt {} to {} failed: {}",
-                    attempt + 1,
-                    url,
-                    last_err
-                );
+                warn!("webhook attempt {} failed: {}", attempt + 1, last_err);
             }
-            Err(e) => {
-                last_err = e.to_string();
-                warn!(
-                    "webhook attempt {} to {} error: {}",
-                    attempt + 1,
-                    url,
-                    last_err
-                );
+            Err(_) => {
+                last_err = "request transport error".to_string();
+                warn!("webhook attempt {} failed: {}", attempt + 1, last_err);
             }
         }
     }
 
     Err(NotificationError::DeliveryError(format!(
-        "webhook to {url} failed after {retries} attempt(s): {last_err}"
+        "webhook delivery failed after {retries} attempt(s): {last_err}"
     )))
+}
+
+fn parse_webhook_method(method: Option<&str>) -> Result<reqwest::Method, NotificationError> {
+    match method
+        .unwrap_or("POST")
+        .trim()
+        .to_ascii_uppercase()
+        .as_str()
+    {
+        "POST" => Ok(reqwest::Method::POST),
+        "GET" => Ok(reqwest::Method::GET),
+        "PUT" => Ok(reqwest::Method::PUT),
+        "PATCH" => Ok(reqwest::Method::PATCH),
+        _ => Err(NotificationError::ConfigError(
+            "webhook method must be POST, GET, PUT, or PATCH".to_string(),
+        )),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_webhook_request(
+    client: &reqwest::Client,
+    url: &str,
+    method: &reqwest::Method,
+    headers: Option<&HashMap<String, String>>,
+    payload: &str,
+    timeout: std::time::Duration,
+    secret: Option<&str>,
+) -> Result<reqwest::Request, NotificationError> {
+    if headers.is_some_and(|configured| {
+        configured
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case("x-signature"))
+    }) {
+        return Err(NotificationError::ConfigError(
+            "X-Signature is reserved for the webhook signer".to_string(),
+        ));
+    }
+
+    if secret.is_some_and(|configured| configured.trim().is_empty()) {
+        return Err(NotificationError::ConfigError(
+            "webhook signing secret must not be empty".to_string(),
+        ));
+    }
+
+    let mut request = client
+        .request(method.clone(), url)
+        .timeout(timeout)
+        .header("Content-Type", "application/json")
+        .body(payload.as_bytes().to_vec());
+
+    if let Some(configured) = headers {
+        for (name, value) in configured {
+            request = request.header(name.as_str(), value.as_str());
+        }
+    }
+
+    if let Some(configured) = secret {
+        request = request.header("X-Signature", compute_hmac_hex(configured, payload));
+    }
+
+    request.build().map_err(|_| {
+        NotificationError::ConfigError("invalid webhook request configuration".to_string())
+    })
 }
 
 // ── Slack ───────────────────────────────────────────────────────────
@@ -517,8 +566,12 @@ impl SmtpConfig {
             .ok()
             .and_then(|s| s.parse::<u16>().ok())
             .unwrap_or(default_port);
-        let username = std::env::var("SMTP_USERNAME").ok().filter(|s| !s.is_empty());
-        let password = std::env::var("SMTP_PASSWORD").ok().filter(|s| !s.is_empty());
+        let username = std::env::var("SMTP_USERNAME")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let password = std::env::var("SMTP_PASSWORD")
+            .ok()
+            .filter(|s| !s.is_empty());
         let from = std::env::var("SMTP_FROM")
             .ok()
             .filter(|s| !s.is_empty())
@@ -604,10 +657,7 @@ pub async fn send_smtp_email(
     }
 
     let from_mbox: Mailbox = config.from.parse().map_err(|e| {
-        NotificationError::ConfigError(format!(
-            "invalid SMTP_FROM address '{}': {e}",
-            config.from
-        ))
+        NotificationError::ConfigError(format!("invalid SMTP_FROM address '{}': {e}", config.from))
     })?;
 
     let mut builder = Message::builder().from(from_mbox).subject(subject);
@@ -695,18 +745,19 @@ async fn post_json(url: &str, payload: &str, channel_name: &str) -> Result<(), N
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
-        .map_err(|e| {
-            NotificationError::DeliveryError(format!("{channel_name} request failed: {e}"))
+        .map_err(|_| {
+            NotificationError::DeliveryError(format!(
+                "{channel_name} request failed due to a transport error"
+            ))
         })?;
 
     if resp.status().is_success() {
-        info!("{} notification delivered to {}", channel_name, url);
+        info!("{} notification delivered", channel_name);
         Ok(())
     } else {
         let status = resp.status();
-        let resp_body = resp.text().await.unwrap_or_default();
         Err(NotificationError::DeliveryError(format!(
-            "{channel_name} returned HTTP {status}: {resp_body}"
+            "{channel_name} returned HTTP {status}"
         )))
     }
 }
@@ -720,17 +771,156 @@ fn render_inline(template: &str, title: &str, body: &str, data: &serde_json::Val
         .replace("{{data}}", &data.to_string())
 }
 
-/// Compute HMAC-SHA256 hex digest for webhook signature verification.
-/// Uses a simple manual implementation to avoid an extra dependency.
+/// Compute an HMAC-SHA256 hex digest for webhook signature verification.
 fn compute_hmac_hex(secret: &str, payload: &str) -> String {
-    // Simple XOR-based HMAC stand-in. In production you'd use `hmac` + `sha2` crates.
-    // For now we produce a deterministic hex string derived from secret + payload.
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    use std::fmt::Write as _;
 
-    let mut hasher = DefaultHasher::new();
-    secret.hash(&mut hasher);
-    payload.hash(&mut hasher);
-    let hash = hasher.finish();
-    format!("sha256={:016x}", hash)
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .expect("HMAC-SHA256 accepts keys of any length");
+    mac.update(payload.as_bytes());
+
+    let digest = mac.finalize().into_bytes();
+    let mut encoded = String::with_capacity("sha256=".len() + digest.len() * 2);
+    encoded.push_str("sha256=");
+    for byte in digest {
+        write!(&mut encoded, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webhook_signature_matches_rfc_4231_hmac_sha256_vector() {
+        let key = "\x0b".repeat(20);
+        assert_eq!(
+            compute_hmac_hex(&key, "Hi There"),
+            concat!(
+                "sha256=",
+                "b0344c61d8db38535ca8afceaf0bf12b",
+                "881dc200c9833da726e9376c2e32cff7"
+            )
+        );
+    }
+
+    #[test]
+    fn signed_webhook_request_uses_exact_body_and_single_signature_header() {
+        let client = reqwest::Client::new();
+        let payload = "what do ya want for nothing?";
+        let request = build_webhook_request(
+            &client,
+            "https://example.invalid/hooks",
+            &reqwest::Method::POST,
+            None,
+            payload,
+            std::time::Duration::from_secs(1),
+            Some("Jefe"),
+        )
+        .expect("valid signed webhook request");
+
+        assert_eq!(
+            request.body().and_then(reqwest::Body::as_bytes),
+            Some(payload.as_bytes())
+        );
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(
+            request.headers().get(reqwest::header::CONTENT_TYPE),
+            Some(&reqwest::header::HeaderValue::from_static(
+                "application/json"
+            ))
+        );
+
+        let signatures: Vec<_> = request.headers().get_all("x-signature").iter().collect();
+        assert_eq!(signatures.len(), 1);
+        assert_eq!(
+            signatures[0],
+            "sha256=5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+    }
+
+    #[test]
+    fn unsigned_webhook_request_omits_signature_header() {
+        let request = build_webhook_request(
+            &reqwest::Client::new(),
+            "https://example.invalid/hooks",
+            &reqwest::Method::POST,
+            None,
+            "{}",
+            std::time::Duration::from_secs(1),
+            None,
+        )
+        .expect("valid unsigned webhook request");
+
+        assert!(!request.headers().contains_key("x-signature"));
+    }
+
+    #[test]
+    fn configured_signature_header_is_rejected() {
+        let headers = HashMap::from([("X-SIGNATURE".to_string(), "attacker".to_string())]);
+        let result = build_webhook_request(
+            &reqwest::Client::new(),
+            "https://example.invalid/hooks",
+            &reqwest::Method::POST,
+            Some(&headers),
+            "{}",
+            std::time::Duration::from_secs(1),
+            Some("secret"),
+        );
+
+        assert!(matches!(
+            result,
+            Err(NotificationError::ConfigError(message))
+                if message == "X-Signature is reserved for the webhook signer"
+        ));
+    }
+
+    #[test]
+    fn empty_webhook_secret_is_rejected() {
+        let result = build_webhook_request(
+            &reqwest::Client::new(),
+            "https://example.invalid/hooks",
+            &reqwest::Method::POST,
+            None,
+            "{}",
+            std::time::Duration::from_secs(1),
+            Some("  "),
+        );
+
+        assert!(matches!(
+            result,
+            Err(NotificationError::ConfigError(message))
+                if message == "webhook signing secret must not be empty"
+        ));
+    }
+
+    #[test]
+    fn unsupported_webhook_method_is_rejected() {
+        let result = parse_webhook_method(Some("DELETE"));
+
+        assert!(matches!(
+            result,
+            Err(NotificationError::ConfigError(message))
+                if message == "webhook method must be POST, GET, PUT, or PATCH"
+        ));
+    }
+
+    #[tokio::test]
+    async fn generic_channel_without_adapter_fails_closed() {
+        let channel = ChannelConfig::Generic {
+            adapter_id: "missing".to_string(),
+            config: serde_json::json!({}),
+        };
+        let data = serde_json::json!({});
+        let result = deliver_notification(&channel, "title", "body", &data).await;
+
+        assert!(matches!(
+            result,
+            Err(NotificationError::ConfigError(message))
+                if message == "generic notification adapters are unsupported and were not executed"
+        ));
+    }
 }
