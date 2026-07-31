@@ -122,24 +122,6 @@ fn resolve_windows_binary(name: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
-/// Construct a cross-platform shell command.
-///
-/// On Windows, wraps with `cmd /C`. On Unix, wraps with `sh -c`.
-pub fn shell_command(cmd: &str) -> Command {
-    #[cfg(windows)]
-    {
-        let mut c = Command::new("cmd");
-        c.args(["/C", cmd]);
-        c
-    }
-    #[cfg(not(windows))]
-    {
-        let mut c = Command::new("sh");
-        c.args(["-c", cmd]);
-        c
-    }
-}
-
 /// Build a `Command` for a resolved binary.
 ///
 /// Resolves the binary path first, then constructs the command.
@@ -180,15 +162,5 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("not found in PATH"));
-    }
-
-    #[test]
-    fn shell_command_constructs_valid_command() {
-        let cmd = shell_command("echo hello");
-        let program = cmd.get_program().to_string_lossy().to_string();
-        #[cfg(windows)]
-        assert!(program.contains("cmd"));
-        #[cfg(not(windows))]
-        assert!(program.contains("sh"));
     }
 }
