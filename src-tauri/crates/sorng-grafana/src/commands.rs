@@ -43,7 +43,6 @@ pub async fn grafana_list_connections(
     Ok(state.lock().await.list_connections())
 }
 
-#[tauri::command]
 pub async fn grafana_ping(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -81,7 +80,6 @@ pub async fn grafana_get_dashboard(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_save_dashboard(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -122,7 +120,6 @@ pub async fn grafana_get_home_dashboard(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_list_dashboard_versions(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -136,7 +133,6 @@ pub async fn grafana_list_dashboard_versions(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_get_dashboard_tags(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -338,7 +334,6 @@ pub async fn grafana_get_current_org(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_switch_org(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -415,7 +410,6 @@ pub async fn grafana_delete_user(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_get_current_user(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -428,7 +422,6 @@ pub async fn grafana_get_current_user(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_set_user_admin(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -620,7 +613,6 @@ pub async fn grafana_pause_alert_rule(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_list_alert_notifications(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -781,7 +773,6 @@ pub async fn grafana_delete_snapshot(
 
 // ── Panels ────────────────────────────────────────────────────────
 
-#[tauri::command]
 pub async fn grafana_list_panel_plugins(
     state: State<'_, GrafanaServiceState>,
     id: String,
@@ -794,7 +785,6 @@ pub async fn grafana_list_panel_plugins(
         .map_err(map_err)
 }
 
-#[tauri::command]
 pub async fn grafana_get_panel_plugin(
     state: State<'_, GrafanaServiceState>,
     id: String,

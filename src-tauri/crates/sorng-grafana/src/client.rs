@@ -8,6 +8,10 @@ use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
+const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_METADATA_RESPONSE_BYTES: usize = 256 * 1024;
+const MAX_COLLECTION_ITEMS: usize = 50_000;
+
 pub struct GrafanaClient {
     pub config: GrafanaConnectionConfig,
     http: HttpClient,
@@ -15,7 +19,13 @@ pub struct GrafanaClient {
 
 impl GrafanaClient {
     pub fn new(config: GrafanaConnectionConfig) -> GrafanaResult<Self> {
-        let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
+        let accept_invalid =
+            config.use_tls.unwrap_or(true) && config.accept_invalid_certs.unwrap_or(false);
+        if accept_invalid != config.acknowledge_invalid_cert_risk.unwrap_or(false) {
+            return Err(GrafanaError::invalid_request(
+                "disabling TLS certificate validation requires a runtime acknowledgement for this connection attempt",
+            ));
+        }
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
             .danger_accept_invalid_certs(accept_invalid);
@@ -82,15 +92,54 @@ impl GrafanaClient {
 
     // ── Status mapping ───────────────────────────────────────────
 
-    fn map_status_error(&self, status: u16, body: &str) -> GrafanaError {
+    fn map_status_error(&self, status: u16) -> GrafanaError {
         match status {
-            401 => GrafanaError::auth(format!("Authentication failed (HTTP 401): {body}")),
-            403 => GrafanaError::permission_denied(format!("Access denied (HTTP 403): {body}")),
-            404 => GrafanaError::api(format!("Not found (HTTP 404): {body}")),
-            409 => GrafanaError::conflict(format!("Conflict (HTTP 409): {body}")),
-            412 => GrafanaError::conflict(format!("Precondition failed (HTTP 412): {body}")),
-            _ => GrafanaError::http(format!("HTTP {status}: {body}")),
+            401 => GrafanaError::auth("Authentication failed (HTTP 401)"),
+            403 => GrafanaError::permission_denied("Access denied (HTTP 403)"),
+            404 => GrafanaError::api("Not found (HTTP 404)"),
+            409 => GrafanaError::conflict("Conflict (HTTP 409)"),
+            412 => GrafanaError::conflict("Precondition failed (HTTP 412)"),
+            _ => GrafanaError::http(format!("HTTP {status}")),
         }
+    }
+
+    fn response_limit(path: &str) -> usize {
+        if path == "health" {
+            MAX_METADATA_RESPONSE_BYTES
+        } else {
+            MAX_RESPONSE_BYTES
+        }
+    }
+
+    async fn read_json_limited<T: DeserializeOwned>(
+        mut resp: reqwest::Response,
+        limit: usize,
+        context: &str,
+    ) -> GrafanaResult<T> {
+        let declared = resp.content_length();
+        if declared.is_some_and(|size| size > limit as u64) {
+            return Err(GrafanaError::parse(format!(
+                "{context} rejected: declared response exceeds {limit} bytes"
+            )));
+        }
+        let mut body = Vec::with_capacity(declared.unwrap_or(0).min(limit as u64) as usize);
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| GrafanaError::parse(format!("{context}: failed to read response: {e}")))?
+        {
+            let next_len = body.len().checked_add(chunk.len()).ok_or_else(|| {
+                GrafanaError::parse(format!("{context} rejected: response size overflow"))
+            })?;
+            if next_len > limit {
+                return Err(GrafanaError::parse(format!(
+                    "{context} rejected: streamed response exceeds {limit} bytes"
+                )));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&body)
+            .map_err(|e| GrafanaError::parse(format!("{context}: invalid JSON: {e}")))
     }
 
     // ── Generic request helpers ──────────────────────────────────
@@ -105,12 +154,9 @@ impl GrafanaClient {
             .map_err(|e| GrafanaError::http(format!("GET {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json::<T>()
-            .await
-            .map_err(|e| GrafanaError::parse(format!("GET {url} parse: {e}")))
+        Self::read_json_limited(resp, Self::response_limit(path), "Grafana GET response").await
     }
 
     pub async fn api_get_raw(&self, path: &str) -> GrafanaResult<serde_json::Value> {
@@ -131,12 +177,9 @@ impl GrafanaClient {
             .map_err(|e| GrafanaError::http(format!("POST {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json::<T>()
-            .await
-            .map_err(|e| GrafanaError::parse(format!("POST {url} parse: {e}")))
+        Self::read_json_limited(resp, MAX_RESPONSE_BYTES, "Grafana POST response").await
     }
 
     pub async fn api_put<B: serde::Serialize, T: DeserializeOwned>(
@@ -153,12 +196,9 @@ impl GrafanaClient {
             .map_err(|e| GrafanaError::http(format!("PUT {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json::<T>()
-            .await
-            .map_err(|e| GrafanaError::parse(format!("PUT {url} parse: {e}")))
+        Self::read_json_limited(resp, MAX_RESPONSE_BYTES, "Grafana PUT response").await
     }
 
     pub async fn api_patch<B: serde::Serialize, T: DeserializeOwned>(
@@ -175,12 +215,9 @@ impl GrafanaClient {
             .map_err(|e| GrafanaError::http(format!("PATCH {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json::<T>()
-            .await
-            .map_err(|e| GrafanaError::parse(format!("PATCH {url} parse: {e}")))
+        Self::read_json_limited(resp, MAX_RESPONSE_BYTES, "Grafana PATCH response").await
     }
 
     pub async fn api_delete(&self, path: &str) -> GrafanaResult<serde_json::Value> {
@@ -193,12 +230,9 @@ impl GrafanaClient {
             .map_err(|e| GrafanaError::http(format!("DELETE {url}: {e}")))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
+            return Err(self.map_status_error(status.as_u16()));
         }
-        resp.json::<serde_json::Value>()
-            .await
-            .map_err(|e| GrafanaError::parse(format!("DELETE {url} parse: {e}")))
+        Self::read_json_limited(resp, MAX_RESPONSE_BYTES, "Grafana DELETE response").await
     }
 
     // ── Convenience ──────────────────────────────────────────────
@@ -212,6 +246,11 @@ impl GrafanaClient {
         let org: serde_json::Value = self.api_get("org").await?;
         let search: Vec<serde_json::Value> = self.api_get("search?type=dash-db").await?;
         let users: Vec<serde_json::Value> = self.api_get("org/users").await?;
+        if search.len() > MAX_COLLECTION_ITEMS || users.len() > MAX_COLLECTION_ITEMS {
+            return Err(GrafanaError::parse(format!(
+                "Grafana inventory rejected: more than {MAX_COLLECTION_ITEMS} entries"
+            )));
+        }
         Ok(GrafanaConnectionSummary {
             host: self.config.host.clone(),
             version: health.version.unwrap_or_else(|| "unknown".into()),

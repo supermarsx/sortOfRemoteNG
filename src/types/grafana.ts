@@ -23,6 +23,8 @@ export interface GrafanaConnectionConfig {
   port?: number;
   use_tls?: boolean;
   accept_invalid_certs?: boolean;
+  /** Runtime-only acknowledgement. Never persist this field. */
+  acknowledge_invalid_cert_risk?: boolean;
   api_key?: string;
   username?: string;
   password?: string;

@@ -12,6 +12,8 @@ pub struct GrafanaConnectionConfig {
     pub port: Option<u16>,
     pub use_tls: Option<bool>,
     pub accept_invalid_certs: Option<bool>,
+    #[serde(default)]
+    pub acknowledge_invalid_cert_risk: Option<bool>,
     pub api_key: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,

@@ -80,6 +80,7 @@ fn config(server: &MockHttpServer) -> GrafanaConnectionConfig {
         port: Some(server.port),
         use_tls: Some(false),
         accept_invalid_certs: None,
+        acknowledge_invalid_cert_risk: None,
         api_key: Some("grafana-secret".into()),
         username: None,
         password: None,
