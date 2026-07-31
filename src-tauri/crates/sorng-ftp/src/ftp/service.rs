@@ -363,9 +363,8 @@ impl FtpService {
 
     /// Execute a raw SITE command.
     pub async fn site_command(&mut self, session_id: &str, args: &str) -> Result<String, String> {
-        let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
-        let resp = client.site(args).await.map_err(|e| e.to_string())?;
-        Ok(resp.text())
+        let _ = (session_id, args);
+        Err("Raw FTP SITE commands are disabled; use a typed operation".to_string())
     }
 
     // ─── Raw command ─────────────────────────────────────────────
@@ -376,11 +375,21 @@ impl FtpService {
         session_id: &str,
         command: &str,
     ) -> Result<FtpResponse, String> {
+        let trimmed = command.trim();
+        let mut parts = trimmed.split_ascii_whitespace();
+        let verb = parts.next().unwrap_or("");
+        if parts.next().is_some()
+            || !matches!(
+                verb.to_ascii_uppercase().as_str(),
+                "NOOP" | "PWD" | "SYST" | "FEAT"
+            )
+        {
+            return Err(
+                "Raw FTP commands are restricted to argument-free NOOP, PWD, SYST, and FEAT"
+                    .to_string(),
+            );
+        }
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
-        client
-            .codec
-            .execute(command)
-            .await
-            .map_err(|e| e.to_string())
+        client.codec.execute(verb).await.map_err(|e| e.to_string())
     }
 }

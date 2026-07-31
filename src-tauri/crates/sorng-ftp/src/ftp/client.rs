@@ -353,8 +353,10 @@ impl FtpClient {
 
     // ─── SITE ────────────────────────────────────────────────────
 
-    pub async fn site(&mut self, args: &str) -> FtpResult<FtpResponse> {
-        self.codec.execute(&format!("SITE {}", args)).await
+    pub async fn site(&mut self, _args: &str) -> FtpResult<FtpResponse> {
+        Err(FtpError::unsupported(
+            "Raw SITE commands are disabled; use a typed FTP operation",
+        ))
     }
 
     // ─── QUIT ────────────────────────────────────────────────────
