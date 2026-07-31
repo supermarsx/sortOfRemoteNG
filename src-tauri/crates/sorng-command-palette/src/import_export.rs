@@ -246,7 +246,7 @@ pub fn validate_import(content: &str) -> ValidationResult {
                 let computed = sha256_hex(data_json.as_bytes());
                 checksum_valid = Some(computed == pkg.checksum);
                 if checksum_valid == Some(false) {
-                    warnings.push("Package checksum does not match — data may be corrupted".into());
+                    errors.push("Package checksum does not match; import is blocked".into());
                 }
                 pkg_meta = Some(pkg.metadata.clone());
                 summary = count_persistent_data(&pkg.data);
@@ -327,13 +327,8 @@ pub fn parse_import_data(content: &str) -> Result<PersistentData, String> {
     }
 
     // 2. Try SharePackage JSON.
-    if let Ok(pkg) = serde_json::from_str::<SharePackage>(trimmed) {
-        let data_json = serde_json::to_string(&pkg.data).unwrap_or_default();
-        let computed = sha256_hex(data_json.as_bytes());
-        if computed != pkg.checksum {
-            log::warn!("Share package checksum mismatch during import");
-        }
-        return Ok(pkg.data);
+    if serde_json::from_str::<SharePackage>(trimmed).is_ok() {
+        return deserialise_share_package(trimmed).map(|pkg| pkg.data);
     }
 
     // 3. Try PersistentData JSON.
@@ -1668,6 +1663,36 @@ mod tests {
         let err = deserialise_share_package(&json);
         assert!(err.is_err());
         assert!(err.unwrap_err().contains("Checksum mismatch"));
+    }
+
+    #[test]
+    fn test_tampered_share_package_is_invalid_and_cannot_be_imported() {
+        let data = sample_data();
+        let metadata = SharePackageMetadata {
+            name: "Tampered".into(),
+            description: None,
+            author: None,
+            version: "1.0.0".into(),
+            tags: Vec::new(),
+            created_at: Utc::now(),
+            homepage: None,
+            min_app_version: None,
+            format_version: 1,
+        };
+        let mut pkg = create_share_package(data, metadata).unwrap();
+        pkg.data.history.clear();
+        let json = serde_json::to_string_pretty(&pkg).unwrap();
+
+        let validation = validate_import(&json);
+        assert!(!validation.valid);
+        assert_eq!(validation.checksum_valid, Some(false));
+        assert!(validation
+            .errors
+            .iter()
+            .any(|error| error.contains("checksum")));
+
+        let error = parse_import_data(&json).unwrap_err();
+        assert!(error.contains("Checksum mismatch"));
     }
 
     #[test]
