@@ -71,6 +71,12 @@ export class IndexedDbService {
     }
   }
 
+  static async getItemStrict<T>(key: string): Promise<T | null> {
+    const db = await this.getDB();
+    const raw = await db.get(STORE_NAME, key);
+    return raw === undefined ? null : (JSON.parse(raw) as T);
+  }
+
   static async setItem<T>(key: string, value: T): Promise<void> {
     try {
       const db = await this.getDB();
@@ -81,6 +87,12 @@ export class IndexedDbService {
     }
   }
 
+  static async setItemStrict<T>(key: string, value: T): Promise<void> {
+    const db = await this.getDB();
+    const serialized = JSON.stringify(value);
+    await db.put(STORE_NAME, serialized, key);
+  }
+
   static async removeItem(key: string): Promise<void> {
     try {
       const db = await this.getDB();
@@ -88,5 +100,10 @@ export class IndexedDbService {
     } catch (error) {
       console.error(`Failed to remove IndexedDB key "${key}":`, error);
     }
+  }
+
+  static async removeItemStrict(key: string): Promise<void> {
+    const db = await this.getDB();
+    await db.delete(STORE_NAME, key);
   }
 }
