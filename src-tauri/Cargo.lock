@@ -11942,6 +11942,7 @@ dependencies = [
  "tauri",
  "thiserror 1.0.69",
  "tokio",
+ "sorng-ssh",
  "tokio-rustls",
  "uuid",
  "vnc-rs",
