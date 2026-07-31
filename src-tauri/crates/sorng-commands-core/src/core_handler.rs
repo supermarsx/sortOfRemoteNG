@@ -236,8 +236,6 @@ pub fn is_command(command: &str) -> bool {
             | "ftp_add_bookmark"
             | "ftp_remove_bookmark"
             | "ftp_update_bookmark"
-            | "ftp_site_command"
-            | "ftp_raw_command"
             | "ping_host"
             | "ping_host_detailed"
             | "ping_gateway"
@@ -1615,8 +1613,6 @@ define_command_group!(
         ftp_commands::ftp_add_bookmark,
         ftp_commands::ftp_remove_bookmark,
         ftp_commands::ftp_update_bookmark,
-        ftp_commands::ftp_site_command,
-        ftp_commands::ftp_raw_command,
         network_commands::ping_host,
         network_commands::ping_host_detailed,
         network_commands::ping_gateway,
