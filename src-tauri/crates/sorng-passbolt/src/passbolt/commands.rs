@@ -5,6 +5,7 @@
 
 use super::service::PassboltServiceState;
 use super::types::*;
+use zeroize::Zeroize;
 
 // ── Configuration ───────────────────────────────────────────────────
 
@@ -24,8 +25,7 @@ pub async fn pb_set_config(
     config: PassboltConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.update_config(config);
-    Ok(())
+    svc.update_config(config).map_err(|e| e.message)
 }
 
 // ── Authentication ──────────────────────────────────────────────────
@@ -51,9 +51,7 @@ pub async fn pb_login_jwt(
 
 /// Refresh the JWT access token.
 #[tauri::command]
-pub async fn pb_refresh_token(
-    state: tauri::State<'_, PassboltServiceState>,
-) -> Result<String, String> {
+pub async fn pb_refresh_token(state: tauri::State<'_, PassboltServiceState>) -> Result<(), String> {
     let mut svc = state.lock().await;
     svc.refresh_token().await.map_err(|e| e.message)
 }
@@ -89,26 +87,26 @@ pub async fn pb_is_authenticated(
 #[tauri::command]
 pub async fn pb_verify_mfa_totp(
     state: tauri::State<'_, PassboltServiceState>,
-    code: String,
+    mut code: String,
     remember: bool,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.verify_mfa_totp(&code, remember)
-        .await
-        .map_err(|e| e.message)
+    let result = svc.verify_mfa_totp(&code, remember).await;
+    code.zeroize();
+    result.map_err(|e| e.message)
 }
 
 /// Verify Yubikey MFA OTP.
 #[tauri::command]
 pub async fn pb_verify_mfa_yubikey(
     state: tauri::State<'_, PassboltServiceState>,
-    otp: String,
+    mut otp: String,
     remember: bool,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.verify_mfa_yubikey(&otp, remember)
-        .await
-        .map_err(|e| e.message)
+    let result = svc.verify_mfa_yubikey(&otp, remember).await;
+    otp.zeroize();
+    result.map_err(|e| e.message)
 }
 
 /// Get MFA requirements.
@@ -861,9 +859,10 @@ pub async fn pb_directory_sync_dry_run(
 #[tauri::command]
 pub async fn pb_directory_sync(
     state: tauri::State<'_, PassboltServiceState>,
+    confirmed: bool,
 ) -> Result<DirectorySyncResult, String> {
     let svc = state.lock().await;
-    svc.directory_sync().await.map_err(|e| e.message)
+    svc.directory_sync(confirmed).await.map_err(|e| e.message)
 }
 
 // ── Cache ───────────────────────────────────────────────────────────

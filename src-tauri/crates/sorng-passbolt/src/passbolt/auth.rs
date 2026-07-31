@@ -18,7 +18,8 @@
 use crate::passbolt::api_client::PassboltApiClient;
 use crate::passbolt::crypto::PgpContext;
 use crate::passbolt::types::*;
-use log::{debug, info, warn};
+use log::{info, warn};
+use zeroize::Zeroize;
 
 /// Server verify response body.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -28,52 +29,52 @@ pub struct ServerVerifyBody {
 }
 
 /// JWT login request payload.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct JwtLoginRequest {
     pub user_id: String,
     pub challenge: String,
 }
 
 /// JWT login response body.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct JwtLoginResponse {
     pub challenge: String,
 }
 
 /// JWT logout request.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct JwtLogoutRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
 }
 
 /// JWT refresh request.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct JwtRefreshRequest {
     pub user_id: String,
     pub refresh_token: String,
 }
 
 /// JWT refresh response body.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct JwtRefreshResponse {
     pub access_token: String,
 }
 
 /// GPGAuth login stages.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct GpgAuthLoginPayload {
     pub data: GpgAuthData,
 }
 
 /// GPGAuth data envelope.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct GpgAuthData {
     pub gpg_auth: GpgAuthFields,
 }
 
 /// GPGAuth field variants.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct GpgAuthFields {
     /// Fingerprint of user's key (always required).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,7 +98,11 @@ impl PassboltAuth {
         info!("Fetching server public key from /auth/verify.json");
         let resp: ApiResponse<ServerVerifyBody> =
             client.get_unauthenticated("/auth/verify.json").await?;
-        debug!("Server key fingerprint: {}", resp.body.fingerprint);
+        if resp.body.fingerprint.len() > 128 || resp.body.keydata.len() > 512 * 1024 {
+            return Err(PassboltError::auth_failed(
+                "Passbolt server key response exceeds safe limits",
+            ));
+        }
         Ok(resp.body)
     }
 
@@ -109,7 +114,7 @@ impl PassboltAuth {
         client: &PassboltApiClient,
         pgp: &PgpContext,
     ) -> Result<bool, PassboltError> {
-        let challenge = pgp.generate_challenge();
+        let mut challenge = pgp.generate_challenge();
         let encrypted = pgp.encrypt_for_server(&challenge)?;
 
         let payload = GpgAuthLoginPayload {
@@ -125,21 +130,33 @@ impl PassboltAuth {
         let response = client
             .post_unauthenticated_raw("/auth/verify.json", &payload)
             .await?;
+        if !response.status().is_success() {
+            return Err(PassboltError::auth_failed(
+                "Passbolt server identity verification failed",
+            ));
+        }
 
         // The server decrypts the challenge and returns it in X-GPGAuth-Verify-Response header.
         if let Some(verify_header) = response.headers().get("X-GPGAuth-Verify-Response") {
             let returned_token = verify_header.to_str().unwrap_or("");
-            if returned_token == challenge {
+            let matches = returned_token == challenge;
+            challenge.zeroize();
+            if matches {
                 info!("Server identity verified via GPGAuth");
                 return Ok(true);
             } else {
                 warn!("Server returned mismatched challenge token");
-                return Ok(false);
+                return Err(PassboltError::auth_failed(
+                    "Passbolt server challenge did not match",
+                ));
             }
         }
 
+        challenge.zeroize();
         warn!("No X-GPGAuth-Verify-Response header in server response");
-        Ok(false)
+        Err(PassboltError::auth_failed(
+            "Passbolt server did not prove key possession",
+        ))
     }
 
     /// Step 3 (GPGAuth): Login.
@@ -177,11 +194,21 @@ impl PassboltAuth {
                 "No X-GPGAuth-User-Auth-Token in server response",
             ));
         }
+        if encrypted_token.len() > 2 * 1024 * 1024 {
+            return Err(PassboltError::auth_failed(
+                "Passbolt authentication challenge is too large",
+            ));
+        }
 
         // Stage 2: Decrypt the challenge and send it back.
         let decrypted_token = pgp.decrypt(&encrypted_token)?;
+        if !PgpContext::verify_challenge_format(&decrypted_token) {
+            return Err(PassboltError::auth_failed(
+                "Passbolt authentication challenge is malformed",
+            ));
+        }
 
-        let login_payload = GpgAuthLoginPayload {
+        let mut login_payload = GpgAuthLoginPayload {
             data: GpgAuthData {
                 gpg_auth: GpgAuthFields {
                     keyid: pgp.user_fingerprint().map(String::from),
@@ -194,6 +221,9 @@ impl PassboltAuth {
         let login_response = client
             .post_unauthenticated_raw("/auth/login.json", &login_payload)
             .await?;
+        if let Some(token) = login_payload.data.gpg_auth.user_token_result.as_mut() {
+            token.zeroize();
+        }
 
         if !login_response.status().is_success() {
             return Err(PassboltError::auth_failed("GPGAuth login failed"));
@@ -207,13 +237,9 @@ impl PassboltAuth {
         };
 
         // Extract user ID from X-GPGAuth-Progress or response body if available.
-        if let Some(progress) = login_response.headers().get("X-GPGAuth-Progress") {
-            debug!("GPGAuth progress: {:?}", progress);
-        }
-
-        client.set_session(session.clone());
+        client.set_session(session);
         info!("GPGAuth login successful");
-        Ok(session)
+        Ok(client.session().public_view())
     }
 
     /// JWT Login: create a challenge, encrypt+sign it, exchange for tokens.
@@ -222,7 +248,8 @@ impl PassboltAuth {
         pgp: &PgpContext,
         user_id: &str,
     ) -> Result<SessionState, PassboltError> {
-        info!("Starting JWT login for user {}", user_id);
+        PassboltApiClient::encode_path_segment(user_id)?;
+        info!("Starting JWT login");
 
         // Build the challenge JSON.
         let challenge_json = serde_json::json!({
@@ -236,8 +263,9 @@ impl PassboltAuth {
         });
 
         // gpg_encrypt(gpg_sign(challenge, user_key), server_key)
-        let challenge_str = challenge_json.to_string();
+        let mut challenge_str = challenge_json.to_string();
         let encrypted_challenge = pgp.encrypt_and_sign_for_server(&challenge_str)?;
+        challenge_str.zeroize();
 
         let payload = JwtLoginRequest {
             user_id: user_id.to_string(),
@@ -249,24 +277,38 @@ impl PassboltAuth {
             .await?;
 
         // Decrypt the server's response challenge to extract the access token.
-        let decrypted = pgp.decrypt_and_verify(&resp.body.challenge)?;
-        let token_data: serde_json::Value = serde_json::from_str(&decrypted)
-            .map_err(|e| PassboltError::parse(format!("Failed to parse JWT response: {}", e)))?;
-
-        let access_token = token_data
-            .get("access_token")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let refresh_token = token_data
-            .get("refresh_token")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        if access_token.is_empty() {
+        if resp.body.challenge.len() > 2 * 1024 * 1024 {
             return Err(PassboltError::auth_failed(
-                "No access_token in JWT login response",
+                "Passbolt JWT challenge is too large",
+            ));
+        }
+        let mut decrypted = pgp.decrypt_and_verify(&resp.body.challenge)?;
+        if decrypted.len() > 64 * 1024 {
+            decrypted.zeroize();
+            return Err(PassboltError::auth_failed(
+                "Passbolt JWT response is too large",
+            ));
+        }
+        #[derive(serde::Deserialize)]
+        struct TokenData {
+            access_token: String,
+            #[serde(default)]
+            refresh_token: String,
+        }
+        let token_data: TokenData = serde_json::from_str(&decrypted)
+            .map_err(|_| PassboltError::parse("Passbolt JWT response was malformed"))?;
+        decrypted.zeroize();
+        let access_token = token_data.access_token;
+        let refresh_token = token_data.refresh_token;
+
+        if access_token.len() < 16 || access_token.len() > 16 * 1024 {
+            return Err(PassboltError::auth_failed(
+                "Passbolt returned an invalid access token",
+            ));
+        }
+        if refresh_token.len() > 16 * 1024 {
+            return Err(PassboltError::auth_failed(
+                "Passbolt returned an invalid refresh token",
             ));
         }
 
@@ -283,13 +325,13 @@ impl PassboltAuth {
             ..Default::default()
         };
 
-        client.set_session(session.clone());
-        info!("JWT login successful for user {}", user_id);
-        Ok(session)
+        client.set_session(session);
+        info!("JWT login successful");
+        Ok(client.session().public_view())
     }
 
     /// Refresh the JWT access token.
-    pub async fn jwt_refresh(client: &mut PassboltApiClient) -> Result<String, PassboltError> {
+    pub async fn jwt_refresh(client: &mut PassboltApiClient) -> Result<(), PassboltError> {
         let (user_id, refresh_token) = {
             let session = client.session();
             let uid = session
@@ -303,44 +345,55 @@ impl PassboltAuth {
             (uid, rt)
         };
 
-        let payload = JwtRefreshRequest {
+        let mut payload = JwtRefreshRequest {
             user_id: user_id.clone(),
             refresh_token,
         };
 
-        let resp: ApiResponse<JwtRefreshResponse> =
-            client.post("/auth/jwt/refresh.json", &payload).await?;
+        let response: Result<ApiResponse<JwtRefreshResponse>, PassboltError> =
+            client.post("/auth/jwt/refresh.json", &payload).await;
+        payload.refresh_token.zeroize();
+        let resp = response?;
 
         let new_token = resp.body.access_token;
+        if new_token.len() < 16 || new_token.len() > 16 * 1024 {
+            return Err(PassboltError::auth_failed(
+                "Passbolt returned an invalid refreshed access token",
+            ));
+        }
         {
             let session = client.session_mut();
-            session.access_token = Some(new_token.clone());
+            if let Some(old_token) = session.access_token.as_mut() {
+                old_token.zeroize();
+            }
+            session.access_token = Some(new_token);
         }
 
-        info!("JWT token refreshed for user {}", user_id);
-        Ok(new_token)
+        info!("JWT token refreshed");
+        Ok(())
     }
 
     /// Logout (JWT).
     pub async fn jwt_logout(client: &mut PassboltApiClient) -> Result<(), PassboltError> {
         let refresh_token = client.session().refresh_token.clone();
-        let payload = JwtLogoutRequest { refresh_token };
-
-        let _ = client
-            .post::<_, serde_json::Value>("/auth/jwt/logout.json", &payload)
-            .await;
-
-        client.set_session(SessionState::default());
+        let mut payload = JwtLogoutRequest { refresh_token };
+        let result = client.post_void("/auth/jwt/logout.json", &payload).await;
+        if let Some(token) = payload.refresh_token.as_mut() {
+            token.zeroize();
+        }
+        client.clear_session();
+        result?;
         info!("JWT logout complete");
         Ok(())
     }
 
     /// Logout (GPGAuth).
     pub async fn gpg_auth_logout(client: &mut PassboltApiClient) -> Result<(), PassboltError> {
-        let builder =
-            reqwest::Client::new().post(format!("{}/auth/logout.json", client.base_url()));
-        let _ = client.execute_raw(builder).await;
-        client.set_session(SessionState::default());
+        let result = client
+            .post_void("/auth/logout.json", &serde_json::json!({}))
+            .await;
+        client.clear_session();
+        result?;
         info!("GPGAuth logout complete");
         Ok(())
     }
@@ -351,7 +404,15 @@ impl PassboltAuth {
             client.get("/auth/is-authenticated.json").await;
         match result {
             Ok(resp) => Ok(resp.header.status == "success"),
-            Err(_) => Ok(false),
+            Err(e)
+                if matches!(
+                    e.kind,
+                    PassboltErrorKind::SessionExpired | PassboltErrorKind::Forbidden
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -395,12 +456,17 @@ impl PassboltAuth {
         code: &str,
         remember: bool,
     ) -> Result<(), PassboltError> {
-        let payload = MfaTotpRequest {
+        if !(6..=10).contains(&code.len()) || !code.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(PassboltError::bad_request("TOTP code is invalid"));
+        }
+        let mut payload = MfaTotpRequest {
             totp: code.to_string(),
             remember: if remember { Some(1) } else { Some(0) },
         };
-        let _: ApiResponse<serde_json::Value> =
-            client.post("/mfa/verify/totp.json", &payload).await?;
+        let response: Result<ApiResponse<serde_json::Value>, PassboltError> =
+            client.post("/mfa/verify/totp.json", &payload).await;
+        payload.totp.zeroize();
+        response?;
 
         let session = client.session_mut();
         session.mfa_verified = true;
@@ -415,12 +481,17 @@ impl PassboltAuth {
         otp: &str,
         remember: bool,
     ) -> Result<(), PassboltError> {
-        let payload = MfaYubikeyRequest {
+        if otp.len() < 32 || otp.len() > 128 || !otp.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err(PassboltError::bad_request("Yubikey OTP is invalid"));
+        }
+        let mut payload = MfaYubikeyRequest {
             hotp: otp.to_string(),
             remember: if remember { Some(1) } else { Some(0) },
         };
-        let _: ApiResponse<serde_json::Value> =
-            client.post("/mfa/verify/yubikey.json", &payload).await?;
+        let response: Result<ApiResponse<serde_json::Value>, PassboltError> =
+            client.post("/mfa/verify/yubikey.json", &payload).await;
+        payload.hotp.zeroize();
+        response?;
 
         let session = client.session_mut();
         session.mfa_verified = true;

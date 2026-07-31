@@ -24,6 +24,7 @@ use crate::passbolt::users_groups::{
 use log::info;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::Zeroize;
 
 /// Tauri-managed state wrapper.
 pub type PassboltServiceState = Arc<Mutex<PassboltService>>;
@@ -42,6 +43,8 @@ pub struct PassboltService {
     cache: Option<ResourceCache>,
     /// Last sync timestamp.
     last_sync: Option<String>,
+    /// Fail-closed initialization state for invalid default or supplied config.
+    configuration_error: Option<PassboltError>,
 }
 
 impl Default for PassboltService {
@@ -57,13 +60,37 @@ impl PassboltService {
     }
 
     /// Create a new service with the given config.
-    pub fn with_config(config: PassboltConfig) -> Self {
+    pub fn with_config(mut config: PassboltConfig) -> Self {
         let client = PassboltApiClient::from_config(&config);
         let mut pgp = PgpContext::new();
+        let mut configuration_error = client.initialization_error().cloned();
+
+        if config.max_retries > 5 {
+            configuration_error = Some(PassboltError::invalid_config(
+                "Passbolt retry count cannot exceed 5",
+            ));
+        }
+        if config.cache_ttl_secs > 86_400 {
+            configuration_error = Some(PassboltError::invalid_config(
+                "Passbolt cache TTL cannot exceed 24 hours",
+            ));
+        }
 
         // Load the user's PGP key if configured.
         if let Some(ref key) = config.user_private_key {
-            pgp.set_user_key(key, config.user_passphrase.as_deref().unwrap_or(""));
+            if let Err(error) =
+                pgp.set_user_key(key, config.user_passphrase.as_deref().unwrap_or(""))
+            {
+                configuration_error = Some(error);
+            } else if !config.user_fingerprint.trim().is_empty()
+                && pgp.user_fingerprint().is_some_and(|actual| {
+                    !actual.eq_ignore_ascii_case(config.user_fingerprint.trim())
+                })
+            {
+                configuration_error = Some(PassboltError::invalid_config(
+                    "Configured Passbolt user-key fingerprint does not match the private key",
+                ));
+            }
         }
 
         let cache = if config.cache_enabled {
@@ -77,6 +104,7 @@ impl PassboltService {
             None
         };
 
+        wipe_config_secrets(&mut config);
         Self {
             config,
             client,
@@ -84,6 +112,7 @@ impl PassboltService {
             authenticated: false,
             cache,
             last_sync: None,
+            configuration_error,
         }
     }
 
@@ -113,49 +142,100 @@ impl PassboltService {
     }
 
     /// Update the configuration.
-    pub fn update_config(&mut self, config: PassboltConfig) {
-        self.client = PassboltApiClient::from_config(&config);
-        self.pgp = PgpContext::new();
-        if let Some(ref key) = config.user_private_key {
-            self.pgp
-                .set_user_key(key, config.user_passphrase.as_deref().unwrap_or(""));
+    pub fn update_config(&mut self, mut config: PassboltConfig) -> Result<(), PassboltError> {
+        if config.max_retries > 5 {
+            return reject_config(
+                &mut config,
+                PassboltError::invalid_config("Passbolt retry count cannot exceed 5"),
+            );
         }
-        if config.cache_enabled && self.cache.is_none() {
-            self.cache = Some(ResourceCache {
+        if config.cache_ttl_secs > 86_400 {
+            return reject_config(
+                &mut config,
+                PassboltError::invalid_config("Passbolt cache TTL cannot exceed 24 hours"),
+            );
+        }
+        let client = match PassboltApiClient::new(
+            &config.server_url,
+            config.verify_tls,
+            config.request_timeout_secs,
+        ) {
+            Ok(client) => client,
+            Err(error) => return reject_config(&mut config, error),
+        };
+        let mut pgp = PgpContext::new();
+        if let Some(ref key) = config.user_private_key {
+            if let Err(error) =
+                pgp.set_user_key(key, config.user_passphrase.as_deref().unwrap_or(""))
+            {
+                return reject_config(&mut config, error);
+            }
+            if !config.user_fingerprint.trim().is_empty()
+                && pgp.user_fingerprint().is_some_and(|actual| {
+                    !actual.eq_ignore_ascii_case(config.user_fingerprint.trim())
+                })
+            {
+                return reject_config(
+                    &mut config,
+                    PassboltError::invalid_config(
+                        "Configured Passbolt user-key fingerprint does not match the private key",
+                    ),
+                );
+            }
+        }
+        let cache = if config.cache_enabled {
+            Some(ResourceCache {
                 resources: Vec::new(),
                 folders: Vec::new(),
                 last_updated: None,
                 ttl_seconds: config.cache_ttl_secs,
-            });
-        }
+            })
+        } else {
+            None
+        };
+        wipe_config_secrets(&mut config);
+        self.client = client;
+        self.pgp = pgp;
         self.config = config;
+        self.cache = cache;
+        self.authenticated = false;
+        self.last_sync = None;
+        self.configuration_error = None;
         info!("Passbolt configuration updated");
+        Ok(())
     }
 
     /// Check if the service is authenticated.
     pub fn is_authenticated(&self) -> bool {
-        self.authenticated
+        self.authenticated && self.client.is_authenticated()
     }
 
     // ── Authentication ──────────────────────────────────────────────
 
     /// Get the server's PGP public key and set it in the PGP context.
     pub async fn fetch_server_key(&mut self) -> Result<String, PassboltError> {
+        self.ensure_ready()?;
         let server_key = PassboltAuth::get_server_key(&self.client).await?;
         self.pgp
-            .set_server_key(&server_key.keydata, &server_key.fingerprint);
+            .set_server_key(&server_key.keydata, &server_key.fingerprint)?;
         info!("Server key loaded: fingerprint={}", server_key.fingerprint);
         Ok(server_key.fingerprint)
     }
 
     /// Verify the server's identity via GPGAuth.
     pub async fn verify_server(&self) -> Result<bool, PassboltError> {
+        self.ensure_ready()?;
         PassboltAuth::verify_server(&self.client, &self.pgp).await
     }
 
     /// Login via GPGAuth.
     pub async fn login_gpgauth(&mut self) -> Result<SessionState, PassboltError> {
         self.fetch_server_key().await?;
+        if !self.verify_server().await? {
+            return Err(PassboltError::auth_failed(
+                "Passbolt server identity verification failed",
+            ));
+        }
         let session = PassboltAuth::gpg_auth_login(&mut self.client, &self.pgp).await?;
         self.authenticated = true;
         Ok(session)
@@ -163,6 +243,7 @@ impl PassboltService {
 
     /// Login via JWT.
     pub async fn login_jwt(&mut self, user_id: &str) -> Result<SessionState, PassboltError> {
+        PassboltApiClient::encode_path_segment(user_id)?;
         self.fetch_server_key().await?;
         let session = PassboltAuth::jwt_login(&mut self.client, &self.pgp, user_id).await?;
         self.authenticated = true;
@@ -170,19 +251,19 @@ impl PassboltService {
     }
 
     /// Refresh JWT token.
-    pub async fn refresh_token(&mut self) -> Result<String, PassboltError> {
+    pub async fn refresh_token(&mut self) -> Result<(), PassboltError> {
         PassboltAuth::jwt_refresh(&mut self.client).await
     }
 
     /// Logout.
     pub async fn logout(&mut self) -> Result<(), PassboltError> {
-        match self.config.auth_method {
-            AuthMethod::Jwt => PassboltAuth::jwt_logout(&mut self.client).await?,
-            AuthMethod::GpgAuth => PassboltAuth::gpg_auth_logout(&mut self.client).await?,
-        }
+        let result = match self.config.auth_method {
+            AuthMethod::Jwt => PassboltAuth::jwt_logout(&mut self.client).await,
+            AuthMethod::GpgAuth => PassboltAuth::gpg_auth_logout(&mut self.client).await,
+        };
         self.authenticated = false;
         self.invalidate_cache();
-        Ok(())
+        result
     }
 
     /// Check if session is still valid.
@@ -603,9 +684,11 @@ impl PassboltService {
         let user = PassboltUsers::get(&self.client, user_id).await?;
         if let Some(gpg_key) = &user.gpgkey {
             if let Some(ref armored) = gpg_key.armored_key {
-                let fp = gpg_key.fingerprint.clone().unwrap_or_default();
-                self.pgp.add_recipient_key(user_id, armored, &fp);
-                info!("Loaded GPG key for user {} (fp: {})", user_id, fp);
+                let fp = gpg_key.fingerprint.as_deref().ok_or_else(|| {
+                    PassboltError::crypto("Passbolt recipient key has no fingerprint")
+                })?;
+                self.pgp.add_recipient_key(user_id, armored, fp)?;
+                info!("Loaded Passbolt recipient GPG key");
                 return Ok(());
             }
         }
@@ -711,7 +794,15 @@ impl PassboltService {
     }
 
     /// Execute directory sync.
-    pub async fn directory_sync(&self) -> Result<DirectorySyncResult, PassboltError> {
+    pub async fn directory_sync(
+        &self,
+        confirmed: bool,
+    ) -> Result<DirectorySyncResult, PassboltError> {
+        if !confirmed {
+            return Err(PassboltError::bad_request(
+                "Directory synchronization requires explicit confirmation",
+            ));
+        }
         PassboltDirectorySync::synchronize(&self.client).await
     }
 
@@ -745,7 +836,7 @@ impl PassboltService {
     /// Get cached resources (returns cache or fetches fresh).
     pub async fn get_cached_resources(&mut self) -> Result<Vec<Resource>, PassboltError> {
         if let Some(ref cache) = self.cache {
-            if !cache.resources.is_empty() && cache.last_updated.is_some() {
+            if !cache.resources.is_empty() && cache_is_fresh(cache) {
                 return Ok(cache.resources.clone());
             }
         }
@@ -760,7 +851,7 @@ impl PassboltService {
     /// Get cached folders.
     pub async fn get_cached_folders(&mut self) -> Result<Vec<Folder>, PassboltError> {
         if let Some(ref cache) = self.cache {
-            if !cache.folders.is_empty() && cache.last_updated.is_some() {
+            if !cache.folders.is_empty() && cache_is_fresh(cache) {
                 return Ok(cache.folders.clone());
             }
         }
@@ -788,6 +879,47 @@ impl PassboltService {
     pub fn decrypt_metadata(&self, encrypted: &str) -> Result<String, PassboltError> {
         self.pgp.decrypt_metadata(encrypted)
     }
+
+    fn ensure_ready(&self) -> Result<(), PassboltError> {
+        if let Some(error) = &self.configuration_error {
+            Err(error.clone())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn wipe_config_secrets(config: &mut PassboltConfig) {
+    if let Some(key) = config.user_private_key.as_mut() {
+        key.zeroize();
+    }
+    if let Some(passphrase) = config.user_passphrase.as_mut() {
+        passphrase.zeroize();
+    }
+    config.user_private_key = None;
+    config.user_passphrase = None;
+}
+
+fn reject_config<T>(config: &mut PassboltConfig, error: PassboltError) -> Result<T, PassboltError> {
+    wipe_config_secrets(config);
+    Err(error)
+}
+
+fn cache_is_fresh(cache: &ResourceCache) -> bool {
+    if cache.ttl_seconds == 0 {
+        return false;
+    }
+    cache
+        .last_updated
+        .as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .and_then(|updated| {
+            chrono::Utc::now()
+                .signed_duration_since(updated)
+                .to_std()
+                .ok()
+        })
+        .is_some_and(|age| age.as_secs() < cache.ttl_seconds)
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -831,8 +963,8 @@ mod tests {
         };
         let svc = PassboltService::with_config(config);
         let redacted = svc.config();
-        assert_eq!(redacted.user_private_key, Some("[REDACTED]".into()));
-        assert_eq!(redacted.user_passphrase, Some("[REDACTED]".into()));
+        assert_eq!(redacted.user_private_key, None);
+        assert_eq!(redacted.user_passphrase, None);
     }
 
     #[test]
@@ -863,7 +995,7 @@ mod tests {
             cache_enabled: true,
             ..Default::default()
         };
-        svc.update_config(new_config);
+        svc.update_config(new_config).unwrap();
         assert!(svc.cache.is_some());
     }
 }

@@ -116,7 +116,7 @@ impl PassboltUsers {
         client: &PassboltApiClient,
         request: &CreateUserRequest,
     ) -> Result<User, PassboltError> {
-        info!("Creating user: {:?}", request.username);
+        info!("Creating Passbolt user");
         let resp: ApiResponse<User> = client.post("/users.json", request).await?;
         info!("Created user {}", resp.body.id);
         Ok(resp.body)

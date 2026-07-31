@@ -33,11 +33,13 @@ impl PassboltHealthcheck {
         match Self::status(client).await {
             Ok(_) => Ok(true),
             Err(e) => {
-                if e.kind == PassboltErrorKind::NetworkError {
+                if matches!(
+                    e.kind,
+                    PassboltErrorKind::NetworkError | PassboltErrorKind::Timeout
+                ) {
                     Ok(false)
                 } else {
-                    // Server responded (even with an error), so it's reachable.
-                    Ok(true)
+                    Err(e)
                 }
             }
         }

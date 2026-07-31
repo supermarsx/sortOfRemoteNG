@@ -12,7 +12,7 @@
 use crate::passbolt::api_client::PassboltApiClient;
 use crate::passbolt::types::*;
 use log::{debug, info};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Resource API operations.
 pub struct PassboltResources;
@@ -30,8 +30,20 @@ impl PassboltResources {
                 query.insert("filter[search]".into(), search.clone());
             }
             if let Some(has_id) = &p.has_id {
-                for id in has_id {
-                    query.insert("filter[has-id][]".to_string(), id.clone());
+                if has_id.len() > 32 {
+                    return Err(PassboltError::bad_request(
+                        "Passbolt resource ID filter exceeds 32 entries",
+                    ));
+                }
+                let mut seen = HashSet::with_capacity(has_id.len());
+                for (index, id) in has_id.iter().enumerate() {
+                    PassboltApiClient::encode_path_segment(id)?;
+                    if !seen.insert(id.as_str()) {
+                        return Err(PassboltError::bad_request(
+                            "Passbolt resource ID filter contains duplicates",
+                        ));
+                    }
+                    query.insert(format!("filter[has-id][{}]", index), id.clone());
                 }
             }
             if let Some(ref folder_id) = p.folder_parent_id {
@@ -136,9 +148,9 @@ impl PassboltResources {
         client: &PassboltApiClient,
         request: &CreateResourceRequest,
     ) -> Result<Resource, PassboltError> {
-        info!("Creating resource: {}", request.name);
+        info!("Creating Passbolt resource");
         let resp: ApiResponse<Resource> = client.post("/resources.json", request).await?;
-        info!("Created resource {}", resp.body.id);
+        info!("Created Passbolt resource");
         Ok(resp.body)
     }
 

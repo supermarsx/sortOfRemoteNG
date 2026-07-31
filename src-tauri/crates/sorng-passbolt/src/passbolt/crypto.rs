@@ -4,16 +4,20 @@
 //! challenge-response messages, and sharing workflows.
 
 use crate::passbolt::types::PassboltError;
-use log::warn;
 use pgp::composed::cleartext::CleartextSignedMessage;
 use pgp::composed::{Deserializable, Message, SignedPublicKey, SignedSecretKey};
 use pgp::crypto::hash::HashAlgorithm;
 use pgp::crypto::sym::SymmetricKeyAlgorithm;
 use pgp::types::PublicKeyTrait;
 use pgp::ArmorOptions;
+use zeroize::Zeroize;
+
+const MAX_KEY_BYTES: usize = 512 * 1024;
+const MAX_PLAINTEXT_BYTES: usize = 1024 * 1024;
+const MAX_ARMORED_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RECIPIENT_KEYS: usize = 1024;
 
 /// A parsed PGP key (public or private).
-#[derive(Debug, Clone)]
 pub struct PgpKey {
     /// Armored key text.
     pub armored: String,
@@ -29,7 +33,6 @@ pub struct PgpKey {
 
 /// PGP operation context holding the current user's key pair
 /// and cached recipient keys.
-#[derive(Debug, Clone)]
 pub struct PgpContext {
     /// User's private key.
     user_key: Option<PgpKey>,
@@ -59,13 +62,19 @@ impl PgpContext {
     }
 
     /// Import the user's private key.
-    pub fn set_user_key(&mut self, armored: &str, passphrase: &str) {
-        if let Ok(key) = parse_armored_key(armored, true) {
-            self.user_key = Some(key);
-        } else {
-            warn!("Failed to parse user private key");
+    pub fn set_user_key(&mut self, armored: &str, passphrase: &str) -> Result<(), PassboltError> {
+        if armored.len() > MAX_KEY_BYTES || passphrase.len() > 16 * 1024 {
+            return Err(PassboltError::invalid_config(
+                "Passbolt user key material exceeds safe limits",
+            ));
+        }
+        let key = parse_armored_key(armored, true)?;
+        self.user_key = Some(key);
+        if let Some(existing) = self.passphrase.as_mut() {
+            existing.zeroize();
         }
         self.passphrase = Some(passphrase.to_string());
+        Ok(())
     }
 
     /// Get the user key fingerprint.
@@ -74,19 +83,24 @@ impl PgpContext {
     }
 
     /// Import the server's public key.
-    pub fn set_server_key(&mut self, armored: &str, expected_fingerprint: &str) {
-        match parse_armored_key(armored, false) {
-            Ok(key) => {
-                if !fingerprint_matches(&key.fingerprint, expected_fingerprint) {
-                    warn!(
-                        "Server key fingerprint mismatch: expected {}, got {}",
-                        expected_fingerprint, key.fingerprint
-                    );
-                }
-                self.server_key = Some(key);
-            }
-            Err(_) => warn!("Failed to parse server public key"),
+    pub fn set_server_key(
+        &mut self,
+        armored: &str,
+        expected_fingerprint: &str,
+    ) -> Result<(), PassboltError> {
+        if armored.len() > MAX_KEY_BYTES {
+            return Err(PassboltError::auth_failed(
+                "Passbolt server key exceeds safe limits",
+            ));
         }
+        let key = parse_armored_key(armored, false)?;
+        if !fingerprint_matches(&key.fingerprint, expected_fingerprint) {
+            return Err(PassboltError::auth_failed(
+                "Passbolt server key fingerprint mismatch",
+            ));
+        }
+        self.server_key = Some(key);
+        Ok(())
     }
 
     /// Get the server key fingerprint.
@@ -95,19 +109,32 @@ impl PgpContext {
     }
 
     /// Cache a recipient's public key for sharing operations.
-    pub fn add_recipient_key(&mut self, user_id: &str, armored: &str, expected_fingerprint: &str) {
-        match parse_armored_key(armored, false) {
-            Ok(key) => {
-                if !fingerprint_matches(&key.fingerprint, expected_fingerprint) {
-                    warn!(
-                        "Recipient key fingerprint mismatch for user {}: expected {}, got {}",
-                        user_id, expected_fingerprint, key.fingerprint
-                    );
-                }
-                self.recipient_keys.insert(user_id.to_string(), key);
-            }
-            Err(_) => warn!("Failed to parse recipient key for user {}", user_id),
+    pub fn add_recipient_key(
+        &mut self,
+        user_id: &str,
+        armored: &str,
+        expected_fingerprint: &str,
+    ) -> Result<(), PassboltError> {
+        if self.recipient_keys.len() >= MAX_RECIPIENT_KEYS
+            && !self.recipient_keys.contains_key(user_id)
+        {
+            return Err(PassboltError::bad_request(
+                "Passbolt recipient-key cache is full",
+            ));
         }
+        if user_id.is_empty() || user_id.len() > 128 || armored.len() > MAX_KEY_BYTES {
+            return Err(PassboltError::bad_request(
+                "Passbolt recipient key is invalid",
+            ));
+        }
+        let key = parse_armored_key(armored, false)?;
+        if !fingerprint_matches(&key.fingerprint, expected_fingerprint) {
+            return Err(PassboltError::crypto(
+                "Passbolt recipient key fingerprint mismatch",
+            ));
+        }
+        self.recipient_keys.insert(user_id.to_string(), key);
+        Ok(())
     }
 
     /// Get a cached recipient key.
@@ -117,6 +144,7 @@ impl PgpContext {
 
     /// Encrypt a plaintext message for the server using its public key.
     pub fn encrypt_for_server(&self, plaintext: &str) -> Result<String, PassboltError> {
+        validate_plaintext_len(plaintext)?;
         let server_key = self
             .server_key
             .as_ref()
@@ -127,6 +155,7 @@ impl PgpContext {
 
     /// Encrypt and sign a message for the server (used in JWT challenge).
     pub fn encrypt_and_sign_for_server(&self, plaintext: &str) -> Result<String, PassboltError> {
+        validate_plaintext_len(plaintext)?;
         let server_key = self
             .server_key
             .as_ref()
@@ -138,12 +167,14 @@ impl PgpContext {
 
         let public_key = parse_public_key(&server_key.armored)?;
         let secret_key = parse_secret_key(&user_key.armored)?;
-        let passphrase = self.passphrase.clone().unwrap_or_default();
-        let signed = sign_openpgp_message(
+        let mut passphrase = self.passphrase.clone().unwrap_or_default();
+        let result = sign_openpgp_message(
             Message::new_literal("", plaintext),
             &secret_key,
             &passphrase,
-        )?;
+        );
+        passphrase.zeroize();
+        let signed = result?;
         encrypt_message_for_public_key(&signed, &public_key)
     }
 
@@ -153,6 +184,7 @@ impl PgpContext {
         plaintext: &str,
         user_id: &str,
     ) -> Result<String, PassboltError> {
+        validate_plaintext_len(plaintext)?;
         let recipient_key = self.recipient_keys.get(user_id).ok_or_else(|| {
             PassboltError::crypto(format!("No public key cached for user {}", user_id))
         })?;
@@ -162,12 +194,14 @@ impl PgpContext {
 
     /// Decrypt a PGP message using the user's private key.
     pub fn decrypt(&self, armored_message: &str) -> Result<String, PassboltError> {
+        validate_armored_message_len(armored_message)?;
         let decrypted = self.decrypt_message(armored_message)?;
         message_to_string(&decrypted)
     }
 
     /// Decrypt and verify a PGP message (verifying the server's signature).
     pub fn decrypt_and_verify(&self, armored_message: &str) -> Result<String, PassboltError> {
+        validate_armored_message_len(armored_message)?;
         let server_key = self
             .server_key
             .as_ref()
@@ -181,13 +215,16 @@ impl PgpContext {
 
     /// Sign a message with the user's private key as an OpenPGP cleartext signature.
     pub fn sign(&self, message: &str) -> Result<String, PassboltError> {
+        validate_plaintext_len(message)?;
         let user_key = self
             .user_key
             .as_ref()
             .ok_or_else(|| PassboltError::crypto("User private key not set for signing"))?;
         let secret_key = parse_secret_key(&user_key.armored)?;
-        let passphrase = self.passphrase.clone().unwrap_or_default();
-        let signed = sign_cleartext_message(message, &secret_key, &passphrase)?;
+        let mut passphrase = self.passphrase.clone().unwrap_or_default();
+        let result = sign_cleartext_message(message, &secret_key, &passphrase);
+        passphrase.zeroize();
+        let signed = result?;
 
         signed
             .to_armored_string(ArmorOptions::default())
@@ -196,6 +233,7 @@ impl PgpContext {
 
     /// Verify a cleartext-signed message from the server.
     pub fn verify_signature(&self, armored_signed: &str) -> Result<String, PassboltError> {
+        validate_armored_message_len(armored_signed)?;
         let server_key = self
             .server_key
             .as_ref()
@@ -219,17 +257,28 @@ impl PgpContext {
 
     /// Verify a GPGAuth challenge token format.
     pub fn verify_challenge_format(token: &str) -> bool {
-        token.starts_with("gpgauthv1.3.0|36|") && token.len() > 17
+        const PREFIX: &str = "gpgauthv1.3.0|36|";
+        token.len() == PREFIX.len() + 72
+            && token.starts_with(PREFIX)
+            && token[PREFIX.len()..]
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
     }
 
     /// Encrypt metadata for a resource/folder/tag using the metadata key.
     pub fn encrypt_metadata(&self, plaintext_json: &str) -> Result<String, PassboltError> {
-        self.encrypt_for_server(plaintext_json)
+        let _ = plaintext_json;
+        Err(PassboltError::crypto(
+            "Passbolt metadata-key encryption is not implemented; refusing to substitute the server authentication key",
+        ))
     }
 
     /// Decrypt metadata using the metadata private key.
     pub fn decrypt_metadata(&self, armored_metadata: &str) -> Result<String, PassboltError> {
-        self.decrypt(armored_metadata)
+        let _ = armored_metadata;
+        Err(PassboltError::crypto(
+            "Passbolt metadata-key decryption is not implemented; refusing to substitute the user authentication key",
+        ))
     }
 
     fn decrypt_message(&self, armored_message: &str) -> Result<Message, PassboltError> {
@@ -238,12 +287,32 @@ impl PgpContext {
             .as_ref()
             .ok_or_else(|| PassboltError::crypto("User private key not set for decryption"))?;
         let secret_key = parse_secret_key(&user_key.armored)?;
-        let passphrase = self.passphrase.clone().unwrap_or_default();
+        let mut passphrase = self.passphrase.clone().unwrap_or_default();
         let (message, _) = Message::from_string(armored_message).map_err(map_pgp_err)?;
-        let (decrypted, _) = message
+        let result = message
             .decrypt(|| passphrase.clone(), &[&secret_key])
-            .map_err(map_pgp_err)?;
+            .map_err(map_pgp_err);
+        passphrase.zeroize();
+        let (decrypted, _) = result?;
         Ok(decrypted)
+    }
+}
+
+impl Drop for PgpKey {
+    fn drop(&mut self) {
+        self.armored.zeroize();
+    }
+}
+
+impl Drop for PgpContext {
+    fn drop(&mut self) {
+        if let Some(passphrase) = self.passphrase.as_mut() {
+            passphrase.zeroize();
+        }
+        self.passphrase = None;
+        self.user_key = None;
+        self.server_key = None;
+        self.recipient_keys.clear();
     }
 }
 
@@ -251,9 +320,18 @@ impl PgpContext {
 
 /// Parse an armored PGP key and extract OpenPGP metadata.
 pub fn parse_armored_key(armored: &str, expect_secret: bool) -> Result<PgpKey, PassboltError> {
+    if armored.is_empty() || armored.len() > MAX_KEY_BYTES {
+        return Err(PassboltError::crypto("OpenPGP key size is invalid"));
+    }
     let trimmed = armored.trim();
 
-    if expect_secret || trimmed.contains("PRIVATE KEY") {
+    if !expect_secret && trimmed.contains("PRIVATE KEY") {
+        return Err(PassboltError::crypto(
+            "A private OpenPGP key was supplied where a public key is required",
+        ));
+    }
+
+    if expect_secret {
         let key = parse_secret_key(trimmed)?;
         Ok(secret_key_metadata(trimmed, &key))
     } else {
@@ -442,11 +520,33 @@ fn message_to_string(message: &Message) -> Result<String, PassboltError> {
 }
 
 fn fingerprint_matches(actual: &str, expected: &str) -> bool {
-    expected.trim().is_empty() || actual.eq_ignore_ascii_case(expected.trim())
+    let expected = expected.trim();
+    !expected.is_empty()
+        && matches!(expected.len(), 40 | 64)
+        && expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && actual.eq_ignore_ascii_case(expected)
 }
 
-fn map_pgp_err(error: pgp::errors::Error) -> PassboltError {
-    PassboltError::crypto(format!("OpenPGP operation failed: {}", error))
+fn map_pgp_err(_error: pgp::errors::Error) -> PassboltError {
+    PassboltError::crypto("OpenPGP operation failed")
+}
+
+fn validate_plaintext_len(plaintext: &str) -> Result<(), PassboltError> {
+    if plaintext.len() > MAX_PLAINTEXT_BYTES {
+        Err(PassboltError::crypto(
+            "OpenPGP plaintext exceeds the configured size limit",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_armored_message_len(message: &str) -> Result<(), PassboltError> {
+    if message.is_empty() || message.len() > MAX_ARMORED_MESSAGE_BYTES {
+        Err(PassboltError::crypto("OpenPGP message size is invalid"))
+    } else {
+        Ok(())
+    }
 }
 
 /// Hex-encode a byte slice.
@@ -494,9 +594,14 @@ k0mXubZvyl4GBg==
 
     fn roundtrip_context() -> PgpContext {
         let mut ctx = PgpContext::new();
-        ctx.set_user_key(TEST_PRIVATE_KEY, "");
-        ctx.set_server_key(TEST_PUBLIC_KEY, "");
-        ctx.add_recipient_key("user1", TEST_PUBLIC_KEY, "");
+        let fingerprint = parse_armored_key(TEST_PUBLIC_KEY, false)
+            .unwrap()
+            .fingerprint
+            .clone();
+        ctx.set_user_key(TEST_PRIVATE_KEY, "").unwrap();
+        ctx.set_server_key(TEST_PUBLIC_KEY, &fingerprint).unwrap();
+        ctx.add_recipient_key("user1", TEST_PUBLIC_KEY, &fingerprint)
+            .unwrap();
         ctx
     }
 
@@ -519,6 +624,8 @@ k0mXubZvyl4GBg==
     fn test_parse_wrong_expectation() {
         let err = parse_armored_key(TEST_PUBLIC_KEY, true);
         assert!(err.is_err());
+        let err = parse_armored_key(TEST_PRIVATE_KEY, false);
+        assert!(err.is_err());
     }
 
     #[test]
@@ -531,14 +638,18 @@ k0mXubZvyl4GBg==
     #[test]
     fn test_set_user_key() {
         let mut ctx = PgpContext::new();
-        ctx.set_user_key(TEST_PRIVATE_KEY, "");
+        ctx.set_user_key(TEST_PRIVATE_KEY, "").unwrap();
         assert!(ctx.user_fingerprint().is_some());
     }
 
     #[test]
     fn test_set_server_key() {
         let mut ctx = PgpContext::new();
-        ctx.set_server_key(TEST_PUBLIC_KEY, "");
+        let fingerprint = parse_armored_key(TEST_PUBLIC_KEY, false)
+            .unwrap()
+            .fingerprint
+            .clone();
+        ctx.set_server_key(TEST_PUBLIC_KEY, &fingerprint).unwrap();
         assert!(ctx.server_fingerprint().is_some());
     }
 
@@ -592,13 +703,10 @@ k0mXubZvyl4GBg==
     }
 
     #[test]
-    fn test_encrypt_metadata_roundtrip() {
+    fn test_metadata_crypto_fails_closed_without_metadata_keys() {
         let ctx = roundtrip_context();
-        let encrypted = ctx.encrypt_metadata(r#"{"name":"test"}"#).unwrap();
-        assert_eq!(
-            ctx.decrypt_metadata(&encrypted).unwrap(),
-            r#"{"name":"test"}"#
-        );
+        assert!(ctx.encrypt_metadata(r#"{"name":"test"}"#).is_err());
+        assert!(ctx.decrypt_metadata("encrypted-metadata").is_err());
     }
 
     #[test]

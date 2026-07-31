@@ -108,7 +108,7 @@ impl PassboltFolders {
         client: &PassboltApiClient,
         request: &CreateFolderRequest,
     ) -> Result<Folder, PassboltError> {
-        info!("Creating folder: {}", request.name);
+        info!("Creating Passbolt folder");
         let resp: ApiResponse<Folder> = client.post("/folders.json", request).await?;
         info!("Created folder {}", resp.body.id);
         Ok(resp.body)

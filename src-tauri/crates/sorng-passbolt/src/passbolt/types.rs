@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use zeroize::Zeroize;
 
 // ── Error types ─────────────────────────────────────────────────────
 
@@ -176,7 +177,7 @@ impl PassboltError {
 // ── Configuration ───────────────────────────────────────────────────
 
 /// Passbolt connection and behaviour configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PassboltConfig {
     /// Passbolt server base URL (e.g. `https://passbolt.example.com`).
     pub server_url: String,
@@ -198,6 +199,29 @@ pub struct PassboltConfig {
     pub cache_enabled: bool,
     /// Cache TTL in seconds.
     pub cache_ttl_secs: u64,
+}
+
+impl fmt::Debug for PassboltConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PassboltConfig")
+            .field("server_url", &self.server_url)
+            .field("verify_tls", &self.verify_tls)
+            .field(
+                "user_private_key",
+                &self.user_private_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "user_passphrase",
+                &self.user_passphrase.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("user_fingerprint", &self.user_fingerprint)
+            .field("auth_method", &self.auth_method)
+            .field("request_timeout_secs", &self.request_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("cache_enabled", &self.cache_enabled)
+            .field("cache_ttl_secs", &self.cache_ttl_secs)
+            .finish()
+    }
 }
 
 /// Supported authentication methods.
@@ -229,19 +253,23 @@ impl Default for PassboltConfig {
 // ── Session state ───────────────────────────────────────────────────
 
 /// Current session state with the Passbolt server.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct SessionState {
     /// Whether the user is authenticated.
     pub authenticated: bool,
     /// The authenticated user's UUID.
     pub user_id: Option<String>,
     /// JWT access token (if using JWT auth).
+    #[serde(skip_serializing, default)]
     pub access_token: Option<String>,
     /// JWT refresh token (if using JWT auth).
+    #[serde(skip_serializing, default)]
     pub refresh_token: Option<String>,
     /// CSRF token for cookie-based auth.
+    #[serde(skip_serializing, default)]
     pub csrf_token: Option<String>,
     /// Server's public PGP key (armored).
+    #[serde(skip_serializing, default)]
     pub server_public_key: Option<String>,
     /// Server key fingerprint.
     pub server_fingerprint: Option<String>,
@@ -251,6 +279,70 @@ pub struct SessionState {
     pub mfa_verified: bool,
     /// MFA provider used.
     pub mfa_provider: Option<MfaProvider>,
+}
+
+impl SessionState {
+    /// Return the non-secret session projection suitable for IPC responses.
+    pub fn public_view(&self) -> Self {
+        Self {
+            authenticated: self.authenticated,
+            user_id: self.user_id.clone(),
+            access_token: None,
+            refresh_token: None,
+            csrf_token: None,
+            server_public_key: None,
+            server_fingerprint: self.server_fingerprint.clone(),
+            expires_at: self.expires_at,
+            mfa_verified: self.mfa_verified,
+            mfa_provider: self.mfa_provider.clone(),
+        }
+    }
+
+    /// Erase bearer, refresh, CSRF, and cached key material before replacement.
+    pub fn clear_sensitive(&mut self) {
+        for value in [
+            &mut self.access_token,
+            &mut self.refresh_token,
+            &mut self.csrf_token,
+            &mut self.server_public_key,
+        ] {
+            if let Some(secret) = value.as_mut() {
+                secret.zeroize();
+            }
+            *value = None;
+        }
+        self.authenticated = false;
+        self.mfa_verified = false;
+    }
+}
+
+impl fmt::Debug for SessionState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SessionState")
+            .field("authenticated", &self.authenticated)
+            .field("user_id", &self.user_id)
+            .field(
+                "access_token",
+                &self.access_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "csrf_token",
+                &self.csrf_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "server_public_key",
+                &self.server_public_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("server_fingerprint", &self.server_fingerprint)
+            .field("expires_at", &self.expires_at)
+            .field("mfa_verified", &self.mfa_verified)
+            .field("mfa_provider", &self.mfa_provider)
+            .finish()
+    }
 }
 
 /// MFA provider types.
