@@ -11,6 +11,73 @@ pub struct ClipboardFilePayload {
     pub is_directory: bool,
 }
 
+const MAX_RDP_INPUT_ACTIONS: usize = 4_096;
+const MAX_RDP_CLIPBOARD_TEXT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RDP_CLIPBOARD_FILES: usize = 1_024;
+const MAX_RDP_CLIPBOARD_FILE_NAME_BYTES: usize = 1_024;
+const MAX_RDP_CLIPBOARD_FILE_PATH_BYTES: usize = 32 * 1024;
+const MAX_RDP_CLIPBOARD_FILE_METADATA_BYTES: usize = 8 * 1024 * 1024;
+
+fn validate_rdp_input_actions(events: &[RdpInputAction]) -> Result<(), String> {
+    if events.len() > MAX_RDP_INPUT_ACTIONS {
+        return Err(format!(
+            "Too many RDP input actions: {} (maximum {MAX_RDP_INPUT_ACTIONS})",
+            events.len()
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_rdp_clipboard_text(text: &str) -> Result<(), String> {
+    if text.len() > MAX_RDP_CLIPBOARD_TEXT_BYTES {
+        return Err(format!(
+            "RDP clipboard text is too large: {} bytes (maximum {MAX_RDP_CLIPBOARD_TEXT_BYTES})",
+            text.len()
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_rdp_clipboard_files(files: &[ClipboardFilePayload]) -> Result<(), String> {
+    if files.len() > MAX_RDP_CLIPBOARD_FILES {
+        return Err(format!(
+            "Too many RDP clipboard files: {} (maximum {MAX_RDP_CLIPBOARD_FILES})",
+            files.len()
+        ));
+    }
+
+    let mut metadata_bytes = 0usize;
+    for (index, file) in files.iter().enumerate() {
+        let name_bytes = file.name.len();
+        let path_bytes = file.path.len();
+
+        if name_bytes > MAX_RDP_CLIPBOARD_FILE_NAME_BYTES {
+            return Err(format!(
+                "RDP clipboard file {index} name is too large: {name_bytes} bytes (maximum {MAX_RDP_CLIPBOARD_FILE_NAME_BYTES})"
+            ));
+        }
+        if path_bytes > MAX_RDP_CLIPBOARD_FILE_PATH_BYTES {
+            return Err(format!(
+                "RDP clipboard file {index} path is too large: {path_bytes} bytes (maximum {MAX_RDP_CLIPBOARD_FILE_PATH_BYTES})"
+            ));
+        }
+
+        metadata_bytes = metadata_bytes
+            .checked_add(name_bytes)
+            .and_then(|total| total.checked_add(path_bytes))
+            .ok_or_else(|| "RDP clipboard file metadata size overflow".to_string())?;
+        if metadata_bytes > MAX_RDP_CLIPBOARD_FILE_METADATA_BYTES {
+            return Err(format!(
+                "RDP clipboard file metadata is too large: {metadata_bytes} bytes (maximum {MAX_RDP_CLIPBOARD_FILE_METADATA_BYTES})"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Copy, serde::Serialize)]
 pub struct RdpDesktopSizePayload {
     pub width: u16,
@@ -175,14 +242,17 @@ pub async fn connect_rdp(
 
     // Log sink channel: the session runner pushes log entries through this
     // channel and a background task drains them into the service's log buffer.
-    let (log_tx, log_rx) = std::sync::mpsc::channel::<RdpLogEntry>();
+    let (log_tx, log_rx) = std::sync::mpsc::sync_channel::<RdpLogEntry>(
+        super::session_runner::RDP_LOG_CHANNEL_CAPACITY,
+    );
     let log_state = Arc::clone(&*state);
     tokio::spawn(async move {
         // Drain in a non-blocking loop with small sleeps so we don't
         // spin-lock.  Exits when the sender is dropped (session ends).
         loop {
-            let mut batch = Vec::new();
-            loop {
+            let mut batch =
+                Vec::with_capacity(super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE);
+            while batch.len() < super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE {
                 match log_rx.try_recv() {
                     Ok(entry) => batch.push(entry),
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -472,6 +542,8 @@ pub async fn rdp_send_input(
     session_id: String,
     events: Vec<RdpInputAction>,
 ) -> Result<(), String> {
+    validate_rdp_input_actions(&events)?;
+
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
         let fp_events: Vec<FastPathInputEvent> = events.iter().flat_map(convert_input).collect();
@@ -729,6 +801,8 @@ pub async fn rdp_clipboard_copy(
     session_id: String,
     text: String,
 ) -> Result<(), String> {
+    validate_rdp_clipboard_text(&text)?;
+
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
         conn.cmd_tx
@@ -749,6 +823,8 @@ pub async fn rdp_clipboard_copy_files(
     session_id: String,
     files: Vec<ClipboardFilePayload>,
 ) -> Result<(), String> {
+    validate_rdp_clipboard_files(&files)?;
+
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
         let entries: Vec<ClipboardFileEntry> = files.into_iter().map(|f| ClipboardFileEntry {

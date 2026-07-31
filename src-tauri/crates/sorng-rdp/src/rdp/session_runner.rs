@@ -40,7 +40,9 @@ use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 
 /// A sink for RDP log entries — pushes to the backend log buffer via a channel
 /// so entries persist for polling, AND emits `rdp://log` for real-time UI.
-pub type LogSink = std::sync::mpsc::Sender<RdpLogEntry>;
+pub const RDP_LOG_CHANNEL_CAPACITY: usize = 1_024;
+pub const RDP_LOG_DRAIN_BATCH_SIZE: usize = 256;
+pub type LogSink = std::sync::mpsc::SyncSender<RdpLogEntry>;
 
 /// Emit a log entry to both the real-time event stream and the persistent log buffer.
 fn emit_log(
@@ -63,7 +65,7 @@ fn emit_log(
         "rdp://log",
         serde_json::to_value(&entry).unwrap_or_default(),
     );
-    let _ = log_sink.send(entry);
+    let _ = log_sink.try_send(entry);
 }
 
 fn emit_lifecycle_snapshot(
