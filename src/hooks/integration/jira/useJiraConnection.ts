@@ -50,15 +50,26 @@ export function useJiraConnection() {
       id: string,
       config: JiraConnectionConfig,
     ): Promise<JiraConnectionStatus> => {
+      let acknowledgementAvailable =
+        config.acknowledge_invalid_cert_risk === true;
+      const reconnectConfig = {
+        ...config,
+        acknowledge_invalid_cert_risk: false,
+      };
       return trackConnect(
         `jira:${id}`,
         async () => {
           setConnecting(true);
           setError(null);
           try {
+            const attemptConfig = {
+              ...reconnectConfig,
+              acknowledge_invalid_cert_risk: acknowledgementAvailable,
+            };
+            acknowledgementAvailable = false;
             const result = await jiraConnectionApi.connect(
               id,
-              withGlobalHttpProxy(config),
+              withGlobalHttpProxy(attemptConfig),
             );
             setConnectionId(id);
             setStatus(result);

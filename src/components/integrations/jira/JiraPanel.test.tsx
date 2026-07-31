@@ -102,6 +102,7 @@ describe("JiraPanel", () => {
             host: "https://acme.atlassian.net",
             api_version: "2",
             skip_tls_verify: false,
+            acknowledge_invalid_cert_risk: false,
             auth: {
               ApiToken: { email: "jsmith@acme.com", token: "api-tok-123" },
             },

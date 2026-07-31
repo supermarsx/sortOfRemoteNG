@@ -23,7 +23,9 @@ import type {
 } from "../../../types/jira";
 import { useJiraConnection } from "../../../hooks/integration/jira/useJiraConnection";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
 import { generateId } from "../../../utils/core/id";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { jiraCategoryTabs } from "./registry";
 
 /** The secret blob stored in the OS vault packs every possible auth secret (the
@@ -118,9 +120,20 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
   } = useJiraConnection();
 
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(
     jiraCategoryTabs[0]?.categoryKey ?? null,
   );
+  const effectiveTlsSkip =
+    form.skipTlsVerify && /^https:\/\//i.test(form.host.trim());
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: instanceId ?? `jira:${form.host.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Prefill the form from a persisted instance when opened against one.
   useEffect(() => {
@@ -177,76 +190,94 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
     };
   }, [form]);
 
-  const handleConnect = useCallback(async () => {
-    setError(null);
-    try {
-      const config = buildConfig();
-      const secret = JSON.stringify({
-        password: form.password,
-        token: form.token,
-      } satisfies JiraSecret);
-      const fields = {
-        authKind: form.authKind,
-        username: form.username.trim(),
-        email: form.email.trim(),
-        apiVersion: config.api_version ?? DEFAULT_API_VERSION,
-        skipTlsVerify: String(form.skipTlsVerify),
-      };
-      const name = config.name;
-
-      // Connect first. A failed backend connection must not leave a newly saved
-      // credential instance behind.
-      const id = instanceId ?? generateId();
-      await connect(id, config);
-
-      // Persist host + creds (encrypted) only after the backend accepted the
-      // connection. Existing instances keep their id; new instances are created
-      // with the same id as the live backend session.
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      setError(null);
       try {
-        if (instanceId) {
-          await updateInstance(instanceId, {
-            integrationKey: "jira",
-            name,
-            host: config.host,
-            fields,
-            secret,
-          });
-        } else {
-          await createInstance({
-            id,
-            integrationKey: "jira",
-            name,
-            host: config.host,
-            fields,
-            secret,
-          });
-        }
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(
-          t(
-            "integrations.jira.saveAfterConnectFailed",
-            "Connected, but failed to save this Jira configuration: {{error}}",
-            { error: msg },
-          ),
-        );
-      }
+        const config = {
+          ...buildConfig(),
+          acknowledge_invalid_cert_risk: effectiveTlsSkip && acknowledged,
+        };
+        const secret = JSON.stringify({
+          password: form.password,
+          token: form.token,
+        } satisfies JiraSecret);
+        const fields = {
+          authKind: form.authKind,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          apiVersion: config.api_version ?? DEFAULT_API_VERSION,
+          skipTlsVerify: String(form.skipTlsVerify),
+        };
+        const name = config.name;
 
-      setActiveTab(jiraCategoryTabs[0]?.categoryKey ?? null);
-    } catch {
-      // `connect` already surfaced the error via the hook; persistence failures
-      // after a successful connect are handled above and leave the session live.
+        // Connect first. A failed backend connection must not leave a newly saved
+        // credential instance behind.
+        const id = instanceId ?? generateId();
+        await connect(id, config);
+
+        // Persist host + creds (encrypted) only after the backend accepted the
+        // connection. Existing instances keep their id; new instances are created
+        // with the same id as the live backend session.
+        try {
+          if (instanceId) {
+            await updateInstance(instanceId, {
+              integrationKey: "jira",
+              name,
+              host: config.host,
+              fields,
+              secret,
+            });
+          } else {
+            await createInstance({
+              id,
+              integrationKey: "jira",
+              name,
+              host: config.host,
+              fields,
+              secret,
+            });
+          }
+        } catch (e) {
+          const msg = typeof e === "string" ? e : (e as Error).message;
+          setError(
+            t(
+              "integrations.jira.saveAfterConnectFailed",
+              "Connected, but failed to save this Jira configuration: {{error}}",
+              { error: msg },
+            ),
+          );
+        }
+
+        setActiveTab(jiraCategoryTabs[0]?.categoryKey ?? null);
+      } catch {
+        // `connect` already surfaced the error via the hook; persistence failures
+        // after a successful connect are handled above and leave the session live.
+      } finally {
+        resetTlsAck();
+      }
+    },
+    [
+      buildConfig,
+      effectiveTlsSkip,
+      form,
+      instanceId,
+      createInstance,
+      updateInstance,
+      connect,
+      setError,
+      resetTlsAck,
+      t,
+    ],
+  );
+
+  const handleConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
+      return;
     }
-  }, [
-    buildConfig,
-    form,
-    instanceId,
-    createInstance,
-    updateInstance,
-    connect,
-    setError,
-    t,
-  ]);
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const ActiveTab = useMemo(() => {
     if (!connectionId || !activeTab) return null;
@@ -272,6 +303,22 @@ const JiraPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={form.host.trim() || "Jira endpoint"}
+        connectionName={form.name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
           <SquareKanban className="h-5 w-5 text-primary" />
