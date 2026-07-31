@@ -7,33 +7,38 @@ use reqwest::Client;
 use crate::error::MarketplaceError;
 use crate::types::*;
 
+const MAX_REPOSITORY_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 /// Fetch the `index.json` from a remote repository and parse it as a
 /// [`RepositoryIndex`].
 pub async fn fetch_index(config: &RepositoryConfig) -> Result<RepositoryIndex, MarketplaceError> {
     let index_path = config.index_path.as_deref().unwrap_or("index.json");
     let url = build_raw_url(config, index_path);
 
-    info!("Fetching repository index from {url}");
+    info!("Fetching configured repository index");
 
     let client = build_client(config.auth_token.as_deref())?;
-    let resp = client.get(&url).send().await?;
+    let resp = client.get(&url).send().await.map_err(|_| {
+        MarketplaceError::NetworkError("Repository index request failed".to_string())
+    })?;
 
     if !resp.status().is_success() {
         return Err(MarketplaceError::NetworkError(format!(
-            "HTTP {} from {url}",
+            "Repository index returned HTTP {}",
             resp.status()
         )));
     }
 
-    let body = resp.text().await?;
-    let index: RepositoryIndex = serde_json::from_str(&body)
-        .map_err(|e| MarketplaceError::IndexParseError(e.to_string()))?;
+    let body = read_bounded_response_body(resp, "Repository index").await?;
+    let index: RepositoryIndex = serde_json::from_slice(&body).map_err(|e| {
+        MarketplaceError::IndexParseError(format!(
+            "Invalid repository index JSON at line {}, column {}",
+            e.line(),
+            e.column()
+        ))
+    })?;
 
-    info!(
-        "Fetched index with {} listing(s), version {}",
-        index.listings.len(),
-        index.version,
-    );
+    info!("Fetched configured index with {} listing(s)", index.listings.len());
 
     Ok(index)
 }
@@ -47,7 +52,7 @@ pub async fn fetch_github_releases(
 ) -> Result<Vec<MarketplaceListing>, MarketplaceError> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases");
 
-    info!("Fetching GitHub releases from {url}");
+    info!("Fetching configured GitHub releases");
 
     let client = build_client(token)?;
     let resp = client
@@ -55,7 +60,10 @@ pub async fn fetch_github_releases(
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "sorng-marketplace/0.1")
         .send()
-        .await?;
+        .await
+        .map_err(|_| {
+            MarketplaceError::NetworkError("GitHub release request failed".to_string())
+        })?;
 
     if !resp.status().is_success() {
         return Err(MarketplaceError::NetworkError(format!(
@@ -64,7 +72,14 @@ pub async fn fetch_github_releases(
         )));
     }
 
-    let releases: Vec<serde_json::Value> = resp.json().await?;
+    let body = read_bounded_response_body(resp, "GitHub release").await?;
+    let releases: Vec<serde_json::Value> = serde_json::from_slice(&body).map_err(|e| {
+        MarketplaceError::NetworkError(format!(
+            "GitHub release response contained invalid JSON at line {}, column {}",
+            e.line(),
+            e.column()
+        ))
+    })?;
     let now = Utc::now();
 
     let listings: Vec<MarketplaceListing> = releases
@@ -146,7 +161,7 @@ pub async fn refresh_all_repositories(
         match fetch_index(cfg).await {
             Ok(idx) => indexes.push(idx),
             Err(e) => {
-                warn!("Failed to fetch index from {}: {e}", cfg.url);
+                warn!("Failed to fetch configured repository index: {e}");
                 // Continue with remaining repositories.
             }
         }
@@ -233,16 +248,55 @@ fn build_raw_url(config: &RepositoryConfig, path: &str) -> String {
 
 /// Build a `reqwest::Client`, optionally injecting a bearer token.
 fn build_client(token: Option<&str>) -> Result<Client, MarketplaceError> {
-    let mut builder = Client::builder().user_agent("sorng-marketplace/0.1");
+    let mut builder = Client::builder()
+        .user_agent("sorng-marketplace/0.1")
+        .redirect(reqwest::redirect::Policy::none());
     if let Some(tok) = token {
         use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
         let mut headers = HeaderMap::new();
-        let val = HeaderValue::from_str(&format!("Bearer {tok}"))
-            .map_err(|e| MarketplaceError::NetworkError(e.to_string()))?;
+        let val = HeaderValue::from_str(&format!("Bearer {tok}")).map_err(|_| {
+            MarketplaceError::NetworkError(
+                "Invalid marketplace authorization token".to_string(),
+            )
+        })?;
         headers.insert(AUTHORIZATION, val);
         builder = builder.default_headers(headers);
     }
     builder
         .build()
-        .map_err(|e| MarketplaceError::NetworkError(e.to_string()))
+        .map_err(|_| MarketplaceError::NetworkError("Failed to build HTTP client".to_string()))
+}
+
+async fn read_bounded_response_body(
+    mut response: reqwest::Response,
+    operation: &str,
+) -> Result<Vec<u8>, MarketplaceError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_REPOSITORY_RESPONSE_BODY_BYTES as u64)
+    {
+        return Err(MarketplaceError::NetworkError(format!(
+            "{operation} response exceeds {MAX_REPOSITORY_RESPONSE_BODY_BYTES} byte limit"
+        )));
+    }
+
+    let capacity = response
+        .content_length()
+        .unwrap_or(0)
+        .min(MAX_REPOSITORY_RESPONSE_BODY_BYTES as u64) as usize;
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response.chunk().await.map_err(|_| {
+        MarketplaceError::NetworkError(format!("Failed to read {operation} response"))
+    })? {
+        let remaining =
+            (MAX_REPOSITORY_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        if body.len() > MAX_REPOSITORY_RESPONSE_BODY_BYTES {
+            return Err(MarketplaceError::NetworkError(format!(
+                "{operation} response exceeds {MAX_REPOSITORY_RESPONSE_BODY_BYTES} byte limit"
+            )));
+        }
+    }
+
+    Ok(body)
 }
