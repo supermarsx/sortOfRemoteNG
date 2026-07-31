@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::client::RedisClient;
-use crate::error::RedisError;
+use crate::error::{RedisError, RedisErrorKind};
 use crate::types::*;
 
 // ---------------------------------------------------------------------------
@@ -61,13 +61,13 @@ impl RedisService {
         &mut self,
         config: RedisConnectionConfig,
     ) -> Result<RedisSession, RedisError> {
-        // SSH tunnel stub
-        let ssh_child = if config.ssh_tunnel.is_some() {
-            log::warn!("SSH tunnel support for Redis is a stub — connecting directly");
-            None
-        } else {
-            None
-        };
+        if config.ssh_tunnel.is_some() {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidConfig,
+                "Redis SSH tunnelling is not implemented; refusing a direct connection",
+            ));
+        }
+        let ssh_child = None;
 
         let mut client = RedisClient::new(&config).await?;
 

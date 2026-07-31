@@ -7,6 +7,7 @@ use std::fmt;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RedisErrorKind {
+    InvalidConfig,
     ConnectionFailed,
     AuthenticationFailed,
     SessionNotFound,

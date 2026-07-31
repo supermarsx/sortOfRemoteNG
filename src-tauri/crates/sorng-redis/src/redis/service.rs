@@ -3,7 +3,7 @@
 
 use super::types::*;
 use chrono::Utc;
-use log::{info, warn};
+use log::info;
 use redis::AsyncCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,13 +54,13 @@ impl RedisService {
             .clone()
             .unwrap_or_else(|| format!("redis-{}", &session_id[..8]));
 
-        // SSH tunnel stub
-        let ssh_child = if let Some(ref _ssh) = config.ssh_tunnel {
-            warn!("SSH tunnel support for Redis is a stub — connecting directly");
-            None
-        } else {
-            None
-        };
+        if config.ssh_tunnel.is_some() {
+            return Err(RedisError::new(
+                RedisErrorKind::InvalidConfig,
+                "Redis SSH tunnelling is not implemented; refusing a direct connection",
+            ));
+        }
+        let ssh_child = None;
 
         let url = config.to_url();
         let client = redis::Client::open(url.as_str())
