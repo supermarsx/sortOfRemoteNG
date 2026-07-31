@@ -7,6 +7,7 @@ use crate::types::*;
 use base64::Engine;
 use log::debug;
 use std::collections::HashMap;
+use zeroize::{Zeroize, Zeroizing};
 
 // ─── Auth Provider Trait ─────────────────────────────────────────────────────
 
@@ -53,6 +54,12 @@ impl BasicAuth {
     }
 }
 
+impl Drop for BasicAuth {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 #[async_trait::async_trait]
 impl AuthProvider for BasicAuth {
     fn name(&self) -> &str {
@@ -65,9 +72,10 @@ impl AuthProvider for BasicAuth {
         } else {
             self.username.clone()
         };
+        let cleartext = Zeroizing::new(format!("{}:{}", user, self.password));
         let encoded =
-            base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", user, self.password));
-        Ok(format!("Basic {}", encoded))
+            Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(cleartext.as_bytes()));
+        Ok(format!("Basic {}", encoded.as_str()))
     }
 
     async fn process_challenge(&mut self, _challenge: &str) -> Result<Option<String>, String> {
