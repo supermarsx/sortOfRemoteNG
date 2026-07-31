@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use secrecy::{ExposeSecret, SecretString};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -50,6 +51,10 @@ const FB_REQUEST_INTERVAL: Duration = Duration::from_millis(33); // ~30 fps
 
 /// Refuse attacker-controlled failure strings large enough to exhaust memory.
 const MAX_FAILURE_REASON_BYTES: u32 = 16 * 1024;
+
+/// Per-transfer ceiling. Transfers stream in bounded chunks, but a hard
+/// total protects disk usage and rejects implausible server size claims.
+pub const MAX_FILE_TRANSFER_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Configuration for a new ARD session.
 #[derive(Debug, Clone)]
@@ -850,24 +855,65 @@ async fn handle_upload(
     session_id: &str,
     evt_tx: &mpsc::Sender<ArdStatusEvent>,
 ) -> Result<(), ArdError> {
-    let data = tokio::fs::read(local_path)
+    let source_metadata = tokio::fs::symlink_metadata(local_path)
         .await
-        .map_err(|e| ArdError::FileTransfer(format!("Read local file: {e}")))?;
+        .map_err(|e| ArdError::FileTransfer(format!("Inspect local file: {e}")))?;
+    if source_metadata.file_type().is_symlink() || !source_metadata.is_file() {
+        return Err(ArdError::FileTransfer(
+            "Upload source must be a regular, non-symlink file".to_string(),
+        ));
+    }
+    if source_metadata.len() > MAX_FILE_TRANSFER_BYTES {
+        return Err(ArdError::FileTransfer(format!(
+            "Upload exceeds the {MAX_FILE_TRANSFER_BYTES}-byte safety limit"
+        )));
+    }
 
-    let total = data.len() as u64;
+    let mut source = tokio::fs::File::open(local_path)
+        .await
+        .map_err(|e| ArdError::FileTransfer(format!("Open local file: {e}")))?;
+    let opened_metadata = source
+        .metadata()
+        .await
+        .map_err(|e| ArdError::FileTransfer(format!("Inspect opened local file: {e}")))?;
+    if !opened_metadata.is_file()
+        || opened_metadata.len() != source_metadata.len()
+        || opened_metadata.len() > MAX_FILE_TRANSFER_BYTES
+    {
+        return Err(ArdError::FileTransfer(
+            "Upload source changed or is not a bounded regular file".to_string(),
+        ));
+    }
+
+    let total = opened_metadata.len();
     file_transfer::request_upload(conn, remote_path, total)?;
 
     // Send in 64 KB chunks.
-    let chunk_size = 65536;
-    let mut offset = 0usize;
-    while offset < data.len() {
-        let end = (offset + chunk_size).min(data.len());
-        let _is_last = end >= data.len();
-        file_transfer::send_upload_chunk(conn, &data[offset..end])?;
-        stats
-            .bytes_sent
-            .fetch_add((end - offset) as u64, Ordering::Relaxed);
-        offset = end;
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut sent = 0u64;
+    loop {
+        let read = source
+            .read(&mut buffer)
+            .await
+            .map_err(|e| ArdError::FileTransfer(format!("Read local file: {e}")))?;
+        if read == 0 {
+            break;
+        }
+        sent = sent
+            .checked_add(read as u64)
+            .ok_or_else(|| ArdError::FileTransfer("Upload byte count overflowed".to_string()))?;
+        if sent > total || sent > MAX_FILE_TRANSFER_BYTES {
+            return Err(ArdError::FileTransfer(
+                "Upload source grew while reading".to_string(),
+            ));
+        }
+        file_transfer::send_upload_chunk(conn, &buffer[..read])?;
+        stats.bytes_sent.fetch_add(read as u64, Ordering::Relaxed);
+    }
+    if sent != total {
+        return Err(ArdError::FileTransfer(
+            "Upload source changed while reading".to_string(),
+        ));
     }
 
     file_transfer::read_upload_response(conn)?;
@@ -893,23 +939,88 @@ async fn handle_download(
     session_id: &str,
     evt_tx: &mpsc::Sender<ArdStatusEvent>,
 ) -> Result<(), ArdError> {
+    let destination = std::path::Path::new(local_path);
+    let parent = destination.parent().ok_or_else(|| {
+        ArdError::FileTransfer("Download destination has no parent directory".to_string())
+    })?;
+    let parent_metadata = std::fs::symlink_metadata(parent)
+        .map_err(|e| ArdError::FileTransfer(format!("Inspect destination directory: {e}")))?;
+    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
+        return Err(ArdError::FileTransfer(
+            "Download destination parent must be a regular directory".to_string(),
+        ));
+    }
+    if let Ok(metadata) = std::fs::symlink_metadata(destination) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(ArdError::FileTransfer(
+                "Download destination must be a regular, non-symlink file".to_string(),
+            ));
+        }
+    }
+    let temporary = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| ArdError::FileTransfer(format!("Create temporary download: {e}")))?;
+    let output_handle = temporary
+        .reopen()
+        .map_err(|e| ArdError::FileTransfer(format!("Open temporary download: {e}")))?;
+    let mut output = tokio::fs::File::from_std(output_handle);
+
     file_transfer::request_download(conn, remote_path)?;
 
-    let mut file_data = Vec::new();
-    while let file_transfer::DownloadChunk::Data {
-        total_size: _,
-        data,
-    } = file_transfer::read_download_chunk(conn)?
+    let mut expected_total = None;
+    let mut received = 0u64;
+    while let file_transfer::DownloadChunk::Data { total_size, data } =
+        file_transfer::read_download_chunk(conn)?
     {
+        if total_size > MAX_FILE_TRANSFER_BYTES {
+            return Err(ArdError::FileTransfer(format!(
+                "Download exceeds the {MAX_FILE_TRANSFER_BYTES}-byte safety limit"
+            )));
+        }
+        if let Some(expected) = expected_total {
+            if expected != total_size {
+                return Err(ArdError::FileTransfer(
+                    "Server changed the declared download size".to_string(),
+                ));
+            }
+        } else {
+            expected_total = Some(total_size);
+        }
+        received = received
+            .checked_add(data.len() as u64)
+            .ok_or_else(|| ArdError::FileTransfer("Download byte count overflowed".to_string()))?;
+        if received > total_size || received > MAX_FILE_TRANSFER_BYTES {
+            return Err(ArdError::FileTransfer(
+                "Server sent more data than declared".to_string(),
+            ));
+        }
+        output
+            .write_all(&data)
+            .await
+            .map_err(|e| ArdError::FileTransfer(format!("Write temporary download: {e}")))?;
         stats
             .bytes_received
             .fetch_add(data.len() as u64, Ordering::Relaxed);
-        file_data.extend_from_slice(&data);
     }
-
-    tokio::fs::write(local_path, &file_data)
+    if expected_total.is_some_and(|total| total != received) {
+        return Err(ArdError::FileTransfer(
+            "Download ended before the declared size was received".to_string(),
+        ));
+    }
+    output
+        .flush()
         .await
-        .map_err(|e| ArdError::FileTransfer(format!("Write local file: {e}")))?;
+        .map_err(|e| ArdError::FileTransfer(format!("Flush temporary download: {e}")))?;
+    output
+        .sync_all()
+        .await
+        .map_err(|e| ArdError::FileTransfer(format!("Sync temporary download: {e}")))?;
+    drop(output);
+    temporary.persist(destination).map_err(|e| {
+        ArdError::FileTransfer(format!(
+            "Atomically replace download destination: {}",
+            e.error
+        ))
+    })?;
 
     let _ = evt_tx
         .send(ArdStatusEvent {
@@ -917,7 +1028,7 @@ async fn handle_download(
             status: "download_complete".into(),
             message: Some(format!(
                 "Downloaded {remote_path} → {local_path} ({} bytes)",
-                file_data.len()
+                received
             )),
             timestamp: Utc::now().to_rfc3339(),
         })
