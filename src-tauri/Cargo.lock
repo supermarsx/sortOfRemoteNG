@@ -12762,6 +12762,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "uuid",
 ]

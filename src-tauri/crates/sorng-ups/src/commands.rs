@@ -19,7 +19,12 @@ pub async fn ups_connect(
     id: String,
     config: UpsConnectionConfig,
 ) -> CmdResult<String> {
-    state.lock().await.connect(id, config).map_err(map_err)
+    state
+        .lock()
+        .await
+        .connect(id, config)
+        .await
+        .map_err(map_err)
 }
 
 #[tauri::command]

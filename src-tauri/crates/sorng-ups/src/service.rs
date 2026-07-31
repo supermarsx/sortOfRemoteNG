@@ -43,8 +43,9 @@ impl UpsService {
 
     // ── Connection lifecycle ─────────────────────────────────────
 
-    pub fn connect(&mut self, id: String, config: UpsConnectionConfig) -> UpsResult<String> {
+    pub async fn connect(&mut self, id: String, config: UpsConnectionConfig) -> UpsResult<String> {
         let client = UpsClient::new(config)?;
+        client.probe().await?;
         self.connections.insert(id.clone(), client);
         Ok(id)
     }

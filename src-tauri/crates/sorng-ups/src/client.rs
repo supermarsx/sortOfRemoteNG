@@ -4,15 +4,41 @@
 use crate::error::{UpsError, UpsResult};
 use crate::types::*;
 use log::debug;
+use sorng_ssh::ssh::integration::{ExternalSshConfig, IntegrationSshSession};
+
+const MAX_SSH_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SSH_ERROR_BYTES: usize = 64 * 1024;
 
 /// UPS management client – connects via SSH to manage NUT remotely.
 pub struct UpsClient {
     pub config: UpsConnectionConfig,
+    ssh: IntegrationSshSession,
 }
 
 impl UpsClient {
-    pub fn new(config: UpsConnectionConfig) -> UpsResult<Self> {
-        Ok(Self { config })
+    pub fn new(mut config: UpsConnectionConfig) -> UpsResult<Self> {
+        config.host = config.host.trim().to_string();
+        if config.host.is_empty() {
+            return Err(UpsError::connection("SSH host cannot be empty"));
+        }
+
+        if let Some(user) = config.ssh_user.as_mut() {
+            *user = user.trim().to_string();
+            if user.is_empty() {
+                return Err(UpsError::connection("SSH user cannot be empty"));
+            }
+        }
+
+        let ssh = IntegrationSshSession::new(ExternalSshConfig {
+            host: &config.host,
+            username: config.ssh_user.as_deref().unwrap_or("root"),
+            port: config.port.unwrap_or(22),
+            private_key: config.ssh_key.as_deref(),
+            password: config.ssh_password.as_deref(),
+            connect_timeout_secs: config.timeout_secs.unwrap_or(30).max(1),
+        });
+
+        Ok(Self { config, ssh })
     }
 
     // ── Binary paths ─────────────────────────────────────────────
@@ -54,69 +80,64 @@ impl UpsClient {
 
     /// Build the full `upsc` command string for a device.
     pub fn upsc_cmd(&self, ups_name: &str) -> String {
-        format!("{} {}", self.upsc_bin(), self.ups_addr(ups_name))
+        format!(
+            "{} {}",
+            self.upsc_bin(),
+            shell_escape(&self.ups_addr(ups_name))
+        )
     }
 
     // ── SSH command execution ──────────────────────────────────
 
     pub async fn exec_ssh(&self, command: &str) -> UpsResult<SshOutput> {
-        debug!("UPS SSH [{}]: {}", self.config.host, command);
+        debug!("Executing UPS SSH command on {}", self.config.host);
 
-        let ssh_user = self.config.ssh_user.as_deref().unwrap_or("root");
-        let port = self.config.port.unwrap_or(22);
-        let timeout = self.config.timeout_secs.unwrap_or(30);
-
-        let mut ssh_args = vec![
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={}", timeout),
-            "-p".to_string(),
-            port.to_string(),
-        ];
-
-        if let Some(ref key) = self.config.ssh_key {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(key.clone());
-        }
-
-        if self.config.ssh_key.is_none() && self.config.ssh_password.is_none() {
-            ssh_args.push("-o".to_string());
-            ssh_args.push("BatchMode=yes".to_string());
-        }
-
-        let target = format!("{}@{}", ssh_user, self.config.host);
-        ssh_args.push(target);
-        ssh_args.push(command.to_string());
-
-        let use_sshpass = self.config.ssh_password.is_some() && self.config.ssh_key.is_none();
-
-        let mut cmd = if use_sshpass {
-            let mut c = tokio::process::Command::new("sshpass");
-            c.arg("-e").arg("ssh");
-            c.args(&ssh_args);
-            if let Some(ref pw) = self.config.ssh_password {
-                c.env("SSHPASS", pw);
-            }
-            c
-        } else {
-            let mut c = tokio::process::Command::new("ssh");
-            c.args(&ssh_args);
-            c
-        };
-
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        let output = cmd
-            .output()
+        let output = self
+            .ssh
+            .execute(
+                command,
+                Some(
+                    self.config
+                        .timeout_secs
+                        .unwrap_or(30)
+                        .max(1)
+                        .saturating_mul(1000),
+                ),
+            )
             .await
-            .map_err(|e| UpsError::ssh(format!("Failed to execute ssh: {}", e)))?;
+            .map_err(|error| {
+                UpsError::ssh(redact_and_bound_error(
+                    error,
+                    &[
+                        self.config.ssh_password.as_deref(),
+                        self.config.nut_password.as_deref(),
+                    ],
+                ))
+            })?;
+
+        if output.len() > MAX_SSH_OUTPUT_BYTES {
+            return Err(UpsError::ssh(format!(
+                "SSH command output exceeded the {} byte limit",
+                MAX_SSH_OUTPUT_BYTES
+            )));
+        }
 
         Ok(SshOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            exit_code: output.status.code().unwrap_or(-1),
+            stdout: output,
+            stderr: String::new(),
+            exit_code: 0,
+        })
+    }
+
+    pub async fn probe(&self) -> UpsResult<()> {
+        self.ssh.probe().await.map_err(|error| {
+            UpsError::ssh(redact_and_bound_error(
+                error,
+                &[
+                    self.config.ssh_password.as_deref(),
+                    self.config.nut_password.as_deref(),
+                ],
+            ))
         })
     }
 
@@ -125,7 +146,12 @@ impl UpsClient {
     /// Run `upsc <ups>@<host>:<port> [var]` and return stdout.
     pub async fn exec_upsc(&self, ups_name: &str, var: Option<&str>) -> UpsResult<String> {
         let cmd = match var {
-            Some(v) => format!("{} {} {}", self.upsc_bin(), self.ups_addr(ups_name), v),
+            Some(v) => format!(
+                "{} {} {}",
+                self.upsc_bin(),
+                shell_escape(&self.ups_addr(ups_name)),
+                shell_escape(v)
+            ),
             None => self.upsc_cmd(ups_name),
         };
         let out = self.exec_ssh(&cmd).await?;
@@ -141,8 +167,8 @@ impl UpsClient {
             self.upscmd_bin(),
             shell_escape(nut_user),
             shell_escape(nut_pass),
-            self.ups_addr(ups_name),
-            cmd
+            shell_escape(&self.ups_addr(ups_name)),
+            shell_escape(cmd)
         );
         let out = self.exec_ssh(&full).await?;
         Ok(out.stdout)
@@ -152,14 +178,14 @@ impl UpsClient {
     pub async fn exec_upsrw(&self, ups_name: &str, var: &str, value: &str) -> UpsResult<String> {
         let nut_user = self.config.nut_user.as_deref().unwrap_or("admin");
         let nut_pass = self.config.nut_password.as_deref().unwrap_or("");
+        let setting = format!("{var}={value}");
         let full = format!(
-            "{} -s {}={} -u {} -p {} {}",
+            "{} -s {} -u {} -p {} {}",
             self.upsrw_bin(),
-            var,
-            shell_escape(value),
+            shell_escape(&setting),
             shell_escape(nut_user),
             shell_escape(nut_pass),
-            self.ups_addr(ups_name),
+            shell_escape(&self.ups_addr(ups_name)),
         );
         let out = self.exec_ssh(&full).await?;
         Ok(out.stdout)
@@ -199,4 +225,29 @@ impl UpsClient {
 /// Minimal shell escaping to prevent injection via file paths or arguments.
 pub fn shell_escape(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn redact_and_bound_error(mut error: String, secrets: &[Option<&str>]) -> String {
+    for secret in secrets.iter().filter_map(|value| *value) {
+        if !secret.is_empty() {
+            error = error.replace(secret, "[REDACTED]");
+            error = error.replace(&shell_escape(secret), "[REDACTED]");
+        }
+    }
+
+    truncate_utf8(error, MAX_SSH_ERROR_BYTES)
+}
+
+fn truncate_utf8(mut value: String, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value;
+    }
+
+    let mut boundary = max_bytes;
+    while !value.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    value.truncate(boundary);
+    value.push_str(" [truncated]");
+    value
 }
