@@ -24,12 +24,7 @@ pub fn build_env(cfg: &BorgConfig) -> HashMap<String, String> {
         env.insert("BORG_PASSPHRASE_FD".into(), "0".into()); // will pipe from file
         env.insert("BORG_PASSCOMMAND".into(), format!("cat {file}"));
     }
-    // Non-interactive
-    env.insert("BORG_RELOCATED_REPO_ACCESS_IS_OK".into(), "yes".into());
-    env.insert(
-        "BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK".into(),
-        "yes".into(),
-    );
+
 
     // SSH command
     if let Some(ssh) = &cfg.ssh {
