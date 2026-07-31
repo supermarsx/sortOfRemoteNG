@@ -8,6 +8,19 @@ use crate::serial::types::*;
 use std::sync::Arc;
 use std::time::Instant;
 
+const MAX_MODEM_RESPONSE_LINES: usize = 4096;
+
+fn bounded_utf8(value: &str, max_bytes: usize) -> &str {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let mut end = max_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Standard AT commands
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -104,8 +117,11 @@ impl AtCommands {
 
 /// Parse an AT command response buffer into structured form.
 pub fn parse_at_response(command: &str, raw: &str, elapsed_ms: u64) -> AtCommandResult {
+    let command = bounded_utf8(command, MAX_SERIAL_MODEM_COMMAND_BYTES);
+    let raw = bounded_utf8(raw, MAX_SERIAL_MODEM_RESPONSE_BYTES);
     let lines: Vec<String> = raw
         .lines()
+        .take(MAX_MODEM_RESPONSE_LINES)
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
         .filter(|l| {
@@ -180,12 +196,27 @@ pub async fn execute_at_command(
     command: &str,
     timeout_ms: u64,
 ) -> Result<AtCommandResult, String> {
+    if command.is_empty()
+        || command.len() > MAX_SERIAL_MODEM_COMMAND_BYTES
+        || command.chars().any(char::is_control)
+    {
+        return Err("AT command is empty, oversized, or contains control characters".to_string());
+    }
+    if timeout_ms == 0 || timeout_ms > MAX_SERIAL_TIMEOUT_MS {
+        return Err(format!(
+            "AT command timeout must be between 1 and {} ms",
+            MAX_SERIAL_TIMEOUT_MS
+        ));
+    }
     let start = Instant::now();
 
     // Send the command with CR
     let mut cmd_bytes = command.as_bytes().to_vec();
     cmd_bytes.push(b'\r');
-    transport.write(&cmd_bytes).await?;
+    let written = transport.write(&cmd_bytes).await?;
+    if written != cmd_bytes.len() {
+        return Err("Serial transport did not accept the complete AT command".to_string());
+    }
 
     // Read response with timeout
     let timeout = tokio::time::Duration::from_millis(timeout_ms);
@@ -202,6 +233,12 @@ pub async fn execute_at_command(
             result = transport.read(&mut buf) => {
                 match result {
                     Ok(n) if n > 0 => {
+                        if response.len().saturating_add(n) > MAX_SERIAL_MODEM_RESPONSE_BYTES {
+                            return Err(format!(
+                                "AT response exceeds {} bytes",
+                                MAX_SERIAL_MODEM_RESPONSE_BYTES
+                            ));
+                        }
                         response.extend_from_slice(&buf[..n]);
                         // Check if we have a complete response (ends with a result code)
                         let text = String::from_utf8_lossy(&response);
