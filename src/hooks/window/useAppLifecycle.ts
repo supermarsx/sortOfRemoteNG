@@ -19,6 +19,8 @@ import {
 import {
   parsePersistedConnectionSession,
   serializePersistedConnectionSession,
+  MAX_PERSISTED_SESSIONS,
+  MAX_PERSISTED_SESSION_STORAGE_CHARS,
   type PersistedConnectionSession,
 } from "../../utils/session/sessionPersistence";
 import { hasSessionVpnCleanupQuarantine } from "../../utils/session/sessionLifecycle";
@@ -27,7 +29,22 @@ import { SAFE_MODE_KEY } from "../../components/app/CriticalErrorScreen";
 
 const CLEAN_EXIT_KEY = "mremote-clean-exit";
 const LAST_SESSION_KEY = "mremote-last-session-time";
+const ACTIVE_SESSIONS_KEY = "mremote-active-sessions";
 const INVALID_ACTIVE_SESSIONS_KEY = "mremote-invalid-active-sessions";
+const SESSION_RESTORE_CONCURRENCY = 4;
+
+const stringifySessionSnapshot = (
+  rows: PersistedConnectionSession[],
+): string => {
+  if (rows.length > MAX_PERSISTED_SESSIONS) {
+    throw new Error("Saved session count exceeds the safety limit.");
+  }
+  const serialized = JSON.stringify(rows);
+  if (serialized.length > MAX_PERSISTED_SESSION_STORAGE_CHARS) {
+    throw new Error("Saved session payload exceeds the safety limit.");
+  }
+  return serialized;
+};
 
 /** Read and consume the safe-mode flag set by the BSOD recovery screen. */
 function consumeSafeMode(): "once" | "permanent" | null {
@@ -101,6 +118,9 @@ export const useAppLifecycle = ({
   const mountedRef = useRef(true);
   const safeModeRef = useRef<"once" | "permanent" | null>(null);
   const reconnectingSessions = useRef<Set<string>>(new Set());
+  const restoreInProgressRef = useRef(false);
+  const failedRecoveryRowsRef = useRef<PersistedConnectionSession[]>([]);
+  const delayedRestoreCancelsRef = useRef<Set<() => void>>(new Set());
 
   /** Maximum time (ms) allowed for initialization before BSOD. */
   const INIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -423,73 +443,214 @@ export const useAppLifecycle = ({
   ]);
 
   useEffect(() => {
+    const delayedRestoreCancels = delayedRestoreCancelsRef.current;
     const settings = settingsManager.getSettings();
+    sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
     if (
       settings.reconnectOnReload &&
       !safeModeRef.current &&
       isInitialized &&
       state.connections.length > 0
     ) {
-      const savedSessions = sessionStorage.getItem("mremote-active-sessions");
-      if (savedSessions && !hasReconnected.current) {
+      const savedSessions = sessionStorage.getItem(ACTIVE_SESSIONS_KEY);
+      if (
+        !savedSessions ||
+        hasReconnected.current ||
+        restoreInProgressRef.current
+      ) {
+        return;
+      }
+
+      let cancelled = false;
+      restoreInProgressRef.current = true;
+
+      const scheduleRestore = (
+        sessionData: PersistedConnectionSession,
+        connection: Connection,
+      ): Promise<void> =>
+        new Promise<void>((resolve, reject) => {
+          let settled = false;
+
+          const cancel = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            delayedRestoreCancels.delete(cancel);
+            reconnectingSessions.current.delete(sessionData.id);
+            reject(new Error("Delayed session restoration was cancelled."));
+          };
+
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            delayedRestoreCancels.delete(cancel);
+
+            void (async () => {
+              if (cancelled || !mountedRef.current) {
+                throw new Error("Session restoration was cancelled.");
+              }
+              if (restoreSession) {
+                await restoreSession(sessionData, connection);
+                return;
+              }
+              if (hasSessionVpnCleanupQuarantine(sessionData)) {
+                throw new Error(
+                  "A quarantined session requires a restore-capable lifecycle owner.",
+                );
+              }
+              // Await an async implementation even though the compatibility
+              // surface permits a synchronous handleConnect callback.
+              await Promise.resolve(handleConnect(connection));
+            })()
+              .then(resolve, reject)
+              .finally(() => {
+                reconnectingSessions.current.delete(sessionData.id);
+              });
+          }, 1000);
+
+          delayedRestoreCancels.add(cancel);
+        });
+
+      const restoreSavedSessions = async () => {
         try {
+          if (savedSessions.length > MAX_PERSISTED_SESSION_STORAGE_CHARS) {
+            sessionStorage.removeItem(ACTIVE_SESSIONS_KEY);
+            sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
+            throw new Error("Saved session payload exceeds the safety limit.");
+          }
           const rawSessions: unknown = JSON.parse(savedSessions);
-          if (!Array.isArray(rawSessions)) {
+          if (
+            !Array.isArray(rawSessions) ||
+            rawSessions.length > MAX_PERSISTED_SESSIONS
+          ) {
             throw new Error("Saved session payload is not an array.");
           }
-          sessionStorage.removeItem("mremote-active-sessions");
-          const invalidSessions: unknown[] = [];
 
-          rawSessions.forEach((rawSession) => {
+          const invalidSessionReasons: string[] = [];
+          const retryRows: PersistedConnectionSession[] = [];
+          const candidates: Array<{
+            sessionData: PersistedConnectionSession;
+            connection: Connection;
+          }> = [];
+
+          rawSessions.forEach((rawSession, index) => {
             const parsed = parsePersistedConnectionSession(rawSession);
             if (!parsed.valid) {
-              invalidSessions.push(rawSession);
+              if (invalidSessionReasons.length < 32) {
+                invalidSessionReasons.push(
+                  `Row ${index + 1}: ${parsed.reason}`,
+                );
+              }
               console.error(
                 "Refusing to restore unsafe saved session:",
                 parsed.reason,
               );
               return;
             }
+
             const sessionData = parsed.session;
             const connection = state.connections.find(
-              (c) => c.id === sessionData.connectionId,
+              (candidate) => candidate.id === sessionData.connectionId,
             );
             if (
-              connection &&
-              !reconnectingSessions.current.has(sessionData.id)
+              !connection ||
+              reconnectingSessions.current.has(sessionData.id)
             ) {
-              reconnectingSessions.current.add(sessionData.id);
-              setTimeout(() => {
-                // Use restoreSession to preserve session state when available
-                if (restoreSession) {
-                  restoreSession(sessionData, connection).finally(() => {
-                    reconnectingSessions.current.delete(sessionData.id);
-                  });
-                } else if (hasSessionVpnCleanupQuarantine(sessionData)) {
-                  // Never bypass quarantine through the legacy new-session
-                  // fallback. A restore-capable owner can surface it safely.
-                  reconnectingSessions.current.delete(sessionData.id);
-                } else {
-                  // Fallback to handleConnect for new sessions
-                  handleConnect(connection);
-                  reconnectingSessions.current.delete(sessionData.id);
-                }
-              }, 1000);
+              retryRows.push(sessionData);
+              return;
             }
+
+            reconnectingSessions.current.add(sessionData.id);
+            candidates.push({ sessionData, connection });
           });
-          if (invalidSessions.length > 0) {
+
+          const outcomes: PromiseSettledResult<void>[] = [];
+          for (
+            let offset = 0;
+            offset < candidates.length;
+            offset += SESSION_RESTORE_CONCURRENCY
+          ) {
+            outcomes.push(
+              ...(await Promise.allSettled(
+                candidates
+                  .slice(offset, offset + SESSION_RESTORE_CONCURRENCY)
+                  .map(({ sessionData, connection }) =>
+                    scheduleRestore(sessionData, connection),
+                  ),
+              )),
+            );
+          }
+          if (cancelled || !mountedRef.current) {
+            return;
+          }
+
+          outcomes.forEach((outcome, index) => {
+            if (outcome.status === "fulfilled") {
+              return;
+            }
+            const failed = candidates[index].sessionData;
+            retryRows.push(failed);
+            console.error(
+              `Failed to restore session "${failed.name}" (${failed.id}):`,
+              "reconnection failed",
+            );
+            settingsManager.logAction(
+              "error",
+              "Session restore failed",
+              failed.connectionId,
+              `${failed.name}: reconnection failed`,
+            );
+          });
+
+          failedRecoveryRowsRef.current = retryRows;
+          if (retryRows.length > 0) {
+            sessionStorage.setItem(
+              ACTIVE_SESSIONS_KEY,
+              stringifySessionSnapshot(
+                retryRows.slice(0, MAX_PERSISTED_SESSIONS),
+              ),
+            );
+          } else {
+            sessionStorage.removeItem(ACTIVE_SESSIONS_KEY);
+          }
+
+          if (invalidSessionReasons.length > 0) {
             sessionStorage.setItem(
               INVALID_ACTIVE_SESSIONS_KEY,
-              JSON.stringify(invalidSessions),
+              JSON.stringify({
+                count: invalidSessionReasons.length,
+                reasons: invalidSessionReasons,
+              }),
             );
           } else {
             sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
           }
+          hasReconnected.current = true;
         } catch (error) {
-          console.error("Failed to restore sessions:", error);
+          if (!cancelled && mountedRef.current) {
+            console.error("Failed to restore saved sessions safely.");
+            hasReconnected.current = true;
+          }
+        } finally {
+          if (!cancelled) {
+            restoreInProgressRef.current = false;
+          }
         }
-        hasReconnected.current = true;
-      }
+      };
+
+      void restoreSavedSessions().catch(() => {
+        if (!cancelled && mountedRef.current) {
+          console.error("Unexpected safe session restoration failure.");
+        }
+      });
+
+      return () => {
+        cancelled = true;
+        restoreInProgressRef.current = false;
+        for (const cancel of [...delayedRestoreCancels]) {
+          cancel();
+        }
+      };
     }
   }, [
     isInitialized,
@@ -501,6 +662,7 @@ export const useAppLifecycle = ({
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
+    sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
     // Remote connections and integration panels are worth restoring across a
     // reload. Tool tabs (`tool:*`) and Windows management panels
     // (`winmgmt:*`) are stateless app surfaces — re-opening them
@@ -508,20 +670,49 @@ export const useAppLifecycle = ({
     // just bloat sessionStorage with garbage that the next launch
     // would discard anyway.
     const restorable = state.sessions.filter(isRestorableConnectionSession);
-    if (settings.reconnectOnReload && restorable.length > 0) {
-      try {
-        const sessionData = restorable.map(serializePersistedConnectionSession);
+    if (!settings.reconnectOnReload) {
+      failedRecoveryRowsRef.current = [];
+      sessionStorage.removeItem(ACTIVE_SESSIONS_KEY);
+      sessionStorage.removeItem(INVALID_ACTIVE_SESSIONS_KEY);
+      return;
+    }
+
+    const hasPendingRecoverySnapshot =
+      !hasReconnected.current &&
+      sessionStorage.getItem(ACTIVE_SESSIONS_KEY) !== null;
+    if (restoreInProgressRef.current || hasPendingRecoverySnapshot) {
+      return;
+    }
+
+    try {
+      const sessionData = restorable
+        .slice(-MAX_PERSISTED_SESSIONS)
+        .map(serializePersistedConnectionSession);
+      const liveSessionIds = new Set(sessionData.map((session) => session.id));
+      failedRecoveryRowsRef.current = failedRecoveryRowsRef.current.filter(
+        (session) => !liveSessionIds.has(session.id),
+      );
+      const merged = new Map<string, PersistedConnectionSession>();
+      failedRecoveryRowsRef.current.forEach((session) => {
+        merged.set(session.id, session);
+      });
+      sessionData.forEach((session) => {
+        merged.set(session.id, session);
+      });
+      const nextSnapshot = [...merged.values()].slice(-MAX_PERSISTED_SESSIONS);
+
+      if (nextSnapshot.length > 0) {
         sessionStorage.setItem(
-          "mremote-active-sessions",
-          JSON.stringify(sessionData),
+          ACTIVE_SESSIONS_KEY,
+          stringifySessionSnapshot(nextSnapshot),
         );
-      } catch (error) {
-        // Preserve the last known-safe snapshot rather than overwriting it
-        // with ownership data that cannot be cleaned deterministically.
-        console.error("Refusing to persist unsafe active session:", error);
+      } else {
+        sessionStorage.removeItem(ACTIVE_SESSIONS_KEY);
       }
-    } else if (restorable.length === 0) {
-      sessionStorage.removeItem("mremote-active-sessions");
+    } catch (error) {
+      // Preserve the last known-safe snapshot rather than overwriting it
+      // with ownership data that cannot be cleaned deterministically.
+      console.error("Refusing to persist unsafe active session:", error);
     }
   }, [state.sessions, settingsManager]);
 

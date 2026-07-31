@@ -466,17 +466,208 @@ describe("useAppLifecycle", () => {
     const saved = JSON.parse(json);
 
     expect(json).not.toContain("plaintext-");
+    expect(json).not.toContain("grafana-instance");
+    expect(json).not.toContain("vault-ref");
     expect(saved).toHaveLength(1);
     expect(saved[0]).toEqual(
       expect.objectContaining({
         id: "integration-session",
         protocol: "integration:grafana",
-        integration: {
-          descriptorKey: "grafana",
-          instanceId: "grafana-instance",
-          credentialRefId: "vault-ref",
-        },
       }),
     );
+    expect(saved[0]).not.toHaveProperty("integration");
+  });
+
+  it("retains only failed recovery rows and retries their exact ownership metadata", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      reconnectOnReload: true,
+      autoOpenLastCollection: false,
+    });
+    lifecycleMocks.state.connections = [
+      {
+        id: "connection-restored",
+        name: "Restored",
+        protocol: "ssh",
+        hostname: "restored.example",
+      },
+      {
+        id: "connection-retry",
+        name: "Retry",
+        protocol: "ssh",
+        hostname: "retry.example",
+      },
+    ];
+    const retryRow = {
+      id: "session-retry",
+      connectionId: "connection-retry",
+      name: "Retry SSH",
+      protocol: "ssh",
+      hostname: "retry.example",
+      status: "connected",
+      backendSessionId: "backend-retry",
+      vpnLeaseOwnerId: "owner-retry",
+      vpnLeaseOwnerIds: ["owner-retry"],
+      vpnLeaseBindings: [
+        {
+          ownerId: "owner-retry",
+          backendSessionId: "backend-retry",
+          protocol: "ssh",
+          status: "active",
+        },
+      ],
+      lifecycleRevision: 9,
+      lifecycleActorGeneration: 3,
+      lifecycleWriterId: "native-window-3",
+      password: "must-not-survive-recovery",
+    };
+    sessionStorage.setItem(
+      "mremote-active-sessions",
+      JSON.stringify([
+        {
+          id: "session-restored",
+          connectionId: "connection-restored",
+          name: "Restored SSH",
+          protocol: "ssh",
+          hostname: "restored.example",
+          status: "connected",
+        },
+        retryRow,
+      ]),
+    );
+    const restoreSession = vi.fn(
+      async (session: { id: string }): Promise<void> => {
+        if (session.id === "session-retry") {
+          throw new Error("backend actor unavailable");
+        }
+      },
+    );
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const first = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(first.result.current.isInitialized).toBe(true);
+    });
+    expect(
+      JSON.parse(sessionStorage.getItem("mremote-active-sessions")!),
+    ).toHaveLength(2);
+
+    await waitFor(
+      () => {
+        expect(restoreSession).toHaveBeenCalledTimes(2);
+        const retained = JSON.parse(
+          sessionStorage.getItem("mremote-active-sessions")!,
+        );
+        expect(retained).toHaveLength(1);
+        expect(retained[0]).toEqual(
+          expect.objectContaining({
+            id: "session-retry",
+            backendSessionId: "backend-retry",
+            vpnLeaseOwnerId: "owner-retry",
+            vpnLeaseOwnerIds: ["owner-retry"],
+            vpnLeaseBindings: retryRow.vpnLeaseBindings,
+            lifecycleRevision: 9,
+            lifecycleActorGeneration: 3,
+            lifecycleWriterId: "native-window-3",
+          }),
+        );
+        expect(JSON.stringify(retained)).not.toContain(
+          "must-not-survive-recovery",
+        );
+      },
+      { timeout: 3000 },
+    );
+
+    first.unmount();
+    restoreSession.mockResolvedValue(undefined);
+    const retry = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+    await waitFor(
+      () => {
+        expect(restoreSession).toHaveBeenCalledTimes(3);
+        expect(sessionStorage.getItem("mremote-active-sessions")).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+
+    retry.unmount();
+    consoleSpy.mockRestore();
+  });
+
+  it("cancels delayed recovery on cleanup without consuming its snapshot", async () => {
+    mockSettingsManager.getSettings.mockReturnValue({
+      language: "en",
+      theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
+      reconnectOnReload: true,
+      autoOpenLastCollection: false,
+    });
+    lifecycleMocks.state.connections = [
+      {
+        id: "connection-delayed",
+        name: "Delayed",
+        protocol: "ssh",
+        hostname: "delayed.example",
+      },
+    ];
+    const saved = [
+      {
+        id: "session-delayed",
+        connectionId: "connection-delayed",
+        name: "Delayed SSH",
+        protocol: "ssh",
+        hostname: "delayed.example",
+        status: "connected",
+        backendSessionId: "backend-delayed",
+        lifecycleRevision: 2,
+        lifecycleActorGeneration: 1,
+        lifecycleWriterId: "native-window-1",
+      },
+    ];
+    sessionStorage.setItem("mremote-active-sessions", JSON.stringify(saved));
+    const restoreSession = vi.fn().mockResolvedValue(undefined);
+
+    const lifecycle = renderHook(() =>
+      useAppLifecycle({
+        handleConnect: vi.fn(),
+        restoreSession,
+        setShowDatabasePanel: vi.fn(),
+        setShowPasswordDialog: vi.fn(),
+        setPasswordDialogMode: vi.fn(),
+      }),
+    );
+    await waitFor(() => {
+      expect(lifecycle.result.current.isInitialized).toBe(true);
+    });
+
+    lifecycle.unmount();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+
+    expect(restoreSession).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(sessionStorage.getItem("mremote-active-sessions")!),
+    ).toEqual(saved);
   });
 });
