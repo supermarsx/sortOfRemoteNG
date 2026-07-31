@@ -17,6 +17,7 @@
 //! live in `password_wrap.rs` / `artifacts/settings.rs`.
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -128,6 +129,7 @@ pub struct MigrationReport {
 
 const SETTINGS_JSON_FILENAME: &str = "settings.json";
 const DEK_ENC_FILENAME: &str = "dek.enc";
+const MAX_SETTINGS_BYTES: u64 = 64 * 1024 * 1024;
 
 fn app_data_path(app: &AppHandle, file: &str) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -138,6 +140,36 @@ fn ensure_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
+}
+
+fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|e| format!("inspect {}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!(
+            "{} must be a regular, non-symlink file",
+            path.display()
+        ));
+    }
+    if metadata.len() > max_bytes {
+        return Err(format!(
+            "{} exceeds the {max_bytes}-byte safety limit",
+            path.display()
+        ));
+    }
+
+    let file = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!(
+            "{} changed while reading and exceeded the safety limit",
+            path.display()
+        ));
+    }
+    Ok(bytes)
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -340,7 +372,7 @@ pub async fn encryption_unlock(
             if lockout.remaining_cooldown_ms() > 0 {
                 return Ok(UnlockResult::WrongPassword);
             }
-            let blob = std::fs::read(&dek_path).map_err(|e| format!("read dek.enc: {e}"))?;
+            let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
             match password_wrap::unwrap(pw, &blob) {
                 Ok(dek) => {
                     state.install(dek).await;
@@ -427,7 +459,7 @@ pub async fn encryption_change_password(
     argon2: Option<Argon2Params>,
 ) -> Result<(), String> {
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
-    let blob = std::fs::read(&dek_path).map_err(|e| format!("read dek.enc: {e}"))?;
+    let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
 
     // Validate the old password by unwrapping first; do not touch
     // anything until we have the plaintext DEK in hand.
@@ -469,7 +501,7 @@ pub async fn encryption_migrate_settings(
     let dir = ensure_app_data_dir(&app)?;
     let source = dir.join(SETTINGS_JSON_FILENAME);
     let destination = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
-    let raw = std::fs::read(&source).map_err(|e| format!("read settings.json: {e}"))?;
+    let raw = read_bounded_regular_file(&source, MAX_SETTINGS_BYTES)?;
     let bytes_in = raw.len();
 
     // Idempotency guard: a file that already starts with the SORNG
@@ -560,7 +592,7 @@ pub async fn encryption_disable_settings(
     let source = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
     let destination = dir.join(SETTINGS_JSON_FILENAME);
 
-    let raw = std::fs::read(&source).map_err(|e| format!("read settings.enc: {e}"))?;
+    let raw = read_bounded_regular_file(&source, MAX_SETTINGS_BYTES)?;
     let bytes_in = raw.len();
     if !looks_like_envelope_helper(&raw) {
         return Err("source is not an envelope file; refusing to operate".into());
@@ -786,7 +818,10 @@ pub async fn encryption_import_portable_dek(
     password: String,
 ) -> Result<(), String> {
     let dir = ensure_app_data_dir(&app)?;
-    let blob = std::fs::read(&source_path).map_err(|e| format!("read source: {e}"))?;
+    let blob = read_bounded_regular_file(
+        Path::new(&source_path),
+        password_wrap::FILE_LEN as u64,
+    )?;
     let dek = password_wrap::unwrap(&password, &blob)
         .map_err(|e| format!("unwrap: {e}"))?;
 
