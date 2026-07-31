@@ -38,6 +38,38 @@ pub(super) fn register(app: &mut tauri::App<tauri::Wry>, app_dir: &std::path::Pa
     let font: FontServiceState = fonts::create_font_state(app_dir);
     app.manage(font);
     let secure_clip: SecureClipServiceState = secure_clip::create_secure_clip_state();
+    if let Some(auto_lock_handle) = app.try_state::<auto_lock::AutoLockServiceState>() {
+        let auto_lock = auto_lock_handle.inner().clone();
+        let callback_clip = secure_clip.clone();
+        let initial_clip = secure_clip.clone();
+        tauri::async_runtime::block_on(async move {
+            let initially_locked = {
+                let mut service = auto_lock.lock().await;
+                let callback: auto_lock::LockTransitionCallback = Arc::new(move |locked| {
+                    let secure_clip = callback_clip.clone();
+                    Box::pin(async move {
+                        secure_clip
+                            .write()
+                            .await
+                            .synchronize_lock_state(locked)
+                            .await
+                    })
+                });
+                service.set_lock_transition_callback(callback);
+                matches!(service.get_lock_state().await, auto_lock::LockState::Locked)
+            };
+            if let Err(error) = initial_clip
+                .write()
+                .await
+                .synchronize_lock_state(initially_locked)
+                .await
+            {
+                log::error!("Initial secure clipboard lock synchronization failed: {error}");
+            }
+        });
+    } else {
+        log::error!("Auto-lock state is unavailable; secure clipboard lock callback was not wired");
+    }
     app.manage(secure_clip);
     let theme: ThemeEngineState = terminal_themes::engine::create_theme_engine_state();
     app.manage(theme);

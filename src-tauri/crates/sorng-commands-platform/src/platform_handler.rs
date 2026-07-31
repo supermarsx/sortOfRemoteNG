@@ -216,6 +216,7 @@ pub fn is_command(command: &str) -> bool {
             | "secure_clip_paste_to_terminal"
             | "secure_clip_clear"
             | "secure_clip_on_app_lock"
+            | "secure_clip_on_app_unlock"
             | "secure_clip_on_app_exit"
             | "secure_clip_get_current"
             | "secure_clip_has_entry"
@@ -845,6 +846,7 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         secure_clip_commands::secure_clip_paste_to_terminal,
         secure_clip_commands::secure_clip_clear,
         secure_clip_commands::secure_clip_on_app_lock,
+        secure_clip_commands::secure_clip_on_app_unlock,
         secure_clip_commands::secure_clip_on_app_exit,
         secure_clip_commands::secure_clip_get_current,
         secure_clip_commands::secure_clip_has_entry,
