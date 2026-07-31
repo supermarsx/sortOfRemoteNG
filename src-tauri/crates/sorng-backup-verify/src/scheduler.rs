@@ -263,7 +263,7 @@ impl BackupScheduler {
         } else {
             job.state = BackupJobState::Failed;
             job.error_message = error_msg;
-            warn!("Job {} failed: {:?}", job_id, job.error_message);
+            warn!("Job {} failed (error details redacted)", job_id);
         }
 
         let finished_job = job.clone();
