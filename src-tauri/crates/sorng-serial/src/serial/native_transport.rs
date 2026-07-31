@@ -108,6 +108,10 @@ impl NativeTransport {
 impl SerialTransport for NativeTransport {
     // ── open ───────────────────────────────────────────────────
     async fn open(&self, config: &SerialConfig) -> Result<(), String> {
+        config.validate()?;
+        if config.port_name != self.port_name {
+            return Err("Native transport port does not match its configuration".to_string());
+        }
         if self.open.load(Ordering::SeqCst) {
             return Err("Port is already open".into());
         }
@@ -206,6 +210,12 @@ impl SerialTransport for NativeTransport {
             return Err("Port is not open".into());
         }
 
+        if buf.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial read buffer exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES
+            ));
+        }
         let port_arc = self.port.clone();
         let len = buf.len();
         let data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
@@ -237,6 +247,12 @@ impl SerialTransport for NativeTransport {
             return Err("Port is not open".into());
         }
 
+        if buf.len() > MAX_SERIAL_PAYLOAD_BYTES {
+            return Err(format!(
+                "Serial write exceeds {} bytes",
+                MAX_SERIAL_PAYLOAD_BYTES
+            ));
+        }
         let port_arc = self.port.clone();
         let data = buf.to_vec();
         tokio::task::spawn_blocking(move || -> Result<usize, String> {
@@ -279,6 +295,12 @@ impl SerialTransport for NativeTransport {
             return Err("Port is not open".into());
         }
 
+        if duration_ms > MAX_SERIAL_BREAK_MS {
+            return Err(format!(
+                "Serial break duration cannot exceed {} ms",
+                MAX_SERIAL_BREAK_MS
+            ));
+        }
         let port_arc = self.port.clone();
         tokio::task::spawn_blocking(move || -> Result<(), String> {
             let mut guard = port_arc.blocking_lock();
@@ -371,6 +393,10 @@ impl SerialTransport for NativeTransport {
 
     // ── reconfigure ────────────────────────────────────────────
     async fn reconfigure(&self, config: &SerialConfig) -> Result<(), String> {
+        config.validate()?;
+        if config.port_name != self.port_name {
+            return Err("Cannot change the native transport port name".to_string());
+        }
         if !self.open.load(Ordering::SeqCst) {
             return Err("Port is not open".into());
         }
