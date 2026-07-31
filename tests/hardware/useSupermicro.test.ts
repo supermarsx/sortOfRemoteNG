@@ -212,37 +212,52 @@ describe("useSupermicro", () => {
 
   // ── Auto-refresh ──────────────────────────────────────────────────
 
-  it("startAutoRefresh polls session, stopAutoRefresh cancels", () => {
+  it("startAutoRefresh polls session, stopAutoRefresh cancels", async () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(true);
+    try {
+      vi.mocked(invoke).mockResolvedValue(true);
 
-    const { result } = renderHook(() => useSupermicro());
+      const { result, unmount } = renderHook(() => useSupermicro());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(1000);
+        });
 
-    act(() => {
-      result.current.startAutoRefresh(1000);
-    });
-
-    vi.advanceTimersByTime(3000);
-    expect(invoke).toHaveBeenCalledWith("smc_check_session");
-
-    act(() => {
-      result.current.stopAutoRefresh();
-    });
-
-    vi.useRealTimers();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000);
+        });
+        expect(invoke).toHaveBeenCalledWith("smc_check_session");
+      } finally {
+        try {
+          act(() => {
+            result.current.stopAutoRefresh();
+          });
+        } finally {
+          unmount();
+        }
+      }
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("cleans up interval on unmount", () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(true);
+    try {
+      vi.mocked(invoke).mockResolvedValue(true);
 
-    const { result, unmount } = renderHook(() => useSupermicro());
-
-    act(() => {
-      result.current.startAutoRefresh(1000);
-    });
-
-    unmount();
-    vi.useRealTimers();
+      const { result, unmount } = renderHook(() => useSupermicro());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(1000);
+        });
+      } finally {
+        unmount();
+      }
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });

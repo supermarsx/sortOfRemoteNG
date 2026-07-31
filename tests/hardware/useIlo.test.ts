@@ -261,40 +261,54 @@ describe("useIlo", () => {
 
   // ── Auto-refresh ──────────────────────────────────────────────────
 
-  it("startAutoRefresh and stopAutoRefresh manage interval", () => {
+  it("startAutoRefresh and stopAutoRefresh manage interval", async () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(null);
+    try {
+      vi.mocked(invoke).mockResolvedValue(null);
 
-    const { result } = renderHook(() => useIlo());
+      const { result, unmount } = renderHook(() => useIlo());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(1000);
+        });
 
-    act(() => {
-      result.current.startAutoRefresh(1000);
-    });
-
-    vi.advanceTimersByTime(3000);
-    expect(invoke).toHaveBeenCalledWith("ilo_get_config");
-
-    act(() => {
-      result.current.stopAutoRefresh();
-    });
-
-    vi.clearAllTimers();
-    vi.useRealTimers();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000);
+        });
+        expect(invoke).toHaveBeenCalledWith("ilo_get_config");
+      } finally {
+        try {
+          act(() => {
+            result.current.stopAutoRefresh();
+          });
+        } finally {
+          unmount();
+        }
+      }
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("cleanup on unmount clears interval", () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(null);
+    try {
+      vi.mocked(invoke).mockResolvedValue(null);
 
-    const { result, unmount } = renderHook(() => useIlo());
-
-    act(() => {
-      result.current.startAutoRefresh(1000);
-    });
-
-    unmount();
-    // No assertion needed — ensures no errors on cleanup
-    vi.useRealTimers();
+      const { result, unmount } = renderHook(() => useIlo());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(1000);
+        });
+      } finally {
+        unmount();
+      }
+      // No assertion needed — ensures no errors on cleanup
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   // ── Federation ────────────────────────────────────────────────────

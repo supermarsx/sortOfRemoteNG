@@ -219,39 +219,54 @@ describe("useLenovo", () => {
 
   // ── Auto-refresh ──────────────────────────────────────────────────
 
-  it("startAutoRefresh polls session and stopAutoRefresh cancels", () => {
+  it("startAutoRefresh polls session and stopAutoRefresh cancels", async () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(true);
+    try {
+      vi.mocked(invoke).mockResolvedValue(true);
 
-    const { result } = renderHook(() => useLenovo());
+      const { result, unmount } = renderHook(() => useLenovo());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(2000);
+        });
 
-    act(() => {
-      result.current.startAutoRefresh(2000);
-    });
-
-    vi.advanceTimersByTime(6000);
-    expect(invoke).toHaveBeenCalledWith("lenovo_check_session");
-
-    act(() => {
-      result.current.stopAutoRefresh();
-    });
-
-    vi.useRealTimers();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(6000);
+        });
+        expect(invoke).toHaveBeenCalledWith("lenovo_check_session");
+      } finally {
+        try {
+          act(() => {
+            result.current.stopAutoRefresh();
+          });
+        } finally {
+          unmount();
+        }
+      }
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   // ── Cleanup ───────────────────────────────────────────────────────
 
   it("cleans up interval on unmount", () => {
     vi.useFakeTimers();
-    vi.mocked(invoke).mockResolvedValue(true);
+    try {
+      vi.mocked(invoke).mockResolvedValue(true);
 
-    const { result, unmount } = renderHook(() => useLenovo());
-
-    act(() => {
-      result.current.startAutoRefresh(1000);
-    });
-
-    unmount();
-    vi.useRealTimers();
+      const { result, unmount } = renderHook(() => useLenovo());
+      try {
+        act(() => {
+          result.current.startAutoRefresh(1000);
+        });
+      } finally {
+        unmount();
+      }
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });
