@@ -248,16 +248,26 @@ pub struct BackupMetadata {
     pub created_at: u64,
     pub backup_type: String, // "full" or "differential"
     pub version: String,
+    /// SHA-256 digest whose byte domain is declared by
+    /// `checksum_scope`. Current backups hash the final archive bytes
+    /// exactly as written, so integrity can be established before any
+    /// decrypt, decompress, UTF-8, or JSON work.
     pub checksum: String,
+    /// `archive-sha256-v1` for current backups. A missing scope marks a
+    /// legacy sidecar whose checksum covered rendered plaintext JSON;
+    /// those backups require an explicit migration path rather than a
+    /// best-effort interpretation.
+    #[serde(default)]
+    pub checksum_scope: Option<String>,
     pub encrypted: bool,
     pub compressed: bool,
     pub size_bytes: u64,
     pub connections_count: u32,
     pub parent_backup_id: Option<String>, // For differential backups
-    /// Canonical SHA-256 hash of the *plaintext* payload (sorted keys,
-    /// pre-encryption). Drives delta-skip on the next tick — the
-    /// checksum field above is over the rendered JSON text and varies
-    /// with formatting, so it can't be used for that comparison.
+    /// Canonical SHA-256 hash of the logical payload (sorted keys,
+    /// pre-rendering). Drives delta-skip on the next tick — the
+    /// checksum field above covers the final archive bytes and varies
+    /// with encryption, so it can't be used for that comparison.
     /// Legacy records without this field deserialise as `None`.
     #[serde(default)]
     pub payload_hash: Option<String>,
@@ -588,10 +598,6 @@ impl BackupService {
         let json_data = serde_json::to_string_pretty(data)
             .map_err(|e| format!("Failed to serialize backup data: {}", e))?;
 
-        let mut hasher = Sha256::new();
-        hasher.update(json_data.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
-
         let final_data = if self.config.compress_backups {
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
             encoder
@@ -623,6 +629,7 @@ impl BackupService {
         } else {
             final_data
         };
+        let checksum = sha256_hex(&encrypted_data);
 
         let connections_count = data
             .get("connections")
@@ -752,6 +759,7 @@ impl BackupService {
                         backup_type: backup_type.to_string(),
                         version: env!("CARGO_PKG_VERSION").to_string(),
                         checksum: checksum.clone(),
+                        checksum_scope: Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE.to_string()),
                         // `encrypted` mirrors the only crypto path
                         // that still exists: the v2 envelope under
                         // the master DEK.
@@ -1309,6 +1317,7 @@ fn skipped_run_metadata(backup_type: &str, payload_hash: String) -> BackupMetada
         backup_type: format!("{}-skipped", backup_type),
         version: env!("CARGO_PKG_VERSION").to_string(),
         checksum: String::new(),
+        checksum_scope: None,
         encrypted: false,
         compressed: false,
         size_bytes: 0,
@@ -1341,6 +1350,14 @@ fn resolve_target_dir(target: &BackupTarget, legacy_fallback: &str) -> Result<Pa
         "Backup target '{}' has no custom_path set and no legacy destination_path to fall back on",
         target.label
     ))
+}
+
+const CURRENT_ARCHIVE_CHECKSUM_SCOPE: &str = "archive-sha256-v1";
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// Scan `dir` for the most recent `.meta.json` sidecar whose
@@ -1550,6 +1567,7 @@ mod tests {
             backup_type: "full".to_string(),
             version: "1.0.0".to_string(),
             checksum: "deadbeef".to_string(),
+            checksum_scope: Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE.to_string()),
             encrypted: true,
             compressed: true,
             size_bytes: 4096,
@@ -1574,6 +1592,7 @@ mod tests {
             backup_type: "full".to_string(),
             version: "0".to_string(),
             checksum: "".to_string(),
+            checksum_scope: None,
             encrypted: false,
             compressed: false,
             size_bytes: 0,
