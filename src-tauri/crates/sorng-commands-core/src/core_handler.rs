@@ -85,8 +85,6 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_migrate_settings"
             | "encryption_lockout_state"
             | "encryption_disable_settings"
-            | "encryption_rotate_master_key"
-            | "encryption_rotate_master_key_full"
             | "encryption_export_portable_dek"
             | "encryption_import_portable_dek"
             | "encryption_audit_read"
@@ -1395,8 +1393,6 @@ define_command_group!(
         encryption_commands::encryption_migrate_settings,
         encryption_commands::encryption_lockout_state,
         encryption_commands::encryption_disable_settings,
-        encryption_commands::encryption_rotate_master_key,
-        encryption_rotation_commands::encryption_rotate_master_key_full,
         encryption_commands::encryption_export_portable_dek,
         encryption_commands::encryption_import_portable_dek,
         encryption_commands::encryption_audit_read,
@@ -3071,6 +3067,25 @@ mod tests {
         assert_eq!(XDMCP_COMMANDS.len(), 10);
         assert_eq!(X2GO_COMMANDS.len(), 15);
         assert_eq!(NX_COMMANDS.len(), 14);
+    }
+
+    #[test]
+    fn destructive_master_key_rotation_commands_are_not_exposed() {
+        let source = include_str!("core_handler.rs");
+        for (module, command) in [
+            ("encryption_commands", "encryption_rotate_master_key"),
+            (
+                "encryption_rotation_commands",
+                "encryption_rotate_master_key_full",
+            ),
+        ] {
+            assert!(!is_command(command), "{command} must remain unavailable");
+            let registration = format!("{module}::{command},");
+            assert!(
+                !source.contains(&registration),
+                "{command} must not be present in generate_handler"
+            );
+        }
     }
 
     #[cfg(feature = "ops")]
