@@ -84,8 +84,8 @@ impl PsRemotingCapabilities {
             transports: vec![
                 PsTransportCapability {
                     transport: PsTransportProtocol::Http,
-                    status: Partial,
-                    reason: "WSMan launches independent powershell.exe processes; it is not a persistent PSRP runspace"
+                    status: Unsupported,
+                    reason: "the only legacy authentication path proven end to end is Basic, which is rejected without HTTPS"
                         .to_string(),
                 },
                 PsTransportCapability {
@@ -111,23 +111,23 @@ impl PsRemotingCapabilities {
                 },
                 PsAuthCapability {
                     auth_method: PsAuthMethod::Ntlm,
-                    status: Partial,
+                    status: Unsupported,
                     requires_tls: false,
-                    reason: "NTLM primitives exist, but HTTP challenge handling is not wired end to end"
+                    reason: "legacy WinRS does not wire the NTLM HTTP challenge exchange end to end"
                         .to_string(),
                 },
                 PsAuthCapability {
                     auth_method: PsAuthMethod::Negotiate,
-                    status: Partial,
+                    status: Unsupported,
                     requires_tls: false,
-                    reason: "currently aliases the incomplete NTLM path instead of negotiating Kerberos"
+                    reason: "legacy WinRS does not wire SPNEGO challenge handling end to end"
                         .to_string(),
                 },
                 PsAuthCapability {
                     auth_method: PsAuthMethod::Kerberos,
-                    status: Partial,
+                    status: Unsupported,
                     requires_tls: false,
-                    reason: "Kerberos token generation exists, but the HTTP challenge exchange is not wired end to end"
+                    reason: "legacy WinRS does not wire the Kerberos HTTP challenge exchange end to end"
                         .to_string(),
                 },
                 PsAuthCapability {
@@ -146,15 +146,16 @@ impl PsRemotingCapabilities {
                 },
                 PsAuthCapability {
                     auth_method: PsAuthMethod::Default,
-                    status: Partial,
+                    status: Unsupported,
                     requires_tls: false,
-                    reason: "currently aliases the incomplete Negotiate path".to_string(),
+                    reason: "server-selected authentication is not a verifiable legacy authentication policy"
+                        .to_string(),
                 },
                 PsAuthCapability {
                     auth_method: PsAuthMethod::Digest,
-                    status: Partial,
+                    status: Unsupported,
                     requires_tls: false,
-                    reason: "Digest primitives exist, but HTTP challenge handling is not wired end to end"
+                    reason: "legacy WinRS does not wire the Digest HTTP challenge exchange end to end"
                         .to_string(),
                 },
             ],
@@ -190,8 +191,8 @@ impl PsRemotingCapabilities {
                 },
                 PsFeatureCapability {
                     feature: PsFeature::DisconnectReconnect,
-                    status: Partial,
-                    reason: "WSMan signals exist but are not proven against a persistent PSRP runspace"
+                    status: Unsupported,
+                    reason: "the legacy process shell cannot prove durable PSRP disconnect and reconnect semantics"
                         .to_string(),
                 },
                 PsFeatureCapability {
