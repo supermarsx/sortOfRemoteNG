@@ -3,6 +3,24 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+const MAX_ERROR_MESSAGE_CHARS: usize = 4_096;
+const MAX_ERROR_SESSION_CHARS: usize = 128;
+
+fn bounded_message(message: impl Into<String>) -> String {
+    message
+        .into()
+        .chars()
+        .map(|ch| {
+            if ch.is_control() && ch != '\t' {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .take(MAX_ERROR_MESSAGE_CHARS)
+        .collect()
+}
+
 /// Categorised FTP error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FtpError {
@@ -59,7 +77,7 @@ impl FtpError {
     pub fn new(kind: FtpErrorKind, msg: impl Into<String>) -> Self {
         Self {
             kind,
-            message: msg.into(),
+            message: bounded_message(msg),
             code: None,
             session_id: None,
         }
@@ -71,7 +89,7 @@ impl FtpError {
     }
 
     pub fn with_session(mut self, id: impl Into<String>) -> Self {
-        self.session_id = Some(id.into());
+        self.session_id = Some(id.into().chars().take(MAX_ERROR_SESSION_CHARS).collect());
         self
     }
 
@@ -143,12 +161,13 @@ impl FtpError {
 
     /// Classify an FTP reply code into the most appropriate error kind.
     pub fn from_reply(code: u16, text: &str) -> Self {
+        let message = bounded_message(text);
         let kind = match code {
             421 => FtpErrorKind::Disconnected,
             425 | 426 => FtpErrorKind::DataChannelFailed,
             430 | 530 => FtpErrorKind::AuthFailed,
             450 | 550 => {
-                let lower = text.to_lowercase();
+                let lower = message.to_lowercase();
                 if lower.contains("permission") || lower.contains("denied") {
                     FtpErrorKind::PermissionDenied
                 } else if lower.contains("not found") || lower.contains("no such") {
@@ -166,7 +185,7 @@ impl FtpError {
         };
         Self {
             kind,
-            message: text.to_string(),
+            message,
             code: Some(code),
             session_id: None,
         }
