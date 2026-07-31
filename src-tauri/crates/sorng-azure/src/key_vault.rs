@@ -69,7 +69,7 @@ fn vault_data_url(vault_name: &str, path: &str, api_version: &str) -> String {
 pub async fn list_secrets(client: &AzureClient, vault_name: &str) -> AzureResult<Vec<SecretItem>> {
     let api = &client.config().api_version_keyvault_data;
     let url = vault_data_url(vault_name, "/secrets", api);
-    debug!("list_secrets({}) → {}", vault_name, url);
+    debug!("Listing Azure Key Vault secrets");
     client.get_all_pages(&url).await
 }
 
@@ -80,7 +80,7 @@ pub async fn get_secret(
 ) -> AzureResult<SecretBundle> {
     let api = &client.config().api_version_keyvault_data;
     let url = vault_data_url(vault_name, &format!("/secrets/{}", secret_name), api);
-    debug!("get_secret({}/{}) → {}", vault_name, secret_name, url);
+    debug!("Fetching an Azure Key Vault secret");
     client.get_json(&url).await
 }
 
@@ -116,7 +116,7 @@ pub async fn set_secret(
     if let Some(ct) = content_type {
         body["contentType"] = json!(ct);
     }
-    debug!("set_secret({}/{}) → {}", vault_name, secret_name, url);
+    debug!("Writing an Azure Key Vault secret");
     client.put_json(&url, &body).await
 }
 
@@ -127,7 +127,7 @@ pub async fn delete_secret(
 ) -> AzureResult<()> {
     let api = &client.config().api_version_keyvault_data;
     let url = vault_data_url(vault_name, &format!("/secrets/{}", secret_name), api);
-    debug!("delete_secret({}/{}) → {}", vault_name, secret_name, url);
+    debug!("Deleting an Azure Key Vault secret");
     client.delete(&url).await
 }
 

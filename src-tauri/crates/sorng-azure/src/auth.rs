@@ -32,7 +32,7 @@ pub async fn acquire_token(
     }
 
     let url = token_url(&creds.tenant_id);
-    debug!("Azure token request → {}", url);
+    debug!("Requesting an Azure management token");
 
     let form: Vec<(&str, &str)> = vec![
         ("grant_type", "client_credentials"),
@@ -58,7 +58,7 @@ pub async fn acquire_vault_token(
     }
 
     let url = token_url(&creds.tenant_id);
-    debug!("Azure vault token request → {}", url);
+    debug!("Requesting an Azure Key Vault token");
 
     let form: Vec<(&str, &str)> = vec![
         ("grant_type", "client_credentials"),
@@ -84,7 +84,7 @@ pub async fn acquire_graph_token(
     }
 
     let url = token_url(&creds.tenant_id);
-    debug!("Azure graph token request → {}", url);
+    debug!("Requesting an Azure Graph token");
 
     let form: Vec<(&str, &str)> = vec![
         ("grant_type", "client_credentials"),
