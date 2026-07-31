@@ -10484,6 +10484,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sorng-ssh",
  "tokio",
  "tokio-test",
  "uuid",
