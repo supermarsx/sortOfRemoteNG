@@ -72,7 +72,7 @@ impl GraphApiClient {
     /// GET raw bytes (for downloads).
     pub async fn get_bytes(&self, url: &str) -> OneDriveResult<Vec<u8>> {
         let full_url = self.url(url);
-        debug!("GET (bytes) {}", full_url);
+        debug!("OneDrive GET bytes (URL redacted)");
 
         let resp = self
             .inner
@@ -147,7 +147,7 @@ impl GraphApiClient {
         content_type: &str,
     ) -> OneDriveResult<serde_json::Value> {
         let url = self.url(path);
-        debug!("PUT (bytes) {} ({} bytes)", url, data.len());
+        debug!("OneDrive PUT bytes (URL redacted, {} bytes)", data.len());
 
         let resp = self
             .inner
@@ -199,7 +199,7 @@ impl GraphApiClient {
     /// DELETE a resource.
     pub async fn delete(&self, path: &str) -> OneDriveResult<()> {
         let url = self.url(path);
-        debug!("DELETE {}", url);
+        debug!("OneDrive DELETE (URL redacted)");
 
         let resp = self
             .inner
