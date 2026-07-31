@@ -190,7 +190,7 @@ pub async fn ssh_agent_audit_log(
 ) -> CmdResult<Vec<AuditEntry>> {
     let svc = state.lock().await;
     Ok(svc
-        .recent_audit_entries(count.unwrap_or(100))
+        .recent_audit_entries(count.unwrap_or(100).min(1000))
         .into_iter()
         .cloned()
         .collect())

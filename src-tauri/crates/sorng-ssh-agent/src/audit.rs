@@ -29,8 +29,8 @@ impl AuditLogger {
     /// Create a new audit logger.
     pub fn new(enabled: bool, max_in_memory: usize, log_file: Option<PathBuf>) -> Self {
         Self {
-            entries: VecDeque::with_capacity(max_in_memory.min(1000)),
-            max_in_memory,
+            entries: VecDeque::with_capacity(max_in_memory.clamp(1, 1000)),
+            max_in_memory: max_in_memory.clamp(1, DEFAULT_MAX_IN_MEMORY),
             enabled,
             log_file,
             total_logged: 0,
