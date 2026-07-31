@@ -74,7 +74,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockResolvedValueOnce(rules as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRules(); });
+    await act(async () => {
+      await result.current.fetchRules();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_list_rules");
     expect(result.current.rules).toHaveLength(2);
@@ -83,14 +85,25 @@ describe("useNotificationRules", () => {
 
   it("fetchRules sets loading during fetch", async () => {
     let resolve!: (v: unknown) => void;
-    mockInvoke.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    mockInvoke.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
 
     const { result } = renderHook(() => useNotificationRules());
-    const promise = act(async () => { result.current.fetchRules(); });
+    let fetchPromise!: ReturnType<typeof result.current.fetchRules>;
+    act(() => {
+      fetchPromise = result.current.fetchRules();
+    });
 
     // loading is set synchronously before the await
-    await act(async () => { resolve([]); });
-    await promise;
+    expect(result.current.loading).toBe(true);
+    await act(async () => {
+      resolve([]);
+      await fetchPromise;
+    });
     expect(result.current.loading).toBe(false);
   });
 
@@ -98,7 +111,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockRejectedValueOnce("Backend error");
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRules(); });
+    await act(async () => {
+      await result.current.fetchRules();
+    });
 
     expect(result.current.error).toBe("Backend error");
     expect(result.current.rules).toEqual([]);
@@ -120,17 +135,26 @@ describe("useNotificationRules", () => {
     await act(async () => {
       id = await result.current.addRule({
         name: "CPU Alert",
-        trigger: "latency_high", severity: "warning",
-        channelKind: "email", channelConfig: { to: "admin@example.com" },
-        conditions: [], conditionLogic: "and",
-        enabled: true, throttleMs: 300000, templateId: null, escalationDelayMs: null,
+        trigger: "latency_high",
+        severity: "warning",
+        channelKind: "email",
+        channelConfig: { to: "admin@example.com" },
+        conditions: [],
+        conditionLogic: "and",
+        enabled: true,
+        throttleMs: 300000,
+        templateId: null,
+        escalationDelayMs: null,
       });
     });
 
     expect(id).toBe("r-new");
-    expect(mockInvoke).toHaveBeenCalledWith("notif_add_rule", expect.objectContaining({
-      rule: expect.objectContaining({ name: "CPU Alert" }),
-    }));
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "notif_add_rule",
+      expect.objectContaining({
+        rule: expect.objectContaining({ name: "CPU Alert" }),
+      }),
+    );
     expect(result.current.rules).toHaveLength(1);
   });
 
@@ -142,10 +166,16 @@ describe("useNotificationRules", () => {
     await act(async () => {
       id = await result.current.addRule({
         name: "Dup",
-        trigger: "latency_high", severity: "warning",
-        channelKind: "email", channelConfig: {},
-        conditions: [], conditionLogic: "and",
-        enabled: true, throttleMs: 0, templateId: null, escalationDelayMs: null,
+        trigger: "latency_high",
+        severity: "warning",
+        channelKind: "email",
+        channelConfig: {},
+        conditions: [],
+        conditionLogic: "and",
+        enabled: true,
+        throttleMs: 0,
+        templateId: null,
+        escalationDelayMs: null,
       });
     });
 
@@ -156,19 +186,28 @@ describe("useNotificationRules", () => {
   // --- removeRule ---
 
   it("removeRule filters rule from state", async () => {
-    const rules = [makeRule({ id: "r1" }), makeRule({ id: "r2", name: "Memory Alert" })];
+    const rules = [
+      makeRule({ id: "r1" }),
+      makeRule({ id: "r2", name: "Memory Alert" }),
+    ];
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "notif_list_rules") return Promise.resolve(rules);
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRules(); });
+    await act(async () => {
+      await result.current.fetchRules();
+    });
     expect(result.current.rules).toHaveLength(2);
 
-    await act(async () => { await result.current.removeRule("r1"); });
+    await act(async () => {
+      await result.current.removeRule("r1");
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("notif_remove_rule", { ruleId: "r1" });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_remove_rule", {
+      ruleId: "r1",
+    });
     expect(result.current.rules).toHaveLength(1);
     expect(result.current.rules[0].id).toBe("r2");
   });
@@ -177,7 +216,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockRejectedValueOnce("Not found");
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.removeRule("bad-id"); });
+    await act(async () => {
+      await result.current.removeRule("bad-id");
+    });
 
     expect(result.current.error).toBe("Not found");
   });
@@ -193,9 +234,14 @@ describe("useNotificationRules", () => {
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.updateRule("r1", { name: "Updated Rule" }); });
+    await act(async () => {
+      await result.current.updateRule("r1", { name: "Updated Rule" });
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("notif_update_rule", { ruleId: "r1", updates: { name: "Updated Rule" } });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_update_rule", {
+      ruleId: "r1",
+      updates: { name: "Updated Rule" },
+    });
     expect(result.current.rules[0].name).toBe("Updated Rule");
   });
 
@@ -203,42 +249,61 @@ describe("useNotificationRules", () => {
 
   it("enableRule sets rule enabled to true optimistically", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "notif_list_rules") return Promise.resolve([makeRule({ id: "r1", enabled: false })]);
+      if (cmd === "notif_list_rules")
+        return Promise.resolve([makeRule({ id: "r1", enabled: false })]);
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRules(); });
+    await act(async () => {
+      await result.current.fetchRules();
+    });
     expect(result.current.rules[0].enabled).toBe(false);
 
-    await act(async () => { await result.current.enableRule("r1"); });
-    expect(mockInvoke).toHaveBeenCalledWith("notif_enable_rule", { ruleId: "r1" });
+    await act(async () => {
+      await result.current.enableRule("r1");
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_enable_rule", {
+      ruleId: "r1",
+    });
     expect(result.current.rules[0].enabled).toBe(true);
   });
 
   it("disableRule sets rule enabled to false optimistically", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "notif_list_rules") return Promise.resolve([makeRule({ id: "r1", enabled: true })]);
+      if (cmd === "notif_list_rules")
+        return Promise.resolve([makeRule({ id: "r1", enabled: true })]);
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRules(); });
+    await act(async () => {
+      await result.current.fetchRules();
+    });
     expect(result.current.rules[0].enabled).toBe(true);
 
-    await act(async () => { await result.current.disableRule("r1"); });
-    expect(mockInvoke).toHaveBeenCalledWith("notif_disable_rule", { ruleId: "r1" });
+    await act(async () => {
+      await result.current.disableRule("r1");
+    });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_disable_rule", {
+      ruleId: "r1",
+    });
     expect(result.current.rules[0].enabled).toBe(false);
   });
 
   // --- fetchTemplates ---
 
   it("fetchTemplates sets templates state", async () => {
-    const templates = [makeTemplate(), makeTemplate({ id: "tmpl-2", name: "Slack Alert" })];
+    const templates = [
+      makeTemplate(),
+      makeTemplate({ id: "tmpl-2", name: "Slack Alert" }),
+    ];
     mockInvoke.mockResolvedValueOnce(templates as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchTemplates(); });
+    await act(async () => {
+      await result.current.fetchTemplates();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_list_templates");
     expect(result.current.templates).toHaveLength(2);
@@ -249,7 +314,8 @@ describe("useNotificationRules", () => {
   it("addTemplate invokes backend and refreshes templates", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "notif_add_template") return Promise.resolve("tmpl-new");
-      if (cmd === "notif_list_templates") return Promise.resolve([makeTemplate({ id: "tmpl-new" })]);
+      if (cmd === "notif_list_templates")
+        return Promise.resolve([makeTemplate({ id: "tmpl-new" })]);
       return Promise.resolve(undefined);
     });
 
@@ -257,14 +323,21 @@ describe("useNotificationRules", () => {
     let id: string | null = null;
     await act(async () => {
       id = await result.current.addTemplate({
-        name: "New Template", subject: "Alert", body: "Body", format: "text", variables: [],
+        name: "New Template",
+        subject: "Alert",
+        body: "Body",
+        format: "text",
+        variables: [],
       });
     });
 
     expect(id).toBe("tmpl-new");
-    expect(mockInvoke).toHaveBeenCalledWith("notif_add_template", expect.objectContaining({
-      template: expect.objectContaining({ name: "New Template" }),
-    }));
+    expect(mockInvoke).toHaveBeenCalledWith(
+      "notif_add_template",
+      expect.objectContaining({
+        template: expect.objectContaining({ name: "New Template" }),
+      }),
+    );
     expect(result.current.templates).toHaveLength(1);
   });
 
@@ -274,7 +347,13 @@ describe("useNotificationRules", () => {
     const { result } = renderHook(() => useNotificationRules());
     let id: string | null = null;
     await act(async () => {
-      id = await result.current.addTemplate({ name: "Err", subject: "", body: "", format: "text", variables: [] });
+      id = await result.current.addTemplate({
+        name: "Err",
+        subject: "",
+        body: "",
+        format: "text",
+        variables: [],
+      });
     });
 
     expect(id).toBeNull();
@@ -284,19 +363,28 @@ describe("useNotificationRules", () => {
   // --- removeTemplate ---
 
   it("removeTemplate filters template from state", async () => {
-    const templates = [makeTemplate({ id: "tmpl-1" }), makeTemplate({ id: "tmpl-2", name: "Slack" })];
+    const templates = [
+      makeTemplate({ id: "tmpl-1" }),
+      makeTemplate({ id: "tmpl-2", name: "Slack" }),
+    ];
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "notif_list_templates") return Promise.resolve(templates);
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchTemplates(); });
+    await act(async () => {
+      await result.current.fetchTemplates();
+    });
     expect(result.current.templates).toHaveLength(2);
 
-    await act(async () => { await result.current.removeTemplate("tmpl-1"); });
+    await act(async () => {
+      await result.current.removeTemplate("tmpl-1");
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("notif_remove_template", { templateId: "tmpl-1" });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_remove_template", {
+      templateId: "tmpl-1",
+    });
     expect(result.current.templates).toHaveLength(1);
     expect(result.current.templates[0].id).toBe("tmpl-2");
   });
@@ -308,7 +396,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockResolvedValueOnce(entries as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchHistory(); });
+    await act(async () => {
+      await result.current.fetchHistory();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_get_history");
     expect(result.current.history).toHaveLength(1);
@@ -319,18 +409,26 @@ describe("useNotificationRules", () => {
     mockInvoke.mockResolvedValueOnce([] as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRecentHistory(); });
+    await act(async () => {
+      await result.current.fetchRecentHistory();
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("notif_get_recent_history", { limit: 50 });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_get_recent_history", {
+      limit: 50,
+    });
   });
 
   it("fetchRecentHistory passes custom limit", async () => {
     mockInvoke.mockResolvedValueOnce([] as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchRecentHistory(10); });
+    await act(async () => {
+      await result.current.fetchRecentHistory(10);
+    });
 
-    expect(mockInvoke).toHaveBeenCalledWith("notif_get_recent_history", { limit: 10 });
+    expect(mockInvoke).toHaveBeenCalledWith("notif_get_recent_history", {
+      limit: 10,
+    });
   });
 
   // --- clearHistory ---
@@ -343,10 +441,14 @@ describe("useNotificationRules", () => {
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.fetchHistory(); });
+    await act(async () => {
+      await result.current.fetchHistory();
+    });
     expect(result.current.history).toHaveLength(1);
 
-    await act(async () => { await result.current.clearHistory(); });
+    await act(async () => {
+      await result.current.clearHistory();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_clear_history");
     expect(result.current.history).toEqual([]);
@@ -360,7 +462,9 @@ describe("useNotificationRules", () => {
     const { result } = renderHook(() => useNotificationRules());
     let success = false;
     await act(async () => {
-      success = await result.current.testChannel("email", { to: "admin@example.com" });
+      success = await result.current.testChannel("email", {
+        to: "admin@example.com",
+      });
     });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_test_channel", {
@@ -386,12 +490,19 @@ describe("useNotificationRules", () => {
   // --- fetchStats ---
 
   it("fetchStats sets stats state", async () => {
-    const stats = { totalSent: 100, totalFailed: 5, activeRules: 8, lastSentAt: "2026-03-30T00:00:00Z" };
+    const stats = {
+      totalSent: 100,
+      totalFailed: 5,
+      activeRules: 8,
+      lastSentAt: "2026-03-30T00:00:00Z",
+    };
     mockInvoke.mockResolvedValueOnce(stats as never);
 
     const { result } = renderHook(() => useNotificationRules());
     let res: unknown = null;
-    await act(async () => { res = await result.current.fetchStats(); });
+    await act(async () => {
+      res = await result.current.fetchStats();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_get_stats");
     expect(result.current.stats).toEqual(stats);
@@ -403,7 +514,9 @@ describe("useNotificationRules", () => {
 
     const { result } = renderHook(() => useNotificationRules());
     let res: unknown = "not-null";
-    await act(async () => { res = await result.current.fetchStats(); });
+    await act(async () => {
+      res = await result.current.fetchStats();
+    });
 
     expect(res).toBeNull();
     expect(result.current.error).toBe("Stats unavailable");
@@ -416,7 +529,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockResolvedValueOnce(cfg as never);
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.loadConfig(); });
+    await act(async () => {
+      await result.current.loadConfig();
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_get_config");
     expect(result.current.config).toEqual(cfg);
@@ -426,7 +541,9 @@ describe("useNotificationRules", () => {
     mockInvoke.mockRejectedValueOnce("Config read error");
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.loadConfig(); });
+    await act(async () => {
+      await result.current.loadConfig();
+    });
 
     expect(result.current.error).toBe("Config read error");
   });
@@ -434,29 +551,49 @@ describe("useNotificationRules", () => {
   // --- updateConfig ---
 
   it("updateConfig merges with existing config and persists", async () => {
-    const initial = { enabled: true, globalThrottleMs: 60000, maxHistoryEntries: 100, retryCount: 3, retryDelayMs: 1000, batchDelivery: false, batchIntervalMs: 0, quietHoursEnabled: false, quietHoursStart: "22:00", quietHoursEnd: "07:00" };
+    const initial = {
+      enabled: true,
+      globalThrottleMs: 60000,
+      maxHistoryEntries: 100,
+      retryCount: 3,
+      retryDelayMs: 1000,
+      batchDelivery: false,
+      batchIntervalMs: 0,
+      quietHoursEnabled: false,
+      quietHoursStart: "22:00",
+      quietHoursEnd: "07:00",
+    };
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "notif_get_config") return Promise.resolve(initial);
       return Promise.resolve(undefined);
     });
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.loadConfig(); });
+    await act(async () => {
+      await result.current.loadConfig();
+    });
     expect(result.current.config).toEqual(initial);
 
-    await act(async () => { await result.current.updateConfig({ maxHistoryEntries: 200 }); });
+    await act(async () => {
+      await result.current.updateConfig({ maxHistoryEntries: 200 });
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith("notif_update_config", {
       config: { ...initial, maxHistoryEntries: 200 },
     });
-    expect(result.current.config).toEqual({ ...initial, maxHistoryEntries: 200 });
+    expect(result.current.config).toEqual({
+      ...initial,
+      maxHistoryEntries: 200,
+    });
   });
 
   it("updateConfig sets error on failure", async () => {
     mockInvoke.mockRejectedValueOnce("Write error");
 
     const { result } = renderHook(() => useNotificationRules());
-    await act(async () => { await result.current.updateConfig({ enabled: false }); });
+    await act(async () => {
+      await result.current.updateConfig({ enabled: false });
+    });
 
     expect(result.current.error).toBe("Write error");
   });
