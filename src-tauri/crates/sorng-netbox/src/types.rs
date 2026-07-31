@@ -13,6 +13,9 @@ pub struct NetboxConnectionConfig {
     pub port: Option<u16>,
     pub use_tls: Option<bool>,
     pub accept_invalid_certs: Option<bool>,
+    /// Runtime-only acknowledgement for this insecure connection attempt.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: bool,
     pub api_token: String,
     pub timeout_secs: Option<u64>,
     #[serde(default, alias = "proxyUrl")]

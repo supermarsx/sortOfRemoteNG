@@ -1,3 +1,4 @@
+use sorng_netbox::client::NetboxClient;
 use sorng_netbox::error::NetboxErrorKind;
 use sorng_netbox::service::NetboxService;
 use sorng_netbox::types::NetboxConnectionConfig;
@@ -48,12 +49,30 @@ async fn spawn_server(
     (address, task)
 }
 
+#[test]
+fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    let mut cfg = NetboxConnectionConfig {
+        host: "netbox.example.test".into(),
+        port: Some(443),
+        use_tls: Some(true),
+        accept_invalid_certs: Some(true),
+        acknowledge_invalid_cert_risk: false,
+        api_token: "test-token".into(),
+        timeout_secs: Some(5),
+        proxy_url: None,
+    };
+    assert!(NetboxClient::new(cfg.clone()).is_err());
+    cfg.acknowledge_invalid_cert_risk = true;
+    assert!(NetboxClient::new(cfg).is_ok());
+}
+
 fn config(address: std::net::SocketAddr) -> NetboxConnectionConfig {
     NetboxConnectionConfig {
         host: address.ip().to_string(),
         port: Some(address.port()),
         use_tls: Some(false),
         accept_invalid_certs: Some(false),
+        acknowledge_invalid_cert_risk: false,
         api_token: "netbox-token".into(),
         timeout_secs: Some(5),
         proxy_url: None,
