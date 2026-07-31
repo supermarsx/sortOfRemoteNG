@@ -106,6 +106,8 @@ export interface UseProxmoxReturn extends UseProxmoxState {
     tokenSecret?: string;
     insecure?: boolean;
     timeoutSecs?: number;
+    fingerprint?: string;
+    acknowledgeInvalidCertRisk?: boolean;
   }) => Promise<string>;
   disconnect: () => Promise<void>;
   checkSession: () => Promise<boolean>;
@@ -290,6 +292,7 @@ export function useProxmox(): UseProxmoxReturn {
     host: string; port?: number; username: string;
     password?: string; tokenId?: string; tokenSecret?: string;
     insecure?: boolean; timeoutSecs?: number;
+    fingerprint?: string; acknowledgeInvalidCertRisk?: boolean;
   }): Promise<string> => {
     const res = await call<string>("proxmox_connect", {
       host: params.host,
@@ -300,6 +303,8 @@ export function useProxmox(): UseProxmoxReturn {
       tokenSecret: params.tokenSecret,
       insecure: params.insecure,
       timeoutSecs: params.timeoutSecs,
+      fingerprint: params.fingerprint,
+      acknowledgeInvalidCertRisk: params.acknowledgeInvalidCertRisk,
     });
     if (mountedRef.current) setConnected(true);
     return res;

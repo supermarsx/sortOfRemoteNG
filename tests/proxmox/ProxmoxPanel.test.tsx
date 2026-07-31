@@ -33,6 +33,9 @@ const connectPanel = async () => {
   fireEvent.change(screen.getByPlaceholderText("192.168.1.100"), {
     target: { value: "10.0.0.1" },
   });
+  fireEvent.change(document.querySelector('input[type="password"]')!, {
+    target: { value: "secret123" },
+  });
   fireEvent.click(screen.getByText("Connect"));
 
   await screen.findByTestId("proxmox-tab-dashboard");
@@ -144,11 +147,13 @@ describe("ProxmoxPanel", () => {
     expect(connectBtn).toBeDisabled();
   });
 
-  it("connect button becomes enabled when host and username set", () => {
+  it("connect button becomes enabled when required credentials are set", () => {
     render(<ProxmoxPanel isOpen onClose={() => {}} />);
     const hostInput = screen.getByPlaceholderText("192.168.1.100");
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
-    // username already has default "root@pam"
+    fireEvent.change(document.querySelector('input[type="password"]')!, {
+      target: { value: "secret123" },
+    });
     const connectBtn = screen.getByText("Connect");
     expect(connectBtn).not.toBeDisabled();
   });
@@ -170,6 +175,9 @@ describe("ProxmoxPanel", () => {
     render(<ProxmoxPanel isOpen onClose={() => {}} />);
     const hostInput = screen.getByPlaceholderText("192.168.1.100");
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
+    fireEvent.change(document.querySelector('input[type="password"]')!, {
+      target: { value: "secret123" },
+    });
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
     await waitFor(() => {
@@ -185,6 +193,9 @@ describe("ProxmoxPanel", () => {
     render(<ProxmoxPanel isOpen onClose={() => {}} />);
     const hostInput = screen.getByPlaceholderText("192.168.1.100");
     fireEvent.change(hostInput, { target: { value: "10.0.0.1" } });
+    fireEvent.change(document.querySelector('input[type="password"]')!, {
+      target: { value: "secret123" },
+    });
     const connectBtn = screen.getByText("Connect");
     fireEvent.click(connectBtn);
     await waitFor(() => {
@@ -192,10 +203,10 @@ describe("ProxmoxPanel", () => {
     });
   });
 
-  it("shows insecure checkbox defaulting to checked", () => {
+  it("shows insecure checkbox defaulting to unchecked", () => {
     render(<ProxmoxPanel isOpen onClose={() => {}} />);
     const checkbox = screen.getByLabelText("Accept self-signed certificates");
-    expect(checkbox).toBeChecked();
+    expect(checkbox).not.toBeChecked();
   });
 
   it("renders header with Proxmox VE Manager title", () => {
@@ -454,7 +465,21 @@ describe("ProxmoxPanel - connection and post-connect flows", () => {
     );
     expect(pwFields.length).toBeGreaterThanOrEqual(1);
     fireEvent.change(pwFields[0], { target: { value: "secret123" } });
+    fireEvent.click(screen.getByLabelText("Accept self-signed certificates"));
+    fireEvent.change(screen.getByPlaceholderText("SHA256:AA:BB:..."), {
+      target: {
+        value:
+          "SHA256:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF",
+      },
+    });
     fireEvent.click(screen.getByText("Connect"));
+    expect(
+      await screen.findByTestId("insecure-tls-warning-modal"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("I understand the risks"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue insecurely" }),
+    );
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -464,6 +489,9 @@ describe("ProxmoxPanel - connection and post-connect flows", () => {
           username: "root@pam",
           password: "secret123",
           insecure: true,
+          acknowledgeInvalidCertRisk: true,
+          fingerprint:
+            "SHA256:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF",
         }),
       );
     });
@@ -491,6 +519,9 @@ describe("ProxmoxPanel - connection and post-connect flows", () => {
     render(<ProxmoxPanel isOpen onClose={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText("192.168.1.100"), {
       target: { value: "bad-host" },
+    });
+    fireEvent.change(document.querySelector('input[type="password"]')!, {
+      target: { value: "secret123" },
     });
     fireEvent.click(screen.getByText("Connect"));
 

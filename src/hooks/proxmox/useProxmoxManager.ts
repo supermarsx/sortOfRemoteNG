@@ -76,6 +76,7 @@ export interface ProxmoxManagerState {
   tokenSecret: string;
   useApiToken: boolean;
   insecure: boolean;
+  fingerprint: string;
   connectionError: string | null;
   config: ProxmoxConfigSafe | null;
   version: PveVersion | null;
@@ -144,7 +145,8 @@ export function useProxmoxManager(isOpen: boolean) {
   const [tokenId, setTokenId] = useState("");
   const [tokenSecret, setTokenSecret] = useState("");
   const [useApiToken, setUseApiToken] = useState(false);
-  const [insecure, setInsecure] = useState(true);
+  const [insecure, setInsecure] = useState(false);
+  const [fingerprint, setFingerprint] = useState("");
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [config, setConfig] = useState<ProxmoxConfigSafe | null>(null);
   const [version, setVersion] = useState<PveVersion | null>(null);
@@ -224,9 +226,16 @@ export function useProxmoxManager(isOpen: boolean) {
 
   // ── Connection ────────────────────────────────────────────────
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (acknowledgeInvalidCertRisk = false) => {
     setConnectionState("connecting");
     setConnectionError(null);
+    if (insecure && !acknowledgeInvalidCertRisk) {
+      setConnectionState("error");
+      setConnectionError(
+        "Explicit acknowledgement is required for this self-signed certificate connection attempt",
+      );
+      return;
+    }
     try {
       const msg = await invoke<string>("proxmox_connect", {
         host,
@@ -236,6 +245,8 @@ export function useProxmoxManager(isOpen: boolean) {
         tokenId: useApiToken ? tokenId : undefined,
         tokenSecret: useApiToken ? tokenSecret : undefined,
         insecure,
+        fingerprint: insecure ? fingerprint.trim() || undefined : undefined,
+        acknowledgeInvalidCertRisk: insecure && acknowledgeInvalidCertRisk,
       });
       if (!mountedRef.current) return;
       setConnectionState("connected");
@@ -262,7 +273,7 @@ export function useProxmoxManager(isOpen: boolean) {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reconnect when any connection parameter changes
-  }, [host, port, username, password, tokenId, tokenSecret, useApiToken, insecure, safe]);
+  }, [host, port, username, password, tokenId, tokenSecret, useApiToken, insecure, fingerprint, safe]);
 
   const disconnect = useCallback(async () => {
     try {
@@ -824,6 +835,7 @@ export function useProxmoxManager(isOpen: boolean) {
     username, setUsername, password, setPassword,
     tokenId, setTokenId, tokenSecret, setTokenSecret,
     useApiToken, setUseApiToken, insecure, setInsecure,
+    fingerprint, setFingerprint,
     connectionError, config, version,
     connect, disconnect,
 

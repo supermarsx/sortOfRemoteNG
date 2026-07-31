@@ -16,6 +16,7 @@ export interface ProxmoxConfig {
   auth: ProxmoxAuthMethod;
   insecure: boolean;
   timeoutSecs: number;
+  fingerprint?: string;
 }
 
 /** Config without secrets, safe to display in UI. */
