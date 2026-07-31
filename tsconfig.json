@@ -1,15 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "ES6"
-    ],
-    "types": [
-      "@webgpu/types",
-      "vitest/globals"
-    ],
+    "lib": ["dom", "dom.iterable", "ES6"],
+    "types": ["@webgpu/types", "vitest/globals"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -29,24 +22,12 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@/components/*": [
-        "./src/components/*"
-      ],
-      "@/utils/*": [
-        "./src/utils/*"
-      ],
-      "@/hooks/*": [
-        "./src/hooks/*"
-      ],
-      "@/contexts/*": [
-        "./src/contexts/*"
-      ],
-      "@/types/*": [
-        "./src/types/*"
-      ]
+      "@/*": ["./src/*"],
+      "@/components/*": ["./src/components/*"],
+      "@/utils/*": ["./src/utils/*"],
+      "@/hooks/*": ["./src/hooks/*"],
+      "@/contexts/*": ["./src/contexts/*"],
+      "@/types/*": ["./src/types/*"]
     }
   },
   "include": [
@@ -54,11 +35,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-tauri-dev/types/**/*.ts",
+    ".next-tauri-dev/dev/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "e2e",
-    "src-tauri"
-  ]
+  "exclude": ["node_modules", "e2e", "src-tauri"]
 }

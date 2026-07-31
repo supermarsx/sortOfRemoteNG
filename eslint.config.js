@@ -9,8 +9,8 @@ const tsParser = {
   parseForESLint(code, options) {
     const result = tseslint.parser.parseForESLint(code, options);
     if (
-      result.scopeManager
-      && typeof result.scopeManager.addGlobals !== "function"
+      result.scopeManager &&
+      typeof result.scopeManager.addGlobals !== "function"
     ) {
       // ESLint 10 calls this hook even when no config globals are declared.
       result.scopeManager.addGlobals = () => {};
@@ -33,16 +33,14 @@ export default tseslint.config(
       "src-tauri/target/**",
       "node_modules/**",
       ".next/**",
+      ".next-tauri-dev/**",
       ".claude/**",
       ".copilot/**",
       ".orchestration/**",
     ],
   },
   {
-    extends: [
-      js.configs.recommended,
-      ...tseslint.configs.recommended,
-    ],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2020,
