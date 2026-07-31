@@ -1,9 +1,10 @@
 // ── sorng-osticket/src/types.rs ────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 // ── Connection ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OsticketConnectionConfig {
     pub name: String,
     /// Base URL, e.g. <https://helpdesk.example.com>
@@ -16,6 +17,23 @@ pub struct OsticketConnectionConfig {
     pub skip_tls_verify: bool,
     #[serde(default)]
     pub proxy_url: Option<String>,
+}
+
+impl fmt::Debug for OsticketConnectionConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OsticketConnectionConfig")
+            .field("name", &self.name)
+            .field("host", &"[REDACTED]")
+            .field("api_key", &"[REDACTED]")
+            .field("timeout_seconds", &self.timeout_seconds)
+            .field("skip_tls_verify", &self.skip_tls_verify)
+            .field(
+                "proxy_url",
+                &self.proxy_url.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 fn default_timeout() -> u64 {

@@ -1,16 +1,27 @@
 // ── sorng-osticket/src/client.rs ───────────────────────────────────────────────
 use reqwest::{header, Client, Response, StatusCode};
 use serde::de::DeserializeOwned;
+use std::fmt;
 
 use crate::error::{OsticketError, OsticketErrorKind, OsticketResult};
 use crate::types::OsticketConnectionConfig;
 
 /// Low-level osTicket HTTP client.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OsticketClient {
     pub(crate) http: Client,
     pub(crate) base_url: String,
     pub(crate) api_key: header::HeaderValue,
+}
+
+impl fmt::Debug for OsticketClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OsticketClient")
+            .field("base_url", &"[REDACTED]")
+            .field("api_key", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[allow(dead_code)]
@@ -25,18 +36,25 @@ impl OsticketClient {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            let proxy = reqwest::Proxy::all(proxy_url).map_err(|e| {
-                OsticketError::new(OsticketErrorKind::ConnectionFailed, e.to_string())
+            let proxy = reqwest::Proxy::all(proxy_url).map_err(|_| {
+                OsticketError::new(
+                    OsticketErrorKind::ConnectionFailed,
+                    "Invalid osTicket proxy configuration",
+                )
             })?;
             builder = builder.proxy(proxy);
         }
-        let http = builder
-            .build()
-            .map_err(|e| OsticketError::new(OsticketErrorKind::ConnectionFailed, e.to_string()))?;
+        let http = builder.build().map_err(|_| {
+            OsticketError::new(
+                OsticketErrorKind::ConnectionFailed,
+                "Unable to initialize the osTicket HTTP client",
+            )
+        })?;
 
         let base = cfg.host.trim_end_matches('/').to_string();
-        let api_key = header::HeaderValue::from_str(&cfg.api_key)
-            .map_err(|e| OsticketError::validation(format!("Invalid API key: {e}")))?;
+        let mut api_key = header::HeaderValue::from_str(&cfg.api_key)
+            .map_err(|_| OsticketError::validation("Invalid osTicket API key"))?;
+        api_key.set_sensitive(true);
 
         Ok(Self {
             http,
