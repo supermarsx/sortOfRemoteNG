@@ -37,7 +37,6 @@ const DEFAULT_MAX_ELEMENTS: u32 = 100;
 // ─── Transport ───────────────────────────────────────────────────────
 
 /// Internal state for a WinRM-to-WMI transport connection.
-#[derive(Debug)]
 pub struct WmiTransport {
     client: reqwest::Client,
     endpoint: String,
@@ -46,6 +45,20 @@ pub struct WmiTransport {
     max_envelope_size: usize,
     operation_timeout: String,
     request_counter: u64,
+}
+
+impl std::fmt::Debug for WmiTransport {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WmiTransport")
+            .field("endpoint", &self.endpoint)
+            .field("auth_header_present", &self.auth_header.is_some())
+            .field("namespace", &self.namespace)
+            .field("max_envelope_size", &self.max_envelope_size)
+            .field("operation_timeout", &self.operation_timeout)
+            .field("request_counter", &self.request_counter)
+            .finish_non_exhaustive()
+    }
 }
 
 impl WmiTransport {
