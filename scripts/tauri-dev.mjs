@@ -1,82 +1,120 @@
 #!/usr/bin/env node
-// Resilient `tauri dev` orchestrator.
-//
-// Problem this solves:
-//   `tauri dev` runs `beforeDevCommand` (the Next.js dev server) and then waits
-//   on `build.devUrl` (http://localhost:3001). A stale dev server left on 3001
-//   makes `next dev` fail with EADDRINUSE and aborts the whole launch.
-//
-// What this does:
-//   1. Resolve a usable port BEFORE starting Tauri: reclaim a stale listener on
-//      3001 if possible, else auto-select the next free port.
-//   2. Pass the chosen port to `beforeDevCommand` via `SORNG_DEV_PORT` so the
-//      Next dev server binds it.
-//   3. Keep Tauri's `devUrl` in agreement with the chosen port by merging a
-//      `-c {"build":{"devUrl": "http://localhost:<port>"}}` config override into
-//      `tauri dev`. (Tauri's CLI `-c/--config` deep-merges JSON over the file,
-//      so we never mutate tauri.conf.json on disk.)
-//
-// Any extra args after this script are forwarded to `tauri dev`
-// (e.g. `--features full-dev -- --no-default-features`).
+// Import-safe Tauri development orchestrator. It selects a free port before
+// Tauri starts, pins devUrl and the development capability origin to that port,
+// and marks the beforeDev launch as fixed so it can never silently diverge.
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import process from "node:process";
-import { resolveDevPort, DEFAULT_PORT } from "./dev-port.mjs";
+import { fileURLToPath } from "node:url";
+import {
+  assertNoManagedDevLock,
+  parseDevPort,
+  resolveDevPort,
+  DEFAULT_PORT,
+} from "./dev-port.mjs";
 
 const require = createRequire(import.meta.url);
+const tauriConfigPath = fileURLToPath(
+  new URL("../src-tauri/tauri.conf.json", import.meta.url),
+);
+const defaultCapabilityPath = fileURLToPath(
+  new URL("../src-tauri/capabilities/default.json", import.meta.url),
+);
 
-const passthrough = process.argv.slice(2);
-const log = (m) => console.log(`[tauri-dev] ${m}`);
+export function buildDevSecurityOverride(portValue) {
+  const port = parseDevPort(portValue);
+  const { $schema: _schema, ...capability } = JSON.parse(
+    readFileSync(defaultCapabilityPath, "utf8"),
+  );
+  const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
+  const productionCsp = tauriConfig?.app?.security?.csp;
+  if (
+    typeof productionCsp !== "string" ||
+    !productionCsp.includes("connect-src")
+  ) {
+    throw new Error("tauri.conf.json must define a connect-src CSP directive");
+  }
 
-async function main() {
-  const preferred = process.env.SORNG_DEV_PORT
-    ? Number.parseInt(process.env.SORNG_DEV_PORT, 10)
-    : DEFAULT_PORT;
+  const httpOrigin = `http://localhost:${port}`;
+  const websocketOrigin = `ws://localhost:${port}`;
+  const devCsp = productionCsp.replace(
+    /connect-src\s+([^;]*)/,
+    (_directive, sources) =>
+      `connect-src ${sources.trim()} ${httpOrigin} ${websocketOrigin}`,
+  );
 
-  // This orchestrator OWNS Tauri's devUrl (it injects a -c override below), so
-  // it does NOT need to keep the fixed 3001 — increment-until-free is the
-  // primary, kill-free strategy. We always make devUrl follow the chosen port.
-  const { port, action } = await resolveDevPort({
-    preferred,
-    reclaim: false,
-    log,
-  });
+  return {
+    capabilities: [
+      {
+        ...capability,
+        remote: { urls: [httpOrigin] },
+      },
+    ],
+    csp: devCsp,
+  };
+}
 
-  log(`dev server will use port ${port} (${action})`);
-
-  const env = {
-    ...process.env,
-    SORNG_DEV_PORT: String(port),
-    // Signal to dev-server.mjs that the port is already resolved/aligned.
-    SORNG_DEV_PORT_RESOLVED: "1",
+export function buildTauriLaunchPlan({
+  port: portValue,
+  passthrough = [],
+  baseEnv = process.env,
+  securityOverride,
+} = {}) {
+  const port = parseDevPort(portValue);
+  const devUrl = `http://localhost:${port}`;
+  const security = securityOverride ?? buildDevSecurityOverride(port);
+  const override = {
+    build: { devUrl },
+    app: { security },
   };
 
-  const tauriArgs = ["dev"];
+  return {
+    port,
+    devUrl,
+    env: {
+      ...baseEnv,
+      SORNG_DEV_PORT: String(port),
+      SORNG_DEV_PORT_RESOLVED: "1",
+      SORNG_TAURI_MANAGED_DEV: "1",
+    },
+    tauriArgs: ["dev", "-c", JSON.stringify(override), ...passthrough],
+  };
+}
 
-  // ALWAYS pin Tauri's devUrl to the resolved port so both sides agree, no
-  // matter which port we climbed to (this is a launch-time -c merge over
-  // tauri.conf.json; the file on disk is never mutated).
-  const override = JSON.stringify({
-    build: { devUrl: `http://localhost:${port}` },
+export async function main() {
+  const passthrough = process.argv.slice(2);
+  const log = (message) => console.log(`[tauri-dev] ${message}`);
+  const preferred = parseDevPort(
+    process.env.SORNG_DEV_PORT ?? DEFAULT_PORT,
+    "SORNG_DEV_PORT",
+  );
+
+  assertNoManagedDevLock();
+  const selected = await resolveDevPort({
+    preferred,
+    fixed: false,
+    log,
   });
-  tauriArgs.push("-c", override);
-  log(`pinning Tauri devUrl -> http://localhost:${port}`);
+  const plan = buildTauriLaunchPlan({
+    port: selected.port,
+    passthrough,
+  });
 
-  tauriArgs.push(...passthrough);
+  log(`dev server will use port ${plan.port} (${selected.action})`);
+  log(`pinning Tauri devUrl and capability origin -> ${plan.devUrl}`);
 
-  // Invoke the pinned Tauri CLI's JS entry directly with the current Node
-  // binary. This avoids the Windows `.cmd` shim (spawn EINVAL without a shell)
-  // and keeps the launch fully cross-platform with no shell quoting concerns.
   const tauriBin = require.resolve("@tauri-apps/cli/tauri.js");
-  const child = spawn(process.execPath, [tauriBin, ...tauriArgs], {
+  const child = spawn(process.execPath, [tauriBin, ...plan.tauriArgs], {
     stdio: "inherit",
-    env,
+    env: plan.env,
     shell: false,
   });
 
-  const forward = (sig) => {
-    if (!child.killed) child.kill(sig);
+  const forward = (signal) => {
+    if (!child.killed) child.kill(signal);
   };
   process.on("SIGINT", () => forward("SIGINT"));
   process.on("SIGTERM", () => forward("SIGTERM"));
@@ -84,13 +122,22 @@ async function main() {
     if (signal) process.kill(process.pid, signal);
     else process.exit(code ?? 0);
   });
-  child.on("error", (err) => {
-    console.error(`[tauri-dev] failed to launch tauri: ${err?.stack || err}`);
+  child.on("error", (error) => {
+    console.error(
+      `[tauri-dev] failed to launch Tauri: ${error?.stack || error}`,
+    );
     process.exit(1);
   });
 }
 
-main().catch((err) => {
-  console.error(`[tauri-dev] fatal: ${err?.stack || err}`);
-  process.exit(1);
-});
+function isDirectExecution() {
+  if (!process.argv[1]) return false;
+  return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isDirectExecution()) {
+  main().catch((error) => {
+    console.error(`[tauri-dev] fatal: ${error?.stack || error}`);
+    process.exit(1);
+  });
+}

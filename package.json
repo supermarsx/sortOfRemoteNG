@@ -11,6 +11,7 @@
     "release:test": "node --test ./tests/release/*.test.mjs",
     "dev": "node ./scripts/dev-server.mjs",
     "dev:check": "node ./scripts/dev-server.mjs --check",
+    "dev:launcher:test": "node --test ./tests/tooling/devLauncher.node-test.mjs",
     "build": "next build",
     "stage:opkssh-vendor": "node ./scripts/stage-opkssh-vendor.mjs",
     "stage:opkssh-vendor:enable": "node ./scripts/stage-opkssh-vendor.mjs --enable",

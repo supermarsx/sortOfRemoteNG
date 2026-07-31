@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev -- --fixed-tauri-port",
     "beforeBuildCommand": "npm run build && npm run stage:opkssh-vendor -- --release --enable"
   },
   "app": {

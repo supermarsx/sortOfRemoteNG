@@ -25,6 +25,7 @@ Thumbs.db
 *.sw?
 .env
 /.next
+/.next-tauri-dev
 /out
 tsconfig.tsbuildinfo
 /.claude

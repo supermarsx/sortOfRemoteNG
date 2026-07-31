@@ -1,307 +1,153 @@
 #!/usr/bin/env node
-// Resilient dev-server port resolution for `tauri dev`.
-//
-// The Tauri `beforeDevCommand` starts the Next.js dev server on a fixed port
-// (3001, matching `build.devUrl` in tauri.conf.json). When a previous dev
-// session leaves a stale listener on that port, `next dev` aborts with
-// `EADDRINUSE` and takes `tauri dev` down with it.
-//
-// This module makes the port acquisition self-healing. The PRIMARY behavior
-// (per the user's directive: "keep upping the port until you find a free one")
-// is increment-until-free:
-//   1. If the preferred port (3001) is free, use it.
-//   2. If it is busy, climb 3001 -> 3002 -> 3003 -> ... and bind-probe each one
-//      until a free port is found. This never depends on killing a holder, so
-//      it cannot EADDRINUSE even against a foreign / unkillable process.
-//
-// `reclaim` (kill the stale listener to free the preferred port) is an OPT-IN
-// escape hatch used only by the path that has a *fixed* Tauri devUrl it cannot
-// rewrite (a direct `tauri dev`). The orchestrator (`npm run tauri:dev`) climbs
-// freely and pins `build.devUrl` to the chosen port via `tauri dev -c {...}` so
-// both sides always agree.
-//
-// Pure-Node port probing (net.createServer) is used everywhere; the OS shell is
-// only invoked to identify/kill a stale PID, and only when reclaiming.
+// Kill-free development port selection shared by the standalone Next.js and
+// Tauri launchers. Port probing is intentionally advisory: a fixed Tauri port
+// is checked again by the beforeDev process and any later bind race is allowed
+// to fail closed in Next rather than terminating the process that won it.
 
 import net from "node:net";
-import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 export const DEFAULT_PORT = 3001;
-// Bound the increment-until-free search. The user's directive is "keep upping
-// the port until you find a free one"; we cap the climb so a pathological
-// machine (everything bound) fails loudly instead of spinning forever.
 export const MAX_PORT_SCAN = 100;
+export const BROWSER_DEV_DIST_DIR = ".next";
+export const TAURI_DEV_DIST_DIR = ".next-tauri-dev";
 
-/**
- * Try to bind a single (host, port) pair and report whether it's available.
- * A "stack unavailable" error (e.g. no IPv6 on this machine) is NOT a conflict
- * for our purposes — we only care about EADDRINUSE/EACCES, which mean something
- * is actually holding the port on that stack.
- *
- * @param {number} port
- * @param {string} host
- * @returns {Promise<boolean>} true if free (or the stack is unavailable here)
- */
+export function parseDevPort(value, label = "port") {
+  const normalized =
+    typeof value === "number" ? String(value) : String(value ?? "").trim();
+
+  if (!/^[1-9]\d{0,4}$/.test(normalized)) {
+    throw new Error(`${label} must be an integer between 1 and 65535`);
+  }
+
+  const port = Number(normalized);
+  if (!Number.isSafeInteger(port) || port > 65535) {
+    throw new Error(`${label} must be an integer between 1 and 65535`);
+  }
+
+  return port;
+}
+
+export function browserDevLockPath(cwd = process.cwd()) {
+  return resolve(cwd, BROWSER_DEV_DIST_DIR, "dev", "lock");
+}
+
+export function managedDevLockPath(cwd = process.cwd()) {
+  return resolve(cwd, TAURI_DEV_DIST_DIR, "dev", "lock");
+}
+
+export function assertNoManagedDevLock({
+  cwd = process.cwd(),
+  existsSyncFn = existsSync,
+} = {}) {
+  const lockPath = managedDevLockPath(cwd);
+  if (!existsSyncFn(lockPath)) return;
+
+  throw new Error(
+    `a Tauri-managed Next.js lock already exists at ${lockPath}. ` +
+      "Refusing to start a second managed dev server. Stop the existing " +
+      "`npm run tauri:dev` session; if no process is running, remove the " +
+      "stale lock only after confirming that it is unowned",
+  );
+}
+
 function tryBind(port, host) {
-  return new Promise((resolve) => {
+  return new Promise((resolveProbe) => {
     const server = net.createServer();
-    server.once("error", (err) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      resolveProbe(value);
+    };
+
+    server.once("error", (error) => {
       server.close(() => {});
-      // Stack not present (no IPv6, etc.) -> not a real conflict on this stack.
       if (
-        err &&
-        (err.code === "EADDRNOTAVAIL" ||
-          err.code === "EAFNOSUPPORT" ||
-          err.code === "EINVAL")
+        error &&
+        (error.code === "EADDRNOTAVAIL" ||
+          error.code === "EAFNOSUPPORT" ||
+          error.code === "EINVAL")
       ) {
-        resolve(true);
+        settle(true);
       } else {
-        // EADDRINUSE / EACCES -> occupied or unusable.
-        resolve(false);
+        settle(false);
       }
     });
     server.once("listening", () => {
-      server.close(() => resolve(true));
+      server.close(() => settle(true));
     });
+
     try {
       server.listen(port, host);
     } catch {
-      resolve(false);
+      settle(false);
     }
   });
 }
 
-/**
- * Resolve whether a TCP port is free to bind, checking BOTH network stacks.
- *
- * CRITICAL: `next dev` binds the IPv6 dual-stack wildcard (`::`, which surfaces
- * as ":::<port>" in an EADDRINUSE error and also covers IPv4). A probe that only
- * tried IPv4 `0.0.0.0` would report a port "free" while an IPv6 `::` listener
- * still held it -> the resolver would hand back the "free" port WITHOUT climbing,
- * and `next dev` would then EADDRINUSE on `:::<port>`. (This was the bug: the
- * increment-until-free fallback never triggered because the probe and the real
- * bind were checking different stacks.)
- *
- * We therefore treat a port as free only if it can be bound on BOTH `0.0.0.0`
- * (IPv4) AND `::` (IPv6 dual-stack) — matching what the dev server actually does.
- *
- * @param {number} port
- * @returns {Promise<boolean>} true if the port is free on every relevant stack
- */
-export async function isPortFree(port) {
-  // Order matters only for speed: check IPv6 dual-stack first since that's what
-  // next dev binds and is the most common holder.
+export async function isPortFree(portValue) {
+  const port = parseDevPort(portValue);
   for (const host of ["::", "0.0.0.0"]) {
     if (!(await tryBind(port, host))) return false;
   }
   return true;
 }
 
-/**
- * Find the PID(s) holding a LISTEN socket on the given TCP port.
- * Cross-platform; returns a de-duplicated array of numeric PIDs (may be empty).
- *
- * @param {number} port
- * @returns {number[]}
- */
-export function findListenerPids(port) {
-  const pids = new Set();
-  try {
-    if (process.platform === "win32") {
-      // Get-NetTCPConnection is the robust modern API; fall back to netstat if
-      // the cmdlet is unavailable (older/Server SKUs).
-      const ps = spawnSync(
-        "powershell",
-        [
-          "-NoProfile",
-          "-Command",
-          `try { Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction Stop | ` +
-            `Select-Object -ExpandProperty OwningProcess } catch { ` +
-            `(netstat -ano | Select-String ':${port}\\s' | Select-String 'LISTENING') ` +
-            `-replace '.*\\s(\\d+)$','$1' }`,
-        ],
-        { encoding: "utf8" },
-      );
-      for (const line of String(ps.stdout || "").split(/\r?\n/)) {
-        const pid = Number.parseInt(line.trim(), 10);
-        if (Number.isInteger(pid) && pid > 0) pids.add(pid);
-      }
-    } else {
-      // lsof is the most portable; fall back to fuser.
-      let out = "";
-      const lsof = spawnSync("lsof", [`-ti`, `tcp:${port}`, "-sTCP:LISTEN"], {
-        encoding: "utf8",
-      });
-      if (lsof.status === 0) {
-        out = String(lsof.stdout || "");
-      } else {
-        const fuser = spawnSync("fuser", [`${port}/tcp`], { encoding: "utf8" });
-        // fuser prints PIDs on stderr in some builds, stdout in others.
-        out = `${fuser.stdout || ""} ${fuser.stderr || ""}`;
-      }
-      for (const tok of out.split(/\s+/)) {
-        const pid = Number.parseInt(tok.trim(), 10);
-        if (Number.isInteger(pid) && pid > 0) pids.add(pid);
-      }
-    }
-  } catch {
-    // Best-effort: if discovery fails we simply report no PIDs and the caller
-    // falls back to auto-port selection.
+export async function findFreePort(
+  startValue,
+  { isPortFreeFn = isPortFree, maxScan = MAX_PORT_SCAN } = {},
+) {
+  const start = parseDevPort(startValue, "starting port");
+  if (!Number.isInteger(maxScan) || maxScan < 1) {
+    throw new Error("maxScan must be a positive integer");
   }
-  return [...pids].filter((pid) => pid !== process.pid);
-}
 
-/**
- * Kill the given PID, cross-platform. Returns true if the kill command
- * reported success.
- *
- * @param {number} pid
- * @returns {boolean}
- */
-export function killPid(pid) {
-  try {
-    if (process.platform === "win32") {
-      const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        encoding: "utf8",
-      });
-      return r.status === 0;
-    }
-    const r = spawnSync("kill", ["-9", String(pid)], { encoding: "utf8" });
-    return r.status === 0;
-  } catch {
-    return false;
+  const end = Math.min(start + maxScan - 1, 65535);
+  for (let port = start; port <= end; port++) {
+    if (await isPortFreeFn(port)) return port;
   }
-}
 
-/**
- * Attempt to reclaim a busy port by killing its listener(s), then re-probe
- * with a short backoff to let the OS release the socket.
- *
- * @param {number} port
- * @returns {Promise<{reclaimed: boolean, pids: number[]}>}
- */
-export async function reclaimPort(port) {
-  const pids = findListenerPids(port);
-  if (pids.length === 0) {
-    // Nothing identifiable holding it (could be TIME_WAIT or a perms issue).
-    const free = await waitForFree(port, 1500);
-    return { reclaimed: free, pids: [] };
-  }
-  for (const pid of pids) killPid(pid);
-  const free = await waitForFree(port, 3000);
-  return { reclaimed: free, pids };
-}
-
-/**
- * Poll until the port becomes free or the timeout elapses (bind-race backoff).
- *
- * @param {number} port
- * @param {number} timeoutMs
- * @returns {Promise<boolean>}
- */
-export async function waitForFree(port, timeoutMs = 3000) {
-  const deadline = Date.now() + timeoutMs;
-  let delay = 100;
-  while (true) {
-    if (await isPortFree(port)) return true;
-    if (Date.now() >= deadline) return false;
-    await sleep(Math.min(delay, deadline - Date.now()));
-    delay = Math.min(delay * 2, 500);
-  }
-}
-
-/**
- * Increment-until-free: starting at `start`, probe by actually attempting to
- * bind and step up one port at a time (3001 -> 3002 -> 3003 -> ...) until a
- * free one is found. This is the PRIMARY port-acquisition behavior (the user's
- * directive: "keep upping the port until you find a free one"). It never relies
- * on killing a holder, so it works against foreign / unkillable processes too.
- *
- * The search is bounded by MAX_PORT_SCAN; if every port in the window is busy
- * (and we hit 65535), it throws a clear, actionable error rather than silently
- * landing on an ephemeral port the caller can't predict (Tauri's devUrl has to
- * be able to follow the chosen port, so it must be deterministic).
- *
- * @param {number} start first port to try (inclusive)
- * @returns {Promise<number>} the first free port at or above `start`
- */
-export async function findFreePort(start) {
-  for (let p = start; p < start + MAX_PORT_SCAN; p++) {
-    if (p > 65535) break;
-    if (await isPortFree(p)) return p;
-  }
-  const end = Math.min(start + MAX_PORT_SCAN - 1, 65535);
   throw new Error(
     `no free port found in range ${start}-${end} ` +
-      `(scanned ${MAX_PORT_SCAN} ports). Free a port or set SORNG_DEV_PORT.`,
+      `(scanned ${end - start + 1} ports)`,
   );
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+export async function resolveDevPort({
+  preferred = process.env.SORNG_DEV_PORT ?? DEFAULT_PORT,
+  fixed = false,
+  isPortFreeFn = isPortFree,
+  log = () => {},
+} = {}) {
+  const port = parseDevPort(preferred, "SORNG_DEV_PORT");
 
-/**
- * Resolve the port the dev server should bind, self-healing port conflicts.
- *
- * PRIMARY strategy = increment-until-free (the user's directive). Starting at
- * the preferred port (3001), we bind-probe and step up until a free port is
- * found. This is the single source of truth used by EVERY invocation path
- * (`npm run tauri:dev`, `npm run dev`, and a direct `tauri dev`'s
- * beforeDevCommand). It never depends on killing a holder, so it cannot
- * EADDRINUSE even against a foreign / unkillable process.
- *
- *   - preferred port free  -> use it (action "free")
- *   - preferred port busy  -> climb 3001->3002->... to the first free one
- *                             (action "autoport", changed=true)
- *
- * `reclaim` is an OPT-IN escape hatch for the one path that has a *fixed*
- * Tauri devUrl it cannot rewrite (a direct `tauri dev`, where devUrl=3001 is
- * baked into config). There, before climbing, we try to free the preferred
- * port by killing a stale listener so the fixed devUrl stays valid. If reclaim
- * fails, we STILL climb (never EADDRINUSE) and the caller is told the devUrl
- * won't match — see dev-server.mjs.
- *
- * @param {object} [opts]
- * @param {number} [opts.preferred] preferred port (default DEFAULT_PORT)
- * @param {boolean} [opts.reclaim] try to free the preferred port first (default false)
- * @param {(msg: string) => void} [opts.log] logger
- * @returns {Promise<{port: number, preferred: number, changed: boolean, action: string}>}
- */
-export async function resolveDevPort(opts = {}) {
-  const preferred = Number.parseInt(
-    String(opts.preferred ?? process.env.SORNG_DEV_PORT ?? DEFAULT_PORT),
-    10,
-  );
-  const reclaim = opts.reclaim ?? false;
-  const log = opts.log ?? (() => {});
-
-  if (await isPortFree(preferred)) {
-    log(`port ${preferred} is free`);
-    return { port: preferred, preferred, changed: false, action: "free" };
+  if (await isPortFreeFn(port)) {
+    log(`port ${port} is free`);
+    return { port, preferred: port, changed: false, action: "free" };
   }
 
-  log(`port ${preferred} is busy`);
-
-  if (reclaim) {
-    const { reclaimed, pids } = await reclaimPort(preferred);
-    if (reclaimed) {
-      const who = pids.length
-        ? `stale PID ${pids.join(", ")}`
-        : "stale listener";
-      log(`port ${preferred} busy -> reclaimed ${who}`);
-      return {
-        port: preferred,
-        preferred,
-        changed: false,
-        action: "reclaimed",
-      };
-    }
-    log(`could not reclaim port ${preferred}; climbing to next free port`);
+  log(`port ${port} is busy`);
+  if (fixed) {
+    throw new Error(
+      `fixed Tauri dev port ${port} became occupied before Next.js could ` +
+        "bind. Refusing to terminate the listener, climb to another port, or " +
+        "diverge from Tauri's pinned devUrl. Stop the conflicting process or " +
+        "rerun `npm run tauri:dev`",
+    );
   }
 
-  // PRIMARY behavior: keep upping the port until we find a free one.
-  const port = await findFreePort(preferred + 1);
-  log(`port ${preferred} busy -> climbed to free port ${port}`);
-  return { port, preferred, changed: true, action: "autoport" };
+  if (port === 65535) {
+    throw new Error("port 65535 is busy and no higher valid port exists");
+  }
+
+  const selected = await findFreePort(port + 1, { isPortFreeFn });
+  log(`port ${port} busy -> climbed to free port ${selected}`);
+  return {
+    port: selected,
+    preferred: port,
+    changed: true,
+    action: "autoport",
+  };
 }

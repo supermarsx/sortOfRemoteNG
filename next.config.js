@@ -1,16 +1,21 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const tauriManagedDev = process.env.SORNG_TAURI_MANAGED_DEV === "1";
 
 // The novnc npm package ships a broken static import in
 // core/input/keyboard.js → ../../app/ui.js which does not exist in
 // the published package.  We stub it out so the bundler can resolve it.
-const novncStub = path.join(__dirname, 'src', 'stubs', 'novnc-ui.js');
+const novncStub = path.join(__dirname, "src", "stubs", "novnc-ui.js");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  // Browser and Tauri development may intentionally run together on different
+  // ports. Their lock/cache roots remain separate, while duplicate managed
+  // launches are rejected explicitly by the launchers before Next starts.
+  distDir: tauriManagedDev ? ".next-tauri-dev" : ".next",
+  output: "export",
   trailingSlash: true,
   images: {
     unoptimized: true,
@@ -21,11 +26,11 @@ const nextConfig = {
     // the root. Silences the "multiple lockfiles" warning in CI.
     root: __dirname,
     resolveAlias: {
-      '../../app/ui.js': './src/stubs/novnc-ui.js',
+      "../../app/ui.js": "./src/stubs/novnc-ui.js",
     },
   },
   webpack: (config) => {
-    config.resolve.alias['../../app/ui.js'] = novncStub;
+    config.resolve.alias["../../app/ui.js"] = novncStub;
     return config;
   },
 };

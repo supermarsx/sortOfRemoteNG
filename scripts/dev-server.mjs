@@ -1,34 +1,20 @@
 #!/usr/bin/env node
-// Resilient Next.js dev-server launcher used as Tauri's `beforeDevCommand`.
-//
-// When invoked by `scripts/tauri-dev.mjs`, the chosen port is already resolved
-// and passed through `SORNG_DEV_PORT` (and the Tauri devUrl has been overridden
-// to match). When invoked standalone (`npm run dev`), it resolves the port
-// itself so a plain `next dev` also self-heals a stale listener.
-//
-// Flags:
-//   --check   Resolve/repair the port and print the result, then exit (no Next).
+// Import-safe Next.js development launcher. Standalone browser development may
+// climb to a free port. Tauri-managed development is fixed to the port already
+// present in Tauri's devUrl and fails closed if that port cannot be bound.
 
 import { spawn } from "node:child_process";
 import process from "node:process";
-import { resolveDevPort, isPortFree, DEFAULT_PORT } from "./dev-port.mjs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  assertNoManagedDevLock,
+  resolveDevPort,
+  DEFAULT_PORT,
+} from "./dev-port.mjs";
 
-const args = process.argv.slice(2);
-const checkOnly = args.includes("--check");
-const log = (m) => console.log(`[dev-server] ${m}`);
-
-const preEnv = process.env.SORNG_DEV_PORT;
-const preResolved = process.env.SORNG_DEV_PORT_RESOLVED === "1";
-const bundlerEnv = (
-  process.env.SORNG_NEXT_DEV_BUNDLER ??
-  process.env.SORNG_DEV_BUNDLER ??
-  "turbopack"
-)
-  .trim()
-  .toLowerCase();
-
-function resolveBundlerFlag(value) {
-  switch (value) {
+export function resolveBundlerFlag(value) {
+  switch (value.trim().toLowerCase()) {
     case "turbo":
     case "turbopack":
       return { label: "Turbopack", flag: "--turbopack" };
@@ -36,83 +22,89 @@ function resolveBundlerFlag(value) {
     case "":
       return { label: "Webpack", flag: "--webpack" };
     default:
-      log(
-        `unknown SORNG_NEXT_DEV_BUNDLER=${JSON.stringify(value)}; ` +
-          "falling back to Turbopack",
-      );
-      return { label: "Turbopack", flag: "--turbopack" };
+      return { label: "Turbopack", flag: "--turbopack", usedFallback: true };
   }
 }
 
-async function main() {
-  let port;
-  if (preResolved && preEnv) {
-    // The orchestrator (tauri-dev.mjs) already climbed to a free port and
-    // aligned Tauri's devUrl to it. Re-probe at bind time to close the
-    // resolve->bind race: if something grabbed it in between we re-resolve
-    // with reclaim so we land back on the SAME port Tauri's devUrl expects
-    // (climbing here would silently diverge from devUrl, so we don't).
-    port = Number.parseInt(preEnv, 10);
-    if (await isPortFree(port)) {
-      log(`using port ${port} (resolved by tauri-dev launcher)`);
-    } else {
-      log(
-        `port ${port} (from launcher) was taken before bind; reclaiming to ` +
-          `keep Tauri devUrl in sync`,
-      );
-      const r = await resolveDevPort({ preferred: port, reclaim: true, log });
-      port = r.port;
-      if (r.changed) {
-        log(
-          `WARNING: could not hold ${preEnv}; now on ${port} but Tauri ` +
-            `devUrl still points at ${preEnv}. Re-run \`npm run tauri:dev\`.`,
-        );
-      }
-    }
-  } else {
-    // Standalone (`npm run dev`) or a direct `tauri dev` whose beforeDevCommand
-    // is this script. Tauri's devUrl is the FIXED 3001 from config here, so we
-    // prefer to reclaim 3001 (keeps devUrl valid). If we can't, we STILL climb
-    // to a free port so `next dev` never EADDRINUSEs — and we warn that the
-    // fixed devUrl won't match (the orchestrator path fixes devUrl).
-    const r = await resolveDevPort({
-      preferred: preEnv ? Number.parseInt(preEnv, 10) : DEFAULT_PORT,
-      reclaim: true,
-      log,
-    });
-    port = r.port;
-    if (r.changed) {
-      log(
-        `NOTE: dev server climbed to port ${port}, not ${r.preferred}. ` +
-          `A direct \`tauri dev\` has a fixed devUrl of ${r.preferred}; use ` +
-          `\`npm run tauri:dev\` so Tauri's devUrl follows the chosen port.`,
-      );
-    }
+export async function resolveDevServerPlan({
+  argv = process.argv.slice(2),
+  env = process.env,
+  cwd = process.cwd(),
+  isPortFreeFn,
+  assertNoManagedDevLockFn = assertNoManagedDevLock,
+  log = () => {},
+} = {}) {
+  const checkOnly = argv.includes("--check");
+  const fixed =
+    argv.includes("--fixed-tauri-port") || env.SORNG_DEV_PORT_RESOLVED === "1";
+
+  if (fixed) {
+    assertNoManagedDevLockFn({ cwd });
   }
 
-  if (checkOnly) {
-    console.log(JSON.stringify({ port }));
+  const result = await resolveDevPort({
+    preferred: env.SORNG_DEV_PORT ?? DEFAULT_PORT,
+    fixed,
+    isPortFreeFn,
+    log,
+  });
+  const bundlerValue =
+    env.SORNG_NEXT_DEV_BUNDLER ?? env.SORNG_DEV_BUNDLER ?? "turbopack";
+  const bundler = resolveBundlerFlag(bundlerValue);
+  const childEnv = { ...env, PORT: String(result.port) };
+
+  if (fixed) {
+    childEnv.SORNG_TAURI_MANAGED_DEV = "1";
+  } else {
+    delete childEnv.SORNG_TAURI_MANAGED_DEV;
+  }
+
+  return {
+    ...result,
+    fixed,
+    checkOnly,
+    bundler,
+    childEnv,
+  };
+}
+
+export async function main() {
+  const log = (message) => console.log(`[dev-server] ${message}`);
+  const plan = await resolveDevServerPlan({ log });
+
+  if (plan.bundler.usedFallback) {
+    const configured =
+      process.env.SORNG_NEXT_DEV_BUNDLER ?? process.env.SORNG_DEV_BUNDLER ?? "";
+    log(
+      `unknown development bundler ${JSON.stringify(configured)}; ` +
+        "falling back to Turbopack",
+    );
+  }
+
+  if (plan.fixed) {
+    log(`using fixed Tauri devUrl port ${plan.port}`);
+  }
+
+  if (plan.checkOnly) {
+    console.log(JSON.stringify({ port: plan.port, fixed: plan.fixed }));
     return;
   }
 
-  // Keep the bundler selectable for diagnosing Next compiler regressions.
-  const bundler = resolveBundlerFlag(bundlerEnv);
-  log(`starting Next.js dev server with ${bundler.label}`);
-
+  log(`starting Next.js dev server with ${plan.bundler.label}`);
   const child = spawn(
     process.execPath,
     [
       "./node_modules/next/dist/bin/next",
       "dev",
-      bundler.flag,
+      plan.bundler.flag,
       "--port",
-      String(port),
+      String(plan.port),
     ],
-    { stdio: "inherit", env: { ...process.env, PORT: String(port) } },
+    { stdio: "inherit", env: plan.childEnv, shell: false },
   );
 
-  const forward = (sig) => {
-    if (!child.killed) child.kill(sig);
+  const forward = (signal) => {
+    if (!child.killed) child.kill(signal);
   };
   process.on("SIGINT", () => forward("SIGINT"));
   process.on("SIGTERM", () => forward("SIGTERM"));
@@ -120,9 +112,22 @@ async function main() {
     if (signal) process.kill(process.pid, signal);
     else process.exit(code ?? 0);
   });
+  child.on("error", (error) => {
+    console.error(
+      `[dev-server] failed to launch Next.js: ${error?.stack || error}`,
+    );
+    process.exit(1);
+  });
 }
 
-main().catch((err) => {
-  console.error(`[dev-server] fatal: ${err?.stack || err}`);
-  process.exit(1);
-});
+function isDirectExecution() {
+  if (!process.argv[1]) return false;
+  return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isDirectExecution()) {
+  main().catch((error) => {
+    console.error(`[dev-server] fatal: ${error?.stack || error}`);
+    process.exit(1);
+  });
+}
