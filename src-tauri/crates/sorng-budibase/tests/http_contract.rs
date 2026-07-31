@@ -1,3 +1,4 @@
+use sorng_budibase::client::BudibaseClient;
 use sorng_budibase::error::BudibaseErrorKind;
 use sorng_budibase::service::BudibaseService;
 use sorng_budibase::types::BudibaseConnectionConfig;
@@ -71,6 +72,23 @@ impl MockHttpServer {
     }
 }
 
+#[test]
+fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    let mut cfg = BudibaseConnectionConfig {
+        name: "TLS acknowledgement contract".into(),
+        host: "https://budibase.example.test".into(),
+        api_key: "test-key".into(),
+        app_id: None,
+        timeout_seconds: Some(5),
+        skip_tls_verify: true,
+        acknowledge_invalid_cert_risk: false,
+        proxy_url: None,
+    };
+    assert!(BudibaseClient::from_config(&cfg).is_err());
+    cfg.acknowledge_invalid_cert_risk = true;
+    assert!(BudibaseClient::from_config(&cfg).is_ok());
+}
+
 fn config(host: String) -> BudibaseConnectionConfig {
     BudibaseConnectionConfig {
         name: "local".into(),
@@ -79,6 +97,7 @@ fn config(host: String) -> BudibaseConnectionConfig {
         app_id: Some("app-123".into()),
         timeout_seconds: Some(2),
         skip_tls_verify: false,
+        acknowledge_invalid_cert_risk: false,
         proxy_url: None,
     }
 }

@@ -30,8 +30,10 @@ import {
   type BudibaseManager,
 } from "../../hooks/integration/useBudibase";
 import { useIntegrationConfigStore } from "../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../hooks/security/useInsecureTlsAck";
 import { generateId } from "../../utils/core/id";
 import type { IntegrationPanelProps } from "../../types/integrations/registry";
+import { InsecureTlsWarningModal } from "../security/InsecureTlsWarningModal";
 import type {
   BudibaseApp,
   BudibaseAutomation,
@@ -112,6 +114,17 @@ const ConnectForm: React.FC<{ mgr: BudibaseManager; instanceId?: string }> = ({
   const store = useIntegrationConfigStore();
   const [form, setForm] = useState<ConnectState>(emptyConnect);
   const [savedId, setSavedId] = useState<string | undefined>(instanceId);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
+  const effectiveTlsSkip =
+    form.skipTlsVerify && /^https:\/\//i.test(form.host.trim());
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: savedId ?? instanceId ?? `budibase:${form.host.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Prefill from a persisted instance (host/fields + vault secret = API key).
   useEffect(() => {
@@ -135,19 +148,35 @@ const ConnectForm: React.FC<{ mgr: BudibaseManager; instanceId?: string }> = ({
   const set = <K extends keyof ConnectState>(k: K, v: ConnectState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const doConnect = useCallback(async () => {
-    const id = savedId ?? instanceId ?? generateId();
-    await mgr.connect(id, {
-      name: form.name || form.host,
-      host: form.host.trim(),
-      apiKey: form.apiKey,
-      appId: form.appId || undefined,
-      timeoutSeconds: form.timeoutSeconds
-        ? Number(form.timeoutSeconds)
-        : undefined,
-      skipTlsVerify: form.skipTlsVerify,
-    });
-  }, [mgr, form, savedId, instanceId]);
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      const id = savedId ?? instanceId ?? generateId();
+      try {
+        await mgr.connect(id, {
+          name: form.name || form.host,
+          host: form.host.trim(),
+          apiKey: form.apiKey,
+          appId: form.appId || undefined,
+          timeoutSeconds: form.timeoutSeconds
+            ? Number(form.timeoutSeconds)
+            : undefined,
+          skipTlsVerify: form.skipTlsVerify,
+          acknowledge_invalid_cert_risk: effectiveTlsSkip && acknowledged,
+        });
+      } finally {
+        resetTlsAck();
+      }
+    },
+    [mgr, form, savedId, instanceId, effectiveTlsSkip, resetTlsAck],
+  );
+
+  const doConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
+      return;
+    }
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const doSave = useCallback(async () => {
     const fields: Record<string, string> = {
@@ -176,6 +205,22 @@ const ConnectForm: React.FC<{ mgr: BudibaseManager; instanceId?: string }> = ({
 
   return (
     <div className={card}>
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={form.host.trim() || "Budibase endpoint"}
+        connectionName={form.name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Labeled label={t("integrations.budibase.host", "Host URL")}>
           <input

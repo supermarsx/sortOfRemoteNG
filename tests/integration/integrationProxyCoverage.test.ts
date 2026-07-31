@@ -44,7 +44,7 @@ const FRONTEND_PROXY_CASES = [
     name: "Budibase",
     hookFile: "src/hooks/integration/useBudibase.ts",
     typeFile: "src/types/budibase.ts",
-    helperCall: 'withGlobalHttpProxy(config, "camel")',
+    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
     typeField: "proxyUrl?:",
   },
   {
@@ -65,7 +65,7 @@ const FRONTEND_PROXY_CASES = [
     name: "Exchange",
     hookFile: "src/hooks/integration/exchange/useExchangeConnection.ts",
     typeFile: "src/types/exchange/index.ts",
-    helperCall: 'withGlobalHttpProxy(config, "camel")',
+    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
     typeField: "proxyUrl?:",
   },
   {
@@ -98,7 +98,7 @@ const FRONTEND_PROXY_CASES = [
     name: "LXD",
     hookFile: "src/hooks/integration/lxd/useLxdConnection.ts",
     typeFile: "src/types/lxd/index.ts",
-    helperCall: 'withGlobalHttpProxy(config, "camel")',
+    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
     typeField: "proxyUrl?:",
   },
   {
@@ -112,7 +112,7 @@ const FRONTEND_PROXY_CASES = [
     name: "NetBox",
     hookFile: "src/hooks/integration/netbox/useNetboxConnection.ts",
     typeFile: "src/types/netbox/index.ts",
-    helperCall: 'withGlobalHttpProxy(config, "camel")',
+    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
     typeField: "proxyUrl?:",
   },
   {
@@ -133,7 +133,7 @@ const FRONTEND_PROXY_CASES = [
     name: "pfSense",
     hookFile: "src/components/integrations/pfsense/PfsensePanel.tsx",
     typeFile: "src/types/pfsense/index.ts",
-    helperCall: 'withGlobalHttpProxy(config, "camel")',
+    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
     typeField: "proxyUrl?:",
   },
   {

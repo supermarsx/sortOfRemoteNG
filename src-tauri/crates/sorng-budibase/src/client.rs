@@ -17,10 +17,22 @@ pub struct BudibaseClient {
 impl BudibaseClient {
     /// Build a client from a connection config.
     pub fn from_config(config: &BudibaseConnectionConfig) -> BudibaseResult<Self> {
+        let effective_tls_skip = config.skip_tls_verify
+            && config
+                .host
+                .trim()
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"));
+        if effective_tls_skip != config.acknowledge_invalid_cert_risk {
+            return Err(BudibaseError::connection(
+                "TLS certificate verification bypass requires an explicit runtime acknowledgement for this connection attempt",
+            ));
+        }
+
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_seconds.unwrap_or(30)));
 
-        if config.skip_tls_verify {
+        if effective_tls_skip {
             log::warn!(
                 "TLS certificate verification disabled for Budibase connection to {}",
                 config.host

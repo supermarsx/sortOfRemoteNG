@@ -76,6 +76,56 @@ describe("BudibasePanel", () => {
           config: expect.objectContaining({
             host: "https://budibase.example.com",
             apiKey: "bb-secret",
+            acknowledge_invalid_cert_risk: false,
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("requires a one-shot acknowledgement before an insecure TLS attempt", async () => {
+    render(<BudibasePanel isOpen onClose={() => {}} />);
+    await waitFor(() =>
+      expect(
+        screen.getByPlaceholderText("https://budibase.example.com"),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.change(
+      screen.getByPlaceholderText("https://budibase.example.com"),
+      { target: { value: "https://budibase.example.com" } },
+    );
+    fireEvent.change(document.querySelector('input[type="password"]')!, {
+      target: { value: "bb-secret" },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Accept self-signed certificates",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+
+    expect(
+      invokeMock.mock.calls.some(([command]) => command === "budibase_connect"),
+    ).toBe(false);
+    expect(
+      screen.getByTestId("insecure-tls-warning-modal"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I understand the risks" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue insecurely" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "budibase_connect",
+        expect.objectContaining({
+          config: expect.objectContaining({
+            skipTlsVerify: true,
+            acknowledge_invalid_cert_risk: true,
           }),
         }),
       ),

@@ -286,6 +286,12 @@ export function useBudibase() {
 
   const connect = useCallback(
     async (id: string, config: BudibaseConnectionConfig): Promise<boolean> => {
+      let acknowledgementAvailable =
+        config.acknowledge_invalid_cert_risk === true;
+      const reconnectConfig = {
+        ...config,
+        acknowledge_invalid_cert_risk: false,
+      };
       try {
         await trackConnect(
           `budibase:${id}`,
@@ -293,9 +299,14 @@ export function useBudibase() {
             setIsConnecting(true);
             setError(null);
             try {
+              const attemptConfig = {
+                ...reconnectConfig,
+                acknowledge_invalid_cert_risk: acknowledgementAvailable,
+              };
+              acknowledgementAvailable = false;
               const status = await budibaseApi.connect(
                 id,
-                withGlobalHttpProxy(config, "camel"),
+                withGlobalHttpProxy(attemptConfig, "camel"),
               );
               setConnectionId(id);
               setStatus(status);
