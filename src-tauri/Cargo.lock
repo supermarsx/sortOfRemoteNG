@@ -12630,6 +12630,7 @@ name = "sorng-terminal-themes"
 version = "26.1.0"
 dependencies = [
  "chrono",
+ "sorng-ssh",
  "log",
  "regex",
  "serde",
