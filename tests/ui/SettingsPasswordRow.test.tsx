@@ -9,91 +9,105 @@
  *   - the settings provider is required (because PasswordInput
  *     consumes the password-reveal policy).
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 
-import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import {
+  defaultSettings,
+  SettingsProvider,
+} from "../../src/contexts/SettingsContext";
 import { SettingsPasswordRow } from "../../src/components/ui/settings/SettingsPrimitives";
+import { SettingsManager } from "../../src/utils/settings/settingsManager";
 
 function wrap(ui: React.ReactElement) {
   return <SettingsProvider>{ui}</SettingsProvider>;
 }
 
+const settingsManager = SettingsManager.getInstance();
+let settingsLoadPromise: Promise<typeof defaultSettings>;
+
+async function renderWithLoadedSettings(ui: React.ReactElement) {
+  const rendered = render(wrap(ui));
+  await act(async () => {
+    await settingsLoadPromise;
+  });
+  return rendered;
+}
+
 describe("SettingsPasswordRow", () => {
-  it("renders inside the sor-settings-select-row shell", () => {
-    const { container } = render(
-      wrap(
-        <SettingsPasswordRow
-          settingKey="proxyPassword"
-          label="Password"
-          value=""
-          onChange={vi.fn()}
-        />,
-      ),
+  beforeEach(() => {
+    settingsLoadPromise = Promise.resolve({ ...defaultSettings });
+    vi.spyOn(settingsManager, "loadSettings").mockReturnValue(
+      settingsLoadPromise,
     );
-    const row = container.querySelector(
-      '[data-setting-key="proxyPassword"]',
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders inside the sor-settings-select-row shell", async () => {
+    const { container } = await renderWithLoadedSettings(
+      <SettingsPasswordRow
+        settingKey="proxyPassword"
+        label="Password"
+        value=""
+        onChange={vi.fn()}
+      />,
     );
+    const row = container.querySelector('[data-setting-key="proxyPassword"]');
     expect(row).not.toBeNull();
     expect(row?.className).toContain("sor-settings-select-row");
   });
 
-  it("uses the masked input by default", () => {
-    render(
-      wrap(
-        <SettingsPasswordRow
-          label="Password"
-          value="hunter2"
-          onChange={vi.fn()}
-        />,
-      ),
+  it("uses the masked input by default", async () => {
+    await renderWithLoadedSettings(
+      <SettingsPasswordRow
+        label="Password"
+        value="hunter2"
+        onChange={vi.fn()}
+      />,
     );
     const input = screen.getByDisplayValue("hunter2") as HTMLInputElement;
     expect(input.type).toBe("password");
   });
 
-  it("forwards onChange when the user types", () => {
+  it("forwards onChange when the user types", async () => {
     const onChange = vi.fn();
-    render(
-      wrap(
-        <SettingsPasswordRow
-          label="Password"
-          value=""
-          onChange={onChange}
-          placeholder="enter pass"
-        />,
-      ),
+    await renderWithLoadedSettings(
+      <SettingsPasswordRow
+        label="Password"
+        value=""
+        onChange={onChange}
+        placeholder="enter pass"
+      />,
     );
     const input = screen.getByPlaceholderText("enter pass") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "abc" } });
     expect(onChange).toHaveBeenCalledWith("abc");
   });
 
-  it("forwards the disabled prop", () => {
-    render(
-      wrap(
-        <SettingsPasswordRow
-          label="Password"
-          value="v"
-          onChange={vi.fn()}
-          disabled
-        />,
-      ),
+  it("forwards the disabled prop", async () => {
+    await renderWithLoadedSettings(
+      <SettingsPasswordRow
+        label="Password"
+        value="v"
+        onChange={vi.fn()}
+        disabled
+      />,
     );
     const input = screen.getByDisplayValue("v") as HTMLInputElement;
     expect(input.disabled).toBe(true);
   });
 
-  it("renders the InfoTooltip when infoTooltip is set", () => {
-    const { container } = render(
-      wrap(
-        <SettingsPasswordRow
-          label="Password"
-          value=""
-          onChange={vi.fn()}
-          infoTooltip="Stored encrypted"
-        />,
-      ),
+  it("renders the InfoTooltip when infoTooltip is set", async () => {
+    const { container } = await renderWithLoadedSettings(
+      <SettingsPasswordRow
+        label="Password"
+        value=""
+        onChange={vi.fn()}
+        infoTooltip="Stored encrypted"
+      />,
     );
     // The InfoTooltip renders an aria-described element; the simplest
     // structural check is that *some* element exists with role=button
