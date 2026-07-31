@@ -8,9 +8,12 @@ use crate::mongodb::types::*;
 pub async fn mongo_connect(
     state: tauri::State<'_, MongoServiceState>,
     config: MongoConnectionConfig,
+    insecure_tls_acknowledgement: Option<String>,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    svc.connect(config).await.map_err(|e| e.message)
+    svc.connect_with_acknowledgement(config, insecure_tls_acknowledgement)
+        .await
+        .map_err(|e| e.message)
 }
 
 #[cfg(feature = "db-mongo")]

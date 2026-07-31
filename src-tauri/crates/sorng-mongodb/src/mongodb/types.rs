@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub const INVALID_CERTIFICATE_ACKNOWLEDGEMENT: &str =
+    "I understand that MongoDB certificate verification is disabled for this connection only";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MongoErrorKind {
     ConnectionFailed,
@@ -53,18 +56,38 @@ pub struct SshTunnelConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default, skip_serializing)]
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    #[serde(default, skip_serializing)]
     pub passphrase: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsConfig {
+    #[serde(default = "default_tls_enabled")]
     pub enabled: bool,
     pub ca_cert_path: Option<String>,
     pub client_cert_path: Option<String>,
     pub client_key_path: Option<String>,
+    #[serde(default, skip_serializing)]
     pub allow_invalid_certificates: bool,
+}
+
+const fn default_tls_enabled() -> bool {
+    true
+}
+
+impl Default for TlsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ca_cert_path: None,
+            client_cert_path: None,
+            client_key_path: None,
+            allow_invalid_certificates: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -83,6 +106,7 @@ pub struct MongoConnectionConfig {
     pub hosts: Vec<String>,
     pub database: Option<String>,
     pub username: Option<String>,
+    #[serde(default, skip_serializing)]
     pub password: Option<String>,
     pub auth_database: Option<String>,
     pub auth_mechanism: Option<MongoAuthMechanism>,
@@ -90,6 +114,7 @@ pub struct MongoConnectionConfig {
     pub read_preference: Option<String>,
     pub direct_connection: Option<bool>,
     pub app_name: Option<String>,
+    #[serde(default, skip_serializing)]
     pub connection_string: Option<String>,
     pub connect_timeout_secs: Option<u64>,
     pub server_selection_timeout_secs: Option<u64>,
@@ -110,16 +135,16 @@ impl MongoConnectionConfig {
         };
 
         let hosts = if self.hosts.is_empty() {
-            "localhost:27017".to_string()
+            "127.0.0.1:27017".to_string()
         } else {
             self.hosts.join(",")
         };
 
-        let database = self.database.as_deref().unwrap_or("");
+        let database = self.database.as_deref().map(urlencoded).unwrap_or_default();
         let mut params = Vec::<String>::new();
 
         if let Some(ref auth_db) = self.auth_database {
-            params.push(format!("authSource={auth_db}"));
+            params.push(format!("authSource={}", urlencoded(auth_db)));
         }
         if let Some(ref mech) = self.auth_mechanism {
             let mechanism = match mech {
@@ -134,22 +159,28 @@ impl MongoConnectionConfig {
             }
         }
         if let Some(ref replica_set) = self.replica_set {
-            params.push(format!("replicaSet={replica_set}"));
+            params.push(format!("replicaSet={}", urlencoded(replica_set)));
         }
         if let Some(ref read_preference) = self.read_preference {
-            params.push(format!("readPreference={read_preference}"));
+            params.push(format!("readPreference={}", urlencoded(read_preference)));
         }
         if let Some(true) = self.direct_connection {
             params.push("directConnection=true".to_string());
         }
         if let Some(ref app_name) = self.app_name {
-            params.push(format!("appName={app_name}"));
+            params.push(format!("appName={}", urlencoded(app_name)));
         }
         if let Some(timeout_secs) = self.connect_timeout_secs {
-            params.push(format!("connectTimeoutMS={}", timeout_secs * 1000));
+            params.push(format!(
+                "connectTimeoutMS={}",
+                timeout_secs.saturating_mul(1000)
+            ));
         }
         if let Some(timeout_secs) = self.server_selection_timeout_secs {
-            params.push(format!("serverSelectionTimeoutMS={}", timeout_secs * 1000));
+            params.push(format!(
+                "serverSelectionTimeoutMS={}",
+                timeout_secs.saturating_mul(1000)
+            ));
         }
         if let Some(ref tls) = self.tls {
             if tls.enabled {
@@ -172,15 +203,12 @@ impl MongoConnectionConfig {
 
 fn urlencoded(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            ':' => out.push_str("%3A"),
-            '/' => out.push_str("%2F"),
-            '@' => out.push_str("%40"),
-            '?' => out.push_str("%3F"),
-            '#' => out.push_str("%23"),
-            '%' => out.push_str("%25"),
-            _ => out.push(c),
+    for byte in s.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            let _ = write!(out, "%{byte:02X}");
         }
     }
     out
@@ -303,7 +331,7 @@ mod tests {
             ssh_tunnel: None,
             tls: None,
         };
-        assert_eq!(cfg.to_connection_string(), "mongodb://localhost:27017/");
+        assert_eq!(cfg.to_connection_string(), "mongodb://127.0.0.1:27017/");
     }
 
     #[test]
@@ -426,6 +454,43 @@ mod tests {
     #[test]
     fn test_urlencoded_special_chars() {
         assert_eq!(urlencoded("a:b/c@d?e#f%g"), "a%3Ab%2Fc%40d%3Fe%23f%25g");
+    }
+
+    #[test]
+    fn test_sensitive_connection_fields_are_never_serialized() {
+        let config = MongoConnectionConfig {
+            label: None,
+            hosts: vec!["db.example.com:27017".into()],
+            database: None,
+            username: Some("admin".into()),
+            password: Some("top-secret".into()),
+            auth_database: None,
+            auth_mechanism: None,
+            replica_set: None,
+            read_preference: None,
+            direct_connection: None,
+            app_name: None,
+            connection_string: Some("mongodb://admin:top-secret@db.example.com".into()),
+            connect_timeout_secs: None,
+            server_selection_timeout_secs: None,
+            ssh_tunnel: None,
+            tls: Some(TlsConfig {
+                allow_invalid_certificates: true,
+                ..Default::default()
+            }),
+        };
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        assert!(!serialized.contains("top-secret"));
+        assert!(!serialized.contains("connection_string"));
+        assert!(!serialized.contains("allow_invalid_certificates"));
+    }
+
+    #[test]
+    fn test_tls_defaults_to_verified_transport() {
+        let tls = TlsConfig::default();
+        assert!(tls.enabled);
+        assert!(!tls.allow_invalid_certificates);
     }
 
     #[test]
