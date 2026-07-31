@@ -6,6 +6,8 @@
 
 /// Maximum SSH-agent payload accepted from any local or bridged peer.
 pub const MAX_AGENT_PAYLOAD_LEN: usize = 256 * 1024;
+/// Maximum data accepted for a single signing operation.
+pub const MAX_SIGN_DATA_LEN: usize = 128 * 1024;
 /// Maximum public/private key field accepted by the codec.
 pub const MAX_KEY_DATA_LEN: usize = 128 * 1024;
 /// Maximum text field accepted from an agent peer.
@@ -427,25 +429,29 @@ pub fn decode_message(packet: &[u8]) -> Result<AgentMessage, String> {
     if packet.is_empty() {
         return Err("Empty packet".to_string());
     }
+    if packet.len() > MAX_AGENT_PAYLOAD_LEN {
+        return Err("Agent packet exceeds the configured limit".to_string());
+    }
 
     let msg_type = packet[0];
     let data = &packet[1..];
 
     match msg_type {
-        msg::SSH_AGENT_SUCCESS => Ok(AgentMessage::Success),
-        msg::SSH_AGENT_FAILURE => Ok(AgentMessage::Failure),
-        msg::SSH_AGENT_EXTENSION_FAILURE => Ok(AgentMessage::ExtensionFailure),
+        msg::SSH_AGENT_SUCCESS if data.is_empty() => Ok(AgentMessage::Success),
+        msg::SSH_AGENT_FAILURE if data.is_empty() => Ok(AgentMessage::Failure),
+        msg::SSH_AGENT_EXTENSION_FAILURE if data.is_empty() => Ok(AgentMessage::ExtensionFailure),
 
-        msg::SSH_AGENTC_REQUEST_IDENTITIES => Ok(AgentMessage::RequestIdentities),
+        msg::SSH_AGENTC_REQUEST_IDENTITIES if data.is_empty() => {
+            Ok(AgentMessage::RequestIdentities)
+        }
 
         msg::SSH_AGENTC_SIGN_REQUEST => {
             let (key_blob, offset) = read_string(data, 0)?;
             let (sign_data, offset) = read_string(data, offset)?;
-            let (flags, _) = if offset + 4 <= data.len() {
-                read_u32(data, offset)?
-            } else {
-                (0u32, offset)
-            };
+            ensure_limit("key blob", key_blob.len(), MAX_KEY_DATA_LEN)?;
+            ensure_limit("signing payload", sign_data.len(), MAX_SIGN_DATA_LEN)?;
+            let (flags, offset) = read_u32(data, offset)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::SignRequest {
                 key_blob,
                 data: sign_data,
@@ -457,47 +463,69 @@ pub fn decode_message(packet: &[u8]) -> Result<AgentMessage, String> {
             let (key_type_bytes, offset) = read_string(data, 0)?;
             let key_type = String::from_utf8(key_type_bytes)
                 .map_err(|e| format!("Invalid key type: {}", e))?;
+            ensure_limit("key type", key_type.len(), 128)?;
             // Remaining data is key material + comment
             // For simplicity, store the remaining as key_data and extract comment
             let remaining = data[offset..].to_vec();
+            ensure_limit("key data", remaining.len(), MAX_KEY_DATA_LEN)?;
             Ok(AgentMessage::AddIdentity {
                 key_type,
-                key_data: remaining.clone(),
+                key_data: remaining,
                 comment: String::new(),
             })
         }
 
         msg::SSH_AGENTC_REMOVE_IDENTITY => {
-            let (key_blob, _) = read_string(data, 0)?;
+            let (key_blob, offset) = read_string(data, 0)?;
+            ensure_limit("key blob", key_blob.len(), MAX_KEY_DATA_LEN)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::RemoveIdentity { key_blob })
         }
 
-        msg::SSH_AGENTC_REMOVE_ALL_IDENTITIES => Ok(AgentMessage::RemoveAllIdentities),
+        msg::SSH_AGENTC_REMOVE_ALL_IDENTITIES if data.is_empty() => {
+            Ok(AgentMessage::RemoveAllIdentities)
+        }
 
         msg::SSH_AGENTC_LOCK => {
-            let (passphrase, _) = read_utf8_string(data, 0)?;
+            let (passphrase, offset) = read_utf8_string(data, 0)?;
+            ensure_limit("passphrase", passphrase.len(), MAX_TEXT_LEN)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::Lock { passphrase })
         }
 
         msg::SSH_AGENTC_UNLOCK => {
-            let (passphrase, _) = read_utf8_string(data, 0)?;
+            let (passphrase, offset) = read_utf8_string(data, 0)?;
+            ensure_limit("passphrase", passphrase.len(), MAX_TEXT_LEN)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::Unlock { passphrase })
         }
 
         msg::SSH_AGENTC_ADD_SMARTCARD_KEY => {
             let (provider, offset) = read_utf8_string(data, 0)?;
-            let (pin, _) = read_utf8_string(data, offset)?;
+            let (pin, offset) = read_utf8_string(data, offset)?;
+            ensure_limit("provider", provider.len(), MAX_TEXT_LEN)?;
+            ensure_limit("PIN", pin.len(), 1024)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::AddSmartcardKey { provider, pin })
         }
 
         msg::SSH_AGENTC_REMOVE_SMARTCARD_KEY => {
             let (provider, offset) = read_utf8_string(data, 0)?;
-            let (pin, _) = read_utf8_string(data, offset)?;
+            let (pin, offset) = read_utf8_string(data, offset)?;
+            ensure_limit("provider", provider.len(), MAX_TEXT_LEN)?;
+            ensure_limit("PIN", pin.len(), 1024)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::RemoveSmartcardKey { provider, pin })
         }
 
         msg::SSH_AGENTC_EXTENSION => {
             let (name, offset) = read_utf8_string(data, 0)?;
+            ensure_limit("extension name", name.len(), 256)?;
+            ensure_limit(
+                "extension payload",
+                data.len().saturating_sub(offset),
+                MAX_SIGN_DATA_LEN,
+            )?;
             let ext_data = data[offset..].to_vec();
             Ok(AgentMessage::Extension {
                 name,
@@ -507,22 +535,46 @@ pub fn decode_message(packet: &[u8]) -> Result<AgentMessage, String> {
 
         msg::SSH_AGENT_IDENTITIES_ANSWER => {
             let (count, mut offset) = read_u32(data, 0)?;
-            let mut identities = Vec::with_capacity(count as usize);
+            let count = count as usize;
+            if count > MAX_IDENTITIES {
+                return Err("Identity response count exceeds the configured limit".to_string());
+            }
+            let mut identities = Vec::with_capacity(count);
             for _ in 0..count {
                 let (key_blob, next) = read_string(data, offset)?;
                 let (comment, next) = read_utf8_string(data, next)?;
+                ensure_limit("identity key blob", key_blob.len(), MAX_KEY_DATA_LEN)?;
+                ensure_limit("identity comment", comment.len(), MAX_TEXT_LEN)?;
                 identities.push(ProtocolIdentity { key_blob, comment });
                 offset = next;
             }
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::IdentitiesAnswer { identities })
         }
 
         msg::SSH_AGENT_SIGN_RESPONSE => {
-            let (signature, _) = read_string(data, 0)?;
+            let (signature, offset) = read_string(data, 0)?;
+            ensure_limit("signature", signature.len(), MAX_KEY_DATA_LEN)?;
+            ensure_consumed(data, offset)?;
             Ok(AgentMessage::SignResponse { signature })
         }
 
+        msg::SSH_AGENT_SUCCESS
+        | msg::SSH_AGENT_FAILURE
+        | msg::SSH_AGENT_EXTENSION_FAILURE
+        | msg::SSH_AGENTC_REQUEST_IDENTITIES
+        | msg::SSH_AGENTC_REMOVE_ALL_IDENTITIES => {
+            Err("Unexpected trailing data in agent message".to_string())
+        }
         _ => Err(format!("Unknown message type: {}", msg_type)),
+    }
+}
+
+fn ensure_consumed(data: &[u8], offset: usize) -> Result<(), String> {
+    if offset == data.len() {
+        Ok(())
+    } else {
+        Err("Unexpected trailing data in agent message".to_string())
     }
 }
 
