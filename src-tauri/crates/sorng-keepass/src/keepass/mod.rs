@@ -17,6 +17,7 @@
 
 pub mod attachments;
 pub mod autotype;
+mod codec;
 pub mod crypto;
 pub mod database;
 pub mod entries;

@@ -1,9 +1,7 @@
 use sorng_keepass::keepass::service::{DatabaseInstance, KeePassService};
 use sorng_keepass::keepass::types::{
-    ConflictResolution, CreateDatabaseRequest, KdfSettings, KeePassCipher, KeePassCompression,
-    KeePassDatabase, MergeConfig, OpenDatabaseRequest,
+    CreateDatabaseRequest, KdfAlgorithm, KdfSettings, OpenDatabaseRequest,
 };
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 struct FixtureDir {
@@ -13,7 +11,7 @@ struct FixtureDir {
 impl FixtureDir {
     fn new() -> Self {
         let path =
-            std::env::temp_dir().join(format!("sorng-keepass-contract-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("sorng-keepass-lifecycle-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&path).expect("create fixture directory");
         Self { path }
     }
@@ -25,170 +23,126 @@ impl Drop for FixtureDir {
     }
 }
 
-fn create_request(path: &std::path::Path) -> CreateDatabaseRequest {
+fn create_request(path: &std::path::Path, password: &str) -> CreateDatabaseRequest {
     CreateDatabaseRequest {
         file_path: path.to_string_lossy().to_string(),
-        name: "Contract Vault".into(),
-        description: None,
-        password: Some("correct horse battery staple".into()),
+        name: "Lifecycle Vault".into(),
+        description: Some("Durable KDBX lifecycle test".into()),
+        password: Some(password.into()),
         key_file_path: None,
         cipher: None,
-        kdf: None,
+        kdf: Some(KdfSettings {
+            algorithm: KdfAlgorithm::Argon2id,
+            iterations: Some(1),
+            memory: Some(8 * 1024 * 1024),
+            parallelism: Some(1),
+            salt: None,
+        }),
         compression: None,
-        default_username: None,
+        default_username: Some("operator".into()),
         enable_recycle_bin: Some(true),
     }
 }
 
-fn synthetic_database(path: &std::path::Path, id: &str, modified: bool) -> DatabaseInstance {
-    DatabaseInstance::new_empty(KeePassDatabase {
-        id: id.into(),
-        file_path: path.to_string_lossy().to_string(),
-        name: "Synthetic test database".into(),
-        description: String::new(),
-        default_username: String::new(),
-        locked: false,
-        modified,
-        format_version: "4.1".into(),
-        cipher: KeePassCipher::default(),
-        kdf: KdfSettings::default(),
-        compression: KeePassCompression::default(),
-        root_group_id: "root".into(),
-        recycle_bin_id: None,
-        recycle_bin_enabled: false,
-        color: None,
-        master_seed: None,
-        entry_count: 0,
-        group_count: 1,
-        created_at: "2026-01-01T00:00:00Z".into(),
-        modified_at: "2026-01-01T00:00:00Z".into(),
-        last_opened_at: "2026-01-01T00:00:00Z".into(),
-        custom_icon_count: 0,
-        custom_data: HashMap::new(),
-    })
-}
-
 #[tokio::test]
-async fn unsupported_create_writes_nothing_and_registers_nothing() {
+async fn create_open_save_backup_and_rekey_are_durable() {
     let fixture = FixtureDir::new();
-    let path = fixture.path.join("contract.kdbx");
+    let path = fixture.path.join("lifecycle.kdbx");
     let state = KeePassService::new();
     let mut service = state.lock().await;
 
-    let error = service
-        .create_database(create_request(&path))
-        .expect_err("unsupported KDBX creation must fail closed");
-    assert!(error.contains("not implemented"));
-    assert!(!path.exists(), "create must not write a placeholder file");
-    assert_eq!(service.open_database_count(), 0);
-}
+    let created = service
+        .create_database(create_request(&path, "initial password"))
+        .expect("create KDBX4 database");
+    assert!(path.is_file());
+    assert_eq!(
+        &std::fs::read(&path).expect("read signature")[..8],
+        &[0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5]
+    );
 
-#[tokio::test]
-async fn invalid_or_unsupported_kdbx_open_never_registers_database() {
-    let fixture = FixtureDir::new();
-    let invalid_path = fixture.path.join("invalid.kdbx");
-    std::fs::write(&invalid_path, b"not a kdbx file").expect("write invalid fixture");
-    let valid_header_path = fixture.path.join("header-only.kdbx");
-    std::fs::write(
-        &valid_header_path,
-        [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5],
-    )
-    .expect("write KDBX header fixture");
-    let state = KeePassService::new();
-    let mut service = state.lock().await;
+    service
+        .update_database_metadata(&created.id, Some("Renamed Vault"), None, None, None, None)
+        .expect("update metadata");
+    service
+        .save_database(&created.id, None)
+        .expect("durably save database");
+    let backup = service
+        .backup_database(&created.id, None)
+        .expect("create durable backup");
+    assert!(std::path::Path::new(&backup).is_file());
 
-    let invalid_error = service
-        .open_database(OpenDatabaseRequest {
-            file_path: invalid_path.to_string_lossy().to_string(),
-            password: Some("password".into()),
-            key_file_path: None,
-            read_only: Some(true),
-        })
-        .expect_err("invalid signature must fail");
-    assert!(invalid_error.contains("Invalid KeePass KDBX"));
-    assert_eq!(service.open_database_count(), 0);
-
-    let unsupported_error = service
-        .open_database(OpenDatabaseRequest {
-            file_path: valid_header_path.to_string_lossy().to_string(),
-            password: Some("password".into()),
-            key_file_path: None,
-            read_only: Some(true),
-        })
-        .expect_err("unimplemented parser must not fabricate an open database");
-    assert!(unsupported_error.contains("not implemented"));
-    assert_eq!(service.open_database_count(), 0);
-}
-
-#[tokio::test]
-async fn persistence_operations_fail_closed_without_mutation_or_files() {
-    let fixture = FixtureDir::new();
-    let source = fixture.path.join("source.kdbx");
-    let backup_dir = fixture.path.join("backups");
-    let state = KeePassService::new();
-    let mut service = state.lock().await;
-    service.register_database(synthetic_database(&source, "synthetic", false));
-
-    let save_error = service
-        .save_database("synthetic", None)
-        .expect_err("unsupported KDBX save must fail");
-    assert!(save_error.contains("not implemented"));
-
-    let backup_error = service
-        .backup_database("synthetic", Some(backup_dir.to_string_lossy().as_ref()))
-        .expect_err("unsupported KDBX backup must fail");
-    assert!(backup_error.contains("not implemented"));
-    assert!(!backup_dir.exists());
-
-    let key_error = service
-        .change_master_key("synthetic", Some("old"), None, Some("new"), None)
-        .expect_err("unsupported master-key change must fail");
-    assert!(key_error.contains("not implemented"));
-
-    let merge_error = service
-        .merge_database(
-            "synthetic",
-            MergeConfig {
-                remote_path: fixture
-                    .path
-                    .join("remote.kdbx")
-                    .to_string_lossy()
-                    .to_string(),
-                remote_password: Some("remote".into()),
-                remote_key_file: None,
-                conflict_resolution: ConflictResolution::PreferNewer,
-                sync_deletions: true,
-                merge_custom_icons: true,
-            },
+    service
+        .change_master_key(
+            &created.id,
+            Some("initial password"),
+            None,
+            Some("replacement password"),
+            None,
         )
-        .expect_err("unsupported KDBX merge must fail");
-    assert!(merge_error.contains("not implemented"));
-    assert!(!service.get_database("synthetic").unwrap().info.modified);
+        .expect("durably change master key");
+    service
+        .close_database(&created.id, false)
+        .expect("close database");
+
+    let old_key_error = service
+        .open_database(OpenDatabaseRequest {
+            file_path: path.to_string_lossy().to_string(),
+            password: Some("initial password".into()),
+            key_file_path: None,
+            read_only: None,
+        })
+        .expect_err("old master key must no longer open database");
+    assert!(old_key_error.contains("Failed to open KeePass database"));
+
+    let reopened = service
+        .open_database(OpenDatabaseRequest {
+            file_path: path.to_string_lossy().to_string(),
+            password: Some("replacement password".into()),
+            key_file_path: None,
+            read_only: None,
+        })
+        .expect("new master key opens database");
+    assert_eq!(reopened.name, "Renamed Vault");
 }
 
 #[tokio::test]
-async fn close_all_propagates_save_failure_and_shutdown_discards_all() {
+async fn external_source_change_blocks_overwrite() {
     let fixture = FixtureDir::new();
+    let path = fixture.path.join("external-change.kdbx");
     let state = KeePassService::new();
     let mut service = state.lock().await;
-    service.register_database(synthetic_database(
-        &fixture.path.join("one.kdbx"),
-        "one",
-        true,
-    ));
-    service.register_database(synthetic_database(
-        &fixture.path.join("two.kdbx"),
-        "two",
-        true,
-    ));
+    let created = service
+        .create_database(create_request(&path, "password"))
+        .expect("create database");
+
+    std::fs::write(&path, b"externally replaced").expect("replace source");
+    let error = service
+        .save_database(&created.id, None)
+        .expect_err("external change must block overwrite");
+    assert!(error.contains("changed outside"));
+    assert_eq!(
+        std::fs::read(&path).expect("read external replacement"),
+        b"externally replaced"
+    );
+}
+
+#[tokio::test]
+async fn synthetic_state_without_native_image_still_fails_closed() {
+    let fixture = FixtureDir::new();
+    let path = fixture.path.join("synthetic.kdbx");
+    let state = KeePassService::new();
+    let mut service = state.lock().await;
+    let info = service
+        .create_database(create_request(&path, "password"))
+        .expect("create seed database");
+    let mut synthetic: DatabaseInstance = service
+        .unregister_database(&info.id)
+        .expect("take database instance");
+    synthetic.native_database = None;
+    service.register_database(synthetic);
 
     let error = service
-        .close_all_databases(true)
-        .expect_err("save-first close-all must propagate unsupported save");
-    assert!(error.contains("not implemented"));
-    assert_eq!(service.open_database_count(), 2);
-
-    let closed = service.shutdown();
-    assert_eq!(closed.len(), 2);
-    assert_eq!(service.open_database_count(), 0);
+        .save_database(&info.id, None)
+        .expect_err("missing native image must fail closed");
+    assert!(error.contains("Native KDBX state is unavailable"));
 }

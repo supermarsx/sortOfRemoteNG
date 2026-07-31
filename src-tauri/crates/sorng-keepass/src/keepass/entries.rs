@@ -4,9 +4,12 @@
 // history tracking, field references, OTP generation.
 
 use chrono::Utc;
-use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
+use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use super::service::KeePassService;
 use super::types::*;
@@ -595,20 +598,45 @@ impl KeePassService {
         entry_uuid: &str,
         history_index: usize,
     ) -> Result<KeePassEntry, String> {
-        // Save current state to history first
-        self.save_entry_history(db_id, entry_uuid)?;
-
         let historical = self.get_entry_history_item(db_id, entry_uuid, history_index)?;
+        {
+            let db = self.get_database(db_id)?;
+            let current = db
+                .entries
+                .get(entry_uuid)
+                .ok_or_else(|| format!("Entry not found: {}", entry_uuid))?;
+            if !attachment_refs_equal(&current.attachments, &historical.entry.attachments) {
+                return Err(
+                    "This history item has a different attachment set; the current KeePass \
+                     library cannot restore it without risking attachment data loss"
+                        .to_string(),
+                );
+            }
+            if !db.groups.contains_key(&historical.entry.group_uuid) {
+                return Err("History item references a group that no longer exists".to_string());
+            }
+        }
+
+        // Save current state only after every fail-closed precondition passes.
+        self.save_entry_history(db_id, entry_uuid)?;
         let now = Utc::now().to_rfc3339();
 
         let db = self.get_database_mut(db_id)?;
         if let Some(entry) = db.entries.get_mut(entry_uuid) {
+            entry.group_uuid = historical.entry.group_uuid;
+            entry.icon_id = historical.entry.icon_id;
+            entry.custom_icon_uuid = historical.entry.custom_icon_uuid;
+            entry.foreground_color = historical.entry.foreground_color;
+            entry.background_color = historical.entry.background_color;
+            entry.override_url = historical.entry.override_url;
+            entry.password_quality = historical.entry.password_quality;
             entry.title = historical.entry.title;
             entry.username = historical.entry.username;
             entry.password = historical.entry.password;
             entry.url = historical.entry.url;
             entry.notes = historical.entry.notes;
             entry.custom_fields = historical.entry.custom_fields;
+            entry.attachments = historical.entry.attachments;
             entry.tags = historical.entry.tags;
             entry.auto_type = historical.entry.auto_type;
             entry.otp = historical.entry.otp;
@@ -616,6 +644,8 @@ impl KeePassService {
 
             let restored = entry.clone();
             db.mark_modified();
+            db.rebuild_counts();
+            db.rebuild_tree();
             return Ok(restored);
         }
 
@@ -743,9 +773,12 @@ impl KeePassService {
             .as_ref()
             .ok_or_else(|| "Entry has no OTP configuration".to_string())?;
 
-        match otp.otp_type {
+        match &otp.otp_type {
             OtpType::Totp | OtpType::Steam => {
                 let period = otp.period.unwrap_or(30);
+                if period == 0 || period > 86_400 {
+                    return Err("OTP period must be between 1 and 86400 seconds".to_string());
+                }
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_err(|e| format!("Time error: {}", e))?;
@@ -754,13 +787,11 @@ impl KeePassService {
 
                 // Generate TOTP code (simplified — uses time-based counter)
                 let counter = now.as_secs() / period as u64;
-                let code =
-                    Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?;
-
                 let display_code = if otp.otp_type == OtpType::Steam {
-                    Self::totp_to_steam(&code, 5)
+                    let value = Self::generate_otp_value(&otp.secret, counter, &otp.algorithm)?;
+                    Self::otp_value_to_steam(value, 5)
                 } else {
-                    code
+                    Self::generate_otp_code(&otp.secret, counter, otp.digits, &otp.algorithm)?
                 };
 
                 Ok(OtpValue {
@@ -825,9 +856,8 @@ impl KeePassService {
         }
 
         let secret = params
-            .get("secret")
-            .ok_or_else(|| "Missing secret parameter".to_string())?
-            .clone();
+            .remove("secret")
+            .ok_or_else(|| "Missing secret parameter".to_string())?;
 
         let issuer = params.get("issuer").cloned().or(issuer_from_label);
 
@@ -1099,29 +1129,125 @@ impl KeePassService {
         }
     }
 
-    /// Generate an OTP code (simplified HMAC-based implementation).
+    /// Generate an RFC 4226 HOTP code (also used as the RFC 6238 TOTP primitive).
     pub(crate) fn generate_otp_code(
-        _secret_base32: &str,
+        secret_base32: &str,
         counter: u64,
         digits: u32,
-        _algorithm: &OtpAlgorithm,
+        algorithm: &OtpAlgorithm,
     ) -> Result<String, String> {
-        // In a real implementation, this would:
-        // 1. Base32-decode the secret
-        // 2. HMAC-SHA1/256/512 with the counter as message
-        // 3. Dynamic truncation
-        // 4. Modular reduction to N digits
-        // Simplified: deterministic pseudo-OTP based on counter and secret hash
-        let code = (counter % 10u64.pow(digits)) as u32;
+        if !(6..=10).contains(&digits) {
+            return Err("OTP digit count must be between 6 and 10".to_string());
+        }
+
+        let binary = Self::generate_otp_value(secret_base32, counter, algorithm)?;
+        let modulus = 10u64
+            .checked_pow(digits)
+            .ok_or_else(|| "OTP digit count overflow".to_string())?;
+        let code = u64::from(binary) % modulus;
         Ok(format!("{:0>width$}", code, width = digits as usize))
     }
 
-    /// Convert TOTP code to Steam Guard format.
-    fn totp_to_steam(code: &str, length: usize) -> String {
+    fn generate_otp_value(
+        secret_base32: &str,
+        counter: u64,
+        algorithm: &OtpAlgorithm,
+    ) -> Result<u32, String> {
+        let mut secret = Self::decode_base32_secret(secret_base32)?;
+        let counter_bytes = counter.to_be_bytes();
+        let digest_result = match algorithm {
+            OtpAlgorithm::Sha1 => Hmac::<Sha1>::new_from_slice(&secret).map(|mut mac| {
+                mac.update(&counter_bytes);
+                mac.finalize().into_bytes().to_vec()
+            }),
+            OtpAlgorithm::Sha256 => Hmac::<Sha256>::new_from_slice(&secret).map(|mut mac| {
+                mac.update(&counter_bytes);
+                mac.finalize().into_bytes().to_vec()
+            }),
+            OtpAlgorithm::Sha512 => Hmac::<Sha512>::new_from_slice(&secret).map(|mut mac| {
+                mac.update(&counter_bytes);
+                mac.finalize().into_bytes().to_vec()
+            }),
+        };
+        secret.zeroize();
+
+        let mut digest = digest_result.map_err(|_| "Invalid OTP secret".to_string())?;
+        let offset = (digest
+            .last()
+            .copied()
+            .ok_or_else(|| "OTP HMAC produced no output".to_string())?
+            & 0x0f) as usize;
+        if offset + 4 > digest.len() {
+            digest.zeroize();
+            return Err("OTP HMAC truncation offset is invalid".to_string());
+        }
+        let binary = ((u32::from(digest[offset]) & 0x7f) << 24)
+            | (u32::from(digest[offset + 1]) << 16)
+            | (u32::from(digest[offset + 2]) << 8)
+            | u32::from(digest[offset + 3]);
+        digest.zeroize();
+        Ok(binary)
+    }
+
+    fn decode_base32_secret(encoded: &str) -> Result<Vec<u8>, String> {
+        const MAX_ENCODED_SECRET_BYTES: usize = 16 * 1024;
+        const MAX_DECODED_SECRET_BYTES: usize = 10 * 1024;
+
+        if encoded.is_empty() || encoded.len() > MAX_ENCODED_SECRET_BYTES {
+            return Err("OTP secret is empty or exceeds the safety limit".to_string());
+        }
+
+        let mut output = Vec::with_capacity((encoded.len() * 5) / 8);
+        let mut accumulator = 0u32;
+        let mut bits = 0u32;
+        let mut saw_padding = false;
+
+        for byte in encoded.bytes() {
+            if matches!(byte, b' ' | b'\t' | b'-') {
+                continue;
+            }
+            if byte == b'=' {
+                saw_padding = true;
+                continue;
+            }
+            if saw_padding {
+                output.zeroize();
+                return Err("OTP secret has data after Base32 padding".to_string());
+            }
+
+            let value = match byte.to_ascii_uppercase() {
+                b'A'..=b'Z' => u32::from(byte.to_ascii_uppercase() - b'A'),
+                b'2'..=b'7' => u32::from(byte - b'2' + 26),
+                _ => {
+                    output.zeroize();
+                    return Err("OTP secret is not valid Base32".to_string());
+                }
+            };
+            accumulator = (accumulator << 5) | value;
+            bits += 5;
+            while bits >= 8 {
+                bits -= 8;
+                output.push(((accumulator >> bits) & 0xff) as u8);
+                if output.len() > MAX_DECODED_SECRET_BYTES {
+                    output.zeroize();
+                    return Err("Decoded OTP secret exceeds the safety limit".to_string());
+                }
+            }
+            accumulator &= if bits == 0 { 0 } else { (1u32 << bits) - 1 };
+        }
+
+        if output.is_empty() || (bits > 0 && accumulator != 0) {
+            output.zeroize();
+            return Err("OTP secret has invalid Base32 trailing bits".to_string());
+        }
+        Ok(output)
+    }
+
+    /// Convert the raw RFC dynamic-truncation value to Steam Guard format.
+    fn otp_value_to_steam(value: u32, length: usize) -> String {
         const STEAM_CHARS: &[u8] = b"23456789BCDFGHJKMNPQRTVWXY";
-        let num: u64 = code.parse().unwrap_or(0);
-        let mut result = String::new();
-        let mut remaining = num;
+        let mut result = String::with_capacity(length);
+        let mut remaining = u64::from(value);
 
         for _ in 0..length {
             let idx = (remaining % STEAM_CHARS.len() as u64) as usize;
@@ -1131,4 +1257,13 @@ impl KeePassService {
 
         result
     }
+}
+
+fn attachment_refs_equal(left: &[EntryAttachmentRef], right: &[EntryAttachmentRef]) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|candidate| {
+            right.iter().any(|other| {
+                candidate.ref_id == other.ref_id && candidate.filename == other.filename
+            })
+        })
 }

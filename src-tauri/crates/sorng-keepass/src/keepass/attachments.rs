@@ -8,6 +8,10 @@ use sha2::{Digest, Sha256};
 use super::service::{AttachmentData, KeePassService};
 use super::types::*;
 
+const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_ATTACHMENT_BASE64_BYTES: usize = ((MAX_ATTACHMENT_BYTES + 2) / 3) * 4 + 4;
+const MAX_ATTACHMENT_FILENAME_BYTES: usize = 255;
+
 impl KeePassService {
     // ─── Attachment CRUD ─────────────────────────────────────────────
 
@@ -17,10 +21,18 @@ impl KeePassService {
         db_id: &str,
         req: AddAttachmentRequest,
     ) -> Result<KeePassAttachment, String> {
+        Self::validate_attachment_filename(&req.filename)?;
+        if req.data_base64.len() > MAX_ATTACHMENT_BASE64_BYTES {
+            return Err("Attachment exceeds the encoded size safety limit".to_string());
+        }
         // Decode the attachment data
         let data =
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.data_base64)
                 .map_err(|e| format!("Invalid base64 attachment data: {}", e))?;
+        if data.len() > MAX_ATTACHMENT_BYTES {
+            return Err("Attachment exceeds the size safety limit".to_string());
+        }
+        let data_len = data.len();
 
         // Compute hash for deduplication
         let mut hasher = Sha256::new();
@@ -33,6 +45,13 @@ impl KeePassService {
         if !db.entries.contains_key(&req.entry_uuid) {
             return Err("Entry not found".to_string());
         }
+        if db.entries[&req.entry_uuid]
+            .attachments
+            .iter()
+            .any(|attachment| attachment.filename == req.filename)
+        {
+            return Err("An attachment with this filename already exists".to_string());
+        }
 
         // Check if identical attachment already exists in pool (deduplication)
         let ref_id = if let Some((existing_ref, existing_att)) = db
@@ -40,7 +59,10 @@ impl KeePassService {
             .iter_mut()
             .find(|(_, att)| att.hash == hash)
         {
-            existing_att.ref_count += 1;
+            existing_att.ref_count = existing_att
+                .ref_count
+                .checked_add(1)
+                .ok_or_else(|| "Attachment reference count overflow".to_string())?;
             existing_ref.clone()
         } else {
             // Add to pool
@@ -48,7 +70,7 @@ impl KeePassService {
             db.attachment_pool.insert(
                 ref_id.clone(),
                 AttachmentData {
-                    data: data.clone(),
+                    data,
                     hash: hash.clone(),
                     ref_count: 1,
                 },
@@ -59,7 +81,7 @@ impl KeePassService {
         let attachment = KeePassAttachment {
             ref_id: ref_id.clone(),
             filename: req.filename.clone(),
-            size: data.len() as u64,
+            size: data_len as u64,
             hash: hash.clone(),
             mime_type: req
                 .mime_type
@@ -92,15 +114,19 @@ impl KeePassService {
 
         let mut attachments = Vec::new();
         for att_ref in &entry.attachments {
-            if let Some(pool_data) = db.attachment_pool.get(&att_ref.ref_id) {
-                attachments.push(KeePassAttachment {
-                    ref_id: att_ref.ref_id.clone(),
-                    filename: att_ref.filename.clone(),
-                    size: pool_data.data.len() as u64,
-                    hash: pool_data.hash.clone(),
-                    mime_type: Self::guess_mime_type(&att_ref.filename),
-                });
-            }
+            let pool_data = db.attachment_pool.get(&att_ref.ref_id).ok_or_else(|| {
+                format!(
+                    "Attachment '{}' references missing pool data",
+                    att_ref.filename
+                )
+            })?;
+            attachments.push(KeePassAttachment {
+                ref_id: att_ref.ref_id.clone(),
+                filename: att_ref.filename.clone(),
+                size: pool_data.data.len() as u64,
+                hash: pool_data.hash.clone(),
+                mime_type: Self::guess_mime_type(&att_ref.filename),
+            });
         }
 
         Ok(attachments)
@@ -144,6 +170,9 @@ impl KeePassService {
         ref_id: &str,
     ) -> Result<(), String> {
         let db = self.get_database_mut(db_id)?;
+        if !db.attachment_pool.contains_key(ref_id) {
+            return Err("Attachment data not found in pool".to_string());
+        }
 
         // Remove reference from entry
         let entry = db.entries.get_mut(entry_uuid).ok_or("Entry not found")?;
@@ -183,9 +212,17 @@ impl KeePassService {
         if new_filename.trim().is_empty() {
             return Err("Filename cannot be empty".to_string());
         }
+        Self::validate_attachment_filename(&new_filename)?;
 
         let db = self.get_database_mut(db_id)?;
         let entry = db.entries.get_mut(entry_uuid).ok_or("Entry not found")?;
+        if entry
+            .attachments
+            .iter()
+            .any(|attachment| attachment.ref_id != ref_id && attachment.filename == new_filename)
+        {
+            return Err("An attachment with this filename already exists".to_string());
+        }
 
         let att_ref = entry
             .attachments
@@ -236,7 +273,20 @@ impl KeePassService {
         entry_uuid: &str,
         file_path: &str,
     ) -> Result<KeePassAttachment, String> {
+        let metadata = std::fs::symlink_metadata(file_path)
+            .map_err(|e| format!("Cannot inspect file: {e}"))?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+            return Err("Attachment source must be a regular non-symlink file".to_string());
+        }
+        if metadata.len() > MAX_ATTACHMENT_BYTES as u64 {
+            return Err("Attachment exceeds the size safety limit".to_string());
+        }
         let data = std::fs::read(file_path).map_err(|e| format!("Cannot read file: {}", e))?;
+        if data.len() > MAX_ATTACHMENT_BYTES {
+            return Err(
+                "Attachment changed beyond the size safety limit while reading".to_string(),
+            );
+        }
 
         let filename = std::path::Path::new(file_path)
             .file_name()
@@ -275,21 +325,44 @@ impl KeePassService {
     pub fn compact_attachment_pool(&mut self, db_id: &str) -> Result<usize, String> {
         let db = self.get_database_mut(db_id)?;
 
-        // Collect all referenced ref_ids
-        let mut referenced: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // Count both live and historical references. A history-only attachment is
+        // still part of the KDBX data model and must not be compacted away.
+        let mut actual_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for entry in db.entries.values() {
             for att_ref in &entry.attachments {
-                referenced.insert(att_ref.ref_id.clone());
+                let count = actual_counts.entry(att_ref.ref_id.clone()).or_default();
+                *count = count
+                    .checked_add(1)
+                    .ok_or_else(|| "Attachment reference count overflow".to_string())?;
+            }
+        }
+        for history in db.history.values() {
+            for item in history {
+                for att_ref in &item.entry.attachments {
+                    let count = actual_counts.entry(att_ref.ref_id.clone()).or_default();
+                    *count = count
+                        .checked_add(1)
+                        .ok_or_else(|| "Attachment reference count overflow".to_string())?;
+                }
             }
         }
 
-        // Remove unreferenced
+        // Remove only truly unreferenced data and reconcile cached counts.
         let before = db.attachment_pool.len();
         db.attachment_pool
-            .retain(|ref_id, _| referenced.contains(ref_id));
+            .retain(|ref_id, _| actual_counts.contains_key(ref_id));
         let removed = before - db.attachment_pool.len();
+        let mut counts_changed = false;
+        for (ref_id, attachment) in &mut db.attachment_pool {
+            let actual = actual_counts.get(ref_id).copied().unwrap_or(0);
+            if attachment.ref_count != actual {
+                attachment.ref_count = actual;
+                counts_changed = true;
+            }
+        }
 
-        if removed > 0 {
+        if removed > 0 || counts_changed {
             db.mark_modified();
         }
 
@@ -327,6 +400,18 @@ impl KeePassService {
                 }
             }
         }
+        for (entry_uuid, history) in &db.history {
+            for item in history {
+                for att_ref in &item.entry.attachments {
+                    if !db.attachment_pool.contains_key(&att_ref.ref_id) {
+                        issues.push(format!(
+                            "History item {} for entry '{}' references missing attachment pool entry '{}'",
+                            item.index, entry_uuid, att_ref.ref_id
+                        ));
+                    }
+                }
+            }
+        }
 
         // Check ref counts
         let mut actual_counts: std::collections::HashMap<String, usize> =
@@ -334,6 +419,20 @@ impl KeePassService {
         for entry in db.entries.values() {
             for att_ref in &entry.attachments {
                 *actual_counts.entry(att_ref.ref_id.clone()).or_default() += 1;
+            }
+        }
+        for history in db.history.values() {
+            for item in history {
+                for att_ref in &item.entry.attachments {
+                    let count = actual_counts.entry(att_ref.ref_id.clone()).or_default();
+                    match count.checked_add(1) {
+                        Some(value) => *count = value,
+                        None => issues.push(
+                            "Attachment reference count overflow while checking history"
+                                .to_string(),
+                        ),
+                    }
+                }
             }
         }
 
@@ -394,5 +493,17 @@ impl KeePassService {
             _ => "application/octet-stream",
         }
         .to_string()
+    }
+
+    fn validate_attachment_filename(filename: &str) -> Result<(), String> {
+        if filename.trim().is_empty()
+            || filename.len() > MAX_ATTACHMENT_FILENAME_BYTES
+            || filename.contains(['/', '\\', '\0'])
+            || filename == "."
+            || filename == ".."
+        {
+            return Err("Attachment filename is empty, unsafe, or too long".to_string());
+        }
+        Ok(())
     }
 }

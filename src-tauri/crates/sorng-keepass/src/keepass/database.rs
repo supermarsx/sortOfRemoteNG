@@ -4,11 +4,11 @@
 // backup, change master key, get statistics, merge.
 
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::Read;
+use std::path::{Path, PathBuf};
 
-use super::service::{CompositeKeyInternal, KeePassService};
+use super::codec;
+use super::service::KeePassService;
 use super::types::*;
 
 impl KeePassService {
@@ -19,62 +19,73 @@ impl KeePassService {
         &mut self,
         req: CreateDatabaseRequest,
     ) -> Result<KeePassDatabase, String> {
-        // Validate inputs
-        if req.file_path.is_empty() {
+        if req.file_path.trim().is_empty() {
             return Err("File path is required".to_string());
         }
         if req.password.is_none() && req.key_file_path.is_none() {
             return Err("At least a password or key file is required".to_string());
         }
-
-        // Check if already open
-        if self.is_database_open(&req.file_path) {
-            return Err(format!("Database already open: {}", req.file_path));
+        let path = codec::resolve_destination_path(&req.file_path, false)?;
+        let path_string = path.to_string_lossy().to_string();
+        if self.is_database_open(&path_string) {
+            return Err(format!("Database already open: {path_string}"));
         }
-
-        Err(
-            "Creating KDBX files is not implemented by this backend; no file was written and no database was registered"
-                .to_string(),
-        )
+        let (key, fingerprint) =
+            codec::build_database_key(req.password.as_deref(), req.key_file_path.as_deref())?;
+        let (native, _) = codec::new_native_database(&req)?;
+        let source_hash = codec::save_native_atomic(&native, &key, &path)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let instance = codec::database_instance_from_native(
+            id.clone(),
+            path_string.clone(),
+            native,
+            key,
+            fingerprint,
+            source_hash,
+            false,
+        )?;
+        let info = instance.info.clone();
+        self.register_database(instance);
+        self.add_recent_database(&path_string, &info.name);
+        Ok(info)
     }
 
     // ─── Open Database ────────────────────────────────────────────────
 
     /// Open an existing KeePass database file.
     pub fn open_database(&mut self, req: OpenDatabaseRequest) -> Result<KeePassDatabase, String> {
-        if req.file_path.is_empty() {
+        if req.file_path.trim().is_empty() {
             return Err("File path is required".to_string());
         }
-
-        // Check if already open
-        if let Some(existing_id) = self.database_id_for_path(&req.file_path) {
+        let resolved = codec::resolve_existing_database_path(&req.file_path)?;
+        let path_string = resolved.to_string_lossy().to_string();
+        if let Some(existing_id) = self.database_id_for_path(&path_string) {
             return self.get_database(&existing_id).map(|db| db.info.clone());
         }
-
-        // Verify file exists
-        let path = std::path::Path::new(&req.file_path);
-        if !path.exists() {
-            return Err(format!("File not found: {}", req.file_path));
-        }
-
-        // Build composite key
-        Self::build_composite_key(req.password.as_deref(), req.key_file_path.as_deref())?;
-
-        const KDBX_SIGNATURE: [u8; 8] = [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5];
-        let mut file = std::fs::File::open(path)
-            .map_err(|e| format!("Failed to read KeePass database: {e}"))?;
-        let mut header = [0_u8; KDBX_SIGNATURE.len()];
-        let header_len = file
-            .read(&mut header)
-            .map_err(|e| format!("Failed to read KeePass database header: {e}"))?;
-        if header_len != KDBX_SIGNATURE.len() || header != KDBX_SIGNATURE {
-            return Err("Invalid KeePass KDBX file signature".to_string());
-        }
-
-        Err(
-            "Opening KDBX files is not implemented by this backend; no database was registered"
-                .to_string(),
-        )
+        let opened = codec::open_native_database(
+            &path_string,
+            req.password.as_deref(),
+            req.key_file_path.as_deref(),
+        )?;
+        let codec_read_only = !matches!(
+            opened.native.config.version,
+            keepass::config::DatabaseVersion::KDB4(_)
+        );
+        let read_only = req.read_only.unwrap_or(false) || codec_read_only;
+        let id = uuid::Uuid::new_v4().to_string();
+        let instance = codec::database_instance_from_native(
+            id.clone(),
+            opened.path.to_string_lossy().to_string(),
+            opened.native,
+            opened.key,
+            opened.fingerprint,
+            opened.source_hash,
+            read_only,
+        )?;
+        let info = instance.info.clone();
+        self.register_database(instance);
+        self.add_recent_database(&path_string, &info.name);
+        Ok(info)
     }
 
     // ─── Close Database ───────────────────────────────────────────────
@@ -112,39 +123,98 @@ impl KeePassService {
     pub fn save_database(
         &mut self,
         db_id: &str,
-        _options: Option<SaveDatabaseOptions>,
+        options: Option<SaveDatabaseOptions>,
     ) -> Result<String, String> {
-        let db = self.get_database(db_id)?;
-
-        if db.read_only {
-            return Err("Database is open as read-only".to_string());
+        let settings = self.get_settings();
+        let (source_path, target_path, mut native, key, fingerprint, source_hash, create_backup) = {
+            let db = self.get_database(db_id)?;
+            if db.info.locked {
+                return Err("Database is locked".to_string());
+            }
+            if db.read_only {
+                return Err("Database is open as read-only".to_string());
+            }
+            let source_path = PathBuf::from(&db.info.file_path);
+            let target_path = if let Some(path) = options
+                .as_ref()
+                .and_then(|value| value.file_path.as_deref())
+            {
+                let candidate = codec::resolve_destination_path(path, true)?;
+                if candidate != source_path && candidate.exists() {
+                    return Err(format!(
+                        "Refusing to overwrite an existing Save As target: {}",
+                        candidate.display()
+                    ));
+                }
+                candidate
+            } else {
+                source_path.clone()
+            };
+            if target_path == source_path {
+                codec::verify_source_unchanged(&source_path, db.source_hash)?;
+            }
+            let native = codec::reconcile_native(db)?;
+            let key = db
+                .database_key
+                .clone()
+                .ok_or_else(|| "Database key is unavailable; reopen the database".to_string())?;
+            let fingerprint = db
+                .composite_key
+                .clone()
+                .ok_or_else(|| "Database key fingerprint is unavailable".to_string())?;
+            let create_backup = options
+                .as_ref()
+                .and_then(|value| value.create_backup)
+                .unwrap_or(settings.backup_on_save);
+            (
+                source_path,
+                target_path,
+                native,
+                key,
+                fingerprint,
+                db.source_hash,
+                create_backup,
+            )
+        };
+        codec::apply_save_options(&mut native, options.as_ref())?;
+        if create_backup && target_path.exists() {
+            codec::durable_backup(&target_path, None)?;
         }
-        Err(
-            "Saving KDBX files is not implemented by this backend; in-memory changes remain unsaved"
-                .to_string(),
-        )
+        let new_hash = codec::save_native_atomic(&native, &key, &target_path)?;
+        let refreshed = codec::database_instance_from_native(
+            db_id.to_string(),
+            target_path.to_string_lossy().to_string(),
+            native,
+            key,
+            fingerprint,
+            new_hash,
+            false,
+        )?;
+        *self.get_database_mut(db_id)? = refreshed;
+        let name = self.get_database(db_id)?.info.name.clone();
+        self.add_recent_database(&target_path.to_string_lossy(), &name);
+        if target_path != source_path && source_hash.is_some() {
+            self.remove_recent_database(&source_path.to_string_lossy());
+        }
+        Ok(target_path.to_string_lossy().to_string())
     }
 
     // ─── Lock / Unlock ────────────────────────────────────────────────
 
     /// Lock a database (keeps metadata but clears sensitive data from memory).
     pub fn lock_database(&mut self, db_id: &str) -> Result<(), String> {
-        let db = self.get_database_mut(db_id)?;
-
-        if db.info.locked {
+        if self.get_database(db_id)?.info.locked {
             return Ok(());
         }
-
-        // Clear sensitive data from entries (passwords, protected fields)
-        for entry in db.entries.values_mut() {
-            entry.password = String::new();
-            for field in entry.custom_fields.values_mut() {
-                if field.is_protected {
-                    field.value = String::new();
-                }
-            }
+        let requires_save = {
+            let db = self.get_database(db_id)?;
+            db.info.modified && !db.read_only
+        };
+        if requires_save {
+            self.save_database(db_id, None)?;
         }
-
+        let db = self.get_database_mut(db_id)?;
+        db.clear_sensitive();
         db.info.locked = true;
         log::info!("Locked database: {}", db.info.name);
         Ok(())
@@ -157,37 +227,39 @@ impl KeePassService {
         password: Option<&str>,
         key_file_path: Option<&str>,
     ) -> Result<(), String> {
-        let composite_key = Self::build_composite_key(password, key_file_path)?;
-
-        let db = self.get_database_mut(db_id)?;
-
-        if !db.info.locked {
+        let (file_path, read_only, id) = {
+            let db = self.get_database(db_id)?;
+            if !db.info.locked {
+                return Ok(());
+            }
+            (db.info.file_path.clone(), db.read_only, db.info.id.clone())
+        };
+        let opened = codec::open_native_database(&file_path, password, key_file_path)?;
+        let refreshed = codec::database_instance_from_native(
+            id,
+            opened.path.to_string_lossy().to_string(),
+            opened.native,
+            opened.key,
+            opened.fingerprint,
+            opened.source_hash,
+            read_only,
+        )?;
+        *self.get_database_mut(db_id)? = refreshed;
+        if !self.get_database(db_id)?.info.locked {
             return Ok(());
         }
-
-        // Verify the key matches (in real impl, would re-derive and compare)
-        if let Some(ref stored) = db.composite_key {
-            if stored.combined_hash != composite_key.combined_hash {
-                return Err("Invalid master key".to_string());
-            }
-        }
-
-        db.info.locked = false;
-        db.info.last_opened_at = Utc::now().to_rfc3339();
-        log::info!("Unlocked database: {}", db.info.name);
-        Ok(())
+        Err("Failed to unlock KeePass database".to_string())
     }
 
     // ─── Backup ───────────────────────────────────────────────────────
 
     /// Create a backup of a database file.
     pub fn backup_database(&self, db_id: &str, backup_dir: Option<&str>) -> Result<String, String> {
-        self.get_database(db_id)?;
-        let _ = backup_dir;
-        Err(
-            "Backing up KDBX databases is not implemented by this backend; no backup was written"
-                .to_string(),
-        )
+        let db = self.get_database(db_id)?;
+        let source = Path::new(&db.info.file_path);
+        codec::verify_source_unchanged(source, db.source_hash)?;
+        let backup = codec::durable_backup(source, backup_dir.map(Path::new))?;
+        Ok(backup.to_string_lossy().to_string())
     }
 
     /// List backup files for a database.
@@ -213,20 +285,29 @@ impl KeePassService {
         if let Ok(entries) = std::fs::read_dir(&backup_directory) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                let metadata = match std::fs::symlink_metadata(&path) {
+                    Ok(metadata)
+                        if metadata.is_file()
+                            && !metadata.file_type().is_symlink()
+                            && metadata.len() <= codec::MAX_DATABASE_SIZE =>
+                    {
+                        metadata
+                    }
+                    _ => continue,
+                };
                 let file_name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
                 if file_name.starts_with(&stem) && file_name.ends_with(".kdbx") {
-                    let metadata = std::fs::metadata(&path).ok();
                     backups.push(DatabaseFileInfo {
                         file_path: path.to_string_lossy().to_string(),
-                        file_size: metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+                        file_size: metadata.len(),
                         format_version: None,
                         cipher: None,
                         kdf: None,
-                        created: metadata.and_then(|m| m.created().ok()).map(|t| {
+                        created: metadata.created().ok().map(|t| {
                             let dt: chrono::DateTime<Utc> = t.into();
                             dt.to_rfc3339()
                         }),
@@ -251,32 +332,58 @@ impl KeePassService {
         new_password: Option<&str>,
         new_key_file: Option<&str>,
     ) -> Result<(), String> {
-        self.get_database(db_id)?;
-        let _ = (old_password, old_key_file, new_password, new_key_file);
-        Err(
-            "Changing a KDBX master key is not implemented by this backend; the key was not changed"
-                .to_string(),
-        )
+        let (source_path, native, current_hash, read_only) = {
+            let db = self.get_database(db_id)?;
+            if db.info.locked {
+                return Err("Database is locked".to_string());
+            }
+            if db.read_only {
+                return Err("Database is open as read-only".to_string());
+            }
+            let source = PathBuf::from(&db.info.file_path);
+            codec::verify_source_unchanged(&source, db.source_hash)?;
+            (
+                source,
+                codec::reconcile_native(db)?,
+                db.source_hash,
+                db.read_only,
+            )
+        };
+        let _verified_old = codec::open_native_database(
+            &source_path.to_string_lossy(),
+            old_password,
+            old_key_file,
+        )?;
+        let (new_key, new_fingerprint) = codec::build_database_key(new_password, new_key_file)?;
+        codec::durable_backup(&source_path, None)?;
+        let new_hash = codec::save_native_atomic(&native, &new_key, &source_path)?;
+        let refreshed = codec::database_instance_from_native(
+            db_id.to_string(),
+            source_path.to_string_lossy().to_string(),
+            native,
+            new_key,
+            new_fingerprint,
+            new_hash,
+            read_only,
+        )?;
+        *self.get_database_mut(db_id)? = refreshed;
+        let _ = current_hash;
+        Ok(())
     }
 
     // ─── Database Info ────────────────────────────────────────────────
 
     /// Get database file info without opening it.
     pub fn get_database_file_info(file_path: &str) -> Result<DatabaseFileInfo, String> {
-        let path = std::path::Path::new(file_path);
-        if !path.exists() {
-            return Err(format!("File not found: {}", file_path));
-        }
-
+        let (path, file_size, header) = codec::inspect_database_file(file_path)?;
         let metadata =
-            std::fs::metadata(path).map_err(|e| format!("Cannot read metadata: {}", e))?;
-
+            std::fs::metadata(&path).map_err(|e| format!("Cannot read metadata: {e}"))?;
         Ok(DatabaseFileInfo {
-            file_path: file_path.to_string(),
-            file_size: metadata.len(),
-            format_version: Some("4.x".to_string()), // Would parse header in real impl
-            cipher: Some("AES-256".to_string()),
-            kdf: Some("Argon2".to_string()),
+            file_path: path.to_string_lossy().to_string(),
+            file_size,
+            format_version: Some(header.format_version),
+            cipher: header.cipher,
+            kdf: header.kdf,
             created: metadata.created().ok().map(|t| {
                 let dt: chrono::DateTime<Utc> = t.into();
                 dt.to_rfc3339()
@@ -462,46 +569,5 @@ impl KeePassService {
 
         db.mark_modified();
         Ok(db.info.clone())
-    }
-
-    // ─── Composite Key Helpers ────────────────────────────────────────
-
-    /// Build a composite key from password and/or key file.
-    fn build_composite_key(
-        password: Option<&str>,
-        key_file_path: Option<&str>,
-    ) -> Result<CompositeKeyInternal, String> {
-        let mut hasher = Sha256::new();
-
-        let password_hash = password.map(|p| {
-            let mut h = Sha256::new();
-            h.update(p.as_bytes());
-            h.finalize().to_vec()
-        });
-
-        let key_file_hash = if let Some(path) = key_file_path {
-            let data = std::fs::read(path).map_err(|e| format!("Cannot read key file: {}", e))?;
-            let mut h = Sha256::new();
-            h.update(&data);
-            Some(h.finalize().to_vec())
-        } else {
-            None
-        };
-
-        // Combine components
-        if let Some(ref ph) = password_hash {
-            hasher.update(ph);
-        }
-        if let Some(ref kh) = key_file_hash {
-            hasher.update(kh);
-        }
-
-        let combined_hash = hasher.finalize().to_vec();
-
-        Ok(CompositeKeyInternal {
-            password_hash,
-            key_file_hash,
-            combined_hash,
-        })
     }
 }

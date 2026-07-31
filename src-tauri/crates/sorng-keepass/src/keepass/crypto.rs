@@ -436,9 +436,7 @@ impl KeePassService {
             }
         };
 
-        // Write key file
-        std::fs::write(&req.file_path, &data)
-            .map_err(|e| format!("Failed to write key file: {}", e))?;
+        super::codec::write_new_secret_file(std::path::Path::new(&req.file_path), &data)?;
 
         let mut hasher = Sha256::new();
         hasher.update(&data);
@@ -455,7 +453,7 @@ impl KeePassService {
 
     /// Verify a key file and return its info.
     pub fn verify_key_file(file_path: &str) -> Result<KeyFileInfo, String> {
-        let data = std::fs::read(file_path).map_err(|e| format!("Cannot read key file: {}", e))?;
+        let data = super::codec::read_key_file(std::path::Path::new(file_path))?;
 
         let mut hasher = Sha256::new();
         hasher.update(&data);

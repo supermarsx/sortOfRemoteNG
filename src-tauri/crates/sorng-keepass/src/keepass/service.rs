@@ -49,6 +49,12 @@ pub struct DatabaseInstance {
     pub deleted_objects: Vec<DeletedObject>,
     /// The composite key used to open (kept for saving; never serialized)
     pub composite_key: Option<CompositeKeyInternal>,
+    /// Parsed KDBX model retained so unknown metadata and protected fields survive saves.
+    pub native_database: Option<keepass::Database>,
+    /// The codec key is zeroized on drop and is never serialized or logged.
+    pub database_key: Option<keepass::DatabaseKey>,
+    /// SHA-256 of the durable source image, used to detect external modification.
+    pub source_hash: Option<[u8; 32]>,
     /// Whether opened as read-only
     pub read_only: bool,
     /// Next binary pool ref ID
@@ -56,6 +62,7 @@ pub struct DatabaseInstance {
 }
 
 /// Internal representation of the composite key (not serialized).
+#[derive(Clone)]
 pub struct CompositeKeyInternal {
     pub password_hash: Option<Vec<u8>>,
     pub key_file_hash: Option<Vec<u8>>,
@@ -490,6 +497,9 @@ impl DatabaseInstance {
             custom_icons: HashMap::new(),
             deleted_objects: Vec::new(),
             composite_key: None,
+            native_database: None,
+            database_key: None,
+            source_hash: None,
             read_only: false,
             next_ref_id: 1,
         }
@@ -530,6 +540,8 @@ impl DatabaseInstance {
             composite_key.combined_hash.zeroize();
         }
         self.composite_key = None;
+        self.database_key = None;
+        self.native_database = None;
     }
 
     /// Get the next available binary pool ref ID.
