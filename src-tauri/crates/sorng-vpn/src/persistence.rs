@@ -374,8 +374,6 @@ pub mod keys {
     pub const IPSEC: &str = "vpn_ipsec";
     pub const SSTP: &str = "vpn_sstp";
     pub const PROXY: &str = "proxy_connections";
-    pub const UNIFIED_CHAINS: &str = "unified_chains";
-    pub const LAYER_PROFILES: &str = "layer_profiles";
 }
 
 #[cfg(test)]
