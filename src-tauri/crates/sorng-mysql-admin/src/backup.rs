@@ -29,25 +29,14 @@ impl BackupManager {
             extra_flags.push_str(" --events");
         }
 
-        let dump_cmd = client.mysqldump_cmd(&db_refs, extra_flags.trim());
-
-        let cmd = if config.compress {
-            format!(
-                "{} | gzip > {}",
-                dump_cmd,
-                shell_escape(&config.output_path)
+        let out = client
+            .dump_to_file(
+                &db_refs,
+                extra_flags.trim(),
+                &config.output_path,
+                config.compress,
             )
-        } else {
-            format!("{} > {}", dump_cmd, shell_escape(&config.output_path))
-        };
-
-        // Time the backup
-        let full_cmd = format!(
-            "START_T=$(date +%s); {} ; END_T=$(date +%s); echo \"DURATION:$((END_T - START_T))\"",
-            cmd
-        );
-
-        let out = client.exec_ssh(&full_cmd).await?;
+            .await?;
 
         let mut duration_secs = 0.0;
         for line in out.stdout.lines() {
@@ -75,19 +64,7 @@ impl BackupManager {
 
     /// Restore a SQL dump into a database.
     pub async fn restore(client: &MysqlClient, db: &str, path: &str) -> MysqlResult<()> {
-        let base = client.mysql_cmd_db(db, "");
-        // Remove the trailing -e '' and pipe the file instead
-        let mysql_base = base.replace(" -e ''", "");
-        let is_gzipped = path.ends_with(".gz");
-
-        let cmd = if is_gzipped {
-            format!("gunzip -c {} | {}", shell_escape(path), mysql_base)
-        } else {
-            format!("{} < {}", mysql_base, shell_escape(path))
-        };
-
-        client.exec_ssh(&cmd).await?;
-        Ok(())
+        client.restore_from_file(db, path).await
     }
 
     /// List backup files in a directory.
@@ -138,30 +115,7 @@ impl BackupManager {
         table: &str,
         path: &str,
     ) -> MysqlResult<()> {
-        let user = client.config.mysql_user.as_deref().unwrap_or("root");
-        let host = client.config.mysql_host.as_deref().unwrap_or("127.0.0.1");
-        let port = client.config.mysql_port.unwrap_or(3306);
-
-        let mut cmd = format!(
-            "mysqldump -u {} -h {} -P {} --single-transaction {} {}",
-            user, host, port, db, table
-        );
-
-        if let Some(ref pw) = client.config.mysql_password {
-            cmd = format!(
-                "mysqldump -u {} -p'{}' -h {} -P {} --single-transaction {} {}",
-                user,
-                pw.replace('\'', "'\\''"),
-                host,
-                port,
-                db,
-                table
-            );
-        }
-
-        cmd.push_str(&format!(" > {}", shell_escape(path)));
-        client.exec_ssh(&cmd).await?;
-        Ok(())
+        client.dump_table_to_file(db, table, path).await
     }
 
     /// Import a SQL file into a database.

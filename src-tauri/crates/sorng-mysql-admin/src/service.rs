@@ -51,9 +51,7 @@ impl MysqlService {
     ) -> MysqlResult<MysqlConnectionSummary> {
         let client = MysqlClient::new(config)?;
 
-        let version = VariableManager::get_server_info(&client)
-            .await
-            .unwrap_or_default();
+        let version = VariableManager::get_server_info(&client).await?;
         let uptime_str = client.exec_sql("SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_STATUS WHERE VARIABLE_NAME = 'Uptime'")
             .await
             .map(|s| s.trim().to_string())

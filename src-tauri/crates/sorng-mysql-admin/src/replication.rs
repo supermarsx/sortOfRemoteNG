@@ -126,7 +126,7 @@ impl ReplicationManager {
         if let Some(pos) = master_log_pos {
             sql.push_str(&format!(", MASTER_LOG_POS={}", pos));
         }
-        client.exec_sql(&sql).await?;
+        client.exec_sql_sensitive(&sql, &[master_password]).await?;
         Ok(())
     }
 

@@ -88,7 +88,7 @@ impl UserManager {
                 sql_escape(password)
             ),
         };
-        client.exec_sql(&auth).await?;
+        client.exec_sql_sensitive(&auth, &[password]).await?;
         Ok(())
     }
 
@@ -131,7 +131,7 @@ impl UserManager {
             sql_escape(host),
             sql_escape(password)
         );
-        client.exec_sql(&sql).await?;
+        client.exec_sql_sensitive(&sql, &[password]).await?;
         Ok(())
     }
 
