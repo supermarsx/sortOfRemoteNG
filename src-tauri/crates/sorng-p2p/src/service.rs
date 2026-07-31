@@ -134,20 +134,10 @@ impl P2pService {
 
     /// Start the P2P service (begin mDNS discovery, signaling connection, etc.).
     pub fn start(&mut self) -> Result<(), String> {
-        if self.running {
-            return Err("P2P service is already running".to_string());
-        }
-        if self.identity.is_none() {
-            return Err("Identity must be initialized before starting".to_string());
-        }
-        info!("Starting P2P service");
-        self.running = true;
-        // In a full implementation, this would:
-        // 1. Connect to the signaling server (WebSocket)
-        // 2. Start mDNS listener/advertiser
-        // 3. Start LAN broadcast listener
-        // 4. Run initial NAT detection
-        Ok(())
+        Err(
+            "P2P runtime is unavailable: signaling, authenticated identity persistence, and encrypted data channels are not implemented"
+                .to_string(),
+        )
     }
 
     /// Stop the P2P service and close all sessions.
@@ -203,129 +193,20 @@ impl P2pService {
         target_protocol: &str,
         target_port: u16,
     ) -> Result<ConnectionOffer, String> {
-        let identity = self
-            .identity
-            .as_ref()
-            .ok_or("Identity not initialized")?
-            .clone();
-
-        // NAT type for the offer
-        let nat_type = self
-            .cached_nat
-            .as_ref()
-            .map(|n| n.nat_type)
-            .unwrap_or(NatType::Unknown);
-
-        let session_id = uuid::Uuid::new_v4().to_string();
-
-        // Gather ICE candidates
-        let candidates = crate::ice::gather_candidates(&self.config)?;
-
-        let offer = ConnectionOffer {
-            session_id: session_id.clone(),
-            peer_id: identity.peer_id.clone(),
-            peer_name: identity.display_name.clone(),
-            target_protocol: target_protocol.to_string(),
-            target_port,
-            nat_type,
-            candidates: candidates.clone(),
-            public_key: identity.public_key.clone(),
-            cipher_suite: "CHACHA20-POLY1305".to_string(),
-            created_at: Utc::now(),
-            ttl_secs: 120,
-        };
-
-        // Create the session
-        let session = P2pSession {
-            id: session_id.clone(),
-            local_peer_id: identity.peer_id.clone(),
-            remote_peer_id: remote_peer_id.to_string(),
-            remote_peer_name: String::new(),
-            state: P2pSessionState::OfferSent,
-            transport: P2pTransport::Unknown,
-            target_protocol: target_protocol.to_string(),
-            target_port,
-            local_port: 0,
-            ice_state: IceState::Gathering,
-            selected_pair: None,
-            local_candidates: candidates,
-            remote_candidates: Vec::new(),
-            local_nat_type: nat_type,
-            remote_nat_type: None,
-            bytes_sent: 0,
-            bytes_received: 0,
-            rtt_ms: None,
-            created_at: Utc::now(),
-            connected_at: None,
-            ended_at: None,
-            encrypted: true,
-            cipher_suite: "CHACHA20-POLY1305".to_string(),
-        };
-
-        self.sessions.insert(session_id.clone(), session);
-        info!("Created P2P offer for session {}", session_id);
-
-        Ok(offer)
+        let _ = (remote_peer_id, target_protocol, target_port);
+        Err(
+            "P2P offers are unavailable until authenticated signaling and encrypted data channels are implemented"
+                .to_string(),
+        )
     }
 
     /// Accept a connection offer and generate an answer.
     pub fn accept_offer(&mut self, offer: &ConnectionOffer) -> Result<ConnectionAnswer, String> {
-        let identity = self
-            .identity
-            .as_ref()
-            .ok_or("Identity not initialized")?
-            .clone();
-
-        // Gather our own ICE candidates
-        let candidates = crate::ice::gather_candidates(&self.config)?;
-
-        let answer = ConnectionAnswer {
-            session_id: offer.session_id.clone(),
-            peer_id: identity.peer_id.clone(),
-            peer_name: identity.display_name.clone(),
-            accepted: true,
-            reject_reason: None,
-            candidates: candidates.clone(),
-            public_key: identity.public_key.clone(),
-            cipher_suite: offer.cipher_suite.clone(),
-            created_at: Utc::now(),
-        };
-
-        // Create the session on our side
-        let session = P2pSession {
-            id: offer.session_id.clone(),
-            local_peer_id: identity.peer_id.clone(),
-            remote_peer_id: offer.peer_id.clone(),
-            remote_peer_name: offer.peer_name.clone(),
-            state: P2pSessionState::Connecting,
-            transport: P2pTransport::Unknown,
-            target_protocol: offer.target_protocol.clone(),
-            target_port: offer.target_port,
-            local_port: 0,
-            ice_state: IceState::Checking,
-            selected_pair: None,
-            local_candidates: candidates,
-            remote_candidates: offer.candidates.clone(),
-            local_nat_type: self
-                .cached_nat
-                .as_ref()
-                .map(|n| n.nat_type)
-                .unwrap_or(NatType::Unknown),
-            remote_nat_type: Some(offer.nat_type),
-            bytes_sent: 0,
-            bytes_received: 0,
-            rtt_ms: None,
-            created_at: Utc::now(),
-            connected_at: None,
-            ended_at: None,
-            encrypted: true,
-            cipher_suite: offer.cipher_suite.clone(),
-        };
-
-        self.sessions.insert(offer.session_id.clone(), session);
-        info!("Accepted P2P offer for session {}", offer.session_id);
-
-        Ok(answer)
+        let _ = offer;
+        Err(
+            "P2P offers cannot be accepted until peer authentication and encrypted data channels are implemented"
+                .to_string(),
+        )
     }
 
     /// Reject a connection offer.
