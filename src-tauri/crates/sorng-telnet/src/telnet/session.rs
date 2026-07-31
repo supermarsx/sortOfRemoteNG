@@ -14,6 +14,11 @@ use crate::telnet::negotiation::NegotiationManager;
 use crate::telnet::protocol::{self, TelnetFrame, NOP, SN_SEND};
 use crate::telnet::types::*;
 
+fn saturating_add(counter: &AtomicU64, amount: u64) {
+    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(amount))
+    });
+}
 // ── Internal messages sent from the session read-loop to the service ────
 
 /// Events produced by a session's read loop.
@@ -99,7 +104,10 @@ impl TelnetSessionHandle {
             terminal_type: self.config.terminal_type.clone(),
             window_cols: self.config.cols,
             window_rows: self.config.rows,
-            reconnect_count: self.reconnect_count.load(Ordering::Relaxed) as u32,
+            reconnect_count: self
+                .reconnect_count
+                .load(Ordering::Relaxed)
+                .min(u32::MAX as u64) as u32,
         }
     }
 }
@@ -287,7 +295,7 @@ async fn read_loop(
             }
         };
 
-        bytes_received.fetch_add(n as u64, Ordering::Relaxed);
+        saturating_add(&bytes_received, n as u64);
         last_activity.store(
             chrono::Utc::now().timestamp_millis() as u64,
             Ordering::Relaxed,
@@ -459,7 +467,7 @@ async fn write_loop(
                             connected.store(false, Ordering::Relaxed);
                             break;
                         }
-                        bytes_sent.fetch_add(nop.len() as u64, Ordering::Relaxed);
+                        saturating_add(&bytes_sent, nop.len() as u64);
                     }
                     continue;
                 }
@@ -496,7 +504,7 @@ async fn write_loop(
         if !data.is_empty() {
             match writer.write_all(&data).await {
                 Ok(()) => {
-                    bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                    saturating_add(&bytes_sent, data.len() as u64);
                     last_activity.store(
                         chrono::Utc::now().timestamp_millis() as u64,
                         Ordering::Relaxed,
