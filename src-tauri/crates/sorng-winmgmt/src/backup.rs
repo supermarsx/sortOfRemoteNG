@@ -13,7 +13,7 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use crate::wql::WqlBuilder;
-use log::{debug, info};
+use log::info;
 use std::collections::HashMap;
 
 /// Manages remote Windows Backup operations via WMI.
@@ -104,110 +104,43 @@ impl BackupManager {
     // ─── Windows Server Backup (wbadmin) ─────────────────────────────
 
     /// Get the overall backup status / summary via `wbadmin get status`.
-    pub async fn get_backup_status(transport: &mut WmiTransport) -> Result<BackupStatus, String> {
-        debug!("Querying backup status via wbadmin");
-        let cmd = "wbadmin get status 2>&1";
-        let output = transport.exec_command(cmd).await?;
-        Ok(Self::parse_backup_status(&output))
+    pub async fn get_backup_status(_transport: &mut WmiTransport) -> Result<BackupStatus, String> {
+        Err("Remote backup status is unavailable because Win32_Process.Create does not capture stdout".to_string())
     }
 
     /// List recent backup versions via `wbadmin get versions`.
     pub async fn list_backup_versions(
-        transport: &mut WmiTransport,
+        _transport: &mut WmiTransport,
     ) -> Result<Vec<BackupVersion>, String> {
-        debug!("Querying backup versions via wbadmin");
-        let cmd = "wbadmin get versions 2>&1";
-        let output = transport.exec_command(cmd).await?;
-        Ok(Self::parse_backup_versions(&output))
+        Err("Remote backup version listing is unavailable because Win32_Process.Create does not capture stdout".to_string())
     }
 
     /// Get backup configuration / policy via `wbadmin get policy` (Server editions).
-    pub async fn get_backup_policy(transport: &mut WmiTransport) -> Result<BackupPolicy, String> {
-        debug!("Querying backup policy via wbadmin");
-        let cmd = "wbadmin get policy 2>&1";
-        let output = transport.exec_command(cmd).await?;
-        Ok(Self::parse_backup_policy(&output))
+    pub async fn get_backup_policy(_transport: &mut WmiTransport) -> Result<BackupPolicy, String> {
+        Err("Remote backup policy is unavailable because Win32_Process.Create does not capture stdout".to_string())
     }
 
     /// List items (volumes/files) included in the backup configuration.
-    pub async fn get_backup_items(transport: &mut WmiTransport) -> Result<Vec<BackupItem>, String> {
-        debug!("Querying backup items via wbadmin");
-        let cmd = "wbadmin get items 2>&1";
-        let output = transport.exec_command(cmd).await?;
-        Ok(Self::parse_backup_items(&output))
+    pub async fn get_backup_items(
+        _transport: &mut WmiTransport,
+    ) -> Result<Vec<BackupItem>, String> {
+        Err("Remote backup items are unavailable because Win32_Process.Create does not capture stdout".to_string())
     }
 
     /// Start an ad-hoc backup of the specified volumes.
     pub async fn start_backup(
-        transport: &mut WmiTransport,
-        params: &StartBackupParams,
+        _transport: &mut WmiTransport,
+        _params: &StartBackupParams,
     ) -> Result<BackupJobInfo, String> {
-        info!("Starting backup: {:?}", params);
-        let mut cmd = String::from("wbadmin start backup");
-
-        if !params.include_volumes.is_empty() {
-            cmd.push_str(&format!(" -include:{}", params.include_volumes.join(",")));
-        }
-        if let Some(ref target) = params.backup_target {
-            cmd.push_str(&format!(" -backupTarget:{}", target));
-        }
-        if params.all_critical {
-            cmd.push_str(" -allCritical");
-        }
-        if params.system_state {
-            cmd.push_str(" -systemState");
-        }
-        if params.vss_full {
-            cmd.push_str(" -vssFull");
-        } else if params.vss_copy {
-            cmd.push_str(" -vssCopy");
-        }
-        cmd.push_str(" -quiet");
-        cmd.push_str(" 2>&1");
-
-        let output = transport.exec_command(&cmd).await?;
-        Ok(Self::parse_backup_job(&output))
+        Err("Remote backup launch is unavailable until a bounded, authenticated output channel is implemented".to_string())
     }
 
     /// Start a system state restore from a backup version.
     pub async fn start_restore(
-        transport: &mut WmiTransport,
-        params: &StartRestoreParams,
+        _transport: &mut WmiTransport,
+        _params: &StartRestoreParams,
     ) -> Result<BackupJobInfo, String> {
-        info!("Starting restore: {:?}", params);
-        let mut cmd = String::from("wbadmin start recovery");
-
-        cmd.push_str(&format!(" -version:{}", params.version_id));
-
-        match &params.recovery_type {
-            RecoveryType::Volume { source, target } => {
-                cmd.push_str(&format!(
-                    " -itemType:Volume -items:{} -recoveryTarget:{}",
-                    source, target
-                ));
-            }
-            RecoveryType::File {
-                source_path,
-                target_path,
-                recursive,
-            } => {
-                cmd.push_str(&format!(
-                    " -itemType:File -items:{} -recoveryTarget:{}",
-                    source_path, target_path
-                ));
-                if *recursive {
-                    cmd.push_str(" -recursive");
-                }
-            }
-            RecoveryType::SystemState => {
-                cmd.push_str(" -itemType:SystemState");
-            }
-        }
-        cmd.push_str(" -quiet");
-        cmd.push_str(" 2>&1");
-
-        let output = transport.exec_command(&cmd).await?;
-        Ok(Self::parse_backup_job(&output))
+        Err("Remote restore is unavailable until a bounded, authenticated output channel and explicit confirmation contract are implemented".to_string())
     }
 
     // ─── Backup-related System Volumes ───────────────────────────────
@@ -306,293 +239,5 @@ impl BackupManager {
                 .unwrap_or(0),
             device_id: row.get("DeviceID").cloned().unwrap_or_default(),
         }
-    }
-
-    fn parse_backup_status(output: &str) -> BackupStatus {
-        // The wbadmin "no backup running" line ("No backup is currently
-        // running.") contains the literal substring "currently
-        // running", so a substring check picks it up as a false
-        // positive. Inspect each line and reject those that start with
-        // a clear negation ("No backup is", "No active") before
-        // flagging the status as running.
-        let running = output.lines().any(|line| {
-            let l = line.trim();
-            let lower = l.to_lowercase();
-            let has_signal =
-                lower.contains("currently running") || lower.contains("in progress");
-            let is_negation = lower.starts_with("no backup")
-                || lower.starts_with("no active")
-                || lower.starts_with("no operation");
-            has_signal && !is_negation
-        });
-        let last_success = Self::extract_line_value(output, "Last successful");
-        let last_failure = Self::extract_line_value(output, "Last failed");
-        let next_scheduled = Self::extract_line_value(output, "Next scheduled");
-        let current_operation = if running {
-            Self::extract_line_value(output, "Operation")
-        } else {
-            None
-        };
-        let progress_percent = Self::extract_percent(output);
-
-        BackupStatus {
-            is_running: running,
-            current_operation,
-            progress_percent,
-            last_successful_backup: last_success,
-            last_failed_backup: last_failure,
-            next_scheduled_backup: next_scheduled,
-            raw_output: output.to_string(),
-        }
-    }
-
-    fn parse_backup_versions(output: &str) -> Vec<BackupVersion> {
-        let mut versions = Vec::new();
-        let mut current: Option<BackupVersion> = None;
-
-        for line in output.lines() {
-            let trimmed = line.trim();
-            // `wbadmin get versions` separates each backup with a
-            // `Version identifier:` header — that's the only line that
-            // starts a new `BackupVersion`. Including `Backup time:` in
-            // the new-version trigger duplicated every entry (the
-            // header opened version N, then `Backup time:` closed it
-            // and opened version N+1 from the same backup block).
-            if trimmed.starts_with("Version identifier:") {
-                if let Some(v) = current.take() {
-                    versions.push(v);
-                }
-                current = Some(BackupVersion {
-                    version_id: Self::after_colon(trimmed).to_string(),
-                    backup_time: None,
-                    backup_location: None,
-                    version_info: None,
-                    can_recover: true,
-                });
-            } else if let Some(ref mut v) = current {
-                if trimmed.starts_with("Backup time:") || trimmed.starts_with("Backup Time:") {
-                    v.backup_time = Some(Self::after_colon(trimmed).to_string());
-                } else if trimmed.starts_with("Backup location:")
-                    || trimmed.starts_with("Backup Location:")
-                {
-                    v.backup_location = Some(Self::after_colon(trimmed).to_string());
-                } else if trimmed.starts_with("Version:") {
-                    v.version_info = Some(Self::after_colon(trimmed).to_string());
-                } else if trimmed.contains("can recover:") {
-                    v.can_recover = !trimmed.to_lowercase().contains("no");
-                }
-            }
-        }
-        if let Some(v) = current {
-            versions.push(v);
-        }
-        versions
-    }
-
-    fn parse_backup_policy(output: &str) -> BackupPolicy {
-        let schedule = Self::extract_line_value(output, "Schedule");
-        let target = Self::extract_line_value(output, "Backup target");
-        let volumes: Vec<String> = output
-            .lines()
-            .filter(|l| l.trim().starts_with("Volume"))
-            .map(|l| Self::after_colon(l.trim()).to_string())
-            .collect();
-        let system_state = output.to_lowercase().contains("system state");
-        let bare_metal = output.to_lowercase().contains("bare metal");
-        let configured = !output.to_lowercase().contains("no backup policy");
-
-        BackupPolicy {
-            configured,
-            schedule,
-            backup_target: target,
-            included_volumes: volumes,
-            system_state_backup: system_state,
-            bare_metal_recovery: bare_metal,
-            raw_output: output.to_string(),
-        }
-    }
-
-    fn parse_backup_items(output: &str) -> Vec<BackupItem> {
-        let mut items = Vec::new();
-        for line in output.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("wbadmin") || trimmed.starts_with("--") {
-                continue;
-            }
-            // Try to detect volume or file items
-            if trimmed.contains(':') {
-                let name = trimmed.to_string();
-                let item_type = if trimmed.contains("\\\\?\\Volume")
-                    || (trimmed.len() >= 2 && trimmed.chars().nth(1) == Some(':'))
-                {
-                    BackupItemType::Volume
-                } else if trimmed.to_lowercase().contains("system state") {
-                    BackupItemType::SystemState
-                } else {
-                    BackupItemType::File
-                };
-                items.push(BackupItem {
-                    name,
-                    item_type,
-                    size: None,
-                });
-            }
-        }
-        items
-    }
-
-    fn parse_backup_job(output: &str) -> BackupJobInfo {
-        let success = output.to_lowercase().contains("completed successfully")
-            || output
-                .to_lowercase()
-                .contains("the backup operation completed");
-        let error = if output.to_lowercase().contains("error")
-            || output.to_lowercase().contains("failed")
-        {
-            Some(
-                output
-                    .lines()
-                    .find(|l| {
-                        let lower = l.to_lowercase();
-                        lower.contains("error") || lower.contains("failed")
-                    })
-                    .unwrap_or("Unknown error")
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-        BackupJobInfo {
-            success,
-            error,
-            raw_output: output.to_string(),
-        }
-    }
-
-    // ─── Helpers ─────────────────────────────────────────────────────
-
-    fn extract_line_value(output: &str, prefix: &str) -> Option<String> {
-        output.lines().find_map(|l| {
-            let trimmed = l.trim();
-            if trimmed.to_lowercase().contains(&prefix.to_lowercase()) && trimmed.contains(':') {
-                let after = Self::after_colon(trimmed).trim().to_string();
-                if after.is_empty() {
-                    None
-                } else {
-                    Some(after)
-                }
-            } else {
-                None
-            }
-        })
-    }
-
-    fn extract_percent(output: &str) -> Option<f64> {
-        output.lines().find_map(|l| {
-            if let Some(pos) = l.find('%') {
-                // Walk backward to find the number
-                let before = &l[..pos];
-                let num_str: String = before
-                    .chars()
-                    .rev()
-                    .take_while(|c| c.is_ascii_digit() || *c == '.')
-                    .collect::<String>()
-                    .chars()
-                    .rev()
-                    .collect();
-                num_str.parse::<f64>().ok()
-            } else {
-                None
-            }
-        })
-    }
-
-    fn after_colon(s: &str) -> &str {
-        match s.find(':') {
-            Some(i) => s[i + 1..].trim(),
-            None => s.trim(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_backup_status_idle() {
-        let output = "No backup is currently running.\nLast successful backup: 03/01/2026 02:00\nNext scheduled backup: 03/02/2026 02:00\n";
-        let status = BackupManager::parse_backup_status(output);
-        assert!(!status.is_running);
-        assert_eq!(
-            status.last_successful_backup.as_deref(),
-            Some("03/01/2026 02:00")
-        );
-        assert_eq!(
-            status.next_scheduled_backup.as_deref(),
-            Some("03/02/2026 02:00")
-        );
-    }
-
-    #[test]
-    fn parse_backup_status_running() {
-        let output = "A backup is currently running.\nOperation: Volume backup\nProgress: 45%\n";
-        let status = BackupManager::parse_backup_status(output);
-        assert!(status.is_running);
-        assert_eq!(status.progress_percent, Some(45.0));
-    }
-
-    #[test]
-    fn parse_backup_versions_multiple() {
-        let output = "\
-Version identifier: 03/01/2026-09:00
-Backup time: 03/01/2026 02:00
-Backup location: E:\\WindowsImageBackup
-
-Version identifier: 02/28/2026-09:00
-Backup time: 02/28/2026 02:00
-Backup location: E:\\WindowsImageBackup
-";
-        let versions = BackupManager::parse_backup_versions(output);
-        assert_eq!(versions.len(), 2);
-        assert_eq!(versions[0].version_id, "03/01/2026-09:00");
-    }
-
-    #[test]
-    fn parse_backup_policy_configured() {
-        let output = "\
-Schedule: Daily at 02:00
-Backup target: E:\\
-Volume: C:
-Volume: D:
-System state: Included
-";
-        let policy = BackupManager::parse_backup_policy(output);
-        assert!(policy.configured);
-        assert!(policy.system_state_backup);
-        assert_eq!(policy.included_volumes.len(), 2);
-    }
-
-    #[test]
-    fn parse_backup_policy_unconfigured() {
-        let output = "No backup policy is configured.\n";
-        let policy = BackupManager::parse_backup_policy(output);
-        assert!(!policy.configured);
-    }
-
-    #[test]
-    fn parse_backup_job_success() {
-        let output = "The backup operation completed successfully.\n";
-        let job = BackupManager::parse_backup_job(output);
-        assert!(job.success);
-        assert!(job.error.is_none());
-    }
-
-    #[test]
-    fn parse_backup_job_failure() {
-        let output = "ERROR - The backup operation has failed.\nDisk is full.\n";
-        let job = BackupManager::parse_backup_job(output);
-        assert!(!job.success);
-        assert!(job.error.is_some());
     }
 }
