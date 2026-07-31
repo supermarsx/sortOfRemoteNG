@@ -131,7 +131,7 @@ export class SecureStorage {
   static async hasStoredData(): Promise<boolean> {
     const invoke = await getInvoke();
     if (invoke) {
-      return await invoke('has_stored_data');
+      return await invoke("has_stored_data");
     } else {
       return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
     }
@@ -140,7 +140,7 @@ export class SecureStorage {
   static async isStorageEncrypted(): Promise<boolean> {
     const invoke = await getInvoke();
     if (invoke) {
-      return await invoke('is_storage_encrypted');
+      return await invoke("is_storage_encrypted");
     } else {
       await this.migrateMetaKey();
       const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
@@ -174,7 +174,7 @@ export class SecureStorage {
         // envelope; the master DEK is the single source of connections-
         // at-rest crypto now. `usePassword` is preserved on the wire
         // for backward-compat but no longer influences anything.
-        await invoke('save_data', { data, usePassword });
+        await invoke("save_data", { data, usePassword });
       } catch (err) {
         console.error("Failed to save data via Tauri:", err);
         const message = err instanceof Error ? err.message : String(err);
@@ -232,7 +232,7 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (invoke) {
       try {
-        const result = await invoke('load_data') as StorageData | null;
+        const result = (await invoke("load_data")) as StorageData | null;
         return result;
       } catch (err) {
         console.error("Failed to load data via Tauri:", err);
@@ -286,7 +286,7 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (invoke) {
       try {
-        await invoke('clear_storage');
+        await invoke("clear_storage");
         this.clearPassword();
       } catch (err) {
         console.error("Failed to clear storage via Tauri:", err);
@@ -313,7 +313,7 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (!invoke) return false;
     try {
-      return await invoke('vault_is_available') as boolean;
+      return (await invoke("vault_is_available")) as boolean;
     } catch {
       return false;
     }
@@ -324,11 +324,11 @@ export class SecureStorage {
    */
   static async getVaultBackendName(): Promise<string> {
     const invoke = await getInvoke();
-    if (!invoke) return 'none';
+    if (!invoke) return "none";
     try {
-      return await invoke('vault_backend_name') as string;
+      return (await invoke("vault_backend_name")) as string;
     } catch {
-      return 'none';
+      return "none";
     }
   }
 
@@ -339,7 +339,7 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (!invoke) return false;
     try {
-      return await invoke('biometric_is_available') as boolean;
+      return (await invoke("biometric_is_available")) as boolean;
     } catch {
       return false;
     }
@@ -352,7 +352,10 @@ export class SecureStorage {
     const invoke = await getInvoke();
     if (!invoke) return null;
     try {
-      return await invoke('biometric_check_availability') as Record<string, unknown>;
+      return (await invoke("biometric_check_availability")) as Record<
+        string,
+        unknown
+      >;
     } catch {
       return null;
     }
@@ -365,18 +368,18 @@ export class SecureStorage {
    */
   static async biometricVerify(reason: string): Promise<boolean> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Biometrics not available');
-    return await invoke('biometric_verify', { reason }) as boolean;
+    if (!invoke) throw new Error("Biometrics not available");
+    return (await invoke("biometric_verify", { reason })) as boolean;
   }
 
   /**
    * Check whether legacy storage needs migration to vault-backed storage.
    */
-  static async needsVaultMigration(storagePath: string): Promise<boolean> {
+  static async needsVaultMigration(): Promise<boolean> {
     const invoke = await getInvoke();
     if (!invoke) return false;
     try {
-      return await invoke('vault_needs_migration', { storagePath }) as boolean;
+      return (await invoke("vault_needs_migration")) as boolean;
     } catch {
       return false;
     }
@@ -387,45 +390,40 @@ export class SecureStorage {
    * The DEK (data encryption key) is stored in the OS vault.
    */
   static async migrateToVault(
-    storagePath: string,
     oldPassword?: string,
   ): Promise<{ success: boolean; message: string; backupPath?: string }> {
     const invoke = await getInvoke();
     if (!invoke) {
-      throw new Error('Vault migration requires Tauri');
+      throw new Error("Vault migration requires Tauri");
     }
-    return await invoke('vault_migrate', {
-      storagePath,
+    return (await invoke("vault_migrate", {
       oldPassword: oldPassword ?? null,
-    }) as { success: boolean; message: string; backupPath?: string };
+    })) as { success: boolean; message: string; backupPath?: string };
   }
 
   /**
    * Save data using vault-backed encryption (DEK stored in OS keychain).
    */
-  static async saveDataVault(
-    storagePath: string,
-    data: StorageData,
-  ): Promise<void> {
+  static async saveDataVault(data: StorageData): Promise<void> {
     const invoke = await getInvoke();
     if (!invoke) {
-      throw new Error('Vault storage requires Tauri');
+      throw new Error("Vault storage requires Tauri");
     }
     const jsonData = JSON.stringify(data);
-    await invoke('vault_save_storage', { storagePath, jsonData });
+    await invoke("vault_save_storage", { jsonData });
   }
 
   /**
    * Load data from vault-backed encrypted storage (DEK from OS keychain).
    */
-  static async loadDataVault(storagePath: string): Promise<StorageData | null> {
+  static async loadDataVault(): Promise<StorageData | null> {
     const invoke = await getInvoke();
     if (!invoke) return null;
     try {
-      const json = await invoke('vault_load_storage', { storagePath }) as string;
+      const json = (await invoke("vault_load_storage")) as string;
       return JSON.parse(json) as StorageData;
     } catch (err) {
-      console.error('Failed to load vault storage:', err);
+      console.error("Failed to load vault storage:", err);
       return null;
     }
   }
@@ -439,8 +437,8 @@ export class SecureStorage {
     secret: string,
   ): Promise<void> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Vault not available');
-    await invoke('vault_store_secret', { service, account, secret });
+    if (!invoke) throw new Error("Vault not available");
+    await invoke("vault_store_secret", { service, account, secret });
   }
 
   /**
@@ -451,8 +449,8 @@ export class SecureStorage {
     account: string,
   ): Promise<string> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Vault not available');
-    return await invoke('vault_read_secret', { service, account }) as string;
+    if (!invoke) throw new Error("Vault not available");
+    return (await invoke("vault_read_secret", { service, account })) as string;
   }
 
   /**
@@ -463,8 +461,8 @@ export class SecureStorage {
     account: string,
   ): Promise<void> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Vault not available');
-    await invoke('vault_delete_secret', { service, account });
+    if (!invoke) throw new Error("Vault not available");
+    await invoke("vault_delete_secret", { service, account });
   }
 
   /**
@@ -477,8 +475,8 @@ export class SecureStorage {
     reason: string,
   ): Promise<void> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Vault not available');
-    await invoke('vault_biometric_store', { service, account, secret, reason });
+    if (!invoke) throw new Error("Vault not available");
+    await invoke("vault_biometric_store", { service, account, secret, reason });
   }
 
   /**
@@ -490,7 +488,11 @@ export class SecureStorage {
     reason: string,
   ): Promise<string> {
     const invoke = await getInvoke();
-    if (!invoke) throw new Error('Vault not available');
-    return await invoke('vault_biometric_read', { service, account, reason }) as string;
+    if (!invoke) throw new Error("Vault not available");
+    return (await invoke("vault_biometric_read", {
+      service,
+      account,
+      reason,
+    })) as string;
   }
 }
