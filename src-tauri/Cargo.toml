@@ -403,12 +403,12 @@ full = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-
 #     DLL — runtime keeps the CLI fallback path. Release/CI use `full`.
 full-dev = ["cert-auth", "cloud", "collab", "db-mongo", "db-mssql", "db-mysql", "db-postgres", "db-redis", "db-sqlite", "kafka-static", "logs-json", "opkssh", "ops", "platform", "protocol-serial-dynamic", "rdp", "rdp-mf-decode", "rdp-software-decode", "rdp-snapshot", "script-engine", "tls-cert-details", "vpn-softether"]
 cert-auth = ["sorng-app-domains/cert-auth", "sorng-app-startup-state/cert-auth"]
-cloud = ["sorng-app-domains/cloud", "sorng-app-startup-state/cloud", "dep:sorng-commands-cloud"]
+cloud = ["sorng-app-domains/cloud", "sorng-app-startup-state/cloud", "sorng-commands-core/cloud", "dep:sorng-commands-cloud"]
 collab = ["sorng-app-domains/collab", "sorng-app-startup-state/collab", "dep:sorng-commands-collab"]
 db-mongo = ["sorng-app-domains/db-mongo", "sorng-app-startup-state/db-mongo", "sorng-commands-sessions/db-mongo"]
 db-mssql = ["sorng-app-domains/db-mssql", "sorng-app-startup-state/db-mssql", "sorng-commands-sessions/db-mssql"]
-db-mysql = ["sorng-app-domains/db-mysql", "sorng-app-startup-state/db-mysql", "sorng-commands-sessions/db-mysql"]
-db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-postgres", "sorng-commands-sessions/db-postgres"]
+db-mysql = ["sorng-app-domains/db-mysql", "sorng-app-startup-state/db-mysql", "sorng-commands-core/db-mysql", "sorng-commands-sessions/db-mysql"]
+db-postgres = ["sorng-app-domains/db-postgres", "sorng-app-startup-state/db-postgres", "sorng-commands-core/db-postgres", "sorng-commands-sessions/db-postgres"]
 db-redis = ["sorng-app-domains/db-redis", "sorng-app-startup-state/db-redis", "sorng-commands-sessions/db-redis"]
 db-sqlite = ["sorng-app-domains/db-sqlite", "sorng-app-startup-state/db-sqlite", "sorng-commands-sessions/db-sqlite"]
 # `kafka` dynamic-links against a system-installed librdkafka (t3-e38) —

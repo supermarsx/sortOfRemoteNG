@@ -53,6 +53,9 @@ windows-sys = { workspace = true, features = ["Win32_System_SystemInformation"] 
 # it off with `--no-default-features` (or combine with
 # `protocol-serial` for the static/vendored dev path).
 default = ["protocol-serial-dynamic"]
+cloud = []
+db-mysql = []
+db-postgres = []
 rdp = ["sorng-app-domains/rdp"]
 # `ops` forwards to `sorng-app-domains/ops` so that ops-gated crates
 # (e.g., `sorng_powershell`, `sorng_ipmi`) are re-exported via
