@@ -1,6 +1,6 @@
 use crate::ssh::{SshCompressionConfig, SshConnectionConfig, SshServiceState};
 use rquickjs::prelude::Async;
-use rquickjs::{async_with, AsyncContext, AsyncRuntime, Function, Object};
+use rquickjs::{AsyncContext, AsyncRuntime, Function, Object};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -261,7 +261,7 @@ impl ScriptService {
                                         let js_ctx_res = AsyncContext::full(&js_rt).await;
                                         match js_ctx_res {
                                             Ok(ctx) => {
-                                                let result = async_with!(ctx => |ctx| {
+                                                let result = ctx.async_with(async |ctx| {
                                                     // Add basic globals
                                                     let global = ctx.globals();
 

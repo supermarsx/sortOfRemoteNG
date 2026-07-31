@@ -31,7 +31,7 @@ shell-escape = "0.1"
 socket2 = { version = "0.5", features = ["all"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
-rquickjs = { version = "0.6", features = ["full-async"], optional = true }
+rquickjs = { version = "0.12", features = ["full-async"], optional = true }
 lazy_static = { workspace = true }
 ssh-key = { version = "0.6", features = ["rsa", "ed25519", "encryption", "std", "getrandom"] }
 rsa = "0.9"
@@ -90,9 +90,9 @@ windows-sys = { workspace = true, features = [
 # mTLS client-auth config build (t23-e7). Already in the workspace lock.
 rcgen = "0.12"
 
-# rquickjs-sys 0.6 does not ship pre-generated Windows ARM64 bindings.
+# rquickjs-sys 0.12 does not ship pre-generated Windows ARM64 bindings.
 # Enable rquickjs's forwarding feature so bindgen reaches both rquickjs-core
 # and the host-side rquickjs-macro dependency. Keep the requirement scoped to
 # the unsupported target so bundled-binding targets do not need libclang.
 [target.'cfg(all(target_os = "windows", target_arch = "aarch64"))'.dependencies]
-rquickjs = { version = "0.6", features = ["bindgen", "full-async"], optional = true }
+rquickjs = { version = "0.12", features = ["bindgen", "full-async"], optional = true }
