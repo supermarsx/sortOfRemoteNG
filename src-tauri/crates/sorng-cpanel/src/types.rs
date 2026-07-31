@@ -30,6 +30,9 @@ pub struct CpanelConnectionConfig {
     pub use_tls: Option<bool>,
     /// Accept self-signed certificates.
     pub accept_invalid_certs: Option<bool>,
+    /// Runtime-only acknowledgement; never persist this with a profile.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: Option<bool>,
     /// Authentication mode.
     pub auth_mode: CpanelAuthMode,
     /// WHM / cPanel username.

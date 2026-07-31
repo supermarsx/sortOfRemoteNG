@@ -1,4 +1,5 @@
 use sorng_cpanel::error::CpanelErrorKind;
+use sorng_cpanel::client::CpanelClient;
 use sorng_cpanel::service::CpanelService;
 use sorng_cpanel::types::{CpanelAuthMode, CpanelConnectionConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -55,6 +56,7 @@ fn config(address: std::net::SocketAddr) -> CpanelConnectionConfig {
         cpanel_port: Some(address.port()),
         use_tls: Some(false),
         accept_invalid_certs: Some(false),
+        acknowledge_invalid_cert_risk: None,
         auth_mode: CpanelAuthMode::ApiToken,
         username: "root".into(),
         password: None,
@@ -62,6 +64,42 @@ fn config(address: std::net::SocketAddr) -> CpanelConnectionConfig {
         timeout_secs: Some(5),
         proxy_url: None,
     }
+}
+
+#[test]
+fn insecure_tls_acknowledgement_is_required_consumed_and_not_serialized() {
+    let address = "127.0.0.1:2087".parse().unwrap();
+    let mut insecure = config(address);
+    insecure.use_tls = Some(true);
+    insecure.accept_invalid_certs = Some(true);
+
+    let missing_ack = match CpanelClient::new(insecure.clone()) {
+        Ok(_) => panic!("insecure TLS must require a runtime acknowledgement"),
+        Err(error) => error,
+    };
+    assert!(matches!(missing_ack.kind, CpanelErrorKind::InvalidRequest));
+
+    insecure.acknowledge_invalid_cert_risk = Some(true);
+    let client = CpanelClient::new(insecure).expect("acknowledged client builds");
+    assert_eq!(client.config.acknowledge_invalid_cert_risk, None);
+
+    let serialized = serde_json::to_value(&client.config).unwrap();
+    assert!(serialized
+        .get("acknowledge_invalid_cert_risk")
+        .is_none());
+}
+
+#[test]
+fn stale_tls_acknowledgement_is_rejected_for_verified_transport() {
+    let address = "127.0.0.1:2087".parse().unwrap();
+    let mut verified = config(address);
+    verified.acknowledge_invalid_cert_risk = Some(true);
+
+    let error = match CpanelClient::new(verified) {
+        Ok(_) => panic!("stale acknowledgement must not authorize another attempt"),
+        Err(error) => error,
+    };
+    assert!(matches!(error.kind, CpanelErrorKind::InvalidRequest));
 }
 
 const VERSION: &str = r#"{"data":{"version":"11.120.0.9"},"metadata":{"command":"version","reason":"OK","result":1,"version":1}}"#;

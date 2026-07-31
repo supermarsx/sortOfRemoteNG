@@ -12,13 +12,15 @@ use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct CpanelClient {
     pub config: CpanelConnectionConfig,
     http: HttpClient,
 }
 
 impl CpanelClient {
-    pub fn new(config: CpanelConnectionConfig) -> CpanelResult<Self> {
+    pub fn new(mut config: CpanelConnectionConfig) -> CpanelResult<Self> {
         if config.host.trim().is_empty() {
             return Err(CpanelError::invalid_request("host must not be empty"));
         }
@@ -50,9 +52,16 @@ impl CpanelClient {
             ));
         }
 
-        let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
+        let accept_invalid =
+            config.use_tls.unwrap_or(true) && config.accept_invalid_certs.unwrap_or(false);
+        if accept_invalid != config.acknowledge_invalid_cert_risk.unwrap_or(false) {
+            return Err(CpanelError::invalid_request(
+                "disabling TLS certificate validation requires a runtime acknowledgement for this connection attempt",
+            ));
+        }
         let mut builder = HttpClient::builder()
             .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
+            .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(accept_invalid);
         if let Some(proxy_url) = config
             .proxy_url
@@ -61,12 +70,13 @@ impl CpanelClient {
             .filter(|s| !s.is_empty())
         {
             let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| CpanelError::connection(format!("invalid proxy URL: {e}")))?;
+                .map_err(|_| CpanelError::connection("invalid proxy URL"))?;
             builder = builder.proxy(proxy);
         }
         let http = builder
             .build()
-            .map_err(|e| CpanelError::connection(format!("http client build: {e}")))?;
+            .map_err(|_| CpanelError::connection("failed to build HTTP client"))?;
+        config.acknowledge_invalid_cert_risk = None;
         Ok(Self { config, http })
     }
 
@@ -148,31 +158,73 @@ impl CpanelClient {
 
     // ── Generic request helpers ──────────────────────────────────────
 
-    fn map_status_error(&self, status: u16, body: &str) -> CpanelError {
+    fn map_status_error(&self, status: u16) -> CpanelError {
         match status {
-            401 => CpanelError::auth(format!("Authentication failed (HTTP 401): {body}")),
-            403 => CpanelError::forbidden(format!("Access denied (HTTP 403): {body}")),
-            404 => CpanelError::api(format!("Not found (HTTP 404): {body}")),
-            _ => CpanelError::http(format!("HTTP {status}: {body}")),
+            401 => CpanelError::auth("Authentication failed (HTTP 401)"),
+            403 => CpanelError::forbidden("Access denied (HTTP 403)"),
+            404 => CpanelError::api("Not found (HTTP 404)"),
+            _ => CpanelError::http(format!("HTTP {status}")),
         }
+    }
+
+    async fn read_bounded_body(mut resp: reqwest::Response) -> CpanelResult<Vec<u8>> {
+        if resp
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+        {
+            return Err(CpanelError::http(format!(
+                "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+            )));
+        }
+
+        let capacity = resp
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_RESPONSE_BODY_BYTES as u64) as usize;
+        let mut body = Vec::with_capacity(capacity);
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e| Self::request_error("response body", &e))?
+        {
+            let remaining = (MAX_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if body.len() > MAX_RESPONSE_BODY_BYTES {
+                return Err(CpanelError::http(format!(
+                    "response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                )));
+            }
+        }
+        Ok(body)
+    }
+
+    async fn handle_json_response<T: DeserializeOwned>(
+        &self,
+        resp: reqwest::Response,
+    ) -> CpanelResult<T> {
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(self.map_status_error(status.as_u16()));
+        }
+        let body = Self::read_bounded_body(resp).await?;
+        serde_json::from_slice(&body).map_err(|e| {
+            CpanelError::parse(format!(
+                "invalid JSON response at line {}, column {}",
+                e.line(),
+                e.column()
+            ))
+        })
     }
 
     /// Generic GET request returning parsed JSON.
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> CpanelResult<T> {
-        debug!("CPANEL GET {url}");
+        debug!("CPANEL GET");
         let resp = self
             .apply_auth(self.http.get(url))
             .send()
             .await
-            .map_err(|e| Self::request_error(format!("GET {url}"), e))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
-        }
-        resp.json::<T>()
-            .await
-            .map_err(|e| CpanelError::parse(format!("GET {url} parse: {e}")))
+            .map_err(|e| Self::request_error("GET request", &e))?;
+        self.handle_json_response(resp).await
     }
 
     /// Generic GET request returning raw JSON value.
@@ -186,20 +238,13 @@ impl CpanelClient {
         url: &str,
         params: &[(&str, &str)],
     ) -> CpanelResult<T> {
-        debug!("CPANEL POST {url}");
+        debug!("CPANEL POST");
         let resp = self
             .apply_auth(self.http.post(url).form(params))
             .send()
             .await
-            .map_err(|e| Self::request_error(format!("POST {url}"), e))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
-        }
-        resp.json::<T>()
-            .await
-            .map_err(|e| CpanelError::parse(format!("POST {url} parse: {e}")))
+            .map_err(|e| Self::request_error("POST request", &e))?;
+        self.handle_json_response(resp).await
     }
 
     /// Generic POST request with JSON body.
@@ -208,20 +253,13 @@ impl CpanelClient {
         url: &str,
         body: &B,
     ) -> CpanelResult<T> {
-        debug!("CPANEL POST JSON {url}");
+        debug!("CPANEL POST JSON");
         let resp = self
             .apply_auth(self.http.post(url).json(body))
             .send()
             .await
-            .map_err(|e| Self::request_error(format!("POST JSON {url}"), e))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(self.map_status_error(status.as_u16(), &body));
-        }
-        resp.json::<T>()
-            .await
-            .map_err(|e| CpanelError::parse(format!("POST JSON {url} parse: {e}")))
+            .map_err(|e| Self::request_error("POST JSON request", &e))?;
+        self.handle_json_response(resp).await
     }
 
     // ── WHM API shortcuts ────────────────────────────────────────────
@@ -246,7 +284,7 @@ impl CpanelClient {
         let raw: serde_json::Value = self.get_json(&url).await?;
         Self::ensure_whm_success(&raw)?;
         serde_json::from_value(raw)
-            .map_err(|e| CpanelError::parse(format!("WHM {function} parse: {e}")))
+            .map_err(|_| CpanelError::parse("WHM response schema mismatch"))
     }
 
     /// Call a WHM API function and return raw JSON.
@@ -281,7 +319,7 @@ impl CpanelClient {
         let raw: serde_json::Value = self.get_json(&url).await?;
         Self::ensure_uapi_success(&raw)?;
         serde_json::from_value(raw)
-            .map_err(|e| CpanelError::parse(format!("UAPI {module}::{function} parse: {e}")))
+            .map_err(|_| CpanelError::parse("UAPI response schema mismatch"))
     }
 
     /// Call a UAPI function via WHM (impersonating a user).
@@ -388,13 +426,7 @@ impl CpanelClient {
             .and_then(|metadata| metadata.get("result"))
             .or_else(|| raw.get("status"));
         if result.and_then(|value| value.as_u64()) == Some(0) {
-            let reason = raw
-                .get("metadata")
-                .and_then(|metadata| metadata.get("reason"))
-                .or_else(|| raw.get("statusmsg"))
-                .and_then(|value| value.as_str())
-                .unwrap_or("WHM API call failed");
-            return Err(CpanelError::api(reason));
+            return Err(CpanelError::api("WHM API reported failure"));
         }
         Ok(())
     }
@@ -406,13 +438,7 @@ impl CpanelClient {
             .and_then(|value| value.as_u64());
         match status {
             Some(0) => {
-                let reason = result
-                    .and_then(|value| value.get("errors"))
-                    .and_then(|value| value.as_array())
-                    .and_then(|errors| errors.first())
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("cPanel UAPI call failed");
-                Err(CpanelError::api(reason))
+                Err(CpanelError::api("cPanel UAPI reported failure"))
             }
             Some(_) => Ok(()),
             None => Err(CpanelError::parse(
@@ -421,8 +447,15 @@ impl CpanelClient {
         }
     }
 
-    fn request_error(context: String, error: reqwest::Error) -> CpanelError {
-        let message = format!("{context}: {error}");
+    fn request_error(context: &str, error: &reqwest::Error) -> CpanelError {
+        let reason = if error.is_timeout() {
+            "timed out"
+        } else if error.is_connect() {
+            "connection failed"
+        } else {
+            "transport failed"
+        };
+        let message = format!("{context}: {reason}");
         if error.is_timeout() {
             CpanelError::timeout(message)
         } else {
