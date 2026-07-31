@@ -518,21 +518,51 @@ pub fn generate_vmx(
 
 /// Discover all VMX files in a directory tree.
 pub fn discover_vmx_files(dir: &str) -> VmwResult<Vec<String>> {
+    const MAX_DISCOVERY_DEPTH: usize = 64;
+    const MAX_DISCOVERED_FILES: usize = 10_000;
+
     let mut results = Vec::new();
-    discover_vmx_recursive(Path::new(dir), &mut results)?;
+    discover_vmx_recursive(
+        Path::new(dir),
+        &mut results,
+        0,
+        MAX_DISCOVERY_DEPTH,
+        MAX_DISCOVERED_FILES,
+    )?;
     Ok(results)
 }
 
-fn discover_vmx_recursive(dir: &Path, results: &mut Vec<String>) -> VmwResult<()> {
+fn discover_vmx_recursive(
+    dir: &Path,
+    results: &mut Vec<String>,
+    depth: usize,
+    max_depth: usize,
+    max_files: usize,
+) -> VmwResult<()> {
+    if depth > max_depth {
+        return Err(VmwError::new(
+            VmwErrorKind::IoError,
+            format!("VMX discovery exceeded the maximum depth of {max_depth}"),
+        ));
+    }
     let entries = std::fs::read_dir(dir).map_err(VmwError::io)?;
     for entry in entries {
         let entry = entry.map_err(VmwError::io)?;
         let path = entry.path();
-        if path.is_dir() {
-            // Don't recurse too deep
-            let _ = discover_vmx_recursive(&path, results);
+        let file_type = entry.file_type().map_err(VmwError::io)?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            discover_vmx_recursive(&path, results, depth + 1, max_depth, max_files)?;
         } else if let Some(ext) = path.extension() {
             if ext.to_string_lossy().to_lowercase() == "vmx" {
+                if results.len() >= max_files {
+                    return Err(VmwError::new(
+                        VmwErrorKind::IoError,
+                        format!("VMX discovery exceeded the {max_files}-file safety limit"),
+                    ));
+                }
                 results.push(path.to_string_lossy().to_string());
             }
         }
