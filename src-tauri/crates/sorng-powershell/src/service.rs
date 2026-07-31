@@ -126,8 +126,16 @@ impl PsRemotingService {
     /// Remove all sessions.
     pub async fn remove_all_sessions(&mut self) -> Result<u32, String> {
         self.interactive_sessions.clear();
-        let removed = self.sessions.remove_all_sessions().await;
-        Ok(removed.len() as u32)
+        let count = self.sessions.list_sessions(None).len() as u32;
+        let errors = self.sessions.remove_all_sessions().await;
+        if !errors.is_empty() {
+            return Err(format!(
+                "Failed to remove {} PowerShell session(s); first error: {}",
+                errors.len(),
+                errors[0]
+            ));
+        }
+        Ok(count)
     }
 
     // ─── Command Execution ───────────────────────────────────────────
@@ -138,9 +146,6 @@ impl PsRemotingService {
         session_id: &str,
         params: PsInvokeCommandParams,
     ) -> Result<PsCommandOutput, String> {
-        let cmd_id = uuid::Uuid::new_v4().to_string();
-        self.sessions.mark_busy(session_id, &cmd_id);
-
         let mut invoke_params = params;
         invoke_params.session_id = Some(session_id.to_string());
 
@@ -148,8 +153,6 @@ impl PsRemotingService {
             .executor
             .invoke_command(&mut self.sessions, invoke_params)
             .await;
-
-        self.sessions.mark_available(session_id, &cmd_id);
 
         let output = result?;
 
@@ -179,30 +182,20 @@ impl PsRemotingService {
     pub async fn stop_command(
         &mut self,
         _session_id: &str,
-        command_id: &str,
+        _command_id: &str,
     ) -> Result<(), String> {
-        self.executor.stop_command(&self.sessions, command_id).await
+        Err(
+            "Legacy WinRS cancellation is unsupported while command execution owns the service"
+                .to_string(),
+        )
     }
 
     // ─── Interactive Sessions ────────────────────────────────────────
 
     /// Enter an interactive session (Enter-PSSession).
     pub async fn enter_session(&mut self, session_id: &str) -> Result<String, String> {
-        let cmd_id = uuid::Uuid::new_v4().to_string();
-        self.sessions.mark_busy(session_id, &cmd_id);
-
-        let interactive = InteractiveSession::enter(&self.sessions, session_id).await?;
-        let prompt = interactive.prompt().to_string();
-
-        self.interactive_sessions
-            .insert(session_id.to_string(), interactive);
-
-        self.emit_event(PsRemotingEvent::InteractiveSessionStarted {
-            session_id: session_id.to_string(),
-            timestamp: chrono::Utc::now(),
-        });
-
-        Ok(prompt)
+        self.sessions.get_session(session_id)?;
+        Err("Legacy WinRS does not provide persistent interactive PowerShell state".to_string())
     }
 
     /// Execute a line in an interactive session.
@@ -211,16 +204,8 @@ impl PsRemotingService {
         session_id: &str,
         line: &str,
     ) -> Result<String, String> {
-        let interactive = self
-            .interactive_sessions
-            .get_mut(session_id)
-            .ok_or_else(|| format!("No interactive session for '{}'", session_id))?;
-        let lines = interactive.execute_line(line).await?;
-        Ok(lines
-            .into_iter()
-            .map(|l| l.text)
-            .collect::<Vec<_>>()
-            .join("\n"))
+        let _ = (session_id, line);
+        Err("Legacy WinRS does not provide persistent interactive PowerShell state".to_string())
     }
 
     /// Tab-complete in an interactive session.
@@ -229,13 +214,11 @@ impl PsRemotingService {
         session_id: &str,
         partial: &str,
     ) -> Result<Vec<String>, String> {
-        let interactive = self
-            .interactive_sessions
-            .get(session_id)
-            .ok_or_else(|| format!("No interactive session for '{}'", session_id))?;
-        interactive
-            .tab_complete(partial, partial.len() as u32)
-            .await
+        let _ = (session_id, partial);
+        Err(
+            "Legacy WinRS interactive completion is unsupported without a persistent runspace"
+                .to_string(),
+        )
     }
 
     /// Exit an interactive session.
@@ -243,15 +226,7 @@ impl PsRemotingService {
         if let Some(interactive) = self.interactive_sessions.remove(session_id) {
             interactive.exit();
         }
-        let cmd_id = uuid::Uuid::new_v4().to_string();
-        self.sessions.mark_available(session_id, &cmd_id);
-
-        self.emit_event(PsRemotingEvent::InteractiveSessionEnded {
-            session_id: session_id.to_string(),
-            timestamp: chrono::Utc::now(),
-        });
-
-        Ok(())
+        Err("Legacy WinRS does not provide persistent interactive PowerShell state".to_string())
     }
 
     // ─── File Transfer ───────────────────────────────────────────────
@@ -262,6 +237,9 @@ impl PsRemotingService {
         session_id: &str,
         params: PsFileCopyParams,
     ) -> Result<String, String> {
+        if params.session_id != session_id {
+            return Err("PowerShell file-transfer session selectors do not match".to_string());
+        }
         let progress = self
             .file_transfer
             .copy_to_session(&self.sessions, &params)
@@ -285,6 +263,9 @@ impl PsRemotingService {
         session_id: &str,
         params: PsFileCopyParams,
     ) -> Result<String, String> {
+        if params.session_id != session_id {
+            return Err("PowerShell file-transfer session selectors do not match".to_string());
+        }
         let progress = self
             .file_transfer
             .copy_from_session(&self.sessions, &params)
@@ -551,6 +532,9 @@ impl PsRemotingService {
         session_id: &str,
         iterations: u32,
     ) -> Result<crate::diagnostics::LatencyResult, String> {
+        if !(1..=100).contains(&iterations) {
+            return Err("PowerShell latency iterations must be between 1 and 100".to_string());
+        }
         crate::diagnostics::PsDiagnosticsManager::measure_latency(
             &self.sessions,
             session_id,
@@ -582,7 +566,7 @@ impl PsRemotingService {
 
     /// Get recent events.
     pub fn get_events(&self, limit: Option<usize>) -> Vec<PsRemotingEvent> {
-        let limit = limit.unwrap_or(100);
+        let limit = limit.unwrap_or(100).min(1_000);
         let skip = if self.events.len() > limit {
             self.events.len() - limit
         } else {
@@ -629,8 +613,15 @@ impl PsRemotingService {
     pub async fn cleanup(&mut self) -> Result<(), String> {
         self.interactive_sessions.clear();
         self.file_transfer.cleanup();
-        let _ = self.sessions.remove_all_sessions().await;
+        let errors = self.sessions.remove_all_sessions().await;
         self.events.clear();
+        if !errors.is_empty() {
+            return Err(format!(
+                "PowerShell cleanup failed for {} session(s); first error: {}",
+                errors.len(),
+                errors[0]
+            ));
+        }
         info!("PowerShell Remoting service cleaned up");
         Ok(())
     }

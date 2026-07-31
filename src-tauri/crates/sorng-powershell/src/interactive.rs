@@ -8,11 +8,14 @@ use crate::transport::WinRmTransport;
 use crate::types::*;
 use chrono::Utc;
 use lazy_static::lazy_static;
-use log::{debug, info};
+use log::info;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+const MAX_INTERACTIVE_LINE_BYTES: usize = 32 * 1024;
+const MAX_INTERACTIVE_COMPLETIONS: usize = 256;
 
 lazy_static! {
     /// Buffer for interactive session I/O.
@@ -134,14 +137,17 @@ impl InteractiveSession {
         if trimmed.is_empty() {
             return Ok(Vec::new());
         }
+        if trimmed.len() > MAX_INTERACTIVE_LINE_BYTES {
+            return Err("PowerShell interactive command exceeds the safety limit".to_string());
+        }
 
         // Add to command history
         {
             let mut history = COMMAND_HISTORY.lock().expect("lock poisoned");
             if let Some(hist) = history.get_mut(&self.session_id) {
                 hist.push(trimmed.to_string());
-                // Keep last 1000 commands
-                if hist.len() > 1000 {
+                // Keep a bounded command history per session
+                if hist.len() > 256 {
                     hist.remove(0);
                 }
             }
@@ -237,20 +243,15 @@ impl InteractiveSession {
     }
 
     /// Send raw input (e.g., for interactive prompts).
-    pub async fn send_input(&self, data: &str) -> Result<(), String> {
-        // Find any active command and send stdin
-        let _t = self.transport.lock().await;
-        // Note: In a full implementation, we'd track the active command ID
-        // and send input to it. For now, this is a placeholder.
-        debug!(
-            "Sending input to interactive session {}: {:?}",
-            self.interactive_id, data
-        );
-        Ok(())
+    pub async fn send_input(&self, _data: &str) -> Result<(), String> {
+        Err("Interactive PowerShell stdin is unavailable because active command delivery and completion are not wired".to_string())
     }
 
     /// Get tab completion suggestions for the current input.
     pub async fn tab_complete(&self, input: &str, cursor_pos: u32) -> Result<Vec<String>, String> {
+        if input.len() > MAX_INTERACTIVE_LINE_BYTES || cursor_pos as usize > input.len() {
+            return Err("PowerShell completion input is outside the safety bounds".to_string());
+        }
         let script = format!(
             "[System.Management.Automation.CommandCompletion]::CompleteInput('{}', {}, $null).CompletionMatches | ForEach-Object {{ $_.CompletionText }}",
             input.replace('\'', "''"),
@@ -277,6 +278,7 @@ impl InteractiveSession {
         let completions: Vec<String> = stdout
             .lines()
             .filter(|l| !l.trim().is_empty())
+            .take(MAX_INTERACTIVE_COMPLETIONS)
             .map(|l| l.to_string())
             .collect();
 
