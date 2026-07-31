@@ -258,8 +258,7 @@ impl LlmProvider for OllamaProvider {
                         });
                     } else {
                         let status = resp.status();
-                        let err_body = resp.text().await.unwrap_or_default();
-                        last_err = format!("Ollama API error {}: {}", status, err_body);
+                        last_err = format!("Ollama API returned HTTP {}", status);
                         if status.is_server_error() {
                             warn!("{}", last_err);
                             continue;
@@ -268,7 +267,13 @@ impl LlmProvider for OllamaProvider {
                     }
                 }
                 Err(e) => {
-                    last_err = format!("Ollama request failed: {}", e);
+                    last_err = if e.is_timeout() {
+                        "Ollama request timed out".to_string()
+                    } else if e.is_connect() {
+                        "Could not connect to Ollama".to_string()
+                    } else {
+                        "Ollama request failed".to_string()
+                    };
                     warn!("{}", last_err);
                 }
             }

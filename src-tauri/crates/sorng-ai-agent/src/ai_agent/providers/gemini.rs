@@ -232,10 +232,7 @@ impl LlmProvider for GeminiProvider {
         params: &InferenceParams,
         tools: &[ToolDefinition],
     ) -> Result<ChatResponse, String> {
-        let url = format!(
-            "{}/models/{}:generateContent?key={}",
-            self.base_url, model, self.api_key
-        );
+        let url = format!("{}/models/{}:generateContent", self.base_url, model);
         let start = std::time::Instant::now();
 
         let (system_instruction, contents) = self.build_contents(messages);
@@ -269,7 +266,14 @@ impl LlmProvider for GeminiProvider {
                 .await;
             }
 
-            match self.client.post(&url).json(&body).send().await {
+            match self
+                .client
+                .post(&url)
+                .header("x-goog-api-key", &self.api_key)
+                .json(&body)
+                .send()
+                .await
+            {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let resp_body: serde_json::Value = resp
@@ -281,8 +285,7 @@ impl LlmProvider for GeminiProvider {
                         return Ok(result);
                     } else {
                         let status = resp.status();
-                        let err_body = resp.text().await.unwrap_or_default();
-                        last_err = format!("Gemini API error {}: {}", status, err_body);
+                        last_err = format!("Gemini API returned HTTP {}", status);
                         if status.as_u16() == 429 || status.is_server_error() {
                             warn!("{}", last_err);
                             continue;
@@ -290,8 +293,8 @@ impl LlmProvider for GeminiProvider {
                         return Err(last_err);
                     }
                 }
-                Err(e) => {
-                    last_err = format!("Gemini request failed: {}", e);
+                Err(_) => {
+                    last_err = "Gemini request failed due to a transport error".to_string();
                     warn!("{}", last_err);
                 }
             }
@@ -308,9 +311,10 @@ impl LlmProvider for GeminiProvider {
         request_id: &str,
     ) -> Result<tokio::sync::mpsc::Receiver<StreamEvent>, String> {
         let url = format!(
-            "{}/models/{}:streamGenerateContent?key={}&alt=sse",
-            self.base_url, model, self.api_key
+            "{}/models/{}:streamGenerateContent?alt=sse",
+            self.base_url, model
         );
+        let api_key = self.api_key.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(256);
         let request_id = request_id.to_string();
         let model_str = model.to_string();
@@ -343,13 +347,19 @@ impl LlmProvider for GeminiProvider {
                 })
                 .await;
 
-            let resp = match client.post(&url).json(&body).send().await {
+            let resp = match client
+                .post(&url)
+                .header("x-goog-api-key", &api_key)
+                .json(&body)
+                .send()
+                .await
+            {
                 Ok(r) => r,
-                Err(e) => {
+                Err(_) => {
                     let _ = tx
                         .send(StreamEvent::Error {
                             request_id,
-                            error: format!("Request failed: {}", e),
+                            error: "Gemini request failed due to a transport error".to_string(),
                         })
                         .await;
                     return;
@@ -357,11 +367,11 @@ impl LlmProvider for GeminiProvider {
             };
 
             if !resp.status().is_success() {
-                let err = resp.text().await.unwrap_or_default();
+                let status = resp.status();
                 let _ = tx
                     .send(StreamEvent::Error {
                         request_id,
-                        error: format!("API error: {}", err),
+                        error: format!("Gemini API returned HTTP {}", status),
                     })
                     .await;
                 return;

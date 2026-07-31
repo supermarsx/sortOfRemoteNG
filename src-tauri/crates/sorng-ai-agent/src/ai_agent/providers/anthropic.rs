@@ -36,8 +36,18 @@ impl AnthropicProvider {
 
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("x-api-key", api_key.parse().map_err(|e| format!("{}", e))?);
-        headers.insert("anthropic-version", ANTHROPIC_API_VERSION.parse().expect("valid constant header value"));
-        headers.insert("content-type", "application/json".parse().expect("valid constant header value"));
+        headers.insert(
+            "anthropic-version",
+            ANTHROPIC_API_VERSION
+                .parse()
+                .expect("valid constant header value"),
+        );
+        headers.insert(
+            "content-type",
+            "application/json"
+                .parse()
+                .expect("valid constant header value"),
+        );
         for (k, v) in &config.extra_headers {
             headers.insert(
                 reqwest::header::HeaderName::from_bytes(k.as_bytes())
@@ -326,14 +336,13 @@ impl LlmProvider for AnthropicProvider {
                         let resp_body: serde_json::Value = resp
                             .json()
                             .await
-                            .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
+                            .map_err(|_| "Failed to parse Anthropic response".to_string())?;
                         let mut result = self.parse_response(&resp_body)?;
                         result.latency_ms = start.elapsed().as_millis() as u64;
                         return Ok(result);
                     } else {
                         let status = resp.status();
-                        let err_body = resp.text().await.unwrap_or_default();
-                        last_err = format!("Anthropic API error {}: {}", status, err_body);
+                        last_err = format!("Anthropic API returned HTTP {}", status);
                         if status.as_u16() == 429
                             || status.as_u16() == 529
                             || status.is_server_error()
@@ -345,7 +354,13 @@ impl LlmProvider for AnthropicProvider {
                     }
                 }
                 Err(e) => {
-                    last_err = format!("Anthropic request failed: {}", e);
+                    last_err = if e.is_timeout() {
+                        "Anthropic request timed out".to_string()
+                    } else if e.is_connect() {
+                        "Could not connect to Anthropic".to_string()
+                    } else {
+                        "Anthropic request failed".to_string()
+                    };
                     warn!("{}", last_err);
                 }
             }

@@ -353,14 +353,13 @@ impl LlmProvider for OpenAiProvider {
                         let resp_body: serde_json::Value = resp
                             .json()
                             .await
-                            .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
+                            .map_err(|_| "Failed to parse OpenAI response".to_string())?;
                         let mut result = self.parse_response(&resp_body)?;
                         result.latency_ms = start.elapsed().as_millis() as u64;
                         return Ok(result);
                     } else {
                         let status = resp.status();
-                        let err_body = resp.text().await.unwrap_or_default();
-                        last_err = format!("OpenAI API error {}: {}", status, err_body);
+                        last_err = format!("OpenAI API returned HTTP {}", status);
                         if status.as_u16() == 429 || status.is_server_error() {
                             warn!("{}", last_err);
                             continue;
@@ -369,7 +368,13 @@ impl LlmProvider for OpenAiProvider {
                     }
                 }
                 Err(e) => {
-                    last_err = format!("OpenAI request failed: {}", e);
+                    last_err = if e.is_timeout() {
+                        "OpenAI request timed out".to_string()
+                    } else if e.is_connect() {
+                        "Could not connect to OpenAI".to_string()
+                    } else {
+                        "OpenAI request failed".to_string()
+                    };
                     warn!("{}", last_err);
                 }
             }

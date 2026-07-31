@@ -88,8 +88,8 @@ impl StreamSession {
                 self.usage = usage.clone();
                 self.completed = true;
             }
-            StreamEvent::Error { error, .. } => {
-                warn!("Stream error for {}: {}", self.request_id, error);
+            StreamEvent::Error { .. } => {
+                warn!("AI stream failed; provider error details were not logged");
                 self.completed = true;
             }
         }
