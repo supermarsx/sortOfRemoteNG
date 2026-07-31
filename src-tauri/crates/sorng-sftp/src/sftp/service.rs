@@ -46,6 +46,8 @@ enum HostKeyAction {
     AcceptAndPersist,
 }
 
+const MAX_SESSIONS: usize = 32;
+
 /// Pure host-key policy decision. Returns the action to take, or an actionable
 /// rejection reason. `Ignore` is handled by the caller before this is reached.
 ///
@@ -137,6 +139,9 @@ impl SftpService {
         &mut self,
         config: SftpConnectionConfig,
     ) -> Result<SftpSessionInfo, String> {
+        if self.sessions.len() >= MAX_SESSIONS {
+            return Err("SFTP session limit reached; disconnect an existing session".to_string());
+        }
         let addr = format!("{}:{}", config.host, config.port);
         info!("SFTP connecting to {}", addr);
 
