@@ -8,29 +8,66 @@ use rustls::client::WebPkiServerVerifier;
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 
-use super::cert_trust::{self, ChainStatus, PresentedCertificate};
+use super::cert_trust::{self, ChainStatus, PresentedCertificate, ServerCertValidationMode};
 use super::{RdpTlsConfig, RdpTlsStream};
 
 // ---- Network client for CredSSP HTTP requests ----
 
+const MAX_CREDSSP_URL_BYTES: usize = 8 * 1024;
+const MAX_CREDSSP_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CREDSSP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+fn credssp_http_accepts_invalid_certificates(cert_validation: ServerCertValidationMode) -> bool {
+    matches!(cert_validation, ServerCertValidationMode::Ignore)
+}
+
+pub(super) fn build_credssp_http_client(
+    cert_validation: ServerCertValidationMode,
+) -> Result<reqwest::blocking::Client, reqwest::Error> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .pool_max_idle_per_host(2)
+        .redirect(reqwest::redirect::Policy::none());
+
+    if credssp_http_accepts_invalid_certificates(cert_validation) {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+
+    builder.build()
+}
+
 pub struct BlockingNetworkClient {
-    client: Arc<reqwest::blocking::Client>,
+    client: Option<Arc<reqwest::blocking::Client>>,
 }
 
 impl BlockingNetworkClient {
     /// Create from a pre-built (cached) client.  Falls back to building a
     /// new one with aggressive timeouts if no cached client is supplied.
-    pub fn new(cached: Option<Arc<reqwest::blocking::Client>>) -> Self {
-        let client = cached.unwrap_or_else(|| {
-            Arc::new(
-                reqwest::blocking::Client::builder()
-                    .danger_accept_invalid_certs(true)
-                    .connect_timeout(Duration::from_secs(3))
-                    .timeout(Duration::from_secs(5))
-                    .build()
-                    .unwrap_or_else(|_| reqwest::blocking::Client::new()),
-            )
-        });
+    ///
+    /// The shared cache is always certificate-validating. An explicit
+    /// per-connection `Ignore` policy therefore gets its own client rather
+    /// than weakening the cache for other RDP sessions. `Warn` fails closed
+    /// here because CredSSP's HTTP callback has no certificate-prompt context.
+    pub fn new(
+        cached: Option<Arc<reqwest::blocking::Client>>,
+        cert_validation: ServerCertValidationMode,
+    ) -> Self {
+        let client = match (cached, cert_validation) {
+            (Some(client), ServerCertValidationMode::Validate | ServerCertValidationMode::Warn) => {
+                Some(client)
+            }
+            (_, cert_validation) => match build_credssp_http_client(cert_validation) {
+                Ok(client) => Some(Arc::new(client)),
+                Err(error) => {
+                    log::warn!(
+                        "Failed to build CredSSP HTTP client for {cert_validation:?}: {error}; \
+                         disabling CredSSP HTTP callbacks"
+                    );
+                    None
+                }
+            },
+        };
         Self { client }
     }
 }
@@ -43,25 +80,91 @@ impl crate::ironrdp::connector::sspi::network_client::NetworkClient for Blocking
         use crate::ironrdp::connector::sspi::network_client::NetworkProtocol;
         use std::net::ToSocketAddrs;
 
-        let url = request.url.to_string();
-        let data = request.data.clone();
+        let url = request.url.as_str();
+        if url.len() > MAX_CREDSSP_URL_BYTES {
+            return Err(crate::ironrdp::connector::sspi::Error::new(
+                crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                "CredSSP network URL exceeded the size limit".to_string(),
+            ));
+        }
+        if request.data.len() > MAX_CREDSSP_REQUEST_BYTES {
+            return Err(crate::ironrdp::connector::sspi::Error::new(
+                crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                "CredSSP network request exceeded the size limit".to_string(),
+            ));
+        }
 
         let response_bytes = match request.protocol {
-            NetworkProtocol::Http | NetworkProtocol::Https => {
-                let resp = self.client.post(&url).body(data).send().map_err(|e| {
+            NetworkProtocol::Http => {
+                return Err(crate::ironrdp::connector::sspi::Error::new(
+                    crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                    "Plaintext HTTP is not allowed for CredSSP network requests".to_string(),
+                ));
+            }
+            NetworkProtocol::Https => {
+                use std::io::Read as _;
+
+                if !url
+                    .get(.."https://".len())
+                    .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+                {
+                    return Err(crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        "CredSSP HTTPS request used an invalid URL scheme".to_string(),
+                    ));
+                }
+                let client = self.client.as_ref().ok_or_else(|| {
                     crate::ironrdp::connector::sspi::Error::new(
                         crate::ironrdp::connector::sspi::ErrorKind::InternalError,
-                        format!("HTTP request failed: {e}"),
+                        "CredSSP HTTP client is unavailable".to_string(),
                     )
                 })?;
-                resp.bytes()
-                    .map_err(|e| {
+                let resp = client
+                    .post(url)
+                    .body(request.data.clone())
+                    .send()
+                    .map_err(|_| {
+                    crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        "CredSSP HTTPS request failed".to_string(),
+                    )
+                })?;
+                if !resp.status().is_success() {
+                    return Err(crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        format!(
+                            "CredSSP HTTPS request failed with status {}",
+                            resp.status().as_u16()
+                        ),
+                    ));
+                }
+                let advertised_length = resp.content_length();
+                if advertised_length
+                    .is_some_and(|length| length > MAX_CREDSSP_RESPONSE_BYTES as u64)
+                {
+                    return Err(crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        "CredSSP HTTP response exceeded the size limit".to_string(),
+                    ));
+                }
+                let mut response_bytes = Vec::with_capacity(
+                    advertised_length.unwrap_or_default().min(MAX_CREDSSP_RESPONSE_BYTES as u64)
+                        as usize,
+                );
+                let mut limited = resp.take((MAX_CREDSSP_RESPONSE_BYTES + 1) as u64);
+                limited.read_to_end(&mut response_bytes).map_err(|_| {
                         crate::ironrdp::connector::sspi::Error::new(
                             crate::ironrdp::connector::sspi::ErrorKind::InternalError,
-                            format!("Failed to read response body: {e}"),
+                            "Failed to read CredSSP HTTPS response body".to_string(),
                         )
-                    })?
-                    .to_vec()
+                    })?;
+                if response_bytes.len() > MAX_CREDSSP_RESPONSE_BYTES {
+                    return Err(crate::ironrdp::connector::sspi::Error::new(
+                        crate::ironrdp::connector::sspi::ErrorKind::InternalError,
+                        "CredSSP HTTP response exceeded the size limit".to_string(),
+                    ));
+                }
+                response_bytes
             }
             // Handle raw TCP/UDP Kerberos KDC requests with a short-
             // timeout TCP attempt so the Negotiate layer sees a quick
@@ -100,7 +203,7 @@ impl crate::ironrdp::connector::sspi::network_client::NetworkClient for Blocking
                         use std::io::{Read, Write};
                         let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
                         let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
-                        stream.write_all(&data).map_err(|e| {
+                        stream.write_all(&request.data).map_err(|e| {
                             crate::ironrdp::connector::sspi::Error::new(
                                 crate::ironrdp::connector::sspi::ErrorKind::NoCredentials,
                                 format!("KDC write failed: {e}"),
@@ -496,4 +599,60 @@ fn extract_san(tbs: &x509_cert::TbsCertificate) -> Vec<String> {
     }
 
     Vec::new()
+}
+
+#[cfg(test)]
+mod credssp_http_tls_tests {
+    use super::*;
+
+    #[test]
+    fn validating_policy_is_the_default_and_reuses_only_the_validating_cache() {
+        let policy = ServerCertValidationMode::from_value("");
+        assert_eq!(policy, ServerCertValidationMode::Validate);
+        assert!(!credssp_http_accepts_invalid_certificates(policy));
+
+        let cached = Arc::new(
+            build_credssp_http_client(ServerCertValidationMode::Validate)
+                .expect("validating CredSSP HTTP client should build"),
+        );
+        let client = BlockingNetworkClient::new(Some(cached.clone()), policy);
+        assert!(Arc::ptr_eq(
+            client.client.as_ref().expect("HTTP client should exist"),
+            &cached
+        ));
+    }
+
+    #[test]
+    fn warn_policy_fails_closed_without_an_http_certificate_prompt_context() {
+        let policy = ServerCertValidationMode::from_value("warn");
+        assert_eq!(policy, ServerCertValidationMode::Warn);
+        assert!(!credssp_http_accepts_invalid_certificates(policy));
+
+        let cached = Arc::new(
+            build_credssp_http_client(ServerCertValidationMode::Validate)
+                .expect("validating CredSSP HTTP client should build"),
+        );
+        let client = BlockingNetworkClient::new(Some(cached.clone()), policy);
+        assert!(Arc::ptr_eq(
+            client.client.as_ref().expect("HTTP client should exist"),
+            &cached
+        ));
+    }
+
+    #[test]
+    fn explicit_ignore_policy_gets_an_isolated_insecure_client() {
+        let policy = ServerCertValidationMode::from_value("ignore");
+        assert_eq!(policy, ServerCertValidationMode::Ignore);
+        assert!(credssp_http_accepts_invalid_certificates(policy));
+
+        let cached = Arc::new(
+            build_credssp_http_client(ServerCertValidationMode::Validate)
+                .expect("validating CredSSP HTTP client should build"),
+        );
+        let client = BlockingNetworkClient::new(Some(cached.clone()), policy);
+        assert!(!Arc::ptr_eq(
+            client.client.as_ref().expect("HTTP client should exist"),
+            &cached
+        ));
+    }
 }

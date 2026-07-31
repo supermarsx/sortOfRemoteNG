@@ -218,7 +218,12 @@ pub fn run_diagnostics(
                     // -- Step 5: CredSSP / NLA + Session Setup --
 
                     let t = Instant::now();
-                    let mut network_client = BlockingNetworkClient::new(cached_http_client.clone());
+                    let mut network_client = BlockingNetworkClient::new(
+                        cached_http_client.clone(),
+                        super::cert_trust::ServerCertValidationMode::from_value(
+                            &settings._server_cert_validation,
+                        ),
+                    );
                     let server_name = crate::ironrdp::connector::ServerName::new(host);
 
                     match crate::ironrdp_blocking::connect_finalize(
@@ -492,7 +497,10 @@ fn probe_color_depth(
     };
 
     let upgraded = crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut conn);
-    let mut net_client = BlockingNetworkClient::new(cached_http_client);
+    let mut net_client = BlockingNetworkClient::new(
+        cached_http_client,
+        super::cert_trust::ServerCertValidationMode::from_value(&settings._server_cert_validation),
+    );
     let sn = crate::ironrdp::connector::ServerName::new(host);
 
     match crate::ironrdp_blocking::connect_finalize(

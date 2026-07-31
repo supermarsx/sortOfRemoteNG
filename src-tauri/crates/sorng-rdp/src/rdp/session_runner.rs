@@ -1184,7 +1184,10 @@ fn establish_rdp_connection(
 
     let t_auth = Instant::now();
 
-    let mut network_client = BlockingNetworkClient::new(cached_http_client);
+    let mut network_client = BlockingNetworkClient::new(
+        cached_http_client,
+        super::cert_trust::ServerCertValidationMode::from_value(&settings._server_cert_validation),
+    );
     let server_name = crate::ironrdp::connector::ServerName::new(host);
 
     let connection_result: ConnectionResult = crate::ironrdp_blocking::connect_finalize(
