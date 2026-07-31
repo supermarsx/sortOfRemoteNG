@@ -10,6 +10,38 @@ use serde::{Deserialize, Serialize};
 use super::errors::ArdError;
 use super::rfb::{self, RfbConnection};
 
+const MAX_DIRECTORY_ENTRIES: usize = 4_096;
+const MAX_DIRECTORY_METADATA_BYTES: usize = 8 * 1024 * 1024;
+const MAX_ENTRY_NAME_BYTES: usize = 4 * 1024;
+const MAX_OWNER_BYTES: usize = 1024;
+const MAX_TRANSFER_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const MAX_REMOTE_PATH_BYTES: usize = 32 * 1024;
+
+fn validate_remote_path(path: &str) -> Result<&[u8], ArdError> {
+    let bytes = path.as_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_REMOTE_PATH_BYTES || bytes.contains(&0) {
+        return Err(ArdError::FileTransfer(
+            "Remote path is empty, contains NUL, or exceeds the protocol limit".to_string(),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn validate_remote_entry_name(name: &str) -> Result<(), ArdError> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+    {
+        return Err(ArdError::FileTransfer(
+            "Server returned an unsafe directory entry name".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Apple file-transfer pseudo-encoding.
 pub const FILE_TRANSFER_ENCODING: i32 = rfb::encoding::APPLE_FILE_TRANSFER;
 
@@ -81,15 +113,20 @@ pub enum TransferState {
 /// Build and send a file-transfer sub-command message.
 fn send_ft_message(conn: &mut RfbConnection, subcmd: u8, payload: &[u8]) -> Result<(), ArdError> {
     // Total inner payload: 1 byte subcmd + payload
-    let inner_len = 1 + payload.len();
+    let inner_len = 1usize.checked_add(payload.len()).ok_or_else(|| {
+        ArdError::FileTransfer("File-transfer message length overflow".to_string())
+    })?;
+    let inner_len = u32::try_from(inner_len).map_err(|_| {
+        ArdError::FileTransfer("File-transfer message exceeds protocol limit".to_string())
+    })?;
 
-    let mut msg = Vec::with_capacity(8 + inner_len);
+    let mut msg = Vec::with_capacity(8 + inner_len as usize);
     // ClientCutText type
     msg.push(rfb::client_msg::CLIENT_CUT_TEXT);
     // File-transfer marker: 0xFE, 0xFE, 0xFE
     msg.extend_from_slice(&[0xFE, 0xFE, 0xFE]);
     // Length
-    msg.extend_from_slice(&(inner_len as u32).to_be_bytes());
+    msg.extend_from_slice(&inner_len.to_be_bytes());
     // Sub-command
     msg.push(subcmd);
     // Payload
@@ -101,7 +138,7 @@ fn send_ft_message(conn: &mut RfbConnection, subcmd: u8, payload: &[u8]) -> Resu
 
 /// Request a directory listing from the server.
 pub fn request_list_dir(conn: &mut RfbConnection, path: &str) -> Result<(), ArdError> {
-    let path_bytes = path.as_bytes();
+    let path_bytes = validate_remote_path(path)?;
     let mut payload = Vec::with_capacity(4 + path_bytes.len());
     payload.extend_from_slice(&(path_bytes.len() as u32).to_be_bytes());
     payload.extend_from_slice(path_bytes);
@@ -121,22 +158,58 @@ pub fn read_list_dir_response(conn: &mut RfbConnection) -> Result<Vec<RemoteFile
     }
 
     let entry_count = conn.read_u32()? as usize;
+    if entry_count > MAX_DIRECTORY_ENTRIES {
+        return Err(ArdError::FileTransfer(format!(
+            "Directory listing exceeds {} entries",
+            MAX_DIRECTORY_ENTRIES
+        )));
+    }
     let mut entries = Vec::with_capacity(entry_count);
+    let mut metadata_bytes = 0usize;
 
     for _ in 0..entry_count {
         let flags = conn.read_u8()?;
         let is_directory = flags & 0x01 != 0;
 
         let name_len = conn.read_u16()? as usize;
+        if name_len > MAX_ENTRY_NAME_BYTES {
+            return Err(ArdError::FileTransfer(
+                "Directory entry name exceeds protocol safety limit".to_string(),
+            ));
+        }
+        metadata_bytes = metadata_bytes.checked_add(name_len).ok_or_else(|| {
+            ArdError::FileTransfer("Directory listing metadata length overflow".to_string())
+        })?;
+        if metadata_bytes > MAX_DIRECTORY_METADATA_BYTES {
+            return Err(ArdError::FileTransfer(format!(
+                "Directory listing metadata exceeds {} byte safety limit",
+                MAX_DIRECTORY_METADATA_BYTES
+            )));
+        }
         let mut name_bytes = vec![0u8; name_len];
         conn.read_exact(&mut name_bytes)?;
         let name = String::from_utf8_lossy(&name_bytes).into_owned();
+        validate_remote_entry_name(&name)?;
 
         let size = conn.read_u64()?;
         let permissions = conn.read_u32()?;
         let modified = conn.read_u64()? as i64;
 
         let owner_len = conn.read_u16()? as usize;
+        if owner_len > MAX_OWNER_BYTES {
+            return Err(ArdError::FileTransfer(
+                "Directory entry owner exceeds protocol safety limit".to_string(),
+            ));
+        }
+        metadata_bytes = metadata_bytes.checked_add(owner_len).ok_or_else(|| {
+            ArdError::FileTransfer("Directory listing metadata length overflow".to_string())
+        })?;
+        if metadata_bytes > MAX_DIRECTORY_METADATA_BYTES {
+            return Err(ArdError::FileTransfer(format!(
+                "Directory listing metadata exceeds {} byte safety limit",
+                MAX_DIRECTORY_METADATA_BYTES
+            )));
+        }
         let mut owner_bytes = vec![0u8; owner_len];
         conn.read_exact(&mut owner_bytes)?;
         let owner = String::from_utf8_lossy(&owner_bytes).into_owned();
@@ -156,7 +229,7 @@ pub fn read_list_dir_response(conn: &mut RfbConnection) -> Result<Vec<RemoteFile
 
 /// Initiate a file download from the server.
 pub fn request_download(conn: &mut RfbConnection, remote_path: &str) -> Result<(), ArdError> {
-    let path_bytes = remote_path.as_bytes();
+    let path_bytes = validate_remote_path(remote_path)?;
     let mut payload = Vec::with_capacity(4 + path_bytes.len());
     payload.extend_from_slice(&(path_bytes.len() as u32).to_be_bytes());
     payload.extend_from_slice(path_bytes);
@@ -185,6 +258,12 @@ pub fn read_download_chunk(conn: &mut RfbConnection) -> Result<DownloadChunk, Ar
             // Data chunk
             let total_size = conn.read_u64()?;
             let chunk_len = conn.read_u32()? as usize;
+            if chunk_len > MAX_TRANSFER_CHUNK_BYTES {
+                return Err(ArdError::FileTransfer(format!(
+                    "Download chunk exceeds {} byte safety limit",
+                    MAX_TRANSFER_CHUNK_BYTES
+                )));
+            }
             let mut data = vec![0u8; chunk_len];
             conn.read_exact(&mut data)?;
             Ok(DownloadChunk::Data { total_size, data })
@@ -202,7 +281,7 @@ pub fn request_upload(
     remote_path: &str,
     total_size: u64,
 ) -> Result<(), ArdError> {
-    let path_bytes = remote_path.as_bytes();
+    let path_bytes = validate_remote_path(remote_path)?;
     let mut payload = Vec::with_capacity(4 + path_bytes.len() + 8);
     payload.extend_from_slice(&(path_bytes.len() as u32).to_be_bytes());
     payload.extend_from_slice(path_bytes);
@@ -213,6 +292,12 @@ pub fn request_upload(
 
 /// Send a chunk of upload data.
 pub fn send_upload_chunk(conn: &mut RfbConnection, data: &[u8]) -> Result<(), ArdError> {
+    if data.len() > MAX_TRANSFER_CHUNK_BYTES {
+        return Err(ArdError::FileTransfer(format!(
+            "Upload chunk exceeds {} byte safety limit",
+            MAX_TRANSFER_CHUNK_BYTES
+        )));
+    }
     let mut payload = Vec::with_capacity(4 + data.len());
     payload.extend_from_slice(&(data.len() as u32).to_be_bytes());
     payload.extend_from_slice(data);
@@ -234,7 +319,7 @@ pub fn read_upload_response(conn: &mut RfbConnection) -> Result<(), ArdError> {
 
 /// Request deletion of a remote file or directory.
 pub fn request_delete(conn: &mut RfbConnection, remote_path: &str) -> Result<(), ArdError> {
-    let path_bytes = remote_path.as_bytes();
+    let path_bytes = validate_remote_path(remote_path)?;
     let mut payload = Vec::with_capacity(4 + path_bytes.len());
     payload.extend_from_slice(&(path_bytes.len() as u32).to_be_bytes());
     payload.extend_from_slice(path_bytes);
@@ -244,7 +329,7 @@ pub fn request_delete(conn: &mut RfbConnection, remote_path: &str) -> Result<(),
 
 /// Request creation of a remote directory.
 pub fn request_mkdir(conn: &mut RfbConnection, remote_path: &str) -> Result<(), ArdError> {
-    let path_bytes = remote_path.as_bytes();
+    let path_bytes = validate_remote_path(remote_path)?;
     let mut payload = Vec::with_capacity(4 + path_bytes.len());
     payload.extend_from_slice(&(path_bytes.len() as u32).to_be_bytes());
     payload.extend_from_slice(path_bytes);
@@ -314,5 +399,13 @@ mod tests {
         let json = serde_json::to_string(&entry).unwrap();
         assert!(json.contains("isDirectory"));
         assert!(json.contains("readme.txt"));
+    }
+
+    #[test]
+    fn rejects_unsafe_remote_entry_names() {
+        assert!(validate_remote_entry_name("safe.txt").is_ok());
+        assert!(validate_remote_entry_name("../escape").is_err());
+        assert!(validate_remote_entry_name("nested/file").is_err());
+        assert!(validate_remote_entry_name("..").is_err());
     }
 }
