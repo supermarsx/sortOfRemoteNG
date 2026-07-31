@@ -66,15 +66,9 @@ pub async fn backup_run_job(
     state: State<'_, RemoteBackupServiceState>,
     id: String,
 ) -> Result<String, String> {
-    // Mark as running
-    {
-        let mut svc = state.lock().await;
-        svc.mark_running(&id).map_err(err_str)?;
-    }
-
-    // In a real implementation you'd spawn the tool-specific execution here
-    // and store the JoinHandle. For now, return the job_id to indicate it started.
-    Ok(id)
+    let svc = state.lock().await;
+    svc.get_job(&id).map_err(err_str)?;
+    Err("backup execution is unavailable because tool dispatch and lifecycle tracking are not wired".into())
 }
 
 #[tauri::command]
