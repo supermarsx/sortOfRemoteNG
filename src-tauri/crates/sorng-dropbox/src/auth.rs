@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 const AUTH_URL: &str = "https://www.dropbox.com/oauth2/authorize";
 const TOKEN_URL: &str = "https://api.dropboxapi.com/oauth2/token";
 const REVOKE_URL: &str = "https://api.dropboxapi.com/2/auth/token/revoke";
+const MAX_OAUTH_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
 
 /// Generate a random code verifier (43–128 characters, Base64URL-safe).
 pub fn generate_code_verifier() -> String {
@@ -37,6 +38,85 @@ fn base64_url_encode(bytes: &[u8]) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
     URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn require_success_status(operation: &str, status: reqwest::StatusCode) -> Result<(), String> {
+    if status.is_success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{operation} failed with HTTP status {}",
+            status.as_u16()
+        ))
+    }
+}
+
+fn parse_token_response(
+    operation: &str,
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<OAuthTokenResponse, String> {
+    require_success_status(operation, status)?;
+    serde_json::from_str(body).map_err(|e| {
+        format!(
+            "Failed to parse {operation} response: invalid JSON at line {}, column {}",
+            e.line(),
+            e.column()
+        )
+    })
+}
+
+fn build_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "Failed to build Dropbox HTTP client".to_string())
+}
+
+fn request_error(operation: &str, error: &reqwest::Error) -> String {
+    let reason = if error.is_timeout() {
+        "timed out"
+    } else if error.is_connect() {
+        "connection failed"
+    } else {
+        "transport failed"
+    };
+    format!("{operation}: {reason}")
+}
+
+async fn read_bounded_response_body(
+    mut response: reqwest::Response,
+    operation: &str,
+) -> Result<String, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_OAUTH_RESPONSE_BODY_BYTES as u64)
+    {
+        return Err(format!(
+            "{operation} response exceeds {MAX_OAUTH_RESPONSE_BODY_BYTES} byte limit"
+        ));
+    }
+
+    let capacity = response
+        .content_length()
+        .unwrap_or(0)
+        .min(MAX_OAUTH_RESPONSE_BODY_BYTES as u64) as usize;
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| request_error(operation, &e))?
+    {
+        let remaining = (MAX_OAUTH_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        if body.len() > MAX_OAUTH_RESPONSE_BODY_BYTES {
+            return Err(format!(
+                "{operation} response exceeds {MAX_OAUTH_RESPONSE_BODY_BYTES} byte limit"
+            ));
+        }
+    }
+
+    Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
 /// Build the full PKCE state and the authorization URL the user should open.
@@ -77,7 +157,7 @@ pub async fn exchange_code(
     code: &str,
     pkce: &OAuthPkceState,
 ) -> Result<OAuthTokenResponse, String> {
-    let client = reqwest::Client::new();
+    let client = build_http_client()?;
 
     let mut params = vec![
         ("grant_type", "authorization_code"),
@@ -98,15 +178,13 @@ pub async fn exchange_code(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Token exchange request failed: {e}"))?;
+        .map_err(|e| request_error("Token exchange request", &e))?;
 
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read token response: {e}"))?;
+    let status = resp.status();
+    require_success_status("token exchange", status)?;
+    let body = read_bounded_response_body(resp, "token exchange").await?;
 
-    serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse token response: {e} — body: {body}"))
+    parse_token_response("token exchange", status, &body)
 }
 
 /// Refresh an expired access token using a refresh token.
@@ -115,7 +193,7 @@ pub async fn refresh_token(
     app_secret: Option<&str>,
     refresh_tok: &str,
 ) -> Result<OAuthTokenResponse, String> {
-    let client = reqwest::Client::new();
+    let client = build_http_client()?;
 
     let mut params = vec![
         ("grant_type", "refresh_token"),
@@ -134,26 +212,25 @@ pub async fn refresh_token(
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Token refresh request failed: {e}"))?;
+        .map_err(|e| request_error("Token refresh request", &e))?;
 
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read refresh response: {e}"))?;
+    let status = resp.status();
+    require_success_status("token refresh", status)?;
+    let body = read_bounded_response_body(resp, "token refresh").await?;
 
-    serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse refresh response: {e} — body: {body}"))
+    parse_token_response("token refresh", status, &body)
 }
 
-/// Revoke an access token (best-effort).
+/// Revoke an access token.
 pub async fn revoke_token(access_token: &str) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let _ = client
+    let client = build_http_client()?;
+    let resp = client
         .post(REVOKE_URL)
         .bearer_auth(access_token)
         .send()
         .await
-        .map_err(|e| format!("Token revoke failed: {e}"))?;
+        .map_err(|e| request_error("Token revoke request", &e))?;
+    require_success_status("token revoke", resp.status())?;
     Ok(())
 }
 
@@ -224,6 +301,45 @@ mod tests {
                 || url.contains("scope=files.metadata.read%20files.content.write")
                 || url.contains("scope=files.metadata.read files.content.write")
         );
+    }
+
+    #[test]
+    fn token_response_parser_accepts_successful_dropbox_payload() {
+        let body = r#"{
+            "access_token": "access-secret",
+            "token_type": "bearer",
+            "expires_in": 14400,
+            "refresh_token": "refresh-secret",
+            "scope": "account_info.read",
+            "uid": "12345",
+            "account_id": "dbid:example"
+        }"#;
+
+        let parsed = parse_token_response("token exchange", reqwest::StatusCode::OK, body)
+            .expect("valid successful OAuth response");
+        assert_eq!(parsed.access_token, "access-secret");
+    }
+
+    #[test]
+    fn token_response_classifier_rejects_failure_without_exposing_body() {
+        let body = r#"{"error":"invalid_grant","refresh_token":"highly-secret-marker"}"#;
+        let error = parse_token_response("token refresh", reqwest::StatusCode::BAD_REQUEST, body)
+            .expect_err("non-success status must be rejected");
+
+        assert_eq!(error, "token refresh failed with HTTP status 400");
+        assert!(!error.contains("highly-secret-marker"));
+        assert!(!error.contains(body));
+    }
+
+    #[test]
+    fn token_response_parse_error_never_exposes_body() {
+        let body = "not-json-highly-secret-marker";
+        let error = parse_token_response("token exchange", reqwest::StatusCode::OK, body)
+            .expect_err("malformed success body must be rejected");
+
+        assert!(error.starts_with("Failed to parse token exchange response:"));
+        assert!(!error.contains("highly-secret-marker"));
+        assert!(!error.contains(body));
     }
 
     #[test]
