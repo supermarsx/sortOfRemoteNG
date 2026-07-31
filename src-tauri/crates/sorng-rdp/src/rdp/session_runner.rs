@@ -141,6 +141,19 @@ fn merge_channel_summary(into: &mut ChannelSummary, add: ChannelSummary) {
     into.failed_count = into.failed_count.saturating_add(add.failed_count);
 }
 
+fn redacted_load_balancing_log_message(
+    session_id: &str,
+    load_balancing_info: &str,
+    use_routing_token: bool,
+) -> Option<String> {
+    if load_balancing_info.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "RDP session {session_id}: load-balancing metadata present (routing_token={use_routing_token})"
+        ))
+    }
+}
 // ---- Deactivation-Reactivation Sequence handler ----
 
 /// Drives a ConnectionActivationSequence to completion after receiving
@@ -833,8 +846,8 @@ fn establish_rdp_connection(
     };
 
     log::info!(
-        "RDP session {session_id}: resolved credentials user={:?} domain={:?} (original: {:?}/{:?})",
-        actual_user, actual_domain, username, domain
+        "RDP session {session_id}: credentials resolved (domain_present={})",
+        actual_domain.is_some()
     );
 
     let config = connector::Config {
@@ -1066,12 +1079,12 @@ fn establish_rdp_connection(
             settings.max_retries
         );
     }
-    if !settings.load_balancing_info.is_empty() {
-        log::info!(
-            "RDP session {session_id}: load balancing info -> {:?} (routing_token={})",
-            settings.load_balancing_info,
-            settings.use_routing_token
-        );
+    if let Some(message) = redacted_load_balancing_log_message(
+        session_id,
+        &settings.load_balancing_info,
+        settings.use_routing_token,
+    ) {
+        log::info!("{message}");
     }
     if !settings.use_credssp {
         log::info!("RDP session {session_id}: CredSSP globally DISABLED by user");
@@ -3122,6 +3135,20 @@ mod runner_tests {
         assert_eq!(acc.failed_count, 1);
     }
 
+    #[test]
+    fn load_balancing_log_message_never_exposes_routing_metadata() {
+        let sensitive = "Cookie: msts=highly-secret-routing-token";
+        let message = redacted_load_balancing_log_message("session-x", sensitive, true)
+            .expect("non-empty metadata should produce a diagnostic");
+
+        assert_eq!(
+            message,
+            "RDP session session-x: load-balancing metadata present (routing_token=true)"
+        );
+        assert!(!message.contains(sensitive));
+        assert!(!message.contains("highly-secret-routing-token"));
+        assert!(redacted_load_balancing_log_message("session-x", "", false).is_none());
+    }
     /// classify-then-stamp ordering (plan R1): `set_phase("error")` first stamps
     /// the default `ProtocolViolation`, then `set_failure_class` must correct it
     /// to the real class BEFORE the snapshot is emitted. This drives the real
