@@ -1,153 +1,260 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ScheduledTask,
-  TaskHistoryEntry,
-  UpcomingTask,
-  CronValidation,
-  SchedulerStats,
   SchedulerConfig,
+  SchedulerStats,
+  TaskExecutionRecord,
+  UpcomingTask,
 } from "../../types/scheduler/scheduler";
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function useScheduler() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [history, setHistory] = useState<TaskHistoryEntry[]>([]);
+  const [history, setHistory] = useState<TaskExecutionRecord[]>([]);
   const [upcoming, setUpcoming] = useState<UpcomingTask[]>([]);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [config, setConfig] = useState<SchedulerConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await invoke<ScheduledTask[]>("sched_list_tasks");
-      setTasks(list);
-      return list;
-    } catch (e) { setError(String(e)); return []; }
-    finally { setLoading(false); }
+      const value = await invoke<ScheduledTask[]>("sched_list_tasks");
+      setTasks(value);
+      return value;
+    } catch (caught) {
+      setError(errorText(caught));
+      return [];
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const addTask = useCallback(async (task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'lastRun' | 'nextRun' | 'runCount' | 'failCount'>) => {
-    try {
-      const id = await invoke<string>("sched_add_task", { task });
-      await fetchTasks();
-      return id;
-    } catch (e) { setError(String(e)); return null; }
-  }, [fetchTasks]);
+  const addTask = useCallback(
+    async (task: ScheduledTask) => {
+      try {
+        const id = await invoke<string>("sched_add_task", { task });
+        await fetchTasks();
+        return id;
+      } catch (caught) {
+        setError(errorText(caught));
+        return null;
+      }
+    },
+    [fetchTasks],
+  );
+
+  const updateTask = useCallback(
+    async (task: ScheduledTask) => {
+      try {
+        await invoke("sched_update_task", { task });
+        await fetchTasks();
+        return true;
+      } catch (caught) {
+        setError(errorText(caught));
+        return false;
+      }
+    },
+    [fetchTasks],
+  );
 
   const removeTask = useCallback(async (taskId: string) => {
     try {
       await invoke("sched_remove_task", { taskId });
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } catch (e) { setError(String(e)); }
+      setTasks((current) => current.filter((task) => task.id !== taskId));
+      return true;
+    } catch (caught) {
+      setError(errorText(caught));
+      return false;
+    }
   }, []);
 
-  const updateTask = useCallback(async (taskId: string, updates: Partial<ScheduledTask>) => {
-    try {
-      await invoke("sched_update_task", { taskId, updates });
-      await fetchTasks();
-    } catch (e) { setError(String(e)); }
-  }, [fetchTasks]);
+  const setTaskEnabled = useCallback(
+    async (taskId: string, enabled: boolean) => {
+      try {
+        await invoke(enabled ? "sched_enable_task" : "sched_disable_task", {
+          taskId,
+        });
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskId ? { ...task, enabled } : task,
+          ),
+        );
+        return true;
+      } catch (caught) {
+        setError(errorText(caught));
+        return false;
+      }
+    },
+    [],
+  );
 
-  const enableTask = useCallback(async (taskId: string) => {
+  const fetchHistory = useCallback(async (taskId?: string, limit = 100) => {
     try {
-      await invoke("sched_enable_task", { taskId });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, enabled: true } : t));
-    } catch (e) { setError(String(e)); }
+      const value = await invoke<TaskExecutionRecord[]>("sched_get_history", {
+        taskId: taskId ?? null,
+        limit,
+      });
+      setHistory(value);
+      return value;
+    } catch (caught) {
+      setError(errorText(caught));
+      return [];
+    }
   }, []);
 
-  const disableTask = useCallback(async (taskId: string) => {
-    try {
-      await invoke("sched_disable_task", { taskId });
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, enabled: false } : t));
-    } catch (e) { setError(String(e)); }
-  }, []);
-
-  const executeNow = useCallback(async (taskId: string) => {
-    try {
-      await invoke("sched_execute_now", { taskId });
-      await fetchTasks();
-    } catch (e) { setError(String(e)); }
-  }, [fetchTasks]);
+  const executeNow = useCallback(
+    async (taskId: string) => {
+      try {
+        const record = await invoke<TaskExecutionRecord>("sched_execute_now", {
+          taskId,
+        });
+        await Promise.all([fetchTasks(), fetchHistory()]);
+        return record;
+      } catch (caught) {
+        setError(errorText(caught));
+        return null;
+      }
+    },
+    [fetchHistory, fetchTasks],
+  );
 
   const cancelTask = useCallback(async (taskId: string) => {
     try {
       await invoke("sched_cancel_task", { taskId });
-      await fetchTasks();
-    } catch (e) { setError(String(e)); }
-  }, [fetchTasks]);
-
-  const fetchHistory = useCallback(async (taskId?: string) => {
-    try {
-      const list = await invoke<TaskHistoryEntry[]>("sched_get_history", { taskId: taskId ?? null });
-      setHistory(list);
-      return list;
-    } catch (e) { setError(String(e)); return []; }
+      return true;
+    } catch (caught) {
+      setError(errorText(caught));
+      return false;
+    }
   }, []);
 
-  const fetchUpcoming = useCallback(async (limit?: number) => {
+  const fetchUpcoming = useCallback(async (count = 20) => {
     try {
-      const list = await invoke<UpcomingTask[]>("sched_get_upcoming", { limit: limit ?? 20 });
-      setUpcoming(list);
-      return list;
-    } catch (e) { setError(String(e)); return []; }
+      const value = await invoke<Array<[ScheduledTask, string]>>(
+        "sched_get_upcoming",
+        { count },
+      );
+      const mapped = value.map(([task, next_run_at]) => ({
+        task,
+        next_run_at,
+      }));
+      setUpcoming(mapped);
+      return mapped;
+    } catch (caught) {
+      setError(errorText(caught));
+      return [];
+    }
   }, []);
 
   const validateCron = useCallback(async (expression: string) => {
     try {
-      return await invoke<CronValidation>("sched_validate_cron", { expression });
-    } catch (e) { setError(String(e)); return null; }
+      await invoke<void>("sched_validate_cron", { expression });
+      return null;
+    } catch (caught) {
+      return errorText(caught);
+    }
   }, []);
 
-  const getNextOccurrences = useCallback(async (expression: string, count?: number) => {
-    try {
-      return await invoke<string[]>("sched_get_next_occurrences", { expression, count: count ?? 5 });
-    } catch (e) { setError(String(e)); return []; }
-  }, []);
+  const getNextOccurrences = useCallback(
+    async (expression: string, count = 5) => {
+      try {
+        return await invoke<string[]>("sched_get_next_occurrences", {
+          expression,
+          count,
+        });
+      } catch (caught) {
+        setError(errorText(caught));
+        return [];
+      }
+    },
+    [],
+  );
 
   const pauseAll = useCallback(async () => {
     try {
       await invoke("sched_pause_all");
-      await fetchTasks();
-    } catch (e) { setError(String(e)); }
-  }, [fetchTasks]);
+      return true;
+    } catch (caught) {
+      setError(errorText(caught));
+      return false;
+    }
+  }, []);
 
   const resumeAll = useCallback(async () => {
     try {
       await invoke("sched_resume_all");
-      await fetchTasks();
-    } catch (e) { setError(String(e)); }
-  }, [fetchTasks]);
+      return true;
+    } catch (caught) {
+      setError(errorText(caught));
+      return false;
+    }
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
-      const s = await invoke<SchedulerStats>("sched_get_stats");
-      setStats(s);
-      return s;
-    } catch (e) { setError(String(e)); return null; }
+      const value = await invoke<SchedulerStats>("sched_get_stats");
+      setStats(value);
+      return value;
+    } catch (caught) {
+      setError(errorText(caught));
+      return null;
+    }
   }, []);
 
   const loadConfig = useCallback(async () => {
     try {
-      const c = await invoke<SchedulerConfig>("sched_get_config");
-      setConfig(c);
-    } catch (e) { setError(String(e)); }
+      const value = await invoke<SchedulerConfig>("sched_get_config");
+      setConfig(value);
+      return value;
+    } catch (caught) {
+      setError(errorText(caught));
+      return null;
+    }
   }, []);
 
-  const updateConfig = useCallback(async (cfg: Partial<SchedulerConfig>) => {
+  const updateConfig = useCallback(async (next: SchedulerConfig) => {
     try {
-      const merged = { ...config, ...cfg } as SchedulerConfig;
-      await invoke("sched_update_config", { config: merged });
-      setConfig(merged);
-    } catch (e) { setError(String(e)); }
-  }, [config]);
+      await invoke("sched_update_config", { config: next });
+      setConfig(next);
+      return true;
+    } catch (caught) {
+      setError(errorText(caught));
+      return false;
+    }
+  }, []);
 
   return {
-    tasks, history, upcoming, stats, config, loading, error,
-    fetchTasks, addTask, removeTask, updateTask, enableTask, disableTask,
-    executeNow, cancelTask, fetchHistory, fetchUpcoming,
-    validateCron, getNextOccurrences, pauseAll, resumeAll,
-    fetchStats, loadConfig, updateConfig,
+    tasks,
+    history,
+    upcoming,
+    stats,
+    config,
+    loading,
+    error,
+    clearError,
+    fetchTasks,
+    addTask,
+    updateTask,
+    removeTask,
+    setTaskEnabled,
+    executeNow,
+    cancelTask,
+    fetchHistory,
+    fetchUpcoming,
+    validateCron,
+    getNextOccurrences,
+    pauseAll,
+    resumeAll,
+    fetchStats,
+    loadConfig,
+    updateConfig,
   };
 }

@@ -346,6 +346,15 @@ impl TaskExecutionRecord {
         self.status = ExecutionStatus::TimedOut;
         self.error = Some("task timed out".to_string());
     }
+
+    /// Mark the record as cancelled before its next side effect began.
+    pub fn cancel(&mut self) {
+        let now = Utc::now();
+        self.completed_at = Some(now);
+        self.duration_ms = Some((now - self.started_at).num_milliseconds().max(0) as u64);
+        self.status = ExecutionStatus::Cancelled;
+        self.error = Some("task cancelled before side-effect dispatch".to_string());
+    }
 }
 
 // ─── SchedulerConfig ────────────────────────────────────────────────
@@ -355,7 +364,7 @@ impl TaskExecutionRecord {
 pub struct SchedulerConfig {
     /// Master switch for the entire scheduler.
     pub enabled: bool,
-    /// Maximum tasks that may execute concurrently.
+    /// Maximum simultaneously reserved task executions.
     pub max_concurrent_tasks: usize,
     /// Default timeout applied when a task has no explicit timeout.
     pub default_timeout_ms: u64,
@@ -363,8 +372,8 @@ pub struct SchedulerConfig {
     pub history_retention_days: u64,
     /// How often the scheduler checks for due tasks (seconds).
     pub check_interval_seconds: u64,
-    /// If `true`, tasks that were missed (e.g. app was closed) will be
-    /// executed immediately on the next tick.
+    /// If `true`, one missed occurrence remains eligible after a delayed tick
+    /// or restart. If false, stale occurrences are recorded as skipped.
     pub catch_up_missed: bool,
 }
 

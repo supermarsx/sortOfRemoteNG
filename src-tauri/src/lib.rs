@@ -157,7 +157,7 @@ pub fn run() {
 
     use tauri_plugin_autostart::MacosLauncher;
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
@@ -174,8 +174,18 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(invoke_handler::build())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        #[cfg(not(feature = "ops"))]
+        let _ = (app_handle, event);
+
+        #[cfg(feature = "ops")]
+        if matches!(event, tauri::RunEvent::Exit) {
+            state_registry::stop_scheduler(app_handle);
+        }
+    });
 }
 
 #[cfg(test)]

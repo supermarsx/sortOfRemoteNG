@@ -15,6 +15,11 @@ use chrono::{DateTime, Datelike, Duration, NaiveTime, Timelike, Utc};
 
 use crate::error::SchedulerError;
 
+/// Maximum accepted encoded cron expression length.
+pub const MAX_CRON_EXPRESSION_LENGTH: usize = 256;
+/// Maximum number of occurrences produced by one request.
+pub const MAX_CRON_OCCURRENCES: usize = 256;
+
 // ─── CronField ──────────────────────────────────────────────────────
 
 /// Representation of a single cron field.
@@ -136,9 +141,12 @@ fn parse_field(token: &str, min: u32, max: u32) -> Result<CronField, SchedulerEr
         // Expand to a list
         let mut vals = Vec::new();
         let mut v = lo;
-        while v <= hi {
+        loop {
             vals.push(v);
-            v += step;
+            match v.checked_add(step) {
+                Some(next) if next <= hi => v = next,
+                _ => break,
+            }
         }
         return Ok(CronField::List(vals));
     }
@@ -195,6 +203,11 @@ fn parse_field(token: &str, min: u32, max: u32) -> Result<CronField, SchedulerEr
 ///
 /// Fields: `minute(0-59) hour(0-23) day-of-month(1-31) month(1-12) day-of-week(0-6)`
 pub fn parse(expr: &str) -> Result<CronExpression, SchedulerError> {
+    if expr.len() > MAX_CRON_EXPRESSION_LENGTH {
+        return Err(SchedulerError::CronParseError(format!(
+            "expression exceeds {MAX_CRON_EXPRESSION_LENGTH} bytes"
+        )));
+    }
     let fields: Vec<&str> = expr.split_whitespace().collect();
     if fields.len() != 5 {
         return Err(SchedulerError::CronParseError(format!(
@@ -234,7 +247,7 @@ pub fn matches(expr: &CronExpression, dt: &DateTime<Utc>) -> bool {
 /// Returns `None` if no match is found within that window.
 pub fn next_occurrence(expr: &CronExpression, after: &DateTime<Utc>) -> Option<DateTime<Utc>> {
     // Start from the next whole minute after `after`.
-    let mut candidate = *after + Duration::minutes(1);
+    let mut candidate = after.checked_add_signed(Duration::minutes(1))?;
     // Zero out seconds & nanos.
     candidate = candidate
         .date_naive()
@@ -244,7 +257,7 @@ pub fn next_occurrence(expr: &CronExpression, after: &DateTime<Utc>) -> Option<D
         )
         .and_utc();
 
-    let limit = *after + Duration::days(366 * 4);
+    let limit = after.checked_add_signed(Duration::days(366 * 4))?;
 
     while candidate < limit {
         // Month
@@ -259,7 +272,10 @@ pub fn next_occurrence(expr: &CronExpression, after: &DateTime<Utc>) -> Option<D
                         .with_month(m)
                         .and_then(|d| d.with_day(1))
                     {
-                        candidate = d.and_hms_opt(0, 0, 0).expect("midnight is always valid").and_utc();
+                        candidate = d
+                            .and_hms_opt(0, 0, 0)
+                            .expect("midnight is always valid")
+                            .and_utc();
                         continue;
                     }
                 }
@@ -271,7 +287,10 @@ pub fn next_occurrence(expr: &CronExpression, after: &DateTime<Utc>) -> Option<D
                         .and_then(|d| d.with_month(1))
                         .and_then(|d| d.with_day(1))
                     {
-                        candidate = d.and_hms_opt(0, 0, 0).expect("midnight is always valid").and_utc();
+                        candidate = d
+                            .and_hms_opt(0, 0, 0)
+                            .expect("midnight is always valid")
+                            .and_utc();
                         continue;
                     }
                 }
@@ -332,6 +351,7 @@ pub fn next_occurrences(
     after: &DateTime<Utc>,
     count: usize,
 ) -> Vec<DateTime<Utc>> {
+    let count = count.min(MAX_CRON_OCCURRENCES);
     let mut results = Vec::with_capacity(count);
     let mut cursor = *after;
     for _ in 0..count {

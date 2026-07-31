@@ -1,786 +1,894 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Calendar,
-  Clock,
-  Play,
-  Pause,
-  Plus,
-  Trash2,
-  Edit3,
+  AlertTriangle,
+  CalendarClock,
   CheckCircle2,
-  XCircle,
+  Clock,
+  Edit3,
   Loader2,
-  AlertCircle,
+  Pause,
+  Play,
+  Plus,
   RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  Timer,
-  ListChecks,
-  History,
+  ShieldAlert,
+  Trash2,
+  X,
+  XCircle,
   Zap,
-  Settings,
 } from "lucide-react";
-import { Select } from "../ui/forms";
 import { useScheduler } from "../../hooks/scheduler/useScheduler";
 import type {
   ScheduledTask,
-  TaskKind,
-  TaskHistoryEntry,
-  UpcomingTask,
+  TaskAction,
+  TaskExecutionRecord,
+  TaskSchedule,
 } from "../../types/scheduler/scheduler";
-
-// ─── Props ───────────────────────────────────────────────────────────
 
 export interface SchedulerPanelProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────
-
 type TabId = "tasks" | "upcoming" | "history";
 
-const TASK_KIND_COLORS: Record<TaskKind, string> = {
-  script: "bg-primary/20 text-primary",
-  backup: "bg-primary/20 text-primary",
-  health_check: "bg-success/20 text-success",
-  connect: "bg-info/20 text-info",
-  disconnect: "bg-warning/20 text-warning",
-  wake_on_lan: "bg-warning/20 text-warning",
-  notification: "bg-primary/20 text-primary",
-  custom: "bg-text-secondary/20 text-text-secondary",
-  connection_test: "bg-teal-500/20 text-teal-300",
-};
-
-const CRON_PRESETS = [
-  { label: "Every minute", cron: "* * * * *" },
-  { label: "Every 5 minutes", cron: "*/5 * * * *" },
-  { label: "Every hour", cron: "0 * * * *" },
-  { label: "Daily at midnight", cron: "0 0 * * *" },
-  { label: "Daily at 6 AM", cron: "0 6 * * *" },
-  { label: "Weekly (Sun midnight)", cron: "0 0 * * 0" },
-  { label: "Monthly (1st midnight)", cron: "0 0 1 * *" },
-];
-
-const AVAILABLE_KINDS: TaskKind[] = [
-  "script",
-  "backup",
-  "health_check",
-  "connect",
-  "disconnect",
-  "wake_on_lan",
-  "notification",
-  "custom",
-];
-
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const mins = Math.floor(ms / 60_000);
-  const secs = Math.round((ms % 60_000) / 1000);
-  return `${mins}m ${secs}s`;
-}
-
-function timeUntil(dateStr: string): string {
-  const diff = new Date(dateStr).getTime() - Date.now();
-  if (diff <= 0) return "now";
-  if (diff < 60_000) return `${Math.ceil(diff / 1000)}s`;
-  if (diff < 3_600_000) return `${Math.ceil(diff / 60_000)}m`;
-  if (diff < 86_400_000) {
-    const h = Math.floor(diff / 3_600_000);
-    const m = Math.round((diff % 3_600_000) / 60_000);
-    return `${h}h ${m}m`;
-  }
-  return `${Math.round(diff / 86_400_000)}d`;
-}
-
-function kindBadge(kind: TaskKind): string {
-  return TASK_KIND_COLORS[kind] ?? TASK_KIND_COLORS.custom;
-}
-
-function fmtDate(d: string | null): string {
-  if (!d) return "—";
-  return new Date(d).toLocaleString();
-}
-
-// ─── Tab Button ──────────────────────────────────────────────────────
-
-const TabButton: React.FC<{
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}> = ({ active, onClick, icon, label }) => (
-  <button
-    onClick={onClick}
-    className={`sor-tab-btn flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors ${
-      active
-        ? "bg-primary/20 text-primary border border-primary/30"
-        : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] border border-transparent"
-    }`}
-  >
-    {icon}
-    {label}
-  </button>
-);
-
-// ─── Task Form (Add / Edit) ─────────────────────────────────────────
-
-interface TaskFormState {
+interface WakeForm {
   name: string;
-  kind: TaskKind;
-  cronExpression: string;
   description: string;
-  connectionIds: string;
-  timeoutMs: number;
-  maxRetries: number;
+  cron: string;
+  macAddress: string;
+  port: number;
   enabled: boolean;
 }
 
-const EMPTY_FORM: TaskFormState = {
+interface WakeFormErrors {
+  name: string | null;
+  macAddress: string | null;
+  port: string | null;
+  cron: string | null;
+}
+
+const EMPTY_FORM: WakeForm = {
   name: "",
-  kind: "script",
-  cronExpression: "",
   description: "",
-  connectionIds: "",
-  timeoutMs: 30_000,
-  maxRetries: 0,
+  cron: "0 8 * * 1-5",
+  macAddress: "",
+  port: 9,
   enabled: true,
 };
 
-function taskToForm(t: ScheduledTask): TaskFormState {
-  return {
-    name: t.name,
-    kind: t.kind,
-    cronExpression: t.cronExpression ?? "",
-    description: t.description,
-    connectionIds: t.connectionIds.join(", "),
-    timeoutMs: t.timeoutMs,
-    maxRetries: t.maxRetries,
-    enabled: t.enabled,
-  };
+const EMPTY_FORM_ERRORS: WakeFormErrors = {
+  name: null,
+  macAddress: null,
+  port: null,
+  cron: null,
+};
+
+const MAC_PATTERN = /^(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/;
+
+function formatDate(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : "-";
 }
 
-// ─── Main Component ──────────────────────────────────────────────────
+function formatDuration(value: number | null): string {
+  if (value == null) return "-";
+  if (value < 1000) return `${value} ms`;
+  return `${(value / 1000).toFixed(1)} s`;
+}
+
+function scheduleLabel(schedule: TaskSchedule): string {
+  switch (schedule.type) {
+    case "cron":
+      return schedule.expression;
+    case "once":
+      return formatDate(schedule.at);
+    case "interval":
+      return `Every ${schedule.every_seconds}s`;
+    case "daily":
+      return `Daily ${schedule.time}`;
+    case "weekly":
+      return `${schedule.day} ${schedule.time}`;
+    case "monthly":
+      return `Day ${schedule.day} ${schedule.time}`;
+    case "on_event":
+      return `Event: ${schedule.event_type}`;
+  }
+}
+
+function actionLabel(action: TaskAction): string {
+  switch (action.type) {
+    case "send_wake_on_lan":
+      return "Wake-on-LAN";
+    case "pipeline":
+      return "Pipeline";
+    case "connect_connection":
+      return "Connect";
+    case "disconnect_connection":
+      return "Disconnect";
+    case "execute_script":
+      return "Script";
+    case "run_diagnostics":
+      return "Diagnostics";
+    case "backup_collection":
+      return "Backup";
+    case "sync_cloud":
+      return "Cloud sync";
+    case "run_health_check":
+      return "Health check";
+    case "http_request":
+      return "HTTP request";
+    case "execute_command":
+      return "Command";
+    case "generate_report":
+      return "Report";
+    case "notify":
+      return "Notification";
+  }
+}
+
+function isRunnableAction(action: TaskAction, depth = 0): boolean {
+  if (action.type === "send_wake_on_lan") return true;
+  if (action.type !== "pipeline" || depth >= 16 || action.steps.length > 256) {
+    return false;
+  }
+  return action.steps.every((step) => isRunnableAction(step.action, depth + 1));
+}
+
+function formFromTask(task: ScheduledTask): WakeForm | null {
+  if (
+    task.action.type !== "send_wake_on_lan" ||
+    task.schedule.type !== "cron"
+  ) {
+    return null;
+  }
+  return {
+    name: task.name,
+    description: task.description,
+    cron: task.schedule.expression,
+    macAddress: task.action.mac_address,
+    port: task.action.port ?? 9,
+    enabled: task.enabled,
+  };
+}
 
 export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
   isOpen,
   onClose,
 }) => {
   const { t } = useTranslation();
-  const sched = useScheduler();
-
+  const scheduler = useScheduler();
   const [tab, setTab] = useState<TabId>("tasks");
-  const [showModal, setShowModal] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<TaskFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<WakeForm>(EMPTY_FORM);
+  const [formErrors, setFormErrors] =
+    useState<WakeFormErrors>(EMPTY_FORM_ERRORS);
   const [cronPreview, setCronPreview] = useState<string[]>([]);
-  const [cronError, setCronError] = useState<string | null>(null);
-  const [expandedTask, setExpandedTask] = useState<string | null>(null);
-  const [lastOutputs, setLastOutputs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const formError =
+    formErrors.name ??
+    formErrors.macAddress ??
+    formErrors.port ??
+    formErrors.cron;
 
-  // ── Bootstrap ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!isOpen) return;
-    sched.fetchTasks();
-    sched.fetchStats();
-    sched.fetchUpcoming(20);
-    sched.fetchHistory();
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps -- sched is stable, only re-run when opened
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      scheduler.fetchTasks(),
+      scheduler.fetchStats(),
+      scheduler.fetchUpcoming(20),
+      scheduler.fetchHistory(undefined, 100),
+      scheduler.loadConfig(),
+    ]);
+  }, [scheduler]);
 
-  // ── Cron validation ──────────────────────────────────────────────
   useEffect(() => {
-    if (!form.cronExpression) {
+    if (isOpen) void refresh();
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showEditor || !form.cron.trim()) {
+      setFormErrors((current) => ({ ...current, cron: null }));
       setCronPreview([]);
-      setCronError(null);
       return;
     }
-    const id = setTimeout(async () => {
-      const v = await sched.validateCron(form.cronExpression);
-      if (v?.valid) {
-        setCronError(null);
-        const occ = await sched.getNextOccurrences(form.cronExpression, 5);
-        setCronPreview(occ);
-      } else {
-        setCronError(v?.errorMessage ?? "Invalid expression");
-        setCronPreview([]);
-      }
-    }, 400);
-    return () => clearTimeout(id);
-  }, [form.cronExpression]); // eslint-disable-line react-hooks/exhaustive-deps -- validateCron is stable
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const error = await scheduler.validateCron(form.cron.trim());
+      if (cancelled) return;
+      setFormErrors((current) => ({ ...current, cron: error }));
+      const occurrences = error
+        ? []
+        : await scheduler.getNextOccurrences(form.cron.trim(), 3);
+      if (!cancelled) setCronPreview(occurrences);
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.cron, showEditor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Callbacks ────────────────────────────────────────────────────
-  const openAdd = useCallback(() => {
+  const tasks = useMemo(
+    () =>
+      [...scheduler.tasks].sort((left, right) =>
+        left.name.localeCompare(right.name),
+      ),
+    [scheduler.tasks],
+  );
+  const unavailableCount = tasks.filter(
+    (task) => !isRunnableAction(task.action),
+  ).length;
+
+  const openAdd = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setFormErrors(EMPTY_FORM_ERRORS);
     setCronPreview([]);
-    setCronError(null);
-    setShowModal(true);
-  }, []);
+    setShowEditor(true);
+  };
 
-  const openEdit = useCallback((task: ScheduledTask) => {
+  const openEdit = (task: ScheduledTask) => {
+    const next = formFromTask(task);
+    if (!next) return;
     setEditingId(task.id);
-    setForm(taskToForm(task));
+    setForm(next);
+    setFormErrors(EMPTY_FORM_ERRORS);
     setCronPreview([]);
-    setCronError(null);
-    setShowModal(true);
-  }, []);
+    setShowEditor(true);
+  };
 
-  const handleSave = useCallback(async () => {
-    const payload = {
-      name: form.name,
-      description: form.description,
-      kind: form.kind,
-      scheduleType: "cron" as const,
-      cronExpression: form.cronExpression || null,
-      intervalMs: null,
-      scheduledAt: null,
-      enabled: form.enabled,
-      connectionIds: form.connectionIds
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-      payload: {},
-      tags: [],
-      maxRetries: form.maxRetries,
-      retryDelayMs: 5000,
-      timeoutMs: form.timeoutMs,
+  const saveTask = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = form.name.trim();
+    const cron = form.cron.trim();
+    const macAddress = form.macAddress.trim();
+
+    const staticErrors: WakeFormErrors = {
+      name:
+        !name || name.length > 128
+          ? t(
+              "scheduler.nameInvalid",
+              "Name is required and must be at most 128 characters.",
+            )
+          : null,
+      macAddress: !MAC_PATTERN.test(macAddress)
+        ? t(
+            "scheduler.macInvalid",
+            "Enter a MAC address such as AA:BB:CC:DD:EE:FF.",
+          )
+        : null,
+      port:
+        !Number.isInteger(form.port) || form.port < 1 || form.port > 65535
+          ? t("scheduler.portInvalid", "Port must be between 1 and 65535.")
+          : null,
+      cron: null,
     };
-    if (editingId) {
-      await sched.updateTask(editingId, payload);
-    } else {
-      await sched.addTask(payload);
+    if (staticErrors.name || staticErrors.macAddress || staticErrors.port) {
+      setFormErrors(staticErrors);
+      return;
     }
-    setShowModal(false);
-  }, [form, editingId, sched]);
+    const validation = await scheduler.validateCron(cron);
+    if (validation) {
+      setFormErrors({ ...staticErrors, cron: validation });
+      return;
+    }
+    setFormErrors(EMPTY_FORM_ERRORS);
 
-  const toggleExpand = useCallback(
-    async (taskId: string) => {
-      if (expandedTask === taskId) {
-        setExpandedTask(null);
-        return;
-      }
-      setExpandedTask(taskId);
-      if (!lastOutputs[taskId]) {
-        const hist = await sched.fetchHistory(taskId);
-        if (hist.length > 0) {
-          setLastOutputs((prev) => ({
-            ...prev,
-            [taskId]: hist[0].output ?? "No output recorded.",
-          }));
-        }
-      }
-    },
-    [expandedTask, lastOutputs, sched],
-  );
+    const existing = editingId
+      ? (scheduler.tasks.find((task) => task.id === editingId) ?? null)
+      : null;
+    const now = new Date().toISOString();
+    const task: ScheduledTask = {
+      id: existing?.id ?? crypto.randomUUID(),
+      name,
+      description: form.description.trim().slice(0, 2048),
+      enabled: form.enabled,
+      schedule: { type: "cron", expression: cron },
+      action: {
+        type: "send_wake_on_lan",
+        mac_address: macAddress,
+        port: form.port,
+      },
+      conditions: [],
+      retry_policy: null,
+      timeout_ms: 10_000,
+      tags: existing?.tags ?? [],
+      priority: existing?.priority ?? "Normal",
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+      last_run_at: existing?.last_run_at ?? null,
+      next_run_at: existing?.next_run_at ?? null,
+      run_count: existing?.run_count ?? 0,
+      fail_count: existing?.fail_count ?? 0,
+    };
 
-  // ── Derived ──────────────────────────────────────────────────────
-  const statsData = sched.stats;
-  const totalTasks = statsData?.totalTasks ?? sched.tasks.length;
-  const activeTasks = statsData?.enabledTasks ?? sched.tasks.filter((t) => t.enabled).length;
-  const pausedTasks = totalTasks - activeTasks;
+    setSaving(true);
+    const success = existing
+      ? await scheduler.updateTask(task)
+      : (await scheduler.addTask(task)) !== null;
+    setSaving(false);
+    if (success) {
+      setShowEditor(false);
+      await Promise.all([scheduler.fetchStats(), scheduler.fetchUpcoming(20)]);
+    }
+  };
 
-  // ── Guard ────────────────────────────────────────────────────────
+  const runTask = async (task: ScheduledTask) => {
+    if (!isRunnableAction(task.action)) return;
+    setRunningId(task.id);
+    await scheduler.executeNow(task.id);
+    setRunningId(null);
+    await Promise.all([scheduler.fetchStats(), scheduler.fetchUpcoming(20)]);
+  };
+
+  const deleteTask = async (task: ScheduledTask) => {
+    if (
+      !window.confirm(
+        t("scheduler.confirmDelete", "Delete this scheduled task?"),
+      )
+    ) {
+      return;
+    }
+    if (await scheduler.removeTask(task.id)) {
+      await Promise.all([scheduler.fetchStats(), scheduler.fetchUpcoming(20)]);
+    }
+  };
+
   if (!isOpen) return null;
 
-  // ── Render helpers ───────────────────────────────────────────────
-  const renderTaskCard = (task: ScheduledTask) => {
-    const isExpanded = expandedTask === task.id;
-    const lastSuccess = task.failCount < task.runCount;
-    return (
-      <div
-        key={task.id}
-        className="sor-sched-task-card rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 mb-2"
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                {task.name}
-              </span>
-              <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${kindBadge(task.kind)}`}>
-                {task.kind}
-              </span>
-              {!task.enabled && (
-                <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-text-secondary/20 text-text-muted font-medium">
-                  {t("scheduler.paused", "paused")}
-                </span>
-              )}
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
+      <section className="flex h-[min(860px,94vh)] w-[min(1120px,96vw)] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl">
+        <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <CalendarClock size={20} className="text-[var(--color-accent)]" />
+              <h2 className="text-base font-semibold text-[var(--color-text)]">
+                {t("scheduler.title", "Automation scheduler")}
+              </h2>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-[var(--color-textSecondary)]">
-              {task.cronExpression && (
-                <span className="flex items-center gap-1" title="Cron">
-                  <Clock size={11} /> {task.cronExpression}
-                </span>
+            <p className="mt-1 text-xs text-[var(--color-textSecondary)]">
+              {t(
+                "scheduler.runtimeScope",
+                "Wake-on-LAN is available. Other action types stay read-only until their runtime dispatchers are wired.",
               )}
-              <span className="flex items-center gap-1" title="Next run">
-                <Timer size={11} /> {fmtDate(task.nextRun)}
-              </span>
-              <span>
-                {t("scheduler.runs", "Runs")}: {task.runCount}
-              </span>
-              {task.runCount > 0 && (
-                <span className={`flex items-center gap-0.5 ${lastSuccess ? "text-success" : "text-error"}`}>
-                  {lastSuccess ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
-                  {lastSuccess
-                    ? t("scheduler.lastOk", "Last OK")
-                    : t("scheduler.lastFail", "Last failed")}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => (task.enabled ? sched.disableTask(task.id) : sched.enableTask(task.id))}
-              className="sor-sched-toggle p-1 rounded hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={task.enabled ? t("scheduler.disable", "Disable") : t("scheduler.enable", "Enable")}
-            >
-              {task.enabled ? <Pause size={14} className="text-warning" /> : <Play size={14} className="text-success" />}
-            </button>
-            <button
-              onClick={() => sched.executeNow(task.id)}
-              className="sor-sched-run p-1 rounded hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("scheduler.runNow", "Run now")}
-            >
-              <Zap size={14} className="text-primary" />
-            </button>
-            <button
-              onClick={() => openEdit(task)}
-              className="sor-sched-edit p-1 rounded hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("common.edit", "Edit")}
-            >
-              <Edit3 size={14} className="text-[var(--color-textSecondary)]" />
-            </button>
-            <button
-              onClick={() => sched.removeTask(task.id)}
-              className="sor-sched-delete p-1 rounded hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("common.delete", "Delete")}
-            >
-              <Trash2 size={14} className="text-error" />
-            </button>
-            <button
-              onClick={() => toggleExpand(task.id)}
-              className="p-1 rounded hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("scheduler.details", "Details")}
-            >
-              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-          </div>
-        </div>
-        {isExpanded && (
-          <div className="sor-sched-detail mt-2 pt-2 border-t border-[var(--color-border)]">
-            <p className="text-[11px] text-[var(--color-textSecondary)] mb-1">
-              {task.description || t("scheduler.noDesc", "No description.")}
             </p>
-            <pre className="text-[10px] font-mono bg-[var(--color-bg)] p-2 rounded max-h-32 overflow-auto text-[var(--color-textSecondary)]">
-              {lastOutputs[task.id] ?? t("scheduler.noOutput", "No output available.")}
-            </pre>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+            aria-label={t("common.close", "Close")}
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="grid grid-cols-2 gap-px border-b border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-4">
+          {[
+            [
+              t("scheduler.tasks", "Tasks"),
+              scheduler.stats?.total_tasks ?? tasks.length,
+            ],
+            [
+              t("scheduler.enabled", "Enabled"),
+              scheduler.stats?.enabled_tasks ??
+                tasks.filter((task) => task.enabled).length,
+            ],
+            [
+              t("scheduler.successful", "Successful"),
+              scheduler.stats?.successful ?? 0,
+            ],
+            [t("scheduler.failed", "Failed"), scheduler.stats?.failed ?? 0],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="bg-[var(--color-surface)] px-4 py-3"
+            >
+              <div className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-textMuted)]">
+                {label}
+              </div>
+              <div className="mt-1 text-xl font-semibold text-[var(--color-text)]">
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {scheduler.error && (
+          <div className="mx-4 mt-3 flex items-start justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <span>{scheduler.error}</span>
+            <button
+              onClick={scheduler.clearError}
+              aria-label={t("common.dismiss", "Dismiss")}
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
-      </div>
-    );
-  };
 
-  const renderUpcoming = () => {
-    if (sched.upcoming.length === 0) {
-      return (
-        <div className="sor-sched-empty flex flex-col items-center justify-center py-12 text-[var(--color-textSecondary)]">
-          <Calendar size={32} className="mb-2 opacity-40" />
-          <p className="text-sm">{t("scheduler.noUpcoming", "No upcoming executions.")}</p>
-        </div>
-      );
-    }
-    return (
-      <div className="sor-sched-upcoming space-y-1">
-        {sched.upcoming.map((u: UpcomingTask, i: number) => (
-          <div
-            key={`${u.taskId}-${i}`}
-            className="flex items-center justify-between px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]"
-          >
-            <div className="flex items-center gap-2">
-              <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${kindBadge(u.kind)}`}>
-                {u.kind}
-              </span>
-              <span className="text-xs text-[var(--color-text)]">{u.taskName}</span>
-            </div>
-            <div className="flex items-center gap-3 text-[11px] text-[var(--color-textSecondary)]">
-              <span>{fmtDate(u.nextRunAt)}</span>
-              <span className="font-mono text-primary">{timeUntil(u.nextRunAt)}</span>
-            </div>
+        {unavailableCount > 0 && (
+          <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <ShieldAlert size={15} />
+            {t(
+              "scheduler.unavailableCount",
+              "{{count}} legacy task(s) use unavailable dispatchers and cannot be run or re-enabled.",
+              { count: unavailableCount },
+            )}
           </div>
-        ))}
-      </div>
-    );
-  };
+        )}
 
-  const renderHistory = () => {
-    if (sched.history.length === 0) {
-      return (
-        <div className="sor-sched-empty flex flex-col items-center justify-center py-12 text-[var(--color-textSecondary)]">
-          <History size={32} className="mb-2 opacity-40" />
-          <p className="text-sm">{t("scheduler.noHistory", "No execution history yet.")}</p>
-        </div>
-      );
-    }
-    return (
-      <div className="sor-sched-history overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-left text-[var(--color-textSecondary)] border-b border-[var(--color-border)]">
-              <th className="pb-2 pr-3">{t("scheduler.time", "Time")}</th>
-              <th className="pb-2 pr-3">{t("scheduler.task", "Task")}</th>
-              <th className="pb-2 pr-3">{t("scheduler.duration", "Duration")}</th>
-              <th className="pb-2 pr-3">{t("scheduler.result", "Result")}</th>
-              <th className="pb-2">{t("scheduler.output", "Output")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sched.history.map((h: TaskHistoryEntry) => (
-              <tr key={h.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-surfaceHover)]">
-                <td className="py-1.5 pr-3 text-[var(--color-textSecondary)] whitespace-nowrap">
-                  {fmtDate(h.startedAt)}
-                </td>
-                <td className="py-1.5 pr-3 text-[var(--color-text)]">{h.taskName}</td>
-                <td className="py-1.5 pr-3 font-mono text-[var(--color-textSecondary)]">
-                  {formatDuration(h.durationMs)}
-                </td>
-                <td className="py-1.5 pr-3">
-                  {h.status === "completed" && (
-                    <span className="flex items-center gap-1 text-success">
-                      <CheckCircle2 size={12} /> {t("scheduler.success", "success")}
-                    </span>
-                  )}
-                  {h.status === "failed" && (
-                    <span className="flex items-center gap-1 text-error">
-                      <XCircle size={12} /> {t("scheduler.failure", "failure")}
-                    </span>
-                  )}
-                  {h.status === "cancelled" && (
-                    <span className="flex items-center gap-1 text-warning">
-                      <AlertCircle size={12} /> {t("scheduler.cancelled", "cancelled")}
-                    </span>
-                  )}
-                  {!["completed", "failed", "cancelled"].includes(h.status) && (
-                    <span className="text-[var(--color-textSecondary)]">{h.status}</span>
-                  )}
-                </td>
-                <td className="py-1.5 max-w-[200px] truncate font-mono text-[10px] text-[var(--color-textSecondary)]">
-                  {h.output ?? h.errorMessage ?? "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  // ── Modal ────────────────────────────────────────────────────────
-  const renderModal = () => {
-    if (!showModal) return null;
-    return (
-      <div className="sor-sched-modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="sor-sched-modal w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)]">
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">
-              {editingId
-                ? t("scheduler.editTask", "Edit Task")
-                : t("scheduler.addTask", "Add Task")}
-            </h3>
-            <button
-              onClick={() => setShowModal(false)}
-              className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] text-lg leading-none"
-            >
-              ×
-            </button>
-          </div>
-          <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
-            {/* Name */}
-            <label className="block text-[11px] text-[var(--color-textSecondary)]">
-              {t("scheduler.name", "Name")}
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]"
-              />
-            </label>
-            {/* Kind */}
-            <div className="block text-[11px] text-[var(--color-textSecondary)]">
-              {t("scheduler.type", "Type")}
-              <Select
-                value={form.kind}
-                onChange={(v) => setForm((f) => ({ ...f, kind: v as TaskKind }))}
-                variant="form-sm"
-                className="mt-1 w-full"
-                options={AVAILABLE_KINDS.map((k) => ({
-                  value: k,
-                  label: k,
-                }))}
-              />
-            </div>
-            {/* Cron */}
-            <label className="block text-[11px] text-[var(--color-textSecondary)]">
-              {t("scheduler.cron", "Cron Expression")}
-              <input
-                type="text"
-                value={form.cronExpression}
-                onChange={(e) => setForm((f) => ({ ...f, cronExpression: e.target.value }))}
-                placeholder="* * * * *"
-                className={`mt-1 w-full px-3 py-1.5 text-xs rounded-lg border bg-[var(--color-bg)] text-[var(--color-text)] ${
-                  cronError
-                    ? "border-error/60"
-                    : "border-[var(--color-border)]"
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+          <div className="flex gap-1 rounded-lg bg-[var(--color-surface)] p-1">
+            {(["tasks", "upcoming", "history"] as TabId[]).map((value) => (
+              <button
+                key={value}
+                onClick={() => setTab(value)}
+                className={`rounded-md px-3 py-1.5 text-xs capitalize ${
+                  tab === value
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
                 }`}
-              />
-              {cronError && (
-                <p className="mt-1 text-[10px] text-error">{cronError}</p>
-              )}
-              {cronPreview.length > 0 && (
-                <div className="mt-1.5 space-y-0.5">
-                  <p className="text-[10px] text-[var(--color-textSecondary)]">
-                    {t("scheduler.nextOccurrences", "Next occurrences:")}
-                  </p>
-                  {cronPreview.map((d, i) => (
-                    <p key={i} className="text-[10px] font-mono text-primary pl-2">
-                      {fmtDate(d)}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </label>
-            {/* Cron helper */}
-            <details className="text-[11px]">
-              <summary className="cursor-pointer text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
-                {t("scheduler.cronHelper", "Common cron patterns")}
-              </summary>
-              <div className="mt-1 grid grid-cols-2 gap-1">
-                {CRON_PRESETS.map((p) => (
-                  <button
-                    key={p.cron}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, cronExpression: p.cron }))}
-                    className="text-left px-2 py-1 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)]"
-                  >
-                    <span className="font-mono text-primary">{p.cron}</span>{" "}
-                    <span className="text-[10px]">{p.label}</span>
-                  </button>
-                ))}
-              </div>
-            </details>
-            {/* Target (connection IDs) */}
-            <label className="block text-[11px] text-[var(--color-textSecondary)]">
-              {t("scheduler.target", "Target (connection IDs / script path)")}
-              <input
-                type="text"
-                value={form.connectionIds}
-                onChange={(e) => setForm((f) => ({ ...f, connectionIds: e.target.value }))}
-                placeholder="id1, id2"
-                className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]"
-              />
-            </label>
-            {/* Timeout + Retries */}
-            <div className="flex gap-3">
-              <label className="flex-1 block text-[11px] text-[var(--color-textSecondary)]">
-                {t("scheduler.timeout", "Timeout (ms)")}
-                <input
-                  type="number"
-                  min={0}
-                  value={form.timeoutMs}
-                  onChange={(e) => setForm((f) => ({ ...f, timeoutMs: Number(e.target.value) }))}
-                  className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]"
-                />
-              </label>
-              <label className="flex-1 block text-[11px] text-[var(--color-textSecondary)]">
-                {t("scheduler.retries", "Retries")}
-                <input
-                  type="number"
-                  min={0}
-                  value={form.maxRetries}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, maxRetries: Number(e.target.value) }))
-                  }
-                  className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]"
-                />
-              </label>
-            </div>
-            {/* Description */}
-            <label className="block text-[11px] text-[var(--color-textSecondary)]">
-              {t("scheduler.description", "Description")}
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                rows={2}
-                className="mt-1 w-full px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] resize-none"
-              />
-            </label>
-            {/* Enabled toggle */}
-            <label className="flex items-center gap-2 text-xs text-[var(--color-text)]">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-                className="rounded"
-              />
-              {t("scheduler.enabled", "Enabled")}
-            </label>
+              >
+                {t(`scheduler.${value}`, value)}
+              </button>
+            ))}
           </div>
-          <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--color-border)]">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowModal(false)}
-              className="px-3 py-1.5 text-xs rounded-lg border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
-            >
-              {t("common.cancel", "Cancel")}
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!form.name || !form.cronExpression || !!cronError}
-              className="px-3 py-1.5 text-xs rounded-lg bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {editingId ? t("common.save", "Save") : t("scheduler.create", "Create")}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ── Main Render ──────────────────────────────────────────────────
-  return (
-    <>
-      <div className="sor-sched-panel flex flex-col h-full" data-testid="scheduler-panel">
-        {/* Header */}
-        <div className="sor-sched-header flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)]">
-          <div className="flex items-center gap-3">
-            <Settings size={18} className="text-primary" />
-            <h2 className="text-sm font-semibold text-[var(--color-text)]">
-              {t("scheduler.title", "Scheduled Automation")}
-            </h2>
-            <div className="flex items-center gap-2 ml-3 text-[11px] text-[var(--color-textSecondary)]">
-              <span>
-                {t("scheduler.total", "Total")}: {totalTasks}
-              </span>
-              <span className="text-success">
-                {t("scheduler.active", "Active")}: {activeTasks}
-              </span>
-              <span className="text-warning">
-                {t("scheduler.pausedCount", "Paused")}: {pausedTasks}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={openAdd}
-              data-testid="scheduler-add-task"
-              className="sor-sched-add flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg bg-primary text-[var(--color-text)] hover:bg-primary/90 transition-colors"
-            >
-              <Plus size={13} /> {t("scheduler.add", "Add")}
-            </button>
-            <button
-              onClick={sched.pauseAll}
-              className="sor-sched-pause-all flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("scheduler.pauseAll", "Pause all")}
-            >
-              <Pause size={13} />
-            </button>
-            <button
-              onClick={sched.resumeAll}
-              className="sor-sched-resume-all flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] transition-colors"
-              title={t("scheduler.resumeAll", "Resume all")}
-            >
-              <Play size={13} />
-            </button>
-            <button
-              onClick={() => {
-                sched.fetchTasks();
-                sched.fetchStats();
-                sched.fetchUpcoming(20);
-                sched.fetchHistory();
-              }}
-              className="sor-sched-refresh p-1.5 rounded-lg text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] transition-colors"
+              onClick={() => void refresh()}
+              disabled={scheduler.loading}
+              className="rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-50"
               title={t("common.refresh", "Refresh")}
             >
-              <RefreshCw size={14} />
+              <RefreshCw
+                size={14}
+                className={scheduler.loading ? "animate-spin" : ""}
+              />
+            </button>
+            <button
+              onClick={openAdd}
+              className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-medium text-white hover:brightness-110"
+            >
+              <Plus size={14} />
+              {t("scheduler.addWakeTask", "Add Wake-on-LAN task")}
             </button>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="sor-sched-tabs flex gap-1 px-5 py-2 border-b border-[var(--color-border)]">
-          <TabButton
-            active={tab === "tasks"}
-            onClick={() => setTab("tasks")}
-            icon={<ListChecks size={13} />}
-            label={t("scheduler.tabTasks", "Tasks")}
-          />
-          <TabButton
-            active={tab === "upcoming"}
-            onClick={() => {
-              setTab("upcoming");
-              sched.fetchUpcoming(20);
-            }}
-            icon={<Calendar size={13} />}
-            label={t("scheduler.tabUpcoming", "Upcoming")}
-          />
-          <TabButton
-            active={tab === "history"}
-            onClick={() => {
-              setTab("history");
-              sched.fetchHistory();
-            }}
-            icon={<History size={13} />}
-            label={t("scheduler.tabHistory", "History")}
-          />
-        </div>
-
-        {/* Error banner */}
-        {sched.error && (
-          <div className="sor-sched-error flex items-center gap-2 mx-5 mt-3 px-3 py-2 rounded-lg bg-error/10 border border-error/20 text-error text-xs">
-            <AlertCircle size={14} />
-            {sched.error}
-          </div>
-        )}
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 py-3">
-          {sched.loading ? (
-            <div className="sor-sched-loading flex flex-col items-center justify-center py-16 text-[var(--color-textSecondary)]">
-              <Loader2 size={28} className="animate-spin mb-2" />
-              <p className="text-xs">{t("common.loading", "Loading…")}</p>
-            </div>
-          ) : (
-            <>
-              {tab === "tasks" && (
-                <>
-                  {sched.tasks.length === 0 ? (
-                    <div className="sor-sched-empty flex flex-col items-center justify-center py-16 text-[var(--color-textSecondary)]">
-                      <ListChecks size={32} className="mb-2 opacity-40" />
-                      <p className="text-sm mb-2">
-                        {t("scheduler.noTasks", "No scheduled tasks yet.")}
-                      </p>
-                      <button
-                        onClick={openAdd}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-primary text-[var(--color-text)] hover:bg-primary/90"
-                      >
-                        <Plus size={13} /> {t("scheduler.createFirst", "Create your first task")}
-                      </button>
-                    </div>
-                  ) : (
-                    sched.tasks.map(renderTaskCard)
-                  )}
-                </>
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {tab === "tasks" && (
+            <div className="space-y-2">
+              {tasks.length === 0 && !scheduler.loading && (
+                <div className="flex h-52 flex-col items-center justify-center text-center text-[var(--color-textSecondary)]">
+                  <CalendarClock size={34} className="mb-3 opacity-40" />
+                  <p className="text-sm">
+                    {t("scheduler.noTasks", "No scheduled tasks.")}
+                  </p>
+                </div>
               )}
-              {tab === "upcoming" && renderUpcoming()}
-              {tab === "history" && renderHistory()}
-            </>
+              {tasks.map((task) => {
+                const runnable = isRunnableAction(task.action);
+                const editable = formFromTask(task) !== null;
+                return (
+                  <article
+                    key={task.id}
+                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">
+                            {task.name}
+                          </h3>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] ${
+                              runnable
+                                ? "bg-emerald-500/15 text-emerald-300"
+                                : "bg-amber-500/15 text-amber-200"
+                            }`}
+                          >
+                            {actionLabel(task.action)}
+                          </span>
+                          {!task.enabled && (
+                            <span className="rounded-full bg-[var(--color-background)] px-2 py-0.5 text-[10px] text-[var(--color-textMuted)]">
+                              {t("scheduler.disabled", "disabled")}
+                            </span>
+                          )}
+                          {!runnable && (
+                            <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] text-red-300">
+                              {t("scheduler.unavailable", "unavailable")}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 truncate text-xs text-[var(--color-textSecondary)]">
+                          {task.description ||
+                            t("scheduler.noDescription", "No description")}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-[var(--color-textMuted)]">
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {scheduleLabel(task.schedule)}
+                          </span>
+                          <span>
+                            {t("scheduler.next", "Next")}:{" "}
+                            {formatDate(task.next_run_at)}
+                          </span>
+                          <span>
+                            {t("scheduler.runs", "Runs")}: {task.run_count}
+                          </span>
+                          <span>
+                            {t("scheduler.failures", "Failures")}:{" "}
+                            {task.fail_count}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          onClick={() =>
+                            void scheduler.setTaskEnabled(
+                              task.id,
+                              !task.enabled,
+                            )
+                          }
+                          disabled={!task.enabled && !runnable}
+                          className="rounded-lg p-2 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed disabled:opacity-35"
+                          title={
+                            task.enabled
+                              ? t("scheduler.disable", "Disable")
+                              : t("scheduler.enable", "Enable")
+                          }
+                        >
+                          {task.enabled ? (
+                            <Pause size={14} />
+                          ) : (
+                            <Play size={14} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => void runTask(task)}
+                          disabled={!runnable || runningId === task.id}
+                          className="rounded-lg p-2 text-[var(--color-accent)] hover:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed disabled:opacity-35"
+                          title={
+                            runnable
+                              ? t("scheduler.runNow", "Run now")
+                              : t(
+                                  "scheduler.dispatcherUnavailable",
+                                  "Runtime dispatcher unavailable",
+                                )
+                          }
+                        >
+                          {runningId === task.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Zap size={14} />
+                          )}
+                        </button>
+                        {editable && (
+                          <button
+                            onClick={() => openEdit(task)}
+                            className="rounded-lg p-2 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+                            title={t("common.edit", "Edit")}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void deleteTask(task)}
+                          className="rounded-lg p-2 text-red-400 hover:bg-red-500/10"
+                          title={t("common.delete", "Delete")}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === "upcoming" && (
+            <div className="space-y-2">
+              {scheduler.upcoming.length === 0 && (
+                <p className="py-16 text-center text-sm text-[var(--color-textSecondary)]">
+                  {t("scheduler.noUpcoming", "No upcoming executions.")}
+                </p>
+              )}
+              {scheduler.upcoming.map(({ task, next_run_at }) => (
+                <div
+                  key={`${task.id}-${next_run_at}`}
+                  className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm text-[var(--color-text)]">
+                      {task.name}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-[var(--color-textMuted)]">
+                      {actionLabel(task.action)}
+                    </div>
+                  </div>
+                  <time className="text-xs text-[var(--color-textSecondary)]">
+                    {formatDate(next_run_at)}
+                  </time>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === "history" && (
+            <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[var(--color-surface)] text-[var(--color-textMuted)]">
+                  <tr>
+                    <th className="px-3 py-2">{t("scheduler.task", "Task")}</th>
+                    <th className="px-3 py-2">
+                      {t("scheduler.started", "Started")}
+                    </th>
+                    <th className="px-3 py-2">
+                      {t("scheduler.duration", "Duration")}
+                    </th>
+                    <th className="px-3 py-2">
+                      {t("scheduler.result", "Result")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduler.history.map((record: TaskExecutionRecord) => (
+                    <tr
+                      key={record.id}
+                      className="border-t border-[var(--color-border)]"
+                    >
+                      <td className="px-3 py-2 text-[var(--color-text)]">
+                        {record.task_name}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--color-textSecondary)]">
+                        {formatDate(record.started_at)}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--color-textSecondary)]">
+                        {formatDuration(record.duration_ms)}
+                      </td>
+                      <td className="max-w-sm px-3 py-2">
+                        <div
+                          className={`flex items-center gap-1 ${
+                            record.status === "Completed"
+                              ? "text-emerald-300"
+                              : record.status === "Failed"
+                                ? "text-red-300"
+                                : "text-amber-200"
+                          }`}
+                        >
+                          {record.status === "Completed" ? (
+                            <CheckCircle2 size={13} />
+                          ) : record.status === "Failed" ? (
+                            <XCircle size={13} />
+                          ) : (
+                            <AlertTriangle size={13} />
+                          )}
+                          {record.status}
+                        </div>
+                        {record.error && (
+                          <div
+                            className="mt-1 truncate text-[10px] text-red-300/80"
+                            title={record.error}
+                          >
+                            {record.error}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {scheduler.history.length === 0 && (
+                <p className="py-16 text-center text-sm text-[var(--color-textSecondary)]">
+                  {t("scheduler.noHistory", "No execution history.")}
+                </p>
+              )}
+            </div>
           )}
         </div>
-      </div>
-      {renderModal()}
-    </>
+
+        <footer className="flex items-center justify-between border-t border-[var(--color-border)] px-4 py-3 text-[11px] text-[var(--color-textMuted)]">
+          <span>
+            {scheduler.config?.enabled === false
+              ? t("scheduler.paused", "Scheduler paused")
+              : t("scheduler.active", "Scheduler active")}
+          </span>
+          <button
+            onClick={async () => {
+              if (scheduler.config?.enabled === false) {
+                await scheduler.resumeAll();
+              } else {
+                await scheduler.pauseAll();
+              }
+              await scheduler.loadConfig();
+            }}
+            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+          >
+            {scheduler.config?.enabled === false
+              ? t("scheduler.resume", "Resume scheduler")
+              : t("scheduler.pause", "Pause scheduler")}
+          </button>
+        </footer>
+      </section>
+
+      {showEditor && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4">
+          <form
+            onSubmit={saveTask}
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                  {editingId
+                    ? t("scheduler.editWakeTask", "Edit Wake-on-LAN task")
+                    : t("scheduler.addWakeTask", "Add Wake-on-LAN task")}
+                </h3>
+                <p className="mt-1 text-[11px] text-[var(--color-textMuted)]">
+                  {t(
+                    "scheduler.wakeScope",
+                    "Sends one standard UDP magic packet to the local broadcast address.",
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditor(false)}
+                className="rounded-lg p-2 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <label className="block text-xs text-[var(--color-textSecondary)]">
+                {t("scheduler.name", "Name")}
+                <input
+                  value={form.name}
+                  maxLength={128}
+                  onChange={(event) => {
+                    setForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }));
+                    setFormErrors((current) => ({
+                      ...current,
+                      name: null,
+                    }));
+                  }}
+                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
+                  required
+                />
+              </label>
+              <label className="block text-xs text-[var(--color-textSecondary)]">
+                {t("scheduler.description", "Description")}
+                <textarea
+                  value={form.description}
+                  maxLength={2048}
+                  rows={2}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
+                />
+              </label>
+              <div className="grid grid-cols-[1fr_110px] gap-3">
+                <label className="block text-xs text-[var(--color-textSecondary)]">
+                  {t("scheduler.macAddress", "MAC address")}
+                  <input
+                    value={form.macAddress}
+                    maxLength={17}
+                    placeholder="AA:BB:CC:DD:EE:FF"
+                    onChange={(event) => {
+                      setForm((current) => ({
+                        ...current,
+                        macAddress: event.target.value,
+                      }));
+                      setFormErrors((current) => ({
+                        ...current,
+                        macAddress: null,
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm text-[var(--color-text)]"
+                    required
+                  />
+                </label>
+                <label className="block text-xs text-[var(--color-textSecondary)]">
+                  {t("scheduler.port", "UDP port")}
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={form.port}
+                    onChange={(event) => {
+                      setForm((current) => ({
+                        ...current,
+                        port: Number(event.target.value),
+                      }));
+                      setFormErrors((current) => ({
+                        ...current,
+                        port: null,
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
+                    required
+                  />
+                </label>
+              </div>
+              <label className="block text-xs text-[var(--color-textSecondary)]">
+                {t("scheduler.cron", "Cron schedule (UTC)")}
+                <input
+                  value={form.cron}
+                  maxLength={256}
+                  onChange={(event) => {
+                    setForm((current) => ({
+                      ...current,
+                      cron: event.target.value,
+                    }));
+                    setFormErrors((current) => ({
+                      ...current,
+                      cron: null,
+                    }));
+                  }}
+                  className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 font-mono text-sm text-[var(--color-text)]"
+                  required
+                />
+              </label>
+              {formError ? (
+                <div className="flex items-start gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  {formError}
+                </div>
+              ) : cronPreview.length > 0 ? (
+                <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-200">
+                  <div className="mb-1 font-medium">
+                    {t("scheduler.nextRuns", "Next runs")}
+                  </div>
+                  {cronPreview.map((value) => (
+                    <div key={value}>{formatDate(value)}</div>
+                  ))}
+                </div>
+              ) : null}
+              <label className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      enabled: event.target.checked,
+                    }))
+                  }
+                />
+                {t("scheduler.enableImmediately", "Enable immediately")}
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowEditor(false)}
+                className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+              >
+                {t("common.cancel", "Cancel")}
+              </button>
+              <button
+                type="submit"
+                disabled={saving || Boolean(formError)}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {saving && <Loader2 size={13} className="animate-spin" />}
+                {t("common.save", "Save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
   );
 };
 

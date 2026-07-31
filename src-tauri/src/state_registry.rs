@@ -34,6 +34,8 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
             format!("credential lifecycle state could not be loaded: {error}"),
         )
     })?;
+    #[cfg(feature = "ops")]
+    register_scheduler(app, &app_dir)?;
 
     // t40-f2: recover crash-orphaned in-flight terminal recordings. f2's
     // incremental-flush writer persists a crash snapshot under
@@ -246,6 +248,58 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     });
 
     Ok(())
+}
+
+#[cfg(feature = "ops")]
+fn register_scheduler(
+    app: &mut tauri::App<tauri::Wry>,
+    app_dir: &std::path::Path,
+) -> tauri::Result<()> {
+    // This plaintext store is intentionally dedicated to the scheduler's
+    // non-secret Wake-on-LAN task family. SchedulerService rejects every
+    // legacy action that could carry credentials before it reaches disk.
+    let storage_path = app_dir.join("scheduler-wol-state-v1.json");
+    let state = crate::scheduler::service::SchedulerService::with_storage_path(storage_path)
+        .map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("scheduler state could not be loaded from app data: {error}"),
+            )
+        })?;
+
+    if !app.manage(state.clone()) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "scheduler state was registered more than once",
+        )
+        .into());
+    }
+
+    // Setup runs before IPC is exposed. Starting through Tauri's Tokio
+    // runtime here makes lifecycle ownership explicit; the service method is
+    // idempotent, so its constructor's runtime-aware safeguard cannot create
+    // a second background loop.
+    tauri::async_runtime::block_on(
+        crate::scheduler::service::SchedulerService::ensure_background_started(state),
+    )
+    .map_err(|error| {
+        std::io::Error::other(format!(
+            "scheduler background loop could not start: {error}"
+        ))
+    })?;
+
+    Ok(())
+}
+
+#[cfg(feature = "ops")]
+pub(crate) fn stop_scheduler(app_handle: &tauri::AppHandle) {
+    if let Some(state) = app_handle.try_state::<crate::scheduler::service::SchedulerServiceState>()
+    {
+        let state = state.inner().clone();
+        tauri::async_runtime::block_on(
+            crate::scheduler::service::SchedulerService::stop_background(&state),
+        );
+    }
 }
 
 fn resolve_user_store_path(

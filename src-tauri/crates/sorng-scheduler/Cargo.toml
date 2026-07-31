@@ -12,3 +12,4 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
+tauri = { workspace = true }

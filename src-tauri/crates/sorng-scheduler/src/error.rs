@@ -9,6 +9,12 @@ pub enum SchedulerError {
     TaskNotFound(String),
     /// A duplicate task ID was detected.
     DuplicateTask(String),
+    /// An input or configuration value violates a scheduler invariant.
+    InvalidInput(String),
+    /// A bounded scheduler collection has reached its safe capacity.
+    CapacityExceeded(String),
+    /// A task exists but is not currently running and cannot be cancelled.
+    TaskNotRunning(String),
     /// A cron expression could not be parsed.
     CronParseError(String),
     /// A task action failed during execution.
@@ -32,6 +38,9 @@ impl fmt::Display for SchedulerError {
         match self {
             Self::TaskNotFound(id) => write!(f, "task not found: {id}"),
             Self::DuplicateTask(id) => write!(f, "duplicate task id: {id}"),
+            Self::InvalidInput(msg) => write!(f, "invalid scheduler input: {msg}"),
+            Self::CapacityExceeded(msg) => write!(f, "scheduler capacity exceeded: {msg}"),
+            Self::TaskNotRunning(id) => write!(f, "task is not currently running: {id}"),
             Self::CronParseError(msg) => write!(f, "cron parse error: {msg}"),
             Self::ExecutionError(msg) => write!(f, "execution error: {msg}"),
             Self::TimeoutError(msg) => write!(f, "timeout: {msg}"),
