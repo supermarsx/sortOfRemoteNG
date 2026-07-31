@@ -3287,6 +3287,13 @@ ${tableRows}
         exportKeyDerivationIterations,
       );
 
+      if (exportInclusion.includeCredentials && !shouldUsePasswordEncryption) {
+        toast.error(
+          "Credential-bearing exports require password encryption. Enable encryption and enter a password, or exclude credentials and secrets.",
+        );
+        return;
+      }
+
       if (
         shouldUsePasswordEncryption &&
         exportSecuritySettings.enforceMinimumPasswordScore

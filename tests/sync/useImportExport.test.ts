@@ -811,16 +811,7 @@ describe("useImportExport", () => {
     );
   });
 
-  it("refuses plaintext JSON when actual VPN credentials are selected", async () => {
-    mockListTailscale.mockResolvedValueOnce([
-      {
-        id: "tailscale-sensitive",
-        name: "Sensitive tailnet",
-        config: { enabled: true, authKey: "ts-secret-auth-key" },
-        status: "disconnected",
-        createdAt: new Date(FIXTURE_NOW),
-      },
-    ]);
+  it("refuses any requested credential export without password encryption", async () => {
     const { result } = renderImportExport();
 
     act(() => {
@@ -832,7 +823,7 @@ describe("useImportExport", () => {
 
     expect(globalThis.URL.createObjectURL).not.toHaveBeenCalled();
     expect(mockToast.error).toHaveBeenCalledWith(
-      "VPN credentials can only be exported in an encrypted JSON file. Enable encryption, enter a password, or exclude credentials.",
+      "Credential-bearing exports require password encryption. Enable encryption and enter a password, or exclude credentials and secrets.",
     );
   });
 
