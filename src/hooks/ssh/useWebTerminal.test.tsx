@@ -1,4 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionSession } from "../../types/connection/connection";
 import {
@@ -85,6 +86,12 @@ const mocks = vi.hoisted(() => {
   const settingsContext = {
     settings: {} as Record<string, unknown>,
   };
+  const toast = Object.assign(vi.fn(), {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+  });
   const listeners = new Map<string, (event: { payload: any }) => void>();
   const runtimePath = {
     protocol: "ssh" as const,
@@ -109,10 +116,15 @@ const mocks = vi.hoisted(() => {
     connection,
     context,
     settingsContext,
+    toast,
     invoke: vi.fn(),
     addHistoryEntry: vi.fn(),
     listen: vi.fn(async (..._args: unknown[]) => vi.fn()),
     listeners,
+    loadManagedScripts: vi.fn(async () => ({
+      value: [],
+      sanitized: false,
+    })),
     macroRecorder: idleMacroRecorder,
     idleMacroRecorder,
     terminalConfig: {},
@@ -144,7 +156,7 @@ vi.mock("../../contexts/SettingsContext", () => ({
   useSettings: () => mocks.settingsContext,
 }));
 vi.mock("../../contexts/ToastContext", () => ({
-  useToastContext: () => ({ toast: vi.fn() }),
+  useToastContext: () => ({ toast: mocks.toast }),
 }));
 vi.mock("../recording/useTerminalRecorder", () => ({
   useTerminalRecorder: () => ({ isRecording: false }),
@@ -157,6 +169,16 @@ vi.mock("../../utils/recording/macroService", () => ({
   saveMacro: vi.fn(async () => undefined),
   saveRecording: vi.fn(async () => undefined),
   replayMacro: vi.fn(async () => undefined),
+}));
+vi.mock("../../utils/recording/managedScriptPersistence", () => ({
+  managedScriptsStore: {
+    key: "managed-scripts-test",
+    load: () => mocks.loadManagedScripts(),
+  },
+  resolveManagedScripts: (
+    defaults: unknown[],
+    persisted: unknown[] | undefined,
+  ) => persisted ?? defaults,
 }));
 vi.mock("../../types/settings/settings", async (importOriginal) => {
   const actual =
@@ -218,6 +240,12 @@ beforeEach(() => {
   mocks.context.dispatch.mockReset();
   mocks.invoke.mockReset();
   mocks.addHistoryEntry.mockReset();
+  mocks.loadManagedScripts.mockClear();
+  mocks.toast.mockClear();
+  mocks.toast.error.mockClear();
+  mocks.toast.info.mockClear();
+  mocks.toast.success.mockClear();
+  mocks.toast.warning.mockClear();
   mocks.listeners.clear();
   mocks.listen.mockReset();
   mocks.listen.mockImplementation(async (...args: unknown[]) => {
@@ -275,6 +303,42 @@ beforeEach(() => {
 });
 
 describe("useWebTerminal input lifecycle", () => {
+  it("shows a persisted connected SSH session immediately while validating its backend actor", async () => {
+    const fallbackInvoke = mocks.invoke.getMockImplementation();
+    const pendingValidation = new Promise<boolean>(() => undefined);
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "is_session_alive") return pendingValidation;
+      return fallbackInvoke?.(command, args);
+    });
+    const persistedSession: ConnectionSession = {
+      ...session,
+      status: "connected",
+      backendSessionId: "backend-persisted-1",
+      shellId: "shell-persisted-1",
+    };
+    let model: WebTerminalMgr | null = null;
+    const Harness = () => {
+      model = useWebTerminal(persistedSession);
+      return <div ref={model.containerRef} />;
+    };
+
+    const view = render(<Harness />);
+
+    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith("is_session_alive", {
+        sessionId: "backend-persisted-1",
+      }),
+    );
+    expect((model as WebTerminalMgr | null)?.status).toBe("connected");
+    expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(true);
+
+    view.unmount();
+    await waitFor(() =>
+      expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(false),
+    );
+  });
+
   it("shows connecting from the first render until a deferred SSH attempt settles", async () => {
     let resolveConnect!: (sessionId: string) => void;
     const deferredConnect = new Promise<string>((resolve) => {
@@ -306,6 +370,126 @@ describe("useWebTerminal input lifecycle", () => {
     });
     await waitFor(() => expect(model?.status).toBe("connected"));
   });
+
+  it("restarts a superseded StrictMode SSH setup without stranding prompt waiters", async () => {
+    const firstConnect = new Promise<string>(() => undefined);
+    const fallbackInvoke = mocks.invoke.getMockImplementation();
+    let connectCalls = 0;
+    mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "connect_ssh") {
+        connectCalls += 1;
+        return connectCalls === 1
+          ? firstConnect
+          : Promise.resolve("backend-ssh-strict-replacement");
+      }
+      if (command === "start_shell") {
+        return Promise.resolve("shell-ssh-strict-replacement");
+      }
+      return fallbackInvoke?.(command, args);
+    });
+    const rejectTrustPrompt = vi.fn();
+    const rejectProxyCommand = vi.fn();
+    let model: WebTerminalMgr | null = null;
+    const Harness = ({ onResize }: { onResize: () => void }) => {
+      model = useWebTerminal(session, onResize);
+      return <div ref={model.containerRef} />;
+    };
+    const firstResize = vi.fn();
+    const replacementResize = vi.fn();
+    const view = render(
+      <StrictMode>
+        <Harness onResize={firstResize} />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(connectCalls).toBe(1));
+    model!.sshTrustResolveRef.current = rejectTrustPrompt;
+    model!.proxyCommandResolveRef.current = rejectProxyCommand;
+
+    view.rerender(
+      <StrictMode>
+        <Harness onResize={replacementResize} />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(connectCalls).toBe(2));
+    await waitFor(() => expect(model?.status).toBe("connected"));
+    expect(rejectTrustPrompt).toHaveBeenCalledWith("reject");
+    expect(rejectProxyCommand).toHaveBeenCalledWith(false);
+    expect(model!.sshTrustResolveRef.current).toBeNull();
+    expect(model!.proxyCommandResolveRef.current).toBeNull();
+    expect(mocks.invoke).toHaveBeenCalledWith("start_shell", {
+      sessionId: "backend-ssh-strict-replacement",
+    });
+  });
+
+  it.each(["connect_ssh", "start_shell"] as const)(
+    "moves a never-resolving %s attempt to a redacted timeout error",
+    async (hungCommand) => {
+      const fallbackInvoke = mocks.invoke.getMockImplementation();
+      const neverSettles = new Promise<string>(() => undefined);
+      mocks.invoke.mockImplementation((command: string, args?: unknown) => {
+        if (command === hungCommand) return neverSettles;
+        return fallbackInvoke?.(command, args);
+      });
+      const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+      let model: WebTerminalMgr | null = null;
+      const Harness = () => {
+        model = useWebTerminal(session);
+        return <div ref={model.containerRef} />;
+      };
+
+      const view = render(<Harness />);
+      await waitFor(() =>
+        expect(mocks.invoke).toHaveBeenCalledWith(
+          hungCommand,
+          expect.anything(),
+        ),
+      );
+      const watchdogIndex = timeoutSpy.mock.calls.findIndex(
+        ([, delay]) => typeof delay === "number" && delay >= 30_000,
+      );
+      expect(watchdogIndex).toBeGreaterThanOrEqual(0);
+      const watchdogCallback = timeoutSpy.mock.calls[
+        watchdogIndex
+      ][0] as () => void;
+      const watchdogTimer = timeoutSpy.mock.results[watchdogIndex]
+        .value as ReturnType<typeof setTimeout>;
+
+      await act(async () => {
+        watchdogCallback();
+        await Promise.resolve();
+      });
+      clearTimeout(watchdogTimer);
+
+      expect((model as WebTerminalMgr | null)?.status).toBe("error");
+      expect((model as WebTerminalMgr | null)?.sshFailure).toEqual(
+        expect.objectContaining({
+          kind: "timeout",
+          summary:
+            "SSH connection attempt timed out before the remote shell became ready.",
+          technicalDetails:
+            "SSH connection attempt timed out before the remote shell became ready.",
+        }),
+      );
+      expect(
+        (model as WebTerminalMgr | null)?.sshFailure?.technicalDetails,
+      ).not.toContain("secret");
+      expect(hasSessionLifecycleActorAttempt(session.id)).toBe(false);
+      expect(mocks.context.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          lifecycleActorReservationId: undefined,
+          status: "error",
+          errorMessage:
+            "SSH connection attempt timed out before the remote shell became ready.",
+        }),
+      });
+
+      view.unmount();
+      timeoutSpy.mockRestore();
+    },
+  );
 
   it("maps TCP socket keepalive independently from SSH keepalive", async () => {
     mocks.terminalConfig = {
@@ -851,8 +1035,15 @@ describe("useWebTerminal input lifecycle", () => {
       model = useWebTerminal(session);
       return <div ref={model.containerRef} />;
     };
-    render(<Harness />);
+    const view = render(<Harness />);
     await waitFor(() => expect(model?.status).toBe("connected"));
+    await waitFor(() => {
+      expect(mocks.loadManagedScripts).toHaveBeenCalledOnce();
+      expect(mocks.listeners.has("request-terminal-buffer")).toBe(true);
+      expect(mocks.listeners.has("ssh-output")).toBe(true);
+      expect(mocks.listeners.has("ssh-error")).toBe(true);
+      expect(mocks.listeners.has("ssh-shell-closed")).toBe(true);
+    });
 
     await act(async () => {
       await model?.runScript({
@@ -878,6 +1069,12 @@ describe("useWebTerminal input lifecycle", () => {
         errorMessage: "script failed",
       }),
     ]);
+
+    await act(async () => {
+      view.unmount();
+      await Promise.resolve();
+    });
+    expect(mocks.listeners.size).toBe(0);
   });
 
   it.each([

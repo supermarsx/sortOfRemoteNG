@@ -4,15 +4,18 @@ use socket2::{SockRef, TcpKeepalive};
 use sorng_core::events::DynEventEmitter;
 use ssh2::{ErrorCode as SshErrorCode, KeyboardInteractivePrompt, MethodType, Prompt, Session};
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 #[cfg(windows)]
 use std::os::windows::io::AsRawSocket;
 use std::path::Path;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream as AsyncTcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use uuid::Uuid;
 
 use super::automation::process_automation_output;
@@ -31,6 +34,43 @@ const DEFAULT_TCP_KEEPALIVE_INTERVAL_SECS: u64 = 60;
 const MAX_TCP_KEEPALIVE_PROBES: u32 = 255;
 const LIBSSH2_ERROR_EAGAIN: i32 = -37;
 const SHELL_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const SCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS: u32 = 5_000;
+const SCRIPT_OUTPUT_LIMIT_BYTES: usize = 4 * 1024 * 1024;
+const SCRIPT_OUTPUT_LIMIT_ERROR: &str = "Remote script output exceeded the 4 MiB safety limit";
+const SCRIPT_OUTPUT_READ_POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+struct ZeroingCommandInput(Vec<u8>);
+
+impl Drop for ZeroingCommandInput {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+fn remote_environment_set_failure_message(key: &str, error: &impl std::fmt::Display) -> String {
+    format!(
+        "Failed to set remote environment variable '{}': {} (value omitted)",
+        key, error
+    )
+}
+
+#[cfg(test)]
+mod secret_logging_tests {
+    use super::remote_environment_set_failure_message;
+
+    #[test]
+    fn remote_environment_failure_diagnostic_omits_the_value() {
+        let secret_value = "remote-env-secret-that-must-not-be-logged";
+        let message =
+            remote_environment_set_failure_message("DEPLOY_TOKEN", &"server rejected setenv");
+
+        assert!(message.contains("DEPLOY_TOKEN"));
+        assert!(message.contains("server rejected setenv"));
+        assert!(!message.contains(secret_value));
+        assert!(message.contains("value omitted"));
+    }
+}
 
 lazy_static::lazy_static! {
     /// `ssh2::KnownHosts::write_file` rewrites the complete file rather than
@@ -382,12 +422,176 @@ fn parse_script_stdout_and_exit(raw_stdout: &str, raw_exit: i32) -> (String, i32
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScriptOutputReadError {
+    OutputLimitExceeded,
+    DeadlineExceeded,
+    Cancelled,
+    StdoutReadFailed,
+    StderrReadFailed,
+}
+
+impl ScriptOutputReadError {
+    fn user_message(self) -> &'static str {
+        match self {
+            Self::OutputLimitExceeded => SCRIPT_OUTPUT_LIMIT_ERROR,
+            Self::DeadlineExceeded => "Remote script execution exceeded the five-minute deadline",
+            Self::Cancelled => "Remote script output collection was cancelled",
+            Self::StdoutReadFailed => "Failed to read remote script stdout",
+            Self::StderrReadFailed => "Failed to read remote script stderr",
+        }
+    }
+
+    fn priority(self) -> u8 {
+        match self {
+            Self::OutputLimitExceeded => 0,
+            Self::DeadlineExceeded => 1,
+            Self::StdoutReadFailed | Self::StderrReadFailed => 2,
+            Self::Cancelled => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ScriptOutputStream {
+    Stdout,
+    Stderr,
+}
+
+impl ScriptOutputStream {
+    fn read_error(self) -> ScriptOutputReadError {
+        match self {
+            Self::Stdout => ScriptOutputReadError::StdoutReadFailed,
+            Self::Stderr => ScriptOutputReadError::StderrReadFailed,
+        }
+    }
+}
+
+fn read_script_stream_bounded<R: Read>(
+    mut reader: R,
+    stream: ScriptOutputStream,
+    bytes_read: Arc<AtomicUsize>,
+    byte_limit: usize,
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+) -> Result<Vec<u8>, ScriptOutputReadError> {
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8 * 1024];
+
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(ScriptOutputReadError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            cancelled.store(true, Ordering::Release);
+            return Err(ScriptOutputReadError::DeadlineExceeded);
+        }
+
+        match reader.read(&mut chunk) {
+            Ok(0) => return Ok(output),
+            Ok(count) => {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(ScriptOutputReadError::Cancelled);
+                }
+
+                let reserved = bytes_read
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                        current
+                            .checked_add(count)
+                            .filter(|next| *next <= byte_limit)
+                    })
+                    .is_ok();
+                if !reserved {
+                    cancelled.store(true, Ordering::Release);
+                    return Err(ScriptOutputReadError::OutputLimitExceeded);
+                }
+                output.extend_from_slice(&chunk[..count]);
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                std::thread::sleep(SCRIPT_OUTPUT_READ_POLL_INTERVAL.min(remaining));
+            }
+            Err(_) => {
+                cancelled.store(true, Ordering::Release);
+                return Err(stream.read_error());
+            }
+        }
+    }
+}
+
+fn read_script_output_bounded<Stdout, Stderr>(
+    stdout: Stdout,
+    stderr: Stderr,
+    byte_limit: usize,
+    deadline: Instant,
+    cancelled: Arc<AtomicBool>,
+) -> Result<(Vec<u8>, Vec<u8>), ScriptOutputReadError>
+where
+    Stdout: Read + Send,
+    Stderr: Read + Send,
+{
+    let bytes_read = Arc::new(AtomicUsize::new(0));
+    let (stdout_result, stderr_result) = std::thread::scope(|scope| {
+        let stdout_bytes_read = Arc::clone(&bytes_read);
+        let stdout_cancelled = Arc::clone(&cancelled);
+        let stdout_task = scope.spawn(move || {
+            read_script_stream_bounded(
+                stdout,
+                ScriptOutputStream::Stdout,
+                stdout_bytes_read,
+                byte_limit,
+                deadline,
+                stdout_cancelled,
+            )
+        });
+
+        let stderr_bytes_read = Arc::clone(&bytes_read);
+        let stderr_cancelled = Arc::clone(&cancelled);
+        let stderr_task = scope.spawn(move || {
+            read_script_stream_bounded(
+                stderr,
+                ScriptOutputStream::Stderr,
+                stderr_bytes_read,
+                byte_limit,
+                deadline,
+                stderr_cancelled,
+            )
+        });
+
+        let stdout_result = stdout_task
+            .join()
+            .unwrap_or(Err(ScriptOutputReadError::StdoutReadFailed));
+        let stderr_result = stderr_task
+            .join()
+            .unwrap_or(Err(ScriptOutputReadError::StderrReadFailed));
+        (stdout_result, stderr_result)
+    });
+
+    if stdout_result.is_err() || stderr_result.is_err() {
+        let error = [stdout_result.as_ref().err(), stderr_result.as_ref().err()]
+            .into_iter()
+            .flatten()
+            .copied()
+            .min_by_key(|error| error.priority())
+            .unwrap_or(ScriptOutputReadError::Cancelled);
+        return Err(error);
+    }
+
+    Ok((
+        stdout_result.unwrap_or_default(),
+        stderr_result.unwrap_or_default(),
+    ))
+}
+
 fn is_transient_shell_io_error(error: &std::io::Error) -> bool {
-    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
-        || error
-            .to_string()
-            .to_ascii_lowercase()
-            .contains("timed out waiting on socket")
+    matches!(
+        error.kind(),
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+    ) || error
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("timed out waiting on socket")
 }
 
 fn shell_closed_event(
@@ -403,6 +607,142 @@ fn shell_closed_event(
     }
 }
 
+#[derive(Debug)]
+struct PendingSshConnection {
+    cancelled: AtomicBool,
+    cancellation_notify: Notify,
+}
+
+impl PendingSshConnection {
+    fn new() -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            cancellation_notify: Notify::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        if !self.cancelled.swap(true, Ordering::AcqRel) {
+            self.cancellation_notify.notify_one();
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    async fn cancelled(&self) {
+        if !self.is_cancelled() {
+            self.cancellation_notify.notified().await;
+        }
+    }
+}
+
+type PendingSshConnections =
+    std::sync::Arc<StdMutex<HashMap<String, std::sync::Arc<PendingSshConnection>>>>;
+
+fn cleanup_pending_connection_artifacts(session_id: &str) {
+    if let Ok(mut pending_prompts) = PENDING_HOST_KEY_PROMPTS.lock() {
+        pending_prompts.remove(session_id);
+    }
+    let _ = super::proxy_command::stop_proxy_command(session_id);
+}
+
+struct SshConnectionAttempt {
+    session_id: String,
+    cancellation: std::sync::Arc<PendingSshConnection>,
+    pending_connections: PendingSshConnections,
+    registered: bool,
+}
+
+impl SshConnectionAttempt {
+    fn unregister(&mut self) {
+        if let Ok(mut pending) = self.pending_connections.lock() {
+            let owns_entry = pending
+                .get(&self.session_id)
+                .is_some_and(|current| std::sync::Arc::ptr_eq(current, &self.cancellation));
+            if owns_entry {
+                pending.remove(&self.session_id);
+            }
+        }
+        self.registered = false;
+    }
+
+    fn finish(mut self) -> bool {
+        let cancelled = self.cancellation.is_cancelled();
+        self.unregister();
+        cancelled
+    }
+}
+
+impl Drop for SshConnectionAttempt {
+    fn drop(&mut self) {
+        if self.registered {
+            self.cancellation.cancel();
+            self.unregister();
+            cleanup_pending_connection_artifacts(&self.session_id);
+        }
+    }
+}
+
+struct SshConnectionSetupGuard {
+    session_id: String,
+    armed: bool,
+}
+
+impl SshConnectionSetupGuard {
+    fn new(session_id: String) -> Self {
+        Self {
+            session_id,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for SshConnectionSetupGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            cleanup_pending_connection_artifacts(&self.session_id);
+        }
+    }
+}
+
+struct EstablishedSshConnection {
+    session_id: String,
+    session: Option<SshSession>,
+}
+
+impl Drop for EstablishedSshConnection {
+    fn drop(&mut self) {
+        let Some(mut session) = self.session.take() else {
+            return;
+        };
+
+        if let Some(handle) = session.keep_alive_handle.take() {
+            handle.abort();
+        }
+        for (_, forward) in session.port_forwards.drain() {
+            forward.handle.abort();
+        }
+
+        drop(session.session);
+        while let Some(intermediate) = session.intermediate_sessions.pop() {
+            drop(intermediate);
+        }
+        for handle in session.bridge_handles.drain(..) {
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
+        }
+
+        cleanup_pending_connection_artifacts(&self.session_id);
+    }
+}
+
 pub struct SshService {
     pub sessions: HashMap<String, SshSession>,
     #[allow(dead_code)]
@@ -411,6 +751,7 @@ pub struct SshService {
     known_hosts: HashMap<String, String>,
     pub shells: HashMap<String, SshShellHandle>,
     pub event_emitter: Option<DynEventEmitter>,
+    pending_connections: PendingSshConnections,
 }
 
 impl SshService {
@@ -421,6 +762,7 @@ impl SshService {
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: None,
+            pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
         }))
     }
 
@@ -431,7 +773,79 @@ impl SshService {
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: Some(emitter),
+            pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
         }))
+    }
+
+    fn begin_connection_attempt(&self) -> Result<(Self, SshConnectionAttempt), String> {
+        let mut pending = self
+            .pending_connections
+            .lock()
+            .map_err(|_| "Failed to lock pending SSH connections".to_string())?;
+
+        let session_id = loop {
+            let candidate = Uuid::new_v4().to_string();
+            if !self.sessions.contains_key(&candidate) && !pending.contains_key(&candidate) {
+                break candidate;
+            }
+        };
+        let cancellation = std::sync::Arc::new(PendingSshConnection::new());
+        pending.insert(session_id.clone(), cancellation.clone());
+        drop(pending);
+
+        let connector = Self {
+            sessions: HashMap::new(),
+            connection_pool: HashMap::new(),
+            known_hosts: self.known_hosts.clone(),
+            shells: HashMap::new(),
+            event_emitter: self.event_emitter.clone(),
+            pending_connections: self.pending_connections.clone(),
+        };
+        let attempt = SshConnectionAttempt {
+            session_id,
+            cancellation,
+            pending_connections: self.pending_connections.clone(),
+            registered: true,
+        };
+
+        Ok((connector, attempt))
+    }
+
+    fn cancel_pending_connection(&self, session_id: &str) -> Result<bool, String> {
+        let pending = self
+            .pending_connections
+            .lock()
+            .map_err(|_| "Failed to lock pending SSH connections".to_string())?
+            .get(session_id)
+            .cloned();
+
+        if let Some(pending) = pending {
+            pending.cancel();
+            cleanup_pending_connection_artifacts(session_id);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn adopt_connection(
+        &mut self,
+        mut connection: EstablishedSshConnection,
+    ) -> Result<String, String> {
+        if self.sessions.contains_key(&connection.session_id) {
+            return Err(format!(
+                "SSH session id collision while adopting {}",
+                connection.session_id
+            ));
+        }
+
+        let session_id = connection.session_id.clone();
+        let session = connection
+            .session
+            .take()
+            .ok_or_else(|| "Established SSH connection has no session".to_string())?;
+        self.sessions.insert(session_id.clone(), session);
+        Ok(session_id)
     }
 
     fn pause_shell_io(
@@ -491,6 +905,16 @@ impl SshService {
 
     pub async fn connect_ssh(&mut self, config: SshConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
+        let connection = self.establish_ssh_connection(session_id, config).await?;
+        self.adopt_connection(connection)
+    }
+
+    async fn establish_ssh_connection(
+        &mut self,
+        session_id: String,
+        config: SshConnectionConfig,
+    ) -> Result<EstablishedSshConnection, String> {
+        let mut setup_guard = SshConnectionSetupGuard::new(session_id.clone());
 
         // Connection method priority:
         // 0. ProxyCommand (spawns external command whose stdio IS the transport)
@@ -633,8 +1057,11 @@ impl SshService {
                 Some(self.start_keep_alive(session_id.clone(), interval, session.session.clone()));
         }
 
-        self.sessions.insert(session_id.clone(), session);
-        Ok(session_id)
+        setup_guard.disarm();
+        Ok(EstablishedSshConnection {
+            session_id,
+            session: Some(session),
+        })
     }
 
     pub async fn establish_direct_connection(
@@ -2357,6 +2784,69 @@ impl SshService {
         command: String,
         timeout: Option<u64>,
     ) -> Result<String, String> {
+        let output = self
+            .execute_command_capped(
+                session_id,
+                command,
+                timeout,
+                super::integration::DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES,
+            )
+            .await?;
+
+        if output.exit_status != 0 {
+            return Err(Self::command_failure_message(&output));
+        }
+        if output.was_truncated() {
+            return Err(format!(
+                "Command completed with exit code 0, but output exceeded the {}-byte combined capture limit (stdout truncated: {}, stderr truncated: {}); excess output was drained",
+                output.capture_limit_bytes,
+                output.stdout_truncated,
+                output.stderr_truncated
+            ));
+        }
+
+        String::from_utf8(output.stdout)
+            .map_err(|error| Self::cap_command_error(format!("Invalid UTF-8 output: {error}")))
+    }
+
+    /// Execute a command while retaining at most `max_output_bytes` across
+    /// stdout and stderr combined. Both streams continue to be drained after
+    /// that budget is exhausted so a verbose remote process cannot deadlock on
+    /// a full SSH channel window.
+    pub async fn execute_command_capped(
+        &mut self,
+        session_id: &str,
+        command: String,
+        timeout: Option<u64>,
+        max_output_bytes: usize,
+    ) -> Result<super::integration::SshCommandOutput, String> {
+        self.execute_command_capped_with_input(session_id, command, timeout, max_output_bytes, None)
+            .await
+    }
+
+    pub async fn execute_command_capped_with_input(
+        &mut self,
+        session_id: &str,
+        command: String,
+        timeout: Option<u64>,
+        max_output_bytes: usize,
+        stdin_data: Option<Vec<u8>>,
+    ) -> Result<super::integration::SshCommandOutput, String> {
+        let mut stdin_data = stdin_data.map(ZeroingCommandInput);
+        if stdin_data.as_ref().map_or(false, |data| {
+            data.0.len() > super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES
+        }) {
+            return Err(format!(
+                "SSH command input exceeds the {} byte limit",
+                super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES
+            ));
+        }
+        if max_output_bytes > super::integration::MAX_COMMAND_OUTPUT_LIMIT_BYTES {
+            return Err(format!(
+                "Requested SSH command capture limit {max_output_bytes} exceeds the hard limit of {} bytes",
+                super::integration::MAX_COMMAND_OUTPUT_LIMIT_BYTES
+            ));
+        }
         if !self.sessions.contains_key(session_id) {
             return Err("Session not found".to_string());
         }
@@ -2377,72 +2867,176 @@ impl SshService {
             session.session.set_blocking(true);
         }
 
-        let result = (|| -> Result<String, String> {
-            let mut channel = session
+        let result = (|| -> Result<super::integration::SshCommandOutput, String> {
+            let mut channel = session.session.channel_session().map_err(|error| {
+                Self::cap_command_error(format!("Failed to create channel: {error}"))
+            })?;
+
+            // Keep channel setup blocking, then alternate non-blocking reads
+            // across both streams so neither stream can starve the other.
+            let timeout_ms = timeout.unwrap_or(30_000).clamp(1, 300_000);
+            session
                 .session
-                .channel_session()
-                .map_err(|e| format!("Failed to create channel: {}", e))?;
+                .set_timeout(timeout_ms.min(u32::MAX as u64) as u32);
 
-            // Apply timeout if provided (default 30s)
-            let timeout_ms = timeout.unwrap_or(30_000);
-            session.session.set_timeout(timeout_ms as u32);
+            channel.exec(&command).map_err(|error| {
+                Self::cap_command_error(format!("Failed to execute command: {error}"))
+            })?;
 
-            channel
-                .exec(&command)
-                .map_err(|e| format!("Failed to execute command: {}", e))?;
+            if let Some(data) = stdin_data.as_mut() {
+                channel.write_all(&data.0).map_err(|error| {
+                    Self::cap_command_error(format!("Failed to write SSH command input: {error}"))
+                })?;
+                channel.send_eof().map_err(|error| {
+                    Self::cap_command_error(format!("Failed to close SSH command input: {error}"))
+                })?;
+            }
 
-            let mut output = Vec::new();
-            channel
-                .read_to_end(&mut output)
-                .map_err(|e| format!("Failed to read output: {}", e))?;
+            session.session.set_blocking(false);
+            let deadline = std::time::Instant::now()
+                .checked_add(std::time::Duration::from_millis(timeout_ms))
+                .ok_or_else(|| "SSH command timeout is outside the supported range".to_string())?;
+            let mut output = super::integration::SshCommandOutput {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                exit_status: -1,
+                stdout_truncated: false,
+                stderr_truncated: false,
+                capture_limit_bytes: max_output_bytes,
+            };
+            let mut stdout_buffer = [0_u8; 16 * 1024];
+            let mut stderr_buffer = [0_u8; 16 * 1024];
 
-            // Read stderr as well
-            let mut stderr_output = Vec::new();
-            let mut stderr_stream = channel.stderr();
-            let _ = stderr_stream.read_to_end(&mut stderr_output);
+            loop {
+                let mut made_progress = false;
 
-            // Best-effort close — don't fail the whole command if close errors
-            let _ = channel.wait_close();
+                match channel.read(&mut stdout_buffer) {
+                    Ok(0) => {}
+                    Ok(bytes_read) => {
+                        made_progress = true;
+                        let remaining = max_output_bytes.saturating_sub(
+                            output.stdout.len().saturating_add(output.stderr.len()),
+                        );
+                        Self::append_captured_output(
+                            &mut output.stdout,
+                            &stdout_buffer[..bytes_read],
+                            remaining,
+                            &mut output.stdout_truncated,
+                        );
+                    }
+                    Err(error) if is_transient_shell_io_error(&error) => {}
+                    Err(error) => {
+                        return Err(Self::cap_command_error(format!(
+                            "Failed to read SSH command stdout: {error}"
+                        )));
+                    }
+                }
 
-            let exit_status = channel.exit_status().unwrap_or(-1);
-
-            if exit_status != 0 {
-                let stderr_str = String::from_utf8_lossy(&stderr_output);
-                if !stderr_str.is_empty() {
-                    return Err(format!(
-                        "Command failed with exit code {}: {}{}",
-                        exit_status,
-                        stderr_str.trim(),
-                        if output.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" (stdout: {})", String::from_utf8_lossy(&output).trim())
+                {
+                    let mut stderr_stream = channel.stderr();
+                    match stderr_stream.read(&mut stderr_buffer) {
+                        Ok(0) => {}
+                        Ok(bytes_read) => {
+                            made_progress = true;
+                            let remaining = max_output_bytes.saturating_sub(
+                                output.stdout.len().saturating_add(output.stderr.len()),
+                            );
+                            Self::append_captured_output(
+                                &mut output.stderr,
+                                &stderr_buffer[..bytes_read],
+                                remaining,
+                                &mut output.stderr_truncated,
+                            );
                         }
+                        Err(error) if is_transient_shell_io_error(&error) => {}
+                        Err(error) => {
+                            return Err(Self::cap_command_error(format!(
+                                "Failed to read SSH command stderr: {error}"
+                            )));
+                        }
+                    }
+                }
+
+                if channel.eof() {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = channel.close();
+                    return Err(format!(
+                        "SSH command timed out after {timeout_ms} ms; the retained session must be discarded"
                     ));
                 }
+                if !made_progress {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                let _ = channel.close();
                 return Err(format!(
-                    "Command failed with exit code {}{}",
-                    exit_status,
-                    if output.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" (stdout: {})", String::from_utf8_lossy(&output).trim())
-                    }
+                    "SSH command timed out after {timeout_ms} ms while awaiting channel close; the retained session must be discarded"
                 ));
             }
 
-            String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 output: {}", e))
+            session.session.set_blocking(true);
+            session
+                .session
+                .set_timeout(remaining.as_millis().clamp(1, u32::MAX as u128) as u32);
+            channel.wait_close().map_err(|error| {
+                Self::cap_command_error(format!("Failed to close SSH command channel: {error}"))
+            })?;
+            output.exit_status = channel.exit_status().unwrap_or(-1);
+            Ok(output)
         })();
 
-        // Restore previous blocking state
-        if !was_blocking {
-            session.session.set_blocking(false);
-        }
+        // Restore the exact previous session mode even though the drain loop
+        // deliberately switches between blocking setup and non-blocking I/O.
+        session.session.set_blocking(was_blocking);
         // Reset timeout
         session.session.set_timeout(0);
         Self::resume_shell_io(shell_pause);
 
         result
+    }
+
+    fn append_captured_output(
+        destination: &mut Vec<u8>,
+        bytes: &[u8],
+        remaining: usize,
+        truncated: &mut bool,
+    ) {
+        let retained = remaining.min(bytes.len());
+        destination.extend_from_slice(&bytes[..retained]);
+        if retained < bytes.len() {
+            *truncated = true;
+        }
+    }
+
+    fn command_failure_message(output: &super::integration::SshCommandOutput) -> String {
+        let mut message = format!("Command failed with exit code {}", output.exit_status);
+        if output.was_truncated() {
+            message.push_str(&format!(
+                " [capture exceeded {} bytes; stdout truncated: {}, stderr truncated: {}]",
+                output.capture_limit_bytes, output.stdout_truncated, output.stderr_truncated
+            ));
+        }
+        Self::cap_command_error(message)
+    }
+
+    fn cap_command_error(mut error: String) -> String {
+        const MAX_ERROR_BYTES: usize = 64 * 1024;
+        if error.len() <= MAX_ERROR_BYTES {
+            return error;
+        }
+
+        let mut boundary = MAX_ERROR_BYTES;
+        while !error.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        error.truncate(boundary);
+        error.push_str(" [error truncated]");
+        error
     }
 
     pub async fn execute_command_interactive(
@@ -2538,12 +3132,10 @@ impl SshService {
         // ── Environment variables ───────────────────────────────────
         for (key, value) in &session.config.environment {
             if let Err(e) = channel.setenv(key, value) {
-                log::warn!(
-                    "Failed to set env {}={}: {} (server may reject setenv)",
-                    key,
-                    value,
-                    e
-                );
+                // Remote environment values commonly carry tokens and other
+                // credentials. Keep the variable name and transport error for
+                // diagnosis, but never place the value in logs.
+                log::warn!("{}", remote_environment_set_failure_message(key, &e));
             }
         }
 
@@ -2591,6 +3183,39 @@ impl SshService {
                         SshShellCommand::Input(data) => {
                             record_input(&session_id_owned, &data);
 
+                            if let Err(error) = channel.write_all(data.as_bytes()) {
+                                let message = error.to_string();
+                                let payload = SshShellError {
+                                    session_id: session_id_owned.clone(),
+                                    message: message.clone(),
+                                };
+                                let _ = emitter.emit_event(
+                                    "ssh-error",
+                                    serde_json::to_value(&payload).unwrap_or_default(),
+                                );
+                                close_reason = SshShellCloseReason::TransportError;
+                                close_message = Some(message);
+                                running = false;
+                                break;
+                            }
+                            if let Err(error) = channel.flush() {
+                                let message = error.to_string();
+                                let payload = SshShellError {
+                                    session_id: session_id_owned.clone(),
+                                    message: message.clone(),
+                                };
+                                let _ = emitter.emit_event(
+                                    "ssh-error",
+                                    serde_json::to_value(&payload).unwrap_or_default(),
+                                );
+                                close_reason = SshShellCloseReason::TransportError;
+                                close_message = Some(message);
+                                running = false;
+                                break;
+                            }
+                            idle_count = 0;
+                        }
+                        SshShellCommand::SecretInput(data) => {
                             if let Err(error) = channel.write_all(data.as_bytes()) {
                                 let message = error.to_string();
                                 let payload = SshShellError {
@@ -2741,6 +3366,18 @@ impl SshService {
             .sender
             .send(SshShellCommand::Input(data))
             .map_err(|_| "Failed to send input to shell".to_string())
+    }
+
+    pub async fn send_shell_secret_input(
+        &mut self,
+        session_id: &str,
+        data: zeroize::Zeroizing<String>,
+    ) -> Result<(), String> {
+        let shell = self.shells.get(session_id).ok_or("Shell not started")?;
+        shell
+            .sender
+            .send(SshShellCommand::SecretInput(data))
+            .map_err(|_| "Failed to send secure input to shell".to_string())
     }
 
     pub async fn resize_shell(
@@ -3600,6 +4237,10 @@ impl SshService {
     }
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
+        if self.cancel_pending_connection(session_id)? {
+            return Ok(());
+        }
+
         // Do not report the backend actor as closed until the shell thread has
         // actually exited. This keeps VPN/session cleanup fail-closed when a
         // native actor cannot be stopped deterministically.
@@ -3738,7 +4379,7 @@ impl SshService {
         script: &str,
         interpreter: Option<&str>,
     ) -> Result<super::types::ScriptExecutionResult, String> {
-        use std::io::{Read, Write};
+        use std::io::Write;
         use uuid::Uuid;
 
         let interpreter = interpreter.unwrap_or("bash");
@@ -3802,48 +4443,87 @@ impl SshService {
                 interpreter,
             ));
 
-            let mut exec_ch = session
+            let execution_result = (|| -> Result<_, String> {
+                let mut exec_ch = session
+                    .session
+                    .channel_session()
+                    .map_err(|e| format!("Failed to create exec channel: {}", e))?;
+                let deadline = Instant::now() + SCRIPT_EXECUTION_TIMEOUT;
+
+                session
+                    .session
+                    .set_timeout(SCRIPT_EXECUTION_TIMEOUT.as_millis() as u32);
+                exec_ch
+                    .exec(&exec_command)
+                    .map_err(|e| format!("Failed to execute script: {}", e))?;
+                let _ = exec_ch.send_eof();
+
+                // A blocking read of stdout before stderr can deadlock when the
+                // remote process fills its stderr window. Drain both SSH
+                // streams concurrently in nonblocking mode under one atomic
+                // byte budget instead.
+                session.session.set_blocking(false);
+                let cancellation = Arc::new(AtomicBool::new(false));
+                let output_result = read_script_output_bounded(
+                    exec_ch.stream(0),
+                    exec_ch.stderr(),
+                    SCRIPT_OUTPUT_LIMIT_BYTES,
+                    deadline,
+                    cancellation,
+                );
+                session.session.set_blocking(true);
+
+                if output_result.is_err() || Instant::now() >= deadline {
+                    session
+                        .session
+                        .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                    let _ = exec_ch.close();
+                    let _ = exec_ch.wait_close();
+                } else {
+                    let remaining_ms = deadline
+                        .saturating_duration_since(Instant::now())
+                        .as_millis()
+                        .clamp(1, u32::MAX as u128) as u32;
+                    session.session.set_timeout(remaining_ms);
+                    if exec_ch.wait_close().is_err() {
+                        let _ = exec_ch.close();
+                        session
+                            .session
+                            .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
+                        let _ = exec_ch.wait_close();
+                    }
+                }
+
+                let raw_exit = exec_ch.exit_status().unwrap_or(-1);
+                let (stdout_buf, stderr_buf) =
+                    output_result.map_err(|error| error.user_message().to_string())?;
+                let raw_stdout = String::from_utf8_lossy(&stdout_buf).to_string();
+                let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
+
+                // Parse the sentinel to extract the real exit code and clean stdout
+                let (stdout, exit_code) = parse_script_stdout_and_exit(&raw_stdout, raw_exit);
+
+                Ok(super::types::ScriptExecutionResult {
+                    stdout,
+                    stderr,
+                    exit_code,
+                    remote_path: remote_path.clone(),
+                })
+            })();
+
+            // ── 3. Clean up the temp file, including failure paths ──────
+            session
                 .session
-                .channel_session()
-                .map_err(|e| format!("Failed to create exec channel: {}", e))?;
-
-            session.session.set_timeout(300_000); // 5 min timeout
-
-            exec_ch
-                .exec(&exec_command)
-                .map_err(|e| format!("Failed to execute script: {}", e))?;
-
-            let mut stdout_buf = Vec::new();
-            exec_ch
-                .read_to_end(&mut stdout_buf)
-                .map_err(|e| format!("Failed to read stdout: {}", e))?;
-
-            let mut stderr_buf = Vec::new();
-            let mut stderr_s = exec_ch.stderr();
-            let _ = stderr_s.read_to_end(&mut stderr_buf);
-
-            let _ = exec_ch.wait_close();
-            let raw_exit = exec_ch.exit_status().unwrap_or(-1);
-
-            let raw_stdout = String::from_utf8_lossy(&stdout_buf).to_string();
-            let stderr = String::from_utf8_lossy(&stderr_buf).to_string();
-
-            // Parse the sentinel to extract the real exit code and clean stdout
-            let (stdout, exit_code) = parse_script_stdout_and_exit(&raw_stdout, raw_exit);
-
-            // ── 3. Clean up the temp file ───────────────────────────────
+                .set_timeout(SCRIPT_CHANNEL_CLEANUP_TIMEOUT_MS);
             if let Ok(mut rm_ch) = session.session.channel_session() {
                 let rm_cmd = format!("rm -f {}", shell_escape::escape(remote_path.clone().into()));
                 let _ = rm_ch.exec(&rm_cmd);
+                let _ = rm_ch.send_eof();
+                let _ = rm_ch.close();
                 let _ = rm_ch.wait_close();
             }
 
-            Ok(super::types::ScriptExecutionResult {
-                stdout,
-                stderr,
-                exit_code,
-                remote_path: remote_path.clone(),
-            })
+            execution_result
         })();
 
         // Restore previous session state
@@ -4173,6 +4853,60 @@ impl SshService {
     }
 }
 
+/// App-layer connection entry point that keeps connection establishment
+/// cancellable without holding the shared service lock.
+///
+/// This must remain public because the Tauri app compiles its command wrapper
+/// in a separate crate and reaches this function through a public re-export.
+#[doc(hidden)]
+pub async fn connect_ssh_on_state(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+) -> Result<String, String> {
+    connect_ssh_on_state_with(
+        state,
+        config,
+        |mut connector, session_id, config| async move {
+            connector.establish_ssh_connection(session_id, config).await
+        },
+    )
+    .await
+}
+
+async fn connect_ssh_on_state_with<F, Fut>(
+    state: &SshServiceState,
+    config: SshConnectionConfig,
+    establish: F,
+) -> Result<String, String>
+where
+    F: FnOnce(SshService, String, SshConnectionConfig) -> Fut,
+    Fut: Future<Output = Result<EstablishedSshConnection, String>>,
+{
+    let (connector, attempt) = {
+        let service = state.lock().await;
+        service.begin_connection_attempt()?
+    };
+    let session_id = attempt.session_id.clone();
+    let cancellation = attempt.cancellation.clone();
+
+    let result = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err("SSH connection cancelled".to_string()),
+        result = establish(connector, session_id, config) => result,
+    };
+
+    // Keep the attempt registered until the service lock is reacquired. This
+    // makes adoption atomic with a concurrent disconnect of the provisional id.
+    let mut service = state.lock().await;
+    let cancelled = attempt.finish();
+    if cancelled {
+        drop(result);
+        return Err("SSH connection cancelled".to_string());
+    }
+
+    service.adopt_connection(result?)
+}
+
 #[cfg(test)]
 mod host_key_prompt_tests {
     use super::*;
@@ -4202,6 +4936,7 @@ mod host_key_prompt_tests {
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: Some(emitter),
+            pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 
@@ -4408,6 +5143,68 @@ mod host_key_prompt_tests {
             .contains_key("session-timeout"));
         clear_pending_prompt("session-timeout");
     }
+
+    #[tokio::test]
+    async fn pending_host_key_prompt_does_not_starve_service_or_block_cancellation() {
+        let emitter = Arc::new(RecordingEmitter::default());
+        let state = Arc::new(tokio::sync::Mutex::new(test_service(emitter)));
+        let config = test_config();
+        let (session_id_tx, session_id_rx) = tokio::sync::oneshot::channel();
+        let connecting_state = state.clone();
+
+        let connect_task = tokio::spawn(async move {
+            connect_ssh_on_state_with(
+                &connecting_state,
+                config,
+                move |connector, session_id, config| async move {
+                    session_id_tx
+                        .send(session_id.clone())
+                        .expect("test should receive provisional session id");
+                    connector
+                        .prompt_for_host_key_decision_with_timeout(
+                            &session_id,
+                            &config,
+                            &test_host_key_info(),
+                            SshHostKeyPromptStatus::FirstUse,
+                            Duration::from_secs(30),
+                        )
+                        .await?;
+                    Err("test connection stopped after prompt".to_string())
+                },
+            )
+            .await
+        });
+
+        let session_id = session_id_rx
+            .await
+            .expect("connect task should expose its provisional session id");
+        wait_for_pending_prompt(&session_id).await;
+
+        let sessions = tokio::time::timeout(Duration::from_secs(1), async {
+            state.lock().await.list_sessions().await
+        })
+        .await
+        .expect("session status should not wait behind a host-key prompt");
+        assert!(sessions.is_empty());
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            state.lock().await.disconnect_ssh(&session_id).await
+        })
+        .await
+        .expect("disconnect should not wait behind a host-key prompt")
+        .expect("pending connection cancellation should succeed");
+
+        let error = tokio::time::timeout(Duration::from_secs(1), connect_task)
+            .await
+            .expect("cancelled connection should finish promptly")
+            .expect("connect task should not panic")
+            .expect_err("cancelled connection should fail");
+        assert_eq!(error, "SSH connection cancelled");
+        assert!(!PENDING_HOST_KEY_PROMPTS
+            .lock()
+            .expect("pending host-key prompt map poisoned")
+            .contains_key(&session_id));
+    }
 }
 
 impl SshService {
@@ -4447,7 +5244,107 @@ mod tests {
     use super::*;
     use crate::ssh::types::ScriptExecutionResult;
     use serde_json::json;
-    use std::sync::Arc;
+
+    fn output_deadline() -> Instant {
+        Instant::now() + Duration::from_secs(1)
+    }
+
+    #[test]
+    fn script_output_accepts_exact_combined_limit() {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let output = read_script_output_bounded(
+            std::io::Cursor::new(b"abc".to_vec()),
+            std::io::Cursor::new(b"de".to_vec()),
+            5,
+            output_deadline(),
+            cancellation,
+        )
+        .expect("the exact combined limit must be accepted");
+
+        assert_eq!(output.0, b"abc");
+        assert_eq!(output.1, b"de");
+    }
+
+    #[test]
+    fn script_output_overflow_returns_only_the_fixed_limit_error() {
+        let secret = b"secret-output".to_vec();
+        let error = read_script_output_bounded(
+            std::io::Cursor::new(secret.clone()),
+            std::io::Cursor::new(Vec::new()),
+            secret.len() - 1,
+            output_deadline(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect_err("output beyond the combined limit must fail");
+
+        assert_eq!(error, ScriptOutputReadError::OutputLimitExceeded);
+        assert_eq!(error.user_message(), SCRIPT_OUTPUT_LIMIT_ERROR);
+        assert!(!error.user_message().contains("secret-output"));
+    }
+
+    #[test]
+    fn script_output_drains_stderr_independently() {
+        let output = read_script_output_bounded(
+            std::io::Cursor::new(Vec::new()),
+            std::io::Cursor::new(b"stderr-only".to_vec()),
+            64,
+            output_deadline(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("stderr should be drained even when stdout is empty");
+
+        assert!(output.0.is_empty());
+        assert_eq!(output.1, b"stderr-only");
+    }
+
+    #[test]
+    fn script_output_keeps_binary_bytes_bounded_and_utf8_safe() {
+        let binary = vec![0xff, 0xfe, b'a', 0x00];
+        let output = read_script_output_bounded(
+            std::io::Cursor::new(binary.clone()),
+            std::io::Cursor::new(Vec::new()),
+            binary.len(),
+            output_deadline(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("binary output within the limit should be retained");
+
+        assert_eq!(output.0, binary);
+        assert_eq!(String::from_utf8_lossy(&output.0), "\u{fffd}\u{fffd}a\0");
+    }
+
+    struct CancellingReader {
+        inner: std::io::Cursor<Vec<u8>>,
+        cancellation: Arc<AtomicBool>,
+    }
+
+    impl Read for CancellingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = self.inner.read(buffer)?;
+            if count > 0 {
+                self.cancellation.store(true, Ordering::Release);
+            }
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn script_output_cancellation_stops_both_readers() {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let error = read_script_output_bounded(
+            CancellingReader {
+                inner: std::io::Cursor::new(vec![b'x'; 32]),
+                cancellation: Arc::clone(&cancellation),
+            },
+            std::io::Cursor::new(vec![b'y'; 32]),
+            128,
+            output_deadline(),
+            cancellation,
+        )
+        .expect_err("shared cancellation must stop output collection");
+
+        assert_eq!(error, ScriptOutputReadError::Cancelled);
+    }
 
     fn empty_test_service() -> SshService {
         SshService {
@@ -4456,6 +5353,7 @@ mod tests {
             known_hosts: HashMap::new(),
             shells: HashMap::new(),
             event_emitter: None,
+            pending_connections: std::sync::Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 

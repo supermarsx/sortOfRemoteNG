@@ -13,6 +13,90 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { SessionFullscreenProvider } from "../../src/contexts/SessionFullscreenProvider";
 import { getStoredIdentity } from "../../src/utils/auth/trustStore";
 
+const trustBoundary = vi.hoisted(() => {
+  type Identity = { fingerprint: string; [key: string]: unknown };
+  type Record = {
+    host: string;
+    type: string;
+    identity: Identity;
+    userApproved: boolean;
+    history: Identity[];
+  };
+  const records = new Map<string, Record>();
+  const key = (
+    host: string,
+    port: number,
+    type: string,
+    connectionId?: string,
+  ) => `${connectionId ?? "global"}:${type}:${host}:${port}`;
+
+  return {
+    records,
+    formatFingerprint: vi.fn((fingerprint: string) => {
+      const normalized = fingerprint.trim();
+      if (/^SHA256:/i.test(normalized) || normalized.includes(":")) {
+        return normalized;
+      }
+      return normalized.match(/.{1,2}/g)?.join(":") ?? normalized;
+    }),
+    getStoredIdentity: vi.fn(
+      (host: string, port: number, type: string, connectionId?: string) =>
+        records.get(key(host, port, type, connectionId)),
+    ),
+    verifyIdentity: vi.fn(
+      async (
+        host: string,
+        port: number,
+        type: string,
+        identity: Identity,
+        connectionId?: string,
+      ) => {
+        const stored = records.get(key(host, port, type, connectionId));
+        if (!stored) return { status: "first-use", identity } as const;
+        if (stored.identity.fingerprint === identity.fingerprint) {
+          return { status: "trusted" } as const;
+        }
+        return {
+          status: "mismatch",
+          stored: stored.identity,
+          received: identity,
+        } as const;
+      },
+    ),
+    trustIdentity: vi.fn(
+      async (
+        host: string,
+        port: number,
+        type: string,
+        identity: Identity,
+        userApproved = true,
+        connectionId?: string,
+      ) => {
+        records.set(key(host, port, type, connectionId), {
+          host: `${host}:${port}`,
+          type,
+          identity,
+          userApproved,
+          history: [],
+        });
+      },
+    ),
+  };
+});
+
+vi.mock("../../src/utils/auth/trustStore", () => ({
+  formatFingerprint: trustBoundary.formatFingerprint,
+  getStoredIdentity: trustBoundary.getStoredIdentity,
+  isCertificateTrustRecordType: (type: string) =>
+    type === "certificate" ||
+    type === "https" ||
+    type === "rdp" ||
+    type === "tls",
+  resolveEffectiveTrustPolicy: vi.fn(() => "always-ask"),
+  trustIdentity: trustBoundary.trustIdentity,
+  verifyIdentity: trustBoundary.verifyIdentity,
+}));
+
 const mockConnection = {
   id: "test-connection",
   name: "Test SSH Server",
@@ -182,6 +266,7 @@ describe("WebTerminal", () => {
     mockDispatch.mockClear();
     hostKeyPromptListener = undefined;
     shellClosedListener = undefined;
+    trustBoundary.records.clear();
     localStorage.clear();
     delete (mockConnection as any).security;
     delete (mockConnection as any).proxyChainId;
@@ -466,7 +551,7 @@ describe("WebTerminal", () => {
         return Promise.resolve(undefined);
       });
 
-      renderWithProviders(mockSession);
+      const view = renderWithProviders(mockSession);
       await waitFor(() =>
         expect(mockInvoke).toHaveBeenCalledWith(
           "connect_ssh",
@@ -476,13 +561,13 @@ describe("WebTerminal", () => {
 
       expect(screen.getByTestId("terminal-reconnect")).toBeDisabled();
 
-      await act(async () => {
+      act(() => {
         resolveConnect("ssh-session-123");
-        await deferredConnect;
       });
       await waitFor(() =>
         expect(screen.getByTestId("terminal-reconnect")).toBeEnabled(),
       );
+      view.unmount();
     });
 
     it("disables both Retry now and toolbar reconnect during automatic recovery", async () => {
@@ -514,8 +599,15 @@ describe("WebTerminal", () => {
       const retryNow = await screen.findByRole("button", {
         name: "Retry now",
       });
-      expect(retryNow).toBeDisabled();
-      expect(screen.getByTestId("terminal-reconnect")).toBeDisabled();
+      await waitFor(() => {
+        expect(
+          mockInvoke.mock.calls.some(
+            ([command]) => command === "disconnect_ssh",
+          ),
+        ).toBe(true);
+        expect(retryNow).toBeDisabled();
+        expect(screen.getByTestId("terminal-reconnect")).toBeDisabled();
+      });
       view.unmount();
     });
 
@@ -541,18 +633,19 @@ describe("WebTerminal", () => {
 
     it("prompts on first-use host keys and stores them after accept-and-save", async () => {
       let resolveConnect: ((sessionId: string) => void) | undefined;
+      let connectAttempt!: Promise<string>;
+      let promptListener!: Promise<void>;
 
-      mockInvoke.mockImplementation((command, args) => {
+      mockInvoke.mockImplementation((command) => {
         if (command === "connect_ssh") {
-          return new Promise<string>((resolve) => {
+          connectAttempt = new Promise<string>((resolve) => {
             resolveConnect = resolve;
           });
+          return connectAttempt;
         }
 
         if (command === "ssh_respond_to_host_key_prompt") {
-          if ((args as { decision: string }).decision === "accept_and_save") {
-            resolveConnect?.("ssh-session-123");
-          }
+          resolveConnect?.("ssh-session-123");
           return Promise.resolve(undefined);
         }
 
@@ -563,14 +656,21 @@ describe("WebTerminal", () => {
         return Promise.resolve(undefined);
       });
 
-      renderWithProviders(mockSession);
+      const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(hostKeyPromptListener).toBeDefined();
       });
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_ssh",
+          expect.anything(),
+        );
+        expect(resolveConnect).toBeDefined();
+      });
 
-      await act(async () => {
-        void hostKeyPromptListener?.({
+      act(() => {
+        promptListener = hostKeyPromptListener!({
           payload: {
             session_id: "prompt-session-123",
             host: "192.168.1.100",
@@ -606,24 +706,28 @@ describe("WebTerminal", () => {
         );
       });
 
-      await waitFor(() => {
-        expect(screen.getByText("Connected")).toBeInTheDocument();
-      });
+      expect(resolveConnect).toBeDefined();
+      await Promise.all([promptListener, connectAttempt]);
 
       expect(
         getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection")
           ?.identity.fingerprint,
       ).toBe("SHA256:new-host-key");
+
+      view.unmount();
     });
 
     it("aborts the connection when the user rejects a first-use host key", async () => {
       let rejectConnect: ((error?: unknown) => void) | undefined;
+      let connectAttempt!: Promise<string>;
+      let promptListener!: Promise<void>;
 
       mockInvoke.mockImplementation((command, args) => {
         if (command === "connect_ssh") {
-          return new Promise<string>((_, reject) => {
+          connectAttempt = new Promise<string>((_, reject) => {
             rejectConnect = reject;
           });
+          return connectAttempt;
         }
 
         if (command === "ssh_respond_to_host_key_prompt") {
@@ -642,14 +746,14 @@ describe("WebTerminal", () => {
         return Promise.resolve(undefined);
       });
 
-      renderWithProviders(mockSession);
+      const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(hostKeyPromptListener).toBeDefined();
       });
 
-      await act(async () => {
-        void hostKeyPromptListener?.({
+      act(() => {
+        promptListener = hostKeyPromptListener!({
           payload: {
             session_id: "prompt-session-reject",
             host: "192.168.1.100",
@@ -671,11 +775,19 @@ describe("WebTerminal", () => {
         dialogTitle.parentElement?.parentElement?.parentElement;
       expect(modal).toBeTruthy();
 
-      fireEvent.click(
-        within(modal as HTMLElement).getByRole("button", {
-          name: /^disconnect$/i,
-        }),
-      );
+      await act(async () => {
+        fireEvent.click(
+          within(modal as HTMLElement).getByRole("button", {
+            name: /^disconnect$/i,
+          }),
+        );
+        await Promise.all([
+          promptListener,
+          expect(connectAttempt).rejects.toThrow(
+            "Host key verification failed: key rejected by user",
+          ),
+        ]);
+      });
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith(
@@ -699,6 +811,81 @@ describe("WebTerminal", () => {
       expect(
         getStoredIdentity("192.168.1.100", 22, "ssh", "test-connection"),
       ).toBeUndefined();
+
+      await act(async () => {
+        view.unmount();
+        await Promise.resolve();
+      });
+    });
+
+    it("clears an unanswered host-key prompt when native verification times out", async () => {
+      const timeoutMessage =
+        "Host key verification timed out for 192.168.1.100 after waiting for user confirmation";
+      let rejectConnect!: (error: Error) => void;
+      const connectAttempt = new Promise<string>((_, reject) => {
+        rejectConnect = reject;
+      });
+      let promptListener!: Promise<void>;
+
+      mockInvoke.mockImplementation((command) => {
+        if (command === "connect_ssh") return connectAttempt;
+        if (command === "start_shell") {
+          return Promise.resolve("shell-must-not-start");
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const view = renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(hostKeyPromptListener).toBeDefined();
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_ssh",
+          expect.anything(),
+        );
+      });
+
+      act(() => {
+        promptListener = hostKeyPromptListener!({
+          payload: {
+            session_id: "prompt-session-timeout",
+            host: "192.168.1.100",
+            port: 22,
+            username: "testuser",
+            status: "first_use",
+            fingerprint: "SHA256:unanswered-host-key",
+            key_type: "ssh-ed25519",
+            key_bits: 256,
+            public_key: "AAAAC3NzaC1lZDI1NTE5AAAAITimeoutPublicKey",
+          },
+        });
+      });
+
+      expect(await screen.findByText("Unknown Host Key")).toBeInTheDocument();
+
+      await act(async () => {
+        rejectConnect(new Error(timeoutMessage));
+        await expect(connectAttempt).rejects.toThrow(timeoutMessage);
+        await promptListener;
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Error")).toBeInTheDocument();
+        expect(screen.queryByText("Unknown Host Key")).not.toBeInTheDocument();
+      });
+      expect(
+        mockInvoke.mock.calls.some(([command]) => command === "start_shell"),
+      ).toBe(false);
+      expect(
+        mockInvoke.mock.calls.some(
+          ([command]) => command === "ssh_respond_to_host_key_prompt",
+        ),
+      ).toBe(false);
+
+      await act(async () => {
+        view.unmount();
+        await Promise.resolve();
+      });
     });
   });
 
@@ -982,7 +1169,7 @@ describe("WebTerminal", () => {
     it("should filter scripts by OS tag in selector", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
-      renderWithProviders(mockSession);
+      const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -1012,6 +1199,8 @@ describe("WebTerminal", () => {
           screen.queryByText("System Info (Linux)"),
         ).not.toBeInTheDocument();
       });
+
+      act(() => view.unmount());
     });
 
     it("should display OS tag icons next to script names", async () => {
@@ -1202,14 +1391,27 @@ describe("WebTerminal", () => {
     it("should have Send Ctrl+C button for SSH sessions", async () => {
       mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
-      renderWithProviders(mockSession);
+      const view = renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
+        expect(mockListen).toHaveBeenCalledWith(
+          "ssh-output",
+          expect.any(Function),
+        );
+        expect(mockListen).toHaveBeenCalledWith(
+          "ssh-error",
+          expect.any(Function),
+        );
+        expect(mockListen).toHaveBeenCalledWith(
+          "ssh-shell-closed",
+          expect.any(Function),
+        );
       });
 
       const ctrlCButton = screen.getByRole("button", { name: /send ctrl\+c/i });
       expect(ctrlCButton).toBeInTheDocument();
+      act(() => view.unmount());
     });
 
     it("should call send_ssh_input with Ctrl+C when button clicked", async () => {

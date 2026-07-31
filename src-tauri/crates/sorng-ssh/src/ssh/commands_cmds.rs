@@ -9,8 +9,7 @@ pub async fn connect_ssh(
     state: tauri::State<'_, SshServiceState>,
     config: SshConnectionConfig,
 ) -> Result<String, String> {
-    let mut ssh = state.lock().await;
-    redact_result(ssh.connect_ssh(config).await)
+    redact_result(super::service::connect_ssh_on_state(state.inner(), config).await)
 }
 
 #[tauri::command]

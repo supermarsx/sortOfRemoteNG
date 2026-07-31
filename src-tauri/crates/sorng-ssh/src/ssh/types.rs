@@ -561,11 +561,32 @@ impl SshShellHandle {
     }
 }
 
-#[derive(Debug)]
 pub enum SshShellCommand {
     Input(String),
+    SecretInput(zeroize::Zeroizing<String>),
     Resize(u32, u32),
     Close,
+}
+
+impl std::fmt::Debug for SshShellCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Input(data) => formatter
+                .debug_tuple("Input")
+                .field(&format_args!("[REDACTED {} bytes]", data.len()))
+                .finish(),
+            Self::SecretInput(data) => formatter
+                .debug_tuple("SecretInput")
+                .field(&format_args!("[REDACTED {} bytes]", data.len()))
+                .finish(),
+            Self::Resize(cols, rows) => formatter
+                .debug_tuple("Resize")
+                .field(cols)
+                .field(rows)
+                .finish(),
+            Self::Close => formatter.write_str("Close"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

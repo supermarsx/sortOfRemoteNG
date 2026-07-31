@@ -67,6 +67,15 @@ impl Ssh3Service {
         if session.connection_state != Ssh3ConnectionState::Connected {
             return Err("Session not connected".to_string());
         }
+        match &config.direction {
+            Ssh3PortForwardDirection::Local => {}
+            Ssh3PortForwardDirection::Remote => {
+                return Err("SSH3 remote port-forward is not implemented".to_string())
+            }
+            Ssh3PortForwardDirection::Dynamic => {
+                return Err("SSH3 dynamic port-forward is not implemented".to_string())
+            }
+        }
 
         // The live QUIC connection raw bidi streams open off. Without a live
         // transport there is nothing to forward over — fail honestly.
@@ -80,7 +89,7 @@ impl Ssh3Service {
         let config_clone = config.clone();
         let forward_id_clone = forward_id.clone();
 
-        let handle = match config.direction {
+        let handle = match &config.direction {
             Ssh3PortForwardDirection::Local => tokio::spawn(async move {
                 Self::handle_local_forward(connection, config_clone, forward_id_clone).await
             }),
@@ -192,7 +201,8 @@ impl Ssh3Service {
                         // Announce the forward target so the SSH3 server knows
                         // where to direct-tcpip connect this stream.
                         let frame = forward_target_frame(&remote_host, remote_port);
-                        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut send, &frame).await {
+                        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut send, &frame).await
+                        {
                             log::warn!(
                                 "SSH3[{id_clone}]: failed to send forward target frame for {peer}: {e}"
                             );
@@ -265,10 +275,7 @@ impl Ssh3Service {
 mod tests {
     use super::*;
 
-    fn forward_config(
-        local_host: &str,
-        allow_non_loopback_bind: bool,
-    ) -> Ssh3PortForwardConfig {
+    fn forward_config(local_host: &str, allow_non_loopback_bind: bool) -> Ssh3PortForwardConfig {
         Ssh3PortForwardConfig {
             local_host: local_host.to_string(),
             local_port: 0,
@@ -317,7 +324,10 @@ mod tests {
             err.contains("allow_non_loopback_bind"),
             "error should explain the opt-in: {err}"
         );
-        assert!(err.contains("0.0.0.0"), "error should name the address: {err}");
+        assert!(
+            err.contains("0.0.0.0"),
+            "error should name the address: {err}"
+        );
     }
 
     #[test]

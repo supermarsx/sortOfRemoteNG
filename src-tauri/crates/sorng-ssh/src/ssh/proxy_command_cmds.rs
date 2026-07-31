@@ -12,49 +12,6 @@ pub fn stop_proxy_command_cmd(session_id: String) -> Result<(), String> {
     stop_proxy_command(&session_id)
 }
 
-/// Test a ProxyCommand — spawn it, wait for the first byte of output,
-/// then kill it.  Returns the expanded command and whether it connected.
-#[tauri::command]
-pub async fn test_proxy_command(
-    config: ProxyCommandConfig,
-    host: String,
-    port: u16,
-    username: String,
-) -> Result<ProxyCommandStatus, String> {
-    let cmd_string = build_command_string(&config, &host, port, &username)?;
-
-    let mut child =
-        spawn_shell_command(&cmd_string).map_err(|e| format!("Failed to spawn: {}", e))?;
-
-    let pid = child.id();
-
-    // Wait a short time to see if it starts successfully
-    let timeout = config.timeout_secs.unwrap_or(5);
-    let alive = tokio::task::spawn_blocking(move || {
-        std::thread::sleep(Duration::from_secs(timeout.min(5)));
-        match child.try_wait() {
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                true // still running = probably connected
-            }
-            Ok(Some(status)) => status.success(),
-            Err(_) => false,
-        }
-    })
-    .await
-    .unwrap_or(false);
-
-    Ok(ProxyCommandStatus {
-        session_id: String::new(),
-        // Redact before returning — the expanded command may embed inline
-        // `user:pass@host` or `--proxy-auth` credentials.
-        command: redact_proxy_credentials(&cmd_string),
-        alive,
-        pid: Some(pid),
-    })
-}
-
 /// Mark a connection's ProxyCommand as user-confirmed for execution.
 ///
 /// ProxyCommand stays fully free-form (OpenSSH parity). The only constraint is
@@ -65,11 +22,11 @@ pub async fn test_proxy_command(
 /// and once they confirm it calls THIS command with the SAME
 /// `config`/`host`/`port`/`username` it would connect with. The backend rebuilds
 /// the exact expanded command string and records its fingerprint as confirmed,
-/// so the subsequent connect attempt is allowed through.
+/// so exactly one subsequent connect attempt is allowed through.
 ///
-/// Confirmation is fingerprint-scoped to the exact expanded command: editing or
-/// re-importing a different command re-arms the gate. Returns the redacted
-/// confirmed command for display/audit.
+/// Confirmation is one-shot and fingerprint-scoped to the exact expanded
+/// command: editing or re-importing a different command re-arms the gate.
+/// Returns the redacted confirmed command for display/audit.
 #[tauri::command]
 pub fn confirm_proxy_command(
     config: ProxyCommandConfig,

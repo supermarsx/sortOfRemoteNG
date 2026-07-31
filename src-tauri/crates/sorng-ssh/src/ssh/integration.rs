@@ -4,10 +4,181 @@
 //! transport. All integrations use it rather than spawning one-shot clients.
 
 use secrecy::SecretString;
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
+use std::process::{Output, Stdio};
 use std::sync::Arc;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use super::{service::SshService, types::SshConnectionConfig};
+
+/// Compatibility capture budget used by [`IntegrationSshSession::execute`].
+///
+/// The budget is shared by stdout and stderr so a remote process cannot force
+/// two independent maximum-sized allocations.
+pub const DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Absolute capture ceiling accepted by the shared integration transport.
+pub const MAX_COMMAND_OUTPUT_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_COMMAND_INPUT_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+
+const MAX_COMMAND_ERROR_BYTES: usize = 64 * 1024;
+const LOCAL_COMMAND_TIMEOUT_MS: u64 = 300_000;
+const LOCAL_COMMAND_STDOUT_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+const LOCAL_COMMAND_STDERR_LIMIT_BYTES: usize = 64 * 1024;
+const LOCAL_COMMAND_STDIN_LIMIT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Adds a bounded, timed replacement for Tokio's allocation-unbounded
+/// `Command::output`.
+pub trait BoundedCommandExt {
+    fn output_bounded(&mut self) -> Pin<Box<dyn Future<Output = io::Result<Output>> + Send + '_>>;
+}
+
+impl BoundedCommandExt for Command {
+    fn output_bounded(&mut self) -> Pin<Box<dyn Future<Output = io::Result<Output>> + Send + '_>> {
+        Box::pin(run_local_command_bounded(self, None))
+    }
+}
+
+/// Run a local command with bounded output, a finite deadline, and bounded
+/// stdin. This is the safe counterpart used by integrations that need to pipe
+/// configuration data into a child process.
+pub async fn output_bounded_with_input(command: &mut Command, input: &[u8]) -> io::Result<Output> {
+    run_local_command_bounded(command, Some(input)).await
+}
+
+async fn run_local_command_bounded(
+    command: &mut Command,
+    input: Option<&[u8]>,
+) -> io::Result<Output> {
+    if input.map_or(false, |data| data.len() > LOCAL_COMMAND_STDIN_LIMIT_BYTES) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Local command input exceeds the 8 MiB limit",
+        ));
+    }
+
+    command
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = command.spawn()?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to capture local command stdout",
+        )
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to capture local command stderr",
+        )
+    })?;
+    let child_stdin = child.stdin.take();
+
+    let write_input = async move {
+        if let (Some(mut stdin), Some(data)) = (child_stdin, input) {
+            stdin.write_all(data).await?;
+            stdin.shutdown().await?;
+        }
+        Ok::<(), io::Error>(())
+    };
+
+    let outcome = tokio::time::timeout(
+        std::time::Duration::from_millis(LOCAL_COMMAND_TIMEOUT_MS),
+        async {
+            let (status, stdout, stderr, input_result) = tokio::join!(
+                child.wait(),
+                read_local_output_bounded(stdout, LOCAL_COMMAND_STDOUT_LIMIT_BYTES),
+                read_local_output_bounded(stderr, LOCAL_COMMAND_STDERR_LIMIT_BYTES),
+                write_input
+            );
+            let status = status?;
+            let (stdout, stdout_truncated) = stdout?;
+            let (stderr, stderr_truncated) = stderr?;
+            input_result?;
+            Ok::<_, io::Error>((status, stdout, stderr, stdout_truncated, stderr_truncated))
+        },
+    )
+    .await;
+
+    match outcome {
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Local command timed out after 300 seconds",
+            ))
+        }
+        Ok(Err(error)) => Err(error),
+        Ok(Ok((status, stdout, stderr, stdout_truncated, stderr_truncated))) => {
+            if stdout_truncated || stderr_truncated {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Local command output exceeded the capture limit",
+                ));
+            }
+            Ok(Output {
+                status,
+                stdout,
+                stderr,
+            })
+        }
+    }
+}
+
+async fn read_local_output_bounded<R>(mut reader: R, limit: usize) -> io::Result<(Vec<u8>, bool)>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut captured = Vec::with_capacity(limit.min(16 * 1024));
+    let mut truncated = false;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let bytes_read = reader.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(captured.len());
+        let retained = remaining.min(bytes_read);
+        captured.extend_from_slice(&buffer[..retained]);
+        truncated |= retained < bytes_read;
+    }
+    Ok((captured, truncated))
+}
+
+/// Bounded output returned by an integration SSH command.
+///
+/// Both streams are drained through EOF even after the capture budget is
+/// exhausted. `stdout_truncated` and `stderr_truncated` identify which stream
+/// produced discarded bytes, and `exit_status` remains available even when the
+/// command failed or output was truncated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SshCommandOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub exit_status: i32,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
+    pub capture_limit_bytes: usize,
+}
+
+impl SshCommandOutput {
+    pub fn was_truncated(&self) -> bool {
+        self.stdout_truncated || self.stderr_truncated
+    }
+}
 
 /// Credentials and transport policy for a retained integration SSH session.
 #[derive(Clone, Copy, Debug)]
@@ -50,7 +221,10 @@ impl IntegrationSshSession {
         let id = match session_id.as_ref() {
             Some(id) => id.clone(),
             None => {
-                let id = service.connect_ssh(self.config.clone()).await?;
+                let id = service
+                    .connect_ssh(self.config.clone())
+                    .await
+                    .map_err(cap_command_error)?;
                 *session_id = Some(id.clone());
                 id
             }
@@ -66,12 +240,125 @@ impl IntegrationSshSession {
                     if let Err(teardown_error) =
                         apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
                     {
-                        return Err(format!(
+                        return Err(cap_command_error(format!(
                             "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
-                        ));
+                        )));
                     }
                 }
-                Err(error)
+                Err(cap_command_error(error))
+            }
+        }
+    }
+
+    /// Execute with an explicit combined stdout/stderr capture budget.
+    ///
+    /// The remote streams are always drained through EOF. Command exit status
+    /// and truncation are returned to the caller rather than converted into an
+    /// error, while transport/protocol failures remain errors. Limits above
+    /// [`MAX_COMMAND_OUTPUT_LIMIT_BYTES`] are rejected before execution.
+    pub async fn execute_capped(
+        &self,
+        command: &str,
+        timeout_ms: Option<u64>,
+        max_output_bytes: usize,
+    ) -> Result<SshCommandOutput, String> {
+        let mut service = self.service.lock().await;
+        let mut session_id = self.session_id.lock().await;
+        let id = match session_id.as_ref() {
+            Some(id) => id.clone(),
+            None => {
+                let id = service
+                    .connect_ssh(self.config.clone())
+                    .await
+                    .map_err(cap_command_error)?;
+                *session_id = Some(id.clone());
+                id
+            }
+        };
+
+        match service
+            .execute_command_capped(&id, command.to_string(), timeout_ms, max_output_bytes)
+            .await
+        {
+            Ok(output) => Ok(output),
+            Err(error) => {
+                if is_recoverable_transport_error(&error) {
+                    if let Err(teardown_error) =
+                        apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
+                    {
+                        return Err(cap_command_error(format!(
+                            "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
+                        )));
+                    }
+                }
+                Err(cap_command_error(error))
+            }
+        }
+    }
+
+    /// Execute with bounded data written directly to the SSH channel's stdin.
+    /// The owned input is overwritten before its allocation is released.
+    pub async fn execute_with_input(
+        &self,
+        command: &str,
+        mut input: Vec<u8>,
+        timeout_ms: Option<u64>,
+    ) -> Result<String, String> {
+        if input.len() > MAX_COMMAND_INPUT_LIMIT_BYTES {
+            input.fill(0);
+            return Err(format!(
+                "SSH command input exceeds the {} byte limit",
+                MAX_COMMAND_INPUT_LIMIT_BYTES
+            ));
+        }
+
+        let mut service = self.service.lock().await;
+        let mut session_id = self.session_id.lock().await;
+        let id = match session_id.as_ref() {
+            Some(id) => id.clone(),
+            None => match service.connect_ssh(self.config.clone()).await {
+                Ok(id) => {
+                    *session_id = Some(id.clone());
+                    id
+                }
+                Err(error) => {
+                    input.fill(0);
+                    return Err(cap_command_error(error));
+                }
+            },
+        };
+
+        match service
+            .execute_command_capped_with_input(
+                &id,
+                command.to_string(),
+                timeout_ms,
+                DEFAULT_COMMAND_OUTPUT_LIMIT_BYTES,
+                Some(input),
+            )
+            .await
+        {
+            Ok(output) if output.exit_status != 0 => Err(format!(
+                "Command failed with exit code {}",
+                output.exit_status
+            )),
+            Ok(output) if output.was_truncated() => Err(format!(
+                "Command output exceeded the {} byte capture limit",
+                output.capture_limit_bytes
+            )),
+            Ok(output) => String::from_utf8(output.stdout)
+                .map_err(|_| "SSH command returned non-UTF-8 output".to_string()),
+            Err(error) => {
+                if is_recoverable_transport_error(&error) {
+                    if let Err(teardown_error) =
+                        apply_teardown_result(&mut session_id, service.disconnect_ssh(&id).await)
+                    {
+                        return Err(cap_command_error(format!(
+                            "{error}; failed to tear down retained SSH session {id}: {teardown_error}"
+                        )));
+                    }
+                }
+                Err(cap_command_error(error))
             }
         }
     }
@@ -169,18 +456,31 @@ fn actor_config(config: ExternalSshConfig<'_>) -> SshConnectionConfig {
 
 fn is_recoverable_transport_error(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
-    [
-        "session not found",
-        "channel",
-        "socket",
-        "transport",
-        "connection reset",
-        "broken pipe",
-        "failed to execute command",
-        "failed to read output",
-    ]
-    .iter()
-    .any(|needle| error.contains(needle))
+    error == "session not found"
+        || error.starts_with("failed to create channel:")
+        || error.starts_with("failed to execute command:")
+        || error.starts_with("failed to read ssh command stdout:")
+        || error.starts_with("failed to read ssh command stderr:")
+        || error.starts_with("failed to write ssh command input:")
+        || error.starts_with("failed to close ssh command input:")
+        || error.starts_with("failed to close ssh command channel:")
+        || error.contains("connection reset")
+        || error.contains("broken pipe")
+        || error.starts_with("ssh command timed out")
+}
+
+fn cap_command_error(mut error: String) -> String {
+    if error.len() <= MAX_COMMAND_ERROR_BYTES {
+        return error;
+    }
+
+    let mut boundary = MAX_COMMAND_ERROR_BYTES;
+    while !error.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    error.truncate(boundary);
+    error.push_str(" [error truncated]");
+    error
 }
 
 #[cfg(test)]

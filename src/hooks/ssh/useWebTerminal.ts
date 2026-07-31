@@ -62,6 +62,11 @@ import { redactSecrets } from "../../utils/errors/redact";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import { appendSSHSessionActivity } from "../../utils/ssh/sshSessionActivity";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
+import { APP_DATA_STORE_CHANGED_EVENT } from "../../utils/storage/appDataJsonStore";
+import {
+  managedScriptsStore,
+  resolveManagedScripts,
+} from "../../utils/recording/managedScriptPersistence";
 import {
   cancelSessionLifecycleActorAttempts,
   finishSessionLifecycleActorAttempt,
@@ -95,6 +100,9 @@ type ConnectionStatus =
   | "error";
 type SshConnectMode = "connect" | "reconnect";
 type SshDisconnectIntent = "none" | "user" | "replace";
+const SSH_ATTEMPT_WATCHDOG_GRACE_MS = 15_000;
+const SSH_ATTEMPT_TIMEOUT_MESSAGE =
+  "SSH connection attempt timed out before the remote shell became ready.";
 export type SshFailureKind =
   | "auth"
   | "connection_refused"
@@ -277,6 +285,9 @@ export function useWebTerminal(
   const isDisposed = useRef(false);
   const disconnectIntentRef = useRef<SshDisconnectIntent>("none");
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sshAttemptWatchdogTimersRef = useRef(
+    new Set<ReturnType<typeof setTimeout>>(),
+  );
   const autoReconnectAttemptRef = useRef(0);
   const wasSshEstablishedRef = useRef(
     session.status === "connected" && Boolean(session.backendSessionId),
@@ -297,6 +308,14 @@ export function useWebTerminal(
   /* ── UI state ── */
   const [status, setStatus] = useState<ConnectionStatus>(() => {
     if (session.status === "reconnecting") return "reconnecting";
+    if (
+      session.protocol === "ssh" &&
+      session.status === "connected" &&
+      session.backendSessionId &&
+      session.shellId
+    ) {
+      return "connected";
+    }
     if (session.status === "connected" || session.status === "connecting") {
       return "connecting";
     }
@@ -435,50 +454,38 @@ export function useWebTerminal(
    * ────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
-    const loadScripts = () => {
+    let cancelled = false;
+    const loadScripts = async () => {
       try {
         const defaults = getDefaultScripts();
-        const stored = localStorage.getItem("managedScripts");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (
-            parsed &&
-            typeof parsed === "object" &&
-            "customScripts" in parsed
-          ) {
-            const {
-              customScripts = [],
-              modifiedDefaults = [],
-              deletedDefaultIds = [],
-            } = parsed;
-            const activeDefaults = defaults
-              .filter((d: ManagedScript) => !deletedDefaultIds.includes(d.id))
-              .map(
-                (d: ManagedScript) =>
-                  modifiedDefaults.find((m: ManagedScript) => m.id === d.id) ||
-                  d,
-              );
-            setScripts([...activeDefaults, ...customScripts]);
-          } else if (Array.isArray(parsed)) {
-            setScripts([...defaults, ...parsed]);
-          } else {
-            setScripts(defaults);
-          }
-        } else {
-          setScripts(defaults);
+        const result = await managedScriptsStore.load();
+        if (cancelled) return;
+        setScripts(resolveManagedScripts(defaults, result.value));
+        if (result.sanitized) {
+          toast.warning(
+            "Unsafe script entries or credential material were removed during secure storage migration.",
+          );
         }
       } catch (e) {
-        console.error("Failed to load scripts:", e);
+        if (cancelled) return;
+        toast.error(`Failed to load scripts securely: ${String(e)}`);
         setScripts(getDefaultScripts());
       }
     };
-    loadScripts();
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "managedScripts") loadScripts();
+    void loadScripts();
+    const handleStorageChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (detail?.key === managedScriptsStore.key) void loadScripts();
     };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
+    window.addEventListener(APP_DATA_STORE_CHANGED_EVENT, handleStorageChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        APP_DATA_STORE_CHANGED_EVENT,
+        handleStorageChange,
+      );
+    };
+  }, [toast]);
 
   /* ── script filter memos ── */
   const uniqueCategories = useMemo(() => {
@@ -1338,6 +1345,89 @@ export function useWebTerminal(
       let attemptVpnLeaseOwnerId: string | null = null;
       let attemptSshSessionId: string | null = null;
       let lifecycleAttempt: SessionLifecycleActorAttempt | null = null;
+      let attemptWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+      let attemptPromptActive = false;
+      let attemptHostKeyResolve:
+        | ((decision: HostKeyPromptDecision) => void)
+        | null = null;
+      const takeAttemptHostKeyResolve = ():
+        | ((decision: HostKeyPromptDecision) => void)
+        | null => {
+        const resolve = attemptHostKeyResolve;
+        attemptHostKeyResolve = null;
+        return resolve;
+      };
+      let unansweredHostKeyPromptOutlivedAttempt = false;
+      const validatingPersistedSession =
+        !force &&
+        mode === "connect" &&
+        currentSession.status === "connected" &&
+        Boolean(currentSession.backendSessionId && currentSession.shellId);
+
+      const clearAttemptWatchdog = () => {
+        if (!attemptWatchdogTimer) return;
+        clearTimeout(attemptWatchdogTimer);
+        sshAttemptWatchdogTimersRef.current.delete(attemptWatchdogTimer);
+        attemptWatchdogTimer = null;
+      };
+
+      const armAttemptWatchdog = (connectTimeoutSeconds: number) => {
+        clearAttemptWatchdog();
+        const timeoutMs =
+          Math.max(1, connectTimeoutSeconds) * 2_000 +
+          SSH_ATTEMPT_WATCHDOG_GRACE_MS;
+        const timer = setTimeout(() => {
+          sshAttemptWatchdogTimersRef.current.delete(timer);
+          if (attemptWatchdogTimer === timer) attemptWatchdogTimer = null;
+          if (
+            sshInitGenRef.current !== gen ||
+            isDisposed.current ||
+            hasSessionVpnCleanupQuarantine(sessionRef.current)
+          ) {
+            return;
+          }
+          if (attemptPromptActive) {
+            armAttemptWatchdog(connectTimeoutSeconds);
+            return;
+          }
+
+          // Invalidate this generation without racing away from the native
+          // promise. If it resolves later, the existing stopIfStale path still
+          // captures and closes its backend actor before releasing its VPN.
+          sshInitGenRef.current++;
+          cancelSessionLifecycleActorAttempts(currentSession.id);
+          const reconnectPolicy = getReconnectPolicy();
+          const failure: SshConnectionFailure = {
+            kind: "timeout",
+            summary: SSH_ATTEMPT_TIMEOUT_MESSAGE,
+            technicalDetails: SSH_ATTEMPT_TIMEOUT_MESSAGE,
+            recoverable: true,
+            occurredAt: new Date().toISOString(),
+            retryScheduled: false,
+            retryAttempt: autoReconnectAttemptRef.current,
+            maxRetryAttempts: reconnectPolicy.maxAttempts,
+            retryDelaySeconds:
+              getSshReconnectDelayMs(
+                reconnectPolicy,
+                autoReconnectAttemptRef.current,
+              ) / 1_000,
+          };
+          setStatusState("error");
+          setError(SSH_ATTEMPT_TIMEOUT_MESSAGE);
+          setSshFailure(failure);
+          const timedOutSession = {
+            ...sessionRef.current,
+            lifecycleActorReservationId: undefined,
+            status: "error" as const,
+            errorMessage: SSH_ATTEMPT_TIMEOUT_MESSAGE,
+          };
+          sessionRef.current = timedOutSession;
+          dispatch({ type: "UPDATE_SESSION", payload: timedOutSession });
+          writeLine(`\x1b[31m${SSH_ATTEMPT_TIMEOUT_MESSAGE}\x1b[0m`);
+        }, timeoutMs);
+        attemptWatchdogTimer = timer;
+        sshAttemptWatchdogTimersRef.current.add(timer);
+      };
 
       const releaseAttemptVpnLease = async () => {
         const ownerId = attemptVpnLeaseOwnerId;
@@ -1479,8 +1569,10 @@ export function useWebTerminal(
         !ignoreHostKey && sshTrustPolicy !== "always-trust";
       disconnectIntentRef.current = "none";
       isConnecting.current = true;
-      setStatusState(mode === "reconnect" ? "reconnecting" : "connecting");
-      if (mode === "connect") {
+      if (!validatingPersistedSession) {
+        setStatusState(mode === "reconnect" ? "reconnecting" : "connecting");
+      }
+      if (mode === "connect" && !validatingPersistedSession) {
         setError("");
         setSshFailure(null);
         if (typeof (termRef.current as any).reset === "function") {
@@ -1728,7 +1820,7 @@ export function useWebTerminal(
             setHostKeyIdentity(identity);
 
             const connectionId = currentConnection.id;
-            const verification = verifyIdentity(
+            const verification = await verifyIdentity(
               currentSession.hostname,
               expectedPort,
               "ssh",
@@ -1779,15 +1871,28 @@ export function useWebTerminal(
               );
             }
 
-            const decision = await new Promise<HostKeyPromptDecision>(
-              (resolve) => {
-                sshTrustResolveRef.current = resolve;
+            let decision: HostKeyPromptDecision;
+            attemptPromptActive = true;
+            try {
+              decision = await new Promise<HostKeyPromptDecision>((resolve) => {
+                const settlePrompt = (nextDecision: HostKeyPromptDecision) => {
+                  if (sshTrustResolveRef.current === settlePrompt) {
+                    sshTrustResolveRef.current = null;
+                  }
+                  attemptHostKeyResolve = null;
+                  resolve(nextDecision);
+                };
+                attemptHostKeyResolve = settlePrompt;
+                sshTrustResolveRef.current = settlePrompt;
                 setSshTrustPrompt(verification);
-              },
-            );
+              });
+            } finally {
+              attemptPromptActive = false;
+            }
+            if (unansweredHostKeyPromptOutlivedAttempt) return;
 
             if (decision === "accept_and_save") {
-              trustIdentity(
+              await trustIdentity(
                 currentSession.hostname,
                 expectedPort,
                 "ssh",
@@ -1903,6 +2008,7 @@ export function useWebTerminal(
             throw new Error(`Unsupported authentication method: ${authMethod}`);
         }
 
+        armAttemptWatchdog(Number(sshConfig.connect_timeout) || 30);
         const sessionId = await invoke<string>("connect_ssh", {
           config: sshConfig,
         });
@@ -2011,10 +2117,16 @@ export function useWebTerminal(
             writeLine(
               "\x1b[33mThis connection's ProxyCommand has not been confirmed (imported/synced).\x1b[0m",
             );
-            const confirmed = await new Promise<boolean>((resolve) => {
-              proxyCommandResolveRef.current = resolve;
-              setProxyCommandPrompt({ command: expanded });
-            });
+            let confirmed: boolean;
+            attemptPromptActive = true;
+            try {
+              confirmed = await new Promise<boolean>((resolve) => {
+                proxyCommandResolveRef.current = resolve;
+                setProxyCommandPrompt({ command: expanded });
+              });
+            } finally {
+              attemptPromptActive = false;
+            }
             if (await stopIfStale()) return;
             if (confirmed) {
               // Record runtime confirmation (fingerprint-scoped) ...
@@ -2112,6 +2224,7 @@ export function useWebTerminal(
         writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
         writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);
       } finally {
+        clearAttemptWatchdog();
         if (
           lifecycleAttempt &&
           sessionRef.current.lifecycleActorReservationId ===
@@ -2137,9 +2250,17 @@ export function useWebTerminal(
         privateKeyPassphrase = null;
         totpSecret = null;
         proxyCommandPassword = null;
+        const pendingSshTrustResolve = takeAttemptHostKeyResolve();
+        if (pendingSshTrustResolve) {
+          if (sshTrustResolveRef.current === pendingSshTrustResolve) {
+            sshTrustResolveRef.current = null;
+          }
+          unansweredHostKeyPromptOutlivedAttempt = true;
+          pendingSshTrustResolve("reject");
+        }
         if (!stale()) {
           isConnecting.current = false;
-          sshTrustResolveRef.current = null;
+          if (!isDisposed.current) setSshTrustPrompt(null);
         }
         unlistenHostKeyPrompt?.();
       }
@@ -2766,15 +2887,30 @@ export function useWebTerminal(
       setStatusState("connected");
     }
 
+    const sshAttemptWatchdogTimers = sshAttemptWatchdogTimersRef.current;
+
     return () => {
       // Supersede in-flight connection attempts. Their own continuation owns
       // cleanup of attempt-local SSH and VPN resources.
       // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally invalidate the latest shared generation
       sshInitGenRef.current++;
+      isConnecting.current = false;
+      const pendingSshTrustResolve = sshTrustResolveRef.current;
+      sshTrustResolveRef.current = null;
+      pendingSshTrustResolve?.("reject");
+      const pendingProxyCommandResolve = proxyCommandResolveRef.current;
+      proxyCommandResolveRef.current = null;
+      pendingProxyCommandResolve?.(false);
+      setSshTrustPrompt(null);
+      setProxyCommandPrompt(null);
       cancelSessionLifecycleActorAttempts(mountedSessionId);
       isDisposed.current = true;
       disconnectIntentRef.current = "user";
       clearReconnectTimer();
+      for (const timer of sshAttemptWatchdogTimers) {
+        clearTimeout(timer);
+      }
+      sshAttemptWatchdogTimers.clear();
       closingSshActors.clear();
       cancelled = true;
       cancelAnimationFrame(openTimer);
