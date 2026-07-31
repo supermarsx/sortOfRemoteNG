@@ -80,19 +80,19 @@ pub fn parse_xml(xml_content: &str, master_password: &str) -> MremotengResult<Mr
                     inside_connections = false;
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                if inside_connections && file.encryption.full_file_encryption {
-                    // quick-xml 0.41 removed BytesText::unescape() (decode +
-                    // entity-unescape); reproduce it as decode() followed by
-                    // escape::unescape() to preserve the original semantics.
-                    let decoded = e
-                        .decode()
-                        .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
-                    encrypted_body.push_str(
-                        &quick_xml::escape::unescape(&decoded)
-                            .map_err(|e| MremotengError::XmlParse(e.to_string()))?,
-                    );
-                }
+            Ok(Event::Text(ref e))
+                if inside_connections && file.encryption.full_file_encryption =>
+            {
+                // quick-xml 0.41 removed BytesText::unescape() (decode +
+                // entity-unescape); reproduce it as decode() followed by
+                // escape::unescape() to preserve the original semantics.
+                let decoded = e
+                    .decode()
+                    .map_err(|e| MremotengError::XmlParse(e.to_string()))?;
+                encrypted_body.push_str(
+                    &quick_xml::escape::unescape(&decoded)
+                        .map_err(|e| MremotengError::XmlParse(e.to_string()))?,
+                );
             }
             Ok(Event::Eof) => break,
             Err(e) => {

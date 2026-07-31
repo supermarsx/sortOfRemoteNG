@@ -64,10 +64,8 @@ pub fn parse_reg_file(content: &str) -> MremotengResult<Vec<PuttySession>> {
                     "ProxyPort" => session.proxy_port = parse_dword(&value).unwrap_or(0) as u16,
                     "ProxyMethod" => session.proxy_type = parse_dword(&value).unwrap_or(0),
                     "ProxyUsername" => session.proxy_username = value,
-                    "PublicKeyFile" | "KeyExchange" => {
-                        if key == "PublicKeyFile" {
-                            session.private_key_file = value;
-                        }
+                    "PublicKeyFile" | "KeyExchange" if key == "PublicKeyFile" => {
+                        session.private_key_file = value;
                     }
                     "TerminalType" => session.terminal_type = value,
                     "SerialLine" => session.serial_line = value,
