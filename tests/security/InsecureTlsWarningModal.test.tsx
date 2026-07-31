@@ -64,10 +64,31 @@ describe("InsecureTlsWarningModal", () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("requires a fresh acknowledgement whenever the modal reopens", () => {
+    const props = {
+      kind: "integration" as const,
+      endpoint: "https://monitoring.lab",
+      onAcknowledge: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const view = render(<InsecureTlsWarningModal isOpen {...props} />);
+    fireEvent.click(screen.getByLabelText(/i understand the risks/i));
+    expect(
+      screen.getByRole("button", { name: /continue insecurely/i }),
+    ).toBeEnabled();
+
+    view.rerender(<InsecureTlsWarningModal isOpen={false} {...props} />);
+    view.rerender(<InsecureTlsWarningModal isOpen {...props} />);
+    expect(screen.getByLabelText(/i understand the risks/i)).not.toBeChecked();
+    expect(
+      screen.getByRole("button", { name: /continue insecurely/i }),
+    ).toBeDisabled();
+  });
 });
 
 describe("useInsecureTlsAck", () => {
-  it("reports needsAck=true for insecure configs with no persisted ack", () => {
+  it("reports needsAck=true for insecure configs with no runtime ack", () => {
     window.localStorage.clear();
     const { result } = renderHook(() =>
       useInsecureTlsAck({ configId: "cfg-1", insecure: true }),
@@ -76,17 +97,20 @@ describe("useInsecureTlsAck", () => {
     expect(result.current.acknowledged).toBe(false);
   });
 
-  it("persists the ack and flips needsAck to false", () => {
+  it("keeps the ack in memory only and resets it for a different config", () => {
     window.localStorage.clear();
-    const { result } = renderHook(() =>
-      useInsecureTlsAck({ configId: "cfg-2", insecure: true }),
+    const { result, rerender } = renderHook(
+      ({ configId }) => useInsecureTlsAck({ configId, insecure: true }),
+      { initialProps: { configId: "cfg-2" } },
     );
     act(() => result.current.acknowledge());
     expect(result.current.acknowledged).toBe(true);
     expect(result.current.needsAck).toBe(false);
-    expect(
-      window.localStorage.getItem("insecure-tls-ack:cfg-2"),
-    ).not.toBeNull();
+    expect(window.localStorage.getItem("insecure-tls-ack:cfg-2")).toBeNull();
+
+    rerender({ configId: "cfg-2-imported" });
+    expect(result.current.acknowledged).toBe(false);
+    expect(result.current.needsAck).toBe(true);
   });
 
   it("reports needsAck=false when insecure=false even without ack", () => {

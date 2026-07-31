@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ShieldAlert, AlertTriangle, ArrowRight } from "lucide-react";
 import { Modal } from "../ui/overlays/Modal";
 
 /** Kind of connection the insecure-TLS warning is being raised for. */
-export type InsecureTlsConnectionKind = "bmc" | "cicd" | "k8s";
+export type InsecureTlsConnectionKind = "bmc" | "cicd" | "k8s" | "integration";
 
 export interface InsecureTlsWarningModalProps {
   /** Whether the modal is visible. */
@@ -24,6 +24,7 @@ const kindLabels: Record<InsecureTlsConnectionKind, string> = {
   bmc: "BMC / Redfish",
   cicd: "CI/CD",
   k8s: "Kubernetes",
+  integration: "management integration",
 };
 
 /**
@@ -31,20 +32,18 @@ const kindLabels: Record<InsecureTlsConnectionKind, string> = {
  * verification disabled (`tls_skip_verify` / `insecure_skip_verify` /
  * `danger_accept_invalid_certs`).
  *
- * The user must check the "I understand" box and click "Continue insecurely"
- * to acknowledge.  The parent is responsible for persisting the ack via the
- * `useInsecureTlsAck` hook so the warning isn't shown again for the same
- * config id.
+ * The user must check the "I understand" box and click "Continue insecurely".
+ * The parent consumes the runtime-only acknowledgement for one connection
+ * attempt; it must never be saved with the connection profile.
  */
-export const InsecureTlsWarningModal: React.FC<InsecureTlsWarningModalProps> = ({
-  isOpen,
-  kind,
-  endpoint,
-  connectionName,
-  onAcknowledge,
-  onCancel,
-}) => {
+export const InsecureTlsWarningModal: React.FC<
+  InsecureTlsWarningModalProps
+> = ({ isOpen, kind, endpoint, connectionName, onAcknowledge, onCancel }) => {
   const [understood, setUnderstood] = useState(false);
+
+  useEffect(() => {
+    setUnderstood(false);
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
@@ -97,17 +96,16 @@ export const InsecureTlsWarningModal: React.FC<InsecureTlsWarningModalProps> = (
               </p>
               <p className="mt-1 text-error/80">
                 Traffic may be intercepted or tampered with by a
-                man-in-the-middle.  Only continue if you trust the network
-                path between this machine and{" "}
+                man-in-the-middle. Only continue if you trust the network path
+                between this machine and{" "}
                 <span className="font-mono">{endpoint}</span>.
               </p>
             </div>
           </div>
 
           <p className="text-xs text-[var(--color-textSecondary)]">
-            You only need to acknowledge this once per connection
-            configuration. The decision is stored locally and a warning
-            breadcrumb is logged server-side on every insecure request.
+            This acknowledgement applies only to the current connection attempt.
+            It is not saved with the connection profile.
           </p>
 
           <label className="flex items-center gap-2 cursor-pointer select-none">
