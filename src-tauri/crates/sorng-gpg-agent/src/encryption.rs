@@ -8,6 +8,9 @@ use crate::protocol::{run_gpg_command, run_gpg_command_with_input};
 use crate::types::*;
 use log::info;
 
+const SYMMETRIC_PASSPHRASE_CHANNEL_REQUIRED: &str =
+    "Symmetric encryption is unavailable without a secure passphrase input channel";
+
 /// GPG encryption engine.
 pub struct EncryptionEngine {
     gpg_binary: String,
@@ -133,45 +136,16 @@ impl EncryptionEngine {
     /// Symmetric encryption.
     pub async fn encrypt_symmetric(
         &self,
-        data: &[u8],
-        armor: bool,
-        cipher: Option<&str>,
+        _data: &[u8],
+        _armor: bool,
+        _cipher: Option<&str>,
     ) -> Result<EncryptionResult, String> {
-        let mut args = self.base_args();
-        args.push("--symmetric".to_string());
-
-        if armor {
-            args.push("--armor".to_string());
-        }
-
-        if let Some(c) = cipher {
-            args.push("--cipher-algo".to_string());
-            args.push(c.to_string());
-        }
-
-        // For batch symmetric, need passphrase through pinentry or loopback
-        args.push("--pinentry-mode".to_string());
-        args.push("loopback".to_string());
-
-        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await?;
-
-        let armor_str = if armor {
-            String::from_utf8_lossy(&output).to_string()
-        } else {
-            String::new()
-        };
-
-        info!("Encrypted data symmetrically");
-
-        Ok(EncryptionResult {
-            success: true,
-            ciphertext: output,
-            armor: armor_str,
-            recipients: Vec::new(),
-            session_key_algo: cipher.unwrap_or("AES256").to_string(),
-            is_symmetric: true,
-        })
+        // This API has no passphrase parameter and the helper's stdin is
+        // already reserved for plaintext.  Forcing loopback pinentry without
+        // a separate passphrase descriptor can hang or accidentally reuse
+        // ambient credentials.  Fail closed until a dedicated, non-argv
+        // passphrase channel is part of the public API and process wrapper.
+        Err(SYMMETRIC_PASSPHRASE_CHANNEL_REQUIRED.to_string())
     }
 
     /// Decrypt data.
@@ -300,5 +274,16 @@ mod tests {
         let output = "some random output\n";
         let recipients = parse_decryption_recipients(output);
         assert!(recipients.is_empty());
+    }
+
+    #[tokio::test]
+    async fn symmetric_encryption_fails_closed_without_passphrase_channel() {
+        let engine = EncryptionEngine::new("not-a-real-gpg-binary", None);
+        let error = engine
+            .encrypt_symmetric(b"plaintext", true, Some("AES256"))
+            .await
+            .unwrap_err();
+        assert_eq!(error, SYMMETRIC_PASSPHRASE_CHANNEL_REQUIRED);
+        assert!(!error.contains("plaintext"));
     }
 }

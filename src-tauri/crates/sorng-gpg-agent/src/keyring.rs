@@ -606,33 +606,29 @@ pub fn parse_colon_key_listing(output: &str, secret_only: bool) -> Vec<GpgKey> {
                 current_uid = None;
             }
 
-            "fpr" => {
-                if fields.len() > 9 {
-                    let fpr = fields[9].to_string();
-                    if in_subkey {
-                        if let Some(ref mut key) = current_key {
-                            if let Some(sub) = key.subkeys.last_mut() {
-                                sub.fingerprint = fpr;
-                            }
+            "fpr" if fields.len() > 9 => {
+                let fpr = fields[9].to_string();
+                match current_key.as_mut() {
+                    Some(key) if in_subkey => {
+                        if let Some(sub) = key.subkeys.last_mut() {
+                            sub.fingerprint = fpr;
                         }
-                    } else if let Some(ref mut key) = current_key {
-                        key.fingerprint = fpr;
                     }
+                    Some(key) => key.fingerprint = fpr,
+                    None => {}
                 }
             }
 
-            "grp" => {
-                if fields.len() > 9 {
-                    let grip = fields[9].to_string();
-                    if in_subkey {
-                        if let Some(ref mut key) = current_key {
-                            if let Some(sub) = key.subkeys.last_mut() {
-                                sub.keygrip = Some(grip);
-                            }
+            "grp" if fields.len() > 9 => {
+                let grip = fields[9].to_string();
+                match current_key.as_mut() {
+                    Some(key) if in_subkey => {
+                        if let Some(sub) = key.subkeys.last_mut() {
+                            sub.keygrip = Some(grip);
                         }
-                    } else if let Some(ref mut key) = current_key {
-                        key.keygrip = Some(grip);
                     }
+                    Some(key) => key.keygrip = Some(grip),
+                    None => {}
                 }
             }
 

@@ -412,13 +412,6 @@ pub async fn gpg_card_status(
     service.get_card_status().await
 }
 
-/// List all known smart cards.
-#[tauri::command]
-pub async fn gpg_list_cards(state: State<'_, GpgServiceState>) -> CmdResult<Vec<SmartCardInfo>> {
-    let service = state.lock().await;
-    service.list_cards().await
-}
-
 /// Change a smart-card PIN.
 #[tauri::command]
 pub async fn gpg_card_change_pin(
@@ -429,11 +422,30 @@ pub async fn gpg_card_change_pin(
     service.card_change_pin(&pin_type).await
 }
 
-/// Factory-reset the smart card.
+/// Unblock the user PIN using the card's configured reset code.
 #[tauri::command]
-pub async fn gpg_card_factory_reset(state: State<'_, GpgServiceState>) -> CmdResult<bool> {
+pub async fn gpg_card_unblock_pin(state: State<'_, GpgServiceState>) -> CmdResult<bool> {
     let mut service = state.lock().await;
-    service.card_factory_reset().await
+    service.card_unblock_pin().await
+}
+
+/// Prepare a short-lived, serial-bound factory-reset confirmation.
+#[tauri::command]
+pub async fn gpg_card_prepare_factory_reset(
+    state: State<'_, GpgServiceState>,
+) -> CmdResult<CardFactoryResetChallenge> {
+    let mut service = state.lock().await;
+    service.prepare_card_factory_reset().await
+}
+
+/// Factory-reset the card after consuming a valid one-shot confirmation.
+#[tauri::command]
+pub async fn gpg_card_factory_reset(
+    state: State<'_, GpgServiceState>,
+    confirmation: CardFactoryResetConfirmation,
+) -> CmdResult<bool> {
+    let mut service = state.lock().await;
+    service.card_factory_reset(confirmation).await
 }
 
 /// Set a card attribute (name, url, login, lang, sex).
@@ -514,7 +526,7 @@ mod tests {
     #[test]
     fn test_cmd_result_type() {
         let ok: super::CmdResult<u32> = Ok(42);
-        assert_eq!(ok.unwrap(), 42);
+        assert_eq!(ok, Ok(42));
         let err: super::CmdResult<u32> = Err("poison".to_string());
         assert!(err.is_err());
     }

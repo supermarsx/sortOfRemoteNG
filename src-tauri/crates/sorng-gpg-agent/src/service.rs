@@ -14,6 +14,50 @@ use crate::signing::SigningEngine;
 use crate::trust::TrustManager;
 use crate::types::*;
 use log::{info, warn};
+use std::future::Future;
+use std::time::{Duration, Instant};
+
+const CARD_RESET_CHALLENGE_TTL: Duration = Duration::from_secs(60);
+
+struct PendingCardReset {
+    serial: String,
+    challenge_fingerprint: String,
+    confirmation_phrase: String,
+    expires_at: Instant,
+}
+
+fn validate_factory_reset_confirmation(
+    pending: &PendingCardReset,
+    confirmation: &CardFactoryResetConfirmation,
+    current_serial: &str,
+    now: Instant,
+) -> Result<(), String> {
+    if now > pending.expires_at {
+        return Err("The smart-card reset confirmation has expired".to_string());
+    }
+    if current_serial.is_empty()
+        || current_serial != pending.serial
+        || confirmation.serial != pending.serial
+    {
+        return Err("The inserted smart card does not match the reset confirmation".to_string());
+    }
+    if confirmation.challenge_fingerprint != pending.challenge_fingerprint
+        || confirmation.confirmation_phrase != pending.confirmation_phrase
+    {
+        return Err("The smart-card reset confirmation is invalid".to_string());
+    }
+    Ok(())
+}
+
+async fn reconnect_after_reload<F>(was_running: bool, reconnect: F) -> Result<(), String>
+where
+    F: Future<Output = Result<(), String>>,
+{
+    if was_running {
+        reconnect.await?;
+    }
+    Ok(())
+}
 
 /// The main GPG agent service — orchestrates all modules.
 pub struct GpgAgentService {
@@ -35,6 +79,7 @@ pub struct GpgAgentService {
     pub audit: GpgAuditLogger,
     /// Current agent status.
     pub status: GpgAgentStatus,
+    pending_card_reset: Option<PendingCardReset>,
 }
 
 impl Default for GpgAgentService {
@@ -58,10 +103,22 @@ impl GpgAgentService {
             trust: TrustManager::new(&gpg, home.clone()),
             card: CardManager::new(&gpg, home.clone()),
             config,
-            protocol: AssuanClient::new(&gpg),
+            protocol: AssuanClient::new(&gpg, home),
             audit: GpgAuditLogger::default_logger(),
             status: GpgAgentStatus::default(),
+            pending_card_reset: None,
         }
+    }
+
+    fn reconfigure_clients(&mut self, cfg: &GpgAgentConfig) {
+        let home = Some(cfg.home_dir.clone()).filter(|value| !value.is_empty());
+        self.keyring = KeyringManager::new(&cfg.gpg_binary, home.clone(), &cfg.keyserver);
+        self.signing = SigningEngine::new(&cfg.gpg_binary, home.clone());
+        self.encryption = EncryptionEngine::new(&cfg.gpg_binary, home.clone());
+        self.trust = TrustManager::new(&cfg.gpg_binary, home.clone());
+        self.card = CardManager::new(&cfg.gpg_binary, home.clone());
+        self.protocol = AssuanClient::new(&cfg.gpg_binary, home);
+        self.pending_card_reset = None;
     }
 
     /// Detect the environment — find gpg, agent, scdaemon, home dir.
@@ -84,20 +141,9 @@ impl GpgAgentService {
             String::new()
         });
 
-        // Reinitialize sub-components with detected paths
-        let gpg = self.config.gpg_binary.clone();
-        let home = Some(self.config.home_dir.clone()).filter(|s| !s.is_empty());
-        let keyserver = "hkps://keys.openpgp.org";
-
-        self.keyring = KeyringManager::new(&gpg, home.clone(), keyserver);
-        self.signing = SigningEngine::new(&gpg, home.clone());
-        self.encryption = EncryptionEngine::new(&gpg, home.clone());
-        self.trust = TrustManager::new(&gpg, home.clone());
-        self.card = CardManager::new(&gpg, home.clone());
-        self.protocol = AssuanClient::new(&gpg);
-
         // Read full config
         let cfg = self.config.read_config().await?;
+        self.reconfigure_clients(&cfg);
         info!(
             "GPG environment detected: binary={}, home={}",
             cfg.gpg_binary, cfg.home_dir
@@ -124,8 +170,12 @@ impl GpgAgentService {
         info!("Starting gpg-agent");
 
         // gpg-agent is auto-started by gpg, but we can explicitly start it
-        let output = tokio::process::Command::new(&self.config.gpg_agent_binary)
-            .args(["--daemon", "--quiet"])
+        let mut command = tokio::process::Command::new(&self.config.gpg_agent_binary);
+        command.args(["--daemon", "--quiet"]);
+        if !self.config.home_dir.is_empty() {
+            command.env("GNUPGHOME", &self.config.home_dir);
+        }
+        let output = command
             .output()
             .await
             .map_err(|e| format!("Failed to start gpg-agent: {}", e))?;
@@ -230,10 +280,34 @@ impl GpgAgentService {
     }
 
     /// Update the config.
-    pub async fn update_config(&mut self, cfg: GpgAgentConfig) -> Result<(), String> {
+    pub async fn update_config(&mut self, mut cfg: GpgAgentConfig) -> Result<(), String> {
+        let was_running = self.status.running;
+        if cfg.home_dir.is_empty() {
+            cfg.home_dir = self.config.home_dir.clone();
+        }
+        if cfg.gpg_binary.is_empty() {
+            cfg.gpg_binary = self.config.gpg_binary.clone();
+        }
+        if cfg.gpg_agent_binary.is_empty() {
+            cfg.gpg_agent_binary = self.config.gpg_agent_binary.clone();
+        }
+        if cfg.scdaemon_binary.is_empty() {
+            cfg.scdaemon_binary = self.config.scdaemon_binary.clone();
+        }
         self.config.write_agent_conf(&cfg).await?;
+        self.config.home_dir = cfg.home_dir.clone();
+        self.config.gpg_binary = cfg.gpg_binary.clone();
+        self.config.gpg_agent_binary = cfg.gpg_agent_binary.clone();
+        self.config.scdaemon_binary = cfg.scdaemon_binary.clone();
+        self.reconfigure_clients(&cfg);
         // Reload agent to pick up changes
         self.config.gpgconf_reload("gpg-agent").await?;
+        if was_running {
+            self.status.running = false;
+            reconnect_after_reload(true, self.protocol.connect()).await?;
+            self.status.running = true;
+            self.refresh_status().await;
+        }
         Ok(())
     }
 
@@ -560,10 +634,6 @@ impl GpgAgentService {
         self.card.get_card_status().await
     }
 
-    pub async fn list_cards(&self) -> Result<Vec<SmartCardInfo>, String> {
-        self.card.list_cards().await
-    }
-
     pub async fn card_change_pin(&mut self, pin_type: &str) -> Result<bool, String> {
         let result = self.card.change_pin(pin_type).await?;
         self.audit.log_event(
@@ -577,13 +647,78 @@ impl GpgAgentService {
         Ok(result)
     }
 
-    pub async fn card_factory_reset(&mut self) -> Result<bool, String> {
-        let result = self.card.factory_reset().await?;
+    pub async fn card_unblock_pin(&mut self) -> Result<bool, String> {
+        let result = self.card.unblock_pin().await?;
+        self.audit.log_event(
+            GpgAuditAction::PinReset,
+            None,
+            None,
+            "User PIN unblocked with reset code",
+            result,
+            None,
+        );
+        Ok(result)
+    }
+
+    pub async fn prepare_card_factory_reset(
+        &mut self,
+    ) -> Result<CardFactoryResetChallenge, String> {
+        let card = self
+            .card
+            .get_card_status()
+            .await?
+            .ok_or_else(|| "No smart card is present".to_string())?;
+        if card.serial.is_empty()
+            || card.serial.len() > 128
+            || card.serial.chars().any(char::is_control)
+        {
+            return Err("The smart card did not provide a valid serial number".to_string());
+        }
+
+        let fingerprint = uuid::Uuid::new_v4().simple().to_string()[..12].to_ascii_uppercase();
+        let confirmation_phrase = format!("RESET {} {}", card.serial, fingerprint);
+        self.pending_card_reset = Some(PendingCardReset {
+            serial: card.serial.clone(),
+            challenge_fingerprint: fingerprint.clone(),
+            confirmation_phrase: confirmation_phrase.clone(),
+            expires_at: Instant::now() + CARD_RESET_CHALLENGE_TTL,
+        });
+
+        Ok(CardFactoryResetChallenge {
+            serial: card.serial,
+            challenge_fingerprint: fingerprint,
+            confirmation_phrase,
+            expires_in_seconds: CARD_RESET_CHALLENGE_TTL.as_secs(),
+        })
+    }
+
+    pub async fn card_factory_reset(
+        &mut self,
+        confirmation: CardFactoryResetConfirmation,
+    ) -> Result<bool, String> {
+        // Consume before validation: every confirmation attempt is one-shot.
+        let pending = self
+            .pending_card_reset
+            .take()
+            .ok_or_else(|| "Prepare a new smart-card reset confirmation first".to_string())?;
+        let current = self
+            .card
+            .get_card_status()
+            .await?
+            .ok_or_else(|| "No smart card is present".to_string())?;
+        validate_factory_reset_confirmation(
+            &pending,
+            &confirmation,
+            &current.serial,
+            Instant::now(),
+        )?;
+
+        let result = self.card.factory_reset(&pending.serial).await?;
         self.audit.log_event(
             GpgAuditAction::CardOperation,
             None,
             None,
-            "Factory reset",
+            &format!("Factory reset card {}", pending.serial),
             result,
             None,
         );
@@ -695,5 +830,61 @@ mod tests {
         assert!(!service.status.running);
         assert!(service.status.version.is_empty());
         assert_eq!(service.status.keys_cached, 0);
+    }
+
+    #[tokio::test]
+    async fn config_reload_reconnects_only_a_previously_running_agent() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let skipped = Arc::new(AtomicBool::new(false));
+        let skipped_probe = Arc::clone(&skipped);
+        reconnect_after_reload(false, async move {
+            skipped_probe.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(!skipped.load(Ordering::SeqCst));
+
+        let reconnected = Arc::new(AtomicBool::new(false));
+        let reconnect_probe = Arc::clone(&reconnected);
+        reconnect_after_reload(true, async move {
+            reconnect_probe.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(reconnected.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn factory_reset_confirmation_is_serial_bound_expiring_and_one_shot_ready() {
+        let now = Instant::now();
+        let pending = PendingCardReset {
+            serial: "SERIAL01".to_string(),
+            challenge_fingerprint: "ABC123".to_string(),
+            confirmation_phrase: "RESET SERIAL01 ABC123".to_string(),
+            expires_at: now + Duration::from_secs(60),
+        };
+        let confirmation = CardFactoryResetConfirmation {
+            serial: pending.serial.clone(),
+            challenge_fingerprint: pending.challenge_fingerprint.clone(),
+            confirmation_phrase: pending.confirmation_phrase.clone(),
+        };
+        assert!(
+            validate_factory_reset_confirmation(&pending, &confirmation, "SERIAL01", now).is_ok()
+        );
+        assert!(
+            validate_factory_reset_confirmation(&pending, &confirmation, "OTHER-CARD", now)
+                .is_err()
+        );
+        assert!(validate_factory_reset_confirmation(
+            &pending,
+            &confirmation,
+            "SERIAL01",
+            now + Duration::from_secs(61)
+        )
+        .is_err());
     }
 }

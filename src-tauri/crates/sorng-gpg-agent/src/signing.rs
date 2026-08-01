@@ -3,7 +3,10 @@
 //! Sign data and files, verify signatures, and perform key signing
 //! via GPG command-line operations.
 
-use crate::protocol::{run_gpg_command, run_gpg_command_bytes, run_gpg_command_with_input};
+use crate::protocol::{
+    run_gpg_command, run_gpg_command_bytes, run_gpg_command_classified, run_gpg_command_with_input,
+    run_gpg_command_with_input_classified, GpgCommandResult, GpgCommandStatus,
+};
 use crate::types::*;
 use log::info;
 
@@ -191,29 +194,20 @@ impl SigningEngine {
             args.push("-".to_string());
 
             let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-            let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
+            let output =
+                run_gpg_command_with_input_classified(&self.gpg_binary, &args_ref, data).await;
 
             // Clean up temp file
             let _ = std::fs::remove_file(&sig_path);
 
-            let output_str = match output {
-                Ok(o) => String::from_utf8_lossy(&o).to_string(),
-                Err(e) => e,
-            };
-
-            return Ok(parse_verification_output(&output_str));
+            return parse_classified_verification(output?);
         }
 
         // Inline/clear-text signature
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output = run_gpg_command_with_input(&self.gpg_binary, &args_ref, data).await;
-
-        let output_str = match output {
-            Ok(o) => String::from_utf8_lossy(&o).to_string(),
-            Err(e) => e,
-        };
-
-        Ok(parse_verification_output(&output_str))
+        let output =
+            run_gpg_command_with_input_classified(&self.gpg_binary, &args_ref, data).await?;
+        parse_classified_verification(output)
     }
 
     /// Verify a file signature.
@@ -233,14 +227,8 @@ impl SigningEngine {
         args.push(path.to_string());
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output = run_gpg_command(&self.gpg_binary, &args_ref).await;
-
-        let output_str = match output {
-            Ok(o) => o,
-            Err(e) => e,
-        };
-
-        Ok(parse_verification_output(&output_str))
+        let output = run_gpg_command_classified(&self.gpg_binary, &args_ref).await?;
+        parse_classified_verification(output)
     }
 
     /// Sign someone else's key (key signing / certification).
@@ -277,6 +265,30 @@ impl SigningEngine {
 }
 
 // ── Verification Output Parsing ─────────────────────────────────────
+
+fn parse_classified_verification(output: GpgCommandResult) -> Result<VerificationResult, String> {
+    match output.status() {
+        GpgCommandStatus::Success
+        | GpgCommandStatus::BadSignature
+        | GpgCommandStatus::MissingPublicKey
+        | GpgCommandStatus::SignatureError => {
+            let mut result = parse_verification_output(&String::from_utf8_lossy(output.stdout()));
+            match output.status() {
+                GpgCommandStatus::BadSignature => {
+                    result.valid = false;
+                    result.signature_status = SigStatus::Bad;
+                }
+                GpgCommandStatus::MissingPublicKey => {
+                    result.valid = false;
+                    result.signature_status = SigStatus::MissingSigner;
+                }
+                _ => {}
+            }
+            Ok(result)
+        }
+        GpgCommandStatus::CardAbsent | GpgCommandStatus::Failed => Err(output.sanitized_error()),
+    }
+}
 
 /// Parse GPG --status-fd verification output.
 fn parse_verification_output(output: &str) -> VerificationResult {

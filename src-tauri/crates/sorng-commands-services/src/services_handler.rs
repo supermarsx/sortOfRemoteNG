@@ -310,8 +310,9 @@ pub fn is_command(command: &str) -> bool {
             | "gpg_send_to_keyserver"
             | "gpg_refresh_keys"
             | "gpg_card_status"
-            | "gpg_list_cards"
             | "gpg_card_change_pin"
+            | "gpg_card_unblock_pin"
+            | "gpg_card_prepare_factory_reset"
             | "gpg_card_factory_reset"
             | "gpg_card_set_attribute"
             | "gpg_card_generate_key"
@@ -796,8 +797,9 @@ pub fn build() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync 
         gpg_agent_commands::gpg_send_to_keyserver,
         gpg_agent_commands::gpg_refresh_keys,
         gpg_agent_commands::gpg_card_status,
-        gpg_agent_commands::gpg_list_cards,
         gpg_agent_commands::gpg_card_change_pin,
+        gpg_agent_commands::gpg_card_unblock_pin,
+        gpg_agent_commands::gpg_card_prepare_factory_reset,
         gpg_agent_commands::gpg_card_factory_reset,
         gpg_agent_commands::gpg_card_set_attribute,
         gpg_agent_commands::gpg_card_generate_key,

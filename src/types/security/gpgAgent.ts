@@ -1,17 +1,17 @@
 // ── GPG Agent Types ──────────────────────────────────────────────────
 
 export type GpgKeyAlgorithm =
-  | "Rsa1024"
-  | "Rsa2048"
-  | "Rsa3072"
-  | "Rsa4096"
-  | "Dsa"
-  | "Ed25519"
-  | "Cv25519"
-  | "EcdsaP256"
-  | "EcdsaP384"
-  | "EcdsaP521"
-  | "ElGamal";
+  | "rsa1024"
+  | "rsa2048"
+  | "rsa3072"
+  | "rsa4096"
+  | "dsa"
+  | "ed25519"
+  | "cv25519"
+  | "ecdsaP256"
+  | "ecdsaP384"
+  | "ecdsaP521"
+  | "elGamal";
 
 export type KeyCapability = "Certify" | "Sign" | "Encrypt" | "Authenticate";
 export type KeyValidity =
@@ -31,12 +31,7 @@ export type KeyOwnerTrust =
   | "Marginal"
   | "Full"
   | "Ultimate";
-export type PinentryMode =
-  | "Default"
-  | "Ask"
-  | "Cancel"
-  | "Error"
-  | "Loopback";
+export type PinentryMode = "Default" | "Ask" | "Cancel" | "Error" | "Loopback";
 export type SigStatus =
   | "Good"
   | "Bad"
@@ -45,7 +40,7 @@ export type SigStatus =
   | "RevokedKey"
   | "MissingSigner"
   | "Error";
-export type CardSlot = "Signature" | "Encryption" | "Authentication";
+export type CardSlot = "signature" | "encryption" | "authentication";
 export type GpgAuditAction =
   | "Sign"
   | "Verify"
@@ -126,9 +121,16 @@ export interface GpgKey {
 
 export interface CardKeyAttribute {
   slot: CardSlot;
-  algorithm: string;
+  algorithm: GpgKeyAlgorithm;
   bits: number;
   curve: string | null;
+}
+
+export interface CardFactoryResetChallenge {
+  serial: string;
+  challengeFingerprint: string;
+  confirmationPhrase: string;
+  expiresInSeconds: number;
 }
 
 export interface SmartCardInfo {

@@ -18,6 +18,8 @@ import type {
   VerificationResult,
   EncryptionResult,
   DecryptionResult,
+  CardSlot,
+  CardFactoryResetChallenge,
 } from "../../types/security/gpgAgent";
 
 // ─── Tauri runtime check ──────────────────────────────────────────
@@ -617,25 +619,14 @@ export function useGpgAgent() {
     if (!isTauri()) return;
     setError(null);
     try {
-      const info = await invoke<SmartCardInfo>("gpg_card_status");
+      const info = await invoke<SmartCardInfo | null>("gpg_card_status");
       setCardInfo(info);
     } catch (e: any) {
       setError(e?.toString() ?? "Failed to get card status");
     }
   }, []);
 
-  const listCards = useCallback(async (): Promise<SmartCardInfo[] | null> => {
-    if (!isTauri()) return null;
-    setError(null);
-    try {
-      return await invoke<SmartCardInfo[]>("gpg_list_cards");
-    } catch (e: any) {
-      setError(e?.toString() ?? "Failed to list cards");
-      return null;
-    }
-  }, []);
-
-  const cardChangePin = useCallback(async (pinType: string) => {
+  const cardChangePin = useCallback(async (pinType: "user" | "admin") => {
     if (!isTauri()) return;
     setError(null);
     try {
@@ -645,16 +636,56 @@ export function useGpgAgent() {
     }
   }, []);
 
-  const cardFactoryReset = useCallback(async () => {
-    if (!isTauri()) return;
+  const cardUnblockPin = useCallback(async () => {
+    if (!isTauri()) return false;
     setError(null);
     try {
-      await invoke("gpg_card_factory_reset");
+      await invoke("gpg_card_unblock_pin");
       await getCardStatus();
+      return true;
     } catch (e: any) {
-      setError(e?.toString() ?? "Failed to factory reset card");
+      setError(e?.toString() ?? "Failed to unblock card PIN");
+      return false;
     }
   }, [getCardStatus]);
+
+  const prepareCardFactoryReset = useCallback(async () => {
+    if (!isTauri()) return null;
+    setError(null);
+    try {
+      return await invoke<CardFactoryResetChallenge>(
+        "gpg_card_prepare_factory_reset",
+      );
+    } catch (e: any) {
+      setError(e?.toString() ?? "Failed to prepare card factory reset");
+      return null;
+    }
+  }, []);
+
+  const cardFactoryReset = useCallback(
+    async (
+      challenge: CardFactoryResetChallenge,
+      confirmationPhrase: string,
+    ) => {
+      if (!isTauri()) return false;
+      setError(null);
+      try {
+        await invoke("gpg_card_factory_reset", {
+          confirmation: {
+            serial: challenge.serial,
+            challengeFingerprint: challenge.challengeFingerprint,
+            confirmationPhrase,
+          },
+        });
+        await getCardStatus();
+        return true;
+      } catch (e: any) {
+        setError(e?.toString() ?? "Failed to factory reset card");
+        return false;
+      }
+    },
+    [getCardStatus],
+  );
 
   const cardSetAttr = useCallback(async (attr: string, value: string) => {
     if (!isTauri()) return;
@@ -667,11 +698,11 @@ export function useGpgAgent() {
   }, []);
 
   const cardGenKey = useCallback(
-    async (slot: string, algo: string) => {
+    async (slot: CardSlot, algorithm: GpgKeyAlgorithm) => {
       if (!isTauri()) return;
       setError(null);
       try {
-        await invoke("gpg_card_generate_key", { slot, algorithm: algo });
+        await invoke("gpg_card_generate_key", { slot, algorithm });
         await getCardStatus();
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to generate card key");
@@ -681,11 +712,11 @@ export function useGpgAgent() {
   );
 
   const cardMoveKey = useCallback(
-    async (keyId: string, subkeyIdx: number, slot: string) => {
+    async (keyId: string, subkeyIndex: number, slot: CardSlot) => {
       if (!isTauri()) return;
       setError(null);
       try {
-        await invoke("gpg_card_move_key", { keyId, subkeyIdx, slot });
+        await invoke("gpg_card_move_key", { keyId, subkeyIndex, slot });
         await getCardStatus();
       } catch (e: any) {
         setError(e?.toString() ?? "Failed to move key to card");
@@ -807,8 +838,9 @@ export function useGpgAgent() {
 
     // Smart card
     getCardStatus,
-    listCards,
     cardChangePin,
+    cardUnblockPin,
+    prepareCardFactoryReset,
     cardFactoryReset,
     cardSetAttr,
     cardGenKey,

@@ -37,6 +37,14 @@ impl GpgConfigManager {
         }
     }
 
+    fn gpgconf_command(&self) -> Command {
+        let mut command = Command::new("gpgconf");
+        if !self.home_dir.is_empty() {
+            command.env("GNUPGHOME", &self.home_dir);
+        }
+        command
+    }
+
     /// Detect the GPG binary on the system.
     pub async fn detect_gpg(&mut self) -> Result<String, String> {
         // Try common binary names
@@ -52,7 +60,8 @@ impl GpgConfigManager {
         }
 
         // Try gpgconf to find the path
-        if let Ok(output) = Command::new("gpgconf")
+        if let Ok(output) = self
+            .gpgconf_command()
             .args(["--list-components"])
             .output()
             .await
@@ -75,7 +84,8 @@ impl GpgConfigManager {
 
     /// Detect the gpg-agent binary.
     pub async fn detect_gpg_agent(&mut self) -> Result<String, String> {
-        if let Ok(output) = Command::new("gpgconf")
+        if let Ok(output) = self
+            .gpgconf_command()
             .args(["--list-components"])
             .output()
             .await
@@ -113,7 +123,8 @@ impl GpgConfigManager {
             return Ok(self.home_dir.clone());
         }
 
-        let output = Command::new("gpgconf")
+        let output = self
+            .gpgconf_command()
             .args(["--list-dirs", "homedir"])
             .output()
             .await
@@ -273,7 +284,8 @@ impl GpgConfigManager {
 
     /// Get the gpg-agent socket path.
     pub async fn get_agent_socket_path(&self) -> Result<String, String> {
-        let output = Command::new("gpgconf")
+        let output = self
+            .gpgconf_command()
             .args(["--list-dirs", "agent-socket"])
             .output()
             .await
@@ -288,7 +300,8 @@ impl GpgConfigManager {
 
     /// Get the SSH agent socket path.
     pub async fn get_agent_ssh_socket(&self) -> Result<String, String> {
-        let output = Command::new("gpgconf")
+        let output = self
+            .gpgconf_command()
             .args(["--list-dirs", "agent-ssh-socket"])
             .output()
             .await
@@ -303,7 +316,8 @@ impl GpgConfigManager {
 
     /// Reload a GPG component via gpgconf.
     pub async fn gpgconf_reload(&self, component: &str) -> Result<bool, String> {
-        let output = Command::new("gpgconf")
+        let output = self
+            .gpgconf_command()
             .args(["--reload", component])
             .output()
             .await
@@ -320,7 +334,8 @@ impl GpgConfigManager {
 
     /// Kill a GPG component via gpgconf.
     pub async fn gpgconf_kill(&self, component: &str) -> Result<bool, String> {
-        let output = Command::new("gpgconf")
+        let output = self
+            .gpgconf_command()
             .args(["--kill", component])
             .output()
             .await

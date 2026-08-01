@@ -13,10 +13,53 @@ import {
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "../../ui/display";
 import type { Mgr } from "./types";
+import type {
+  CardFactoryResetChallenge,
+  CardSlot,
+  SmartCardInfo,
+} from "../../../types/security/gpgAgent";
+
+function slotLabel(slot: CardSlot): string {
+  return `${slot.charAt(0).toUpperCase()}${slot.slice(1)}`;
+}
+
+function slotFingerprint(card: SmartCardInfo, slot: CardSlot): string | null {
+  if (slot === "signature") return card.signature_key_fingerprint;
+  if (slot === "encryption") return card.encryption_key_fingerprint;
+  return card.authentication_key_fingerprint;
+}
 
 const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
   const c = mgr.cardInfo;
+  const [resetChallenge, setResetChallenge] =
+    React.useState<CardFactoryResetChallenge | null>(null);
+  const [resetConfirmation, setResetConfirmation] = React.useState("");
+  const [resetting, setResetting] = React.useState(false);
+
+  React.useEffect(() => {
+    setResetChallenge(null);
+    setResetConfirmation("");
+  }, [c?.serial]);
+
+  const beginFactoryReset = async () => {
+    const challenge = await mgr.prepareCardFactoryReset();
+    if (challenge) {
+      setResetChallenge(challenge);
+      setResetConfirmation("");
+    }
+  };
+
+  const confirmFactoryReset = async () => {
+    if (!resetChallenge) return;
+    setResetting(true);
+    const reset = await mgr.cardFactoryReset(resetChallenge, resetConfirmation);
+    setResetting(false);
+    if (reset) {
+      setResetChallenge(null);
+      setResetConfirmation("");
+    }
+  };
 
   return (
     <div className="sor-gpg-smartcard space-y-4">
@@ -26,7 +69,9 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           disabled={mgr.loading}
           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-muted rounded hover:bg-muted/80"
         >
-          <RefreshCw className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${mgr.loading ? "animate-spin" : ""}`}
+          />
           {t("gpgAgent.card.refresh", "Refresh Card")}
         </button>
         <button
@@ -42,7 +87,10 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         <EmptyState
           icon={CreditCard}
           message={t("gpgAgent.card.noCard", "No Smart Card Detected")}
-          hint={t("gpgAgent.card.noCardDesc", "Insert a smart card and click Refresh.")}
+          hint={t(
+            "gpgAgent.card.noCardDesc",
+            "Insert a smart card and click Refresh.",
+          )}
         />
       ) : (
         <>
@@ -56,10 +104,22 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {[
                 { label: t("gpgAgent.card.reader", "Reader"), value: c.reader },
                 { label: t("gpgAgent.card.serial", "Serial"), value: c.serial },
-                { label: t("gpgAgent.card.manufacturer", "Manufacturer"), value: c.manufacturer },
-                { label: t("gpgAgent.card.version", "Version"), value: c.application_version },
-                { label: t("gpgAgent.card.holder", "Cardholder"), value: c.card_holder },
-                { label: t("gpgAgent.card.language", "Language"), value: c.language },
+                {
+                  label: t("gpgAgent.card.manufacturer", "Manufacturer"),
+                  value: c.manufacturer,
+                },
+                {
+                  label: t("gpgAgent.card.version", "Version"),
+                  value: c.application_version,
+                },
+                {
+                  label: t("gpgAgent.card.holder", "Cardholder"),
+                  value: c.card_holder,
+                },
+                {
+                  label: t("gpgAgent.card.language", "Language"),
+                  value: c.language,
+                },
               ].map((item) => (
                 <div key={item.label}>
                   <span className="text-muted-foreground">{item.label}: </span>
@@ -105,10 +165,15 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {[
                 { label: "Signature", value: c.signature_key_fingerprint },
                 { label: "Encryption", value: c.encryption_key_fingerprint },
-                { label: "Authentication", value: c.authentication_key_fingerprint },
+                {
+                  label: "Authentication",
+                  value: c.authentication_key_fingerprint,
+                },
               ].map((kf) => (
                 <div key={kf.label} className="flex gap-2">
-                  <span className="text-muted-foreground w-24">{kf.label}:</span>
+                  <span className="text-muted-foreground w-24">
+                    {kf.label}:
+                  </span>
                   <span className="truncate">{kf.value || "\u2014"}</span>
                 </div>
               ))}
@@ -132,7 +197,7 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 <tbody>
                   {c.key_attributes.map((attr, i) => (
                     <tr key={i} className="border-b border-border/50">
-                      <td className="py-1">{attr.slot}</td>
+                      <td className="py-1">{slotLabel(attr.slot)}</td>
                       <td className="py-1 font-mono">{attr.algorithm}</td>
                       <td className="py-1">{attr.bits}</td>
                     </tr>
@@ -159,20 +224,132 @@ const SmartCardTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               {t("gpgAgent.card.changeAdminPin", "Change Admin PIN")}
             </button>
             <button
-              onClick={mgr.cardFactoryReset}
+              onClick={mgr.cardUnblockPin}
+              disabled={
+                mgr.loading ||
+                c.pin_retry_count[0] > 0 ||
+                c.pin_retry_count[1] === 0
+              }
+              title={
+                c.pin_retry_count[0] > 0
+                  ? t(
+                      "gpgAgent.card.pinNotBlocked",
+                      "The user PIN is not blocked",
+                    )
+                  : undefined
+              }
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-warning text-[var(--color-text)] rounded hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ShieldAlert className="w-3 h-3" />
+              {t("gpgAgent.card.unblockPin", "Unblock PIN")}
+            </button>
+            <button
+              onClick={beginFactoryReset}
+              disabled={mgr.loading || resetting}
               className="flex items-center gap-1 px-3 py-1.5 text-xs bg-error text-[var(--color-text)] rounded hover:bg-error/90"
             >
               <Trash2 className="w-3 h-3" />
               {t("gpgAgent.card.factoryReset", "Factory Reset")}
             </button>
-            <button
-              onClick={() => mgr.cardGenKey("sig", "rsa2048")}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-[var(--color-text)] rounded hover:bg-primary/90"
-            >
-              <Plus className="w-3 h-3" />
-              {t("gpgAgent.card.genKey", "Generate Key on Card")}
-            </button>
+            {c.key_attributes
+              .filter((attr) => !slotFingerprint(c, attr.slot))
+              .map((attr) => (
+                <button
+                  key={attr.slot}
+                  onClick={() => mgr.cardGenKey(attr.slot, attr.algorithm)}
+                  disabled={mgr.loading}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs bg-primary text-[var(--color-text)] rounded hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="w-3 h-3" />
+                  {t("gpgAgent.card.genKey", "Generate Key")}:{" "}
+                  {slotLabel(attr.slot)} ({attr.algorithm})
+                </button>
+              ))}
           </div>
+
+          {resetChallenge && (
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="gpg-card-reset-title"
+              className="space-y-3 rounded-lg border-2 border-error bg-error/10 p-4"
+            >
+              <h3
+                id="gpg-card-reset-title"
+                className="font-semibold text-error"
+              >
+                {t(
+                  "gpgAgent.card.resetConfirmTitle",
+                  "Permanently erase this smart card?",
+                )}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "gpgAgent.card.resetConfirmWarning",
+                  "Factory reset permanently destroys every private key and PIN on the inserted card. This cannot be undone.",
+                )}
+              </p>
+              <p className="text-xs">
+                {t("gpgAgent.card.resetSerial", "Card serial")}:{" "}
+                <code className="font-mono font-semibold">
+                  {resetChallenge.serial}
+                </code>
+              </p>
+              <label className="block space-y-1 text-xs">
+                <span>
+                  {t(
+                    "gpgAgent.card.resetTypePhrase",
+                    "Type this exact one-time phrase",
+                  )}
+                  :{" "}
+                  <code className="select-all font-mono font-semibold">
+                    {resetChallenge.confirmationPhrase}
+                  </code>
+                </span>
+                <input
+                  value={resetConfirmation}
+                  onChange={(event) => setResetConfirmation(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded border border-error/50 bg-background px-2 py-1.5 font-mono"
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmFactoryReset}
+                  disabled={
+                    resetting ||
+                    resetConfirmation !== resetChallenge.confirmationPhrase
+                  }
+                  className="rounded bg-error px-3 py-1.5 text-xs text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {resetting
+                    ? t("gpgAgent.card.resetting", "Resetting…")
+                    : t(
+                        "gpgAgent.card.resetPermanently",
+                        "Reset card permanently",
+                      )}
+                </button>
+                <button
+                  onClick={() => {
+                    setResetChallenge(null);
+                    setResetConfirmation("");
+                  }}
+                  disabled={resetting}
+                  className="rounded bg-muted px-3 py-1.5 text-xs hover:bg-muted/80"
+                >
+                  {t("common.cancel", "Cancel")}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {t(
+                  "gpgAgent.card.resetExpiry",
+                  "This one-time confirmation expires in {{seconds}} seconds and is consumed after one attempt.",
+                  { seconds: resetChallenge.expiresInSeconds },
+                )}
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

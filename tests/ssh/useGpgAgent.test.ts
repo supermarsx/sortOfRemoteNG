@@ -328,6 +328,85 @@ describe("useGpgAgent", () => {
     expect(result.current.cardInfo).toEqual(cardInfo);
   });
 
+  it("uses the camel-case smart-card slot and algorithm wire contract", async () => {
+    const { result } = renderHook(() => useGpgAgent());
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+
+    await act(async () => {
+      await result.current.cardGenKey("signature", "rsa3072");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("gpg_card_generate_key", {
+      slot: "signature",
+      algorithm: "rsa3072",
+    });
+  });
+
+  it("uses subkeyIndex for the Tauri move-key argument", async () => {
+    const { result } = renderHook(() => useGpgAgent());
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+
+    await act(async () => {
+      await result.current.cardMoveKey("KEY01", 2, "encryption");
+    });
+
+    expect(invoke).toHaveBeenCalledWith("gpg_card_move_key", {
+      keyId: "KEY01",
+      subkeyIndex: 2,
+      slot: "encryption",
+    });
+  });
+
+  it("prepares and submits the serial-bound one-shot reset confirmation", async () => {
+    const challenge = {
+      serial: "SERIAL01",
+      challengeFingerprint: "ABC123",
+      confirmationPhrase: "RESET SERIAL01 ABC123",
+      expiresInSeconds: 60,
+    };
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === "gpg_card_prepare_factory_reset") return challenge;
+      if (cmd === "gpg_card_factory_reset") return true;
+      if (cmd === "gpg_card_status") return null;
+      if (cmd === "gpg_get_status") return { running: true };
+      if (cmd === "gpg_list_keys") return [];
+      return undefined;
+    });
+    const { result } = renderHook(() => useGpgAgent());
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+
+    let prepared: typeof challenge | null = null;
+    await act(async () => {
+      prepared = await result.current.prepareCardFactoryReset();
+    });
+    expect(prepared).toEqual(challenge);
+
+    await act(async () => {
+      await result.current.cardFactoryReset(
+        challenge,
+        challenge.confirmationPhrase,
+      );
+    });
+    expect(invoke).toHaveBeenCalledWith("gpg_card_factory_reset", {
+      confirmation: {
+        serial: "SERIAL01",
+        challengeFingerprint: "ABC123",
+        confirmationPhrase: "RESET SERIAL01 ABC123",
+      },
+    });
+  });
+
+  it("exposes unblock as a distinct card operation", async () => {
+    const { result } = renderHook(() => useGpgAgent());
+    await waitFor(() => expect(result.current.status).not.toBeNull());
+
+    await act(async () => {
+      await result.current.cardUnblockPin();
+    });
+
+    expect(invoke).toHaveBeenCalledWith("gpg_card_unblock_pin");
+  });
+
   // ── Error handling ────────────────────────────────────────────────
 
   it("generateKey failure sets error", async () => {

@@ -10,7 +10,7 @@ use std::sync::Arc;
 // ── Key Algorithm ───────────────────────────────────────────────────
 
 /// GPG key algorithm variants.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GpgKeyAlgorithm {
     Rsa1024,
     Rsa2048,
@@ -27,6 +27,42 @@ pub enum GpgKeyAlgorithm {
 }
 
 impl GpgKeyAlgorithm {
+    /// Stable string used at the Tauri/Serde boundary.
+    pub fn wire_name(&self) -> &str {
+        match self {
+            Self::Rsa1024 => "rsa1024",
+            Self::Rsa2048 => "rsa2048",
+            Self::Rsa3072 => "rsa3072",
+            Self::Rsa4096 => "rsa4096",
+            Self::Dsa => "dsa",
+            Self::Ed25519 => "ed25519",
+            Self::Cv25519 => "cv25519",
+            Self::EcdsaP256 => "ecdsaP256",
+            Self::EcdsaP384 => "ecdsaP384",
+            Self::EcdsaP521 => "ecdsaP521",
+            Self::ElGamal => "elGamal",
+            Self::Unknown(value) => value,
+        }
+    }
+
+    /// Parse the stable Tauri/Serde wire representation.
+    pub fn from_wire_name(value: &str) -> Self {
+        match value {
+            "rsa1024" | "Rsa1024" => Self::Rsa1024,
+            "rsa2048" | "Rsa2048" => Self::Rsa2048,
+            "rsa3072" | "Rsa3072" => Self::Rsa3072,
+            "rsa4096" | "Rsa4096" => Self::Rsa4096,
+            "dsa" | "Dsa" => Self::Dsa,
+            "ed25519" | "Ed25519" => Self::Ed25519,
+            "cv25519" | "Cv25519" => Self::Cv25519,
+            "ecdsaP256" | "EcdsaP256" | "nistp256" => Self::EcdsaP256,
+            "ecdsaP384" | "EcdsaP384" | "nistp384" => Self::EcdsaP384,
+            "ecdsaP521" | "EcdsaP521" | "nistp521" => Self::EcdsaP521,
+            "elGamal" | "ElGamal" | "elg" => Self::ElGamal,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+
     /// Parse from GPG algorithm ID string.
     pub fn from_gpg_id(id: &str) -> Self {
         match id {
@@ -79,6 +115,25 @@ impl GpgKeyAlgorithm {
             Self::EcdsaP521 => 521,
             Self::Unknown(_) => 0,
         }
+    }
+}
+
+impl Serialize for GpgKeyAlgorithm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.wire_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for GpgKeyAlgorithm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::from_wire_name(&value))
     }
 }
 
@@ -462,10 +517,30 @@ pub struct CardKeyAttribute {
 
 /// Smart card key slot.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum CardSlot {
     Signature,
     Encryption,
     Authentication,
+}
+
+/// Short-lived proof required before a smart-card factory reset can be confirmed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CardFactoryResetChallenge {
+    pub serial: String,
+    pub challenge_fingerprint: String,
+    pub confirmation_phrase: String,
+    pub expires_in_seconds: u64,
+}
+
+/// User confirmation submitted for a previously-prepared factory reset.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CardFactoryResetConfirmation {
+    pub serial: String,
+    pub challenge_fingerprint: String,
+    pub confirmation_phrase: String,
 }
 
 impl CardSlot {
@@ -1037,6 +1112,39 @@ mod tests {
         assert_eq!(GpgKeyAlgorithm::Rsa4096.default_bits(), 4096);
         assert_eq!(GpgKeyAlgorithm::Ed25519.default_bits(), 256);
         assert_eq!(GpgKeyAlgorithm::EcdsaP384.default_bits(), 384);
+    }
+
+    #[test]
+    fn smart_card_wire_names_are_stable_strings() {
+        assert_eq!(
+            serde_json::to_string(&GpgKeyAlgorithm::Rsa2048).unwrap(),
+            "\"rsa2048\""
+        );
+        assert_eq!(
+            serde_json::from_str::<GpgKeyAlgorithm>("\"ecdsaP384\"").unwrap(),
+            GpgKeyAlgorithm::EcdsaP384
+        );
+        assert_eq!(
+            serde_json::to_string(&CardSlot::Authentication).unwrap(),
+            "\"authentication\""
+        );
+        assert_eq!(
+            serde_json::from_str::<CardSlot>("\"signature\"").unwrap(),
+            CardSlot::Signature
+        );
+    }
+
+    #[test]
+    fn reset_confirmation_uses_camel_case_nested_fields() {
+        let confirmation = CardFactoryResetConfirmation {
+            serial: "SERIAL01".to_string(),
+            challenge_fingerprint: "ABC123".to_string(),
+            confirmation_phrase: "RESET SERIAL01 ABC123".to_string(),
+        };
+        let value = serde_json::to_value(confirmation).unwrap();
+        assert_eq!(value["challengeFingerprint"], "ABC123");
+        assert_eq!(value["confirmationPhrase"], "RESET SERIAL01 ABC123");
+        assert!(value.get("challenge_fingerprint").is_none());
     }
 
     #[test]
