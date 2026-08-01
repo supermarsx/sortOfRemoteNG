@@ -42,9 +42,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use sha2::Sha256;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+const MAX_STORAGE_FILE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_STORAGE_PLAINTEXT_BYTES: usize = (255 * 1024 * 1024) as usize;
 
 /// Represents the structure of data stored by the secure storage system.
 ///
@@ -79,8 +83,7 @@ pub struct SecureStorage {
     /// (`sorng-v1::connections` sub-key). A missing state is reserved
     /// for tests and writes plain JSON; an installed-but-locked state
     /// refuses writes rather than silently downgrading secrets.
-    encryption_state:
-        Option<Arc<sorng_encryption::EncryptionState>>,
+    encryption_state: Option<Arc<sorng_encryption::EncryptionState>>,
 }
 
 impl SecureStorage {
@@ -110,10 +113,7 @@ impl SecureStorage {
     /// v2 envelope, and `load_data` magic-byte sniffs between v0 / v2
     /// / plaintext. Safe to call multiple times — the latest handle
     /// replaces the previous one.
-    pub fn set_encryption_state(
-        &mut self,
-        state: Arc<sorng_encryption::EncryptionState>,
-    ) {
+    pub fn set_encryption_state(&mut self, state: Arc<sorng_encryption::EncryptionState>) {
         self.encryption_state = Some(state);
     }
 
@@ -137,7 +137,7 @@ impl SecureStorage {
     ///
     /// Returns an error if there are file system permission issues.
     pub async fn has_stored_data(&self) -> Result<bool, String> {
-        Ok(Path::new(&self.store_path).exists())
+        Ok(Self::checked_storage_metadata(Path::new(&self.store_path))?.is_some())
     }
 
     /// Checks if the stored data is encrypted.
@@ -146,11 +146,19 @@ impl SecureStorage {
     /// envelope (binary `SORNG\0` magic). The legacy `SORNG_ENC:`
     /// text envelope was retired in commit Z.
     pub async fn is_storage_encrypted(&self) -> Result<bool, String> {
-        if !Path::new(&self.store_path).exists() {
+        let path = Path::new(&self.store_path);
+        let Some(metadata) = Self::checked_storage_metadata(path)? else {
+            return Ok(false);
+        };
+        let mut prefix = [0_u8; 6];
+        if metadata.len() < prefix.len() as u64 {
             return Ok(false);
         }
-        let data = fs::read(&self.store_path).map_err(|e| e.to_string())?;
-        Ok(data.len() >= 6 && &data[..6] == sorng_encryption::envelope::MAGIC)
+        let mut file =
+            fs::File::open(path).map_err(|_| "Failed to open connections storage".to_string())?;
+        file.read_exact(&mut prefix)
+            .map_err(|_| "Failed to read connections storage".to_string())?;
+        Ok(prefix == *sorng_encryption::envelope::MAGIC)
     }
 
     #[cfg(test)]
@@ -188,12 +196,14 @@ impl SecureStorage {
     /// Saves data to persistent storage.
     ///
     /// Serializes the provided data to JSON format and writes it to the storage file.
-    /// Currently saves data without encryption regardless of the `use_password` parameter.
+    /// An installed master encryption state controls the encoding. If a legacy
+    /// caller explicitly requests protection and no state is installed, the
+    /// write fails rather than silently downgrading to plaintext.
     ///
     /// # Arguments
     ///
     /// * `data` - The `StorageData` to save
-    /// * `use_password` - Legacy downgrade guard; true requires initialized encryption
+    /// * `use_password` - Legacy downgrade guard; `true` requires initialized encryption
     ///
     /// # Returns
     ///
@@ -210,11 +220,14 @@ impl SecureStorage {
     ///
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        if json.len() > MAX_STORAGE_PLAINTEXT_BYTES {
+            return Err("Connections storage exceeds the 255 MiB limit".to_string());
+        }
 
         // Encryption dispatch — master DEK only. The `use_password`
-        // arg is retained on the Tauri-facing API for backward-compat
-        // with the previous serde shape but no longer influences
-        // anything; the master key is the single source of truth.
+        // arg is retained on the Tauri-facing API for backward
+        // compatibility and acts as a downgrade guard when the global
+        // encryption state was not installed.
         let state = self.encryption_state.as_ref();
         let used_v2 = match state {
             Some(state) if state.is_unlocked().await => true,
@@ -266,7 +279,30 @@ impl SecureStorage {
     /// data (every host, tunnel, and credential) and now gets the same
     /// guarantees.
     fn atomic_write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
-        crate::durable::durable_write(Path::new(path), bytes)
+        if bytes.len() as u64 > MAX_STORAGE_FILE_BYTES {
+            return Err("Connections storage exceeds the 256 MiB limit".to_string());
+        }
+        let path = Path::new(path);
+        let _ = Self::checked_storage_metadata(path)?;
+        crate::durable::durable_write(path, bytes)
+    }
+
+    fn checked_storage_metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err("Failed to inspect connections storage".to_string()),
+        };
+        if metadata.file_type().is_symlink() {
+            return Err("Connections storage must not be a symbolic link".to_string());
+        }
+        if !metadata.is_file() {
+            return Err("Connections storage must be a regular file".to_string());
+        }
+        if metadata.len() > MAX_STORAGE_FILE_BYTES {
+            return Err("Connections storage exceeds the 256 MiB limit".to_string());
+        }
+        Ok(Some(metadata))
     }
 
     /// Detect the v2 connections envelope by its binary magic prefix.
@@ -298,10 +334,15 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn load_data(&self) -> Result<Option<StorageData>, String> {
-        if !Path::new(&self.store_path).exists() {
+        let path = Path::new(&self.store_path);
+        if Self::checked_storage_metadata(path)?.is_none() {
             return Ok(None);
         }
-        let raw_bytes = fs::read(&self.store_path).map_err(|e| e.to_string())?;
+        let raw_bytes =
+            fs::read(path).map_err(|_| "Failed to read connections storage".to_string())?;
+        if raw_bytes.len() as u64 > MAX_STORAGE_FILE_BYTES {
+            return Err("Connections storage exceeds the 256 MiB limit".to_string());
+        }
 
         // v2 envelope binary blob.
         if Self::is_v2_connections_blob(&raw_bytes) {
@@ -327,9 +368,80 @@ impl SecureStorage {
         // accepted — files in that format error out as "invalid JSON"
         // so the user is forced through a fresh master-DEK setup.
         let raw = String::from_utf8(raw_bytes).map_err(|e| format!("UTF-8 decode: {}", e))?;
-        let storage_data: StorageData =
-            serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        let storage_data: StorageData = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         Ok(Some(storage_data))
+    }
+
+    /// Validate and commit a restored backup as one durable storage
+    /// replacement. Omitted backup sections retain their live values,
+    /// and app-local data is always preserved because backup payloads
+    /// do not own that namespace. All shape validation and the live
+    /// read complete before `save_data` reaches the atomic writer.
+    pub async fn apply_restored_backup_transactionally(
+        &self,
+        restored: &serde_json::Value,
+    ) -> Result<StorageData, String> {
+        let object = restored
+            .as_object()
+            .ok_or_else(|| "Restore payload must be a JSON object".to_string())?;
+
+        let restored_connections = match object.get("connections") {
+            None => None,
+            Some(serde_json::Value::Array(connections)) => {
+                if connections.iter().any(|connection| !connection.is_object()) {
+                    return Err("Restore payload connections must contain only objects".to_string());
+                }
+                Some(connections.clone())
+            }
+            Some(_) => {
+                return Err("Restore payload connections must be an array".to_string());
+            }
+        };
+        let restored_settings = match object.get("settings") {
+            None => None,
+            Some(serde_json::Value::Object(settings)) => Some(
+                settings
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
+            Some(_) => {
+                return Err("Restore payload settings must be an object".to_string());
+            }
+        };
+        let restored_timestamp = match object.get("timestamp") {
+            None => None,
+            Some(timestamp) => Some(timestamp.as_u64().ok_or_else(|| {
+                "Restore payload timestamp must be an unsigned integer".to_string()
+            })?),
+        };
+        if restored_connections.is_none() && restored_settings.is_none() {
+            return Err(
+                "Restore payload contains no supported connections or settings data".to_string(),
+            );
+        }
+
+        let mut candidate = self.load_data().await?.unwrap_or_else(|| StorageData {
+            connections: Vec::new(),
+            settings: std::collections::HashMap::new(),
+            timestamp: 0,
+            app_data: std::collections::HashMap::new(),
+        });
+        if let Some(connections) = restored_connections {
+            candidate.connections = connections;
+        }
+        if let Some(settings) = restored_settings {
+            candidate.settings = settings;
+        }
+        candidate.timestamp = restored_timestamp.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0)
+        });
+
+        self.save_data(candidate.clone(), false).await?;
+        Ok(candidate)
     }
 
     /// Clears all stored data by deleting the storage file.
@@ -348,8 +460,9 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn clear_storage(&self) -> Result<(), String> {
-        if Path::new(&self.store_path).exists() {
-            fs::remove_file(&self.store_path).map_err(|e| e.to_string())
+        let path = Path::new(&self.store_path);
+        if Self::checked_storage_metadata(path)?.is_some() {
+            fs::remove_file(path).map_err(|_| "Failed to clear connections storage".to_string())
         } else {
             Ok(())
         }
@@ -398,8 +511,8 @@ impl SecureStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        // `use_password` is a vestigial no-op after the legacy
-        // SORNG_ENC: write path was retired.
+        // The global master-key state determines whether the write is
+        // encrypted; no per-record password is retained here.
         self.save_data(data, false).await
     }
 
@@ -541,7 +654,10 @@ mod connections_dispatch_tests {
         // No legacy envelope, no v2 envelope — just JSON.
         assert!(!raw.starts_with("SORNG_ENC:"));
         let bytes = std::fs::read(&path).unwrap();
-        assert_ne!(&bytes[..6.min(bytes.len())], sorng_encryption::envelope::MAGIC);
+        assert_ne!(
+            &bytes[..6.min(bytes.len())],
+            sorng_encryption::envelope::MAGIC
+        );
         let loaded = svc.load_data().await.unwrap().unwrap();
         assert_eq!(loaded.connections[0]["id"], "c1");
     }
@@ -593,8 +709,7 @@ mod connections_dispatch_tests {
         let svc = build_storage(path);
         let err = svc.load_data().await.unwrap_err();
         assert!(
-            err.to_lowercase().contains("expected")
-                || err.to_lowercase().contains("invalid"),
+            err.to_lowercase().contains("expected") || err.to_lowercase().contains("invalid"),
             "legacy SORNG_ENC: file must surface as a parse error, got: {err}"
         );
     }
@@ -623,7 +738,10 @@ mod connections_dispatch_tests {
         let path = nested.to_string_lossy().to_string();
         let svc = build_storage(path.clone());
         svc.save_data(sample_data(), false).await.unwrap();
-        assert!(nested.exists(), "durable writer must create the parent tree");
+        assert!(
+            nested.exists(),
+            "durable writer must create the parent tree"
+        );
         let loaded = svc.load_data().await.unwrap().unwrap();
         assert_eq!(loaded.connections[0]["id"], "c1");
     }
@@ -678,10 +796,7 @@ mod connections_dispatch_tests {
         let tmp_path = p
             .parent()
             .unwrap()
-            .join(format!(
-                ".{}.tmp",
-                p.file_name().unwrap().to_string_lossy()
-            ))
+            .join(format!(".{}.tmp", p.file_name().unwrap().to_string_lossy()))
             .to_string_lossy()
             .to_string();
         // Pre-plant: simulate a previously-killed writer.

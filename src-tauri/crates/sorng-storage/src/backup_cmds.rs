@@ -1,4 +1,5 @@
 use super::backup::*;
+use sorng_storage::storage::SecureStorageState;
 
 /// Update backup configuration
 #[tauri::command]
@@ -61,30 +62,42 @@ pub async fn backup_list_all_targets(
     service.list_backups_all_targets().await
 }
 
-/// Restore from a backup. When `target_id` is `None` the first
-/// matching file across every enabled destination is used (legacy
-/// behaviour). When set, the restore reads from that destination
-/// only so the user controls which copy gets restored when the same
-/// backup ID exists at multiple destinations.
+/// Restore one exact backup from one configured destination.
 #[tauri::command]
 pub async fn backup_restore(
-    state: tauri::State<'_, BackupServiceState>,
+    backup_state: tauri::State<'_, BackupServiceState>,
+    storage_state: tauri::State<'_, SecureStorageState>,
     backup_id: String,
-    target_id: Option<String>,
+    target_id: String,
+    apply: Option<bool>,
 ) -> Result<serde_json::Value, String> {
-    let service = state.lock().await;
-    service
-        .restore_backup_from_target(&backup_id, target_id.as_deref())
-        .await
+    let restored = {
+        let service = backup_state.lock().await;
+        service
+            .restore_backup_from_target(&backup_id, &target_id)
+            .await?
+    };
+
+    // Read-only is the compatibility default used by backup
+    // verification. An actual user restore opts into one durable
+    // storage commit after archive and payload validation complete.
+    if apply.unwrap_or(false) {
+        let storage = storage_state.lock().await;
+        storage
+            .apply_restored_backup_transactionally(&restored)
+            .await?;
+    }
+
+    Ok(restored)
 }
 
-/// Delete a backup
+/// Delete one exact backup data/sidecar pair from one configured destination.
 #[tauri::command]
 pub async fn backup_delete(
     state: tauri::State<'_, BackupServiceState>,
     backup_id: String,
+    target_id: String,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    service.delete_backup(&backup_id).await
+    service.delete_backup(&backup_id, &target_id).await
 }
-

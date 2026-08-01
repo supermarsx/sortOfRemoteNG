@@ -23,7 +23,7 @@ pub async fn has_stored_data(state: tauri::State<'_, SecureStorageState>) -> Res
 ///
 /// # Returns
 ///
-/// `Ok(false)` (encryption not yet implemented)
+/// `Ok(true)` only when the canonical storage file is a v2 encrypted envelope.
 #[tauri::command]
 pub async fn is_storage_encrypted(
     state: tauri::State<'_, SecureStorageState>,
@@ -38,7 +38,7 @@ pub async fn is_storage_encrypted(
 ///
 /// * `state` - The secure storage service state
 /// * `data` - The data to save
-/// * `use_password` - Whether to use encryption (currently ignored)
+/// * `use_password` - Legacy downgrade guard; protected writes fail if encryption is unavailable
 ///
 /// # Returns
 ///

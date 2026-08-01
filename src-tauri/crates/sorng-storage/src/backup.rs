@@ -374,8 +374,7 @@ pub struct BackupService {
     /// (`sorng-v1::backups` sub-key) instead of the legacy
     /// PBKDF2/600k SORNG1 path. Reads always magic-byte sniff so
     /// existing SORNG1 backups remain restorable for one release.
-    encryption_state:
-        Option<Arc<sorng_encryption::EncryptionState>>,
+    encryption_state: Option<Arc<sorng_encryption::EncryptionState>>,
 }
 
 /// Type alias for thread-safe backup state
@@ -410,10 +409,7 @@ impl BackupService {
     /// `app.manage`-d before this service is created (see
     /// `state_registry::security_data`), and we don't want to make the
     /// backup module aware of Tauri.
-    pub fn set_encryption_state(
-        &mut self,
-        state: Arc<sorng_encryption::EncryptionState>,
-    ) {
+    pub fn set_encryption_state(&mut self, state: Arc<sorng_encryption::EncryptionState>) {
         self.encryption_state = Some(state);
     }
 
@@ -529,10 +525,7 @@ impl BackupService {
                     // contract stays a `Result<BackupMetadata, String>`
                     // — the caller can detect skips via
                     // `backup_type == "skipped"` or status updates.
-                    return Ok(skipped_run_metadata(
-                        backup_type,
-                        summary.payload_hash,
-                    ));
+                    return Ok(skipped_run_metadata(backup_type, summary.payload_hash));
                 }
 
                 // At least one destination wrote — counter resets and
@@ -618,8 +611,7 @@ impl BackupService {
             Some(state) if state.is_unlocked().await => true,
             Some(_) => {
                 return Err(
-                    "Backup encryption state is locked; unlock before creating backups"
-                        .to_string(),
+                    "Backup encryption state is locked; unlock before creating backups".to_string(),
                 );
             }
             None => false,
@@ -954,11 +946,8 @@ impl BackupService {
             let entries = match fs::read_dir(&resolved) {
                 Ok(e) => e,
                 Err(e) => {
-                    listing.error_message = Some(format!(
-                        "Failed to scan {}: {}",
-                        resolved.display(),
-                        e
-                    ));
+                    listing.error_message =
+                        Some(format!("Failed to scan {}: {}", resolved.display(), e));
                     out.push(listing);
                     continue;
                 }
@@ -979,9 +968,7 @@ impl BackupService {
                 let (id, backup_type, created_at, encrypted, compressed, payload_hash, target_id) =
                     if meta_path.exists() {
                         let meta_content = fs::read_to_string(&meta_path).unwrap_or_default();
-                        if let Ok(meta) =
-                            serde_json::from_str::<BackupMetadata>(&meta_content)
-                        {
+                        if let Ok(meta) = serde_json::from_str::<BackupMetadata>(&meta_content) {
                             (
                                 meta.id,
                                 meta.backup_type,
@@ -1036,123 +1023,71 @@ impl BackupService {
         Ok(out)
     }
 
-    /// Restore from a backup file. When the user has multiple
-    /// destinations and the restore picker offers a specific source,
-    /// `target_id` should be set so we read from that destination
-    /// only. When `target_id` is `None`, every enabled destination is
-    /// searched and the first matching file is used (back-compat with
-    /// the legacy single-destination flow).
+    /// Restore one exact backup file from one configured destination.
     pub async fn restore_backup_from_target(
         &self,
         backup_id: &str,
-        target_id: Option<&str>,
+        target_id: &str,
     ) -> Result<serde_json::Value, String> {
-        // Build the list of directories to search.
-        let mut candidate_dirs: Vec<PathBuf> = Vec::new();
-        for target in self.config.effective_destinations() {
-            if !target.enabled {
-                continue;
-            }
-            if let Some(want) = target_id {
-                if target.id != want {
-                    continue;
-                }
-            }
-            if let Ok(p) = resolve_target_dir(&target, &self.config.destination_path) {
-                candidate_dirs.push(p);
-            }
-        }
-        if candidate_dirs.is_empty() {
-            return Err(match target_id {
-                Some(t) => format!("Backup target '{}' is not configured or disabled", t),
-                None => "No backup destinations configured".to_string(),
-            });
+        let target_root = resolve_configured_target_root(&self.config, target_id)?;
+        let pair = resolve_backup_pair(&target_root, backup_id, target_id)?;
+
+        // Validate the sidecar and filesystem length before reserving,
+        // then hash the archive while reading it through a hard byte cap.
+        // The sidecar is an integrity declaration, not an allocation hint
+        // that we trust on its own.
+        let file_data = read_and_verify_current_archive(&pair.data_path, &pair.metadata)?;
+
+        // The sidecar's encryption declaration must agree with the
+        // archive magic. This check happens only after the untouched
+        // archive bytes have passed size and checksum verification.
+        let is_v2 = self.is_v2_backup(&file_data);
+        if pair.metadata.encrypted != is_v2 {
+            return Err(
+                "Backup integrity check failed: encryption metadata does not match archive encoding"
+                    .to_string(),
+            );
         }
 
-        // Find the backup file across every candidate directory.
-        let mut backup_path: Option<PathBuf> = None;
-        for dir in &candidate_dirs {
-            if !dir.exists() {
-                continue;
-            }
-            let entries = match fs::read_dir(dir) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if filename.contains(backup_id) && !filename.contains(".meta.") {
-                    backup_path = Some(path);
-                    break;
-                }
-            }
-            if backup_path.is_some() {
-                break;
-            }
-        }
-
-        let path = backup_path.ok_or_else(|| format!("Backup not found: {}", backup_id))?;
-
-        // Read file
-        let file_data =
-            fs::read(&path).map_err(|e| format!("Failed to read backup file: {}", e))?;
-
-        // Magic-byte dispatch on read. v2 envelope is the only
-        // supported crypto envelope; everything else is treated as
-        // plaintext. The legacy SORNG1 path was retired in commit Z
-        // alongside the migrator that converted existing files.
-        let decrypted_data = if self.is_v2_backup(&file_data) {
+        let decrypted_data = if is_v2 {
             self.decrypt_backup_v2(&file_data).await?
         } else {
             file_data
         };
 
+        if decrypted_data.len() > MAX_BACKUP_ARCHIVE_BYTES {
+            return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+        }
+
         // Decompress if needed
-        let is_compressed = path.to_string_lossy().contains(".gz");
-        let json_data = if is_compressed {
-            let mut decoder = GzDecoder::new(&decrypted_data[..]);
-            let mut decompressed = String::new();
-            decoder
-                .read_to_string(&mut decompressed)
-                .map_err(|e| format!("Failed to decompress backup: {}", e))?;
-            decompressed
+        let json_bytes = if pair.metadata.compressed {
+            decompress_backup_gzip(&decrypted_data)?
         } else {
-            String::from_utf8(decrypted_data)
-                .map_err(|e| format!("Invalid UTF-8 in backup: {}", e))?
+            if decrypted_data.len() > MAX_BACKUP_EXPANDED_BYTES {
+                return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+            }
+            decrypted_data
         };
 
-        // Parse JSON
+        // Parse only after the archive's declared integrity has been
+        // established over the original on-disk bytes.
+        let json_data =
+            String::from_utf8(json_bytes).map_err(|e| format!("Invalid UTF-8 in backup: {}", e))?;
         let data: serde_json::Value = serde_json::from_str(&json_data)
             .map_err(|e| format!("Failed to parse backup JSON: {}", e))?;
 
         Ok(data)
     }
 
-    /// Back-compat wrapper for callers that don't care which
-    /// destination the backup is restored from — searches every
-    /// enabled destination and returns the first match. New callers
-    /// should use `restore_backup_from_target` with an explicit
-    /// `target_id` so the user controls which copy is restored when
-    /// the same backup ID exists at multiple destinations.
-    pub async fn restore_backup(&self, backup_id: &str) -> Result<serde_json::Value, String> {
-        self.restore_backup_from_target(backup_id, None).await
-    }
+    /// Delete one exact backup data/sidecar pair from one configured target.
+    pub async fn delete_backup(&mut self, backup_id: &str, target_id: &str) -> Result<(), String> {
+        let target_root = resolve_configured_target_root(&self.config, target_id)?;
+        let pair = resolve_backup_pair(&target_root, backup_id, target_id)?;
 
-    /// Delete a specific backup
-    pub async fn delete_backup(&mut self, backup_id: &str) -> Result<(), String> {
-        let dest_path = Path::new(&self.config.destination_path);
-
-        for entry in fs::read_dir(dest_path).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-            if filename.contains(backup_id) {
-                fs::remove_file(&path)
-                    .map_err(|e| format!("Failed to delete backup file: {}", e))?;
-            }
-        }
+        fs::remove_file(&pair.data_path)
+            .map_err(|e| format!("Failed to delete backup data file: {}", e))?;
+        fs::remove_file(&pair.metadata_path)
+            .map_err(|e| format!("Failed to delete backup metadata file: {}", e))?;
 
         self.update_backup_stats().await?;
         Ok(())
@@ -1228,9 +1163,7 @@ impl BackupService {
         .map_err(|e| format!("encrypt: {e}"))?;
         let tmp = path.with_extension(format!(
             "{}.rotating",
-            path.extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("bin")
+            path.extension().and_then(|s| s.to_str()).unwrap_or("bin")
         ));
         fs::write(&tmp, &blob).map_err(|e| format!("write tmp: {e}"))?;
         fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
@@ -1274,7 +1207,6 @@ impl BackupService {
             .await
             .map_err(|e| format!("v2 backup decrypt: {e}"))
     }
-
 }
 
 // ── Multi-target / delta-skip helpers ────────────────────────────────
@@ -1352,12 +1284,380 @@ fn resolve_target_dir(target: &BackupTarget, legacy_fallback: &str) -> Result<Pa
     ))
 }
 
+const BACKUP_FILE_SUFFIXES: [&str; 6] = [
+    ".enc.json.gz",
+    ".json.gz",
+    ".xml.gz",
+    ".enc.json",
+    ".json",
+    ".xml",
+];
+
 const CURRENT_ARCHIVE_CHECKSUM_SCOPE: &str = "archive-sha256-v1";
+const LEGACY_BACKUP_INTEGRITY_GUIDANCE: &str = "This backup uses legacy integrity metadata that cannot authenticate the stored archive before decoding. Restore it with the last compatible SortOfRemoteNG release, create a new backup, then restore that current-format copy.";
+const MAX_BACKUP_METADATA_BYTES: usize = 64 * 1024;
+const MAX_BACKUP_ARCHIVE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_BACKUP_EXPANDED_BYTES: usize = 256 * 1024 * 1024;
+const MAX_BACKUP_EXPANSION_RATIO: usize = 100;
+const BACKUP_EXPANSION_SLACK_BYTES: usize = 64 * 1024;
+const BACKUP_IO_BUFFER_BYTES: usize = 32 * 1024;
+const BACKUP_SAFETY_LIMIT_ERROR: &str = "Backup restore rejected by safety limits";
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
+}
+
+fn validate_current_archive_sidecar(
+    metadata: &BackupMetadata,
+    max_archive_bytes: usize,
+) -> Result<(), String> {
+    if metadata.size_bytes > max_archive_bytes as u64 {
+        return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+    }
+
+    match metadata.checksum_scope.as_deref() {
+        Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE) => {}
+        Some(scope) => {
+            return Err(format!(
+                "Backup integrity check failed: unsupported checksum scope '{}'. {}",
+                scope, LEGACY_BACKUP_INTEGRITY_GUIDANCE
+            ));
+        }
+        None => return Err(LEGACY_BACKUP_INTEGRITY_GUIDANCE.to_string()),
+    }
+
+    if metadata.checksum.len() != 64
+        || !metadata
+            .checksum
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(
+            "Backup integrity check failed: sidecar checksum is missing or malformed".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+fn read_and_verify_current_archive(
+    path: &Path,
+    metadata: &BackupMetadata,
+) -> Result<Vec<u8>, String> {
+    read_and_verify_current_archive_with_limit(path, metadata, MAX_BACKUP_ARCHIVE_BYTES)
+}
+
+fn read_and_verify_current_archive_with_limit(
+    path: &Path,
+    metadata: &BackupMetadata,
+    max_archive_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    validate_current_archive_sidecar(metadata, max_archive_bytes)?;
+
+    let mut file = File::open(path).map_err(|e| format!("Failed to open backup file: {e}"))?;
+    let filesystem_size = file
+        .metadata()
+        .map_err(|e| format!("Failed to inspect backup file: {e}"))?
+        .len();
+    if filesystem_size > max_archive_bytes as u64 {
+        return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+    }
+    if metadata.size_bytes != filesystem_size {
+        return Err(format!(
+            "Backup integrity check failed: sidecar size is {}, archive size is {}",
+            metadata.size_bytes, filesystem_size
+        ));
+    }
+
+    let declared_size =
+        usize::try_from(metadata.size_bytes).map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+    let mut archive = Vec::new();
+    archive
+        .try_reserve_exact(declared_size.min(BACKUP_IO_BUFFER_BYTES))
+        .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; BACKUP_IO_BUFFER_BYTES];
+
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Failed to read backup file: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        let new_len = archive
+            .len()
+            .checked_add(count)
+            .ok_or_else(|| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        if new_len > max_archive_bytes {
+            return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+        }
+        if new_len > declared_size {
+            return Err(format!(
+                "Backup integrity check failed: sidecar size is {}, archive changed while reading",
+                metadata.size_bytes
+            ));
+        }
+        archive
+            .try_reserve_exact(count)
+            .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        hasher.update(&buffer[..count]);
+        archive.extend_from_slice(&buffer[..count]);
+    }
+
+    if archive.len() != declared_size {
+        return Err(format!(
+            "Backup integrity check failed: sidecar size is {}, archive size is {}",
+            metadata.size_bytes,
+            archive.len()
+        ));
+    }
+    let actual_checksum = format!("{:x}", hasher.finalize());
+    if metadata.checksum != actual_checksum {
+        return Err("Backup integrity check failed: archive checksum mismatch".to_string());
+    }
+    Ok(archive)
+}
+
+fn read_backup_metadata(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| format!("Failed to open backup metadata: {e}"))?;
+    if file
+        .metadata()
+        .map_err(|e| format!("Failed to inspect backup metadata: {e}"))?
+        .len()
+        > MAX_BACKUP_METADATA_BYTES as u64
+    {
+        return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+    }
+
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(BACKUP_IO_BUFFER_BYTES.min(MAX_BACKUP_METADATA_BYTES))
+        .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+    let mut buffer = [0u8; BACKUP_IO_BUFFER_BYTES];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Failed to read backup metadata: {e}"))?;
+        if count == 0 {
+            break;
+        }
+        let new_len = bytes
+            .len()
+            .checked_add(count)
+            .ok_or_else(|| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        if new_len > MAX_BACKUP_METADATA_BYTES {
+            return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+        }
+        bytes
+            .try_reserve_exact(count)
+            .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| "Failed to parse backup metadata: invalid UTF-8".to_string())
+}
+
+fn decompress_backup_gzip(compressed: &[u8]) -> Result<Vec<u8>, String> {
+    if compressed.len() > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+    }
+
+    let ratio_limit = compressed
+        .len()
+        .checked_mul(MAX_BACKUP_EXPANSION_RATIO)
+        .and_then(|value| value.checked_add(BACKUP_EXPANSION_SLACK_BYTES))
+        .unwrap_or(usize::MAX);
+    let output_limit = MAX_BACKUP_EXPANDED_BYTES.min(ratio_limit);
+    let mut decoder = GzDecoder::new(compressed);
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(output_limit.min(BACKUP_IO_BUFFER_BYTES))
+        .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+    let mut buffer = [0u8; BACKUP_IO_BUFFER_BYTES];
+
+    loop {
+        let count = decoder
+            .read(&mut buffer)
+            .map_err(|_| "Failed to decompress backup".to_string())?;
+        if count == 0 {
+            break;
+        }
+        let new_len = output
+            .len()
+            .checked_add(count)
+            .ok_or_else(|| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        if new_len > output_limit {
+            return Err(BACKUP_SAFETY_LIMIT_ERROR.to_string());
+        }
+        output
+            .try_reserve_exact(count)
+            .map_err(|_| BACKUP_SAFETY_LIMIT_ERROR.to_string())?;
+        output.extend_from_slice(&buffer[..count]);
+    }
+    Ok(output)
+}
+
+struct ResolvedBackupPair {
+    data_path: PathBuf,
+    metadata_path: PathBuf,
+    metadata: BackupMetadata,
+}
+
+fn validate_backup_id(backup_id: &str) -> Result<(), String> {
+    let Some((timestamp, random)) = backup_id.split_once('-') else {
+        return Err("Invalid backup ID".to_string());
+    };
+    let timestamp_valid = !timestamp.is_empty()
+        && timestamp.bytes().all(|byte| byte.is_ascii_digit())
+        && timestamp.parse::<u64>().is_ok();
+    let random_valid = random.len() == 8
+        && random
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    if !timestamp_valid || !random_valid {
+        return Err("Invalid backup ID".to_string());
+    }
+    Ok(())
+}
+
+fn backup_filename_matches_id(filename: &str, backup_id: &str) -> bool {
+    BACKUP_FILE_SUFFIXES.iter().any(|suffix| {
+        filename
+            .strip_suffix(suffix)
+            .and_then(|stem| stem.strip_suffix(backup_id))
+            .is_some_and(|prefix| {
+                prefix.starts_with("backup_")
+                    && prefix.ends_with('_')
+                    && prefix.len() > "backup_".len()
+            })
+    })
+}
+
+fn resolve_configured_target_root(
+    config: &BackupConfig,
+    target_id: &str,
+) -> Result<PathBuf, String> {
+    if target_id.is_empty() {
+        return Err("Backup target ID is required".to_string());
+    }
+
+    let mut matches = config
+        .effective_destinations()
+        .into_iter()
+        .filter(|target| target.enabled && target.id == target_id);
+    let target = matches.next().ok_or_else(|| {
+        format!(
+            "Backup target '{}' is not configured or disabled",
+            target_id
+        )
+    })?;
+    if matches.next().is_some() {
+        return Err(format!("Backup target '{}' is ambiguous", target_id));
+    }
+
+    let unresolved = resolve_target_dir(&target, &config.destination_path)?;
+    let root_metadata = fs::symlink_metadata(&unresolved)
+        .map_err(|e| format!("Failed to inspect backup target '{}': {}", target_id, e))?;
+    if root_metadata.file_type().is_symlink() {
+        return Err(format!(
+            "Backup target '{}' must not be a symlink",
+            target_id
+        ));
+    }
+    if !root_metadata.is_dir() {
+        return Err(format!("Backup target '{}' is not a directory", target_id));
+    }
+    fs::canonicalize(&unresolved).map_err(|e| {
+        format!(
+            "Failed to canonicalize backup target '{}': {}",
+            target_id, e
+        )
+    })
+}
+
+fn canonical_regular_file_under(root: &Path, path: &Path, label: &str) -> Result<PathBuf, String> {
+    let metadata =
+        fs::symlink_metadata(path).map_err(|e| format!("Failed to inspect {}: {}", label, e))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("{} must not be a symlink", label));
+    }
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular file", label));
+    }
+
+    let canonical =
+        fs::canonicalize(path).map_err(|e| format!("Failed to canonicalize {}: {}", label, e))?;
+    if !canonical.starts_with(root) || canonical.parent() != Some(root) {
+        return Err(format!("{} escapes the configured backup target", label));
+    }
+    Ok(canonical)
+}
+
+fn resolve_backup_pair(
+    target_root: &Path,
+    backup_id: &str,
+    target_id: &str,
+) -> Result<ResolvedBackupPair, String> {
+    validate_backup_id(backup_id)?;
+
+    let mut resolved: Option<ResolvedBackupPair> = None;
+    for entry in fs::read_dir(target_root)
+        .map_err(|e| format!("Failed to scan backup target '{}': {}", target_id, e))?
+    {
+        let entry = entry.map_err(|e| format!("Failed to scan backup target entry: {}", e))?;
+        let filename = match entry.file_name().to_str() {
+            Some(filename) => filename.to_string(),
+            None => continue,
+        };
+        if !backup_filename_matches_id(&filename, backup_id) {
+            continue;
+        }
+        if resolved.is_some() {
+            return Err(format!(
+                "Multiple backup files match ID '{}' in target '{}'",
+                backup_id, target_id
+            ));
+        }
+
+        let data_path =
+            canonical_regular_file_under(target_root, &entry.path(), "Backup data file")?;
+        let metadata_path = canonical_regular_file_under(
+            target_root,
+            &target_root.join(format!("{}.meta.json", filename)),
+            "Backup metadata file",
+        )?;
+        let metadata_content = read_backup_metadata(&metadata_path)?;
+        let metadata: BackupMetadata = serde_json::from_str(&metadata_content)
+            .map_err(|e| format!("Failed to parse backup metadata: {}", e))?;
+        if metadata.id != backup_id {
+            return Err(format!(
+                "Backup metadata ID does not match requested ID '{}'",
+                backup_id
+            ));
+        }
+        if metadata.target_id.as_deref() != Some(target_id) {
+            return Err(format!(
+                "Backup metadata target does not match requested target '{}'",
+                target_id
+            ));
+        }
+
+        resolved = Some(ResolvedBackupPair {
+            data_path,
+            metadata_path,
+            metadata,
+        });
+    }
+
+    resolved.ok_or_else(|| {
+        format!(
+            "Backup '{}' was not found in target '{}'",
+            backup_id, target_id
+        )
+    })
 }
 
 /// Scan `dir` for the most recent `.meta.json` sidecar whose
@@ -1389,7 +1689,11 @@ fn find_last_payload_hash_for_target(dir: &Path, target_id: &str) -> Option<Stri
             continue;
         }
         if let Some(hash) = meta.payload_hash {
-            if best.as_ref().map(|(t, _)| meta.created_at > *t).unwrap_or(true) {
+            if best
+                .as_ref()
+                .map(|(t, _)| meta.created_at > *t)
+                .unwrap_or(true)
+            {
                 best = Some((meta.created_at, hash));
             }
         }
@@ -1605,6 +1909,7 @@ mod tests {
         assert!(json.contains("createdAt"));
         assert!(json.contains("sizeBytes"));
         assert!(json.contains("parentBackupId"));
+        assert!(json.contains("checksumScope"));
     }
 
     // ── BackupStatus serde ──────────────────────────────────────────────
@@ -1862,7 +2167,10 @@ mod tests {
         assert!(status.last_backup_time.is_some());
 
         // Restore
-        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        let restored = svc
+            .restore_backup_from_target(&meta.id, "legacy-default")
+            .await
+            .unwrap();
         assert_eq!(restored["connections"][0]["name"], "test");
 
         // Cleanup
@@ -1887,7 +2195,10 @@ mod tests {
         let meta = svc.run_backup("full", &data).await.unwrap();
         assert!(meta.compressed);
 
-        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        let restored = svc
+            .restore_backup_from_target(&meta.id, "legacy-default")
+            .await
+            .unwrap();
         assert_eq!(restored["connections"], serde_json::json!([]));
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -1915,7 +2226,10 @@ mod tests {
         assert!(meta.encrypted);
         assert!(meta.compressed);
 
-        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        let restored = svc
+            .restore_backup_from_target(&meta.id, "legacy-default")
+            .await
+            .unwrap();
         assert_eq!(restored["connections"][0]["name"], "secure");
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -2311,10 +2625,8 @@ mod tests {
 
     async fn unlocked_enc_state() -> std::sync::Arc<sorng_encryption::EncryptionState> {
         let s = sorng_encryption::EncryptionState::new();
-        s.install(
-            sorng_encryption::MasterDek::from_bytes(&[9u8; 32]).unwrap(),
-        )
-        .await;
+        s.install(sorng_encryption::MasterDek::from_bytes(&[9u8; 32]).unwrap())
+            .await;
         std::sync::Arc::new(s)
     }
 
@@ -2331,18 +2643,24 @@ mod tests {
         let meta = svc.perform_backup("manual", &data).await.unwrap();
         // Locate the on-disk blob (no compression / no legacy crypto)
         // and verify the magic prefix is the v2 envelope, not SORNG1.
-        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
-            let e = e.ok()?;
-            let name = e.file_name().to_string_lossy().into_owned();
-            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
-        }).expect("backup file written");
+        let entry = std::fs::read_dir(&tmp)
+            .unwrap()
+            .find_map(|e| {
+                let e = e.ok()?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+            })
+            .expect("backup file written");
         let bytes = std::fs::read(&entry).unwrap();
         assert_eq!(
             &bytes[..6],
             sorng_encryption::envelope::MAGIC,
             "v2 envelope must win when state is unlocked"
         );
-        assert!(meta.primary_metadata.unwrap().encrypted, "metadata flags as encrypted");
+        assert!(
+            meta.primary_metadata.unwrap().encrypted,
+            "metadata flags as encrypted"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -2360,11 +2678,14 @@ mod tests {
 
         let data = serde_json::json!({ "connections": [] });
         let _ = svc.perform_backup("manual", &data).await.unwrap();
-        let entry = std::fs::read_dir(&tmp).unwrap().find_map(|e| {
-            let e = e.ok()?;
-            let name = e.file_name().to_string_lossy().into_owned();
-            (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
-        }).unwrap();
+        let entry = std::fs::read_dir(&tmp)
+            .unwrap()
+            .find_map(|e| {
+                let e = e.ok()?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
+            })
+            .unwrap();
         let bytes = std::fs::read(&entry).unwrap();
         // Neither legacy nor v2 magic on disk — plain bytes.
         assert_ne!(&bytes[..6], b"SORNG1");
@@ -2389,7 +2710,7 @@ mod tests {
         let result = svc.perform_backup("manual", &payload).await.unwrap();
         let id = result.primary_metadata.unwrap().id;
         let restored = svc
-            .restore_backup_from_target(&id, None)
+            .restore_backup_from_target(&id, "legacy-default")
             .await
             .unwrap();
         assert_eq!(restored, payload, "v2 round-trip preserves the payload");
@@ -2442,9 +2763,7 @@ mod tests {
 
         // Sanity-check the file still reachable via restore once the
         // service is wired with the new state.
-        svc.set_encryption_state(std::sync::Arc::new(
-            sorng_encryption::EncryptionState::new(),
-        ));
+        svc.set_encryption_state(std::sync::Arc::new(sorng_encryption::EncryptionState::new()));
         // (Recreate enc_b with its key inside the service slot.)
         svc.set_encryption_state(std::sync::Arc::new({
             let s = sorng_encryption::EncryptionState::new();
@@ -2453,7 +2772,7 @@ mod tests {
             s
         }));
         let restored = svc
-            .restore_backup_from_target(&result.primary_metadata.unwrap().id, None)
+            .restore_backup_from_target(&result.primary_metadata.unwrap().id, "legacy-default")
             .await
             .unwrap();
         assert_eq!(restored, payload);
@@ -2513,7 +2832,9 @@ mod tests {
     //          vault eviction simulations.
     // ────────────────────────────────────────────────────────────────
 
-    async fn unlocked_enc_state_with_bytes(bytes: [u8; 32]) -> std::sync::Arc<sorng_encryption::EncryptionState> {
+    async fn unlocked_enc_state_with_bytes(
+        bytes: [u8; 32],
+    ) -> std::sync::Arc<sorng_encryption::EncryptionState> {
         let s = sorng_encryption::EncryptionState::new();
         s.install(sorng_encryption::MasterDek::from_bytes(&bytes).unwrap())
             .await;
@@ -2539,8 +2860,14 @@ mod tests {
 
         let data = serde_json::json!({"connections": [{"id": "c1"}]});
         let result = svc.run_backup("full", &data).await;
-        assert!(result.is_ok(), "backup must auto-mkdir the destination, got: {result:?}");
-        assert!(nested.exists(), "auto-mkdir should have created the parent chain");
+        assert!(
+            result.is_ok(),
+            "backup must auto-mkdir the destination, got: {result:?}"
+        );
+        assert!(
+            nested.exists(),
+            "auto-mkdir should have created the parent chain"
+        );
 
         let _ = std::fs::remove_dir_all(&parent);
     }
@@ -2560,12 +2887,19 @@ mod tests {
 
         let mut garbage = vec![0u8; 500];
         OsRng.fill_bytes(&mut garbage);
-        // The id "garbage-id" lets restore_backup_from_target find this
-        // file (it does a substring match on the filename).
-        let backup_filename = "backup_full_garbage-id_0.json";
-        std::fs::write(tmp.join(backup_filename), &garbage).unwrap();
+        let backup_id = "1-deadbeef";
+        let backup_filename = format!("backup_full_{}.json", backup_id);
+        write_test_backup_pair(
+            &tmp,
+            &backup_filename,
+            backup_id,
+            "legacy-default",
+            &garbage,
+        );
 
-        let result = svc.restore_backup_from_target("garbage-id", None).await;
+        let result = svc
+            .restore_backup_from_target(backup_id, "legacy-default")
+            .await;
         assert!(result.is_err(), "garbage backup must error, not panic");
         let err = result.unwrap_err();
         let lower = err.to_lowercase();
@@ -2595,7 +2929,10 @@ mod tests {
         assert!(list.is_empty(), "missing backup dir must yield empty list");
 
         // restore_backup against a non-existent id must error cleanly.
-        let err = svc.restore_backup("nonexistent-id").await.unwrap_err();
+        let err = svc
+            .restore_backup_from_target("1-deadbeef", "legacy-default")
+            .await
+            .unwrap_err();
         assert!(err.to_lowercase().contains("not found"), "got: {err}");
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -2634,7 +2971,10 @@ mod tests {
             .flatten()
             .filter(|e| {
                 let n = e.file_name().to_string_lossy().into_owned();
-                n.starts_with("backup_") && !n.contains(".meta.") && !n.ends_with(".tmp") && !n.ends_with(".rotating")
+                n.starts_with("backup_")
+                    && !n.contains(".meta.")
+                    && !n.ends_with(".tmp")
+                    && !n.ends_with(".rotating")
             })
             .collect();
         assert_eq!(backups.len(), 1, "expected exactly one new backup file");
@@ -2663,7 +3003,9 @@ mod tests {
         let state_b = unlocked_enc_state_with_bytes([2u8; 32]).await;
         svc.set_encryption_state(state_b);
 
-        let result = svc.restore_backup_from_target(&backup_id, None).await;
+        let result = svc
+            .restore_backup_from_target(&backup_id, "legacy-default")
+            .await;
         assert!(result.is_err(), "wrong DEK must surface an error");
         let err = result.unwrap_err();
         let lower = err.to_lowercase();
@@ -2696,7 +3038,10 @@ mod tests {
         let state_b = unlocked_enc_state_with_bytes([5u8; 32]).await;
         svc.set_encryption_state(state_b);
 
-        let restored = svc.restore_backup_from_target(&backup_id, None).await.unwrap();
+        let restored = svc
+            .restore_backup_from_target(&backup_id, "legacy-default")
+            .await
+            .unwrap();
         assert_eq!(restored["connections"][0]["host"], "h.example");
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -2728,10 +3073,467 @@ mod tests {
                 (name.starts_with("backup_") && !name.contains(".meta.")).then_some(e.path())
             })
             .collect();
-        assert!(backup_files.is_empty(), "locked state must not write plaintext backups");
+        assert!(
+            backup_files.is_empty(),
+            "locked state must not write plaintext backups"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-}
+    fn test_target(id: &str, root: &Path) -> BackupTarget {
+        BackupTarget {
+            id: id.to_string(),
+            label: id.to_string(),
+            preset: "custom".to_string(),
+            custom_path: Some(root.to_string_lossy().into_owned()),
+            enabled: true,
+            retention_override: None,
+        }
+    }
 
+    fn write_test_backup_pair(
+        root: &Path,
+        filename: &str,
+        backup_id: &str,
+        target_id: &str,
+        payload: &[u8],
+    ) -> (PathBuf, PathBuf) {
+        write_test_backup_pair_with_compression(
+            root, filename, backup_id, target_id, payload, false,
+        )
+    }
+
+    fn write_test_backup_pair_with_compression(
+        root: &Path,
+        filename: &str,
+        backup_id: &str,
+        target_id: &str,
+        payload: &[u8],
+        compressed: bool,
+    ) -> (PathBuf, PathBuf) {
+        let data_path = root.join(filename);
+        let metadata_path = root.join(format!("{}.meta.json", filename));
+        std::fs::write(&data_path, payload).unwrap();
+        let metadata = BackupMetadata {
+            id: backup_id.to_string(),
+            created_at: 1,
+            backup_type: "manual".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            checksum: sha256_hex(payload),
+            checksum_scope: Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE.to_string()),
+            encrypted: false,
+            compressed,
+            size_bytes: payload.len() as u64,
+            connections_count: 0,
+            parent_backup_id: None,
+            payload_hash: None,
+            target_id: Some(target_id.to_string()),
+        };
+        std::fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )
+        .unwrap();
+        (data_path, metadata_path)
+    }
+
+    fn gzip_fixture(payload: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn config_with_targets(targets: Vec<BackupTarget>) -> BackupConfig {
+        let mut config = BackupConfig::default();
+        config.destination_path.clear();
+        config.compress_backups = false;
+        config.max_backups_to_keep = 0;
+        config.destinations = targets;
+        config
+    }
+
+    #[cfg(unix)]
+    fn create_file_symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(source, destination)
+    }
+
+    #[cfg(windows)]
+    fn create_file_symlink(source: &Path, destination: &Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_file(source, destination)
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_backup_ids_without_touching_files() {
+        let root = fresh_temp_dir("strict_empty_id");
+        let target_id = "target-a";
+        let (data_path, metadata_path) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            "1-aaaaaaaa",
+            target_id,
+            br#"{"marker":"kept"}"#,
+        );
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        assert!(svc.restore_backup_from_target("", target_id).await.is_err());
+        assert!(svc.delete_backup("", target_id).await.is_err());
+        assert!(data_path.exists());
+        assert!(metadata_path.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn does_not_match_backup_id_substrings() {
+        let root = fresh_temp_dir("strict_substring");
+        let target_id = "target-a";
+        let (short_data, short_metadata) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            "1-aaaaaaaa",
+            target_id,
+            br#"{"marker":"short"}"#,
+        );
+        let (long_data, long_metadata) = write_test_backup_pair(
+            &root,
+            "backup_manual_11-aaaaaaaa.json",
+            "11-aaaaaaaa",
+            target_id,
+            br#"{"marker":"long"}"#,
+        );
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let restored = svc
+            .restore_backup_from_target("1-aaaaaaaa", target_id)
+            .await
+            .unwrap();
+        assert_eq!(restored["marker"], "short");
+        svc.delete_backup("1-aaaaaaaa", target_id).await.unwrap();
+        assert!(!short_data.exists());
+        assert!(!short_metadata.exists());
+        assert!(long_data.exists());
+        assert!(long_metadata.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn rejects_traversal_shaped_backup_ids() {
+        let root = fresh_temp_dir("strict_traversal");
+        let target_id = "target-a";
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        assert!(svc
+            .restore_backup_from_target("../1-aaaaaaaa", target_id)
+            .await
+            .is_err());
+        assert!(svc.delete_backup("../1-aaaaaaaa", target_id).await.is_err());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn rejects_symlinked_backup_data() {
+        let root = fresh_temp_dir("strict_symlink");
+        let outside = fresh_temp_dir("strict_symlink_outside");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let filename = "backup_manual_1-aaaaaaaa.json";
+        let outside_data = outside.join("outside.json");
+        std::fs::write(&outside_data, br#"{"marker":"outside"}"#).unwrap();
+        let (data_path, _) = write_test_backup_pair(
+            &root,
+            filename,
+            backup_id,
+            target_id,
+            br#"{"marker":"placeholder"}"#,
+        );
+        std::fs::remove_file(&data_path).unwrap();
+        if let Err(error) = create_file_symlink(&outside_data, &data_path) {
+            #[cfg(windows)]
+            if error.kind() == std::io::ErrorKind::PermissionDenied {
+                let _ = std::fs::remove_dir_all(root);
+                let _ = std::fs::remove_dir_all(outside);
+                return;
+            }
+            panic!("failed to create test symlink: {error}");
+        }
+
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+        assert!(svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .is_err());
+        assert!(svc.delete_backup(backup_id, target_id).await.is_err());
+        assert!(outside_data.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_dir_all(outside);
+    }
+
+    #[tokio::test]
+    async fn rejects_pair_copied_under_wrong_target() {
+        let root_a = fresh_temp_dir("strict_wrong_target_a");
+        let root_b = fresh_temp_dir("strict_wrong_target_b");
+        let backup_id = "1-aaaaaaaa";
+        write_test_backup_pair(
+            &root_b,
+            "backup_manual_1-aaaaaaaa.json",
+            backup_id,
+            "target-a",
+            br#"{"marker":"copied"}"#,
+        );
+        let state = BackupService::new(root_a.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![
+            test_target("target-a", &root_a),
+            test_target("target-b", &root_b),
+        ]));
+
+        let error = svc
+            .restore_backup_from_target(backup_id, "target-b")
+            .await
+            .unwrap_err();
+        assert!(error.contains("metadata target"));
+        assert!(svc.delete_backup(backup_id, "target-b").await.is_err());
+
+        let _ = std::fs::remove_dir_all(root_a);
+        let _ = std::fs::remove_dir_all(root_b);
+    }
+
+    #[tokio::test]
+    async fn deletes_only_exact_data_and_sidecar_pair() {
+        let root = fresh_temp_dir("strict_exact_pair");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let (data_path, metadata_path) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            backup_id,
+            target_id,
+            br#"{"marker":"selected"}"#,
+        );
+        let unrelated = root.join("unrelated.json");
+        std::fs::write(&unrelated, br#"{"marker":"unrelated"}"#).unwrap();
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let restored = svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .unwrap();
+        assert_eq!(restored["marker"], "selected");
+        svc.delete_backup(backup_id, target_id).await.unwrap();
+        assert!(!data_path.exists());
+        assert!(!metadata_path.exists());
+        assert!(unrelated.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn rejects_size_mismatch_before_archive_decode() {
+        let root = fresh_temp_dir("strict_size_integrity");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let (data_path, _) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json.gz",
+            backup_id,
+            target_id,
+            b"not-gzip",
+        );
+        std::fs::write(&data_path, b"not-gzip-but-longer").unwrap();
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let error = svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .unwrap_err();
+        assert!(error.contains("sidecar size"));
+        assert!(!error.contains("decompress"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn rejects_checksum_mismatch_before_json_parse() {
+        let root = fresh_temp_dir("strict_checksum_integrity");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let (data_path, _) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            backup_id,
+            target_id,
+            br#"{"marker":"safe"}"#,
+        );
+        std::fs::write(&data_path, br#"{"marker":"evil"}"#).unwrap();
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let error = svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .unwrap_err();
+        assert!(error.contains("checksum mismatch"));
+        assert!(!error.contains("parse backup JSON"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn rejects_legacy_sidecars_with_explicit_migration_guidance() {
+        let root = fresh_temp_dir("strict_legacy_integrity");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let (_, metadata_path) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            backup_id,
+            target_id,
+            br#"{"marker":"legacy"}"#,
+        );
+        let mut metadata: BackupMetadata =
+            serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
+        metadata.checksum_scope = None;
+        std::fs::write(
+            &metadata_path,
+            serde_json::to_vec_pretty(&metadata).unwrap(),
+        )
+        .unwrap();
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let error = svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .unwrap_err();
+        assert!(error.contains("last compatible SortOfRemoteNG release"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bounded_archive_reader_accepts_exact_limit_and_rejects_one_byte_less() {
+        let root = fresh_temp_dir("archive_size_boundary");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let payload = br#"{"marker":"boundary"}"#;
+        let (data_path, _) = write_test_backup_pair(
+            &root,
+            "backup_manual_1-aaaaaaaa.json",
+            backup_id,
+            target_id,
+            payload,
+        );
+        let metadata = BackupMetadata {
+            id: backup_id.to_string(),
+            created_at: 1,
+            backup_type: "manual".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            checksum: sha256_hex(payload),
+            checksum_scope: Some(CURRENT_ARCHIVE_CHECKSUM_SCOPE.to_string()),
+            encrypted: false,
+            compressed: false,
+            size_bytes: payload.len() as u64,
+            connections_count: 0,
+            parent_backup_id: None,
+            payload_hash: None,
+            target_id: Some(target_id.to_string()),
+        };
+
+        let read = read_and_verify_current_archive_with_limit(&data_path, &metadata, payload.len())
+            .unwrap();
+        assert_eq!(read, payload);
+        let error =
+            read_and_verify_current_archive_with_limit(&data_path, &metadata, payload.len() - 1)
+                .unwrap_err();
+        assert_eq!(error, BACKUP_SAFETY_LIMIT_ERROR);
+        assert!(data_path.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn restore_rejects_gzip_bomb_without_removing_recoverable_source() {
+        let root = fresh_temp_dir("restore_gzip_bomb");
+        let target_id = "target-a";
+        let backup_id = "1-aaaaaaaa";
+        let json = format!(r#"{{"padding":"{}"}}"#, "A".repeat(128 * 1024));
+        let archive = gzip_fixture(json.as_bytes());
+        assert!(
+            json.len() > archive.len() * MAX_BACKUP_EXPANSION_RATIO + BACKUP_EXPANSION_SLACK_BYTES
+        );
+        let (data_path, metadata_path) = write_test_backup_pair_with_compression(
+            &root,
+            "backup_manual_1-aaaaaaaa.json.gz",
+            backup_id,
+            target_id,
+            &archive,
+            true,
+        );
+        let state = BackupService::new(root.to_string_lossy().into_owned());
+        let mut svc = state.lock().await;
+        svc.update_config(config_with_targets(vec![test_target(target_id, &root)]));
+
+        let error = svc
+            .restore_backup_from_target(backup_id, target_id)
+            .await
+            .unwrap_err();
+        assert_eq!(error, BACKUP_SAFETY_LIMIT_ERROR);
+        assert!(data_path.exists());
+        assert!(metadata_path.exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn invalid_restore_payload_leaves_live_storage_unchanged() {
+        let root = fresh_temp_dir("restore_storage_transaction");
+        let storage_path = root.join("connections.json");
+        let storage_state =
+            crate::storage::SecureStorage::new(storage_path.to_string_lossy().into_owned());
+        let storage = storage_state.lock().await;
+        let original = crate::storage::StorageData {
+            connections: vec![serde_json::json!({"id": "live"})],
+            settings: std::collections::HashMap::from([(
+                "theme".to_string(),
+                serde_json::json!("dark"),
+            )]),
+            timestamp: 1,
+            app_data: std::collections::HashMap::from([("keep".to_string(), "value".to_string())]),
+        };
+        storage.save_data(original.clone(), false).await.unwrap();
+
+        let error = storage
+            .apply_restored_backup_transactionally(&serde_json::json!({
+                "connections": "not-an-array",
+                "settings": {"theme": "light"}
+            }))
+            .await
+            .unwrap_err();
+        assert!(error.contains("connections must be an array"));
+        let after = storage.load_data().await.unwrap().unwrap();
+        assert_eq!(after.connections, original.connections);
+        assert_eq!(after.settings, original.settings);
+        assert_eq!(after.app_data, original.app_data);
+
+        drop(storage);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
