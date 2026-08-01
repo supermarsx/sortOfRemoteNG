@@ -664,12 +664,12 @@ fn is_direct_executable(path: &Path) -> bool {
 
     #[cfg(windows)]
     {
-        return path
+        path
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| {
                 extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("com")
-            });
+            })
     }
 
     #[cfg(unix)]

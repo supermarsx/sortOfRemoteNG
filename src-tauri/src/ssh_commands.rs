@@ -47,7 +47,6 @@ mod highlighting {
 mod proxy_command {
     pub use crate::ssh::proxy_command::*;
     pub use crate::ssh::types::*;
-    pub use std::time::Duration;
 }
 mod recording {
 

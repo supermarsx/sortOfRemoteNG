@@ -676,8 +676,8 @@ fn load_scheduler(path: &Path) -> Result<Scheduler, SchedulerError> {
                 || record
                     .error
                     .as_ref()
-                    .map_or(false, |error| error.len() > 65_536)
-                || record.result.as_ref().map_or(false, |result| {
+                    .is_some_and(|error| error.len() > 65_536)
+                || record.result.as_ref().is_some_and(|result| {
                     serde_json::to_vec(result)
                         .map(|encoded| encoded.len() > MAX_PERSISTED_RESULT_BYTES)
                         .unwrap_or(true)

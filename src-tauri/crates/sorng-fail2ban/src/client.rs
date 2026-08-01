@@ -242,12 +242,12 @@ fn validate_program(program: &str) -> Result<(), Fail2banError> {
             "command binary contains invalid characters".into(),
         ));
     }
-    if program.contains('/') {
-        if !program.starts_with('/') || program.split('/').any(|part| part == "..") {
-            return Err(Fail2banError::ConfigError(
-                "command binary paths must be absolute and traversal-free".into(),
-            ));
-        }
+    if program.contains('/')
+        && (!program.starts_with('/') || program.split('/').any(|part| part == ".."))
+    {
+        return Err(Fail2banError::ConfigError(
+            "command binary paths must be absolute and traversal-free".into(),
+        ));
     }
     Ok(())
 }

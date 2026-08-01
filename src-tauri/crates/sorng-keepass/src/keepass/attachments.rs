@@ -9,7 +9,7 @@ use super::service::{AttachmentData, KeePassService};
 use super::types::*;
 
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
-const MAX_ATTACHMENT_BASE64_BYTES: usize = ((MAX_ATTACHMENT_BYTES + 2) / 3) * 4 + 4;
+const MAX_ATTACHMENT_BASE64_BYTES: usize = MAX_ATTACHMENT_BYTES.div_ceil(3) * 4 + 4;
 const MAX_ATTACHMENT_FILENAME_BYTES: usize = 255;
 
 impl KeePassService {

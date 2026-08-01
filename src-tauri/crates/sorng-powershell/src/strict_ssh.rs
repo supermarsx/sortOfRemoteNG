@@ -217,7 +217,7 @@ impl PsrpEventLog {
             events: state
                 .events
                 .iter()
-                .filter(|event| after_sequence.map_or(true, |after| event.sequence > after))
+                .filter(|event| after_sequence.is_none_or(|after| event.sequence > after))
                 .cloned()
                 .collect(),
         }

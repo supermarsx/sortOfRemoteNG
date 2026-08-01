@@ -121,7 +121,7 @@ fn validate_server_url(raw_url: &str) -> Result<String, BitwardenError> {
     let is_loopback_http = parsed.scheme() == "http"
         && parsed
             .host_str()
-            .is_some_and(|host| is_loopback_hostname(host));
+            .is_some_and(is_loopback_hostname);
     if parsed.scheme() != "https" && !is_loopback_http {
         return Err(BitwardenError::invalid_config(
             "Bitwarden server URL must use HTTPS unless it is loopback",

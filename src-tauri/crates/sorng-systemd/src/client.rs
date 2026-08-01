@@ -125,9 +125,7 @@ fn ssh_error(message: impl Into<String>) -> SystemdError {
     SystemdError::SshError(message.into())
 }
 
-fn ssh_credentials<'a>(
-    ssh: &'a SshConfig,
-) -> Result<(Option<&'a str>, Option<&'a str>), SystemdError> {
+fn ssh_credentials(ssh: &SshConfig) -> Result<(Option<&str>, Option<&str>), SystemdError> {
     validate_ssh_identity(ssh)?;
     match &ssh.auth {
         SshAuth::Password { password } if password.is_empty() => {

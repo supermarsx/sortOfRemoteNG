@@ -193,9 +193,7 @@ async fn execute_remote(
     }
 }
 
-fn ssh_credentials<'a>(
-    ssh: &'a SshConfig,
-) -> Result<(Option<&'a str>, Option<&'a str>), CronError> {
+fn ssh_credentials(ssh: &SshConfig) -> Result<(Option<&str>, Option<&str>), CronError> {
     validate_ssh_identity(ssh)?;
     match &ssh.auth {
         SshAuth::Password { password } if password.is_empty() => Err(CronError::SshError(

@@ -132,9 +132,7 @@ fn ssh_error(message: impl Into<String>) -> BootloaderError {
     BootloaderError::Other(message.into())
 }
 
-fn ssh_credentials<'a>(
-    ssh: &'a SshConfig,
-) -> Result<(Option<&'a str>, Option<&'a str>), BootloaderError> {
+fn ssh_credentials(ssh: &SshConfig) -> Result<(Option<&str>, Option<&str>), BootloaderError> {
     validate_ssh_identity(ssh)?;
     match &ssh.auth {
         SshAuth::Password { password } if password.is_empty() => {

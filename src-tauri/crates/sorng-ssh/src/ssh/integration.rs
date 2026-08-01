@@ -54,7 +54,7 @@ async fn run_local_command_bounded(
     command: &mut Command,
     input: Option<&[u8]>,
 ) -> io::Result<Output> {
-    if input.map_or(false, |data| data.len() > LOCAL_COMMAND_STDIN_LIMIT_BYTES) {
+    if input.is_some_and(|data| data.len() > LOCAL_COMMAND_STDIN_LIMIT_BYTES) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Local command input exceeds the 8 MiB limit",
@@ -72,18 +72,14 @@ async fn run_local_command_bounded(
         .kill_on_drop(true);
 
     let mut child = command.spawn()?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to capture local command stdout",
-        )
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to capture local command stderr",
-        )
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("Failed to capture local command stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("Failed to capture local command stderr"))?;
     let child_stdin = child.stdin.take();
 
     let write_input = async move {
@@ -124,8 +120,7 @@ async fn run_local_command_bounded(
         Ok(Err(error)) => Err(error),
         Ok(Ok((status, stdout, stderr, stdout_truncated, stderr_truncated))) => {
             if stdout_truncated || stderr_truncated {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     "Local command output exceeded the capture limit",
                 ));
             }

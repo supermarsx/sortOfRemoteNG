@@ -416,14 +416,14 @@ impl AnsibleClient {
         {
             let extensions =
                 std::env::var_os("PATHEXT").unwrap_or_else(|| OsString::from(".COM;.EXE"));
-            return extensions
+            extensions
                 .to_string_lossy()
                 .split(';')
                 .filter(|extension| {
                     extension.eq_ignore_ascii_case(".com") || extension.eq_ignore_ascii_case(".exe")
                 })
                 .map(|extension| directory.join(format!("{name}{extension}")))
-                .collect();
+                .collect()
         }
 
         #[cfg(not(windows))]
@@ -881,10 +881,8 @@ impl AnsibleClient {
                 })?)
             } else if let Some(value) = argument.strip_prefix("--extra-vars=") {
                 Some(value)
-            } else if let Some(value) = argument.strip_prefix("-e=") {
-                Some(value)
             } else {
-                None
+                argument.strip_prefix("-e=")
             };
 
             if let Some(extra_vars) = extra_vars {

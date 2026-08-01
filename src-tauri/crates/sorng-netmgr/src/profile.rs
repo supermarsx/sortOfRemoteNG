@@ -15,15 +15,11 @@ pub fn detect_profile(
     for profile in profiles {
         for rule in &profile.detect_rules {
             match rule.rule_type {
-                DetectRuleType::Ssid => {
-                    if current_ssid == Some(rule.value.as_str()) {
-                        return Some(profile.id.clone());
-                    }
+                DetectRuleType::Ssid if current_ssid == Some(rule.value.as_str()) => {
+                    return Some(profile.id.clone());
                 }
-                DetectRuleType::Subnet => {
-                    if current_subnet == Some(rule.value.as_str()) {
-                        return Some(profile.id.clone());
-                    }
+                DetectRuleType::Subnet if current_subnet == Some(rule.value.as_str()) => {
+                    return Some(profile.id.clone());
                 }
                 _ => {}
             }

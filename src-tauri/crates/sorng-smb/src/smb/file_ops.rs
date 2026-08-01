@@ -497,7 +497,7 @@ mod windows_impl {
                 None => None,
             };
 
-            let mut resource = NETRESOURCEW {
+            let resource = NETRESOURCEW {
                 dwType: RESOURCETYPE_DISK,
                 lpRemoteName: remote.as_mut_ptr(),
                 ..Default::default()
@@ -509,7 +509,7 @@ mod windows_impl {
             // buffers for the duration of the call. No interactive flag is
             // supplied, so the API cannot display a credential prompt.
             let status = unsafe {
-                WNetAddConnection2W(&mut resource, password_ptr, username_ptr, CONNECT_TEMPORARY)
+                WNetAddConnection2W(&resource, password_ptr, username_ptr, CONNECT_TEMPORARY)
             };
             match status {
                 ERROR_SUCCESS => Ok(()),

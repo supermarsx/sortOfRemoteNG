@@ -158,7 +158,7 @@ impl ApiRuntimeConfig {
                     .to_string(),
             );
         }
-        if self.auth_required && self.api_key.as_bytes().len() < 32 {
+        if self.auth_required && self.api_key.len() < 32 {
             return Err(
                 "REST API authentication requires an API key of at least 32 bytes from the OS vault or API_KEY"
                     .to_string(),
@@ -175,7 +175,7 @@ impl ApiRuntimeConfig {
         if !(1..=MAX_REQUEST_TIMEOUT_SECS).contains(&self.request_timeout_secs) {
             return Err("REST API request timeout is outside the safe range".to_string());
         }
-        if self.jwt_secret.as_bytes().len() < 32 {
+        if self.jwt_secret.len() < 32 {
             return Err(
                 "REST API JWT signing requires at least 32 bytes from the OS vault or JWT_SECRET"
                     .to_string(),
@@ -291,9 +291,7 @@ impl ApiRuntimeConfig {
         let configured_rate_limit = get_u64(r, "maxRequestsPerMinute")
             .map(|value| value.clamp(1, MAX_RATE_LIMIT_PER_MINUTE as u64) as u32);
         let rate_limit_required = allow_remote || !cfg!(debug_assertions);
-        let rate_limit_per_minute = if rate_limit_required {
-            configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
-        } else if rate_limiting_on {
+        let rate_limit_per_minute = if rate_limit_required || rate_limiting_on {
             configured_rate_limit.unwrap_or(DEFAULT_REQUIRED_RATE_LIMIT_PER_MINUTE)
         } else {
             0

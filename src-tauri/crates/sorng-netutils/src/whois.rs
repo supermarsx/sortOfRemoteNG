@@ -54,30 +54,24 @@ pub fn parse_whois_output(output: &str, target: &str) -> Option<WhoisResult> {
         }
 
         match key.as_str() {
-            "registrar" => {
-                if registrar.is_none() {
-                    registrar = Some(value);
-                }
+            "registrar" if registrar.is_none() => {
+                registrar = Some(value);
             }
-            "registrant organization" | "org-name" | "registrant" => {
-                if registrant.is_none() {
-                    registrant = Some(value);
-                }
+            "registrant organization" | "org-name" | "registrant"
+                if registrant.is_none() =>
+            {
+                registrant = Some(value);
             }
-            "creation date" | "created" => {
-                if creation_date.is_none() {
-                    creation_date = Some(value);
-                }
+            "creation date" | "created" if creation_date.is_none() => {
+                creation_date = Some(value);
             }
-            "expiration date" | "registry expiry date" | "expires" => {
-                if expiration_date.is_none() {
-                    expiration_date = Some(value);
-                }
+            "expiration date" | "registry expiry date" | "expires"
+                if expiration_date.is_none() =>
+            {
+                expiration_date = Some(value);
             }
-            "updated date" | "last-modified" => {
-                if updated_date.is_none() {
-                    updated_date = Some(value);
-                }
+            "updated date" | "last-modified" if updated_date.is_none() => {
+                updated_date = Some(value);
             }
             "name server" => {
                 let ns = value.to_lowercase();
@@ -85,21 +79,15 @@ pub fn parse_whois_output(output: &str, target: &str) -> Option<WhoisResult> {
                     name_servers.push(ns);
                 }
             }
-            "status" | "domain status" => {
+            "status" | "domain status" if !status.contains(&value) => {
                 // May contain URL after space, take entire value
-                if !status.contains(&value) {
-                    status.push(value);
-                }
+                status.push(value);
             }
-            "dnssec" => {
-                if dnssec.is_none() {
-                    dnssec = Some(value);
-                }
+            "dnssec" if dnssec.is_none() => {
+                dnssec = Some(value);
             }
-            "registrar abuse contact email" | "abuse-mailbox" => {
-                if abuse_contact.is_none() {
-                    abuse_contact = Some(value);
-                }
+            "registrar abuse contact email" | "abuse-mailbox" if abuse_contact.is_none() => {
+                abuse_contact = Some(value);
             }
             _ => {}
         }

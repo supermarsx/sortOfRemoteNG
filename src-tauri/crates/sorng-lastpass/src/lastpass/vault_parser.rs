@@ -33,7 +33,7 @@ pub fn parse_vault(blob: &VaultBlob, key: &[u8]) -> Result<Vec<Account>, LastPas
         if chunk_size > MAX_CHUNK_BYTES
             || pos
                 .checked_add(chunk_size)
-                .map_or(true, |end| end > data.len())
+                .is_none_or(|end| end > data.len())
         {
             return Err(LastPassError::vault_parse_error(
                 "Vault contains an invalid chunk",
@@ -158,7 +158,7 @@ fn parse_chunk_fields(data: &[u8]) -> Result<Vec<Vec<u8>>, LastPassError> {
 
         if fields.len() >= MAX_FIELDS_PER_CHUNK
             || size > MAX_FIELD_BYTES
-            || pos.checked_add(size).map_or(true, |end| end > data.len())
+            || pos.checked_add(size).is_none_or(|end| end > data.len())
         {
             return Err(LastPassError::vault_parse_error(
                 "Vault item contains an invalid field",
@@ -228,7 +228,7 @@ pub fn parse_folders(blob: &VaultBlob, key: &[u8]) -> Result<Vec<FolderEntry>, L
         if chunk_size > MAX_CHUNK_BYTES
             || pos
                 .checked_add(chunk_size)
-                .map_or(true, |end| end > data.len())
+                .is_none_or(|end| end > data.len())
         {
             return Err(LastPassError::vault_parse_error(
                 "Vault contains an invalid folder chunk",

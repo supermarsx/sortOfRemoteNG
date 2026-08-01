@@ -364,7 +364,7 @@ impl ConsulClient {
         })
     }
 
-    fn map_status_error(&self, status: u16, body: &str) -> ConsulError {
+    fn map_status_error(&self, status: u16, _body: &str) -> ConsulError {
         match status {
             401 => ConsulError::auth(format!("Unauthorized (401): {}", truncate("", 0))),
             403 => ConsulError::forbidden(format!("Forbidden (403): {}", truncate("", 0))),

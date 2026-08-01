@@ -201,40 +201,36 @@ pub fn parse_zone_list(output: &str) -> Vec<FirewalldZone> {
                             .collect();
                     }
                     "masquerade" => zone.masquerade = value == "yes",
-                    "forward-ports" => {
+                    "forward-ports" if !value.is_empty() => {
                         // forward-ports entries like: port=80:proto=tcp:toport=8080:toaddr=192.168.1.1
-                        if !value.is_empty() {
-                            for entry in value.split_whitespace() {
-                                let mut port = String::new();
-                                let mut protocol = String::new();
-                                let mut to_port = None;
-                                let mut to_addr = None;
-                                for kv in entry.split(':') {
-                                    if let Some((k, v)) = kv.split_once('=') {
-                                        match k {
-                                            "port" => port = v.to_string(),
-                                            "proto" => protocol = v.to_string(),
-                                            "toport" => to_port = Some(v.to_string()),
-                                            "toaddr" => to_addr = Some(v.to_string()),
-                                            _ => {}
-                                        }
+                        for entry in value.split_whitespace() {
+                            let mut port = String::new();
+                            let mut protocol = String::new();
+                            let mut to_port = None;
+                            let mut to_addr = None;
+                            for kv in entry.split(':') {
+                                if let Some((k, v)) = kv.split_once('=') {
+                                    match k {
+                                        "port" => port = v.to_string(),
+                                        "proto" => protocol = v.to_string(),
+                                        "toport" => to_port = Some(v.to_string()),
+                                        "toaddr" => to_addr = Some(v.to_string()),
+                                        _ => {}
                                     }
                                 }
-                                if !port.is_empty() {
-                                    zone.forward_ports.push(FirewalldForwardPort {
-                                        port,
-                                        protocol,
-                                        to_port,
-                                        to_addr,
-                                    });
-                                }
+                            }
+                            if !port.is_empty() {
+                                zone.forward_ports.push(FirewalldForwardPort {
+                                    port,
+                                    protocol,
+                                    to_port,
+                                    to_addr,
+                                });
                             }
                         }
                     }
-                    "rich rules" => {
-                        if !value.is_empty() {
-                            zone.rich_rules.push(value.to_string());
-                        }
+                    "rich rules" if !value.is_empty() => {
+                        zone.rich_rules.push(value.to_string());
                     }
                     "icmp-blocks" => {
                         zone.icmp_blocks = value

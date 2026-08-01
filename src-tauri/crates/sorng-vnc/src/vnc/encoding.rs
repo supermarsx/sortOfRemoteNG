@@ -383,7 +383,7 @@ pub fn convert_to_rgba(data: &[u8], pf: &PixelFormat) -> Result<Vec<u8>, String>
     if !matches!(bpp, 1 | 2 | 4) {
         return Err("Unsupported pixel width for RGBA conversion".into());
     }
-    if data.len() % bpp != 0 {
+    if !data.len().is_multiple_of(bpp) {
         return Err("Pixel data is not aligned to the negotiated pixel width".into());
     }
     let pixel_count = data.len() / bpp;

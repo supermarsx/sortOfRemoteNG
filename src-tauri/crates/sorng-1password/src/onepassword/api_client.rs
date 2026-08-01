@@ -394,18 +394,18 @@ impl OnePasswordApiClient {
 
     fn validate_full_item(&self, item: &FullItem) -> Result<(), OnePasswordError> {
         Self::validate_identifier(&item.vault.id, "Item vault identifier")?;
-        if item.title.as_ref().map_or(false, |title| {
+        if item.title.as_ref().is_some_and(|title| {
             title.is_empty()
                 || title.len() > MAX_ITEM_TITLE_BYTES
                 || title.chars().any(char::is_control)
-        }) || item.urls.as_ref().map_or(false, |urls| {
+        }) || item.urls.as_ref().is_some_and(|urls| {
             urls.len() > MAX_ITEM_URLS
                 || urls.iter().any(|url| {
                     url.href.is_empty()
                         || url.href.len() > 8_192
                         || url.href.chars().any(char::is_control)
                 })
-        }) || item.tags.as_ref().map_or(false, |tags| {
+        }) || item.tags.as_ref().is_some_and(|tags| {
             tags.len() > MAX_ITEM_TAGS
                 || tags.iter().any(|tag| {
                     tag.is_empty() || tag.len() > 256 || tag.chars().any(char::is_control)
@@ -413,25 +413,25 @@ impl OnePasswordApiClient {
         }) || item
             .sections
             .as_ref()
-            .map_or(false, |sections| sections.len() > MAX_ITEM_SECTIONS)
-            || item.fields.as_ref().map_or(false, |fields| {
+            .is_some_and(|sections| sections.len() > MAX_ITEM_SECTIONS)
+            || item.fields.as_ref().is_some_and(|fields| {
                 fields.len() > MAX_ITEM_FIELDS
                     || fields.iter().any(|field| {
                         field.id.is_empty()
                             || field.id.len() > 128
-                            || field.label.as_ref().map_or(false, |label| {
+                            || field.label.as_ref().is_some_and(|label| {
                                 label.len() > 512 || label.chars().any(char::is_control)
                             })
                             || field
                                 .value
                                 .as_ref()
-                                .map_or(false, |value| value.len() > MAX_FIELD_VALUE_BYTES)
+                                .is_some_and(|value| value.len() > MAX_FIELD_VALUE_BYTES)
                     })
             })
             || item
                 .files
                 .as_ref()
-                .map_or(false, |files| files.len() > MAX_FILES_PER_ITEM)
+                .is_some_and(|files| files.len() > MAX_FILES_PER_ITEM)
         {
             return Err(OnePasswordError::bad_request(
                 "Item structure exceeds the configured safety limits",

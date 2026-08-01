@@ -116,7 +116,7 @@ impl DashlaneService {
 
     async fn ensure_vault(&mut self) -> Result<(), DashlaneError> {
         self.require_session()?;
-        let needs_refresh = self.vault_fetched_at.map_or(true, |fetched| {
+        let needs_refresh = self.vault_fetched_at.is_none_or(|fetched| {
             fetched.elapsed() > std::time::Duration::from_secs(300)
         });
 
