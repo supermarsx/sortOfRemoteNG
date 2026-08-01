@@ -7,19 +7,13 @@ import {
   resetIdracRuntimeLeaseForTests,
   teardownIdracRuntime,
 } from "../../src/utils/session/builtInManagementRuntimeRegistry";
-import {
-  getProtocolAvailability,
-} from "../../src/utils/session/protocolAvailability";
+import { getProtocolAvailability } from "../../src/utils/session/protocolAvailability";
 import { PROTOCOL_OPTIONS } from "../../src/hooks/connection/useConnectionEditor";
 
 describe("iDRAC built-in management runtime descriptor", () => {
   it("registers a selectable, client-owned lights-out runtime", () => {
-    expect(builtInManagementRuntimeRegistry).toContain(
-      idracRuntimeDescriptor,
-    );
-    expect(findBuiltInManagementRuntime("idrac")).toBe(
-      idracRuntimeDescriptor,
-    );
+    expect(builtInManagementRuntimeRegistry).toContain(idracRuntimeDescriptor);
+    expect(findBuiltInManagementRuntime("idrac")).toBe(idracRuntimeDescriptor);
     expect(idracRuntimeDescriptor.category).toBe("lights-out");
     expect(PROTOCOL_OPTIONS).toContainEqual(
       expect.objectContaining({
@@ -39,8 +33,8 @@ describe("iDRAC built-in management runtime descriptor", () => {
   });
 
   it("lazy-loads a concrete saved-connection panel", async () => {
-    const module = await idracRuntimeDescriptor.importPanel();
-    expect(module.default).toBeTypeOf("function");
+    const panelModule = await idracRuntimeDescriptor.importPanel();
+    expect(panelModule.default).toBeTypeOf("function");
   });
 
   it("keeps the lease occupied until its idempotent teardown settles", async () => {

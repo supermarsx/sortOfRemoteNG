@@ -22,8 +22,8 @@ describe("built-in management runtime registry", () => {
   it("lazy-loads every registered lights-out panel", async () => {
     for (const descriptor of builtInManagementRuntimeRegistry) {
       expect(descriptor.category).toBe("lights-out");
-      const module = await descriptor.importPanel();
-      expect(module.default, descriptor.protocol).toBeTypeOf("function");
+      const panelModule = await descriptor.importPanel();
+      expect(panelModule.default, descriptor.protocol).toBeTypeOf("function");
     }
   });
 

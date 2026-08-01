@@ -20,8 +20,7 @@ describe("built-in cloud route registry", () => {
       {
         protocol: "azure",
         label: "Microsoft Azure",
-        description:
-          "Manage Azure resources with a saved service principal.",
+        description: "Manage Azure resources with a saved service principal.",
         frontendPath: "src/components/cloud/AzureSessionPanel.tsx",
         backendPath: "src-tauri/crates/sorng-azure",
         testPath: "tests/cloud/CloudSessionPanel.test.tsx",
@@ -29,8 +28,7 @@ describe("built-in cloud route registry", () => {
       {
         protocol: "digital-ocean",
         label: "DigitalOcean",
-        description:
-          "Manage DigitalOcean resources with a saved API token.",
+        description: "Manage DigitalOcean resources with a saved API token.",
         frontendPath: "src/components/cloud/DigitalOceanSessionPanel.tsx",
         backendPath: "src-tauri/crates/sorng-cloud",
         testPath: "tests/cloud/CloudSessionPanel.test.tsx",
@@ -94,8 +92,8 @@ describe("built-in cloud route registry", () => {
   it("lazy-loads every registered cloud session panel", async () => {
     for (const descriptor of builtInCloudRuntimeRegistry) {
       expect(descriptor.category).toBe("cloud");
-      const module = await descriptor.importPanel();
-      expect(module.default, descriptor.protocol).toBeTypeOf("function");
+      const panelModule = await descriptor.importPanel();
+      expect(panelModule.default, descriptor.protocol).toBeTypeOf("function");
     }
   });
 });
