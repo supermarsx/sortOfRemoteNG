@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 use crate::error::{JiraError, JiraErrorKind, JiraResult};
 use crate::types::{JiraAuthMethod, JiraConnectionConfig};
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 /// Low-level Jira HTTP client.
 #[derive(Debug, Clone)]
 pub struct JiraClient {
@@ -31,6 +33,7 @@ impl JiraClient {
 
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(effective_tls_skip)
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(cfg.timeout_seconds));
         if let Some(proxy_url) = cfg
             .proxy_url
@@ -38,13 +41,22 @@ impl JiraClient {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| JiraError::new(JiraErrorKind::ConnectionFailed, e.to_string()))?;
+            let proxy = reqwest::Proxy::all(proxy_url).map_err(|_| {
+                JiraError::new(
+                    JiraErrorKind::ConnectionFailed,
+                    "Invalid proxy configuration",
+                )
+            })?;
             builder = builder.proxy(proxy);
         }
         let http = builder
             .build()
-            .map_err(|e| JiraError::new(JiraErrorKind::ConnectionFailed, e.to_string()))?;
+            .map_err(|_| {
+                JiraError::new(
+                    JiraErrorKind::ConnectionFailed,
+                    "Failed to build Jira HTTP client",
+                )
+            })?;
 
         let base = cfg.host.trim_end_matches('/').to_string();
 
@@ -66,9 +78,9 @@ impl JiraClient {
             JiraAuthMethod::Bearer { token } => format!("Bearer {}", token),
             JiraAuthMethod::Pat { token } => format!("Bearer {}", token),
         };
-        let auth_header = header::HeaderValue::from_str(&auth_header).map_err(|e| {
-            JiraError::validation(format!("Invalid authorization credentials: {e}"))
-        })?;
+        let mut auth_header = header::HeaderValue::from_str(&auth_header)
+            .map_err(|_| JiraError::validation("Invalid authorization credentials"))?;
+        auth_header.set_sensitive(true);
 
         Ok(Self {
             http,
@@ -92,6 +104,23 @@ impl JiraClient {
         h
     }
 
+    fn validated_request_url(&self, url: &str) -> JiraResult<reqwest::Url> {
+        let base = reqwest::Url::parse(&self.base_url)
+            .map_err(|_| JiraError::validation("Invalid Jira base URL"))?;
+        let request = reqwest::Url::parse(url)
+            .map_err(|_| JiraError::validation("Invalid Jira request URL"))?;
+
+        let same_origin = request.scheme() == base.scheme()
+            && request.host_str() == base.host_str()
+            && request.port_or_known_default() == base.port_or_known_default();
+        if !same_origin {
+            return Err(JiraError::validation(
+                "Jira request URL must use the configured origin",
+            ));
+        }
+        Ok(request)
+    }
+
     /// REST API v2/v3 endpoint.
     pub(crate) fn api_url(&self, path: &str) -> String {
         format!("{}/rest/api/{}{}", self.base_url, self.api_version, path)
@@ -103,12 +132,14 @@ impl JiraClient {
     }
 
     pub(crate) async fn get<T: DeserializeOwned>(&self, url: &str) -> JiraResult<T> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .get(url)
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         self.handle_response(resp).await
     }
 
@@ -117,13 +148,15 @@ impl JiraClient {
         url: &str,
         params: &[(String, String)],
     ) -> JiraResult<T> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .get(url)
             .headers(self.default_headers())
             .query(params)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("GET request", &e))?;
         self.handle_response(resp).await
     }
 
@@ -132,23 +165,27 @@ impl JiraClient {
         url: &str,
         body: &B,
     ) -> JiraResult<T> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .post(url)
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_response(resp).await
     }
 
     pub(crate) async fn post_empty(&self, url: &str) -> JiraResult<()> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .post(url)
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_empty(resp).await
     }
 
@@ -157,13 +194,15 @@ impl JiraClient {
         url: &str,
         body: &B,
     ) -> JiraResult<()> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .post(url)
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("POST request", &e))?;
         self.handle_empty(resp).await
     }
 
@@ -172,13 +211,15 @@ impl JiraClient {
         url: &str,
         body: &B,
     ) -> JiraResult<T> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .put(url)
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("PUT request", &e))?;
         self.handle_response(resp).await
     }
 
@@ -187,39 +228,46 @@ impl JiraClient {
         url: &str,
         body: &B,
     ) -> JiraResult<()> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .put(url)
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("PUT request", &e))?;
         self.handle_empty(resp).await
     }
 
     pub(crate) async fn delete(&self, url: &str) -> JiraResult<()> {
+        let url = self.validated_request_url(url)?;
         let resp = self
             .http
             .delete(url)
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("DELETE request", &e))?;
         self.handle_empty(resp).await
     }
 
     async fn handle_response<T: DeserializeOwned>(&self, resp: Response) -> JiraResult<T> {
         let status = resp.status();
         if status.is_success() {
-            let text = resp.text().await?;
-            serde_json::from_str(&text).map_err(|e| {
+            let body = Self::read_bounded_body(resp).await?;
+            serde_json::from_slice(&body).map_err(|e| {
                 JiraError::new(
                     JiraErrorKind::ParseError,
-                    format!("{}: {}", e, &text[..text.len().min(200)]),
+                    format!(
+                        "Invalid JSON response at line {}, column {}",
+                        e.line(),
+                        e.column()
+                    ),
                 )
             })
         } else {
-            let body = resp.text().await.unwrap_or_default();
-            Err(self.status_error(status, body))
+            Err(self.status_error(status))
         }
     }
 
@@ -228,12 +276,11 @@ impl JiraClient {
         if status.is_success() {
             Ok(())
         } else {
-            let body = resp.text().await.unwrap_or_default();
-            Err(self.status_error(status, body))
+            Err(self.status_error(status))
         }
     }
 
-    fn status_error(&self, status: StatusCode, body: String) -> JiraError {
+    fn status_error(&self, status: StatusCode) -> JiraError {
         let kind = match status.as_u16() {
             401 => JiraErrorKind::AuthError,
             403 => JiraErrorKind::Forbidden,
@@ -242,20 +289,70 @@ impl JiraClient {
             429 => JiraErrorKind::RateLimited,
             _ => JiraErrorKind::ApiError(status.as_u16()),
         };
+        JiraError::new(kind, format!("Jira API returned HTTP {}", status.as_u16()))
+    }
+
+    fn transport_error(operation: &str, error: &reqwest::Error) -> JiraError {
+        let reason = if error.is_timeout() {
+            "timed out"
+        } else if error.is_connect() {
+            "connection failed"
+        } else {
+            "transport failed"
+        };
         JiraError::new(
-            kind,
-            format!("{}: {}", status, &body[..body.len().min(500)]),
+            JiraErrorKind::ConnectionFailed,
+            format!("{operation}: {reason}"),
         )
+    }
+
+    async fn read_bounded_body(mut response: Response) -> JiraResult<Vec<u8>> {
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+        {
+            return Err(JiraError::new(
+                JiraErrorKind::ParseError,
+                format!(
+                    "Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                ),
+            ));
+        }
+
+        let capacity = response
+            .content_length()
+            .unwrap_or(0)
+            .min(MAX_RESPONSE_BODY_BYTES as u64) as usize;
+        let mut body = Vec::with_capacity(capacity);
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| Self::transport_error("Response body", &e))?
+        {
+            let remaining = (MAX_RESPONSE_BODY_BYTES + 1).saturating_sub(body.len());
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            if body.len() > MAX_RESPONSE_BODY_BYTES {
+                return Err(JiraError::new(
+                    JiraErrorKind::ParseError,
+                    format!(
+                        "Response body exceeds {MAX_RESPONSE_BODY_BYTES} byte limit"
+                    ),
+                ));
+            }
+        }
+        Ok(body)
     }
 
     pub async fn ping(&self) -> JiraResult<crate::types::JiraConnectionStatus> {
         let url = format!("{}/rest/api/{}/serverInfo", self.base_url, self.api_version);
+        let url = self.validated_request_url(&url)?;
         let resp = self
             .http
-            .get(&url)
+            .get(url)
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(|e| Self::transport_error("Ping request", &e))?;
         let body: serde_json::Value = self.handle_response(resp).await?;
         Ok(crate::types::JiraConnectionStatus {
             connected: true,
