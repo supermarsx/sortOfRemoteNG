@@ -49,6 +49,9 @@ sorng-storage = { path = "../sorng-storage" }
 # the ring provider.  We only need base SSPI + Kerberos builder types.
 sspi = { git = "https://github.com/Devolutions/sspi-rs.git", rev = "095e3f341c74d57daafb015bfb0226188e9e8e18", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 rcgen = "0.12"
 tempfile = { workspace = true }
