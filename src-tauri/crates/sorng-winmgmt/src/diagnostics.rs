@@ -6,18 +6,13 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use log::debug;
-use sorng_core::diagnostics::{
-    self, DiagnosticReport, DiagnosticStep,
-};
+use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 use std::time::{Duration, Instant};
 
 /// Run the full WinRM/WMI diagnostic sequence.
 ///
 /// This is designed to be called from a Tauri command handler.
-pub async fn run_diagnostics(
-    host: &str,
-    config: &WmiConnectionConfig,
-) -> DiagnosticReport {
+pub async fn run_diagnostics(host: &str, config: &WmiConnectionConfig) -> DiagnosticReport {
     let run_start = Instant::now();
     let port = config.effective_port();
     let protocol_label = if config.use_ssl { "HTTPS" } else { "HTTP" };
@@ -32,30 +27,17 @@ pub async fn run_diagnostics(
     // Show everything the diagnostic is using so the user can spot
     // misconfigurations at a glance.
     let cred_summary = match &config.credential {
-        Some(c) => {
-            let user_display = if let Some(ref d) = c.domain {
-                if d.is_empty() || d == "." {
-                    format!(".\\{}", c.username)
-                } else {
-                    format!("{}\\{}", d, c.username)
-                }
-            } else {
-                c.username.clone()
-            };
-            let pass_hint = if c.password.is_empty() {
-                "(empty password)".to_string()
-            } else {
-                format!("({}chars)", c.password.len())
-            };
-            format!("{} {}", user_display, pass_hint)
-        }
-        None => "(no credentials — anonymous / SSO)".to_string(),
+        Some(_) => "(credentials configured)".to_string(),
+        None => "(no credentials configured)".to_string(),
     };
 
     let alt_port = if config.alt_port > 0 {
         config.alt_port
-    } else if config.use_ssl { 5985 } else { 5986 }
-    ;
+    } else if config.use_ssl {
+        5985
+    } else {
+        5986
+    };
 
     steps.push(DiagnosticStep {
         name: "Connection Configuration".into(),
@@ -80,8 +62,21 @@ pub async fn run_diagnostics(
             if config.use_ssl { "HTTP" } else { "HTTPS" },
             config.endpoint_uri(),
             config.auth_method,
-            config.credential.as_ref().map(|c| c.username.as_str()).unwrap_or("(none)"),
-            config.credential.as_ref().and_then(|c| c.domain.as_deref()).unwrap_or("(none)"),
+            if config.credential.is_some() {
+                "[redacted]"
+            } else {
+                "(none)"
+            },
+            if config
+                .credential
+                .as_ref()
+                .and_then(|c| c.domain.as_ref())
+                .is_some()
+            {
+                "[redacted]"
+            } else {
+                "(none)"
+            },
             config.namespace,
             config.timeout_sec,
             config.skip_ca_check,
@@ -95,9 +90,7 @@ pub async fn run_diagnostics(
     let socket_addr = match socket_addr {
         Some(addr) => addr,
         None => {
-            return diagnostics::finish_report(
-                host, port, "winrm", None, steps, run_start,
-            );
+            return diagnostics::finish_report(host, port, "winrm", None, steps, run_start);
         }
     };
 
@@ -123,9 +116,7 @@ pub async fn run_diagnostics(
             &mut steps,
             port,
         );
-        return diagnostics::finish_report(
-            host, port, "winrm", resolved_ip, steps, run_start,
-        );
+        return diagnostics::finish_report(host, port, "winrm", resolved_ip, steps, run_start);
     }
     // Drop the sync TcpStream — the async probes below use reqwest
     drop(tcp_stream);
@@ -152,7 +143,9 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: format!("WinRM Identify ({})", protocol_label),
                     status: "pass".into(),
-                    message: "WinRM service is listening (requires authentication for all requests)".into(),
+                    message:
+                        "WinRM service is listening (requires authentication for all requests)"
+                            .into(),
                     duration_ms: *ms,
                     detail: Some(err.clone()),
                 });
@@ -169,10 +162,6 @@ pub async fn run_diagnostics(
 
                 let mut alt_config = config.clone();
                 alt_config.use_ssl = !config.use_ssl;
-                if alt_config.use_ssl {
-                    alt_config.skip_ca_check = true;
-                    alt_config.skip_cn_check = true;
-                }
                 let alt_label = if alt_config.use_ssl { "HTTPS" } else { "HTTP" };
                 let alt_port = alt_config.effective_port();
 
@@ -191,7 +180,9 @@ pub async fn run_diagnostics(
                             steps.push(DiagnosticStep {
                                 name: format!("WinRM Identify ({alt_label})"),
                                 status: "pass".into(),
-                                message: format!("WinRM responded on {alt_label}:{alt_port} — {info}"),
+                                message: format!(
+                                    "WinRM responded on {alt_label}:{alt_port} — {info}"
+                                ),
                                 duration_ms: 0,
                                 detail: Some(format!(
                                     "The target is listening on {alt_label} (port {alt_port}) \
@@ -207,7 +198,9 @@ pub async fn run_diagnostics(
                                 steps.push(DiagnosticStep {
                                     name: format!("WinRM Identify ({alt_label})"),
                                     status: "pass".into(),
-                                    message: format!("WinRM listening on {alt_label}:{alt_port} (requires auth)"),
+                                    message: format!(
+                                        "WinRM listening on {alt_label}:{alt_port} (requires auth)"
+                                    ),
                                     duration_ms: ms2,
                                     detail: Some(format!(
                                         "The target has WinRM on {alt_label} (port {alt_port}). \
@@ -219,7 +212,9 @@ pub async fn run_diagnostics(
                                 steps.push(DiagnosticStep {
                                     name: format!("WinRM Identify ({alt_label})"),
                                     status: "fail".into(),
-                                    message: format!("Also not responding on {alt_label}:{alt_port}"),
+                                    message: format!(
+                                        "Also not responding on {alt_label}:{alt_port}"
+                                    ),
                                     duration_ms: ms2,
                                     detail: None,
                                 });
@@ -243,9 +238,7 @@ pub async fn run_diagnostics(
             &mut steps,
             port,
         );
-        return diagnostics::finish_report(
-            host, port, "winrm", resolved_ip, steps, run_start,
-        );
+        return diagnostics::finish_report(host, port, "winrm", resolved_ip, steps, run_start);
     }
 
     // If we found the service on the alternate protocol, use that config
@@ -253,10 +246,6 @@ pub async fn run_diagnostics(
     let effective_config = if identify_used_alt {
         let mut alt = config.clone();
         alt.use_ssl = !config.use_ssl;
-        if alt.use_ssl {
-            alt.skip_ca_check = true;
-            alt.skip_cn_check = true;
-        }
         alt
     } else {
         config.clone()
@@ -264,10 +253,21 @@ pub async fn run_diagnostics(
     let effective_port = effective_config.effective_port();
 
     // ── Step 4: HTTP Authentication ─────────────────────────────────
-    let username = effective_config
-        .credential.as_ref().map(|c| c.username.as_str()).unwrap_or("(none)");
-    let domain = effective_config
-        .credential.as_ref().and_then(|c| c.domain.as_deref()).unwrap_or("(none)");
+    let username = if effective_config.credential.is_some() {
+        "[redacted]"
+    } else {
+        "(none)"
+    };
+    let domain = if effective_config
+        .credential
+        .as_ref()
+        .and_then(|c| c.domain.as_ref())
+        .is_some()
+    {
+        "[redacted]"
+    } else {
+        "(none)"
+    };
 
     let auth_result = probe_winrm_auth(host, &effective_config).await;
     match &auth_result {
@@ -366,9 +366,7 @@ pub async fn run_diagnostics(
                     )),
                 });
             }
-            return diagnostics::finish_report(
-                host, port, "winrm", resolved_ip, steps, run_start,
-            );
+            return diagnostics::finish_report(host, port, "winrm", resolved_ip, steps, run_start);
         }
     }
 
@@ -436,7 +434,10 @@ pub async fn run_diagnostics(
                 steps.push(DiagnosticStep {
                     name: "WMI Namespace Access".into(),
                     status: "fail".into(),
-                    message: format!("WMI namespace {} does not exist or is invalid", effective_config.namespace),
+                    message: format!(
+                        "WMI namespace {} does not exist or is invalid",
+                        effective_config.namespace
+                    ),
                     duration_ms: *ms,
                     detail: Some(err.clone()),
                 });
@@ -460,9 +461,7 @@ pub async fn run_diagnostics(
                     detail: None,
                 });
             }
-            return diagnostics::finish_report(
-                host, port, "winrm", resolved_ip, steps, run_start,
-            );
+            return diagnostics::finish_report(host, port, "winrm", resolved_ip, steps, run_start);
         }
     }
 
@@ -512,8 +511,8 @@ async fn probe_winrm_identify(
     let mut anon_config = config.clone();
     anon_config.credential = None;
 
-    let mut transport = WmiTransport::new(&anon_config)
-        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
+    let mut transport =
+        WmiTransport::new(&anon_config).map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     match transport.test_connection().await {
         Ok(_) => Ok("WS-Management IdentifyResponse received".into()),
@@ -529,8 +528,8 @@ async fn probe_winrm_auth(
     config: &WmiConnectionConfig,
 ) -> Result<(u64, String), (u64, String)> {
     let t = Instant::now();
-    let mut transport = WmiTransport::new(config)
-        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
+    let mut transport =
+        WmiTransport::new(config).map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     let variants = WmiTransport::build_auth_variants(config);
     let variant_labels: Vec<String> = variants.iter().map(|(l, _)| l.clone()).collect();
@@ -559,8 +558,8 @@ async fn probe_wmi_query(
     config: &WmiConnectionConfig,
 ) -> Result<(u64, String), (u64, String)> {
     let t = Instant::now();
-    let mut transport = WmiTransport::new(config)
-        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
+    let mut transport =
+        WmiTransport::new(config).map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     // Use adaptive auth to find the right credential format
     transport
@@ -591,29 +590,22 @@ async fn probe_wmi_enum(
     config: &WmiConnectionConfig,
 ) -> Result<(u64, usize), (u64, String)> {
     let t = Instant::now();
-    let mut transport = WmiTransport::new(config)
-        .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
+    let mut transport =
+        WmiTransport::new(config).map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
     transport
         .try_auth_variants(config)
         .await
         .map_err(|e| (t.elapsed().as_millis() as u64, e))?;
 
-    match transport
-        .wql_query("SELECT Name FROM Win32_Service")
-        .await
-    {
+    match transport.wql_query("SELECT Name FROM Win32_Service").await {
         Ok(rows) => Ok((t.elapsed().as_millis() as u64, rows.len())),
         Err(e) => Err((t.elapsed().as_millis() as u64, e)),
     }
 }
 
 /// Add a "Root Cause Analysis" step with the given hint text.
-fn add_root_cause(
-    hint: &str,
-    steps: &mut Vec<DiagnosticStep>,
-    _port: u16,
-) {
+fn add_root_cause(hint: &str, steps: &mut Vec<DiagnosticStep>, _port: u16) {
     steps.push(DiagnosticStep {
         name: "Root Cause Analysis".into(),
         status: "info".into(),

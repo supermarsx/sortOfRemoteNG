@@ -6,6 +6,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 // ─── Connection & Session ────────────────────────────────────────────
 
@@ -26,22 +27,32 @@ pub enum WmiTransportProtocol {
 #[serde(rename_all = "camelCase")]
 #[derive(Default)]
 pub enum WmiAuthMethod {
+    #[default]
     Basic,
     Ntlm,
-    #[default]
     Negotiate,
     Kerberos,
     CredSsp,
 }
 
 /// Credentials for the remote host.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WmiCredential {
     pub username: String,
     pub password: String,
     #[serde(default)]
     pub domain: Option<String>,
+}
+
+impl fmt::Debug for WmiCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WmiCredential")
+            .field("username", &"[redacted]")
+            .field("password", &"[redacted]")
+            .field("domain", &self.domain.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
 }
 
 /// Configuration to establish a WMI session.
@@ -63,7 +74,7 @@ pub struct WmiConnectionConfig {
     #[serde(default = "default_namespace")]
     pub namespace: String,
     /// Use HTTPS / encrypted channel.
-    #[serde(default)]
+    #[serde(default = "default_use_ssl")]
     pub use_ssl: bool,
     /// Primary port (0 = auto: 5985 HTTP / 5986 HTTPS for WinRM, 135 DCOM).
     #[serde(default)]
@@ -89,6 +100,9 @@ fn default_namespace() -> String {
 }
 fn default_timeout() -> u32 {
     30
+}
+fn default_use_ssl() -> bool {
+    true
 }
 
 impl WmiConnectionConfig {

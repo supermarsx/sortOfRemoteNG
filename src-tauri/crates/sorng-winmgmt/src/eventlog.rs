@@ -14,6 +14,10 @@ use std::collections::HashMap;
 /// Manages remote Windows Event Logs via WMI.
 pub struct EventLogManager;
 
+const MAX_EVENT_RESULTS: usize = 5_000;
+const MAX_EVENT_EXPORT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_EVENT_FIELD_BYTES: usize = 256 * 1024;
+
 impl EventLogManager {
     // ─── Log Metadata ────────────────────────────────────────────────
 
@@ -69,7 +73,7 @@ impl EventLogManager {
         filter: &EventLogFilter,
     ) -> Result<Vec<EventLogEntry>, String> {
         let query = Self::build_event_query(filter);
-        debug!("Event log query: {}", query);
+        debug!("Running event log query ({} bytes)", query.len());
 
         let rows = transport.wql_query(&query).await?;
 
@@ -94,8 +98,11 @@ impl EventLogManager {
         }
 
         // Apply limit
-        if entries.len() > filter.max_results as usize {
-            entries.truncate(filter.max_results as usize);
+        let max_results = usize::try_from(filter.max_results)
+            .unwrap_or(MAX_EVENT_RESULTS)
+            .clamp(1, MAX_EVENT_RESULTS);
+        if entries.len() > max_results {
+            entries.truncate(max_results);
         }
 
         Ok(entries)
@@ -203,7 +210,7 @@ impl EventLogManager {
         let return_value = result
             .get("ReturnValue")
             .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(0);
+            .unwrap_or(u32::MAX);
 
         if return_value != 0 {
             return Err(format!(
@@ -238,7 +245,7 @@ impl EventLogManager {
         let return_value = result
             .get("ReturnValue")
             .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(0);
+            .unwrap_or(u32::MAX);
 
         if return_value != 0 {
             return Err(format!(
@@ -267,7 +274,7 @@ impl EventLogManager {
                 .where_eq_num("EventType", level_val as i64)
                 .build();
 
-            let rows = transport.wql_query(&query).await.unwrap_or_default();
+            let rows = transport.wql_query(&query).await?;
             stats.insert(level.name().to_string(), rows.len() as u64);
         }
 
@@ -295,7 +302,7 @@ impl EventLogManager {
 
         let mut sorted: Vec<(String, u64)> = counts.into_iter().collect();
         sorted.sort_by_key(|entry| Reverse(entry.1));
-        sorted.truncate(limit);
+        sorted.truncate(limit.min(MAX_EVENT_RESULTS));
         Ok(sorted)
     }
 
@@ -306,24 +313,23 @@ impl EventLogManager {
         let mut csv =
             String::from("RecordNumber,LogFile,EventCode,EventType,Source,TimeGenerated,Message\n");
 
-        for e in events {
-            let msg = e
-                .message
-                .as_deref()
-                .unwrap_or("")
-                .replace('"', "\"\"")
-                .replace('\n', " ")
-                .replace('\r', "");
-            csv.push_str(&format!(
-                "{},{},{},{:?},{},{},\"{}\"\n",
+        for e in events.iter().take(MAX_EVENT_RESULTS) {
+            let event_type = format!("{:?}", e.event_type);
+            let generated = e.time_generated.to_rfc3339();
+            let line = format!(
+                "{},{},{},{},{},{},{}\n",
                 e.record_number,
-                e.log_file,
+                Self::csv_field(&e.log_file),
                 e.event_code,
-                e.event_type,
-                e.source_name,
-                e.time_generated.to_rfc3339(),
-                msg
-            ));
+                Self::csv_field(&event_type),
+                Self::csv_field(&e.source_name),
+                Self::csv_field(&generated),
+                Self::csv_field(e.message.as_deref().unwrap_or(""))
+            );
+            if csv.len().saturating_add(line.len()) > MAX_EVENT_EXPORT_BYTES {
+                break;
+            }
+            csv.push_str(&line);
         }
 
         csv
@@ -331,8 +337,53 @@ impl EventLogManager {
 
     /// Export events as JSON.
     pub fn export_events_json(events: &[EventLogEntry]) -> Result<String, String> {
-        serde_json::to_string_pretty(events)
-            .map_err(|e| format!("Failed to serialize events: {}", e))
+        if events.len() > MAX_EVENT_RESULTS {
+            return Err("Event export exceeds the entry safety limit".to_string());
+        }
+        let estimated_bytes = events
+            .iter()
+            .try_fold(0usize, |total, event| {
+                let strings = event
+                    .log_file
+                    .len()
+                    .saturating_add(event.source_name.len())
+                    .saturating_add(event.computer_name.len())
+                    .saturating_add(event.message.as_ref().map_or(0, String::len))
+                    .saturating_add(event.user.as_ref().map_or(0, String::len))
+                    .checked_add(
+                        event
+                            .insertion_strings
+                            .iter()
+                            .try_fold(0usize, |sum, value| sum.checked_add(value.len()))?,
+                    )?
+                    .saturating_add(event.data.len());
+                total.checked_add(strings.saturating_mul(2).saturating_add(512))
+            })
+            .ok_or_else(|| "Event export size overflow".to_string())?;
+        if estimated_bytes > MAX_EVENT_EXPORT_BYTES {
+            return Err("Event export exceeds the size safety limit".to_string());
+        }
+        let output = serde_json::to_string_pretty(events)
+            .map_err(|e| format!("Failed to serialize events: {}", e))?;
+        if output.len() > MAX_EVENT_EXPORT_BYTES {
+            return Err("Event export exceeds the size safety limit".to_string());
+        }
+        Ok(output)
+    }
+
+    fn csv_field(value: &str) -> String {
+        let mut end = value.len().min(MAX_EVENT_FIELD_BYTES);
+        while end > 0 && !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut safe = value[..end].replace(['\r', '\n'], " ");
+        if matches!(
+            safe.trim_start().chars().next(),
+            Some('=' | '+' | '-' | '@')
+        ) {
+            safe.insert(0, '\'');
+        }
+        format!("\"{}\"", safe.replace('"', "\"\""))
     }
 
     // ─── Query Builder ───────────────────────────────────────────────

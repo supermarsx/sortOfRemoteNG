@@ -126,8 +126,12 @@ pub async fn winmgmt_search_services(
 pub async fn winmgmt_start_service(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_start_service".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::start_service(transport, &name).await
@@ -137,8 +141,12 @@ pub async fn winmgmt_start_service(
 pub async fn winmgmt_stop_service(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_stop_service".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::stop_service(transport, &name).await
@@ -148,8 +156,12 @@ pub async fn winmgmt_stop_service(
 pub async fn winmgmt_restart_service(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_restart_service".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::restart_service(transport, &name).await
@@ -159,8 +171,12 @@ pub async fn winmgmt_restart_service(
 pub async fn winmgmt_pause_service(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_pause_service".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::pause_service(transport, &name).await
@@ -170,8 +186,12 @@ pub async fn winmgmt_pause_service(
 pub async fn winmgmt_resume_service(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_resume_service".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::resume_service(transport, &name).await
@@ -181,9 +201,15 @@ pub async fn winmgmt_resume_service(
 pub async fn winmgmt_set_service_start_mode(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     name: String,
     start_mode: ServiceStartMode,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_set_service_start_mode".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ServiceManager::set_start_mode(transport, &name, &start_mode).await
@@ -288,8 +314,12 @@ pub async fn winmgmt_events_by_source(
 pub async fn winmgmt_clear_event_log(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     log_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_clear_event_log".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     EventLogManager::clear_log(transport, &log_name).await
@@ -299,9 +329,13 @@ pub async fn winmgmt_clear_event_log(
 pub async fn winmgmt_backup_event_log(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     log_name: String,
     path: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_backup_event_log".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     EventLogManager::backup_log(transport, &log_name, &path).await
@@ -393,8 +427,12 @@ pub async fn winmgmt_search_processes(
 pub async fn winmgmt_create_process(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     params: CreateProcessParams,
 ) -> Result<CreateProcessResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_create_process".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::create_process(transport, &params).await
@@ -404,9 +442,13 @@ pub async fn winmgmt_create_process(
 pub async fn winmgmt_terminate_process(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     pid: u32,
     reason: Option<u32>,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_terminate_process".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::terminate_process(transport, pid, reason).await
@@ -430,9 +472,15 @@ pub async fn winmgmt_terminate_by_name(
 pub async fn winmgmt_set_process_priority(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     pid: u32,
     priority: u32,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_set_process_priority".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ProcessManager::set_priority(transport, pid, priority).await
@@ -593,11 +641,17 @@ pub async fn winmgmt_registry_get_key_info(
 pub async fn winmgmt_registry_set_string(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     value: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_set_string".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_string_value(transport, &hive, &path, &name, &value).await
@@ -607,11 +661,15 @@ pub async fn winmgmt_registry_set_string(
 pub async fn winmgmt_registry_set_dword(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     value: u32,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_registry_set_dword".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_dword_value(transport, &hive, &path, &name, value).await
@@ -621,9 +679,15 @@ pub async fn winmgmt_registry_set_dword(
 pub async fn winmgmt_registry_create_key(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_create_key".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::create_key(transport, &hive, &path).await
@@ -633,9 +697,15 @@ pub async fn winmgmt_registry_create_key(
 pub async fn winmgmt_registry_delete_key(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_delete_key".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::delete_key(transport, &hive, &path).await
@@ -645,10 +715,16 @@ pub async fn winmgmt_registry_delete_key(
 pub async fn winmgmt_registry_delete_value(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_delete_value".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::delete_value(transport, &hive, &path, &name).await
@@ -672,11 +748,15 @@ pub async fn winmgmt_registry_key_exists(
 pub async fn winmgmt_registry_set_qword(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     value: u64,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_registry_set_qword".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_qword_value(transport, &hive, &path, &name, value).await
@@ -686,11 +766,17 @@ pub async fn winmgmt_registry_set_qword(
 pub async fn winmgmt_registry_set_multi_string(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     values: Vec<String>,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_set_multi_string".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_multi_string_value(transport, &hive, &path, &name, &values).await
@@ -700,11 +786,17 @@ pub async fn winmgmt_registry_set_multi_string(
 pub async fn winmgmt_registry_set_binary(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_set_binary".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_binary_value(transport, &hive, &path, &name, &data).await
@@ -714,11 +806,17 @@ pub async fn winmgmt_registry_set_binary(
 pub async fn winmgmt_registry_set_expand_string(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     name: String,
     value: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_set_expand_string".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::set_expanded_string_value(transport, &hive, &path, &name, &value).await
@@ -743,9 +841,15 @@ pub async fn winmgmt_registry_recursive_enum(
 pub async fn winmgmt_registry_recursive_delete(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
 ) -> Result<u32, String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_recursive_delete".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::recursive_delete(transport, &hive, &path).await
@@ -791,8 +895,12 @@ pub async fn winmgmt_registry_export(
 pub async fn winmgmt_registry_import(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     request: RegistryImportRequest,
 ) -> Result<RegistryImportResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_registry_import".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::import(transport, &request).await
@@ -843,8 +951,12 @@ pub async fn winmgmt_registry_compare(
 pub async fn winmgmt_registry_bulk_set(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     request: RegistryBulkSetRequest,
 ) -> Result<RegistryBulkSetResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_registry_bulk_set".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::bulk_set(transport, &request).await
@@ -856,8 +968,12 @@ pub async fn winmgmt_registry_bulk_set(
 pub async fn winmgmt_registry_copy_key(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     request: RegistryCopyRequest,
 ) -> Result<RegistryCopyResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_registry_copy_key".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::copy_key(transport, &request).await
@@ -867,11 +983,17 @@ pub async fn winmgmt_registry_copy_key(
 pub async fn winmgmt_registry_rename_value(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     hive: RegistryHive,
     path: String,
     old_name: String,
     new_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_registry_rename_value".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     RegistryManager::rename_value(transport, &hive, &path, &old_name, &new_name).await
@@ -945,9 +1067,13 @@ pub async fn winmgmt_search_tasks(
 pub async fn winmgmt_enable_task(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     task_path: String,
     task_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_enable_task".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ScheduledTaskManager::enable_task(transport, &task_path, &task_name).await
@@ -957,9 +1083,13 @@ pub async fn winmgmt_enable_task(
 pub async fn winmgmt_disable_task(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     task_path: String,
     task_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_disable_task".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ScheduledTaskManager::disable_task(transport, &task_path, &task_name).await
@@ -969,9 +1099,13 @@ pub async fn winmgmt_disable_task(
 pub async fn winmgmt_run_task(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     task_path: String,
     task_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_run_task".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ScheduledTaskManager::run_task(transport, &task_path, &task_name).await
@@ -981,9 +1115,13 @@ pub async fn winmgmt_run_task(
 pub async fn winmgmt_stop_task(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     task_path: String,
     task_name: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_stop_task".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     ScheduledTaskManager::stop_task(transport, &task_path, &task_name).await
@@ -1093,8 +1231,12 @@ pub async fn winmgmt_shadow_copies_by_volume(
 pub async fn winmgmt_create_shadow_copy(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     volume: String,
 ) -> Result<String, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_create_shadow_copy".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     BackupManager::create_shadow_copy(transport, &volume).await
@@ -1104,8 +1246,12 @@ pub async fn winmgmt_create_shadow_copy(
 pub async fn winmgmt_delete_shadow_copy(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     shadow_id: String,
 ) -> Result<(), String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_delete_shadow_copy".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     BackupManager::delete_shadow_copy(transport, &shadow_id).await
@@ -1165,8 +1311,12 @@ pub async fn winmgmt_backup_get_items(
 pub async fn winmgmt_backup_start(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     params: StartBackupParams,
 ) -> Result<BackupJobInfo, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required for winmgmt_backup_start".to_string());
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     BackupManager::start_backup(transport, &params).await
@@ -1176,8 +1326,14 @@ pub async fn winmgmt_backup_start(
 pub async fn winmgmt_backup_start_restore(
     state: State<'_, WinMgmtServiceState>,
     session_id: String,
+    confirmed: bool,
     params: StartRestoreParams,
 ) -> Result<BackupJobInfo, String> {
+    if !confirmed {
+        return Err(
+            "Explicit confirmation is required for winmgmt_backup_start_restore".to_string(),
+        );
+    }
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     BackupManager::start_restore(transport, &params).await

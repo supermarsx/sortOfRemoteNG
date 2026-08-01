@@ -8,11 +8,58 @@ use crate::transport::WmiTransport;
 use crate::types::*;
 use log::{debug, info};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// Manages remote Windows Registry via WMI StdRegProv.
 pub struct RegistryManager;
 
+const DEFAULT_REGISTRY_DEPTH: u32 = 8;
+const MAX_REGISTRY_DEPTH: u32 = 32;
+const MAX_REGISTRY_NODES: usize = 10_000;
+const MAX_REGISTRY_RESULTS: u32 = 5_000;
+const MAX_REGISTRY_CHILDREN: usize = 1_024;
+const MAX_REGISTRY_IMPORT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_REGISTRY_IMPORT_OPERATIONS: usize = 10_000;
+const MAX_REGISTRY_BULK_VALUES: usize = 1_000;
+const MAX_REGISTRY_PATH_BYTES: usize = 2_048;
+const MAX_REGISTRY_EXPORT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_REGISTRY_AGGREGATE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_REGISTRY_EXPORT_SOURCE_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Clone)]
+struct SnapshotBudget {
+    nodes: Arc<AtomicUsize>,
+    bytes: Arc<AtomicUsize>,
+}
+
 impl RegistryManager {
+    fn consume_budget(budget: &AtomicUsize, amount: usize, message: &str) -> Result<(), String> {
+        budget
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                remaining.checked_sub(amount)
+            })
+            .map(|_| ())
+            .map_err(|_| message.to_string())
+    }
+
+    fn push_search_result(
+        results: &mut Vec<RegistrySearchResult>,
+        result: RegistrySearchResult,
+        byte_budget: &AtomicUsize,
+    ) -> Result<(), String> {
+        let encoded_bytes = serde_json::to_vec(&result)
+            .map_err(|_| "Registry search result contains invalid data".to_string())?
+            .len();
+        Self::consume_budget(
+            byte_budget,
+            encoded_bytes,
+            "Registry search exceeds the aggregate size safety limit",
+        )?;
+        results.push(result);
+        Ok(())
+    }
+
     // ─── Enumerate ───────────────────────────────────────────────────
 
     /// List subkeys of a registry key.
@@ -702,7 +749,43 @@ impl RegistryManager {
         path: &str,
         max_depth: u32,
     ) -> Result<RegistryTreeNode, String> {
-        Self::recursive_enum_inner(transport, hive, path, max_depth, 0).await
+        if path.len() > MAX_REGISTRY_PATH_BYTES {
+            return Err("Registry path exceeds the safety limit".to_string());
+        }
+        let max_depth = if max_depth == 0 {
+            DEFAULT_REGISTRY_DEPTH
+        } else {
+            max_depth.min(MAX_REGISTRY_DEPTH)
+        };
+        Self::recursive_enum_bounded(
+            transport,
+            hive,
+            path,
+            max_depth,
+            MAX_REGISTRY_AGGREGATE_BYTES,
+        )
+        .await
+    }
+
+    async fn recursive_enum_bounded(
+        transport: &mut WmiTransport,
+        hive: &RegistryHive,
+        path: &str,
+        max_depth: u32,
+        max_bytes: usize,
+    ) -> Result<RegistryTreeNode, String> {
+        let node_budget = Arc::new(AtomicUsize::new(MAX_REGISTRY_NODES));
+        let byte_budget = Arc::new(AtomicUsize::new(max_bytes));
+        Self::recursive_enum_inner(
+            transport,
+            hive,
+            path,
+            max_depth,
+            0,
+            node_budget,
+            byte_budget,
+        )
+        .await
     }
 
     fn recursive_enum_inner<'a>(
@@ -711,44 +794,60 @@ impl RegistryManager {
         path: &'a str,
         max_depth: u32,
         current_depth: u32,
+        node_budget: Arc<AtomicUsize>,
+        byte_budget: Arc<AtomicUsize>,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<RegistryTreeNode, String>> + Send + 'a>,
     > {
         Box::pin(async move {
+            if node_budget
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                    remaining.checked_sub(1)
+                })
+                .is_err()
+            {
+                return Err("Registry traversal exceeds the node safety limit".to_string());
+            }
             let name = path.rsplit('\\').next().unwrap_or(path).to_string();
 
             // Get values for this key
-            let values = match Self::get_key_info(transport, hive, path).await {
-                Ok(info) => info.values,
-                Err(_) => Vec::new(),
-            };
+            let values = Self::get_key_info(transport, hive, path).await?.values;
+            let payload_bytes = serde_json::to_vec(&values)
+                .map_err(|_| "Registry traversal contains invalid data".to_string())?
+                .len()
+                .saturating_add(path.len())
+                .saturating_add(name.len());
+            Self::consume_budget(
+                &byte_budget,
+                payload_bytes,
+                "Registry traversal exceeds the aggregate size safety limit",
+            )?;
 
             let mut children = Vec::new();
 
             // Recurse into subkeys if within depth limit
-            if max_depth == 0 || current_depth < max_depth {
-                if let Ok(subkeys) = Self::enum_keys(transport, hive, path).await {
-                    for subkey in subkeys {
-                        let child_path = if path.is_empty() {
-                            subkey.clone()
-                        } else {
-                            format!("{}\\{}", path, subkey)
-                        };
-                        match Self::recursive_enum_inner(
-                            transport,
-                            hive,
-                            &child_path,
-                            max_depth,
-                            current_depth + 1,
-                        )
-                        .await
-                        {
-                            Ok(child) => children.push(child),
-                            Err(e) => {
-                                debug!("Skipping subkey {}: {}", child_path, e);
-                            }
-                        }
-                    }
+            if current_depth < max_depth {
+                let subkeys = Self::enum_keys(transport, hive, path).await?;
+                if subkeys.len() > MAX_REGISTRY_CHILDREN {
+                    return Err("Registry key has too many immediate children".to_string());
+                }
+                for subkey in subkeys {
+                    let child_path = if path.is_empty() {
+                        subkey.clone()
+                    } else {
+                        format!("{}\\{}", path, subkey)
+                    };
+                    let child = Self::recursive_enum_inner(
+                        transport,
+                        hive,
+                        &child_path,
+                        max_depth,
+                        current_depth + 1,
+                        node_budget.clone(),
+                        byte_budget.clone(),
+                    )
+                    .await?;
+                    children.push(child);
                 }
             }
 
@@ -768,27 +867,52 @@ impl RegistryManager {
         hive: &RegistryHive,
         path: &str,
     ) -> Result<u32, String> {
+        if path.is_empty() || path.len() > MAX_REGISTRY_PATH_BYTES {
+            return Err("Recursive deletion requires a bounded non-root registry path".to_string());
+        }
         info!("Recursively deleting {}\\{}", hive.display_name(), path);
-        Self::recursive_delete_inner(transport, hive, path).await
+        let budget = Arc::new(AtomicUsize::new(MAX_REGISTRY_NODES));
+        Self::recursive_delete_inner(transport, hive, path, 0, budget).await
     }
 
     fn recursive_delete_inner<'a>(
         transport: &'a mut WmiTransport,
         hive: &'a RegistryHive,
         path: &'a str,
+        depth: u32,
+        budget: Arc<AtomicUsize>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u32, String>> + Send + 'a>> {
         Box::pin(async move {
+            if depth > MAX_REGISTRY_DEPTH
+                || budget
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                        remaining.checked_sub(1)
+                    })
+                    .is_err()
+            {
+                return Err("Registry deletion exceeds the traversal safety limit".to_string());
+            }
             let mut count = 0u32;
 
             // First delete all subkeys recursively
-            if let Ok(subkeys) = Self::enum_keys(transport, hive, path).await {
-                for subkey in subkeys {
-                    let child_path = format!("{}\\{}", path, subkey);
-                    match Self::recursive_delete_inner(transport, hive, &child_path).await {
-                        Ok(c) => count += c,
-                        Err(e) => {
-                            return Err(format!("Failed to delete subkey {}: {}", child_path, e));
-                        }
+            let subkeys = Self::enum_keys(transport, hive, path).await?;
+            if subkeys.len() > MAX_REGISTRY_CHILDREN {
+                return Err("Registry key has too many immediate children".to_string());
+            }
+            for subkey in subkeys {
+                let child_path = format!("{}\\{}", path, subkey);
+                match Self::recursive_delete_inner(
+                    transport,
+                    hive,
+                    &child_path,
+                    depth + 1,
+                    budget.clone(),
+                )
+                .await
+                {
+                    Ok(c) => count += c,
+                    Err(e) => {
+                        return Err(format!("Failed to delete subkey {}: {}", child_path, e));
                     }
                 }
             }
@@ -808,14 +932,40 @@ impl RegistryManager {
         transport: &mut WmiTransport,
         filter: &RegistrySearchFilter,
     ) -> Result<Vec<RegistrySearchResult>, String> {
+        if filter.root_path.len() > MAX_REGISTRY_PATH_BYTES || filter.pattern.len() > 1_024 {
+            return Err("Registry search input exceeds the safety limit".to_string());
+        }
+        let mut bounded_filter = filter.clone();
+        bounded_filter.max_depth = if filter.max_depth == 0 {
+            DEFAULT_REGISTRY_DEPTH
+        } else {
+            filter.max_depth.min(MAX_REGISTRY_DEPTH)
+        };
+        bounded_filter.max_results = if filter.max_results == 0 {
+            MAX_REGISTRY_RESULTS
+        } else {
+            filter.max_results.min(MAX_REGISTRY_RESULTS)
+        };
         info!(
-            "Searching registry {}\\{} for '{}'",
+            "Searching registry hive {} (root_bytes={}, pattern_bytes={}, regex={})",
             filter.hive.display_name(),
-            filter.root_path,
-            filter.pattern
+            filter.root_path.len(),
+            filter.pattern.len(),
+            filter.is_regex
         );
         let mut results = Vec::new();
-        Self::search_inner(transport, filter, &filter.root_path, 0, &mut results).await?;
+        let node_budget = Arc::new(AtomicUsize::new(MAX_REGISTRY_NODES));
+        let byte_budget = Arc::new(AtomicUsize::new(MAX_REGISTRY_AGGREGATE_BYTES));
+        Self::search_inner(
+            transport,
+            &bounded_filter,
+            &bounded_filter.root_path,
+            0,
+            &mut results,
+            node_budget,
+            byte_budget,
+        )
+        .await?;
         Ok(results)
     }
 
@@ -825,8 +975,18 @@ impl RegistryManager {
         path: &'a str,
         depth: u32,
         results: &'a mut Vec<RegistrySearchResult>,
+        node_budget: Arc<AtomicUsize>,
+        byte_budget: Arc<AtomicUsize>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
+            if node_budget
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                    remaining.checked_sub(1)
+                })
+                .is_err()
+            {
+                return Err("Registry search exceeds the traversal safety limit".to_string());
+            }
             // Check result limit
             if filter.max_results > 0 && results.len() as u32 >= filter.max_results {
                 return Ok(());
@@ -843,13 +1003,17 @@ impl RegistryManager {
             if filter.search_keys
                 && Self::matches_pattern(key_name, &filter.pattern, filter.is_regex)
             {
-                results.push(RegistrySearchResult {
-                    hive: filter.hive.clone(),
-                    path: path.to_string(),
-                    match_type: RegistrySearchMatchType::KeyName,
-                    matched_text: key_name.to_string(),
-                    value: None,
-                });
+                Self::push_search_result(
+                    results,
+                    RegistrySearchResult {
+                        hive: filter.hive.clone(),
+                        path: path.to_string(),
+                        match_type: RegistrySearchMatchType::KeyName,
+                        matched_text: key_name.to_string(),
+                        value: None,
+                    },
+                    &byte_budget,
+                )?;
             }
 
             // Check values
@@ -867,13 +1031,17 @@ impl RegistryManager {
                             let value = Self::get_value(transport, &filter.hive, path, vname)
                                 .await
                                 .ok();
-                            results.push(RegistrySearchResult {
-                                hive: filter.hive.clone(),
-                                path: path.to_string(),
-                                match_type: RegistrySearchMatchType::ValueName,
-                                matched_text: vname.clone(),
-                                value,
-                            });
+                            Self::push_search_result(
+                                results,
+                                RegistrySearchResult {
+                                    hive: filter.hive.clone(),
+                                    path: path.to_string(),
+                                    match_type: RegistrySearchMatchType::ValueName,
+                                    matched_text: vname.clone(),
+                                    value,
+                                },
+                                &byte_budget,
+                            )?;
                         }
 
                         // Match value data (strings only)
@@ -900,13 +1068,17 @@ impl RegistryManager {
 
                                 if let Some(ref ds) = data_str {
                                     if Self::matches_pattern(ds, &filter.pattern, filter.is_regex) {
-                                        results.push(RegistrySearchResult {
-                                            hive: filter.hive.clone(),
-                                            path: path.to_string(),
-                                            match_type: RegistrySearchMatchType::ValueData,
-                                            matched_text: ds.clone(),
-                                            value: Some(val),
-                                        });
+                                        Self::push_search_result(
+                                            results,
+                                            RegistrySearchResult {
+                                                hive: filter.hive.clone(),
+                                                path: path.to_string(),
+                                                match_type: RegistrySearchMatchType::ValueData,
+                                                matched_text: ds.clone(),
+                                                value: Some(val),
+                                            },
+                                            &byte_budget,
+                                        )?;
                                     }
                                 }
                             }
@@ -926,7 +1098,16 @@ impl RegistryManager {
                     } else {
                         format!("{}\\{}", path, subkey)
                     };
-                    Self::search_inner(transport, filter, &child_path, depth + 1, results).await?;
+                    Self::search_inner(
+                        transport,
+                        filter,
+                        &child_path,
+                        depth + 1,
+                        results,
+                        node_budget.clone(),
+                        byte_budget.clone(),
+                    )
+                    .await?;
                 }
             }
 
@@ -1002,13 +1183,32 @@ impl RegistryManager {
             format
         );
 
-        let tree = Self::recursive_enum(transport, hive, path, max_depth).await?;
+        if path.len() > MAX_REGISTRY_PATH_BYTES {
+            return Err("Registry export path exceeds the safety limit".to_string());
+        }
+        let depth = if max_depth == 0 {
+            DEFAULT_REGISTRY_DEPTH
+        } else {
+            max_depth.min(MAX_REGISTRY_DEPTH)
+        };
+        let tree = Self::recursive_enum_bounded(
+            transport,
+            hive,
+            path,
+            depth,
+            MAX_REGISTRY_EXPORT_SOURCE_BYTES,
+        )
+        .await?;
 
-        match format {
+        let output = match format {
             RegistryExportFormat::RegFile => Ok(Self::tree_to_reg_file(hive, &tree)),
             RegistryExportFormat::Json => serde_json::to_string_pretty(&tree)
                 .map_err(|e| format!("JSON serialization failed: {}", e)),
+        }?;
+        if output.len() > MAX_REGISTRY_EXPORT_BYTES {
+            return Err("Registry export exceeds the size safety limit".to_string());
         }
+        Ok(output)
     }
 
     /// Convert a tree node to .reg file format.
@@ -1120,6 +1320,18 @@ impl RegistryManager {
         transport: &mut WmiTransport,
         request: &RegistryImportRequest,
     ) -> Result<RegistryImportResult, String> {
+        if request.content.len() > MAX_REGISTRY_IMPORT_BYTES
+            || request
+                .content
+                .lines()
+                .take(MAX_REGISTRY_IMPORT_OPERATIONS + 1)
+                .count()
+                > MAX_REGISTRY_IMPORT_OPERATIONS
+        {
+            return Err(
+                "Registry import exceeds the payload or operation safety limit".to_string(),
+            );
+        }
         info!("Importing registry data (dry_run={})", request.dry_run);
 
         match request.format {
@@ -1525,8 +1737,29 @@ impl RegistryManager {
             computer_name
         );
 
+        if path.len() > MAX_REGISTRY_PATH_BYTES || computer_name.len() > 255 {
+            return Err("Registry snapshot input exceeds the safety limit".to_string());
+        }
+        let max_depth = if max_depth == 0 {
+            DEFAULT_REGISTRY_DEPTH
+        } else {
+            max_depth.min(MAX_REGISTRY_DEPTH)
+        };
         let mut keys = Vec::new();
-        Self::snapshot_inner(transport, hive, path, max_depth, 0, &mut keys).await?;
+        let budget = SnapshotBudget {
+            nodes: Arc::new(AtomicUsize::new(MAX_REGISTRY_NODES)),
+            bytes: Arc::new(AtomicUsize::new(MAX_REGISTRY_AGGREGATE_BYTES)),
+        };
+        Self::snapshot_inner(
+            transport,
+            hive,
+            path,
+            max_depth,
+            0,
+            &mut keys,
+            budget,
+        )
+        .await?;
 
         Ok(RegistrySnapshot {
             hive: hive.clone(),
@@ -1544,18 +1777,33 @@ impl RegistryManager {
         max_depth: u32,
         depth: u32,
         keys: &'a mut Vec<RegistrySnapshotKey>,
+        budget: SnapshotBudget,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
+            Self::consume_budget(
+                &budget.nodes,
+                1,
+                "Registry snapshot exceeds the node safety limit",
+            )?;
             // Read values for this key
             let values = match Self::get_key_info(transport, hive, path).await {
                 Ok(info) => info.values,
                 Err(_) => Vec::new(),
             };
 
-            keys.push(RegistrySnapshotKey {
+            let key = RegistrySnapshotKey {
                 path: path.to_string(),
                 values,
-            });
+            };
+            let encoded_bytes = serde_json::to_vec(&key)
+                .map_err(|_| "Registry snapshot contains invalid data".to_string())?
+                .len();
+            Self::consume_budget(
+                &budget.bytes,
+                encoded_bytes,
+                "Registry snapshot exceeds the aggregate size safety limit",
+            )?;
+            keys.push(key);
 
             // Recurse if within depth
             if max_depth == 0 || depth < max_depth {
@@ -1573,6 +1821,7 @@ impl RegistryManager {
                             max_depth,
                             depth + 1,
                             keys,
+                            budget.clone(),
                         )
                         .await?;
                     }
@@ -1718,6 +1967,11 @@ impl RegistryManager {
         transport: &mut WmiTransport,
         request: &RegistryBulkSetRequest,
     ) -> Result<RegistryBulkSetResult, String> {
+        if request.path.len() > MAX_REGISTRY_PATH_BYTES
+            || request.values.len() > MAX_REGISTRY_BULK_VALUES
+        {
+            return Err("Registry bulk request exceeds the safety limit".to_string());
+        }
         info!(
             "Bulk setting {} values at {}\\{}",
             request.values.len(),
@@ -1768,93 +2022,14 @@ impl RegistryManager {
 
     /// Copy a registry key (with all values) to another location.
     pub async fn copy_key(
-        transport: &mut WmiTransport,
-        request: &RegistryCopyRequest,
+        _transport: &mut WmiTransport,
+        _request: &RegistryCopyRequest,
     ) -> Result<RegistryCopyResult, String> {
-        info!(
-            "Copying {}\\{} to {}\\{}",
-            request.source_hive.display_name(),
-            request.source_path,
-            request.dest_hive.display_name(),
-            request.dest_path
-        );
-
-        let mut result = RegistryCopyResult {
-            keys_created: 0,
-            values_copied: 0,
-            errors: Vec::new(),
-        };
-
-        Self::copy_key_inner(
-            transport,
-            request,
-            &request.source_path,
-            &request.dest_path,
-            &mut result,
+        Err(
+            "Registry copy is unavailable until its bounded implementation carries acknowledgement through every service boundary"
+                .to_string(),
         )
-        .await;
-
-        Ok(result)
     }
-
-    fn copy_key_inner<'a>(
-        transport: &'a mut WmiTransport,
-        request: &'a RegistryCopyRequest,
-        src_path: &'a str,
-        dst_path: &'a str,
-        result: &'a mut RegistryCopyResult,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
-        Box::pin(async move {
-            // Create destination key
-            if let Err(e) = Self::create_key(transport, &request.dest_hive, dst_path).await {
-                result
-                    .errors
-                    .push(format!("Create key {}: {}", dst_path, e));
-                return;
-            }
-            result.keys_created += 1;
-
-            // Copy values
-            if let Ok(info) = Self::get_key_info(transport, &request.source_hive, src_path).await {
-                for val in &info.values {
-                    // Check if exists at destination when not overwriting
-                    if !request.overwrite
-                        && Self::get_value(transport, &request.dest_hive, dst_path, &val.name)
-                            .await
-                            .is_ok()
-                    {
-                        continue; // Skip — already exists
-                    }
-
-                    match Self::set_typed_value(
-                        transport,
-                        &request.dest_hive,
-                        dst_path,
-                        &val.name,
-                        &val.value_type,
-                        &val.data,
-                    )
-                    .await
-                    {
-                        Ok(()) => result.values_copied += 1,
-                        Err(e) => result
-                            .errors
-                            .push(format!("Copy value {}\\{}: {}", dst_path, val.name, e)),
-                    }
-                }
-            }
-
-            // Recurse into subkeys
-            if let Ok(subkeys) = Self::enum_keys(transport, &request.source_hive, src_path).await {
-                for subkey in subkeys {
-                    let child_src = format!("{}\\{}", src_path, subkey);
-                    let child_dst = format!("{}\\{}", dst_path, subkey);
-                    Self::copy_key_inner(transport, request, &child_src, &child_dst, result).await;
-                }
-            }
-        })
-    }
-
     /// Rename a registry value (copy + delete).
     pub async fn rename_value(
         transport: &mut WmiTransport,

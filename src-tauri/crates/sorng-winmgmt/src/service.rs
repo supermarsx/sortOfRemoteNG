@@ -7,7 +7,7 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use chrono::Utc;
-use log::{info, warn};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ impl Default for WinMgmtConfig {
             default_namespace: "root/cimv2".to_string(),
             timeout_seconds: 30,
             max_sessions: 50,
-            verify_tls: false,
+            verify_tls: true,
         }
     }
 }
@@ -81,7 +81,7 @@ impl WinMgmtService {
     pub fn with_config(config: WinMgmtConfig) -> Self {
         Self {
             sessions: HashMap::new(),
-            config,
+            config: Self::normalize_config(config),
         }
     }
 
@@ -92,17 +92,23 @@ impl WinMgmtService {
 
     /// Update the configuration.
     pub fn set_config(&mut self, config: WinMgmtConfig) {
-        self.config = config;
+        self.config = Self::normalize_config(config);
+    }
+
+    fn normalize_config(mut config: WinMgmtConfig) -> WinMgmtConfig {
+        config.timeout_seconds = config.timeout_seconds.clamp(5, 120);
+        config.max_sessions = config.max_sessions.clamp(1, 100);
+        config.verify_tls = true;
+        if config.default_namespace.is_empty() || config.default_namespace.len() > 256 {
+            config.default_namespace = r"root\cimv2".to_string();
+        }
+        config
     }
 
     // ─── Session Management ──────────────────────────────────────────
 
     /// Connect to a remote host and create a new WMI session.
     ///
-    /// If the caller did not explicitly set a port (`port == 0`) and the
-    /// initial attempt fails with a connection-level error, we automatically
-    /// retry with the opposite transport security (HTTP ↔ HTTPS) so that
-    /// users don't have to guess which one the target supports.
     pub async fn connect(&mut self, config: WmiConnectionConfig) -> Result<String, String> {
         if self.sessions.len() >= self.config.max_sessions {
             return Err(format!(
@@ -111,74 +117,10 @@ impl WinMgmtService {
             ));
         }
 
-        // Try primary config first (default: HTTP on 5985)
-        match self.try_connect(&config).await {
-            Ok((session_id, transport, effective_config)) => {
-                let id = session_id.clone();
-                self.finish_connect(session_id, transport, effective_config);
-                Ok(id)
-            }
-            Err(primary_err) => {
-                // Attempt fallback to the other protocol.
-                // WinRM has two standard ports:
-                //   HTTP  = 5985 (or config.port when use_ssl=false)
-                //   HTTPS = 5986 (or config.alt_port, or vice versa)
-                let mut fallback = config.clone();
-                fallback.use_ssl = !config.use_ssl;
-
-                // Set the fallback port:
-                //   - If alt_port is explicitly set, use it
-                //   - Otherwise use the standard port for the alternate protocol
-                fallback.port = if config.alt_port > 0 {
-                    config.alt_port
-                } else if fallback.use_ssl {
-                    5986
-                } else {
-                    5985
-                };
-                fallback.alt_port = 0; // no further fallback
-
-                if fallback.use_ssl {
-                    fallback.skip_ca_check = true;
-                    fallback.skip_cn_check = true;
-                }
-
-                let primary_port = config.effective_port();
-                let primary_label = if config.use_ssl { "HTTPS" } else { "HTTP" };
-                let alt_label = if fallback.use_ssl { "HTTPS" } else { "HTTP" };
-                let alt_port = fallback.port;
-
-                info!(
-                    "Primary {} connection to {}:{} failed ({}), trying {}:{}",
-                    primary_label, config.computer_name, primary_port,
-                    primary_err, alt_label, alt_port,
-                );
-
-                match self.try_connect(&fallback).await {
-                    Ok((session_id, transport, effective_config)) => {
-                        info!(
-                            "Fallback {}:{} connection to {} succeeded (session {})",
-                            alt_label, alt_port, config.computer_name, session_id,
-                        );
-                        let id = session_id.clone();
-                        self.finish_connect(session_id, transport, effective_config);
-                        Ok(id)
-                    }
-                    Err(fallback_err) => {
-                        // Both failed — show what happened on each port
-                        let http_err = if config.use_ssl { &fallback_err } else { &primary_err };
-                        let https_err = if config.use_ssl { &primary_err } else { &fallback_err };
-                        let http_port = if config.use_ssl { alt_port } else { primary_port };
-                        let https_port = if config.use_ssl { primary_port } else { alt_port };
-                        Err(format!(
-                            "HTTP ({}): {}\nHTTPS ({}): {}",
-                            http_port, http_err,
-                            https_port, https_err,
-                        ))
-                    }
-                }
-            }
-        }
+        let (session_id, transport, effective_config) = self.try_connect(&config).await?;
+        let id = session_id.clone();
+        self.finish_connect(session_id, transport, effective_config);
+        Ok(id)
     }
 
     /// Attempt a single connect with the given config.  Returns the session
@@ -224,15 +166,14 @@ impl WinMgmtService {
         }
 
         // Probe with a real WQL query to verify credentials and WMI access.
-        if let Err(e) = transport
+        let probe_rows = transport
             .wql_query("SELECT Caption FROM Win32_OperatingSystem")
             .await
-        {
-            warn!(
-                "WMI auth probe failed for {} — {e}",
-                config.computer_name
+            .map_err(|e| format!("Authentication/access check failed: {e}"))?;
+        if probe_rows.is_empty() {
+            return Err(
+                "Authentication/access check returned no operating system instance".to_string(),
             );
-            return Err(format!("Authentication/access check failed: {e}"));
         }
 
         Ok((session_id, transport, config.clone()))
@@ -365,7 +306,7 @@ mod tests {
         assert_eq!(config.default_namespace, "root/cimv2");
         assert_eq!(config.timeout_seconds, 30);
         assert_eq!(config.max_sessions, 50);
-        assert!(!config.verify_tls);
+        assert!(config.verify_tls);
     }
 
     #[test]

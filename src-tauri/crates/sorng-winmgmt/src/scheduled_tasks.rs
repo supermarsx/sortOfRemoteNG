@@ -7,7 +7,7 @@
 use crate::transport::WmiTransport;
 use crate::types::*;
 use crate::wql::{WqlBuilder, WqlQueries};
-use log::{debug, info};
+use log::info;
 use std::collections::HashMap;
 
 /// Manages remote Windows Scheduled Tasks via WMI/CIM.
@@ -164,26 +164,6 @@ impl ScheduledTaskManager {
         Self::check_return(&result, "Stop")
     }
 
-    /// Unregister (delete) a scheduled task.
-    pub async fn unregister_task(
-        transport: &mut WmiTransport,
-        task_path: &str,
-        task_name: &str,
-    ) -> Result<(), String> {
-        info!("Unregistering scheduled task '{}{}'", task_path, task_name);
-
-        let result = transport
-            .invoke_method(
-                "MSFT_ScheduledTask",
-                "Unregister",
-                Some(&[("TaskPath", task_path), ("TaskName", task_name)]),
-                &HashMap::new(),
-            )
-            .await?;
-
-        Self::check_return(&result, "Unregister")
-    }
-
     // ─── Task Details ────────────────────────────────────────────────
 
     /// Get task actions (via MSFT_TaskAction associated instances).
@@ -199,14 +179,8 @@ impl ScheduledTaskManager {
             task_name.replace('\'', "\\'")
         );
 
-        match transport.wql_query(&query).await {
-            Ok(rows) => Ok(rows.iter().map(Self::row_to_action).collect()),
-            Err(_) => {
-                // Fallback: return empty actions if the class is not available
-                debug!("MSFT_TaskExecAction not available, returning empty actions");
-                Ok(Vec::new())
-            }
-        }
+        let rows = transport.wql_query(&query).await?;
+        Ok(rows.iter().map(Self::row_to_action).collect())
     }
 
     /// Get task triggers (via MSFT_TaskTrigger associated instances).
@@ -221,13 +195,8 @@ impl ScheduledTaskManager {
             task_name.replace('\'', "\\'")
         );
 
-        match transport.wql_query(&query).await {
-            Ok(rows) => Ok(rows.iter().map(Self::row_to_trigger).collect()),
-            Err(_) => {
-                debug!("MSFT_TaskTrigger not available, returning empty triggers");
-                Ok(Vec::new())
-            }
-        }
+        let rows = transport.wql_query(&query).await?;
+        Ok(rows.iter().map(Self::row_to_trigger).collect())
     }
 
     /// Get full task details including actions and triggers.
@@ -237,12 +206,8 @@ impl ScheduledTaskManager {
         task_name: &str,
     ) -> Result<ScheduledTask, String> {
         let mut task = Self::get_task(transport, task_path, task_name).await?;
-        task.actions = Self::get_task_actions(transport, task_path, task_name)
-            .await
-            .unwrap_or_default();
-        task.triggers = Self::get_task_triggers(transport, task_path, task_name)
-            .await
-            .unwrap_or_default();
+        task.actions = Self::get_task_actions(transport, task_path, task_name).await?;
+        task.triggers = Self::get_task_triggers(transport, task_path, task_name).await?;
         Ok(task)
     }
 

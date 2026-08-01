@@ -7,7 +7,7 @@
 use crate::types::*;
 use chrono::Utc;
 use futures::StreamExt;
-use log::{debug, error, trace, warn};
+use log::{debug, error, warn};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -19,23 +19,29 @@ const NS_WSA: &str = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
 const NS_WSMAN: &str = "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd";
 const NS_WSEN: &str = "http://schemas.xmlsoap.org/ws/2004/09/enumeration";
 const NS_WMI_BASE: &str = "http://schemas.microsoft.com/wbem/wsman/1/wmi";
-#[allow(dead_code)]
-const NS_WSINVOKE: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer";
 
 const ACTION_ENUMERATE: &str = "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate";
 const ACTION_PULL: &str = "http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull";
 const ACTION_GET: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Get";
 const ACTION_PUT: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Put";
-#[allow(dead_code)]
-const ACTION_CREATE: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create";
-#[allow(dead_code)]
-const ACTION_DELETE: &str = "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete";
 const ACTION_INVOKE_PREFIX: &str = "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2";
 
 const DEFAULT_MAX_ENVELOPE: usize = 512_000;
 const DEFAULT_MAX_ELEMENTS: u32 = 100;
+const MIN_TIMEOUT_SECS: u64 = 5;
+const MAX_TIMEOUT_SECS: u64 = 120;
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_WQL_BYTES: usize = 32 * 1024;
+const MAX_QUERY_ROWS: usize = 10_000;
+const MAX_ENUMERATION_PAGES: usize = 128;
 const MAX_ENUMERATION_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_ENUMERATION_CONTEXT_BYTES: usize = 8 * 1024;
+const MAX_METHOD_PARAMS: usize = 128;
+const MAX_SELECTORS: usize = 64;
+const MAX_METHOD_INPUT_BYTES: usize = 256 * 1024;
+const MAX_COMMAND_BYTES: usize = 16 * 1024;
+const MAX_AUTH_HEADER_BYTES: usize = 24 * 1024;
+const MAX_ERROR_CHARS: usize = 512;
 
 // ─── Transport ───────────────────────────────────────────────────────
 
@@ -65,29 +71,16 @@ impl std::fmt::Debug for WmiTransport {
 }
 
 impl WmiTransport {
-    fn account_enumeration_response_bytes(
-        total: &mut usize,
-        response_bytes: usize,
-    ) -> Result<(), String> {
-        let next_total = (*total)
-            .checked_add(response_bytes)
-            .ok_or_else(|| "WMI enumeration response byte count overflow".to_string())?;
-        if next_total > MAX_ENUMERATION_RESPONSE_BYTES {
-            return Err(
-                "WMI enumeration responses exceed the aggregate body safety limit".to_string(),
-            );
-        }
-        *total = next_total;
-        Ok(())
-    }
-
     /// Create a new transport from a WMI connection config.
     pub fn new(config: &WmiConnectionConfig) -> Result<Self, String> {
-        let endpoint = config.endpoint_uri();
+        Self::validate_config(config)?;
+        let endpoint = Self::validated_endpoint(config)?;
+        let timeout_secs = u64::from(config.timeout_sec).clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
 
         let builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout_sec as u64))
-            .connect_timeout(std::time::Duration::from_secs(15));
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .connect_timeout(std::time::Duration::from_secs(timeout_secs.min(15)))
+            .redirect(reqwest::redirect::Policy::none());
 
         // Route TLS trust through the Trust Center (TOFU default). The legacy
         // `skip_ca_check || skip_cn_check` flags map to an explicit, revocable
@@ -100,9 +93,151 @@ impl WmiTransport {
             auth_header: None,
             namespace: config.namespace.clone(),
             max_envelope_size: DEFAULT_MAX_ENVELOPE,
-            operation_timeout: format!("PT{}S", config.timeout_sec),
+            operation_timeout: format!("PT{}S", timeout_secs),
             request_counter: 0,
         })
+    }
+
+    pub(crate) fn validate_config(config: &WmiConnectionConfig) -> Result<(), String> {
+        if !matches!(config.protocol, WmiTransportProtocol::WinRm) {
+            return Err(
+                "DCOM transport is unavailable because authenticated DCOM/RPC is not implemented"
+                    .to_string(),
+            );
+        }
+        if !matches!(config.auth_method, WmiAuthMethod::Basic) {
+            return Err(
+                "Selected WinRM authentication is unavailable; only Basic over verified HTTPS is implemented"
+                    .to_string(),
+            );
+        }
+        if !config.use_ssl {
+            return Err(
+                "Plaintext WinRM is disabled because WS-Management message encryption is not implemented"
+                    .to_string(),
+            );
+        }
+        if config.namespace.is_empty()
+            || config.namespace.len() > 256
+            || !config
+                .namespace
+                .split(['\\', '/'])
+                .all(Self::is_safe_xml_name)
+        {
+            return Err("Invalid or oversized WMI namespace".to_string());
+        }
+        if let Some(credential) = &config.credential {
+            if credential.username.is_empty()
+                || credential.username.len() > 512
+                || credential.password.len() > 16 * 1024
+                || credential.domain.as_ref().is_some_and(|d| d.len() > 255)
+            {
+                return Err("Invalid or oversized WinRM credentials".to_string());
+            }
+        }
+        Self::validated_endpoint(config).map(|_| ())
+    }
+
+    fn validated_endpoint(config: &WmiConnectionConfig) -> Result<String, String> {
+        let host = config.computer_name.trim();
+        if host.is_empty()
+            || host.len() > 253
+            || host != config.computer_name
+            || host.contains("://")
+            || host.chars().any(|c| {
+                c.is_control() || c.is_whitespace() || matches!(c, '/' | '\\' | '@' | '?' | '#')
+            })
+        {
+            return Err("Invalid WinRM host".to_string());
+        }
+
+        let host_for_url = if host.contains(':') && !(host.starts_with('[') && host.ends_with(']'))
+        {
+            format!("[{host}]")
+        } else {
+            host.to_string()
+        };
+        let port = config.effective_port();
+        let endpoint = url::Url::parse(&format!("https://{host_for_url}:{port}/wsman"))
+            .map_err(|_| "Invalid WinRM endpoint".to_string())?;
+        if endpoint.scheme() != "https"
+            || endpoint.host_str().is_none()
+            || endpoint.username() != ""
+            || endpoint.password().is_some()
+            || endpoint.port_or_known_default() != Some(port)
+            || endpoint.path() != "/wsman"
+        {
+            return Err("Invalid WinRM endpoint".to_string());
+        }
+        Ok(endpoint.to_string())
+    }
+
+    fn is_safe_xml_name(value: &str) -> bool {
+        let mut chars = value.chars();
+        matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    }
+
+    fn validate_method_inputs(
+        class_name: &str,
+        method_name: Option<&str>,
+        selectors: &[(&str, &str)],
+        params: &HashMap<String, String>,
+    ) -> Result<(), String> {
+        if !Self::is_safe_xml_name(class_name)
+            || method_name.is_some_and(|name| !Self::is_safe_xml_name(name))
+        {
+            return Err("Invalid WMI class or method identifier".to_string());
+        }
+        if selectors.len() > MAX_SELECTORS || params.len() > MAX_METHOD_PARAMS {
+            return Err("WMI operation contains too many selectors or parameters".to_string());
+        }
+
+        let mut total_bytes = 0usize;
+        for (name, value) in selectors {
+            if !Self::is_safe_xml_name(name) {
+                return Err("Invalid WMI selector identifier".to_string());
+            }
+            total_bytes = total_bytes
+                .checked_add(name.len())
+                .and_then(|n| n.checked_add(value.len()))
+                .ok_or_else(|| "WMI operation input is too large".to_string())?;
+        }
+        for (name, value) in params {
+            if !Self::is_safe_xml_name(name) {
+                return Err("Invalid WMI parameter identifier".to_string());
+            }
+            total_bytes = total_bytes
+                .checked_add(name.len())
+                .and_then(|n| n.checked_add(value.len()))
+                .ok_or_else(|| "WMI operation input is too large".to_string())?;
+        }
+        if total_bytes > MAX_METHOD_INPUT_BYTES {
+            return Err("WMI operation input exceeds the safety limit".to_string());
+        }
+        Ok(())
+    }
+
+    fn bounded_error(input: &str) -> String {
+        input
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .take(MAX_ERROR_CHARS)
+            .collect()
+    }
+
+    fn account_enumeration_response_bytes(
+        total: &mut usize,
+        response_bytes: usize,
+    ) -> Result<(), String> {
+        let next_total = (*total)
+            .checked_add(response_bytes)
+            .ok_or_else(|| "WMI enumeration response byte count overflow".to_string())?;
+        if next_total > MAX_ENUMERATION_RESPONSE_BYTES {
+            return Err("WMI enumeration responses exceed the aggregate body safety limit".to_string());
+        }
+        *total = next_total;
+        Ok(())
     }
 
     /// Set the authentication header value.
@@ -120,59 +255,17 @@ impl WmiTransport {
         ))
     }
 
-    /// Build all plausible Basic auth headers to try in order.
-    ///
-    /// WinRM servers are picky about credential format.  We generate
-    /// multiple variants so `try_auth_variants` can find the one that works:
-    ///
-    /// 1. `DOMAIN\user` — traditional Windows format
-    /// 2. `user@domain` — UPN format (Kerberos-style)
-    /// 3. `user`         — local account / no domain
-    /// 4. `.\user`       — explicit local account
+    /// Build the explicitly configured Basic auth header as a labeled candidate.
+    /// Username variants are not guessed because they can select a different account.
     pub fn build_auth_variants(config: &WmiConnectionConfig) -> Vec<(String, String)> {
         let cred = match config.credential.as_ref() {
             Some(c) => c,
             None => return Vec::new(),
         };
-
-        let mut variants: Vec<(String, String)> = Vec::new();
-        let user = &cred.username;
-        let pass = &cred.password;
-
-        if let Some(ref domain) = cred.domain {
-            if !domain.is_empty() && domain != "." {
-                // DOMAIN\user (most common for domain accounts)
-                variants.push((
-                    format!("{}\\{}", domain, user),
-                    Self::encode_basic_auth(user, pass, Some(domain)),
-                ));
-                // user@domain (UPN format)
-                variants.push((
-                    format!("{}@{}", user, domain),
-                    Self::encode_basic_auth_raw(&format!("{}@{}", user, domain), pass),
-                ));
-            }
-        }
-
-        // Plain username (local account or domain already in username)
-        variants.push((
-            user.clone(),
-            Self::encode_basic_auth(user, pass, None),
-        ));
-
-        // .\user (explicit local account)
-        if !user.contains('\\') && !user.contains('@') {
-            variants.push((
-                format!(".\\{}", user),
-                Self::encode_basic_auth(user, pass, Some(".")),
-            ));
-        }
-
-        // Deduplicate by header value
-        let mut seen = std::collections::HashSet::new();
-        variants.retain(|(_, header)| seen.insert(header.clone()));
-
-        variants
+        vec![(
+            "configured credential".to_string(),
+            Self::encode_basic_auth(&cred.username, &cred.password, cred.domain.as_deref()),
+        )]
     }
 
     fn encode_basic_auth(user: &str, pass: &str, domain: Option<&str>) -> String {
@@ -192,42 +285,26 @@ impl WmiTransport {
         format!("Basic {}", encoded)
     }
 
-    /// Try multiple credential formats and keep the one that succeeds.
-    ///
-    /// WinRM servers are picky about the username format in Basic auth.
-    /// This method sends a lightweight Identify request with each variant
-    /// and keeps the first one that doesn't return 401.
-    pub async fn try_auth_variants(
-        &mut self,
-        config: &WmiConnectionConfig,
-    ) -> Result<(), String> {
+    /// Try the explicitly configured credential with a lightweight Identify request.
+    pub async fn try_auth_variants(&mut self, config: &WmiConnectionConfig) -> Result<(), String> {
         let variants = Self::build_auth_variants(config);
-        if variants.is_empty() {
+        let Some((_, header)) = variants.into_iter().next() else {
             return Ok(()); // no credentials to try
-        }
+        };
 
-        let mut last_err = String::new();
-        for (label, header) in &variants {
-            self.auth_header = Some(header.clone());
-            match self.test_connection().await {
-                Ok(_) => {
-                    debug!("Auth variant '{}' accepted", label);
-                    return Ok(());
+        self.auth_header = Some(header);
+        match self.test_connection().await {
+            Ok(_) => {
+                debug!("Configured credential accepted");
+                Ok(())
+            }
+            Err(e) => {
+                if e.contains("401") {
+                    debug!("Configured credential rejected (attempt 1)");
                 }
-                Err(e) => {
-                    if e.contains("401") {
-                        debug!("Auth variant '{}' rejected (401)", label);
-                        last_err = e;
-                        continue; // try next variant
-                    }
-                    // Non-auth error — don't keep trying variants
-                    return Err(e);
-                }
+                Err(e)
             }
         }
-
-        // All variants failed
-        Err(last_err)
     }
 
     /// Test the transport by issuing an identify request.
@@ -261,41 +338,65 @@ impl WmiTransport {
 
     /// Execute a WQL query and return raw XML results.
     pub async fn wql_query(&mut self, wql: &str) -> Result<Vec<HashMap<String, String>>, String> {
+        if wql.is_empty() || wql.len() > MAX_WQL_BYTES || wql.contains('\0') {
+            return Err("Invalid or oversized WQL query".to_string());
+        }
         let resource_uri = format!("{}/{}/*", NS_WMI_BASE, self.namespace.replace('\\', "/"));
         let mut enumeration_response_bytes = 0usize;
 
         // Step 1: Enumerate with WQL filter
-        let enum_ctx = self
-            .enumerate(&resource_uri, Some(wql), &mut enumeration_response_bytes)
-            .await?;
+        let (initial_items, enum_ctx, end_of_sequence) =
+            self.enumerate(&resource_uri, Some(wql), &mut enumeration_response_bytes)
+                .await?;
 
         // Step 2: Pull all results
-        let mut all_items = Vec::new();
+        if initial_items.len() > MAX_QUERY_ROWS {
+            return Err("WMI query result exceeds the row safety limit".to_string());
+        }
+        let mut all_items = initial_items;
+        if end_of_sequence || enum_ctx.is_empty() {
+            return Ok(all_items);
+        }
         let mut context = enum_ctx;
+        let mut seen_contexts = std::collections::HashSet::new();
 
-        loop {
+        for _ in 0..MAX_ENUMERATION_PAGES {
+            if context.len() > MAX_ENUMERATION_CONTEXT_BYTES
+                || !seen_contexts.insert(context.clone())
+            {
+                return Err("Invalid or repeated WinRM enumeration context".to_string());
+            }
             let (items, next_context, end_of_sequence) = self
                 .pull(&resource_uri, &context, &mut enumeration_response_bytes)
                 .await?;
+            if all_items.len().saturating_add(items.len()) > MAX_QUERY_ROWS {
+                return Err("WMI query result exceeds the row safety limit".to_string());
+            }
             all_items.extend(items);
 
             if end_of_sequence || next_context.is_empty() {
-                break;
+                return Ok(all_items);
             }
             context = next_context;
         }
 
-        Ok(all_items)
+        Err("WMI enumeration exceeded the page safety limit".to_string())
     }
 
     /// Invoke a WMI method on a class or instance.
-    pub async fn invoke_method(
+    pub(crate) async fn invoke_method(
         &mut self,
         class_name: &str,
         method_name: &str,
         selector: Option<&[(&str, &str)]>,
         params: &HashMap<String, String>,
     ) -> Result<HashMap<String, String>, String> {
+        Self::validate_method_inputs(
+            class_name,
+            Some(method_name),
+            selector.unwrap_or_default(),
+            params,
+        )?;
         let resource_uri = format!(
             "{}/{}/{}",
             NS_WMI_BASE,
@@ -403,6 +504,7 @@ impl WmiTransport {
         class_name: &str,
         selectors: &[(&str, &str)],
     ) -> Result<HashMap<String, String>, String> {
+        Self::validate_method_inputs(class_name, None, selectors, &HashMap::new())?;
         let resource_uri = format!(
             "{}/{}/{}",
             NS_WMI_BASE,
@@ -459,12 +561,13 @@ impl WmiTransport {
     }
 
     /// Put (update) a single WMI instance.
-    pub async fn put_instance(
+    pub(crate) async fn put_instance(
         &mut self,
         class_name: &str,
         selectors: &[(&str, &str)],
         properties: &HashMap<String, String>,
     ) -> Result<HashMap<String, String>, String> {
+        Self::validate_method_inputs(class_name, None, selectors, properties)?;
         let resource_uri = format!(
             "{}/{}/{}",
             NS_WMI_BASE,
@@ -547,7 +650,7 @@ impl WmiTransport {
         resource_uri: &str,
         wql_filter: Option<&str>,
         aggregate_response_bytes: &mut usize,
-    ) -> Result<String, String> {
+    ) -> Result<(Vec<HashMap<String, String>>, String, bool), String> {
         let msg_id = Uuid::new_v4().to_string();
 
         let filter_xml = if let Some(wql) = wql_filter {
@@ -597,7 +700,7 @@ impl WmiTransport {
 
         let response = self.send_raw(&body).await?;
         Self::account_enumeration_response_bytes(aggregate_response_bytes, response.len())?;
-        Self::parse_enumeration_context(&response)
+        Self::parse_pull_response(&response)
     }
 
     /// Pull the next batch from an enumeration.
@@ -653,7 +756,10 @@ impl WmiTransport {
 
     /// Send a raw SOAP XML message and return the response body.
     async fn send_raw(&mut self, soap_body: &str) -> Result<String, String> {
-        self.request_counter += 1;
+        if soap_body.len() > self.max_envelope_size {
+            return Err("WMI SOAP request exceeds the envelope safety limit".to_string());
+        }
+        self.request_counter = self.request_counter.saturating_add(1);
         let req_id = self.request_counter;
 
         let mut headers = HeaderMap::new();
@@ -663,6 +769,9 @@ impl WmiTransport {
         );
 
         if let Some(ref auth) = self.auth_header {
+            if auth.len() > MAX_AUTH_HEADER_BYTES || !auth.starts_with("Basic ") {
+                return Err("Invalid WinRM authentication header".to_string());
+            }
             headers.insert(
                 reqwest::header::AUTHORIZATION,
                 HeaderValue::from_str(auth).map_err(|e| format!("Invalid auth header: {}", e))?,
@@ -675,8 +784,6 @@ impl WmiTransport {
             self.endpoint,
             soap_body.len()
         );
-        trace!("WMI request #{} body:\n{}", req_id, soap_body);
-
         let resp = self
             .client
             .post(&self.endpoint)
@@ -684,7 +791,12 @@ impl WmiTransport {
             .body(soap_body.to_string())
             .send()
             .await
-            .map_err(|e| format!("WMI HTTP request failed: {}", e))?;
+            .map_err(|e| {
+                format!(
+                    "WMI HTTP request failed: {}",
+                    Self::bounded_error(&e.to_string())
+                )
+            })?;
 
         let status = resp.status();
         if resp
@@ -707,8 +819,12 @@ impl WmiTransport {
         let mut body_bytes = Vec::new();
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk =
-                chunk.map_err(|e| format!("Failed to read WMI response body: {}", e))?;
+            let chunk = chunk.map_err(|e| {
+                format!(
+                    "Failed to read WMI response body: {}",
+                    Self::bounded_error(&e.to_string())
+                )
+            })?;
             if body_bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
                 return Err("WMI response exceeds the body safety limit".to_string());
             }
@@ -717,36 +833,21 @@ impl WmiTransport {
         let body = String::from_utf8(body_bytes)
             .map_err(|_| "WMI response is not valid UTF-8".to_string())?;
 
-        trace!(
-            "WMI response #{}: status={}, body length={}",
-            req_id,
-            status,
-            body.len()
-        );
-
         if !status.is_success() {
-            let fault = Self::extract_soap_fault(&body).unwrap_or_default();
+            let fault = Self::safe_fault_summary(&body);
             error!(
-                "WMI SOAP fault (HTTP {}): {}",
-                status.as_u16(),
-                if fault.is_empty() { &body } else { &fault }
+                "WMI request #{} failed with HTTP {}",
+                req_id,
+                status.as_u16()
             );
 
-            let mut msg = format!(
-                "WMI request failed (HTTP {}): {}",
-                status.as_u16(),
-                if fault.is_empty() {
-                    format!("HTTP error {}", status.as_u16())
-                } else {
-                    fault
-                }
-            );
+            let mut msg = format!("WMI request failed (HTTP {}): {}", status.as_u16(), fault);
 
             // For 401, include the server's supported auth methods
             if status.as_u16() == 401 && !www_auth.is_empty() {
                 msg.push_str(&format!(
                     " [Server accepts: {}]",
-                    www_auth
+                    Self::bounded_error(&www_auth)
                 ));
             }
 
@@ -755,8 +856,7 @@ impl WmiTransport {
 
         // Check for SOAP fault inside a 200 response
         if body.contains(":Fault") || body.contains("<Fault") {
-            let fault =
-                Self::extract_soap_fault(&body).unwrap_or_else(|| "Unknown SOAP fault".to_string());
+            let fault = Self::safe_fault_summary(&body);
             return Err(format!("WMI SOAP fault: {}", fault));
         }
 
@@ -791,6 +891,32 @@ impl WmiTransport {
             }
         }
         None
+    }
+
+    fn safe_fault_summary(xml: &str) -> String {
+        let fault = Self::extract_soap_fault(xml)
+            .map(|value| xml_unescape(&value))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if fault.contains("access denied")
+            || fault.contains("unauthorized")
+            || fault.contains("authentication")
+            || fault.contains("credential")
+        {
+            "Remote management authentication or authorization failed".to_string()
+        } else if fault.contains("timeout") || fault.contains("timed out") {
+            "Remote management operation timed out".to_string()
+        } else if fault.contains("invalid")
+            || fault.contains("syntax")
+            || fault.contains("query")
+            || fault.contains("selector")
+        {
+            "Remote management request was rejected as invalid".to_string()
+        } else if fault.contains("not found") || fault.contains("unknown resource") {
+            "Remote management resource was not found".to_string()
+        } else {
+            "Remote management service returned a SOAP fault".to_string()
+        }
     }
 
     /// Parse an EnumerateResponse to extract the enumeration context.
@@ -1076,7 +1202,10 @@ impl WmiTransport {
     /// Execute an arbitrary command on the remote host via Win32_Process.Create.
     ///
     /// Returns the output of the command invocation (return value and process id).
-    pub async fn exec_command(&mut self, command: &str) -> Result<String, String> {
+    pub(crate) async fn exec_command(&mut self, command: &str) -> Result<String, String> {
+        if command.is_empty() || command.len() > MAX_COMMAND_BYTES || command.contains('\0') {
+            return Err("Invalid or oversized remote command".to_string());
+        }
         let mut params = HashMap::new();
         params.insert("CommandLine".to_string(), command.to_string());
 
