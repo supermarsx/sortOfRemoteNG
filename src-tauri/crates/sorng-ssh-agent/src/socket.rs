@@ -8,7 +8,12 @@
 use crate::protocol;
 use log::{debug, error, info, warn};
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use std::time::Duration;
+use tokio::sync::{broadcast, Mutex, Semaphore};
+
+const AGENT_IO_TIMEOUT: Duration = Duration::from_secs(15);
+const AGENT_PROCESS_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_ACTIVE_CONNECTIONS: usize = 64;
 
 /// Abstraction over different socket types the agent can listen on.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -56,18 +61,22 @@ pub async fn handle_connection<R, W>(
     loop {
         // Read 4-byte length prefix
         let mut len_buf = [0u8; 4];
-        match reader.read_exact(&mut len_buf).await {
-            Ok(_) => {}
-            Err(e) => {
+        match tokio::time::timeout(AGENT_IO_TIMEOUT, reader.read_exact(&mut len_buf)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
                 if e.kind() != std::io::ErrorKind::UnexpectedEof {
                     warn!("Connection {} read error: {}", connection_id, e);
                 }
                 break;
             }
+            Err(_) => {
+                warn!("Connection {} timed out", connection_id);
+                break;
+            }
         }
 
         let msg_len = u32::from_be_bytes(len_buf) as usize;
-        if msg_len == 0 || msg_len > 256 * 1024 {
+        if msg_len == 0 || msg_len > protocol::MAX_AGENT_PAYLOAD_LEN {
             warn!(
                 "Connection {} invalid message length: {}",
                 connection_id, msg_len
@@ -77,9 +86,16 @@ pub async fn handle_connection<R, W>(
 
         // Read message payload
         let mut payload = vec![0u8; msg_len];
-        if let Err(e) = reader.read_exact(&mut payload).await {
-            warn!("Connection {} failed to read payload: {}", connection_id, e);
-            break;
+        match tokio::time::timeout(AGENT_IO_TIMEOUT, reader.read_exact(&mut payload)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                warn!("Connection {} failed to read payload: {}", connection_id, e);
+                break;
+            }
+            Err(_) => {
+                warn!("Connection {} payload read timed out", connection_id);
+                break;
+            }
         }
 
         // Parse and process
@@ -88,14 +104,22 @@ pub async fn handle_connection<R, W>(
             Err(e) => {
                 error!("Connection {} decode error: {}", connection_id, e);
                 let resp = protocol::encode_message(&protocol::AgentMessage::Failure);
-                let _ = writer.write_all(&resp).await;
+                let _ = tokio::time::timeout(AGENT_IO_TIMEOUT, writer.write_all(&resp)).await;
                 continue;
             }
         };
 
-        let response = {
+        let response = match tokio::time::timeout(AGENT_PROCESS_TIMEOUT, async {
             let mut proc = processor.lock().await;
             proc.process(request).await
+        })
+        .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                warn!("Connection {} request processing timed out", connection_id);
+                break;
+            }
         };
 
         let encoded = match protocol::try_encode_message(&response) {
@@ -105,9 +129,16 @@ pub async fn handle_connection<R, W>(
                 protocol::encode_message(&protocol::AgentMessage::Failure)
             }
         };
-        if let Err(e) = writer.write_all(&encoded).await {
-            warn!("Connection {} write error: {}", connection_id, e);
-            break;
+        match tokio::time::timeout(AGENT_IO_TIMEOUT, writer.write_all(&encoded)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                warn!("Connection {} write error: {}", connection_id, e);
+                break;
+            }
+            Err(_) => {
+                warn!("Connection {} response write timed out", connection_id);
+                break;
+            }
         }
     }
 
@@ -130,7 +161,13 @@ pub async fn start_tcp_listener(
 ) -> Result<(), String> {
     use tokio::net::TcpListener;
 
-    let listener = TcpListener::bind(addr)
+    let socket_addr = addr
+        .parse::<std::net::SocketAddr>()
+        .map_err(|_| "TCP listener address must be a numeric loopback address".to_string())?;
+    if !socket_addr.ip().is_loopback() {
+        return Err("SSH-agent TCP listeners are restricted to loopback".to_string());
+    }
+    let listener = TcpListener::bind(socket_addr)
         .await
         .map_err(|e| format!("Failed to bind TCP listener: {}", e))?;
 
@@ -138,17 +175,24 @@ pub async fn start_tcp_listener(
 
     let mut shutdown = shutdown;
     let mut conn_counter: u64 = 0;
+    let connection_limit = Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS));
 
     loop {
         tokio::select! {
             accept_result = listener.accept() => {
                 match accept_result {
                     Ok((stream, peer)) => {
-                        conn_counter += 1;
+                        let Ok(permit) = Arc::clone(&connection_limit).try_acquire_owned() else {
+                            warn!("SSH-agent TCP connection limit reached");
+                            drop(stream);
+                            continue;
+                        };
+                        conn_counter = conn_counter.saturating_add(1);
                         let conn_id = format!("tcp-{}-{}", peer, conn_counter);
                         let proc = Arc::clone(&processor);
                         let (reader, writer) = tokio::io::split(stream);
                         tokio::spawn(async move {
+                            let _permit = permit;
                             handle_connection(reader, writer, proc, conn_id).await;
                         });
                     }
@@ -174,10 +218,20 @@ pub async fn start_unix_listener(
     processor: Arc<Mutex<dyn MessageProcessor + Send>>,
     shutdown: broadcast::Receiver<()>,
 ) -> Result<(), String> {
+    use std::os::unix::fs::FileTypeExt;
     use tokio::net::UnixListener;
 
-    // Remove stale socket file
-    let _ = std::fs::remove_file(path);
+    let socket_path = std::path::Path::new(path);
+    if !socket_path.is_absolute() {
+        return Err("SSH-agent Unix socket path must be absolute".to_string());
+    }
+    if let Ok(metadata) = std::fs::symlink_metadata(socket_path) {
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_socket() {
+            return Err("Refusing to replace a non-socket or symlink path".to_string());
+        }
+        std::fs::remove_file(socket_path)
+            .map_err(|_| "Failed to remove stale SSH-agent socket".to_string())?;
+    }
 
     let listener =
         UnixListener::bind(path).map_err(|e| format!("Failed to bind Unix socket: {}", e))?;
@@ -186,24 +240,35 @@ pub async fn start_unix_listener(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        if std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).is_err() {
+            drop(listener);
+            let _ = std::fs::remove_file(path);
+            return Err("Failed to secure SSH-agent Unix socket permissions".to_string());
+        }
     }
 
     info!("SSH agent Unix listener started on {}", path);
 
     let mut shutdown = shutdown;
     let mut conn_counter: u64 = 0;
+    let connection_limit = Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS));
 
     loop {
         tokio::select! {
             accept_result = listener.accept() => {
                 match accept_result {
                     Ok((stream, _)) => {
-                        conn_counter += 1;
+                        let Ok(permit) = Arc::clone(&connection_limit).try_acquire_owned() else {
+                            warn!("SSH-agent Unix connection limit reached");
+                            drop(stream);
+                            continue;
+                        };
+                        conn_counter = conn_counter.saturating_add(1);
                         let conn_id = format!("unix-{}", conn_counter);
                         let proc = Arc::clone(&processor);
                         let (reader, writer) = tokio::io::split(stream);
                         tokio::spawn(async move {
+                            let _permit = permit;
                             handle_connection(reader, writer, proc, conn_id).await;
                         });
                     }
@@ -214,7 +279,6 @@ pub async fn start_unix_listener(
             }
             _ = shutdown.recv() => {
                 info!("Unix listener shutting down");
-                let _ = std::fs::remove_file(path);
                 break;
             }
         }

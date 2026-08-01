@@ -8,6 +8,10 @@ use crate::types::*;
 use log::info;
 use std::collections::HashMap;
 
+const MAX_FORWARDING_SESSIONS: usize = 64;
+const MAX_SESSION_FIELD_LEN: usize = 255;
+const MAX_HOST_RULES: usize = 256;
+
 /// Manages agent forwarding sessions and policies.
 pub struct ForwardingManager {
     /// Active forwarding sessions.
@@ -25,12 +29,12 @@ pub struct ForwardingManager {
 }
 
 /// How to filter keys when forwarding.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum KeyFilterMode {
     /// Forward all keys.
-    #[default]
     AllKeys,
     /// Forward no keys (block forwarding).
+    #[default]
     NoKeys,
     /// Forward only keys matching specific fingerprints.
     SelectedKeys(Vec<String>),
@@ -52,8 +56,8 @@ pub struct ForwardingPolicy {
 impl Default for ForwardingPolicy {
     fn default() -> Self {
         Self {
-            filter: KeyFilterMode::AllKeys,
-            max_sub_depth: 1,
+            filter: KeyFilterMode::NoKeys,
+            max_sub_depth: 0,
             audit_signs: true,
         }
     }
@@ -66,7 +70,7 @@ impl ForwardingManager {
             sessions: HashMap::new(),
             max_depth,
             enabled,
-            _default_filter_mode: KeyFilterMode::AllKeys,
+            _default_filter_mode: KeyFilterMode::NoKeys,
             allowed_hosts: Vec::new(),
             denied_hosts: Vec::new(),
         }
@@ -95,16 +99,37 @@ impl ForwardingManager {
             return Err("Agent forwarding is disabled".to_string());
         }
 
-        if self.max_depth > 0 && depth > self.max_depth {
+        if self.max_depth == 0 || depth == 0 || depth > self.max_depth {
             return Err(format!(
                 "Forwarding depth {} exceeds maximum {}",
                 depth, self.max_depth
             ));
         }
+        if self.sessions.len() >= MAX_FORWARDING_SESSIONS {
+            return Err("Maximum forwarding session count reached".to_string());
+        }
+        if self.sessions.contains_key(session_id) {
+            return Err("Forwarding session identifier already exists".to_string());
+        }
+        if [session_id, remote_host, remote_user].iter().any(|value| {
+            value.is_empty()
+                || value.len() > MAX_SESSION_FIELD_LEN
+                || value.chars().any(char::is_control)
+        }) {
+            return Err("Invalid forwarding session field".to_string());
+        }
 
         if !self.is_host_allowed(remote_host) {
-            return Err(format!("Forwarding not allowed to host: {}", remote_host));
+            return Err("Forwarding destination is not explicitly allowed".to_string());
         }
+        let policy =
+            policy.ok_or_else(|| "An explicit forwarding key policy is required".to_string())?;
+        if policy.max_sub_depth != 0 {
+            return Err("Multi-hop forwarding policy is not implemented safely".to_string());
+        }
+        validate_filter(&policy.filter)?;
+        let key_filter = serde_json::to_string(&policy.filter)
+            .map_err(|_| "Failed to encode forwarding key policy".to_string())?;
 
         let session = ForwardingSession {
             id: session_id.to_string(),
@@ -113,17 +138,11 @@ impl ForwardingManager {
             started_at: chrono::Utc::now(),
             depth,
             active: true,
-            key_filter: policy
-                .as_ref()
-                .map(|p| serde_json::to_string(&p.filter).unwrap_or_default())
-                .unwrap_or_default(),
+            key_filter,
             sign_count: 0,
         };
 
-        info!(
-            "Starting forwarding session {} to {}@{} (depth={})",
-            session_id, remote_user, remote_host, depth
-        );
+        info!("Starting explicitly authorised forwarding session");
 
         self.sessions.insert(session_id.to_string(), session);
         Ok(())
@@ -168,7 +187,10 @@ impl ForwardingManager {
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        session.sign_count += 1;
+        session.sign_count = session
+            .sign_count
+            .checked_add(1)
+            .ok_or_else(|| "Forwarding signature counter overflow".to_string())?;
         Ok(())
     }
 
@@ -181,7 +203,7 @@ impl ForwardingManager {
     ) -> bool {
         if let Some(session) = self.sessions.get(session_id) {
             if session.key_filter.is_empty() {
-                return true;
+                return false;
             }
             // Try to deserialize the filter
             if let Ok(filter) = serde_json::from_str::<KeyFilterMode>(&session.key_filter) {
@@ -195,8 +217,8 @@ impl ForwardingManager {
                 };
             }
         }
-        // No session or unparseable filter → allow
-        true
+        // Missing sessions and malformed filters must never expose keys.
+        false
     }
 
     /// Check if a host is allowed for forwarding.
@@ -207,9 +229,9 @@ impl ForwardingManager {
                 return false;
             }
         }
-        // If allow list is empty, everything is allowed
+        // Forwarding requires an explicit allow list.
         if self.allowed_hosts.is_empty() {
-            return true;
+            return false;
         }
         // Check allow list
         for allow in &self.allowed_hosts {
@@ -221,13 +243,17 @@ impl ForwardingManager {
     }
 
     /// Set the allowed hosts.
-    pub fn set_allowed_hosts(&mut self, hosts: Vec<String>) {
+    pub fn set_allowed_hosts(&mut self, hosts: Vec<String>) -> Result<(), String> {
+        validate_host_rules(&hosts)?;
         self.allowed_hosts = hosts;
+        Ok(())
     }
 
     /// Set the denied hosts.
-    pub fn set_denied_hosts(&mut self, hosts: Vec<String>) {
+    pub fn set_denied_hosts(&mut self, hosts: Vec<String>) -> Result<(), String> {
+        validate_host_rules(&hosts)?;
         self.denied_hosts = hosts;
+        Ok(())
     }
 
     /// Get the maximum depth.
@@ -246,14 +272,58 @@ impl ForwardingManager {
     }
 }
 
+fn validate_filter(filter: &KeyFilterMode) -> Result<(), String> {
+    match filter {
+        KeyFilterMode::SelectedKeys(fingerprints) => {
+            if fingerprints.is_empty()
+                || fingerprints.len() > 64
+                || fingerprints
+                    .iter()
+                    .any(|value| value.is_empty() || value.len() > 256)
+            {
+                return Err("Invalid selected-key forwarding policy".to_string());
+            }
+        }
+        KeyFilterMode::Pattern(pattern) => {
+            if pattern.is_empty() || pattern.len() > 256 || pattern.chars().any(char::is_control) {
+                return Err("Invalid forwarding key pattern".to_string());
+            }
+        }
+        KeyFilterMode::AllKeys | KeyFilterMode::NoKeys => {}
+    }
+    Ok(())
+}
+
+fn validate_host_rules(hosts: &[String]) -> Result<(), String> {
+    if hosts.len() > MAX_HOST_RULES
+        || hosts.iter().any(|host| {
+            let hostname = host.strip_prefix("*.").unwrap_or(host);
+            hostname.is_empty()
+                || host.len() > MAX_SESSION_FIELD_LEN
+                || host.chars().any(char::is_control)
+                || host.chars().any(char::is_whitespace)
+                || host.contains('/')
+                || hostname.contains('*')
+        })
+    {
+        return Err("Invalid forwarding host policy".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn deny_all_policy() -> Option<ForwardingPolicy> {
+        Some(ForwardingPolicy::default())
+    }
+
     #[test]
     fn test_start_stop_session() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.start_session("s1", "host.com", "user", 1, None)
+        mgr.set_allowed_hosts(vec!["host.com".to_string()]).unwrap();
+        mgr.start_session("s1", "host.com", "user", 1, deny_all_policy())
             .unwrap();
         assert_eq!(mgr.active_session_count(), 1);
 
@@ -277,23 +347,36 @@ mod tests {
     #[test]
     fn test_host_deny() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.set_denied_hosts(vec!["evil.com".to_string()]);
-        assert!(mgr.start_session("s1", "evil.com", "u", 1, None).is_err());
-        assert!(mgr.start_session("s2", "good.com", "u", 1, None).is_ok());
+        mgr.set_allowed_hosts(vec!["good.com".to_string(), "evil.com".to_string()])
+            .unwrap();
+        mgr.set_denied_hosts(vec!["evil.com".to_string()]).unwrap();
+        assert!(mgr
+            .start_session("s1", "evil.com", "u", 1, deny_all_policy())
+            .is_err());
+        assert!(mgr
+            .start_session("s2", "good.com", "u", 1, deny_all_policy())
+            .is_ok());
     }
 
     #[test]
     fn test_host_allow() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.set_allowed_hosts(vec!["*.safe.org".to_string()]);
-        assert!(mgr.start_session("s1", "a.safe.org", "u", 1, None).is_ok());
-        assert!(mgr.start_session("s2", "other.com", "u", 1, None).is_err());
+        mgr.set_allowed_hosts(vec!["*.safe.org".to_string()])
+            .unwrap();
+        assert!(mgr
+            .start_session("s1", "a.safe.org", "u", 1, deny_all_policy())
+            .is_ok());
+        assert!(mgr
+            .start_session("s2", "other.com", "u", 1, deny_all_policy())
+            .is_err());
     }
 
     #[test]
     fn test_record_sign() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.start_session("s1", "h", "u", 1, None).unwrap();
+        mgr.set_allowed_hosts(vec!["h".to_string()]).unwrap();
+        mgr.start_session("s1", "h", "u", 1, deny_all_policy())
+            .unwrap();
         mgr.record_sign("s1").unwrap();
         assert_eq!(mgr.get_session("s1").unwrap().sign_count, 1);
     }
@@ -301,8 +384,12 @@ mod tests {
     #[test]
     fn test_stop_all() {
         let mut mgr = ForwardingManager::new(5, true);
-        mgr.start_session("s1", "h1", "u", 1, None).unwrap();
-        mgr.start_session("s2", "h2", "u", 1, None).unwrap();
+        mgr.set_allowed_hosts(vec!["h1".to_string(), "h2".to_string()])
+            .unwrap();
+        mgr.start_session("s1", "h1", "u", 1, deny_all_policy())
+            .unwrap();
+        mgr.start_session("s2", "h2", "u", 1, deny_all_policy())
+            .unwrap();
         assert_eq!(mgr.stop_all_sessions(), 2);
     }
 }

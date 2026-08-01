@@ -7,6 +7,7 @@
 use crate::keystore::KeyStore;
 use crate::protocol::{self, msg, AgentMessage, ProtocolIdentity};
 use crate::types::*;
+use crate::{constraints, keystore};
 use log::{debug, error, info, warn};
 use rsa::pkcs1v15;
 use rsa::BigUint;
@@ -17,6 +18,8 @@ use ssh_key::public::{Ed25519PublicKey, RsaPublicKey};
 use ssh_key::{Mpint, PrivateKey};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
+
+const MAX_PENDING_CONFIRMATIONS: usize = 128;
 
 /// Built-in SSH agent that manages keys and handles protocol requests.
 pub struct BuiltinAgent {
@@ -60,10 +63,13 @@ impl BuiltinAgent {
                 key_data,
                 comment,
                 constraints,
-            } => {
-                let parsed = parse_protocol_constraints(&constraints);
-                self.handle_add_identity(&key_type, &key_data, &comment, parsed)
-            }
+            } => match parse_protocol_constraints(&constraints) {
+                Ok(parsed) => self.handle_add_identity(&key_type, &key_data, &comment, parsed),
+                Err(e) => {
+                    warn!("Rejected invalid key constraints: {}", e);
+                    AgentMessage::Failure
+                }
+            },
             AgentMessage::RemoveIdentity { key_blob } => self.handle_remove_identity(&key_blob),
             AgentMessage::RemoveAllIdentities => self.handle_remove_all(),
             AgentMessage::Lock { passphrase } => self.handle_lock(&passphrase),
@@ -75,10 +81,10 @@ impl BuiltinAgent {
                 provider,
                 pin,
                 constraints,
-            } => {
-                let parsed = parse_protocol_constraints(&constraints);
-                self.handle_add_smartcard(&provider, &pin, parsed)
-            }
+            } => match parse_protocol_constraints(&constraints) {
+                Ok(parsed) => self.handle_add_smartcard(&provider, &pin, parsed),
+                Err(_) => AgentMessage::Failure,
+            },
             AgentMessage::RemoveSmartcardKey { provider, pin } => {
                 self.handle_remove_smartcard(&provider, &pin)
             }
@@ -123,18 +129,51 @@ impl BuiltinAgent {
         data: &[u8],
         flags: u32,
     ) -> AgentMessage {
+        if key_blob.is_empty()
+            || key_blob.len() > protocol::MAX_KEY_DATA_LEN
+            || data.len() > protocol::MAX_SIGN_DATA_LEN
+        {
+            warn!("Rejected oversized SSH-agent signing request");
+            return AgentMessage::Failure;
+        }
+        let supported_flags = msg::SSH_AGENT_RSA_SHA2_256 | msg::SSH_AGENT_RSA_SHA2_512;
+        if flags & !supported_flags != 0 || flags == supported_flags {
+            warn!("Rejected unsupported or ambiguous SSH-agent signing flags");
+            return AgentMessage::Failure;
+        }
+
         // Check if key exists
-        let key = match self.store.find_by_blob(key_blob) {
-            Some(k) => k,
+        let (fingerprint, algorithm, constraint_result) = match self.store.find_by_blob(key_blob) {
+            Some(key) => (
+                key.fingerprint_sha256.clone(),
+                key.algorithm,
+                constraints::can_sign(key, None, None, 0),
+            ),
             None => {
                 warn!("Sign request for unknown key");
                 return AgentMessage::Failure;
             }
         };
 
-        let fingerprint = key.fingerprint_sha256.clone();
-        let _key_id = key.id.clone();
-        let algorithm = key.algorithm;
+        if (!self.config.allowed_algorithms.is_empty()
+            && !self.config.allowed_algorithms.contains(&algorithm))
+            || (algorithm == KeyAlgorithm::Dsa && !self.config.allow_dsa)
+        {
+            warn!("Signing denied by the configured algorithm policy");
+            return AgentMessage::Failure;
+        }
+        if algorithm == KeyAlgorithm::Rsa && flags == 0 {
+            warn!("Legacy RSA-SHA1 agent signatures are disabled");
+            return AgentMessage::Failure;
+        }
+        if algorithm != KeyAlgorithm::Rsa && flags != 0 {
+            warn!("RSA signature flags supplied for a non-RSA key");
+            return AgentMessage::Failure;
+        }
+        if !constraint_result.allowed {
+            warn!("Signing denied by key constraints");
+            return AgentMessage::Failure;
+        }
         let data_hash = hex::encode(Sha256::digest(data));
 
         // Emit sign request event
@@ -144,7 +183,12 @@ impl BuiltinAgent {
         });
 
         // Check confirmation constraint
-        if self.store.needs_confirmation(key_blob) {
+        if constraint_result.needs_confirmation {
+            self.cleanup_expired_confirmations();
+            if self.pending_confirmations.len() >= MAX_PENDING_CONFIRMATIONS {
+                warn!("Pending signing confirmation limit reached");
+                return AgentMessage::Failure;
+            }
             let request_id = uuid::Uuid::new_v4().to_string();
             let pending = PendingSignRequest {
                 id: request_id.clone(),
@@ -210,21 +254,67 @@ impl BuiltinAgent {
         comment: &str,
         constraints: Vec<KeyConstraint>,
     ) -> AgentMessage {
+        if key_type.is_empty()
+            || key_type.len() > 128
+            || key_data.len() > protocol::MAX_KEY_DATA_LEN
+            || comment.len() > protocol::MAX_TEXT_LEN
+        {
+            warn!("Rejected invalid add-identity field size");
+            return AgentMessage::Failure;
+        }
         let parsed = match parse_add_identity_key(key_type, key_data, comment) {
             Ok(parsed) => parsed,
             Err(e) => {
-                debug!(
-                    "Treating add-identity payload for {} as public-only blob: {}",
-                    key_type, e
-                );
-                ParsedIdentity {
-                    public_key_blob: key_data.to_vec(),
-                    private_key: None,
-                    comment: comment.to_string(),
-                }
+                debug!("Rejected invalid add-identity payload: {}", e);
+                return AgentMessage::Failure;
             }
         };
-        let algorithm = KeyAlgorithm::from_ssh_name(key_type);
+        let Some(algorithm) = KeyAlgorithm::try_from_ssh_name(key_type) else {
+            return AgentMessage::Failure;
+        };
+        if (!self.config.allowed_algorithms.is_empty()
+            && !self.config.allowed_algorithms.contains(&algorithm))
+            || (algorithm == KeyAlgorithm::Dsa && !self.config.allow_dsa)
+        {
+            return AgentMessage::Failure;
+        }
+        if keystore::validate_text_field("Key comment", &parsed.comment, protocol::MAX_TEXT_LEN)
+            .is_err()
+        {
+            return AgentMessage::Failure;
+        }
+        let bits = match parsed.private_key.as_ref().map(PrivateKey::key_data) {
+            Some(KeypairData::Rsa(keypair)) => {
+                u32::try_from(keypair.public.n.as_bytes().len().saturating_mul(8))
+                    .unwrap_or(u32::MAX)
+            }
+            Some(KeypairData::Ed25519(_)) => 256,
+            _ => return AgentMessage::Failure,
+        };
+        if algorithm == KeyAlgorithm::Rsa && bits < self.config.min_rsa_bits {
+            warn!("Rejected RSA key below the configured size");
+            return AgentMessage::Failure;
+        }
+        let mut constraints = constraints;
+        if self.config.default_lifetime_secs > 0
+            && !constraints
+                .iter()
+                .any(|item| matches!(item, KeyConstraint::Lifetime(_)))
+        {
+            constraints.push(KeyConstraint::Lifetime(
+                self.config.default_lifetime_secs as u64,
+            ));
+        }
+        if self.config.default_confirm
+            && !constraints
+                .iter()
+                .any(|item| matches!(item, KeyConstraint::ConfirmBeforeUse))
+        {
+            constraints.push(KeyConstraint::ConfirmBeforeUse);
+        }
+        if constraints::validate_key_constraints(&constraints).is_err() {
+            return AgentMessage::Failure;
+        }
         let fingerprint = format!(
             "SHA256:{}",
             base64::Engine::encode(
@@ -237,7 +327,7 @@ impl BuiltinAgent {
             id: uuid::Uuid::new_v4().to_string(),
             comment: parsed.comment,
             algorithm,
-            bits: algorithm.default_bits(),
+            bits,
             fingerprint_sha256: fingerprint.clone(),
             fingerprint_md5: String::new(),
             public_key_blob: parsed.public_key_blob,
@@ -253,7 +343,7 @@ impl BuiltinAgent {
 
         match self.store.add_key_with_private(key, parsed.private_key) {
             Ok(id) => {
-                info!("Added key {} ({})", id, comment);
+                info!("Added key {}", id);
                 let _ = self.event_tx.send(AgentEvent::KeyAdded {
                     key_id: id,
                     fingerprint,
@@ -284,6 +374,9 @@ impl BuiltinAgent {
     }
 
     fn handle_remove_all(&mut self) -> AgentMessage {
+        if self.store.is_locked() {
+            return AgentMessage::Failure;
+        }
         let count = self.store.remove_all_keys();
         let _ = self.event_tx.send(AgentEvent::AllKeysRemoved);
         info!("Removed all {} keys", count);
@@ -343,24 +436,9 @@ impl BuiltinAgent {
     fn handle_extension(&mut self, name: &str, _data: &[u8]) -> AgentMessage {
         debug!("Extension request: {}", name);
         match name {
-            protocol::extensions::QUERY => {
-                // Return the list of supported extensions
-                let _supported = format!(
-                    "{}\n{}\n",
-                    protocol::extensions::SESSION_BIND,
-                    protocol::extensions::RESTRICT_DESTINATION,
-                );
-                AgentMessage::Success
-            }
-            protocol::extensions::SESSION_BIND => {
-                // Session binding — record the session association
-                info!("Session bind extension received");
-                AgentMessage::Success
-            }
-            protocol::extensions::RESTRICT_DESTINATION => {
-                info!("Restrict destination extension received");
-                AgentMessage::Success
-            }
+            protocol::extensions::QUERY
+            | protocol::extensions::SESSION_BIND
+            | protocol::extensions::RESTRICT_DESTINATION => AgentMessage::Failure,
             _ => {
                 warn!("Unsupported extension: {}", name);
                 AgentMessage::ExtensionFailure
@@ -413,15 +491,22 @@ impl BuiltinAgent {
             .pending_confirmations
             .remove(request_id)
             .ok_or_else(|| "No pending confirmation found".to_string())?;
+        if pending.expires_at <= chrono::Utc::now() {
+            return Err("Signing confirmation has expired".to_string());
+        }
 
         let _ = self.event_tx.send(AgentEvent::ConfirmationResponse {
             request_id: request_id.to_string(),
-            approved,
+            approved: false,
         });
 
-        if !approved {
-            info!("Confirmation denied for {}", pending.key_fingerprint);
+        if approved {
+            return Err(
+                "Approved confirmations cannot resume an already-refused agent protocol request"
+                    .to_string(),
+            );
         }
+        info!("Confirmation denied for {}", pending.key_fingerprint);
         Ok(())
     }
 
@@ -436,7 +521,7 @@ impl BuiltinAgent {
         let expired: Vec<String> = self
             .pending_confirmations
             .iter()
-            .filter(|(_, p)| p.expires_at < now)
+            .filter(|(_, p)| p.expires_at <= now)
             .map(|(id, _)| id.clone())
             .collect();
         let count = expired.len();
@@ -457,8 +542,10 @@ impl BuiltinAgent {
     }
 
     /// Update configuration at runtime.
-    pub fn update_config(&mut self, config: AgentConfig) {
+    pub fn update_config(&mut self, config: AgentConfig) -> Result<(), String> {
+        self.store.set_max_keys(config.max_loaded_keys)?;
         self.config = config;
+        Ok(())
     }
 
     // ── PKCS#11 / Hardware Key Helpers ──────────────────────────────
@@ -506,6 +593,7 @@ impl BuiltinAgent {
 
     /// Update the comment on a key.
     pub fn update_comment(&mut self, key_id: &str, comment: &str) -> Result<(), String> {
+        keystore::validate_text_field("Key comment", comment, protocol::MAX_TEXT_LEN)?;
         let key = self
             .store
             .find_by_id_mut(key_id)
@@ -520,6 +608,7 @@ impl BuiltinAgent {
         key_id: &str,
         constraints: Vec<KeyConstraint>,
     ) -> Result<(), String> {
+        constraints::validate_key_constraints(&constraints)?;
         let key = self
             .store
             .find_by_id_mut(key_id)
@@ -703,25 +792,35 @@ fn rsa_private_key_from_ssh_keypair(keypair: &RsaKeypair) -> Result<rsa::RsaPriv
 }
 
 /// Parse wire-format constraints into typed KeyConstraint values.
-fn parse_protocol_constraints(constraints: &[protocol::ProtocolConstraint]) -> Vec<KeyConstraint> {
-    constraints
+fn parse_protocol_constraints(
+    constraints: &[protocol::ProtocolConstraint],
+) -> Result<Vec<KeyConstraint>, String> {
+    let parsed: Result<Vec<KeyConstraint>, String> = constraints
         .iter()
-        .filter_map(|c| match c.constraint_type {
+        .map(|c| match c.constraint_type {
             msg::SSH_AGENT_CONSTRAIN_LIFETIME => {
-                if c.data.len() >= 4 {
+                if c.data.len() == 4 {
                     let secs = u32::from_be_bytes([c.data[0], c.data[1], c.data[2], c.data[3]]);
-                    Some(KeyConstraint::Lifetime(secs as u64))
+                    Ok(KeyConstraint::Lifetime(secs as u64))
                 } else {
-                    None
+                    Err("Invalid lifetime constraint encoding".to_string())
                 }
             }
-            msg::SSH_AGENT_CONSTRAIN_CONFIRM => Some(KeyConstraint::ConfirmBeforeUse),
-            _ => {
-                debug!("Unknown constraint type {}", c.constraint_type);
-                None
+            msg::SSH_AGENT_CONSTRAIN_CONFIRM if c.data.is_empty() => {
+                Ok(KeyConstraint::ConfirmBeforeUse)
             }
+            msg::SSH_AGENT_CONSTRAIN_CONFIRM => {
+                Err("Invalid confirmation constraint encoding".to_string())
+            }
+            _ => Err(format!(
+                "Unsupported agent constraint type {}",
+                c.constraint_type
+            )),
         })
-        .collect()
+        .collect();
+    let parsed = parsed?;
+    constraints::validate_key_constraints(&parsed)?;
+    Ok(parsed)
 }
 
 /// Hex encoding helper (no extra dep needed).

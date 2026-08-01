@@ -5,10 +5,23 @@
 //! handle automatic key expiry.
 
 use crate::types::*;
+use crate::{constraints, protocol};
 use log::{debug, info, warn};
 use sha2::{Digest, Sha256};
 use ssh_key::PrivateKey;
 use std::collections::HashMap;
+
+const MAX_KEYS: usize = 1024;
+const MAX_KEY_ID_LEN: usize = 128;
+const MAX_COMMENT_LEN: usize = 4096;
+const MAX_METADATA_ENTRIES: usize = 64;
+const MAX_METADATA_KEY_LEN: usize = 128;
+const MAX_METADATA_VALUE_LEN: usize = 4096;
+const MAX_PASSPHRASE_LEN: usize = 4096;
+const MAX_FINGERPRINT_LEN: usize = 512;
+const MAX_SOURCE_FIELD_LEN: usize = 4096;
+const MAX_CERTIFICATE_ENTRIES: usize = 256;
+const MAX_NESTED_TEXT_TOTAL: usize = 64 * 1024;
 
 /// In-memory key store with constraint tracking.
 pub struct KeyStore {
@@ -33,7 +46,7 @@ impl KeyStore {
             keys: HashMap::new(),
             blob_index: HashMap::new(),
             private_keys: HashMap::new(),
-            max_keys,
+            max_keys: max_keys.clamp(1, MAX_KEYS),
             locked: false,
             lock_passphrase: None,
         }
@@ -54,6 +67,7 @@ impl KeyStore {
         if self.locked {
             return Err("Agent is already locked".to_string());
         }
+        validate_passphrase(passphrase)?;
         self.locked = true;
         self.lock_passphrase = Some(Self::hash_passphrase(passphrase));
         info!("Key store locked");
@@ -65,18 +79,21 @@ impl KeyStore {
         if !self.locked {
             return Err("Agent is not locked".to_string());
         }
-        if let Some(ref stored_hash) = self.lock_passphrase {
-            let provided_hash = Self::hash_passphrase(passphrase);
-            // Use constant-time comparison to mitigate timing attacks
-            if stored_hash.len() != provided_hash.len()
-                || stored_hash
-                    .iter()
-                    .zip(provided_hash.iter())
-                    .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-                    != 0
-            {
-                return Err("Incorrect passphrase".to_string());
-            }
+        validate_passphrase(passphrase)?;
+        let stored_hash = self
+            .lock_passphrase
+            .as_ref()
+            .ok_or_else(|| "Agent lock state is invalid".to_string())?;
+        let provided_hash = Self::hash_passphrase(passphrase);
+        // Use constant-time comparison to mitigate timing attacks.
+        if stored_hash.len() != provided_hash.len()
+            || stored_hash
+                .iter()
+                .zip(provided_hash.iter())
+                .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                != 0
+        {
+            return Err("Incorrect passphrase".to_string());
         }
         self.locked = false;
         self.lock_passphrase = None;
@@ -101,14 +118,18 @@ impl KeyStore {
         if self.max_keys > 0 && self.keys.len() >= self.max_keys {
             return Err(format!("Maximum key limit reached ({})", self.max_keys));
         }
+        validate_agent_key(&key)?;
 
         // Check for duplicate by blob
         if self.blob_index.contains_key(&key.public_key_blob) {
             return Err("Key already loaded".to_string());
         }
+        if self.keys.contains_key(&key.id) {
+            return Err("Key identifier already loaded".to_string());
+        }
 
         let id = key.id.clone();
-        debug!("Adding key {} ({})", id, key.comment);
+        debug!("Adding key {}", id);
 
         self.blob_index
             .insert(key.public_key_blob.clone(), id.clone());
@@ -216,6 +237,9 @@ impl KeyStore {
 
     /// Get all keys.
     pub fn all_keys(&self) -> Vec<&AgentKey> {
+        if self.locked {
+            return Vec::new();
+        }
         self.keys.values().collect()
     }
 
@@ -234,16 +258,20 @@ impl KeyStore {
         let key = self
             .find_by_blob_mut(blob)
             .ok_or_else(|| "Key not found for sign".to_string())?;
-        key.sign_count += 1;
-        key.last_used_at = Some(chrono::Utc::now());
 
-        // Check max-signatures constraint
+        // Check before incrementing so a limit of one permits exactly one
+        // successful signing attempt.
         for c in &key.constraints {
             if c.is_max_signatures_reached(key.sign_count) {
                 warn!("Key {} reached max signatures ({})", key.id, key.sign_count);
                 return Ok(false);
             }
         }
+        key.sign_count = key
+            .sign_count
+            .checked_add(1)
+            .ok_or_else(|| "Signature counter overflow".to_string())?;
+        key.last_used_at = Some(chrono::Utc::now());
         Ok(true)
     }
 
@@ -271,7 +299,7 @@ impl KeyStore {
             if let Some(key) = self.keys.remove(id) {
                 self.blob_index.remove(&key.public_key_blob);
                 self.private_keys.remove(&key.public_key_blob);
-                info!("Expired key {} ({})", id, key.comment);
+                info!("Expired key {}", id);
             }
         }
 
@@ -306,6 +334,149 @@ impl KeyStore {
         }
         false
     }
+
+    /// Change the key limit without permitting an already-loaded store to
+    /// exceed the new bound.
+    pub fn set_max_keys(&mut self, max_keys: usize) -> Result<(), String> {
+        if max_keys == 0 || max_keys > MAX_KEYS {
+            return Err("Invalid maximum loaded-key count".to_string());
+        }
+        if self.keys.len() > max_keys {
+            return Err("New key limit is below the number of loaded keys".to_string());
+        }
+        self.max_keys = max_keys;
+        Ok(())
+    }
+}
+
+pub(crate) fn validate_text_field(label: &str, value: &str, maximum: usize) -> Result<(), String> {
+    if value.len() > maximum || value.chars().any(|ch| ch == '\0') {
+        Err(format!("{} exceeds the supported limit", label))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_passphrase(passphrase: &str) -> Result<(), String> {
+    if passphrase.is_empty() {
+        return Err("Agent passphrase cannot be empty".to_string());
+    }
+    validate_text_field("Agent passphrase", passphrase, MAX_PASSPHRASE_LEN)
+}
+
+fn validate_agent_key(key: &AgentKey) -> Result<(), String> {
+    if key.id.is_empty() {
+        return Err("Key identifier cannot be empty".to_string());
+    }
+    validate_text_field("Key identifier", &key.id, MAX_KEY_ID_LEN)?;
+    validate_text_field("Key comment", &key.comment, MAX_COMMENT_LEN)?;
+    validate_text_field(
+        "SHA-256 fingerprint",
+        &key.fingerprint_sha256,
+        MAX_FINGERPRINT_LEN,
+    )?;
+    validate_text_field("MD5 fingerprint", &key.fingerprint_md5, MAX_FINGERPRINT_LEN)?;
+    validate_text_field(
+        "OpenSSH public key",
+        &key.public_key_openssh,
+        protocol::MAX_KEY_DATA_LEN,
+    )?;
+    if key.public_key_blob.is_empty() || key.public_key_blob.len() > protocol::MAX_KEY_DATA_LEN {
+        return Err("Invalid public key blob size".to_string());
+    }
+    if key.metadata.len() > MAX_METADATA_ENTRIES
+        || key.metadata.iter().any(|(name, value)| {
+            name.len() > MAX_METADATA_KEY_LEN
+                || value.len() > MAX_METADATA_VALUE_LEN
+                || name.contains('\0')
+                || value.contains('\0')
+        })
+        || map_text_size(&key.metadata) > MAX_NESTED_TEXT_TOTAL
+    {
+        return Err("Key metadata exceeds the supported limits".to_string());
+    }
+    validate_key_source(&key.source)?;
+    if let Some(certificate) = &key.certificate {
+        validate_certificate(certificate)?;
+    }
+    constraints::validate_key_constraints(&key.constraints)
+}
+
+fn validate_key_source(source: &KeySource) -> Result<(), String> {
+    let value = match source {
+        KeySource::File { path } => Some(path.as_str()),
+        KeySource::Pkcs11 { provider, .. } => Some(provider.as_str()),
+        KeySource::SecurityKey { device } => Some(device.as_str()),
+        KeySource::Forwarded { session_id } => Some(session_id.as_str()),
+        KeySource::Generated | KeySource::SystemAgent | KeySource::Imported => None,
+    };
+    if let Some(value) = value {
+        if value.is_empty() {
+            return Err("Key source field cannot be empty".to_string());
+        }
+        validate_text_field("Key source field", value, MAX_SOURCE_FIELD_LEN)?;
+    }
+    Ok(())
+}
+
+fn validate_certificate(certificate: &CertificateInfo) -> Result<(), String> {
+    validate_text_field(
+        "Certificate key identifier",
+        &certificate.key_id,
+        MAX_COMMENT_LEN,
+    )?;
+    validate_text_field(
+        "Certificate CA fingerprint",
+        &certificate.ca_fingerprint,
+        MAX_FINGERPRINT_LEN,
+    )?;
+    if certificate.valid_before < certificate.valid_after
+        || certificate.valid_principals.len() > MAX_CERTIFICATE_ENTRIES
+        || certificate.critical_options.len() > MAX_CERTIFICATE_ENTRIES
+        || certificate.extensions.len() > MAX_CERTIFICATE_ENTRIES
+        || certificate
+            .valid_principals
+            .iter()
+            .any(|value| value.len() > MAX_COMMENT_LEN || value.contains('\0'))
+        || certificate.critical_options.iter().any(|(name, value)| {
+            name.len() > MAX_METADATA_KEY_LEN
+                || value.len() > MAX_METADATA_VALUE_LEN
+                || name.contains('\0')
+                || value.contains('\0')
+        })
+        || certificate.extensions.iter().any(|(name, value)| {
+            name.len() > MAX_METADATA_KEY_LEN
+                || value.len() > MAX_METADATA_VALUE_LEN
+                || name.contains('\0')
+                || value.contains('\0')
+        })
+    {
+        return Err("SSH certificate metadata exceeds the supported limits".to_string());
+    }
+
+    let nested_size = certificate
+        .key_id
+        .len()
+        .saturating_add(certificate.ca_fingerprint.len())
+        .saturating_add(
+            certificate
+                .valid_principals
+                .iter()
+                .map(String::len)
+                .sum::<usize>(),
+        )
+        .saturating_add(map_text_size(&certificate.critical_options))
+        .saturating_add(map_text_size(&certificate.extensions));
+    if nested_size > MAX_NESTED_TEXT_TOTAL {
+        return Err("SSH certificate metadata exceeds the aggregate limit".to_string());
+    }
+    Ok(())
+}
+
+fn map_text_size(map: &HashMap<String, String>) -> usize {
+    map.iter().fold(0usize, |total, (name, value)| {
+        total.saturating_add(name.len()).saturating_add(value.len())
+    })
 }
 
 #[cfg(test)]

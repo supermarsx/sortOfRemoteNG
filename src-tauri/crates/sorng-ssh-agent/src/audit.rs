@@ -10,6 +10,8 @@ use std::path::PathBuf;
 
 /// Maximum audit entries kept in memory (ring buffer).
 const DEFAULT_MAX_IN_MEMORY: usize = 10_000;
+const MAX_AUDIT_TEXT_LEN: usize = 2048;
+const MAX_AUDIT_EXPORT_LEN: usize = 4 * 1024 * 1024;
 
 /// Audit logger for SSH agent operations.
 pub struct AuditLogger {
@@ -87,11 +89,11 @@ impl AuditLogger {
         let entry = AuditEntry {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
-            action: action.to_string(),
+            action: bounded_audit_text(action),
             key_fingerprint,
             client_info: None,
             success,
-            details: details.to_string(),
+            details: bounded_audit_text(details),
         };
 
         self.append(entry);
@@ -99,20 +101,12 @@ impl AuditLogger {
 
     /// Append an entry to the ring buffer and optionally persist.
     fn append(&mut self, entry: AuditEntry) {
-        debug!("Audit: {} — {}", entry.action, entry.details);
+        debug!("Audit event recorded");
 
-        // Persist to file if configured
-        if let Some(ref path) = self.log_file {
-            if let Ok(line) = serde_json::to_string(&entry) {
-                use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                {
-                    let _ = writeln!(f, "{}", line);
-                }
-            }
+        // Persistent audit output is deliberately disabled until owner-only
+        // ACLs and no-follow file opening are implemented on every platform.
+        if self.log_file.is_some() {
+            log::warn!("Persistent SSH-agent audit output is unavailable");
         }
 
         // Add to ring buffer
@@ -120,7 +114,7 @@ impl AuditLogger {
             self.entries.pop_front();
         }
         self.entries.push_back(entry);
-        self.total_logged += 1;
+        self.total_logged = self.total_logged.saturating_add(1);
     }
 
     /// Get all entries in the ring buffer.
@@ -182,24 +176,30 @@ impl AuditLogger {
     /// Export all entries as JSON.
     pub fn export_json(&self) -> Result<String, String> {
         let entries: Vec<&AuditEntry> = self.entries.iter().collect();
-        serde_json::to_string_pretty(&entries)
-            .map_err(|e| format!("Failed to serialize audit log: {}", e))
+        let json = serde_json::to_string(&entries)
+            .map_err(|_| "Failed to serialize audit log".to_string())?;
+        if json.len() > MAX_AUDIT_EXPORT_LEN {
+            return Err("Audit export exceeds the configured limit".to_string());
+        }
+        Ok(json)
     }
 
     /// Set the persistent log file.
-    pub fn set_log_file(&mut self, path: Option<PathBuf>) {
-        self.log_file = path;
+    pub fn set_log_file(&mut self, path: Option<PathBuf>) -> Result<(), String> {
+        if path.is_some() {
+            return Err(
+                "Persistent audit files are disabled until safe file creation is available"
+                    .to_string(),
+            );
+        }
+        self.log_file = None;
+        Ok(())
     }
 
     /// Rotate the log file (rename current → .old, start fresh).
     pub fn rotate_log(&mut self) -> Result<(), String> {
-        if let Some(ref path) = self.log_file {
-            let old_path = path.with_extension("log.old");
-            if path.exists() {
-                std::fs::rename(path, &old_path)
-                    .map_err(|e| format!("Failed to rotate log: {}", e))?;
-            }
-            info!("Audit log rotated");
+        if self.log_file.is_some() {
+            return Err("Persistent audit files are not enabled".to_string());
         }
         Ok(())
     }
@@ -281,16 +281,27 @@ fn event_to_audit(event: &AgentEvent) -> (String, String) {
                 if *approved { "approved" } else { "denied" }
             ),
         ),
-        AgentEvent::SystemAgentEvent { event } => (
+        AgentEvent::SystemAgentEvent { .. } => (
             "system_agent_event".to_string(),
-            format!("System agent: {}", event),
+            "System agent state changed".to_string(),
         ),
-        AgentEvent::Pkcs11Event { provider, event } => (
+        AgentEvent::Pkcs11Event { event, .. } => (
             "pkcs11_event".to_string(),
-            format!("PKCS#11 {} : {}", provider, event),
+            format!("PKCS#11 event: {}", bounded_audit_text(event)),
         ),
-        AgentEvent::Error { message } => ("error".to_string(), format!("Error: {}", message)),
+        AgentEvent::Error { .. } => (
+            "error".to_string(),
+            "SSH-agent operation failed".to_string(),
+        ),
     }
+}
+
+fn bounded_audit_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .take(MAX_AUDIT_TEXT_LEN)
+        .collect()
 }
 
 /// Extract a key fingerprint from an event (if any).

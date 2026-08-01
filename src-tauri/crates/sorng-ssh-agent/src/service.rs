@@ -9,10 +9,14 @@ use crate::audit::AuditLogger;
 use crate::bridge::SystemAgentBridge;
 use crate::forwarding::ForwardingManager;
 use crate::types::*;
-use log::{info, warn};
+use log::info;
 use sha2::Digest;
-use std::path::PathBuf;
 use tokio::sync::broadcast;
+
+const MAX_CONFIG_KEYS: usize = 1024;
+const MAX_CONFIG_PATHS: usize = 64;
+const MAX_CONFIG_PATH_LEN: usize = 4096;
+const MAX_FORWARDING_DEPTH: u32 = 16;
 
 /// The main SSH agent service.
 pub struct SshAgentService {
@@ -50,23 +54,19 @@ impl SshAgentService {
     pub fn with_config(config: AgentConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
 
-        let system_bridge = SystemAgentBridge::new(
-            config.auto_connect_system_agent,
-            config.system_agent_cache_ttl,
-        );
+        let system_bridge = if let Some(path) = config.system_agent_socket.as_deref() {
+            SystemAgentBridge::with_socket(path, config.system_agent_cache_ttl)
+        } else {
+            SystemAgentBridge::new(
+                config.system_agent_enabled && config.auto_connect_system_agent,
+                config.system_agent_cache_ttl,
+            )
+        };
 
         let forwarding =
             ForwardingManager::new(config.max_forwarding_depth, config.allow_forwarding);
 
-        let audit = AuditLogger::new(
-            config.audit_enabled,
-            config.audit_max_entries,
-            if config.audit_file.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(&config.audit_file))
-            },
-        );
+        let audit = AuditLogger::new(config.audit_enabled, config.audit_max_entries, None);
 
         let agent = BuiltinAgent::new(config.clone(), event_tx.clone());
 
@@ -87,21 +87,45 @@ impl SshAgentService {
         if self.status.running {
             return Err("Agent is already running".to_string());
         }
+        validate_config(&self.config)?;
+        if !self.config.enabled {
+            return Err("SSH agent is disabled by configuration".to_string());
+        }
+        if self.config.start_locked {
+            return Err(
+                "start_locked cannot be honoured without a securely supplied unlock secret"
+                    .to_string(),
+            );
+        }
+        if self.config.socket_path.is_some() || self.config.tcp_listen {
+            return Err(
+                "SSH-agent listener startup is not wired to the service; refusing simulated state"
+                    .to_string(),
+            );
+        }
+        if self.config.auto_load_default_keys || !self.config.auto_load_paths.is_empty() {
+            return Err("Automatic key loading is not implemented safely".to_string());
+        }
+        if !self.config.storage_dir.is_empty() {
+            return Err("Persistent key storage is not implemented safely".to_string());
+        }
+        if !self.config.audit_file.is_empty() {
+            return Err("Persistent audit files are not implemented safely".to_string());
+        }
+        if self.config.allow_forwarding {
+            return Err("Agent forwarding transport is not implemented safely".to_string());
+        }
+        if !self.config.pkcs11_providers.is_empty() {
+            return Err("PKCS#11 provider loading is not implemented".to_string());
+        }
 
         info!("Starting SSH agent service");
 
         // Connect to system agent if configured
-        if self.config.auto_connect_system_agent {
-            match self.system_bridge.connect().await {
-                Ok(()) => {
-                    self.status.system_agent_connected = true;
-                    info!("Connected to system SSH agent");
-                }
-                Err(e) => {
-                    warn!("Could not connect to system agent: {}", e);
-                    self.status.system_agent_connected = false;
-                }
-            }
+        if self.config.system_agent_enabled && self.config.auto_connect_system_agent {
+            self.system_bridge.connect().await?;
+            self.status.system_agent_connected = true;
+            info!("Connected to system SSH agent");
         }
 
         // Set up shutdown channel
@@ -110,7 +134,8 @@ impl SshAgentService {
 
         self.status.running = true;
         self.status.started_at = Some(chrono::Utc::now());
-        self.status.socket_path = self.config.socket_path.clone();
+        self.status.socket_path = None;
+        self.status.locked = self.agent.store.is_locked();
 
         let _ = self.event_tx.send(AgentEvent::Started);
         self.audit.log_event(&AgentEvent::Started);
@@ -141,6 +166,8 @@ impl SshAgentService {
 
         self.status.running = false;
         self.status.system_agent_connected = false;
+        self.status.socket_path = None;
+        self.status.started_at = None;
 
         let _ = self.event_tx.send(AgentEvent::Stopped);
         self.audit.log_event(&AgentEvent::Stopped);
@@ -168,17 +195,27 @@ impl SshAgentService {
     }
 
     /// Update the agent configuration.
-    pub fn update_config(&mut self, config: AgentConfig) {
+    pub fn update_config(&mut self, config: AgentConfig) -> Result<(), String> {
+        if self.status.running {
+            return Err("Stop the SSH agent before updating its configuration".to_string());
+        }
+        validate_config(&config)?;
+        self.agent.update_config(config.clone())?;
         self.forwarding.set_max_depth(config.max_forwarding_depth);
         self.forwarding.set_enabled(config.allow_forwarding);
         self.audit.set_enabled(config.audit_enabled);
-        if !config.audit_file.is_empty() {
-            self.audit
-                .set_log_file(Some(PathBuf::from(&config.audit_file)));
-        }
-        self.agent.update_config(config.clone());
+        self.audit.set_log_file(None)?;
+        self.system_bridge = if let Some(path) = config.system_agent_socket.as_deref() {
+            SystemAgentBridge::with_socket(path, config.system_agent_cache_ttl)
+        } else {
+            SystemAgentBridge::new(
+                config.system_agent_enabled && config.auto_connect_system_agent,
+                config.system_agent_cache_ttl,
+            )
+        };
         self.config = config;
         info!("Agent configuration updated");
+        Ok(())
     }
 
     /// Subscribe to agent events.
@@ -190,17 +227,31 @@ impl SshAgentService {
 
     /// List all keys (built-in + system agent).
     pub async fn list_all_keys(&mut self) -> Vec<AgentKey> {
+        if self.status.locked {
+            return Vec::new();
+        }
         let mut keys: Vec<AgentKey> = self.agent.store.all_keys().into_iter().cloned().collect();
 
         // Merge system agent keys if connected
-        if self.status.system_agent_connected {
-            if self.system_bridge.is_cache_stale() {
-                let _ = self.system_bridge.refresh_identities().await;
+        if self.status.system_agent_connected && self.config.merge_system_keys {
+            if self.system_bridge.is_cache_stale()
+                && self.system_bridge.refresh_identities().await.is_err()
+            {
+                self.system_bridge.disconnect();
+                self.status.system_agent_connected = false;
             }
-            for id in self.system_bridge.cached_identities() {
+            for id in if self.status.system_agent_connected {
+                self.system_bridge.cached_identities()
+            } else {
+                &[]
+            } {
                 // Check if we already have this key
                 let already_have = keys.iter().any(|k| k.public_key_blob == id.key_blob);
                 if !already_have {
+                    let algorithm = protocol_key_algorithm(&id.key_blob);
+                    let Some(algorithm) = algorithm else {
+                        continue;
+                    };
                     let fingerprint = format!(
                         "SHA256:{}",
                         base64::Engine::encode(
@@ -209,10 +260,10 @@ impl SshAgentService {
                         )
                     );
                     keys.push(AgentKey {
-                        id: uuid::Uuid::new_v4().to_string(),
+                        id: format!("system:{}", fingerprint),
                         comment: id.comment.clone(),
-                        algorithm: KeyAlgorithm::Ed25519, // Best guess; real impl parses blob
-                        bits: 0,
+                        algorithm,
+                        bits: algorithm.default_bits(),
                         fingerprint_sha256: fingerprint,
                         fingerprint_md5: String::new(),
                         public_key_blob: id.key_blob.clone(),
@@ -229,7 +280,7 @@ impl SshAgentService {
             }
         }
 
-        self.status.loaded_keys = keys.len() as u32;
+        self.status.loaded_keys = u32::try_from(keys.len()).unwrap_or(u32::MAX);
         keys
     }
 
@@ -284,19 +335,8 @@ impl SshAgentService {
         remote_user: &str,
         depth: u32,
     ) -> Result<(), String> {
-        self.forwarding
-            .start_session(session_id, remote_host, remote_user, depth, None)?;
-        self.status.forwarding_sessions = self.forwarding.active_session_count() as u32;
-
-        let _ = self.event_tx.send(AgentEvent::ForwardingStarted {
-            session_id: session_id.to_string(),
-            remote_host: remote_host.to_string(),
-        });
-        self.audit.log_event(&AgentEvent::ForwardingStarted {
-            session_id: session_id.to_string(),
-            remote_host: remote_host.to_string(),
-        });
-        Ok(())
+        let _ = (session_id, remote_host, remote_user, depth);
+        Err("Agent forwarding transport is not implemented; refusing simulated state".to_string())
     }
 
     /// Stop a forwarding session.
@@ -317,6 +357,12 @@ impl SshAgentService {
 
     /// Connect to the system SSH agent.
     pub async fn connect_system_agent(&mut self) -> Result<(), String> {
+        if !self.status.running {
+            return Err("Start the SSH agent before connecting its system bridge".to_string());
+        }
+        if !self.config.system_agent_enabled {
+            return Err("System-agent bridging is disabled".to_string());
+        }
         self.system_bridge.connect().await?;
         self.status.system_agent_connected = true;
         Ok(())
@@ -329,8 +375,14 @@ impl SshAgentService {
     }
 
     /// Set the system agent socket path.
-    pub fn set_system_agent_path(&mut self, path: &str) {
-        self.system_bridge.set_socket_path(path);
+    pub fn set_system_agent_path(&mut self, path: &str) -> Result<(), String> {
+        if self.status.running {
+            return Err("Stop the SSH agent before changing its system socket".to_string());
+        }
+        validate_path("System-agent socket path", path)?;
+        self.system_bridge.set_socket_path(path)?;
+        self.config.system_agent_socket = Some(path.to_string());
+        Ok(())
     }
 
     // ── Audit ───────────────────────────────────────────────────────
@@ -370,47 +422,14 @@ impl SshAgentService {
         &mut self,
         provider_path: &str,
     ) -> Result<Vec<Pkcs11SlotInfo>, String> {
-        log::info!("Loading PKCS#11 provider: {}", provider_path);
-        self.audit.log_event(&AgentEvent::Pkcs11Event {
-            provider: provider_path.to_string(),
-            event: "provider_loaded".to_string(),
-        });
-        if !std::path::Path::new(provider_path).exists() {
-            return Err(format!(
-                "PKCS#11 provider library not found: {}",
-                provider_path
-            ));
-        }
-        if self
-            .config
-            .pkcs11_providers
-            .contains(&provider_path.to_string())
-        {
-            return Err(format!("Provider already loaded: {}", provider_path));
-        }
-        self.config.pkcs11_providers.push(provider_path.to_string());
-        // In production this would dlopen the provider and enumerate slots
-        Ok(vec![Pkcs11SlotInfo {
-            slot_id: 0,
-            token_label: format!("Token from {}", provider_path),
-            manufacturer: "Unknown".to_string(),
-            token_present: true,
-            key_count: 0,
-        }])
+        let _ = provider_path;
+        Err("PKCS#11 provider loading is not implemented".to_string())
     }
 
     /// Unload a PKCS#11 provider and remove keys that came from it.
     pub fn unload_pkcs11_provider(&mut self, provider_path: &str) -> Result<(), String> {
-        log::info!("Unloading PKCS#11 provider: {}", provider_path);
-        self.audit.log_event(&AgentEvent::Pkcs11Event {
-            provider: provider_path.to_string(),
-            event: "provider_unloaded".to_string(),
-        });
-        self.config.pkcs11_providers.retain(|p| p != provider_path);
-        // Remove keys that came from this provider
-        self.agent
-            .remove_keys_by_source(&format!("pkcs11:{}", provider_path));
-        Ok(())
+        let _ = provider_path;
+        Err("PKCS#11 provider unloading is not implemented".to_string())
     }
 
     /// List all loaded PKCS#11 providers with their status.
@@ -420,32 +439,18 @@ impl SshAgentService {
             .iter()
             .map(|path| Pkcs11ProviderStatus {
                 library_path: path.clone(),
-                loaded: true,
-                key_count: self.agent.count_keys_by_source(&format!("pkcs11:{}", path)),
+                loaded: false,
+                key_count: 0,
                 slots: vec![],
-                error: None,
+                error: Some("PKCS#11 integration is not implemented".to_string()),
             })
             .collect()
     }
 
     /// Get slot information for a loaded PKCS#11 provider.
     pub fn get_pkcs11_slots(&self, provider_path: &str) -> Result<Vec<Pkcs11SlotInfo>, String> {
-        if !self
-            .config
-            .pkcs11_providers
-            .contains(&provider_path.to_string())
-        {
-            return Err(format!("Provider not loaded: {}", provider_path));
-        }
-        Ok(vec![Pkcs11SlotInfo {
-            slot_id: 0,
-            token_label: format!("Token from {}", provider_path),
-            manufacturer: "Unknown".to_string(),
-            token_present: true,
-            key_count: self
-                .agent
-                .count_keys_by_source(&format!("pkcs11:{}", provider_path)),
-        }])
+        let _ = provider_path;
+        Err("PKCS#11 slot enumeration is not implemented".to_string())
     }
 
     /// Add keys from a smart card / PKCS#11 token.
@@ -454,27 +459,14 @@ impl SshAgentService {
         provider: &str,
         pin: Option<&str>,
     ) -> Result<usize, String> {
-        log::info!("Adding smart card keys from provider: {}", provider);
-        self.audit.log_event(&AgentEvent::Pkcs11Event {
-            provider: provider.to_string(),
-            event: "smartcard_add".to_string(),
-        });
-        let _ = pin; // Would be used to authenticate to the token
-                     // In production, this would enumerate keys from the smart card via PKCS#11
-        Ok(0)
+        let _ = (provider, pin);
+        Err("Smart-card key loading is not implemented".to_string())
     }
 
     /// Remove keys that came from a smart card provider.
     pub fn remove_smartcard_key(&mut self, provider: &str) -> Result<usize, String> {
-        log::info!("Removing smart card keys from provider: {}", provider);
-        self.audit.log_event(&AgentEvent::Pkcs11Event {
-            provider: provider.to_string(),
-            event: "smartcard_remove".to_string(),
-        });
-        let count = self
-            .agent
-            .remove_keys_by_source(&format!("pkcs11:{}", provider));
-        Ok(count)
+        let _ = provider;
+        Err("Smart-card provider operations are not implemented".to_string())
     }
 
     /// List keys that originate from a FIDO2 / security key.
@@ -503,22 +495,16 @@ impl SshAgentService {
         verify_required: bool,
         resident: bool,
     ) -> Result<String, String> {
-        let provider = sk_provider.unwrap_or("internal");
-        let app = application.unwrap_or("ssh:");
-        log::info!(
-            "Adding security key: provider={}, app={}, resident={}",
-            provider,
-            app,
-            resident
+        let _ = (
+            sk_provider,
+            application,
+            user,
+            pin_required,
+            touch_required,
+            verify_required,
+            resident,
         );
-        self.audit.log_event(&AgentEvent::KeyAdded {
-            key_id: "pending".into(),
-            fingerprint: String::new(),
-        });
-        let _ = (user, pin_required, touch_required, verify_required);
-        // In production: invoke ssh-keygen -t ed25519-sk or ecdsa-sk
-        let key_id = uuid::Uuid::new_v4().to_string();
-        Ok(key_id)
+        Err("FIDO2 security-key enrollment is not implemented".to_string())
     }
 
     /// Return all pending sign-request confirmations.
@@ -528,16 +514,27 @@ impl SshAgentService {
 
     /// Approve or deny a pending sign request.
     pub fn confirm_sign_request(&mut self, request_id: &str, approved: bool) -> Result<(), String> {
-        log::info!(
-            "Confirming sign request {}: approved={}",
-            request_id,
-            approved
-        );
-        self.audit.log_event(&AgentEvent::ConfirmationResponse {
-            request_id: request_id.to_string(),
-            approved,
-        });
-        self.agent.resolve_confirmation(request_id, approved)
+        if request_id.is_empty()
+            || request_id.len() > 128
+            || request_id.chars().any(char::is_control)
+        {
+            return Err("Invalid signing confirmation identifier".to_string());
+        }
+
+        let result = self.agent.resolve_confirmation(request_id, approved);
+        match &result {
+            Ok(()) => self.audit.log_event(&AgentEvent::ConfirmationResponse {
+                request_id: request_id.to_string(),
+                approved: false,
+            }),
+            Err(_) => self.audit.log_custom(
+                "confirmation_response_rejected",
+                None,
+                false,
+                "Signing confirmation response was rejected",
+            ),
+        }
+        result
     }
 
     /// Get detailed information about a specific key.
@@ -568,21 +565,89 @@ impl SshAgentService {
             .get_key(key_id)
             .ok_or_else(|| format!("Key not found: {}", key_id))?;
         match format {
-            "openssh" => Ok(key.public_key_openssh),
-            "pem" => {
-                // Encode the public key blob as PEM
-                let b64 = base64::Engine::encode(
+            "openssh" if !key.public_key_openssh.is_empty() => Ok(key.public_key_openssh),
+            "openssh" => Ok(format!(
+                "{} {} {}",
+                key.algorithm.ssh_name(),
+                base64::Engine::encode(
                     &base64::engine::general_purpose::STANDARD,
                     key.public_key_blob.as_slice(),
-                );
-                Ok(format!(
-                    "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
-                    b64
-                ))
-            }
+                ),
+                key.comment
+            )),
+            "pem" => Err("PEM/SPKI public-key export is not implemented".to_string()),
             _ => Err(format!("Unsupported format: {}", format)),
         }
     }
+}
+
+fn validate_config(config: &AgentConfig) -> Result<(), String> {
+    if config.name.is_empty()
+        || config.name.len() > 128
+        || config.name.chars().any(char::is_control)
+    {
+        return Err("Invalid SSH-agent instance name".to_string());
+    }
+    if config.max_keys == 0
+        || config.max_keys > MAX_CONFIG_KEYS
+        || config.max_loaded_keys == 0
+        || config.max_loaded_keys > MAX_CONFIG_KEYS
+    {
+        return Err("Invalid SSH-agent key limit".to_string());
+    }
+    if config.max_forwarding_depth > MAX_FORWARDING_DEPTH {
+        return Err("Invalid maximum forwarding depth".to_string());
+    }
+    if config.audit_max_entries == 0
+        || config.audit_max_entries > 10_000
+        || config.max_audit_events == 0
+        || config.max_audit_events > 10_000
+    {
+        return Err("Invalid SSH-agent audit limit".to_string());
+    }
+    if config.system_agent_cache_ttl > 86_400 {
+        return Err("System-agent cache TTL exceeds the supported limit".to_string());
+    }
+    if config.auto_load_paths.len() > MAX_CONFIG_PATHS
+        || config.pkcs11_providers.len() > MAX_CONFIG_PATHS
+    {
+        return Err("Too many configured SSH-agent paths".to_string());
+    }
+    for path in config
+        .auto_load_paths
+        .iter()
+        .chain(config.pkcs11_providers.iter())
+    {
+        validate_path("SSH-agent path", path)?;
+    }
+    if let Some(path) = config.socket_path.as_deref() {
+        validate_path("SSH-agent socket path", path)?;
+    }
+    if let Some(path) = config.system_agent_socket.as_deref() {
+        validate_path("System-agent socket path", path)?;
+    }
+    validate_path("SSH-agent storage directory", &config.storage_dir)?;
+    validate_path("SSH-agent audit file", &config.audit_file)?;
+    if config.auto_connect_system_agent && !config.system_agent_enabled {
+        return Err("System-agent auto-connect requires the bridge to be enabled".to_string());
+    }
+    if config.merge_system_keys && !config.system_agent_enabled {
+        return Err("System-agent key merging requires the bridge to be enabled".to_string());
+    }
+    Ok(())
+}
+
+fn validate_path(label: &str, path: &str) -> Result<(), String> {
+    if path.len() > MAX_CONFIG_PATH_LEN || path.contains('\0') {
+        Err(format!("{} exceeds the supported limit", label))
+    } else {
+        Ok(())
+    }
+}
+
+fn protocol_key_algorithm(blob: &[u8]) -> Option<KeyAlgorithm> {
+    let (name, _) = crate::protocol::read_utf8_string(blob, 0).ok()?;
+    KeyAlgorithm::try_from_ssh_name(&name)
 }
 
 #[cfg(test)]
@@ -639,12 +704,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_forwarding() {
+    async fn test_forwarding_is_unavailable_without_a_transport() {
         let mut svc = SshAgentService::new();
         svc.start().await.unwrap();
-        svc.start_forwarding("s1", "host.com", "user", 1).unwrap();
-        assert_eq!(svc.status().forwarding_sessions, 1);
-        svc.stop_forwarding("s1").unwrap();
+        assert!(svc.start_forwarding("s1", "host.com", "user", 1).is_err());
         assert_eq!(svc.status().forwarding_sessions, 0);
     }
 
@@ -653,7 +716,7 @@ mod tests {
         let mut svc = SshAgentService::new();
         let mut config = svc.config().clone();
         config.max_forwarding_depth = 10;
-        svc.update_config(config);
+        svc.update_config(config).unwrap();
         assert_eq!(svc.config().max_forwarding_depth, 10);
     }
 }

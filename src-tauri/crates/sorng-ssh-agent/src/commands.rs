@@ -52,8 +52,7 @@ pub async fn ssh_agent_update_config(
     state: State<'_, SshAgentServiceState>,
     config: AgentConfig,
 ) -> CmdResult<()> {
-    state.lock().await.update_config(config);
-    Ok(())
+    state.lock().await.update_config(config)
 }
 
 // ── Key Management ──────────────────────────────────────────────────
@@ -130,8 +129,7 @@ pub async fn ssh_agent_set_system_path(
     state: State<'_, SshAgentServiceState>,
     path: String,
 ) -> CmdResult<()> {
-    state.lock().await.set_system_agent_path(&path);
-    Ok(())
+    state.lock().await.set_system_agent_path(&path)
 }
 
 /// Discover the system agent socket path.

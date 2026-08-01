@@ -76,18 +76,19 @@ impl KeyAlgorithm {
         }
     }
 
-    /// Parse from an SSH algorithm name string.
-    pub fn from_ssh_name(name: &str) -> Self {
+    /// Parse a recognised SSH algorithm name without silently changing
+    /// unknown algorithms into a different key type.
+    pub fn try_from_ssh_name(name: &str) -> Option<Self> {
         match name {
-            "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => Self::Rsa,
-            "ssh-ed25519" => Self::Ed25519,
-            "ecdsa-sha2-nistp256" => Self::EcdsaP256,
-            "ecdsa-sha2-nistp384" => Self::EcdsaP384,
-            "ecdsa-sha2-nistp521" => Self::EcdsaP521,
-            "sk-ssh-ed25519@openssh.com" => Self::SkEd25519,
-            "sk-ecdsa-sha2-nistp256@openssh.com" => Self::SkEcdsaP256,
-            "ssh-dss" => Self::Dsa,
-            _ => Self::Ed25519,
+            "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => Some(Self::Rsa),
+            "ssh-ed25519" => Some(Self::Ed25519),
+            "ecdsa-sha2-nistp256" => Some(Self::EcdsaP256),
+            "ecdsa-sha2-nistp384" => Some(Self::EcdsaP384),
+            "ecdsa-sha2-nistp521" => Some(Self::EcdsaP521),
+            "sk-ssh-ed25519@openssh.com" => Some(Self::SkEd25519),
+            "sk-ecdsa-sha2-nistp256@openssh.com" => Some(Self::SkEcdsaP256),
+            "ssh-dss" => Some(Self::Dsa),
+            _ => None,
         }
     }
 }
@@ -227,8 +228,14 @@ impl KeyConstraint {
     /// Check if a lifetime constraint has expired.
     pub fn is_lifetime_expired(&self, added_at: DateTime<Utc>) -> bool {
         if let Self::Lifetime(seconds) = self {
-            let expiry = added_at + chrono::Duration::seconds(*seconds as i64);
-            Utc::now() > expiry
+            let Ok(seconds) = i64::try_from(*seconds) else {
+                return true;
+            };
+            let Some(expiry) = added_at.checked_add_signed(chrono::Duration::seconds(seconds))
+            else {
+                return true;
+            };
+            Utc::now() >= expiry
         } else {
             false
         }
@@ -269,18 +276,18 @@ pub struct AgentConfig {
 
     // ── System agent ──
     /// Whether to bridge to the system's native SSH agent.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub system_agent_enabled: bool,
     /// Custom system agent socket path (None = auto-detect).
     #[serde(default)]
     pub system_agent_socket: Option<String>,
     /// Whether to merge system agent keys with built-in keys.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub merge_system_keys: bool,
 
     // ── Key management ──
     /// Auto-load keys from ~/.ssh on startup.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub auto_load_default_keys: bool,
     /// Paths to auto-load on startup.
     #[serde(default)]
@@ -309,7 +316,7 @@ pub struct AgentConfig {
     #[serde(default = "default_min_rsa_bits")]
     pub min_rsa_bits: u32,
     /// Allow agent forwarding (global toggle).
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub allow_forwarding: bool,
     /// Maximum forwarding chain depth.
     #[serde(default = "default_max_forward_depth")]
@@ -341,7 +348,7 @@ pub struct AgentConfig {
     #[serde(default = "default_max_keys")]
     pub max_loaded_keys: usize,
     /// Automatically connect to system SSH agent on start.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub auto_connect_system_agent: bool,
     /// System agent identity cache TTL in seconds.
     #[serde(default = "default_cache_ttl")]
@@ -370,7 +377,7 @@ fn default_min_rsa_bits() -> u32 {
     2048
 }
 fn default_max_forward_depth() -> u32 {
-    5
+    1
 }
 fn default_max_audit_events() -> usize {
     1000
@@ -387,10 +394,10 @@ impl Default for AgentConfig {
             socket_path: None,
             tcp_listen: false,
             tcp_port: 0,
-            system_agent_enabled: true,
+            system_agent_enabled: false,
             system_agent_socket: None,
-            merge_system_keys: true,
-            auto_load_default_keys: true,
+            merge_system_keys: false,
+            auto_load_default_keys: false,
             auto_load_paths: Vec::new(),
             default_lifetime_secs: 0,
             default_confirm: false,
@@ -399,15 +406,15 @@ impl Default for AgentConfig {
             allowed_algorithms: Vec::new(),
             allow_dsa: false,
             min_rsa_bits: 2048,
-            allow_forwarding: true,
-            max_forwarding_depth: 5,
+            allow_forwarding: false,
+            max_forwarding_depth: 1,
             storage_dir: String::new(),
             encrypt_at_rest: true,
             audit_enabled: true,
             max_audit_events: 1000,
             pkcs11_providers: Vec::new(),
             max_loaded_keys: 256,
-            auto_connect_system_agent: true,
+            auto_connect_system_agent: false,
             system_agent_cache_ttl: 300,
             audit_max_entries: 1000,
             audit_file: String::new(),
@@ -637,8 +644,9 @@ mod tests {
     fn test_default_config() {
         let cfg = AgentConfig::default();
         assert!(cfg.enabled);
-        assert!(cfg.system_agent_enabled);
-        assert!(cfg.auto_load_default_keys);
+        assert!(!cfg.system_agent_enabled);
+        assert!(!cfg.auto_load_default_keys);
+        assert!(!cfg.allow_forwarding);
         assert_eq!(cfg.max_keys, 256);
         assert_eq!(cfg.min_rsa_bits, 2048);
         assert!(!cfg.allow_dsa);

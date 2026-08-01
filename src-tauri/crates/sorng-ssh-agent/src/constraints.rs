@@ -7,6 +7,49 @@
 use crate::types::*;
 use log::{debug, warn};
 
+const MAX_CONSTRAINTS: usize = 32;
+const MAX_RESTRICTION_VALUES: usize = 64;
+const MAX_RESTRICTION_LEN: usize = 255;
+const MAX_FORWARDING_DEPTH: u32 = 16;
+const MAX_LIFETIME_SECS: u64 = 10 * 365 * 24 * 60 * 60;
+
+/// Validate externally supplied key constraints before storing them.
+pub fn validate_key_constraints(constraints: &[KeyConstraint]) -> Result<(), String> {
+    if constraints.len() > MAX_CONSTRAINTS {
+        return Err("Too many key constraints".to_string());
+    }
+    for constraint in constraints {
+        match constraint {
+            KeyConstraint::Lifetime(seconds) if *seconds > MAX_LIFETIME_SECS => {
+                return Err("Key lifetime exceeds the supported limit".to_string());
+            }
+            KeyConstraint::MaxSignatures(0) => {
+                return Err("Maximum signature count must be greater than zero".to_string());
+            }
+            KeyConstraint::HostRestriction(values) | KeyConstraint::UserRestriction(values) => {
+                if values.is_empty() || values.len() > MAX_RESTRICTION_VALUES {
+                    return Err("Invalid destination restriction list size".to_string());
+                }
+                if values.iter().any(|value| {
+                    value.is_empty()
+                        || value.len() > MAX_RESTRICTION_LEN
+                        || value.chars().any(char::is_control)
+                }) {
+                    return Err("Invalid destination restriction value".to_string());
+                }
+            }
+            KeyConstraint::ForwardingDepth(depth) if *depth > MAX_FORWARDING_DEPTH => {
+                return Err("Forwarding depth constraint exceeds the supported limit".to_string());
+            }
+            KeyConstraint::Extension { .. } => {
+                return Err("Custom key constraints are not supported safely".to_string());
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 /// Result of evaluating all constraints on a key for a specific request.
 #[derive(Debug, Clone)]
 pub struct ConstraintResult {
@@ -82,9 +125,9 @@ pub fn evaluate_constraints(constraints: &[KeyConstraint], ctx: &EvalContext) ->
 
             KeyConstraint::HostRestriction(hosts) => {
                 if let Some(ref target_host) = ctx.host {
-                    let allowed = hosts.iter().any(|h| {
-                        h == target_host || (h.starts_with("*.") && target_host.ends_with(&h[1..]))
-                    });
+                    let allowed = hosts
+                        .iter()
+                        .any(|allowed_host| host_matches(allowed_host, target_host));
                     if !allowed {
                         result.allowed = false;
                         result
@@ -92,9 +135,10 @@ pub fn evaluate_constraints(constraints: &[KeyConstraint], ctx: &EvalContext) ->
                             .push(format!("Host '{}' not in allowed list", target_host));
                     }
                 } else {
+                    result.allowed = false;
                     result
-                        .info
-                        .push("Host restriction active (host unknown)".to_string());
+                        .deny_reasons
+                        .push("Host is unknown while a host restriction is active".to_string());
                 }
             }
 
@@ -107,9 +151,10 @@ pub fn evaluate_constraints(constraints: &[KeyConstraint], ctx: &EvalContext) ->
                             .push(format!("User '{}' not in allowed list", target_user));
                     }
                 } else {
+                    result.allowed = false;
                     result
-                        .info
-                        .push("User restriction active (user unknown)".to_string());
+                        .deny_reasons
+                        .push("User is unknown while a user restriction is active".to_string());
                 }
             }
 
@@ -125,20 +170,37 @@ pub fn evaluate_constraints(constraints: &[KeyConstraint], ctx: &EvalContext) ->
 
             KeyConstraint::Extension { name, data } => {
                 debug!(
-                    "Extension constraint '{}' ({}B data) — allowing",
+                    "Unsupported extension constraint '{}' ({}B data)",
                     name,
                     data.len()
                 );
-                result.info.push(format!("Extension constraint: {}", name));
+                result.allowed = false;
+                result
+                    .deny_reasons
+                    .push("Custom extension constraint cannot be enforced".to_string());
             }
         }
     }
 
     if !result.allowed {
-        warn!("Constraint evaluation denied: {:?}", result.deny_reasons);
+        warn!(
+            "Constraint evaluation denied for {} reason(s)",
+            result.deny_reasons.len()
+        );
     }
 
     result
+}
+
+fn host_matches(pattern: &str, target: &str) -> bool {
+    let pattern = pattern.trim_end_matches('.').to_ascii_lowercase();
+    let target = target.trim_end_matches('.').to_ascii_lowercase();
+    if let Some(suffix) = pattern.strip_prefix("*.") {
+        let suffix = format!(".{}", suffix);
+        target.len() > suffix.len() && target.ends_with(&suffix)
+    } else {
+        pattern == target
+    }
 }
 
 /// Check whether a specific key's constraints allow a sign operation

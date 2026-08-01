@@ -6,7 +6,13 @@
 //! and merges its keys with the built-in agent.
 
 use crate::protocol::{self, AgentMessage, ProtocolIdentity};
+use crate::types::KeyAlgorithm;
 use log::{info, warn};
+use std::time::Duration;
+
+const AGENT_IO_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_SOCKET_PATH_LEN: usize = 4096;
+const MAX_KEY_TYPE_LEN: usize = 128;
 
 /// The bridge to the operating system's SSH agent.
 pub struct SystemAgentBridge {
@@ -28,7 +34,9 @@ impl SystemAgentBridge {
     /// Create a new system agent bridge.
     pub fn new(auto_discover: bool, cache_ttl: u64) -> Self {
         let socket_path = if auto_discover {
-            Self::discover_socket_path().unwrap_or_default()
+            Self::discover_socket_path()
+                .filter(|path| validate_socket_path(path).is_ok())
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -45,9 +53,14 @@ impl SystemAgentBridge {
 
     /// Create a bridge with an explicit socket path.
     pub fn with_socket(path: &str, cache_ttl: u64) -> Self {
+        let socket_path = if validate_socket_path(path).is_ok() {
+            path.to_string()
+        } else {
+            String::new()
+        };
         Self {
             connected: false,
-            socket_path: path.to_string(),
+            socket_path,
             cached_identities: Vec::new(),
             last_refresh: None,
             _auto_discover: false,
@@ -92,11 +105,14 @@ impl SystemAgentBridge {
 
     /// Connect to the system agent.
     pub async fn connect(&mut self) -> Result<(), String> {
+        self.connected = false;
+        self.cached_identities.clear();
+        self.last_refresh = None;
         if self.socket_path.is_empty() {
             return Err("No agent socket path configured".to_string());
         }
 
-        info!("Connecting to system SSH agent at: {}", self.socket_path);
+        info!("Connecting to configured system SSH agent");
 
         // Verify the socket/pipe exists
         #[cfg(unix)]
@@ -124,8 +140,7 @@ impl SystemAgentBridge {
                 }
                 Ok(_) => {
                     warn!("Unexpected response from system agent");
-                    self.connected = true;
-                    Ok(())
+                    Err("Unexpected response from system agent".to_string())
                 }
                 Err(e) => Err(format!("Failed to parse agent response: {}", e)),
             },
@@ -152,10 +167,13 @@ impl SystemAgentBridge {
     }
 
     /// Set the socket path.
-    pub fn set_socket_path(&mut self, path: &str) {
+    pub fn set_socket_path(&mut self, path: &str) -> Result<(), String> {
+        validate_socket_path(path)?;
         self.socket_path = path.to_string();
         self.connected = false;
         self.cached_identities.clear();
+        self.last_refresh = None;
+        Ok(())
     }
 
     /// Refresh the cached identities from the system agent.
@@ -188,8 +206,8 @@ impl SystemAgentBridge {
         match self.last_refresh {
             None => true,
             Some(t) => {
-                let elapsed = (chrono::Utc::now() - t).num_seconds() as u64;
-                elapsed > self.cache_ttl
+                let elapsed = (chrono::Utc::now() - t).num_seconds();
+                elapsed < 0 || elapsed as u64 >= self.cache_ttl
             }
         }
     }
@@ -198,6 +216,17 @@ impl SystemAgentBridge {
     pub async fn sign(&self, key_blob: &[u8], data: &[u8], flags: u32) -> Result<Vec<u8>, String> {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
+        }
+        if key_blob.is_empty()
+            || key_blob.len() > protocol::MAX_KEY_DATA_LEN
+            || data.len() > protocol::MAX_SIGN_DATA_LEN
+            || flags
+                & !(protocol::msg::SSH_AGENT_RSA_SHA2_256 | protocol::msg::SSH_AGENT_RSA_SHA2_512)
+                != 0
+            || flags
+                == protocol::msg::SSH_AGENT_RSA_SHA2_256 | protocol::msg::SSH_AGENT_RSA_SHA2_512
+        {
+            return Err("System-agent signing request exceeds the configured limit".to_string());
         }
 
         let msg = protocol::encode_message(&AgentMessage::SignRequest {
@@ -226,6 +255,16 @@ impl SystemAgentBridge {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
         }
+        if key_type.is_empty()
+            || key_type.len() > MAX_KEY_TYPE_LEN
+            || key_type.chars().any(char::is_control)
+            || KeyAlgorithm::try_from_ssh_name(key_type).is_none()
+            || key_data.len() > protocol::MAX_KEY_DATA_LEN
+            || comment.len() > protocol::MAX_TEXT_LEN
+            || comment.contains('\0')
+        {
+            return Err("System-agent add-key request exceeds the configured limit".to_string());
+        }
 
         let msg = protocol::encode_message(&AgentMessage::AddIdentity {
             key_type: key_type.to_string(),
@@ -247,6 +286,9 @@ impl SystemAgentBridge {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
         }
+        if key_blob.is_empty() || key_blob.len() > protocol::MAX_KEY_DATA_LEN {
+            return Err("System-agent remove-key request exceeds the configured limit".to_string());
+        }
 
         let msg = protocol::encode_message(&AgentMessage::RemoveIdentity {
             key_blob: key_blob.to_vec(),
@@ -266,6 +308,7 @@ impl SystemAgentBridge {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
         }
+        validate_passphrase(passphrase)?;
 
         let msg = protocol::encode_message(&AgentMessage::Lock {
             passphrase: passphrase.to_string(),
@@ -285,6 +328,7 @@ impl SystemAgentBridge {
         if !self.connected {
             return Err("Not connected to system agent".to_string());
         }
+        validate_passphrase(passphrase)?;
 
         let msg = protocol::encode_message(&AgentMessage::Unlock {
             passphrase: passphrase.to_string(),
@@ -302,37 +346,42 @@ impl SystemAgentBridge {
     /// Send a raw message to the system agent and return the response payload
     /// (without the 4-byte length prefix).
     async fn send_raw_message(&self, message: &[u8]) -> Result<Vec<u8>, String> {
+        if message.len() > protocol::MAX_AGENT_PAYLOAD_LEN + 4 {
+            return Err("Agent request exceeds the configured limit".to_string());
+        }
         #[cfg(unix)]
         {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             use tokio::net::UnixStream;
 
-            let mut stream = UnixStream::connect(&self.socket_path)
-                .await
-                .map_err(|e| format!("Failed to connect to agent socket: {}", e))?;
+            let mut stream =
+                tokio::time::timeout(AGENT_IO_TIMEOUT, UnixStream::connect(&self.socket_path))
+                    .await
+                    .map_err(|_| "Timed out connecting to system agent".to_string())?
+                    .map_err(|_| "Failed to connect to system agent".to_string())?;
 
-            stream
-                .write_all(message)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, stream.write_all(message))
                 .await
-                .map_err(|e| format!("Failed to write to agent: {}", e))?;
+                .map_err(|_| "Timed out writing to system agent".to_string())?
+                .map_err(|_| "Failed to write to system agent".to_string())?;
 
             // Read 4-byte length prefix
             let mut len_buf = [0u8; 4];
-            stream
-                .read_exact(&mut len_buf)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, stream.read_exact(&mut len_buf))
                 .await
-                .map_err(|e| format!("Failed to read agent response length: {}", e))?;
+                .map_err(|_| "Timed out reading system-agent response".to_string())?
+                .map_err(|_| "Failed to read system-agent response".to_string())?;
 
             let len = u32::from_be_bytes(len_buf) as usize;
-            if len > 256 * 1024 {
+            if len == 0 || len > protocol::MAX_AGENT_PAYLOAD_LEN {
                 return Err("Agent response too large".to_string());
             }
 
             let mut payload = vec![0u8; len];
-            stream
-                .read_exact(&mut payload)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, stream.read_exact(&mut payload))
                 .await
-                .map_err(|e| format!("Failed to read agent response: {}", e))?;
+                .map_err(|_| "Timed out reading system-agent response".to_string())?
+                .map_err(|_| "Failed to read system-agent response".to_string())?;
 
             Ok(payload)
         }
@@ -346,27 +395,27 @@ impl SystemAgentBridge {
                 .open(&self.socket_path)
                 .map_err(|e| format!("Failed to open agent pipe: {}", e))?;
 
-            client
-                .write_all(message)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, client.write_all(message))
                 .await
-                .map_err(|e| format!("Failed to write to agent pipe: {}", e))?;
+                .map_err(|_| "Timed out writing to system agent".to_string())?
+                .map_err(|_| "Failed to write to system agent".to_string())?;
 
             let mut len_buf = [0u8; 4];
-            client
-                .read_exact(&mut len_buf)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, client.read_exact(&mut len_buf))
                 .await
-                .map_err(|e| format!("Failed to read agent response length: {}", e))?;
+                .map_err(|_| "Timed out reading system-agent response".to_string())?
+                .map_err(|_| "Failed to read system-agent response".to_string())?;
 
             let len = u32::from_be_bytes(len_buf) as usize;
-            if len > 256 * 1024 {
+            if len == 0 || len > protocol::MAX_AGENT_PAYLOAD_LEN {
                 return Err("Agent response too large".to_string());
             }
 
             let mut payload = vec![0u8; len];
-            client
-                .read_exact(&mut payload)
+            tokio::time::timeout(AGENT_IO_TIMEOUT, client.read_exact(&mut payload))
                 .await
-                .map_err(|e| format!("Failed to read agent response: {}", e))?;
+                .map_err(|_| "Timed out reading system-agent response".to_string())?
+                .map_err(|_| "Failed to read system-agent response".to_string())?;
 
             Ok(payload)
         }
@@ -375,6 +424,25 @@ impl SystemAgentBridge {
         {
             Err("Platform not supported for agent communication".to_string())
         }
+    }
+}
+
+fn validate_socket_path(path: &str) -> Result<(), String> {
+    if path.is_empty() || path.len() > MAX_SOCKET_PATH_LEN || path.contains('\0') {
+        Err("Invalid system-agent socket path".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_passphrase(passphrase: &str) -> Result<(), String> {
+    if passphrase.is_empty()
+        || passphrase.len() > protocol::MAX_TEXT_LEN
+        || passphrase.contains('\0')
+    {
+        Err("Invalid system-agent passphrase".to_string())
+    } else {
+        Ok(())
     }
 }
 
@@ -406,7 +474,9 @@ mod tests {
     #[test]
     fn test_set_socket_path() {
         let mut bridge = SystemAgentBridge::new(false, 300);
-        bridge.set_socket_path("/new/path");
+        bridge
+            .set_socket_path("/new/path")
+            .expect("test socket path should be accepted");
         assert_eq!(bridge.socket_path(), "/new/path");
     }
 }
