@@ -5,12 +5,24 @@
 //! message correlation, shell lifecycle, and command I/O.
 
 use crate::types::*;
+use futures::StreamExt;
 use log::{debug, error, trace, warn};
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_LENGTH, CONTENT_TYPE};
 use std::collections::HashMap;
 use std::fmt;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
+
+const MAX_SOAP_ENVELOPE_BYTES: usize = 1024 * 1024;
+const MAX_SOAP_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_COMMAND_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_STDIN_BYTES: usize = 256 * 1024;
+const MAX_AUTH_HEADER_BYTES: usize = 16 * 1024;
+const MAX_CUSTOM_HEADERS: usize = 32;
+const MAX_CUSTOM_HEADER_VALUE_BYTES: usize = 16 * 1024;
+const MAX_COMMAND_WALL_TIME: Duration = Duration::from_secs(30 * 60);
+const MAX_ACTIVE_SHELLS: usize = 64;
 
 // ─── Transport State ─────────────────────────────────────────────────────────
 
@@ -26,8 +38,9 @@ pub struct WinRmTransport {
     #[allow(dead_code)]
     skip_cert_validation: bool,
     /// Maximum envelope size in bytes (server negotiated)
-    #[allow(dead_code)]
     max_envelope_size: usize,
+    /// Maximum response body accepted after decompression.
+    max_response_size: usize,
     /// Operation timeout as ISO 8601 duration
     operation_timeout: String,
     /// Locale
@@ -52,6 +65,7 @@ impl fmt::Debug for WinRmTransport {
             )
             .field("skip_cert_validation", &self.skip_cert_validation)
             .field("max_envelope_size", &self.max_envelope_size)
+            .field("max_response_size", &self.max_response_size)
             .field("operation_timeout", &self.operation_timeout)
             .field("locale", &self.locale)
             .field("custom_header_names", &custom_header_names)
@@ -106,15 +120,18 @@ impl WinRmTransport {
     /// Create a new WinRM transport from configuration.
     pub fn new(config: &PsRemotingConfig) -> Result<Self, String> {
         config.validate_security()?;
+        validate_legacy_transport_config(config)?;
         let endpoint = config.try_endpoint_uri()?;
 
         let mut client_builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(
                 config.session_option.operation_timeout_sec as u64,
             ))
             .connect_timeout(std::time::Duration::from_secs(
                 config.session_option.open_timeout_sec as u64,
-            ));
+            ))
+            .pool_max_idle_per_host(1);
 
         if config.session_option.no_compression {
             client_builder = client_builder.no_gzip().no_brotli().no_deflate();
@@ -134,7 +151,10 @@ impl WinRmTransport {
             endpoint,
             auth_header: None,
             skip_cert_validation: config.skip_ca_check,
-            max_envelope_size: 512000, // 500 KB default, negotiated during shell creation
+            max_envelope_size: MAX_SOAP_ENVELOPE_BYTES,
+            max_response_size: ((config.session_option.max_received_data_size_mb as usize)
+                .saturating_mul(1024 * 1024))
+            .clamp(512 * 1024, MAX_SOAP_RESPONSE_BYTES),
             operation_timeout,
             locale: config.session_option.culture.clone(),
             custom_headers: config.custom_headers.clone(),
@@ -144,15 +164,29 @@ impl WinRmTransport {
     }
 
     /// Set the authentication header (e.g., Basic base64 or NTLM token).
-    pub fn set_auth_header(&mut self, header: String) {
+    pub fn set_auth_header(&mut self, header: String) -> Result<(), String> {
+        if header.is_empty() || header.len() > MAX_AUTH_HEADER_BYTES {
+            return Err(
+                "WinRM authentication header is empty or exceeds the safety limit".to_string(),
+            );
+        }
+        HeaderValue::from_str(&header)
+            .map_err(|_| "Invalid WinRM authentication header".to_string())?;
         if let Some(mut previous_header) = self.auth_header.replace(header) {
             previous_header.zeroize();
         }
+        Ok(())
     }
 
     /// Send a raw SOAP envelope and return the response body.
     pub async fn send_message(&mut self, soap_body: &str) -> Result<String, String> {
-        self.request_counter += 1;
+        if soap_body.len() > self.max_envelope_size {
+            return Err(format!(
+                "WinRM SOAP envelope exceeds the {} byte safety limit",
+                self.max_envelope_size
+            ));
+        }
+        self.request_counter = self.request_counter.saturating_add(1);
         let req_id = self.request_counter;
 
         let mut headers = HeaderMap::new();
@@ -170,16 +204,15 @@ impl WinRmTransport {
         }
 
         for (key, value) in &self.custom_headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                HeaderValue::from_str(value),
-            ) {
-                headers.insert(name, val);
-            }
+            let name = reqwest::header::HeaderName::from_bytes(key.as_bytes())
+                .map_err(|_| "Invalid WinRM custom header name".to_string())?;
+            let val = HeaderValue::from_str(value)
+                .map_err(|_| "Invalid WinRM custom header value".to_string())?;
+            headers.insert(name, val);
         }
 
         let request_metadata = SoapMessageMetadata::request(req_id, soap_body.len());
-        debug!("WinRM request to {}: {request_metadata:?}", self.endpoint);
+        debug!("WinRM request: {request_metadata:?} (endpoint redacted)");
         trace!("WinRM request metadata: {request_metadata:?}");
 
         let response = self
@@ -193,15 +226,53 @@ impl WinRmTransport {
             .body(soap_body.to_string())
             .send()
             .await
-            .map_err(|e| format!("WinRM HTTP request failed: {}", e))?;
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "WinRM HTTP request timed out".to_string()
+                } else if error.is_connect() {
+                    "WinRM HTTP connection failed".to_string()
+                } else {
+                    "WinRM HTTP request failed".to_string()
+                }
+            })?;
 
         let status = response.status();
-        let body = Zeroizing::new(
-            response
-                .text()
-                .await
-                .map_err(|e| format!("Failed to read WinRM response body: {}", e))?,
-        );
+        if response
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<usize>().ok())
+            .is_some_and(|length| length > self.max_response_size)
+        {
+            return Err(format!(
+                "WinRM response exceeds the {} byte safety limit",
+                self.max_response_size
+            ));
+        }
+
+        let mut response_bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|error| format!("Failed to read WinRM response body: {error}"))?;
+            if response_bytes.len().saturating_add(chunk.len()) > self.max_response_size {
+                response_bytes.zeroize();
+                return Err(format!(
+                    "WinRM response exceeds the {} byte safety limit",
+                    self.max_response_size
+                ));
+            }
+            response_bytes.extend_from_slice(&chunk);
+        }
+        let body_text = match String::from_utf8(response_bytes) {
+            Ok(body) => body,
+            Err(error) => {
+                let mut invalid = error.into_bytes();
+                invalid.zeroize();
+                return Err("WinRM response is not valid UTF-8".to_string());
+            }
+        };
+        let body = Zeroizing::new(body_text);
 
         let response_metadata = SoapMessageMetadata::response(req_id, status, body.len());
         trace!("WinRM response metadata: {response_metadata:?}");
@@ -242,7 +313,12 @@ impl WinRmTransport {
         let response = self.send_message(&envelope).await?;
 
         // Parse shell ID from response (may differ from our suggested ID)
-        let actual_shell_id = extract_shell_id(&response).unwrap_or(shell_id);
+        let actual_shell_id = extract_shell_id(&response)
+            .ok_or_else(|| "WinRM create-shell response did not contain a shell ID".to_string())?;
+        validate_wsman_identifier("shell", &actual_shell_id)?;
+        if self.active_shells.len() >= MAX_ACTIVE_SHELLS {
+            return Err("WinRM transport shell limit reached".to_string());
+        }
 
         self.active_shells.push(actual_shell_id.clone());
         debug!("Created WinRM shell: {}", actual_shell_id);
@@ -252,6 +328,7 @@ impl WinRmTransport {
 
     /// Delete (close) a WinRM shell.
     pub async fn delete_shell(&mut self, shell_id: &str) -> Result<(), String> {
+        validate_wsman_identifier("shell", shell_id)?;
         let message_id = Uuid::new_v4().to_string();
 
         let envelope = build_delete_shell_envelope(
@@ -275,8 +352,19 @@ impl WinRmTransport {
         command: &str,
         arguments: &[String],
     ) -> Result<String, String> {
+        validate_wsman_identifier("shell", shell_id)?;
+        if command.is_empty() || command.len() > 1024 {
+            return Err("WinRM command name is empty or exceeds the safety limit".to_string());
+        }
+        let argument_bytes = arguments.iter().try_fold(0usize, |total, argument| {
+            total
+                .checked_add(argument.len())
+                .ok_or_else(|| "WinRM command argument size overflow".to_string())
+        })?;
+        if arguments.len() > 64 || argument_bytes > MAX_SOAP_ENVELOPE_BYTES {
+            return Err("WinRM command arguments exceed the safety limit".to_string());
+        }
         let message_id = Uuid::new_v4().to_string();
-        let command_id = Uuid::new_v4().to_string().to_uppercase();
 
         let envelope = Zeroizing::new(build_command_envelope(
             &self.endpoint,
@@ -288,7 +376,11 @@ impl WinRmTransport {
         ));
 
         let response = self.send_message(envelope.as_str()).await?;
-        let actual_command_id = extract_command_id(&response).unwrap_or(command_id);
+        // WinRM assigns the authoritative command ID; only its response value
+        // is valid for subsequent receive and signal operations.
+        let actual_command_id = extract_command_id(&response)
+            .ok_or_else(|| "WinRM command response did not contain a command ID".to_string())?;
+        validate_wsman_identifier("command", &actual_command_id)?;
 
         debug!(
             "Executed command in shell {}: {}",
@@ -333,6 +425,8 @@ impl WinRmTransport {
         shell_id: &str,
         command_id: &str,
     ) -> Result<(String, String, bool), String> {
+        validate_wsman_identifier("shell", shell_id)?;
+        validate_wsman_identifier("command", command_id)?;
         let message_id = Uuid::new_v4().to_string();
 
         let envelope = build_receive_envelope(
@@ -355,9 +449,31 @@ impl WinRmTransport {
     ) -> Result<(String, String), String> {
         let mut stdout = String::new();
         let mut stderr = String::new();
+        let deadline = Instant::now() + MAX_COMMAND_WALL_TIME;
 
         loop {
+            if Instant::now() >= deadline {
+                let _ = self
+                    .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
+                    .await;
+                return Err("WinRM command exceeded the 30 minute safety limit".to_string());
+            }
             let (out, err, done) = self.receive_output(shell_id, command_id).await?;
+            if stdout
+                .len()
+                .saturating_add(stderr.len())
+                .saturating_add(out.len())
+                .saturating_add(err.len())
+                > MAX_COMMAND_OUTPUT_BYTES
+            {
+                let _ = self
+                    .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
+                    .await;
+                return Err(format!(
+                    "WinRM command output exceeds the {} byte safety limit",
+                    MAX_COMMAND_OUTPUT_BYTES
+                ));
+            }
             stdout.push_str(&out);
             stderr.push_str(&err);
 
@@ -377,6 +493,14 @@ impl WinRmTransport {
         data: &str,
         end_of_stream: bool,
     ) -> Result<(), String> {
+        validate_wsman_identifier("shell", shell_id)?;
+        validate_wsman_identifier("command", command_id)?;
+        if data.len() > MAX_STDIN_BYTES {
+            return Err(format!(
+                "WinRM stdin exceeds the {} byte safety limit",
+                MAX_STDIN_BYTES
+            ));
+        }
         let message_id = Uuid::new_v4().to_string();
 
         let encoded = Zeroizing::new(base64::Engine::encode(
@@ -405,6 +529,11 @@ impl WinRmTransport {
         command_id: &str,
         signal_code: &str,
     ) -> Result<(), String> {
+        validate_wsman_identifier("shell", shell_id)?;
+        validate_wsman_identifier("command", command_id)?;
+        if signal_code.len() > 512 || !signal_code.starts_with("http") {
+            return Err("Invalid WinRM signal code".to_string());
+        }
         let message_id = Uuid::new_v4().to_string();
 
         let envelope = build_signal_envelope(
@@ -427,6 +556,7 @@ impl WinRmTransport {
 
     /// Disconnect a shell (for later reconnection).
     pub async fn disconnect_shell(&mut self, shell_id: &str) -> Result<(), String> {
+        validate_wsman_identifier("shell", shell_id)?;
         let message_id = Uuid::new_v4().to_string();
 
         let envelope = build_disconnect_envelope(
@@ -444,6 +574,7 @@ impl WinRmTransport {
 
     /// Reconnect to a previously disconnected shell.
     pub async fn reconnect_shell(&mut self, shell_id: &str) -> Result<(), String> {
+        validate_wsman_identifier("shell", shell_id)?;
         let message_id = Uuid::new_v4().to_string();
 
         let envelope = build_reconnect_envelope(
@@ -461,6 +592,7 @@ impl WinRmTransport {
 
     /// Send a keep-alive (empty receive) to maintain the session.
     pub async fn keepalive(&mut self, shell_id: &str) -> Result<u64, String> {
+        validate_wsman_identifier("shell", shell_id)?;
         let start = std::time::Instant::now();
         let message_id = Uuid::new_v4().to_string();
 
@@ -860,9 +992,9 @@ pub fn parse_receive_response(response: &str) -> Result<(String, String, bool), 
     let mut stderr = String::new();
 
     // Extract stdout streams
-    extract_stream_data(response, "stdout", &mut stdout);
+    extract_stream_data(response, "stdout", &mut stdout)?;
     // Extract stderr streams
-    extract_stream_data(response, "stderr", &mut stderr);
+    extract_stream_data(response, "stderr", &mut stderr)?;
 
     // Check if command state is "Done"
     let is_done = response.contains(
@@ -873,7 +1005,11 @@ pub fn parse_receive_response(response: &str) -> Result<(String, String, bool), 
 }
 
 /// Extract base64-encoded stream data and decode it.
-fn extract_stream_data(response: &str, stream_name: &str, output: &mut String) {
+fn extract_stream_data(
+    response: &str,
+    stream_name: &str,
+    output: &mut String,
+) -> Result<(), String> {
     let pattern = format!("Name=\"{}\"", stream_name);
     let mut search_from = 0;
 
@@ -886,13 +1022,18 @@ fn extract_stream_data(response: &str, stream_name: &str, output: &mut String) {
             if let Some(end_pos) = response[data_start..].find("</rsp:Stream>") {
                 let encoded = &response[data_start..data_start + end_pos].trim();
                 if !encoded.is_empty() {
-                    if let Ok(decoded) =
+                    let mut decoded =
                         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
-                    {
-                        if let Ok(text) = String::from_utf8(decoded) {
-                            output.push_str(&text);
+                            .map_err(|_| format!("Invalid base64 in WinRM {stream_name} stream"))?;
+                    let text = match std::str::from_utf8(&decoded) {
+                        Ok(text) => text.to_string(),
+                        Err(_) => {
+                            decoded.zeroize();
+                            return Err(format!("Invalid UTF-8 in WinRM {stream_name} stream"));
                         }
-                    }
+                    };
+                    decoded.zeroize();
+                    output.push_str(&text);
                 }
                 search_from = data_start + end_pos;
             } else {
@@ -902,6 +1043,84 @@ fn extract_stream_data(response: &str, stream_name: &str, output: &mut String) {
             break;
         }
     }
+    Ok(())
+}
+
+fn validate_wsman_identifier(kind: &str, value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '{' | '}'))
+    {
+        return Err(format!("Invalid WinRM {kind} identifier"));
+    }
+    Ok(())
+}
+
+fn validate_legacy_transport_config(config: &PsRemotingConfig) -> Result<(), String> {
+    let options = &config.session_option;
+    if !(1..=300).contains(&options.operation_timeout_sec)
+        || !(1..=300).contains(&options.open_timeout_sec)
+        || !(1..=300).contains(&options.cancel_timeout_sec)
+        || !(30..=86_400).contains(&options.idle_timeout_sec)
+    {
+        return Err("WinRM timeouts are outside the supported safety bounds".to_string());
+    }
+    if !(1..=64).contains(&options.max_received_data_size_mb)
+        || !(1..=16).contains(&options.max_received_object_size_mb)
+        || !(1..=100).contains(&options.max_commands_per_shell)
+        || options.max_connection_retry_count > 10
+        || options.max_connection_retry_delay_sec > 60
+        || (options.keepalive_interval_sec > 0 && options.keepalive_interval_sec < 5)
+    {
+        return Err("WinRM resource limits are outside the supported safety bounds".to_string());
+    }
+    if config.credential.username.is_empty()
+        || config.credential.username.len() > 512
+        || config
+            .credential
+            .password
+            .as_ref()
+            .is_none_or(|password| {
+                password.is_empty() || password.len() > 16 * 1024
+            })
+    {
+        return Err("WinRM Basic credentials are missing or exceed the safety limit".to_string());
+    }
+    if config.proxy.is_some() {
+        return Err("WinRM proxy settings are not supported by the legacy transport".to_string());
+    }
+    if config.skip_revocation_check {
+        return Err(
+            "WinRM revocation-check overrides are not supported by the legacy transport"
+                .to_string(),
+        );
+    }
+    if config.custom_headers.len() > MAX_CUSTOM_HEADERS {
+        return Err("Too many WinRM custom headers".to_string());
+    }
+    for (name, value) in &config.custom_headers {
+        let parsed_name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| "Invalid WinRM custom header name".to_string())?;
+        HeaderValue::from_str(value)
+            .map_err(|_| "Invalid WinRM custom header value".to_string())?;
+        if value.len() > MAX_CUSTOM_HEADER_VALUE_BYTES {
+            return Err("WinRM custom header value exceeds the safety limit".to_string());
+        }
+        let is_transport_controlled = parsed_name == reqwest::header::AUTHORIZATION
+            || parsed_name == reqwest::header::PROXY_AUTHORIZATION
+            || parsed_name == reqwest::header::HOST
+            || parsed_name == reqwest::header::CONTENT_LENGTH
+            || parsed_name == reqwest::header::COOKIE;
+        if is_transport_controlled {
+            return Err(format!(
+                "WinRM custom header '{}' is controlled by the transport",
+                parsed_name
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Parse a SOAP fault from a WinRM error response.
@@ -1110,6 +1329,7 @@ mod tests {
             auth_header: Some(format!("Basic {UNIQUE_SECRET}")),
             skip_cert_validation: false,
             max_envelope_size: 512_000,
+            max_response_size: MAX_SOAP_RESPONSE_BYTES,
             operation_timeout: "PT180S".to_string(),
             locale: "en-US".to_string(),
             custom_headers: HashMap::from([(

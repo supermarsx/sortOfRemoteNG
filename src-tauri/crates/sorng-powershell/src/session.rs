@@ -8,9 +8,11 @@ use crate::types::*;
 use chrono::Utc;
 use log::{debug, info, warn};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 // ─── Session Manager ─────────────────────────────────────────────────────────
 
@@ -38,6 +40,8 @@ pub struct ManagedSession {
     keepalive_handle: Option<tokio::task::JoinHandle<()>>,
     /// Active command IDs
     active_commands: Vec<String>,
+    /// Shared liveness flag updated by the keep-alive owner.
+    healthy: Arc<AtomicBool>,
 }
 
 impl Default for PsSessionManager {
@@ -59,9 +63,15 @@ impl PsSessionManager {
     /// Create a new PSSession to a remote computer.
     pub async fn new_session(
         &mut self,
-        config: PsRemotingConfig,
+        mut config: PsRemotingConfig,
         name: Option<String>,
     ) -> Result<PsSession, String> {
+        if config.auth_method != PsAuthMethod::Basic {
+            return Err(format!(
+                "Legacy WinRS sessions support only Basic authentication over verified HTTPS; '{}' requires the PSRP WSMan path",
+                config.auth_method.name()
+            ));
+        }
         // Check session limit
         let active_count = self
             .sessions
@@ -79,9 +89,15 @@ impl PsSessionManager {
         }
 
         let session_id = Uuid::new_v4().to_string();
-        self.name_counter += 1;
+        self.name_counter = self.name_counter.saturating_add(1);
 
         let session_name = name.unwrap_or_else(|| format!("WinRM{}", self.name_counter));
+        if session_name.is_empty()
+            || session_name.len() > 128
+            || session_name.chars().any(char::is_control)
+        {
+            return Err("PowerShell session name is empty or invalid".to_string());
+        }
 
         let port = config.effective_port();
         let computer_name = config.computer_name.clone();
@@ -109,7 +125,7 @@ impl PsSessionManager {
 
         let auth_header = auth_provider.initial_auth_header()?;
         if !auth_header.is_empty() {
-            transport.set_auth_header(auth_header);
+            transport.set_auth_header(auth_header)?;
         }
 
         // Create the remote shell
@@ -139,13 +155,22 @@ impl PsSessionManager {
             command_count: 0,
             transport: transport_proto,
             auth_method,
-            supports_disconnect: true,
+            supports_disconnect: false,
             reconnect_count: 0,
             runspace_id: Some(Uuid::new_v4().to_string()),
             port,
         };
 
         let transport = Arc::new(Mutex::new(transport));
+        let healthy = Arc::new(AtomicBool::new(true));
+
+        if let Some(mut password) = config.credential.password.take() {
+            password.zeroize();
+        }
+        for value in config.custom_headers.values_mut() {
+            value.zeroize();
+        }
+        config.custom_headers.clear();
 
         let managed = ManagedSession {
             info: session.clone(),
@@ -153,6 +178,7 @@ impl PsSessionManager {
             config,
             keepalive_handle: None,
             active_commands: Vec::new(),
+            healthy,
         };
 
         self.sessions.insert(session_id.clone(), managed);
@@ -175,6 +201,10 @@ impl PsSessionManager {
             .get(session_id)
             .map(|s| {
                 let mut info = s.info.clone();
+                if !s.healthy.load(Ordering::Acquire) {
+                    info.state = PsSessionState::Broken;
+                    info.availability = PsSessionAvailability::None;
+                }
                 info.idle_seconds = (Utc::now() - info.last_activity).num_seconds().max(0) as u64;
                 info
             })
@@ -192,6 +222,10 @@ impl PsSessionManager {
             })
             .map(|s| {
                 let mut info = s.info.clone();
+                if !s.healthy.load(Ordering::Acquire) {
+                    info.state = PsSessionState::Broken;
+                    info.availability = PsSessionAvailability::None;
+                }
                 info.idle_seconds = (Utc::now() - info.last_activity).num_seconds().max(0) as u64;
                 info
             })
@@ -200,85 +234,20 @@ impl PsSessionManager {
 
     /// Disconnect a session (preserving it for later reconnection).
     pub async fn disconnect_session(&mut self, session_id: &str) -> Result<PsSession, String> {
-        let managed = self
-            .sessions
-            .get_mut(session_id)
-            .ok_or_else(|| format!("Session '{}' not found", session_id))?;
-
-        if managed.info.state != PsSessionState::Opened {
-            return Err(format!(
-                "Cannot disconnect session in state {:?}",
-                managed.info.state
-            ));
-        }
-
-        let shell_id = managed
-            .info
-            .shell_id
-            .clone()
-            .ok_or("Session has no shell ID")?;
-
-        // Stop keep-alive
-        if let Some(handle) = managed.keepalive_handle.take() {
-            handle.abort();
-        }
-
-        // Send disconnect signal
-        let mut transport = managed.transport.lock().await;
-        transport.disconnect_shell(&shell_id).await?;
-        drop(transport);
-
-        managed.info.state = PsSessionState::Disconnected;
-        managed.info.availability = PsSessionAvailability::None;
-        managed.info.last_activity = Utc::now();
-
-        info!(
-            "PSSession '{}' ({}) disconnected",
-            managed.info.name, session_id
-        );
-
-        Ok(managed.info.clone())
+        self.get_session(session_id)?;
+        Err(
+            "Legacy WinRS sessions do not support durable PowerShell disconnect semantics"
+                .to_string(),
+        )
     }
 
     /// Reconnect to a previously disconnected session.
     pub async fn reconnect_session(&mut self, session_id: &str) -> Result<PsSession, String> {
-        let managed = self
-            .sessions
-            .get_mut(session_id)
-            .ok_or_else(|| format!("Session '{}' not found", session_id))?;
-
-        if managed.info.state != PsSessionState::Disconnected {
-            return Err(format!(
-                "Cannot reconnect session in state {:?}",
-                managed.info.state
-            ));
-        }
-
-        let shell_id = managed
-            .info
-            .shell_id
-            .clone()
-            .ok_or("Session has no shell ID")?;
-
-        // Re-create transport if needed and reconnect
-        let mut transport = managed.transport.lock().await;
-        transport.reconnect_shell(&shell_id).await?;
-        drop(transport);
-
-        managed.info.state = PsSessionState::Opened;
-        managed.info.availability = PsSessionAvailability::Available;
-        managed.info.reconnect_count += 1;
-        managed.info.last_activity = Utc::now();
-
-        info!(
-            "PSSession '{}' ({}) reconnected (count: {})",
-            managed.info.name, session_id, managed.info.reconnect_count
-        );
-
-        // Restart keep-alive
-        self.start_keepalive(session_id).await;
-
-        Ok(self.sessions[session_id].info.clone())
+        self.get_session(session_id)?;
+        Err(
+            "Legacy WinRS sessions do not support durable PowerShell reconnect semantics"
+                .to_string(),
+        )
     }
 
     /// Remove (close) a session.
@@ -331,17 +300,29 @@ impl PsSessionManager {
 
     /// Get the transport handle for a session.
     pub fn get_transport(&self, session_id: &str) -> Result<Arc<Mutex<WinRmTransport>>, String> {
-        self.sessions
+        let session = self
+            .sessions
             .get(session_id)
-            .map(|s| s.transport.clone())
-            .ok_or_else(|| format!("Session '{}' not found", session_id))
+            .ok_or_else(|| format!("Session '{}' not found", session_id))?;
+        if !session.healthy.load(Ordering::Acquire) {
+            return Err(format!("Session '{}' transport is broken", session_id));
+        }
+        Ok(session.transport.clone())
     }
 
     /// Get the shell ID for a session.
     pub fn get_shell_id(&self, session_id: &str) -> Result<String, String> {
-        self.sessions
+        let session = self
+            .sessions
             .get(session_id)
-            .and_then(|s| s.info.shell_id.clone())
+            .ok_or_else(|| format!("Session '{}' not found", session_id))?;
+        if !session.healthy.load(Ordering::Acquire) {
+            return Err(format!("Session '{}' transport is broken", session_id));
+        }
+        session
+            .info
+            .shell_id
+            .clone()
             .ok_or_else(|| format!("Session '{}' has no shell ID", session_id))
     }
 
@@ -366,6 +347,20 @@ impl PsSessionManager {
         }
     }
 
+    /// Mark transport state as unusable after a failed request or liveness probe.
+    pub fn mark_broken(&mut self, session_id: &str) {
+        if let Some(managed) = self.sessions.get_mut(session_id) {
+            managed.healthy.store(false, Ordering::Release);
+            managed.info.state = PsSessionState::Broken;
+            managed.info.availability = PsSessionAvailability::None;
+            managed.info.last_activity = Utc::now();
+            managed.active_commands.clear();
+            if let Some(handle) = managed.keepalive_handle.take() {
+                handle.abort();
+            }
+        }
+    }
+
     /// Start a background keep-alive task for a session.
     async fn start_keepalive(&mut self, session_id: &str) {
         let managed = match self.sessions.get_mut(session_id) {
@@ -379,6 +374,7 @@ impl PsSessionManager {
         }
 
         let transport = managed.transport.clone();
+        let healthy = managed.healthy.clone();
         let shell_id = match managed.info.shell_id.clone() {
             Some(id) => id,
             None => return,
@@ -397,6 +393,7 @@ impl PsSessionManager {
                         debug!("Keep-alive for session {}: {}ms", sid, latency);
                     }
                     Err(e) => {
+                        healthy.store(false, Ordering::Release);
                         warn!("Keep-alive failed for session {}: {}", sid, e);
                         break;
                     }
@@ -414,7 +411,7 @@ impl PsSessionManager {
 
     /// Set maximum concurrent sessions.
     pub fn set_max_sessions(&mut self, max: u32) {
-        self.max_sessions = max;
+        self.max_sessions = max.clamp(1, 100);
     }
 }
 

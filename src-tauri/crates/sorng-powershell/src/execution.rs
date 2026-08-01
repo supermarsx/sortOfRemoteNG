@@ -15,6 +15,15 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+const MAX_SCRIPT_BYTES: usize = 128 * 1024;
+const MAX_PARAMETER_COUNT: usize = 128;
+const MAX_ARGUMENT_COUNT: usize = 1024;
+const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_OUTPUT_RECORDS: usize = 100_000;
+const DEFAULT_COMMAND_TIMEOUT_SECS: u32 = 300;
+const MAX_COMMAND_TIMEOUT_SECS: u32 = 30 * 60;
+const MAX_FANOUT_SESSIONS: usize = 100;
+
 // ─── Command Executor ────────────────────────────────────────────────────────
 
 /// Executes PowerShell commands on remote sessions.
@@ -54,6 +63,7 @@ impl PsCommandExecutor {
         manager: &mut PsSessionManager,
         params: PsInvokeCommandParams,
     ) -> Result<PsCommandOutput, String> {
+        validate_invoke_params(&params)?;
         let session_id = params.session_id.as_ref().ok_or("Session ID is required")?;
 
         // Validate session state
@@ -82,15 +92,22 @@ impl PsCommandExecutor {
 
         // Execute the command
         debug!(
-            "Invoking command {} on session {}: {}",
+            "Invoking command {} on session {} ({} script bytes)",
             invocation_id,
             session_id,
-            truncate_str(&script, 200)
+            script.len()
         );
 
-        let command_id = {
+        let command_result = {
             let mut t = transport.lock().await;
-            t.execute_ps_command(&shell_id, &script).await?
+            t.execute_ps_command(&shell_id, &script).await
+        };
+        let command_id = match command_result {
+            Ok(command_id) => command_id,
+            Err(error) => {
+                manager.mark_broken(session_id);
+                return Err(error);
+            }
         };
 
         // Track the invocation
@@ -107,69 +124,26 @@ impl PsCommandExecutor {
             },
         );
 
-        // If invoke-and-disconnect, disconnect the session
-        if params.invoke_and_disconnect {
-            info!(
-                "Invoke-and-disconnect: disconnecting session {} after starting command",
-                session_id
-            );
-            manager.disconnect_session(session_id).await?;
-
-            return Ok(PsCommandOutput {
-                invocation_id,
-                session_id: session_id.clone(),
-                command: params.script_block,
-                state: PsInvocationState::Disconnected,
-                streams: Vec::new(),
-                output: Vec::new(),
-                errors: Vec::new(),
-                had_errors: false,
+        let result = self
+            .collect_output(
+                transport.clone(),
+                &shell_id,
+                &command_id,
+                session_id,
+                &invocation_id,
+                &params.script_block,
                 started_at,
-                completed_at: None,
-                duration_ms: 0,
-                raw_clixml: None,
-            });
-        }
+                params.timeout_sec,
+            )
+            .await;
 
-        // Collect output (synchronous by default)
-        if !params.as_job {
-            let result = self
-                .collect_output(
-                    transport.clone(),
-                    &shell_id,
-                    &command_id,
-                    session_id,
-                    &invocation_id,
-                    &params.script_block,
-                    started_at,
-                    params.timeout_sec,
-                )
-                .await;
-
-            // Mark session as available
+        self.invocations.remove(&invocation_id);
+        if result.is_ok() {
             manager.mark_available(session_id, &invocation_id);
-
-            // Clean up invocation tracking
-            self.invocations.remove(&invocation_id);
-
-            result
         } else {
-            // Background job - return immediately with Running state
-            Ok(PsCommandOutput {
-                invocation_id,
-                session_id: session_id.clone(),
-                command: params.script_block,
-                state: PsInvocationState::Running,
-                streams: Vec::new(),
-                output: Vec::new(),
-                errors: Vec::new(),
-                had_errors: false,
-                started_at,
-                completed_at: None,
-                duration_ms: 0,
-                raw_clixml: None,
-            })
+            manager.mark_broken(session_id);
         }
+        result
     }
 
     /// Execute the same script block on multiple sessions (fan-out).
@@ -179,8 +153,14 @@ impl PsCommandExecutor {
         session_ids: &[String],
         params: PsInvokeCommandParams,
     ) -> Vec<Result<PsCommandOutput, String>> {
+        if session_ids.is_empty() || session_ids.len() > MAX_FANOUT_SESSIONS {
+            return vec![Err(format!(
+                "PowerShell fan-out requires 1 to {} sessions",
+                MAX_FANOUT_SESSIONS
+            ))];
+        }
         let mut results = Vec::new();
-        let throttle = params.throttle_limit.max(1) as usize;
+        let throttle = params.throttle_limit.clamp(1, 25) as usize;
 
         // Process in chunks according to throttle limit
         for chunk in session_ids.chunks(throttle) {
@@ -216,31 +196,55 @@ impl PsCommandExecutor {
     ) -> Result<PsCommandOutput, String> {
         let mut all_stdout = String::new();
         let mut all_stderr = String::new();
-        let timeout = if timeout_sec > 0 {
-            Some(std::time::Duration::from_secs(timeout_sec as u64))
+        let timeout_sec = if timeout_sec == 0 {
+            DEFAULT_COMMAND_TIMEOUT_SECS
         } else {
-            None
+            timeout_sec
         };
+        let timeout = std::time::Duration::from_secs(timeout_sec as u64);
         let start_time = std::time::Instant::now();
 
         loop {
             // Check timeout
-            if let Some(to) = timeout {
-                if start_time.elapsed() > to {
-                    // Send terminate signal
+            if start_time.elapsed() > timeout {
+                let mut t = transport.lock().await;
+                let _ = t
+                    .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
+                    .await;
+                return Err(format!("Command timed out after {} seconds", timeout_sec));
+            }
+
+            let received = {
+                let mut t = transport.lock().await;
+                t.receive_output(shell_id, command_id).await
+            };
+            let (stdout, stderr, done) = match received {
+                Ok(received) => received,
+                Err(error) => {
                     let mut t = transport.lock().await;
                     let _ = t
                         .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
                         .await;
-                    return Err(format!("Command timed out after {} seconds", timeout_sec));
+                    return Err(error);
                 }
-            }
-
-            let (stdout, stderr, done) = {
-                let mut t = transport.lock().await;
-                t.receive_output(shell_id, command_id).await?
             };
 
+            if all_stdout
+                .len()
+                .saturating_add(all_stderr.len())
+                .saturating_add(stdout.len())
+                .saturating_add(stderr.len())
+                > MAX_OUTPUT_BYTES
+            {
+                let mut t = transport.lock().await;
+                let _ = t
+                    .signal_command(shell_id, command_id, WsManSignal::TERMINATE)
+                    .await;
+                return Err(format!(
+                    "PowerShell command output exceeds the {} byte safety limit",
+                    MAX_OUTPUT_BYTES
+                ));
+            }
             all_stdout.push_str(&stdout);
             all_stderr.push_str(&stderr);
 
@@ -275,6 +279,9 @@ impl PsCommandExecutor {
                 // CLIXML output
                 match serialization::parse_clixml_to_json(&all_stdout) {
                     Ok(objects) => {
+                        if objects.len() > MAX_OUTPUT_RECORDS {
+                            return Err("PowerShell output contains too many records".to_string());
+                        }
                         for obj in objects {
                             output_objects.push(obj.clone());
                             streams.push(PsStreamRecord {
@@ -302,6 +309,9 @@ impl PsCommandExecutor {
                 }
             } else {
                 // Plain text output (line by line)
+                if all_stdout.lines().count() > MAX_OUTPUT_RECORDS {
+                    return Err("PowerShell output contains too many records".to_string());
+                }
                 for line in all_stdout.lines() {
                     let text = serde_json::Value::String(line.to_string());
                     output_objects.push(text.clone());
@@ -324,6 +334,9 @@ impl PsCommandExecutor {
                 errors = parsed_errors;
             } else {
                 // Plain text errors
+                if all_stderr.lines().count() > MAX_OUTPUT_RECORDS {
+                    return Err("PowerShell error output contains too many records".to_string());
+                }
                 for line in all_stderr.lines() {
                     if !line.trim().is_empty() {
                         errors.push(PsErrorRecord {
@@ -379,11 +392,7 @@ impl PsCommandExecutor {
             started_at,
             completed_at: Some(completed_at),
             duration_ms,
-            raw_clixml: if all_stdout.contains(serialization::CLIXML_HEADER) {
-                Some(all_stdout)
-            } else {
-                None
-            },
+            raw_clixml: None,
         })
     }
 
@@ -437,10 +446,12 @@ impl PsCommandExecutor {
 // ─── Script Builder ──────────────────────────────────────────────────────────
 /// Validates a PowerShell command name (alphanumeric, hyphens, dots, backslashes for modules).
 fn validate_command_name(name: &str) -> Result<(), String> {
-    if name
-        .chars()
-        .all(|c| c.is_alphanumeric() || "-._\\".contains(c))
+    if name.len() <= 256
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-._\\".contains(c))
         && !name.is_empty()
+        && !matches!(name.chars().next(), Some('-' | '.' | '\\'))
     {
         Ok(())
     } else {
@@ -456,6 +467,76 @@ fn validate_file_path(path: &str) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+fn validate_parameter_name(name: &str) -> Result<(), String> {
+    if !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        && name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    {
+        Ok(())
+    } else {
+        Err("PowerShell parameter name contains disallowed characters".to_string())
+    }
+}
+
+fn validate_invoke_params(params: &PsInvokeCommandParams) -> Result<(), String> {
+    if params.script_block.len() > MAX_SCRIPT_BYTES {
+        return Err(format!(
+            "PowerShell script exceeds the {} byte safety limit",
+            MAX_SCRIPT_BYTES
+        ));
+    }
+    if params.as_job {
+        return Err(
+            "Legacy WinRS background jobs are unsupported because no owned collector persists"
+                .to_string(),
+        );
+    }
+    if params.invoke_and_disconnect {
+        return Err(
+            "Legacy WinRS invoke-and-disconnect is unsupported without durable PSRP state"
+                .to_string(),
+        );
+    }
+    if !params.input_object.is_empty() {
+        return Err(
+            "Legacy WinRS pipeline input is unsupported; use the PSRP runspace path".to_string(),
+        );
+    }
+    if params.file_path.is_some() {
+        return Err(
+            "Legacy WinRS FilePath is unsupported because the backend cannot safely resolve a local script as a remote path"
+                .to_string(),
+        );
+    }
+    if params.parameters.len() > MAX_PARAMETER_COUNT
+        || params.argument_list.len() > MAX_ARGUMENT_COUNT
+    {
+        return Err("PowerShell invocation has too many parameters or arguments".to_string());
+    }
+    for name in params.parameters.keys() {
+        validate_parameter_name(name)?;
+    }
+    let serialized_bytes = serde_json::to_vec(&(&params.argument_list, &params.parameters))
+        .map_err(|error| format!("Failed to validate PowerShell arguments: {error}"))?
+        .len();
+    if serialized_bytes > MAX_SCRIPT_BYTES {
+        return Err("PowerShell invocation arguments exceed the safety limit".to_string());
+    }
+    if params.timeout_sec > MAX_COMMAND_TIMEOUT_SECS {
+        return Err(format!(
+            "PowerShell command timeout exceeds {} seconds",
+            MAX_COMMAND_TIMEOUT_SECS
+        ));
+    }
+    Ok(())
 }
 /// Build the effective PowerShell script from invocation parameters.
 fn build_script(params: &PsInvokeCommandParams) -> Result<String, String> {
@@ -542,15 +623,7 @@ fn ps_value_to_arg(value: &serde_json::Value) -> String {
     }
 }
 
-/// Truncate a string for logging purposes.
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
-    } else {
-        s.to_string()
-    }
-}
-
+// Truncate a string for logging purposes.
 // ─── Common PowerShell Commands ──────────────────────────────────────────────
 
 /// Pre-built script templates for common operations.
@@ -560,7 +633,10 @@ impl PsScriptTemplates {
     /// Get-Process equivalent.
     pub fn get_process(name: Option<&str>) -> String {
         match name {
-            Some(n) => format!("Get-Process -Name '{}' | ConvertTo-Json -Depth 3", n),
+            Some(n) => format!(
+                "Get-Process -Name '{}' | ConvertTo-Json -Depth 3",
+                n.replace('\'', "''")
+            ),
             None => "Get-Process | ConvertTo-Json -Depth 3".to_string(),
         }
     }
@@ -570,7 +646,7 @@ impl PsScriptTemplates {
         match name {
             Some(n) => format!(
                 "Get-Service -Name '{}' | Select-Object Name, Status, DisplayName, StartType | ConvertTo-Json -Depth 3",
-                n
+                n.replace('\'', "''")
             ),
             None => "Get-Service | Select-Object Name, Status, DisplayName, StartType | ConvertTo-Json -Depth 3".to_string(),
         }
@@ -597,13 +673,17 @@ impl PsScriptTemplates {
     pub fn get_event_log(log_name: &str, count: u32) -> String {
         format!(
             "Get-WinEvent -LogName '{}' -MaxEvents {} | Select-Object TimeCreated, Id, LevelDisplayName, Message | ConvertTo-Json -Depth 3",
-            log_name, count
+            log_name.replace('\'', "''"),
+            count.min(10_000)
         )
     }
 
     /// Restart a service.
     pub fn restart_service(name: &str) -> String {
-        format!("Restart-Service -Name '{}' -Force -PassThru | Select-Object Name, Status | ConvertTo-Json", name)
+        format!(
+            "Restart-Service -Name '{}' -Force -PassThru | Select-Object Name, Status | ConvertTo-Json",
+            name.replace('\'', "''")
+        )
     }
 
     /// Get disk information.
@@ -619,8 +699,9 @@ impl PsScriptTemplates {
     /// Execute a file integrity check (hash).
     pub fn get_file_hash(path: &str, algorithm: &str) -> String {
         format!(
-            "Get-FileHash -Path '{}' -Algorithm {} | ConvertTo-Json",
-            path, algorithm
+            "Get-FileHash -Path '{}' -Algorithm '{}' | ConvertTo-Json",
+            path.replace('\'', "''"),
+            algorithm.replace('\'', "''")
         )
     }
 
@@ -628,7 +709,7 @@ impl PsScriptTemplates {
     pub fn get_update_history(count: u32) -> String {
         format!(
             "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First {} | ConvertTo-Json -Depth 3",
-            count
+            count.min(10_000)
         )
     }
 
@@ -636,7 +717,8 @@ impl PsScriptTemplates {
     pub fn test_connection(target: &str, count: u32) -> String {
         format!(
             "Test-Connection -ComputerName '{}' -Count {} | ConvertTo-Json -Depth 3",
-            target, count
+            target.replace('\'', "''"),
+            count.clamp(1, 100)
         )
     }
 
@@ -663,7 +745,7 @@ impl PsScriptTemplates {
     pub fn get_local_group_members(group: &str) -> String {
         format!(
             "Get-LocalGroupMember -Group '{}' | Select-Object Name, ObjectClass, PrincipalSource | ConvertTo-Json -Depth 3",
-            group
+            group.replace('\'', "''")
         )
     }
 }
