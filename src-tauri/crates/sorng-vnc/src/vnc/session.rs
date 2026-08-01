@@ -211,8 +211,10 @@ impl VncSessionHandle {
                 task_config,
                 password,
                 stream,
-                cmd_rx,
-                event_tx.clone(),
+                SessionTaskChannels {
+                    cmd_rx,
+                    event_tx: event_tx.clone(),
+                },
                 task_state,
                 task_handshake_signal,
             )
@@ -296,17 +298,26 @@ impl Drop for VncSessionHandle {
 
 // ── Session task ────────────────────────────────────────────────────────
 
+struct SessionTaskChannels {
+    cmd_rx: mpsc::Receiver<SessionCommand>,
+    event_tx: mpsc::Sender<SessionEvent>,
+}
+
 /// The main session loop: handshake → server message dispatch.
 async fn session_task(
     _id: String,
     config: VncConfig,
     password: Option<Zeroizing<String>>,
     mut stream: TcpStream,
-    mut cmd_rx: mpsc::Receiver<SessionCommand>,
-    event_tx: mpsc::Sender<SessionEvent>,
+    channels: SessionTaskChannels,
     state: SharedState,
     handshake_signal: HandshakeSignal,
 ) -> Result<(), VncError> {
+    let SessionTaskChannels {
+        mut cmd_rx,
+        event_tx,
+    } = channels;
+
     // ── 1. Version handshake ────────────────────────────────────────
 
     let mut version_buf = [0u8; 12];
@@ -459,7 +470,7 @@ async fn session_task(
                 .map(|value| value.as_str())
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| VncError::auth_failed("VNC password is required"))?;
-            if password.as_bytes().len() > 8 {
+            if password.len() > 8 {
                 return Err(VncError::auth_failed(
                     "VNC DES passwords are limited to 8 bytes by the protocol",
                 ));
@@ -530,7 +541,7 @@ async fn session_task(
                 .map(|value| value.as_str())
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| VncError::auth_failed("ARD password is required"))?;
-            if username.as_bytes().len() > 63 || password.as_bytes().len() > 63 {
+            if username.len() > 63 || password.len() > 63 {
                 return Err(VncError::auth_failed(
                     "ARD credentials cannot exceed 63 bytes",
                 ));

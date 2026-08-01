@@ -187,6 +187,15 @@ impl SerialSessionHandle {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Internal state for the session task.
+struct SessionRunnerContext {
+    config_metadata: Arc<RwLock<SerialConfig>>,
+    event_tx: mpsc::Sender<SessionEvent>,
+    bytes_rx: Arc<AtomicU64>,
+    bytes_tx: Arc<AtomicU64>,
+    connected: Arc<AtomicBool>,
+    errored: Arc<AtomicBool>,
+}
+
 struct SessionRunner {
     transport: Arc<dyn SerialTransport>,
     config: SerialConfig,
@@ -206,13 +215,17 @@ impl SessionRunner {
     fn new(
         transport: Arc<dyn SerialTransport>,
         config: SerialConfig,
-        config_metadata: Arc<RwLock<SerialConfig>>,
-        event_tx: mpsc::Sender<SessionEvent>,
-        bytes_rx: Arc<AtomicU64>,
-        bytes_tx: Arc<AtomicU64>,
-        connected: Arc<AtomicBool>,
-        errored: Arc<AtomicBool>,
+        context: SessionRunnerContext,
     ) -> Self {
+        let SessionRunnerContext {
+            config_metadata,
+            event_tx,
+            bytes_rx,
+            bytes_tx,
+            connected,
+            errored,
+        } = context;
+
         let mut line_discipline = LineDiscipline::new(config.line_ending, config.local_echo);
         line_discipline.set_max_line_length(
             config
@@ -622,12 +635,14 @@ pub async fn create_session(
     let runner = SessionRunner::new(
         transport,
         config,
-        config_metadata,
-        event_tx,
-        bytes_rx,
-        bytes_tx,
-        connected,
-        errored,
+        SessionRunnerContext {
+            config_metadata,
+            event_tx,
+            bytes_rx,
+            bytes_tx,
+            connected,
+            errored,
+        },
     );
 
     // Spawn the session task

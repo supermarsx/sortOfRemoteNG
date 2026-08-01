@@ -10,7 +10,7 @@ pub struct LlmError {
     pub model: Option<String>,
     pub retryable: bool,
     pub status_code: Option<u16>,
-    pub details: Option<serde_json::Value>,
+    pub details: Option<Box<serde_json::Value>>,
 }
 
 impl fmt::Display for LlmError {
@@ -47,7 +47,8 @@ impl LlmError {
             model: None,
             retryable: true,
             status_code: Some(429),
-            details: retry_after.map(|r| serde_json::json!({"retry_after_seconds": r})),
+            details: retry_after
+                .map(|r| Box::new(serde_json::json!({"retry_after_seconds": r}))),
         }
     }
 
@@ -110,7 +111,9 @@ impl LlmError {
             model: Some(model.to_string()),
             retryable: false,
             status_code: None,
-            details: Some(serde_json::json!({"tokens": tokens, "max_context": max})),
+            details: Some(Box::new(
+                serde_json::json!({"tokens": tokens, "max_context": max}),
+            )),
         }
     }
 
@@ -170,7 +173,9 @@ impl LlmError {
             model: None,
             retryable: false,
             status_code: None,
-            details: Some(serde_json::to_value(&errors).unwrap_or_default()),
+            details: Some(Box::new(
+                serde_json::to_value(&errors).unwrap_or_default(),
+            )),
         }
     }
 }
