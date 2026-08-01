@@ -3,6 +3,12 @@
 
 // Shim modules so `super::commands::*` and `super::diagnostics::*` resolve
 // when the _cmds.rs files are included via include!().
+mod session_runner {
+    pub use crate::rdp::session_runner::{
+        RDP_LOG_CHANNEL_CAPACITY, RDP_LOG_DRAIN_BATCH_SIZE,
+    };
+}
+
 mod commands {
     pub use crate::rdp::commands::*;
     pub use crate::rdp::frame_channel::{DynFrameChannel, FrameChannel};

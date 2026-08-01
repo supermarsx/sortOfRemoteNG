@@ -6,6 +6,9 @@
 
 use std::any::TypeId;
 
+#[cfg(feature = "ops")]
+use sorng_app_domains::credentials::error::CredentialError;
+
 #[test]
 fn app_api_reexports_are_the_dedicated_crate_types() {
     assert_eq!(
@@ -310,8 +313,10 @@ fn every_moved_registrar_keeps_its_internal_registration_order() {
 #[cfg(feature = "ops")]
 #[test]
 fn ops_startup_state_registrar_is_exported_by_the_domain_crate() {
-    let registrar: fn(&mut tauri::App<tauri::Wry>, &std::path::Path) =
-        sorng_app_domains::ops_startup_state::register;
+    let registrar: fn(
+        &mut tauri::App<tauri::Wry>,
+        &std::path::Path,
+    ) -> Result<(), CredentialError> = sorng_app_domains::ops_startup_state::register;
     assert_eq!(
         std::mem::size_of_val(&registrar),
         std::mem::size_of::<fn()>()
