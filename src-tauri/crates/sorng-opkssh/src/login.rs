@@ -1366,7 +1366,7 @@ fn login_failure_message(status: ExitStatus) -> String {
 /// Execute `opkssh login` through the authoritative CLI fallback and parse the
 /// bounded, redacted result.
 pub async fn execute_login(
-    binary_path: &PathBuf,
+    binary_path: &Path,
     opts: &OpksshLoginOptions,
 ) -> Result<OpksshLoginResult, String> {
     validate_login_options(opts).map_err(|error| error.message().to_string())?;
@@ -1936,7 +1936,7 @@ mod tests {
             );
         } else if mode == "descendant-pipe" {
             let executable = std::env::current_exe().expect("test executable path");
-            std::process::Command::new(executable)
+            let mut descendant = std::process::Command::new(executable)
                 .args(fake_helper_args())
                 .env("OPKSSH_PROVIDERS", "pipe-holder")
                 .stdin(Stdio::null())
@@ -1944,13 +1944,16 @@ mod tests {
                 .stderr(Stdio::inherit())
                 .spawn()
                 .expect("spawn inherited-pipe descendant");
+            let _reaper = std::thread::spawn(move || {
+                let _ = descendant.wait();
+            });
         } else if mode == "pipe-holder" {
             std::thread::sleep(Duration::from_secs(30));
         } else if let Some(marker) = mode.strip_prefix("drop-tree:") {
             std::fs::write(format!("{marker}.started"), b"started")
                 .expect("write drop-tree start marker");
             let executable = std::env::current_exe().expect("test executable path");
-            std::process::Command::new(executable)
+            let mut descendant = std::process::Command::new(executable)
                 .args(fake_helper_args())
                 .env(
                     "OPKSSH_PROVIDERS",
@@ -1961,6 +1964,9 @@ mod tests {
                 .stderr(Stdio::inherit())
                 .spawn()
                 .expect("spawn drop-tree descendant");
+            let _reaper = std::thread::spawn(move || {
+                let _ = descendant.wait();
+            });
             std::thread::sleep(Duration::from_secs(30));
         } else if let Some(marker) = mode.strip_prefix("delayed-write:") {
             std::thread::sleep(Duration::from_millis(750));
