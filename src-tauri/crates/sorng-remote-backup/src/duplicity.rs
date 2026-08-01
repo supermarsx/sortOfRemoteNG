@@ -1,6 +1,7 @@
 //! Duplicity wrapper — encrypted incremental backups, restore, status, cleanup.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool,
     DuplicityBackupType, DuplicityConfig,
@@ -8,8 +9,6 @@ use crate::types::{
 use chrono::Utc;
 use log::{error, info};
 use std::collections::HashMap;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
@@ -35,7 +34,8 @@ pub fn build_env(cfg: &DuplicityConfig) -> HashMap<String, String> {
 }
 
 /// Build duplicity argument vector for a backup operation.
-pub fn build_backup_args(cfg: &DuplicityConfig) -> Vec<String> {
+pub fn build_backup_args(cfg: &DuplicityConfig) -> Result<Vec<String>, BackupError> {
+    validate_config(cfg)?;
     let mut args: Vec<String> = Vec::new();
 
     // Backup type
@@ -99,7 +99,7 @@ pub fn build_backup_args(cfg: &DuplicityConfig) -> Vec<String> {
 
     // SSH options
     if let Some(ssh) = &cfg.ssh {
-        let ssh_cmd = ssh.to_ssh_command();
+        let ssh_cmd = ssh.to_ssh_command()?;
         args.push("--ssh-options".into());
         args.push(ssh_cmd);
     }
@@ -117,7 +117,7 @@ pub fn build_backup_args(cfg: &DuplicityConfig) -> Vec<String> {
     args.push(cfg.source.clone());
     args.push(cfg.target_url.clone());
 
-    args
+    Ok(args)
 }
 
 /// Execute a duplicity backup.
@@ -127,70 +127,44 @@ pub async fn backup(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
-    let args = build_backup_args(cfg);
+    let args = build_backup_args(cfg)?;
     let env = build_env(cfg);
     let cmd_str = "duplicity <arguments redacted>".to_string();
-
     info!("Executing duplicity backup");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("duplicity binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn duplicity: {e}"))
+                BackupError::ProcessError(format!("failed to run duplicity safely: {e}"))
             }
         })?;
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+    for line in stderr_buf.lines() {
+        // Basic progress: duplicity outputs volume numbers
+        if line.contains("Copying") || line.contains("Writing") {
+            on_progress(BackupProgress {
+                job_id: job_id.to_string(),
+                bytes_transferred: 0,
+                bytes_total: None,
+                files_transferred: 0,
+                files_total: None,
+                current_file: Some(line.trim().to_string()),
+                speed_bps: 0.0,
+                eta_seconds: None,
+                percent_complete: None,
+                phase: BackupPhase::Transferring,
+            });
         }
     }
-
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-
-            // Basic progress: duplicity outputs volume numbers
-            if line.contains("Copying") || line.contains("Writing") {
-                on_progress(BackupProgress {
-                    job_id: job_id.to_string(),
-                    bytes_transferred: 0,
-                    bytes_total: None,
-                    files_transferred: 0,
-                    files_total: None,
-                    current_file: Some(line.trim().to_string()),
-                    speed_bps: 0.0,
-                    eta_seconds: None,
-                    percent_complete: None,
-                    phase: BackupPhase::Transferring,
-                });
-            }
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for duplicity: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 
@@ -255,6 +229,17 @@ pub async fn restore(
     restore_time: Option<&str>,
     file_to_restore: Option<&str>,
 ) -> Result<String, BackupError> {
+    validate_config(cfg)?;
+    crate::types::validate_existing_restore_directory(
+        "duplicity restore destination",
+        target_path,
+    )?;
+    if let Some(time) = restore_time {
+        crate::types::validate_cli_text("duplicity restore time", time, 256)?;
+    }
+    if let Some(file) = file_to_restore {
+        crate::types::validate_cli_text("duplicity restore file", file, 4096)?;
+    }
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
     let env = build_env(cfg);
     let mut args = vec!["restore".to_string()];
@@ -282,7 +267,7 @@ pub async fn restore(
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run duplicity restore: {e}")))?;
 
@@ -299,6 +284,7 @@ pub async fn restore(
 
 /// Get collection status (list backup chains/sets).
 pub async fn collection_status(cfg: &DuplicityConfig) -> Result<String, BackupError> {
+    validate_config(cfg)?;
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
     let env = build_env(cfg);
     let mut args = vec!["collection-status".to_string()];
@@ -311,7 +297,7 @@ pub async fn collection_status(cfg: &DuplicityConfig) -> Result<String, BackupEr
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| {
             BackupError::ProcessError(format!("failed to run duplicity collection-status: {e}"))
@@ -330,6 +316,12 @@ pub async fn collection_status(cfg: &DuplicityConfig) -> Result<String, BackupEr
 
 /// Clean up old backup sets.
 pub async fn cleanup(cfg: &DuplicityConfig) -> Result<String, BackupError> {
+    validate_config(cfg)?;
+    if !cfg.dry_run {
+        return Err(BackupError::ConfigError(
+            "duplicity cleanup requires dry-run mode until an explicit destructive-operation confirmation is wired".into(),
+        ));
+    }
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
     let env = build_env(cfg);
 
@@ -340,55 +332,39 @@ pub async fn cleanup(cfg: &DuplicityConfig) -> Result<String, BackupError> {
         let args = vec![
             "remove-older-than".to_string(),
             older.clone(),
+            "--dry-run".to_string(),
             "--force".to_string(),
             cfg.target_url.clone(),
         ];
-        let output = Command::new(binary)
-            .args(&args)
-            .envs(&env)
-            .output()
-            .await
-            .map_err(|e| BackupError::ProcessError(format!("duplicity remove-older-than: {e}")))?;
-        results.push(String::from_utf8_lossy(&output.stdout).to_string());
+        results.push(run_cleanup_step(binary, &env, &args, "remove-older-than").await?);
     }
 
     if let Some(n) = cfg.remove_all_but_n_full {
         let args = vec![
             "remove-all-but-n-full".to_string(),
             n.to_string(),
+            "--dry-run".to_string(),
             "--force".to_string(),
             cfg.target_url.clone(),
         ];
-        let output = Command::new(binary)
-            .args(&args)
-            .envs(&env)
-            .output()
-            .await
-            .map_err(|e| {
-                BackupError::ProcessError(format!("duplicity remove-all-but-n-full: {e}"))
-            })?;
-        results.push(String::from_utf8_lossy(&output.stdout).to_string());
+        results.push(run_cleanup_step(binary, &env, &args, "remove-all-but-n-full").await?);
     }
 
     // Always run cleanup to remove orphan files
     let args = vec![
         "cleanup".to_string(),
+        "--dry-run".to_string(),
         "--force".to_string(),
         cfg.target_url.clone(),
     ];
-    let output = Command::new(binary)
-        .args(&args)
-        .envs(&env)
-        .output()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("duplicity cleanup: {e}")))?;
-    results.push(String::from_utf8_lossy(&output.stdout).to_string());
+    results.push(run_cleanup_step(binary, &env, &args, "cleanup").await?);
 
     Ok(results.join("\n---\n"))
 }
 
 /// Verify a duplicity backup.
 pub async fn verify(cfg: &DuplicityConfig) -> Result<String, BackupError> {
+    validate_config(cfg)?;
     let binary = cfg.duplicity_binary.as_deref().unwrap_or("duplicity");
     let env = build_env(cfg);
     let mut args = vec!["verify".to_string()];
@@ -402,7 +378,7 @@ pub async fn verify(cfg: &DuplicityConfig) -> Result<String, BackupError> {
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run duplicity verify: {e}")))?;
 
@@ -421,11 +397,70 @@ pub async fn version(duplicity_binary: Option<&str>) -> Result<String, BackupErr
     let binary = duplicity_binary.unwrap_or("duplicity");
     let output = Command::new(binary)
         .args(["--version"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| {
             BackupError::ProcessError(format!("failed to run duplicity --version: {e}"))
         })?;
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn validate_config(cfg: &DuplicityConfig) -> Result<(), BackupError> {
+    crate::types::validate_cli_text("duplicity source", &cfg.source, 4096)?;
+    crate::types::validate_cli_text("duplicity target URL", &cfg.target_url, 4096)?;
+    let target = cfg.target_url.to_ascii_lowercase();
+    if target.starts_with("ftp://")
+        || target.starts_with("http://")
+        || target.starts_with("webdav://")
+    {
+        return Err(BackupError::ConfigError(
+            "duplicity remote targets must use an authenticated encrypted transport".into(),
+        ));
+    }
+    if cfg.no_encryption && !target.starts_with("file://") {
+        return Err(BackupError::ConfigError(
+            "unencrypted duplicity backups are only allowed for local file targets".into(),
+        ));
+    }
+    crate::types::reject_embedded_url_credentials("duplicity target URL", &cfg.target_url)?;
+    if cfg.num_retries.unwrap_or(0) > 10
+        || cfg.volsize.unwrap_or(0) > 10_240
+        || cfg.extra_args.len() > 64
+    {
+        return Err(BackupError::ConfigError(
+            "duplicity retry, volume-size, or additional-argument limits were exceeded".into(),
+        ));
+    }
+    if let Some(ssh) = &cfg.ssh {
+        ssh.validate()?;
+    }
+    Ok(())
+}
+
+async fn run_cleanup_step(
+    binary: &str,
+    env: &HashMap<String, String>,
+    args: &[String],
+    operation: &str,
+) -> Result<String, BackupError> {
+    let output = Command::new(binary)
+        .args(args)
+        .envs(env)
+        .output_bounded()
+        .await
+        .map_err(|error| {
+            BackupError::ProcessError(format!("duplicity {operation} failed to run: {error}"))
+        })?;
+    if !output.status.success() {
+        return Err(BackupError::ToolFailed {
+            tool: "duplicity".into(),
+            exit_code: output.status.code().unwrap_or(-1),
+            stderr: crate::rsync::truncate_output(&String::from_utf8_lossy(&output.stderr), 5_000),
+        });
+    }
+    Ok(crate::rsync::truncate_output(
+        &String::from_utf8_lossy(&output.stdout),
+        10_000,
+    ))
 }

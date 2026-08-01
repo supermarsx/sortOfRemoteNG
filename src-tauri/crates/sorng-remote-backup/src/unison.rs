@@ -1,19 +1,25 @@
 //! Unison wrapper — profile management, bidirectional sync, conflict handling.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, UnisonConfig,
     UnisonConflictPolicy,
 };
 use chrono::Utc;
 use log::{error, info};
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build unison argument vector from config.
-pub fn build_args(cfg: &UnisonConfig) -> Vec<String> {
+pub fn build_args(cfg: &UnisonConfig) -> Result<Vec<String>, BackupError> {
+    if cfg.paths.len() > 1024 || cfg.extra_args.len() > 64 {
+        return Err(BackupError::ConfigError(
+            "unison path or additional-argument limits were exceeded".into(),
+        ));
+    }
+    crate::types::validate_cli_text("unison root 1", &cfg.root1, 4096)?;
+    crate::types::validate_cli_text("unison root 2", &cfg.root2, 4096)?;
     let mut args: Vec<String> = Vec::new();
 
     // If using a named profile, pass it first
@@ -101,18 +107,7 @@ pub fn build_args(cfg: &UnisonConfig) -> Vec<String> {
     // SSH transport
     if let Some(ssh) = &cfg.ssh {
         args.push("-sshargs".into());
-        let mut ssh_args = Vec::new();
-        ssh_args.push(format!("-p {}", ssh.port));
-        if let Some(key) = &ssh.private_key_path {
-            ssh_args.push(format!("-i {key}"));
-        }
-        if ssh.compression {
-            ssh_args.push("-C".to_string());
-        }
-        for (k, v) in &ssh.ssh_options {
-            ssh_args.push(format!("-o {k}={v}"));
-        }
-        args.push(ssh_args.join(" "));
+        args.push(ssh.to_ssh_options()?.join(" "));
     }
 
     // Extra args
@@ -120,7 +115,7 @@ pub fn build_args(cfg: &UnisonConfig) -> Vec<String> {
         args.push(a.clone());
     }
 
-    args
+    Ok(args)
 }
 
 /// Parse unison output for progress/status.
@@ -168,72 +163,47 @@ pub async fn execute(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.unison_binary.as_deref().unwrap_or("unison");
-    let args = build_args(cfg);
+    let args = build_args(cfg)?;
     let cmd_str = "unison <arguments redacted>".to_string();
-
     info!("Executing Unison sync");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("unison binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn unison: {e}"))
+                BackupError::ProcessError(format!("failed to run unison safely: {e}"))
             }
         })?;
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
     let mut files_seen: u64 = 0;
 
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
-
-            // Track file transfer progress
-            let trimmed = line.trim();
-            if trimmed.contains("---->") || trimmed.contains("<----") {
-                files_seen += 1;
-                let current_file = trimmed.split_whitespace().last().map(String::from);
-                on_progress(BackupProgress {
-                    job_id: job_id.to_string(),
-                    bytes_transferred: 0,
-                    bytes_total: None,
-                    files_transferred: files_seen,
-                    files_total: None,
-                    current_file,
-                    speed_bps: 0.0,
-                    eta_seconds: None,
-                    percent_complete: None,
-                    phase: BackupPhase::Transferring,
-                });
-            }
+    for line in stdout_buf.lines() {
+        // Track file transfer progress
+        let trimmed = line.trim();
+        if trimmed.contains("---->") || trimmed.contains("<----") {
+            files_seen += 1;
+            let current_file = trimmed.split_whitespace().last().map(String::from);
+            on_progress(BackupProgress {
+                job_id: job_id.to_string(),
+                bytes_transferred: 0,
+                bytes_total: None,
+                files_transferred: files_seen,
+                files_total: None,
+                current_file,
+                speed_bps: 0.0,
+                eta_seconds: None,
+                percent_complete: None,
+                phase: BackupPhase::Transferring,
+            });
         }
     }
-
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for unison: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 
@@ -335,7 +305,7 @@ pub async fn version(unison_binary: Option<&str>) -> Result<String, BackupError>
     let binary = unison_binary.unwrap_or("unison");
     let output = Command::new(binary)
         .args(["-version"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run unison -version: {e}")))?;
 

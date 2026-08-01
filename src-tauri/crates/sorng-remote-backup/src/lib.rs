@@ -29,6 +29,7 @@ pub mod borg;
 pub mod duplicity;
 pub mod error;
 pub mod integrity;
+mod process;
 pub mod progress;
 pub mod rclone;
 pub mod restic;

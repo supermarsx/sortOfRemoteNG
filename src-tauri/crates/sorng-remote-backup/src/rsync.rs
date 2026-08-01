@@ -1,19 +1,29 @@
 //! Rsync wrapper — argument builder, execution, dry-run, output parser.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RsyncConfig,
 };
 use chrono::Utc;
 use log::{error, info, warn};
 use regex::Regex;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build the full rsync argument vector from config.
-pub fn build_args(cfg: &RsyncConfig) -> Vec<String> {
+pub fn build_args(cfg: &RsyncConfig) -> Result<Vec<String>, BackupError> {
+    if cfg.sources.is_empty() || cfg.sources.len() > 1024 {
+        return Err(BackupError::ConfigError(
+            "rsync requires between 1 and 1024 source paths".into(),
+        ));
+    }
+    crate::types::validate_cli_text("rsync destination", &cfg.destination, 4096)?;
+    if cfg.extra_args.len() > 64 {
+        return Err(BackupError::ConfigError(
+            "rsync accepts at most 64 additional arguments".into(),
+        ));
+    }
     let mut args: Vec<String> = Vec::new();
 
     if cfg.archive {
@@ -110,7 +120,7 @@ pub fn build_args(cfg: &RsyncConfig) -> Vec<String> {
     // SSH command
     if let Some(ssh) = &cfg.ssh {
         args.push("-e".into());
-        args.push(ssh.to_ssh_command());
+        args.push(ssh.to_ssh_command()?);
     }
 
     // Extra user-provided args
@@ -126,7 +136,7 @@ pub fn build_args(cfg: &RsyncConfig) -> Vec<String> {
     // Destination
     args.push(cfg.destination.clone());
 
-    args
+    Ok(args)
 }
 
 /// Parse rsync --info=progress2 output line.
@@ -234,59 +244,30 @@ pub async fn execute(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.rsync_binary.as_deref().unwrap_or("rsync");
-    let args = build_args(cfg);
+    let args = build_args(cfg)?;
     let cmd_str = "rsync <arguments redacted>".to_string();
-
     info!("Executing rsync");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("rsync binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn rsync: {e}"))
+                BackupError::ProcessError(format!("failed to run rsync safely: {e}"))
             }
         })?;
-
-    // Read stdout for progress
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    if let Some(out) = stdout {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            if let Some(progress) = parse_progress_line(&line, job_id) {
-                on_progress(progress);
-            }
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+    for line in stdout_buf.lines() {
+        if let Some(progress) = parse_progress_line(line, job_id) {
+            on_progress(progress);
         }
     }
-
-    if let Some(err) = stderr {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for rsync: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 

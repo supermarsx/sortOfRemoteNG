@@ -9,7 +9,7 @@ use md5::Md5;
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Component, Path};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use xxhash_rust::xxh64::Xxh64;
@@ -89,16 +89,41 @@ pub async fn generate_manifest(
     algorithm: &ChecksumAlgorithm,
     exclude: &[String],
 ) -> Result<ChecksumManifest, BackupError> {
+    let base_metadata = fs::symlink_metadata(base_path)
+        .await
+        .map_err(|e| BackupError::IoError(format!("cannot inspect manifest root: {e}")))?;
+    if base_metadata.file_type().is_symlink() || !base_metadata.is_dir() {
+        return Err(BackupError::ConfigError(
+            "manifest root must be a real directory, not a symlink".into(),
+        ));
+    }
+    if exclude.len() > 1024 {
+        return Err(BackupError::ConfigError(
+            "at most 1024 manifest exclusion patterns are allowed".into(),
+        ));
+    }
     info!("Generating checksum manifest for {}", base_path.display());
     let mut entries = HashMap::new();
     let mut stack = vec![base_path.to_path_buf()];
+    let mut visited_directories = 0usize;
 
     while let Some(dir) = stack.pop() {
+        visited_directories = visited_directories.saturating_add(1);
+        if visited_directories > 100_000 {
+            return Err(BackupError::ConfigError(
+                "manifest directory count exceeds the 100000 entry limit".into(),
+            ));
+        }
         let mut read_dir = fs::read_dir(&dir)
             .await
             .map_err(|e| BackupError::IoError(format!("cannot read dir {}: {e}", dir.display())))?;
 
-        while let Ok(Some(entry)) = read_dir.next_entry().await {
+        while let Some(entry) = read_dir.next_entry().await.map_err(|error| {
+            BackupError::IoError(format!(
+                "cannot continue reading {}: {error}",
+                dir.display()
+            ))
+        })? {
             let path = entry.path();
             let relative = path
                 .strip_prefix(base_path)
@@ -111,14 +136,22 @@ pub async fn generate_manifest(
                 continue;
             }
 
-            let metadata = entry
-                .metadata()
+            let file_type = entry
+                .file_type()
                 .await
-                .map_err(|e| BackupError::IoError(format!("metadata error: {e}")))?;
+                .map_err(|e| BackupError::IoError(format!("file-type error: {e}")))?;
+            if file_type.is_symlink() {
+                continue;
+            }
 
-            if metadata.is_dir() {
+            if file_type.is_dir() {
                 stack.push(path);
-            } else if metadata.is_file() {
+            } else if file_type.is_file() {
+                if entries.len() >= 100_000 {
+                    return Err(BackupError::ConfigError(
+                        "manifest file count exceeds the 100000 entry limit".into(),
+                    ));
+                }
                 debug!("Checksumming: {relative}");
                 match checksum_file(&path, algorithm).await {
                     Ok(hash) => {
@@ -146,6 +179,11 @@ pub async fn verify_manifest(
     base_path: &Path,
     job_id: &str,
 ) -> Result<IntegrityCheckResult, BackupError> {
+    if manifest.entries.len() > 100_000 {
+        return Err(BackupError::ConfigError(
+            "manifest contains more than 100000 files".into(),
+        ));
+    }
     info!(
         "Verifying {} files against manifest",
         manifest.entries.len()
@@ -158,6 +196,19 @@ pub async fn verify_manifest(
     let mut errors = Vec::new();
 
     for (relative, expected_hash) in &manifest.entries {
+        let relative_path = Path::new(relative);
+        if relative_path.is_absolute()
+            || relative_path.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(BackupError::ConfigError(
+                "manifest contains an unsafe absolute or parent-relative path".into(),
+            ));
+        }
         let full_path = base_path.join(relative);
 
         if !full_path.exists() {
@@ -169,6 +220,14 @@ pub async fn verify_manifest(
                 actual: None,
             });
             continue;
+        }
+        let metadata = fs::symlink_metadata(&full_path)
+            .await
+            .map_err(|e| BackupError::IoError(format!("failed to inspect manifest file: {e}")))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(BackupError::IntegrityError(
+                "manifest target is not a regular non-symlink file".into(),
+            ));
         }
 
         match checksum_file(&full_path, &manifest.algorithm).await {
@@ -219,6 +278,18 @@ pub async fn verify_manifest(
 /// Save a manifest to a JSON file.
 pub async fn save_manifest(manifest: &ChecksumManifest, path: &Path) -> Result<(), BackupError> {
     let json = serde_json::to_string_pretty(manifest)?;
+    if json.len() > 16 * 1024 * 1024 {
+        return Err(BackupError::ConfigError(
+            "serialized manifest exceeds the 16 MiB safety limit".into(),
+        ));
+    }
+    if let Ok(metadata) = fs::symlink_metadata(path).await {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(BackupError::ConfigError(
+                "manifest destination must be a regular non-symlink file".into(),
+            ));
+        }
+    }
     fs::write(path, json)
         .await
         .map_err(|e| BackupError::IoError(format!("failed to write manifest: {e}")))?;
@@ -227,10 +298,24 @@ pub async fn save_manifest(manifest: &ChecksumManifest, path: &Path) -> Result<(
 
 /// Load a manifest from a JSON file.
 pub async fn load_manifest(path: &Path) -> Result<ChecksumManifest, BackupError> {
+    let metadata = fs::symlink_metadata(path)
+        .await
+        .map_err(|e| BackupError::IoError(format!("failed to inspect manifest: {e}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 16 * 1024 * 1024
+    {
+        return Err(BackupError::ConfigError(
+            "manifest must be a regular non-symlink file no larger than 16 MiB".into(),
+        ));
+    }
     let json = fs::read_to_string(path)
         .await
         .map_err(|e| BackupError::IoError(format!("failed to read manifest: {e}")))?;
     let manifest: ChecksumManifest = serde_json::from_str(&json)?;
+    if manifest.entries.len() > 100_000 {
+        return Err(BackupError::ConfigError(
+            "manifest contains more than 100000 entries".into(),
+        ));
+    }
     Ok(manifest)
 }
 

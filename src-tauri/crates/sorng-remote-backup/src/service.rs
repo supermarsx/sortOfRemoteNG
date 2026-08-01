@@ -1,6 +1,7 @@
 //! Service façade — central orchestrator for backup jobs, execution, and progress.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::progress::ProgressTracker;
 use crate::types::{
     BackupExecutionRecord, BackupJob, BackupJobStatus, BackupProgress, BackupTool, ToolInfo,
@@ -255,7 +256,7 @@ async fn detect_tool_binary(name: &str) -> (bool, Option<String>, Option<String>
 
     let path_result = tokio::process::Command::new(which_cmd)
         .arg(name)
-        .output()
+        .output_bounded()
         .await;
 
     match path_result {
@@ -277,7 +278,7 @@ async fn detect_tool_binary(name: &str) -> (bool, Option<String>, Option<String>
 
             let version = tokio::process::Command::new(name)
                 .arg(version_flag)
-                .output()
+                .output_bounded()
                 .await
                 .ok()
                 .and_then(|o| {

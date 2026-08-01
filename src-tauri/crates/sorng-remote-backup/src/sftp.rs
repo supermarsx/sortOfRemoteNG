@@ -1,62 +1,85 @@
 //! SFTP wrapper — bulk file transfer with resume, progress tracking, checksums.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, SftpConfig,
     SftpTransferMode,
 };
 use chrono::Utc;
 use log::{error, info};
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build an sftp batch file content for bulk operations.
-pub fn build_batch_commands(cfg: &SftpConfig) -> String {
+pub fn build_batch_commands(cfg: &SftpConfig) -> Result<String, BackupError> {
+    if cfg.local_paths.is_empty() || cfg.local_paths.len() > 1024 {
+        return Err(BackupError::ConfigError(
+            "SFTP requires between 1 and 1024 local paths".into(),
+        ));
+    }
+    let quote = |path: &str| -> Result<String, BackupError> {
+        crate::types::validate_cli_text("SFTP batch path", path, 4096)?;
+        Ok(format!(
+            "\"{}\"",
+            path.replace('\\', "\\\\").replace('"', "\\\"")
+        ))
+    };
     let mut cmds = Vec::new();
 
     match cfg.mode {
         SftpTransferMode::Upload => {
-            cmds.push(format!("cd {}", cfg.remote_path));
+            cmds.push(format!("cd {}", quote(&cfg.remote_path)?));
             if cfg.recursive {
                 cmds.push("-mkdir .".into()); // ensure remote dir exists
             }
             for path in &cfg.local_paths {
                 if cfg.recursive {
-                    cmds.push(format!("put -r {path}"));
+                    cmds.push(format!("put -r {}", quote(path)?));
                 } else {
-                    cmds.push(format!("put {path}"));
+                    cmds.push(format!("put {}", quote(path)?));
                 }
             }
         }
         SftpTransferMode::Download => {
-            cmds.push(format!("cd {}", cfg.remote_path));
+            cmds.push(format!("cd {}", quote(&cfg.remote_path)?));
             for path in &cfg.local_paths {
                 if cfg.recursive {
-                    cmds.push(format!("get -r . {path}"));
+                    cmds.push(format!("get -r . {}", quote(path)?));
                 } else {
-                    cmds.push(format!("get * {path}"));
+                    cmds.push(format!("get * {}", quote(path)?));
                 }
             }
         }
         SftpTransferMode::Sync | SftpTransferMode::Mirror => {
             // For sync/mirror we use rsync-like approach with sftp —
             // just do a recursive transfer (sftp doesn't natively support sync)
-            cmds.push(format!("cd {}", cfg.remote_path));
+            cmds.push(format!("cd {}", quote(&cfg.remote_path)?));
             for path in &cfg.local_paths {
-                cmds.push(format!("put -r {path}"));
+                cmds.push(format!("put -r {}", quote(path)?));
             }
         }
     }
 
     cmds.push("bye".into());
-    cmds.join("\n")
+    Ok(cmds.join("\n"))
 }
 
 /// Build sftp command-line arguments.
-pub fn build_args(cfg: &SftpConfig) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
+pub fn build_args(cfg: &SftpConfig) -> Result<Vec<String>, BackupError> {
+    cfg.ssh.validate()?;
+    if cfg.buffer_size.unwrap_or(0) > 16 * 1024 * 1024 || cfg.concurrency.unwrap_or(1) > 32 {
+        return Err(BackupError::ConfigError(
+            "SFTP buffer size or concurrency exceeds the safety limit".into(),
+        ));
+    }
+    // OpenSSH uses the first supplied value for these options.
+    let mut args = vec![
+        "-o".into(),
+        "BatchMode=yes".into(),
+        "-o".into(),
+        "StrictHostKeyChecking=yes".into(),
+    ];
 
     // SSH options from transport config
     args.push("-P".into());
@@ -71,10 +94,9 @@ pub fn build_args(cfg: &SftpConfig) -> Vec<String> {
         args.push("-C".into());
     }
 
-    if let Some(timeout) = cfg.ssh.connect_timeout {
-        args.push("-o".into());
-        args.push(format!("ConnectTimeout={timeout}"));
-    }
+    let timeout = cfg.ssh.connect_timeout.unwrap_or(30).clamp(1, 300);
+    args.push("-o".into());
+    args.push(format!("ConnectTimeout={timeout}"));
 
     for (k, v) in &cfg.ssh.ssh_options {
         args.push("-o".into());
@@ -109,7 +131,7 @@ pub fn build_args(cfg: &SftpConfig) -> Vec<String> {
     // target
     args.push(format!("{}@{}", cfg.ssh.username, cfg.ssh.host));
 
-    args
+    Ok(args)
 }
 
 /// Execute an SFTP transfer.
@@ -118,64 +140,26 @@ pub async fn execute(
     job_id: &str,
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
-    let args = build_args(cfg);
-    let batch = build_batch_commands(cfg);
+    let args = build_args(cfg)?;
+    let batch = build_batch_commands(cfg)?;
     let cmd_str = "sftp <arguments redacted>".to_string();
-
     info!("Executing SFTP transfer");
     let started_at = Utc::now();
 
-    let mut child = Command::new("sftp")
+    let output = Command::new("sftp")
         .args(&args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded_with_input(batch.as_bytes())
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound("sftp binary not found".into())
             } else {
-                BackupError::ProcessError(format!("failed to spawn sftp: {e}"))
+                BackupError::ProcessError(format!("failed to run sftp safely: {e}"))
             }
         })?;
-
-    // Write batch commands to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        stdin
-            .write_all(batch.as_bytes())
-            .await
-            .map_err(|e| BackupError::IoError(format!("failed to write sftp batch: {e}")))?;
-        drop(stdin);
-    }
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
-        }
-    }
-
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for sftp: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 

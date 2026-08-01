@@ -1,6 +1,7 @@
 //! Borg wrapper — repo init, create, extract, list, prune, compact, check.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool,
     BorgCompression, BorgConfig, BorgEncryption, BorgRetention, SnapshotInfo,
@@ -8,29 +9,28 @@ use crate::types::{
 use chrono::Utc;
 use log::{error, info};
 use std::collections::HashMap;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build environment variables for borg.
-pub fn build_env(cfg: &BorgConfig) -> HashMap<String, String> {
+pub fn build_env(cfg: &BorgConfig) -> Result<HashMap<String, String>, BackupError> {
+    crate::types::validate_cli_text("borg repository", &cfg.repository, 4096)?;
     let mut env = HashMap::new();
     env.insert("BORG_REPO".into(), cfg.repository.clone());
     if let Some(pass) = &cfg.passphrase {
         env.insert("BORG_PASSPHRASE".into(), pass.clone());
     }
-    if let Some(file) = &cfg.passphrase_file {
-        env.insert("BORG_PASSPHRASE_FD".into(), "0".into()); // will pipe from file
-        env.insert("BORG_PASSCOMMAND".into(), format!("cat {file}"));
+    if cfg.passphrase_file.is_some() {
+        return Err(BackupError::ConfigError(
+            "borg passphrase files are unavailable because the previous shell-based passcommand was injectable; supply the protected passphrase value instead".into(),
+        ));
     }
-
 
     // SSH command
     if let Some(ssh) = &cfg.ssh {
-        env.insert("BORG_RSH".into(), ssh.to_ssh_command());
+        env.insert("BORG_RSH".into(), ssh.to_ssh_command()?);
     }
-    env
+    Ok(env)
 }
 
 /// Build compression argument for borg.
@@ -75,7 +75,7 @@ fn compression_arg(cfg: &BorgConfig) -> Option<String> {
 /// Initialize a borg repository.
 pub async fn init(cfg: &BorgConfig) -> Result<String, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
 
     let encryption = cfg.encryption.as_ref().map_or("repokey", |e| match e {
         BorgEncryption::None => "none",
@@ -93,7 +93,7 @@ pub async fn init(cfg: &BorgConfig) -> Result<String, BackupError> {
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg init: {e}")))?;
 
@@ -118,7 +118,7 @@ pub async fn create(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
 
     let archive_name = cfg.archive_name.as_deref().unwrap_or("{hostname}-{now}");
     let archive_path = format!("::{archive_name}");
@@ -168,79 +168,50 @@ pub async fn create(
     info!("Executing borg create");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("borg binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn borg: {e}"))
+                BackupError::ProcessError(format!("failed to run borg safely: {e}"))
             }
         })?;
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    // Borg outputs JSON progress to stderr
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                if json.get("type").and_then(|v| v.as_str()) == Some("progress_percent") {
-                    let progress = BackupProgress {
-                        job_id: job_id.to_string(),
-                        bytes_transferred: json
-                            .get("current")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        bytes_total: json.get("total").and_then(|v| v.as_u64()),
-                        files_transferred: json.get("nfiles").and_then(|v| v.as_u64()).unwrap_or(0),
-                        files_total: None,
-                        current_file: json.get("path").and_then(|v| v.as_str()).map(String::from),
-                        speed_bps: 0.0,
-                        eta_seconds: None,
-                        percent_complete: json.get("current").and_then(|c| {
-                            json.get("total").and_then(|t| {
-                                let c = c.as_f64()?;
-                                let t = t.as_f64()?;
-                                if t > 0.0 {
-                                    Some(c / t * 100.0)
-                                } else {
-                                    None
-                                }
-                            })
-                        }),
-                        phase: BackupPhase::Transferring,
-                    };
-                    on_progress(progress);
-                }
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+    for line in stderr_buf.lines() {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            if json.get("type").and_then(|v| v.as_str()) == Some("progress_percent") {
+                let progress = BackupProgress {
+                    job_id: job_id.to_string(),
+                    bytes_transferred: json.get("current").and_then(|v| v.as_u64()).unwrap_or(0),
+                    bytes_total: json.get("total").and_then(|v| v.as_u64()),
+                    files_transferred: json.get("nfiles").and_then(|v| v.as_u64()).unwrap_or(0),
+                    files_total: None,
+                    current_file: json.get("path").and_then(|v| v.as_str()).map(String::from),
+                    speed_bps: 0.0,
+                    eta_seconds: None,
+                    percent_complete: json.get("current").and_then(|c| {
+                        json.get("total").and_then(|t| {
+                            let c = c.as_f64()?;
+                            let t = t.as_f64()?;
+                            if t > 0.0 {
+                                Some(c / t * 100.0)
+                            } else {
+                                None
+                            }
+                        })
+                    }),
+                    phase: BackupPhase::Transferring,
+                };
+                on_progress(progress);
             }
         }
     }
-
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for borg: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 
@@ -306,13 +277,13 @@ pub async fn create(
 /// List borg archives.
 pub async fn list(cfg: &BorgConfig) -> Result<Vec<SnapshotInfo>, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let args = vec!["list".to_string(), "--json".to_string()];
 
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg list: {e}")))?;
 
@@ -370,8 +341,9 @@ pub async fn extract(
     target_path: &str,
     patterns: &[String],
 ) -> Result<String, BackupError> {
+    crate::types::validate_existing_restore_directory("borg extraction destination", target_path)?;
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let archive = format!("::{archive_name}");
     let mut args = vec!["extract".to_string(), archive];
     for p in patterns {
@@ -383,7 +355,7 @@ pub async fn extract(
         .args(&args)
         .envs(&env)
         .current_dir(target_path)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg extract: {e}")))?;
 
@@ -401,7 +373,7 @@ pub async fn extract(
 /// Prune old borg archives per retention policy.
 pub async fn prune(cfg: &BorgConfig, retention: &BorgRetention) -> Result<String, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["prune".to_string(), "--stats".to_string()];
 
     if let Some(n) = retention.keep_last {
@@ -435,7 +407,7 @@ pub async fn prune(cfg: &BorgConfig, retention: &BorgRetention) -> Result<String
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg prune: {e}")))?;
 
@@ -458,13 +430,13 @@ pub async fn prune(cfg: &BorgConfig, retention: &BorgRetention) -> Result<String
 /// Compact a borg repository (free space from deleted archives).
 pub async fn compact(cfg: &BorgConfig) -> Result<String, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let args = vec!["compact".to_string()];
 
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg compact: {e}")))?;
 
@@ -482,7 +454,7 @@ pub async fn compact(cfg: &BorgConfig) -> Result<String, BackupError> {
 /// Check borg repository integrity.
 pub async fn check(cfg: &BorgConfig, verify_data: bool) -> Result<String, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["check".to_string()];
     if verify_data {
         args.push("--verify-data".into());
@@ -491,7 +463,7 @@ pub async fn check(cfg: &BorgConfig, verify_data: bool) -> Result<String, Backup
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg check: {e}")))?;
 
@@ -508,13 +480,13 @@ pub async fn check(cfg: &BorgConfig, verify_data: bool) -> Result<String, Backup
 /// Break borg repository lock.
 pub async fn break_lock(cfg: &BorgConfig) -> Result<String, BackupError> {
     let binary = cfg.borg_binary.as_deref().unwrap_or("borg");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let args = vec!["break-lock".to_string()];
 
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg break-lock: {e}")))?;
 
@@ -533,7 +505,7 @@ pub async fn version(borg_binary: Option<&str>) -> Result<String, BackupError> {
     let binary = borg_binary.unwrap_or("borg");
     let output = Command::new(binary)
         .args(["--version"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run borg --version: {e}")))?;
 

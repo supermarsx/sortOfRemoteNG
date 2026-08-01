@@ -1,8 +1,10 @@
 //! Data types, enums, tool configs, and job definitions for remote backup.
 
+use crate::error::BackupError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Component, Path};
 
 // ─── Backup Tool ────────────────────────────────────────────────────
 
@@ -73,44 +75,262 @@ pub struct JumpHost {
 }
 
 impl SshTransportConfig {
-    /// Build the SSH command-line fragment for use with rsync/rclone/etc.
-    pub fn to_ssh_command(&self) -> String {
-        let mut parts = Vec::new();
-        let ssh = self.ssh_binary.as_deref().unwrap_or("ssh");
-        parts.push(ssh.to_string());
-        parts.push(format!("-p {}", self.port));
+    pub fn validate(&self) -> Result<(), BackupError> {
+        validate_identifier("SSH host", &self.host, true)?;
+        validate_identifier("SSH username", &self.username, false)?;
+        if self.port == 0 {
+            return Err(BackupError::ConfigError(
+                "SSH port must be between 1 and 65535".into(),
+            ));
+        }
+        if self.password.is_some() || self.private_key_passphrase.is_some() {
+            return Err(BackupError::ConfigError(
+                "password and private-key passphrase authentication are unavailable for external backup tools because no protected prompt transport is wired; use an SSH agent or an unencrypted key protected by filesystem permissions".into(),
+            ));
+        }
+        if self.agent_forwarding {
+            return Err(BackupError::ConfigError(
+                "SSH agent forwarding is disabled for backup jobs".into(),
+            ));
+        }
+        if self.jump_hosts.len() > 4 {
+            return Err(BackupError::ConfigError(
+                "at most four SSH jump hosts are allowed".into(),
+            ));
+        }
+        if self.connect_timeout.unwrap_or(30) > 300 {
+            return Err(BackupError::ConfigError(
+                "SSH connect timeout must not exceed 300 seconds".into(),
+            ));
+        }
+        if let Some(binary) = &self.ssh_binary {
+            validate_cli_text("SSH binary", binary, 4096)?;
+        }
+        if let Some(key) = &self.private_key_path {
+            validate_cli_text("SSH private-key path", key, 4096)?;
+        }
+        for (key, value) in &self.ssh_options {
+            validate_ssh_option(key, value)?;
+        }
+        for jump in &self.jump_hosts {
+            validate_identifier("jump-host name", &jump.host, true)?;
+            validate_identifier("jump-host username", &jump.username, false)?;
+            if jump.port == 0 {
+                return Err(BackupError::ConfigError(
+                    "jump-host port must be between 1 and 65535".into(),
+                ));
+            }
+            if jump.private_key_path.is_some() {
+                return Err(BackupError::ConfigError(
+                    "per-jump-host private keys are unavailable because OpenSSH ProxyJump cannot transport them safely in this adapter".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Build safely quoted SSH options for tools that provide their own SSH binary.
+    pub fn to_ssh_options(&self) -> Result<Vec<String>, BackupError> {
+        self.validate()?;
+        // OpenSSH keeps the first value it obtains for most options. Put
+        // mandatory policy first so later user options cannot weaken it.
+        let mut parts = vec![
+            "-o".to_string(),
+            "BatchMode=yes".to_string(),
+            "-o".to_string(),
+            "StrictHostKeyChecking=yes".to_string(),
+            "-p".to_string(),
+            self.port.to_string(),
+        ];
 
         if let Some(key) = &self.private_key_path {
-            parts.push(format!("-i {}", key));
+            parts.push("-i".to_string());
+            parts.push(shell_quote(key));
         }
         if self.compression {
             parts.push("-C".to_string());
         }
-        if self.agent_forwarding {
-            parts.push("-A".to_string());
-        }
-        if let Some(timeout) = self.connect_timeout {
-            parts.push(format!("-o ConnectTimeout={}", timeout));
-        }
-        for (k, v) in &self.ssh_options {
-            parts.push(format!("-o {}={}", k, v));
+        let timeout = self.connect_timeout.unwrap_or(30).clamp(1, 300);
+        parts.push("-o".to_string());
+        parts.push(format!("ConnectTimeout={timeout}"));
+        for (key, value) in &self.ssh_options {
+            parts.push("-o".to_string());
+            parts.push(shell_quote(&format!("{key}={value}")));
         }
         if !self.jump_hosts.is_empty() {
-            let jumps: Vec<String> = self
+            let jumps = self
                 .jump_hosts
                 .iter()
-                .map(|j| {
-                    if let Some(key) = &j.private_key_path {
-                        format!("-i {} {}@{}:{}", key, j.username, j.host, j.port)
-                    } else {
-                        format!("{}@{}:{}", j.username, j.host, j.port)
-                    }
-                })
-                .collect();
-            parts.push(format!("-J {}", jumps.join(",")));
+                .map(|jump| format!("{}@{}:{}", jump.username, jump.host, jump.port))
+                .collect::<Vec<_>>()
+                .join(",");
+            parts.push("-J".to_string());
+            parts.push(shell_quote(&jumps));
         }
-        parts.join(" ")
+
+        Ok(parts)
     }
+
+    /// Build the SSH command-line fragment for use with rsync/restic/borg.
+    pub fn to_ssh_command(&self) -> Result<String, BackupError> {
+        let ssh = self.ssh_binary.as_deref().unwrap_or("ssh");
+        let mut parts = vec![shell_quote(ssh)];
+        parts.extend(self.to_ssh_options()?);
+        Ok(parts.join(" "))
+    }
+}
+
+pub(crate) fn validate_cli_text(
+    label: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), BackupError> {
+    if value.is_empty() || value.len() > max_len || value.chars().any(char::is_control) {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must be non-empty, at most {max_len} bytes, and contain no control characters"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+pub(crate) fn quote_remote_path(path: &str) -> Result<String, BackupError> {
+    validate_cli_text("remote path", path, 4096)?;
+    Ok(shell_quote(path))
+}
+
+pub(crate) fn validate_existing_restore_directory(
+    label: &str,
+    value: &str,
+) -> Result<(), BackupError> {
+    validate_cli_text(label, value, 4096)?;
+    let path = Path::new(value);
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must be an absolute path without parent traversal"
+        )));
+    }
+
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        BackupError::ConfigError(format!(
+            "{label} must already exist as a directory before restore: {error}"
+        ))
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must be a real directory, not a symlink or non-directory entry"
+        )));
+    }
+
+    for ancestor in path.ancestors() {
+        let ancestor_metadata = std::fs::symlink_metadata(ancestor).map_err(|error| {
+            BackupError::ConfigError(format!("cannot inspect {label} ancestry: {error}"))
+        })?;
+        if ancestor_metadata.file_type().is_symlink() {
+            return Err(BackupError::ConfigError(format!(
+                "{label} must not traverse a symbolic link"
+            )));
+        }
+    }
+
+    let canonical = std::fs::canonicalize(path).map_err(|error| {
+        BackupError::ConfigError(format!("cannot resolve {label} safely: {error}"))
+    })?;
+    if canonical.parent().is_none() {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must not be a filesystem root"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn reject_embedded_url_credentials(label: &str, value: &str) -> Result<(), BackupError> {
+    let Some((_, remainder)) = value.split_once("://") else {
+        return Ok(());
+    };
+    let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
+    if let Some((user_info, _)) = authority.rsplit_once('@') {
+        let normalized = user_info.to_ascii_lowercase();
+        if user_info.contains(':') || normalized.contains("%3a") {
+            return Err(BackupError::ConfigError(format!(
+                "{label} must not contain embedded credentials; use the protected credential fields"
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn reject_plaintext_url(label: &str, value: &str) -> Result<(), BackupError> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.contains("http://")
+        || normalized.contains("ftp://")
+        || normalized.contains("webdav://")
+        || normalized.contains("dav://")
+    {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must use an encrypted transport"
+        )));
+    }
+    reject_embedded_url_credentials(label, value)
+}
+
+pub(crate) fn validate_https_endpoint(label: &str, value: &str) -> Result<(), BackupError> {
+    validate_cli_text(label, value, 4096)?;
+    if !value.trim().to_ascii_lowercase().starts_with("https://") {
+        return Err(BackupError::ConfigError(format!("{label} must use HTTPS")));
+    }
+    if value.contains('?') || value.contains('#') {
+        return Err(BackupError::ConfigError(format!(
+            "{label} must not contain query credentials or fragments"
+        )));
+    }
+    reject_embedded_url_credentials(label, value)
+}
+
+fn validate_identifier(label: &str, value: &str, host: bool) -> Result<(), BackupError> {
+    validate_cli_text(label, value, 255)?;
+    let valid = value.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || matches!(character, '.' | '-' | '_' | ':')
+            || (host && matches!(character, '[' | ']'))
+    });
+    if !valid || value.starts_with('-') {
+        return Err(BackupError::ConfigError(format!(
+            "{label} contains unsupported characters"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ssh_option(key: &str, value: &str) -> Result<(), BackupError> {
+    validate_cli_text("SSH option key", key, 64)?;
+    validate_cli_text("SSH option value", value, 256)?;
+    let allowed = [
+        "addressfamily",
+        "ipqos",
+        "loglevel",
+        "serveralivecountmax",
+        "serveraliveinterval",
+        "stricthostkeychecking",
+    ];
+    if !allowed.contains(&key.to_ascii_lowercase().as_str()) {
+        return Err(BackupError::ConfigError(format!(
+            "SSH option {key} is not allowed for backup jobs"
+        )));
+    }
+    if key.eq_ignore_ascii_case("StrictHostKeyChecking") && !value.eq_ignore_ascii_case("yes") {
+        return Err(BackupError::ConfigError(
+            "StrictHostKeyChecking must be yes for backup jobs".into(),
+        ));
+    }
+    Ok(())
 }
 
 // ─── Bandwidth Limit ────────────────────────────────────────────────

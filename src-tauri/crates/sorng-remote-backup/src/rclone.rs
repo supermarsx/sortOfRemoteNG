@@ -1,21 +1,21 @@
 //! Rclone wrapper — remote config, sync/copy/move, bandwidth limiting, output parser.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
-    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RcloneConfig,
-    RcloneSyncMode,
+    BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, RcloneBackend,
+    RcloneConfig, RcloneSyncMode,
 };
 use chrono::Utc;
 use log::{error, info};
 use regex::Regex;
 use std::collections::HashMap;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build rclone argument vector from config.
-pub fn build_args(cfg: &RcloneConfig) -> Vec<String> {
+pub fn build_args(cfg: &RcloneConfig) -> Result<Vec<String>, BackupError> {
+    validate_config(cfg)?;
     let mut args: Vec<String> = Vec::new();
 
     // Sub-command
@@ -102,12 +102,13 @@ pub fn build_args(cfg: &RcloneConfig) -> Vec<String> {
         args.push(a.clone());
     }
 
-    args
+    Ok(args)
 }
 
 /// Build environment variables for rclone remote configs.
 /// Rclone accepts remote config as env vars: RCLONE_CONFIG_<NAME>_<PARAM>=value
-pub fn build_env(cfg: &RcloneConfig) -> HashMap<String, String> {
+pub fn build_env(cfg: &RcloneConfig) -> Result<HashMap<String, String>, BackupError> {
+    validate_config(cfg)?;
     let mut env = HashMap::new();
 
     for (name, remote_cfg) in &cfg.remotes {
@@ -139,7 +140,7 @@ pub fn build_env(cfg: &RcloneConfig) -> HashMap<String, String> {
         }
     }
 
-    env
+    Ok(env)
 }
 
 /// Parse rclone --stats-one-line output.
@@ -189,58 +190,32 @@ pub async fn execute(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.rclone_binary.as_deref().unwrap_or("rclone");
-    let args = build_args(cfg);
-    let env = build_env(cfg);
+    let args = build_args(cfg)?;
+    let env = build_env(cfg)?;
     let cmd_str = "rclone <arguments redacted>".to_string();
-
     info!("Executing rclone");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("rclone binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn rclone: {e}"))
+                BackupError::ProcessError(format!("failed to run rclone safely: {e}"))
             }
         })?;
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+    for line in stderr_buf.lines() {
+        if let Some(progress) = parse_progress_line(line, job_id) {
+            on_progress(progress);
         }
     }
-
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            // Rclone outputs progress to stderr
-            if let Some(progress) = parse_progress_line(&line, job_id) {
-                on_progress(progress);
-            }
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for rclone: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 
@@ -303,7 +278,7 @@ pub async fn list_remotes(rclone_binary: Option<&str>) -> Result<Vec<String>, Ba
     let binary = rclone_binary.unwrap_or("rclone");
     let output = Command::new(binary)
         .args(["listremotes"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run rclone listremotes: {e}")))?;
 
@@ -329,12 +304,91 @@ pub async fn version(rclone_binary: Option<&str>) -> Result<String, BackupError>
     let binary = rclone_binary.unwrap_or("rclone");
     let output = Command::new(binary)
         .args(["version"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run rclone version: {e}")))?;
 
     let full = String::from_utf8_lossy(&output.stdout).to_string();
     Ok(full.lines().next().unwrap_or("unknown").to_string())
+}
+
+fn validate_config(cfg: &RcloneConfig) -> Result<(), BackupError> {
+    crate::types::validate_cli_text("rclone source", &cfg.source, 4096)?;
+    crate::types::validate_cli_text("rclone destination", &cfg.destination, 4096)?;
+    crate::types::reject_plaintext_url("rclone source", &cfg.source)?;
+    crate::types::reject_plaintext_url("rclone destination", &cfg.destination)?;
+    if cfg.remotes.len() > 32 || cfg.extra_args.len() > 64 {
+        return Err(BackupError::ConfigError(
+            "rclone configuration exceeds remote or argument limits".into(),
+        ));
+    }
+    if cfg.transfers.unwrap_or(4) > 64 || cfg.checkers.unwrap_or(8) > 64 {
+        return Err(BackupError::ConfigError(
+            "rclone transfers and checkers must not exceed 64".into(),
+        ));
+    }
+    if let Some(ssh) = &cfg.ssh {
+        ssh.validate()?;
+    }
+    let mut parameter_count = 0usize;
+    for (name, remote) in &cfg.remotes {
+        crate::types::validate_cli_text("rclone remote name", name, 64)?;
+        if matches!(&remote.remote_type, RcloneBackend::Ftp)
+            || matches!(
+                &remote.remote_type,
+                RcloneBackend::Custom(kind) if kind.eq_ignore_ascii_case("ftp")
+            )
+        {
+            return Err(BackupError::ConfigError(
+                "rclone FTP remotes are disabled because they do not provide encrypted transport"
+                    .into(),
+            ));
+        }
+        parameter_count = parameter_count.saturating_add(remote.params.len());
+        let mut webdav_url = None;
+        for (key, value) in &remote.params {
+            crate::types::validate_cli_text("rclone parameter name", key, 64)?;
+            crate::types::validate_cli_text("rclone parameter value", value, 65_536)?;
+            let normalized_key = key.to_ascii_lowercase();
+            if normalized_key.contains("url") || normalized_key.contains("endpoint") {
+                crate::types::reject_plaintext_url("rclone remote endpoint", value)?;
+                if value.contains("://") {
+                    crate::types::reject_embedded_url_credentials("rclone remote endpoint", value)?;
+                }
+            }
+            if normalized_key == "url" {
+                webdav_url = Some(value.as_str());
+            }
+        }
+        if matches!(&remote.remote_type, RcloneBackend::WebDav) {
+            let endpoint = webdav_url.ok_or_else(|| {
+                BackupError::ConfigError(
+                    "rclone WebDAV remotes require an explicit HTTPS URL".into(),
+                )
+            })?;
+            crate::types::validate_https_endpoint("rclone WebDAV endpoint", endpoint)?;
+        }
+    }
+    if parameter_count > 256 {
+        return Err(BackupError::ConfigError(
+            "rclone configuration accepts at most 256 remote parameters".into(),
+        ));
+    }
+    for argument in &cfg.extra_args {
+        crate::types::validate_cli_text("rclone additional argument", argument, 1024)?;
+        let normalized = argument.to_ascii_lowercase();
+        if normalized == "--config"
+            || normalized.starts_with("--config=")
+            || normalized.starts_with("--password-command")
+            || normalized.contains("no-check-certificate")
+            || normalized.starts_with("--rc")
+        {
+            return Err(BackupError::ConfigError(
+                "rclone additional arguments may not override configuration, credentials, or transport-security policy".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 //! Restic wrapper — repository management, backup, restore, snapshots, prune, check.
 
 use crate::error::BackupError;
+use crate::process::BoundedCommandExt;
 use crate::types::{
     BackupExecutionRecord, BackupJobStatus, BackupPhase, BackupProgress, BackupTool, ResticConfig,
     ResticRetention, SnapshotInfo,
@@ -8,13 +9,12 @@ use crate::types::{
 use chrono::Utc;
 use log::{error, info};
 use std::collections::HashMap;
-use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
 
 /// Build environment variables for restic (password, cache dir, etc.)
-pub fn build_env(cfg: &ResticConfig) -> HashMap<String, String> {
+pub fn build_env(cfg: &ResticConfig) -> Result<HashMap<String, String>, BackupError> {
+    validate_repository(cfg)?;
     let mut env = HashMap::new();
     env.insert("RESTIC_REPOSITORY".into(), cfg.repository.clone());
     if let Some(pass) = &cfg.password {
@@ -26,11 +26,17 @@ pub fn build_env(cfg: &ResticConfig) -> HashMap<String, String> {
     if let Some(cache) = &cfg.cache_dir {
         env.insert("RESTIC_CACHE_DIR".into(), cache.clone());
     }
-    env
+    Ok(env)
 }
 
 /// Build common restic arguments (verbose, compression, SSH, etc.)
-fn build_common_args(cfg: &ResticConfig) -> Vec<String> {
+fn build_common_args(cfg: &ResticConfig) -> Result<Vec<String>, BackupError> {
+    validate_repository(cfg)?;
+    if cfg.pack_size.unwrap_or(0) > 1024 || cfg.read_concurrency.unwrap_or(0) > 64 {
+        return Err(BackupError::ConfigError(
+            "restic pack size must not exceed 1024 MiB and concurrency must not exceed 64".into(),
+        ));
+    }
     let mut args: Vec<String> = Vec::new();
     if let Some(v) = cfg.verbose {
         for _ in 0..v {
@@ -54,28 +60,41 @@ fn build_common_args(cfg: &ResticConfig) -> Vec<String> {
     }
     // SSH transport — restic uses -o sftp.command='ssh ...' for sftp backend
     if let Some(ssh) = &cfg.ssh {
-        let ssh_cmd = ssh.to_ssh_command();
+        let ssh_cmd = ssh.to_ssh_command()?;
         args.push("-o".into());
         args.push(format!("sftp.command=\"{ssh_cmd} -s sftp\""));
     }
     for a in &cfg.extra_args {
+        crate::types::validate_cli_text("restic additional argument", a, 1024)?;
+        let normalized = a.to_ascii_lowercase();
+        if normalized == "-r"
+            || normalized == "-o"
+            || normalized.starts_with("--repo")
+            || normalized.starts_with("--repository")
+            || normalized.starts_with("--password")
+            || normalized.starts_with("--insecure")
+        {
+            return Err(BackupError::ConfigError(
+                "restic additional arguments may not override repository, credential, or transport-security policy".into(),
+            ));
+        }
         args.push(a.clone());
     }
-    args
+    Ok(args)
 }
 
 /// Initialize a new restic repository.
 pub async fn init(cfg: &ResticConfig) -> Result<String, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["init".to_string()];
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     info!("Initializing restic repository");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic init: {e}")))?;
 
@@ -100,9 +119,9 @@ pub async fn backup(
     mut on_progress: impl FnMut(BackupProgress),
 ) -> Result<BackupExecutionRecord, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["backup".to_string(), "--json".to_string()];
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     // Exclude patterns
     for ex in &cfg.exclude {
@@ -137,93 +156,69 @@ pub async fn backup(
     info!("Executing restic backup");
     let started_at = Utc::now();
 
-    let mut child = Command::new(binary)
+    let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .output_bounded()
+        .await
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 BackupError::ToolNotFound(format!("restic binary not found at: {binary}"))
             } else {
-                BackupError::ProcessError(format!("failed to spawn restic: {e}"))
+                BackupError::ProcessError(format!("failed to run restic safely: {e}"))
             }
         })?;
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
+    let stdout_buf = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
     let mut snapshot_id: Option<String> = None;
 
-    if let Some(out) = child.stdout.take() {
-        let reader = BufReader::new(out);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stdout_buf.push_str(&line);
-            stdout_buf.push('\n');
-
-            // Parse JSON progress messages
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                match json.get("message_type").and_then(|v| v.as_str()) {
-                    Some("status") => {
-                        let progress = BackupProgress {
-                            job_id: job_id.to_string(),
-                            bytes_transferred: json
-                                .get("bytes_done")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0),
-                            bytes_total: json.get("total_bytes").and_then(|v| v.as_u64()),
-                            files_transferred: json
-                                .get("files_done")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0),
-                            files_total: json.get("total_files").and_then(|v| v.as_u64()),
-                            current_file: json
-                                .get("current_files")
-                                .and_then(|v| v.as_array())
-                                .and_then(|a| a.first())
-                                .and_then(|v| v.as_str())
-                                .map(String::from),
-                            speed_bps: json
-                                .get("bytes_done")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0),
-                            eta_seconds: json.get("seconds_remaining").and_then(|v| v.as_u64()),
-                            percent_complete: json
-                                .get("percent_done")
-                                .and_then(|v| v.as_f64())
-                                .map(|p| p * 100.0),
-                            phase: BackupPhase::Transferring,
-                        };
-                        on_progress(progress);
-                    }
-                    Some("summary") => {
-                        snapshot_id = json
-                            .get("snapshot_id")
+    for line in stdout_buf.lines() {
+        // Parse JSON progress messages
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+            match json.get("message_type").and_then(|v| v.as_str()) {
+                Some("status") => {
+                    let progress = BackupProgress {
+                        job_id: job_id.to_string(),
+                        bytes_transferred: json
+                            .get("bytes_done")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0),
+                        bytes_total: json.get("total_bytes").and_then(|v| v.as_u64()),
+                        files_transferred: json
+                            .get("files_done")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0),
+                        files_total: json.get("total_files").and_then(|v| v.as_u64()),
+                        current_file: json
+                            .get("current_files")
+                            .and_then(|v| v.as_array())
+                            .and_then(|a| a.first())
                             .and_then(|v| v.as_str())
-                            .map(String::from);
-                    }
-                    _ => {}
+                            .map(String::from),
+                        speed_bps: json
+                            .get("bytes_done")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0),
+                        eta_seconds: json.get("seconds_remaining").and_then(|v| v.as_u64()),
+                        percent_complete: json
+                            .get("percent_done")
+                            .and_then(|v| v.as_f64())
+                            .map(|p| p * 100.0),
+                        phase: BackupPhase::Transferring,
+                    };
+                    on_progress(progress);
                 }
+                Some("summary") => {
+                    snapshot_id = json
+                        .get("snapshot_id")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                }
+                _ => {}
             }
         }
     }
-
-    if let Some(err) = child.stderr.take() {
-        let reader = BufReader::new(err);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
-
-    let exit_status = child
-        .wait()
-        .await
-        .map_err(|e| BackupError::ProcessError(format!("failed to wait for restic: {e}")))?;
-
-    let exit_code = exit_status.code().unwrap_or(-1);
+    let exit_code = output.status.code().unwrap_or(-1);
     let finished_at = Utc::now();
     let duration = (finished_at - started_at).num_milliseconds() as f64 / 1000.0;
 
@@ -284,14 +279,14 @@ pub async fn backup(
 /// List restic snapshots.
 pub async fn snapshots(cfg: &ResticConfig) -> Result<Vec<SnapshotInfo>, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["snapshots".to_string(), "--json".to_string()];
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic snapshots: {e}")))?;
 
@@ -358,8 +353,15 @@ pub async fn restore(
     include_paths: &[String],
     exclude_paths: &[String],
 ) -> Result<String, BackupError> {
+    crate::types::validate_existing_restore_directory("restic restore destination", target_path)?;
+    crate::types::validate_cli_text("restic snapshot ID", snapshot_id, 256)?;
+    if include_paths.len() > 1024 || exclude_paths.len() > 1024 {
+        return Err(BackupError::ConfigError(
+            "restic restore accepts at most 1024 include and exclude paths".into(),
+        ));
+    }
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec![
         "restore".to_string(),
         snapshot_id.to_string(),
@@ -374,13 +376,13 @@ pub async fn restore(
         args.push("--exclude".into());
         args.push(ep.clone());
     }
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     info!("Restoring restic snapshot {snapshot_id} to {target_path}");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic restore: {e}")))?;
 
@@ -401,7 +403,7 @@ pub async fn forget(
     retention: &ResticRetention,
 ) -> Result<String, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["forget".to_string()];
 
     if let Some(n) = retention.keep_last {
@@ -432,13 +434,13 @@ pub async fn forget(
     if retention.prune {
         args.push("--prune".into());
     }
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     info!("Running restic forget with retention policy");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic forget: {e}")))?;
 
@@ -456,18 +458,18 @@ pub async fn forget(
 /// Run `restic check` to verify repository integrity.
 pub async fn check(cfg: &ResticConfig, read_data: bool) -> Result<String, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
+    let env = build_env(cfg)?;
     let mut args = vec!["check".to_string()];
     if read_data {
         args.push("--read-data".into());
     }
-    args.extend(build_common_args(cfg));
+    args.extend(build_common_args(cfg)?);
 
     info!("Running restic repository check");
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic check: {e}")))?;
 
@@ -484,13 +486,14 @@ pub async fn check(cfg: &ResticConfig, read_data: bool) -> Result<String, Backup
 /// Unlock a locked restic repository.
 pub async fn unlock(cfg: &ResticConfig) -> Result<String, BackupError> {
     let binary = cfg.restic_binary.as_deref().unwrap_or("restic");
-    let env = build_env(cfg);
-    let args = vec!["unlock".to_string()];
+    let env = build_env(cfg)?;
+    let mut args = vec!["unlock".to_string()];
+    args.extend(build_common_args(cfg)?);
 
     let output = Command::new(binary)
         .args(&args)
         .envs(&env)
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic unlock: {e}")))?;
 
@@ -509,9 +512,32 @@ pub async fn version(restic_binary: Option<&str>) -> Result<String, BackupError>
     let binary = restic_binary.unwrap_or("restic");
     let output = Command::new(binary)
         .args(["version"])
-        .output()
+        .output_bounded()
         .await
         .map_err(|e| BackupError::ProcessError(format!("failed to run restic version: {e}")))?;
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn validate_repository(cfg: &ResticConfig) -> Result<(), BackupError> {
+    crate::types::validate_cli_text("restic repository", &cfg.repository, 4096)?;
+    crate::types::reject_embedded_url_credentials("restic repository", &cfg.repository)?;
+    let normalized = cfg.repository.trim().to_ascii_lowercase();
+    if let Some(endpoint) = normalized.strip_prefix("rest:") {
+        crate::types::validate_https_endpoint("restic REST endpoint", endpoint)?;
+    } else {
+        crate::types::reject_plaintext_url("restic repository", &cfg.repository)?;
+    }
+    if cfg.extra_args.len() > 64 {
+        return Err(BackupError::ConfigError(
+            "restic accepts at most 64 additional arguments".into(),
+        ));
+    }
+    if let Some(password_file) = &cfg.password_file {
+        crate::types::validate_cli_text("restic password file", password_file, 4096)?;
+    }
+    if let Some(cache_dir) = &cfg.cache_dir {
+        crate::types::validate_cli_text("restic cache directory", cache_dir, 4096)?;
+    }
+    Ok(())
 }
