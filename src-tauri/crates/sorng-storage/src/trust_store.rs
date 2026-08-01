@@ -17,10 +17,21 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use crate::durable::durable_write;
+
+const MAX_TRUST_STORE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_TRUST_RECORDS: usize = 10_000;
+const MAX_HISTORY_ENTRIES: usize = 1_000;
+const MAX_HOST_BYTES: usize = 4_096;
+const MAX_FINGERPRINT_BYTES: usize = 8_192;
+const MAX_PEM_BYTES: usize = 2 * 1024 * 1024;
+const MAX_NICKNAME_BYTES: usize = 512;
+const MAX_TAGS: usize = 100;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -139,6 +150,16 @@ pub struct VerificationStats {
 
 /// TLS certificate identity information.
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CertChainEntry {
+    pub subject: String,
+    pub issuer: String,
+    pub fingerprint: String,
+    pub valid_from: String,
+    pub valid_to: String,
+}
+
+/// TLS certificate identity information.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CertIdentity {
     /// SHA-256 fingerprint of the DER-encoded certificate
     pub fingerprint: String,
@@ -165,6 +186,34 @@ pub struct CertIdentity {
     /// Full certificate chain fingerprints (for CertificatePinning)
     #[serde(default)]
     pub chain_fingerprints: Vec<String>,
+    #[serde(default)]
+    pub subject_cn: Option<String>,
+    #[serde(default)]
+    pub subject_org: Option<String>,
+    #[serde(default)]
+    pub subject_ou: Option<String>,
+    #[serde(default)]
+    pub subject_country: Option<String>,
+    #[serde(default)]
+    pub subject_state: Option<String>,
+    #[serde(default)]
+    pub subject_locality: Option<String>,
+    #[serde(default)]
+    pub subject_email: Option<String>,
+    #[serde(default)]
+    pub issuer_cn: Option<String>,
+    #[serde(default)]
+    pub issuer_org: Option<String>,
+    #[serde(default)]
+    pub issuer_country: Option<String>,
+    #[serde(default)]
+    pub key_algorithm: Option<String>,
+    #[serde(default)]
+    pub key_size: Option<u32>,
+    #[serde(default)]
+    pub version: Option<u32>,
+    #[serde(default)]
+    pub chain: Option<Vec<CertChainEntry>>,
 }
 
 /// SSH host key identity information.
@@ -192,7 +241,7 @@ pub struct SshHostKeyIdentity {
 #[serde(tag = "kind")]
 pub enum Identity {
     #[serde(rename = "tls")]
-    Tls(CertIdentity),
+    Tls(Box<CertIdentity>),
     #[serde(rename = "ssh")]
     Ssh(SshHostKeyIdentity),
 }
@@ -307,7 +356,10 @@ pub struct TrustStoreService {
 impl TrustStoreService {
     pub fn new(store_path: String) -> TrustStoreServiceState {
         let path = PathBuf::from(&store_path);
-        let data = load_trust_store_data(&path);
+        // Commands and synchronous verifiers reload before use. Construction
+        // stays infallible for Tauri state registration, while corrupt state
+        // still fails closed on first access.
+        let data = load_trust_store_data(&path).unwrap_or_default();
         Arc::new(Mutex::new(TrustStoreService {
             data,
             store_path: path,
@@ -316,6 +368,13 @@ impl TrustStoreService {
 
     fn persist(&self) -> Result<(), String> {
         persist_trust_store_data(&self.store_path, &self.data)
+    }
+
+    /// Reload validated persisted state before an operation from the external
+    /// Tauri command adapter, keeping async commands coherent with sync writers.
+    pub fn reload_from_disk(&mut self) -> Result<(), String> {
+        self.data = load_trust_store_data(&self.store_path)?;
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -377,8 +436,10 @@ impl TrustStoreService {
         host: &str,
         record_type: &str,
         identity: Identity,
-    ) -> TrustVerifyResult {
-        verify_identity_in_data(&mut self.data, host, record_type, identity)
+    ) -> Result<TrustVerifyResult, String> {
+        let result = verify_identity_in_data(&mut self.data, host, record_type, identity);
+        self.persist()?;
+        Ok(result)
     }
 
     /// Trust (memorize) an identity for a host with full metadata.
@@ -422,6 +483,56 @@ impl TrustStoreService {
             reason,
             approved_by,
             note,
+        );
+        self.persist()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn migrate_legacy_identity(
+        &mut self,
+        host: String,
+        record_type: String,
+        identity: Identity,
+        user_approved: bool,
+        history: Vec<Identity>,
+        nickname: Option<String>,
+        approved_by: Option<String>,
+        note: Option<String>,
+    ) -> Result<(), String> {
+        let key = Self::record_key(&record_type, &host);
+        if self.data.records.contains_key(&key) {
+            return Ok(());
+        }
+        let now = Utc::now().to_rfc3339();
+        let history = history
+            .into_iter()
+            .map(|identity| IdentityHistoryEntry {
+                identity,
+                changed_at: now.clone(),
+                reason: IdentityChangeReason::Migrated,
+                approved_by: approved_by.clone(),
+                note: note.clone(),
+                verification_count: 0,
+                trust_score: 0,
+            })
+            .collect();
+        self.data.records.insert(
+            key,
+            TrustRecord {
+                host,
+                record_type,
+                identity,
+                user_approved,
+                nickname,
+                history,
+                host_policy: None,
+                host_policy_config: None,
+                stats: VerificationStats::default(),
+                first_trusted: Some(now),
+                trust_expires: None,
+                revoked: false,
+                tags: vec![],
+            },
         );
         self.persist()
     }
@@ -819,25 +930,178 @@ fn trust_identity_in_data(
     }
 }
 
-/// Load `TrustStoreData` from a JSON file, defaulting on any error/absence.
-fn load_trust_store_data(path: &PathBuf) -> TrustStoreData {
-    if path.exists() {
-        fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    } else {
-        TrustStoreData::default()
+fn validate_short_string(value: &str, field: &str, maximum: usize) -> Result<(), String> {
+    if value.is_empty() || value.len() > maximum || value.contains('\0') {
+        return Err(format!("invalid trust-store {field}"));
     }
+    Ok(())
 }
 
-/// Persist `TrustStoreData` to a JSON file (pretty-printed).
-fn persist_trust_store_data(path: &PathBuf, data: &TrustStoreData) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+fn validate_identity(identity: &Identity, expected_type: &str) -> Result<(), String> {
+    match identity {
+        Identity::Tls(cert) => {
+            if expected_type == "ssh" {
+                return Err("SSH trust record contains a TLS identity".to_string());
+            }
+            validate_short_string(
+                &cert.fingerprint,
+                "certificate fingerprint",
+                MAX_FINGERPRINT_BYTES,
+            )?;
+            if cert
+                .pem
+                .as_ref()
+                .is_some_and(|pem| pem.len() > MAX_PEM_BYTES)
+            {
+                return Err("trust-store certificate PEM is too large".to_string());
+            }
+            if cert.chain.as_ref().is_some_and(|chain| chain.len() > 64)
+                || cert.chain_fingerprints.len() > 64
+            {
+                return Err("trust-store certificate chain is too large".to_string());
+            }
+        }
+        Identity::Ssh(key) => {
+            if expected_type != "ssh" {
+                return Err("certificate trust record contains an SSH identity".to_string());
+            }
+            validate_short_string(&key.fingerprint, "SSH fingerprint", MAX_FINGERPRINT_BYTES)?;
+            if key
+                .public_key
+                .as_ref()
+                .is_some_and(|public_key| public_key.len() > 1024 * 1024)
+            {
+                return Err("trust-store SSH public key is too large".to_string());
+            }
+            if key.algorithms_offered.len() > 128 {
+                return Err("too many SSH algorithms in trust record".to_string());
+            }
+        }
     }
-    let json = serde_json::to_string_pretty(data).map_err(|e| format!("serialize: {}", e))?;
-    fs::write(path, json).map_err(|e| format!("write: {}", e))
+    Ok(())
+}
+
+fn validate_trust_store_data(data: &TrustStoreData) -> Result<(), String> {
+    if data.records.len() > MAX_TRUST_RECORDS {
+        return Err("trust store contains too many records".to_string());
+    }
+    if data.policy_config.allowed_networks.len() > 1_024
+        || data.policy_config.trusted_ca_fingerprints.len() > 1_024
+    {
+        return Err("trust-store policy configuration is too large".to_string());
+    }
+    for (key, record) in &data.records {
+        validate_short_string(&record.host, "host", MAX_HOST_BYTES)?;
+        if !matches!(
+            record.record_type.as_str(),
+            "https" | "certificate" | "rdp" | "ssh" | "tls"
+        ) {
+            return Err("unknown trust-store record type".to_string());
+        }
+        if key != &TrustStoreService::record_key(&record.record_type, &record.host) {
+            return Err("trust-store record key does not match its contents".to_string());
+        }
+        validate_identity(&record.identity, &record.record_type)?;
+        if record.history.len() > MAX_HISTORY_ENTRIES {
+            return Err("trust-store history is too large".to_string());
+        }
+        for entry in &record.history {
+            validate_identity(&entry.identity, &record.record_type)?;
+            if entry.trust_score > 100 {
+                return Err("invalid trust score in trust-store history".to_string());
+            }
+            if entry.note.as_ref().is_some_and(|note| note.len() > 4_096) {
+                return Err("trust-store history note is too large".to_string());
+            }
+        }
+        if record
+            .nickname
+            .as_ref()
+            .is_some_and(|nickname| nickname.len() > MAX_NICKNAME_BYTES)
+        {
+            return Err("trust-store nickname is too large".to_string());
+        }
+        if record.tags.len() > MAX_TAGS
+            || record
+                .tags
+                .iter()
+                .any(|tag| tag.len() > 256 || tag.contains('\0'))
+        {
+            return Err("invalid trust-store tags".to_string());
+        }
+        if record.stats.trust_score > 100 {
+            return Err("invalid trust-store trust score".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Load and validate a bounded, regular trust-store file. Existing malformed,
+/// unreadable, oversized, or symlinked state is an error rather than an empty
+/// TOFU store.
+fn load_trust_store_data(path: &Path) -> Result<TrustStoreData, String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(TrustStoreData::default())
+        }
+        Err(error) => {
+            return Err(format!(
+                "read trust-store metadata {}: {error}",
+                path.display()
+            ))
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!(
+            "trust store {} must be a regular non-symlink file",
+            path.display()
+        ));
+    }
+    if metadata.len() > MAX_TRUST_STORE_BYTES {
+        return Err(format!(
+            "trust store {} exceeds the {} byte limit",
+            path.display(),
+            MAX_TRUST_STORE_BYTES
+        ));
+    }
+
+    let file = std::fs::File::open(path)
+        .map_err(|error| format!("open trust store {}: {error}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_TRUST_STORE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read trust store {}: {error}", path.display()))?;
+    if bytes.len() as u64 > MAX_TRUST_STORE_BYTES {
+        return Err(format!(
+            "trust store {} exceeds the {} byte limit",
+            path.display(),
+            MAX_TRUST_STORE_BYTES
+        ));
+    }
+    let data: TrustStoreData = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("parse trust store {}: {error}", path.display()))?;
+    validate_trust_store_data(&data)?;
+    Ok(data)
+}
+
+/// Persist validated trust state atomically and durably.
+fn persist_trust_store_data(path: &Path, data: &TrustStoreData) -> Result<(), String> {
+    if let Ok(metadata) = std::fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(format!(
+                "trust store {} must be a regular non-symlink file",
+                path.display()
+            ));
+        }
+    }
+    validate_trust_store_data(data)?;
+    let json = serde_json::to_vec_pretty(data)
+        .map_err(|error| format!("serialize trust store: {error}"))?;
+    if json.len() as u64 > MAX_TRUST_STORE_BYTES {
+        return Err("serialized trust store exceeds the size limit".to_string());
+    }
+    durable_write(path, &json)
 }
 
 // ---------------------------------------------------------------------------
@@ -889,11 +1153,9 @@ impl SyncTrustStore {
             .inner
             .lock()
             .map_err(|_| "trust store lock poisoned".to_string())?;
-        let mut data = load_trust_store_data(&path);
+        let mut data = load_trust_store_data(&path)?;
         let result = verify_identity_in_data(&mut data, host, record_type, identity);
-        // Persist the updated stats. Best-effort: a stats-write failure must
-        // not change the verification outcome the caller already computed.
-        let _ = persist_trust_store_data(&path, &data);
+        persist_trust_store_data(&path, &data)?;
         Ok(result)
     }
 
@@ -902,8 +1164,10 @@ impl SyncTrustStore {
     /// the store is empty/absent (matches `TrustPolicy::default()`).
     pub fn global_policy(&self) -> TrustPolicy {
         match self.inner.lock() {
-            Ok(path) => load_trust_store_data(&path).policy,
-            Err(_) => TrustPolicy::default(),
+            Ok(path) => load_trust_store_data(&path)
+                .map(|data| data.policy)
+                .unwrap_or(TrustPolicy::Strict),
+            Err(_) => TrustPolicy::Strict,
         }
     }
 
@@ -920,7 +1184,7 @@ impl SyncTrustStore {
             .inner
             .lock()
             .map_err(|_| "trust store lock poisoned".to_string())?;
-        let mut data = load_trust_store_data(&path);
+        let mut data = load_trust_store_data(&path)?;
         trust_identity_in_data(
             &mut data,
             host,
@@ -932,6 +1196,44 @@ impl SyncTrustStore {
             None,
         );
         persist_trust_store_data(&path, &data)
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn malformed_existing_store_fails_closed() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("trust_store.json");
+        std::fs::write(&path, b"{not-json").unwrap();
+        assert!(load_trust_store_data(&path).is_err());
+        assert_eq!(
+            SyncTrustStore::new(path).global_policy(),
+            TrustPolicy::Strict
+        );
+    }
+
+    #[test]
+    fn oversized_existing_store_is_rejected_without_reading_it_all() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("trust_store.json");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_TRUST_STORE_BYTES + 1).unwrap();
+        assert!(load_trust_store_data(&path).is_err());
+    }
+
+    #[test]
+    fn durable_persistence_round_trips_valid_state() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("trust_store.json");
+        persist_trust_store_data(&path, &TrustStoreData::default()).unwrap();
+        assert_eq!(
+            load_trust_store_data(&path).unwrap().policy,
+            TrustPolicy::Tofu
+        );
     }
 }
 

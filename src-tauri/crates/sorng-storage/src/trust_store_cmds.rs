@@ -8,7 +8,8 @@ pub async fn trust_verify_identity(
     identity: Identity,
 ) -> Result<TrustVerifyResult, String> {
     let mut svc = state.lock().await;
-    Ok(svc.verify_identity(&host, &record_type, identity).await)
+    svc.reload_from_disk()?;
+    svc.verify_identity(&host, &record_type, identity).await
 }
 
 #[tauri::command]
@@ -20,6 +21,7 @@ pub async fn trust_store_identity(
     user_approved: bool,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.trust_identity(host, record_type, identity, user_approved)
         .await
 }
@@ -35,8 +37,28 @@ pub async fn trust_store_identity_with_reason(
     reason: IdentityChangeReason,
     approved_by: Option<String>,
     note: Option<String>,
+    migration_history: Option<Vec<Identity>>,
+    nickname: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
+    if reason == IdentityChangeReason::Migrated {
+        return svc
+            .migrate_legacy_identity(
+                host,
+                record_type,
+                identity,
+                user_approved,
+                migration_history.unwrap_or_default(),
+                nickname,
+                approved_by,
+                note,
+            )
+            .await;
+    }
+    if migration_history.is_some() || nickname.is_some() {
+        return Err("migration fields require the migrated reason".to_string());
+    }
     svc.trust_identity_with_reason(
         host,
         record_type,
@@ -56,6 +78,7 @@ pub async fn trust_remove_identity(
     record_type: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.remove_identity(&host, &record_type).await
 }
 
@@ -65,7 +88,8 @@ pub async fn trust_get_identity(
     host: String,
     record_type: String,
 ) -> Result<Option<TrustRecord>, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     Ok(svc.get_stored_identity(&host, &record_type).await)
 }
 
@@ -73,7 +97,8 @@ pub async fn trust_get_identity(
 pub async fn trust_get_all_records(
     state: tauri::State<'_, TrustStoreServiceState>,
 ) -> Result<Vec<TrustRecord>, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     Ok(svc.get_all_trust_records().await)
 }
 
@@ -82,6 +107,7 @@ pub async fn trust_clear_all(
     state: tauri::State<'_, TrustStoreServiceState>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.clear_all_trust_records().await
 }
 
@@ -93,6 +119,7 @@ pub async fn trust_update_nickname(
     nickname: Option<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.update_trust_record_nickname(&host, &record_type, nickname)
         .await
 }
@@ -101,7 +128,8 @@ pub async fn trust_update_nickname(
 pub async fn trust_get_policy(
     state: tauri::State<'_, TrustStoreServiceState>,
 ) -> Result<TrustPolicy, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     Ok(svc.get_trust_policy().await)
 }
 
@@ -111,6 +139,7 @@ pub async fn trust_set_policy(
     policy: TrustPolicy,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.set_trust_policy(policy).await
 }
 
@@ -118,7 +147,8 @@ pub async fn trust_set_policy(
 pub async fn trust_get_policy_config(
     state: tauri::State<'_, TrustStoreServiceState>,
 ) -> Result<TrustPolicyConfig, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     Ok(svc.get_trust_policy_config().await)
 }
 
@@ -128,6 +158,7 @@ pub async fn trust_set_policy_config(
     config: TrustPolicyConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.set_trust_policy_config(config).await
 }
 
@@ -140,6 +171,7 @@ pub async fn trust_set_host_policy(
     config: Option<TrustPolicyConfig>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.set_host_policy(&host, &record_type, policy, config)
         .await
 }
@@ -151,6 +183,7 @@ pub async fn trust_revoke_identity(
     record_type: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.revoke_identity(&host, &record_type).await
 }
 
@@ -161,6 +194,7 @@ pub async fn trust_reinstate_identity(
     record_type: String,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.reinstate_identity(&host, &record_type).await
 }
 
@@ -172,6 +206,7 @@ pub async fn trust_set_record_tags(
     tags: Vec<String>,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.set_record_tags(&host, &record_type, tags).await
 }
 
@@ -181,7 +216,8 @@ pub async fn trust_get_identity_history(
     host: String,
     record_type: String,
 ) -> Result<Vec<IdentityHistoryEntry>, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.get_identity_history(&host, &record_type).await
 }
 
@@ -191,7 +227,8 @@ pub async fn trust_get_verification_stats(
     host: String,
     record_type: String,
 ) -> Result<VerificationStats, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     svc.get_verification_stats(&host, &record_type).await
 }
 
@@ -199,7 +236,7 @@ pub async fn trust_get_verification_stats(
 pub async fn trust_get_summary(
     state: tauri::State<'_, TrustStoreServiceState>,
 ) -> Result<TrustSummary, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
+    svc.reload_from_disk()?;
     Ok(svc.get_trust_summary().await)
 }
-

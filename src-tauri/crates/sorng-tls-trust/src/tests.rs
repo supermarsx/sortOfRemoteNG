@@ -151,7 +151,7 @@ impl BlockingTrustStore for StubStore {
             None => Ok(TrustVerifyResult::FirstUse { identity }),
             Some(stored) if *stored == presented_fp => Ok(TrustVerifyResult::Trusted),
             Some(stored) => Ok(TrustVerifyResult::Mismatch {
-                stored: Identity::Tls(CertIdentity {
+                stored: Identity::Tls(Box::new(CertIdentity {
                     fingerprint: stored.clone(),
                     subject: None,
                     issuer: None,
@@ -178,7 +178,7 @@ impl BlockingTrustStore for StubStore {
                     key_size: None,
                     version: None,
                     chain: None,
-                }),
+                })),
                 presented: identity,
             }),
         }
@@ -208,7 +208,7 @@ impl BlockingTrustStore for StubStore {
 }
 
 fn tls_identity(fp: &str) -> Identity {
-    Identity::Tls(CertIdentity {
+    Identity::Tls(Box::new(CertIdentity {
         fingerprint: fp.to_string(),
         subject: Some("CN=test".into()),
         issuer: Some("CN=test".into()),
@@ -235,7 +235,7 @@ fn tls_identity(fp: &str) -> Identity {
         key_size: None,
         version: None,
         chain: None,
-    })
+    }))
 }
 
 /// Drive the same decision flow the verifier uses, but against the stub store

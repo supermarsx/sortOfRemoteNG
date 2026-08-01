@@ -455,7 +455,7 @@ fn extract_leaf_details(der: &[u8], intermediates: &[CertificateDer<'_>]) -> Lea
 impl LeafCertDetails {
     fn into_identity(self) -> Identity {
         let now = chrono::Utc::now().to_rfc3339();
-        Identity::Tls(CertIdentity {
+        Identity::Tls(Box::new(CertIdentity {
             fingerprint: self.fingerprint,
             subject: self.subject,
             issuer: self.issuer,
@@ -482,7 +482,7 @@ impl LeafCertDetails {
             key_size: None,
             version: None,
             chain: None,
-        })
+        }))
     }
 }
 
@@ -565,7 +565,7 @@ impl ServerCertVerifier for TofuVerifier {
             total.checked_add(certificate.len())
         });
         if intermediates.len() > MAX_CHAIN_CERTIFICATES
-            || chain_bytes.map_or(true, |total| total > MAX_CHAIN_BYTES)
+            || chain_bytes.is_none_or(|total| total > MAX_CHAIN_BYTES)
         {
             return Err(rustls::Error::General(
                 "the server certificate chain exceeds the safety limit".to_string(),

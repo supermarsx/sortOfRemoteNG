@@ -108,7 +108,7 @@ impl SoapFixture {
             .trust_identity_blocking(
                 format!("127.0.0.1:{}", address.port()),
                 TLS_RECORD_TYPE.to_string(),
-                Identity::Tls(CertIdentity {
+                Identity::Tls(Box::new(CertIdentity {
                     fingerprint: hex::encode(Sha256::digest(&certificate_der)),
                     subject: Some("127.0.0.1".to_string()),
                     issuer: Some("127.0.0.1".to_string()),
@@ -135,7 +135,7 @@ impl SoapFixture {
                     key_size: None,
                     version: None,
                     chain: None,
-                }),
+                })),
                 true,
             )
             .unwrap();
