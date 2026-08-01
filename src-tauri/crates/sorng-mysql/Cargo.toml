@@ -15,6 +15,7 @@ chrono = { workspace = true }
 log = { workspace = true }
 sqlx = { workspace = true, features = ["mysql", "runtime-tokio", "tls-rustls", "chrono"] }
 ssh2 = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

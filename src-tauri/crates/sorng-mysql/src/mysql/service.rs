@@ -5,6 +5,7 @@ use crate::mysql::types::*;
 use log::{debug, info, warn};
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::{Column, MySqlPool, Row};
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -250,16 +251,23 @@ impl MysqlService {
         // Authenticate
         if let Some(ref key) = tun.ssh_private_key {
             const MAX_PRIVATE_KEY_BYTES: usize = 1024 * 1024;
-            if key.len() > MAX_PRIVATE_KEY_BYTES {
-                return Err(MysqlError::tunnel("SSH private key exceeds 1 MiB"));
+            if key.is_empty() || key.len() > MAX_PRIVATE_KEY_BYTES {
+                return Err(MysqlError::tunnel("SSH private key is invalid"));
             }
-            sess.userauth_pubkey_memory(
+
+            let mut key_file = tempfile::NamedTempFile::new()
+                .map_err(|_| MysqlError::tunnel("SSH private key could not be prepared"))?;
+            key_file
+                .write_all(key.as_bytes())
+                .and_then(|_| key_file.flush())
+                .map_err(|_| MysqlError::tunnel("SSH private key could not be prepared"))?;
+            sess.userauth_pubkey_file(
                 &tun.ssh_username,
                 None,
-                key,
+                key_file.path(),
                 tun.ssh_passphrase.as_deref(),
             )
-            .map_err(|e| MysqlError::tunnel(format!("SSH key auth: {}", e)))?;
+            .map_err(|_| MysqlError::tunnel("SSH private key authentication failed"))?;
         } else if let Some(ref pw) = tun.ssh_password {
             sess.userauth_password(&tun.ssh_username, pw)
                 .map_err(|e| MysqlError::tunnel(format!("SSH password auth: {}", e)))?;
