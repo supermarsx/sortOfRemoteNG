@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::timeout;
 
 use crate::telnet::codec::TelnetCodec;
@@ -14,11 +14,17 @@ use crate::telnet::negotiation::NegotiationManager;
 use crate::telnet::protocol::{self, TelnetFrame, NOP, SN_SEND};
 use crate::telnet::types::*;
 
+pub(crate) const MAX_COMMAND_BYTES: usize = 256 * 1024;
+pub(crate) const COMMAND_QUEUE_DEPTH: usize = 16;
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
+const TERMINAL_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
+
 fn saturating_add(counter: &AtomicU64, amount: u64) {
     let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
         Some(current.saturating_add(amount))
     });
 }
+
 // ── Internal messages sent from the session read-loop to the service ────
 
 /// Events produced by a session's read loop.
@@ -79,6 +85,8 @@ pub struct TelnetSessionHandle {
     pub last_activity: Arc<AtomicU64>,
     /// Reconnect counter.
     pub reconnect_count: Arc<AtomicU64>,
+    /// Wakes both I/O loops when the service disconnects the session.
+    pub shutdown: Arc<Notify>,
 }
 
 impl TelnetSessionHandle {
@@ -116,12 +124,17 @@ impl TelnetSessionHandle {
 ///
 /// Returns: `(TelnetSessionHandle)` on success, or a `TelnetError`.
 pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHandle, TelnetError> {
+    config.validate()?;
     let addr = format!("{}:{}", config.host, config.port);
-    log::info!("[telnet:{}] connecting to {}", id, addr);
+    log::warn!(
+        "[telnet:{}] opening explicitly acknowledged plaintext connection to {}",
+        id,
+        addr
+    );
 
     let stream = timeout(
         Duration::from_secs(config.connect_timeout_secs),
-        TcpStream::connect(&addr),
+        TcpStream::connect((config.host.as_str(), config.port)),
     )
     .await
     .map_err(|_| {
@@ -137,7 +150,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     let (read_half, write_half) = stream.into_split();
 
     let (event_tx, event_rx) = mpsc::channel::<SessionEvent>(256);
-    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(64);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCommand>(COMMAND_QUEUE_DEPTH);
 
     let connected = Arc::new(AtomicBool::new(true));
     let bytes_received = Arc::new(AtomicU64::new(0));
@@ -145,6 +158,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     let now_millis = chrono::Utc::now().timestamp_millis();
     let last_activity = Arc::new(AtomicU64::new(now_millis as u64));
     let reconnect_count = Arc::new(AtomicU64::new(0));
+    let shutdown = Arc::new(Notify::new());
 
     // Build negotiation manager with desired/accepted options.
     let mut negotiation = NegotiationManager::new();
@@ -169,7 +183,6 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     let write_connected = connected.clone();
     let write_bytes_sent = bytes_sent.clone();
     let write_last_activity = last_activity.clone();
-    let write_negotiation = negotiation.clone();
     let crlf = config.crlf_mode;
     let keepalive = config.keepalive_interval_secs;
     let terminal_type = config.terminal_type.clone();
@@ -177,6 +190,8 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     let cols = config.cols;
     let rows = config.rows;
     let session_id = id.clone();
+    let write_shutdown = shutdown.clone();
+    let write_event_tx = event_tx.clone();
 
     tokio::spawn(async move {
         write_loop(
@@ -186,13 +201,14 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
             write_connected,
             write_bytes_sent,
             write_last_activity,
-            write_negotiation,
             crlf,
             keepalive,
             terminal_type,
             terminal_speed,
             cols,
             rows,
+            write_shutdown,
+            write_event_tx,
         )
         .await;
     });
@@ -207,6 +223,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     let read_terminal_speed = config.terminal_speed.clone();
     let read_cols = config.cols;
     let read_rows = config.rows;
+    let read_shutdown = shutdown.clone();
 
     tokio::spawn(async move {
         read_loop(
@@ -221,6 +238,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
             read_terminal_speed,
             read_cols,
             read_rows,
+            read_shutdown,
         )
         .await;
     });
@@ -229,8 +247,16 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
     {
         let mut neg = negotiation.lock().await;
         let init_bytes = neg.initial_negotiation();
-        if !init_bytes.is_empty() {
-            let _ = cmd_tx.send(SessionCommand::SendRaw(init_bytes)).await;
+        if !init_bytes.is_empty()
+            && cmd_tx
+                .try_send(SessionCommand::SendRaw(init_bytes))
+                .is_err()
+        {
+            connected.store(false, Ordering::Relaxed);
+            shutdown.notify_waiters();
+            return Err(TelnetError::protocol(
+                "Failed to queue initial Telnet negotiation",
+            ));
         }
     }
 
@@ -245,6 +271,7 @@ pub async fn connect(id: String, config: TelnetConfig) -> Result<TelnetSessionHa
         connected_at: now_millis,
         last_activity,
         reconnect_count,
+        shutdown,
     })
 }
 
@@ -263,6 +290,7 @@ async fn read_loop(
     terminal_speed: String,
     cols: u16,
     rows: u16,
+    shutdown: Arc<Notify>,
 ) {
     let mut codec = TelnetCodec::new();
     let mut buf = [0u8; 4096];
@@ -272,7 +300,11 @@ async fn read_loop(
             break;
         }
 
-        let n = match reader.read(&mut buf).await {
+        let read_result = tokio::select! {
+            _ = shutdown.notified() => break,
+            result = reader.read(&mut buf) => result,
+        };
+        let n = match read_result {
             Ok(0) => {
                 log::info!("[telnet:{}] connection closed by remote", session_id);
                 connected.store(false, Ordering::Relaxed);
@@ -286,10 +318,10 @@ async fn read_loop(
                 log::error!("[telnet:{}] read error: {}", session_id, e);
                 connected.store(false, Ordering::Relaxed);
                 let _ = event_tx
-                    .send(SessionEvent::Error(format!("Read error: {}", e)))
+                    .send(SessionEvent::Error("Telnet receive failed".into()))
                     .await;
                 let _ = event_tx
-                    .send(SessionEvent::Closed(format!("Read error: {}", e)))
+                    .send(SessionEvent::Closed("Telnet receive failed".into()))
                     .await;
                 break;
             }
@@ -302,6 +334,16 @@ async fn read_loop(
         );
 
         let frames = codec.decode(&buf[..n]);
+        if let Some(message) = codec.take_violation() {
+            connected.store(false, Ordering::Relaxed);
+            let _ = event_tx
+                .send(SessionEvent::Error(message.to_string()))
+                .await;
+            let _ = event_tx
+                .send(SessionEvent::Closed(message.to_string()))
+                .await;
+            break;
+        }
 
         for frame in frames {
             match frame {
@@ -347,7 +389,9 @@ async fn read_loop(
                         );
                         // Send the raw negotiation response back via the WriteBack event
                         // so the service layer can route it to the write side.
-                        let _ = event_tx.send(SessionEvent::WriteBack(response.clone())).await;
+                        let _ = event_tx
+                            .send(SessionEvent::WriteBack(response.clone()))
+                            .await;
                         let _ = event_tx
                             .send(SessionEvent::Negotiation {
                                 direction: "sent_raw".into(),
@@ -376,7 +420,9 @@ async fn read_loop(
                     );
 
                     if !response.is_empty() {
-                        let _ = event_tx.send(SessionEvent::WriteBack(response.clone())).await;
+                        let _ = event_tx
+                            .send(SessionEvent::WriteBack(response.clone()))
+                            .await;
                         let _ = event_tx
                             .send(SessionEvent::Negotiation {
                                 direction: "sent_raw".into(),
@@ -395,6 +441,8 @@ async fn read_loop(
         }
     }
 
+    connected.store(false, Ordering::Relaxed);
+    shutdown.notify_waiters();
     log::info!("[telnet:{}] read loop exited", session_id);
 }
 
@@ -436,13 +484,14 @@ async fn write_loop(
     connected: Arc<AtomicBool>,
     bytes_sent: Arc<AtomicU64>,
     last_activity: Arc<AtomicU64>,
-    negotiation: Arc<Mutex<NegotiationManager>>,
     crlf: bool,
     keepalive_secs: u64,
     _terminal_type: String,
     _terminal_speed: String,
     _cols: u16,
     _rows: u16,
+    shutdown: Arc<Notify>,
+    event_tx: mpsc::Sender<SessionEvent>,
 ) {
     let keepalive_interval = if keepalive_secs > 0 {
         Some(Duration::from_secs(keepalive_secs))
@@ -452,7 +501,11 @@ async fn write_loop(
 
     loop {
         let cmd = if let Some(interval) = keepalive_interval {
-            match tokio::time::timeout(interval, cmd_rx.recv()).await {
+            let next = tokio::select! {
+                _ = shutdown.notified() => break,
+                result = tokio::time::timeout(interval, cmd_rx.recv()) => result,
+            };
+            match next {
                 Ok(Some(cmd)) => cmd,
                 Ok(None) => {
                     // Channel closed → session done.
@@ -462,18 +515,33 @@ async fn write_loop(
                     // Timeout → send keepalive NOP.
                     if connected.load(Ordering::Relaxed) {
                         let nop = protocol::build_command(NOP);
-                        if let Err(e) = writer.write_all(&nop).await {
-                            log::warn!("[telnet:{}] keepalive write error: {}", session_id, e);
-                            connected.store(false, Ordering::Relaxed);
-                            break;
+                        match timeout(IO_TIMEOUT, writer.write_all(&nop)).await {
+                            Ok(Ok(())) => saturating_add(&bytes_sent, nop.len() as u64),
+                            Ok(Err(e)) => {
+                                log::warn!("[telnet:{}] keepalive write error: {}", session_id, e);
+                                connected.store(false, Ordering::Relaxed);
+                                report_write_failure(&event_tx, "Telnet keepalive write failed")
+                                    .await;
+                                break;
+                            }
+                            Err(_) => {
+                                log::warn!("[telnet:{}] keepalive write timed out", session_id);
+                                connected.store(false, Ordering::Relaxed);
+                                report_write_failure(&event_tx, "Telnet keepalive write timed out")
+                                    .await;
+                                break;
+                            }
                         }
-                        saturating_add(&bytes_sent, nop.len() as u64);
                     }
                     continue;
                 }
             }
         } else {
-            match cmd_rx.recv().await {
+            let next = tokio::select! {
+                _ = shutdown.notified() => break,
+                command = cmd_rx.recv() => command,
+            };
+            match next {
                 Some(cmd) => cmd,
                 None => break,
             }
@@ -484,42 +552,69 @@ async fn write_loop(
         }
 
         let data = match cmd {
-            SessionCommand::SendRaw(data) => data,
-            SessionCommand::SendLine(line) => protocol::encode_line(&line, crlf),
-            SessionCommand::Resize { cols, rows } => {
-                let naws_bytes = protocol::build_naws(cols, rows);
-                let _ = negotiation.lock().await; // no state change needed
-                naws_bytes
+            SessionCommand::SendRaw(data) if data.len() <= MAX_COMMAND_BYTES => data,
+            SessionCommand::SendLine(line) if line.len() <= MAX_COMMAND_BYTES => {
+                protocol::encode_line(&line, crlf)
             }
+            SessionCommand::SendRaw(_) | SessionCommand::SendLine(_) => {
+                log::warn!("[telnet:{}] rejected oversized queued payload", session_id);
+                connected.store(false, Ordering::Relaxed);
+                report_write_failure(&event_tx, "Telnet queued payload exceeded the size limit")
+                    .await;
+                break;
+            }
+            SessionCommand::Resize { cols, rows } => protocol::build_naws(cols, rows),
             SessionCommand::Break => protocol::build_command(protocol::BRK),
             SessionCommand::AreYouThere => protocol::build_command(protocol::AYT),
             SessionCommand::Disconnect => {
                 log::info!("[telnet:{}] disconnect requested", session_id);
                 connected.store(false, Ordering::Relaxed);
-                let _ = writer.shutdown().await;
+                let _ = timeout(IO_TIMEOUT, writer.shutdown()).await;
                 break;
             }
         };
 
         if !data.is_empty() {
-            match writer.write_all(&data).await {
-                Ok(()) => {
+            match timeout(IO_TIMEOUT, writer.write_all(&data)).await {
+                Ok(Ok(())) => {
                     saturating_add(&bytes_sent, data.len() as u64);
                     last_activity.store(
                         chrono::Utc::now().timestamp_millis() as u64,
                         Ordering::Relaxed,
                     );
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     log::error!("[telnet:{}] write error: {}", session_id, e);
                     connected.store(false, Ordering::Relaxed);
+                    report_write_failure(&event_tx, "Telnet write failed").await;
+                    break;
+                }
+                Err(_) => {
+                    log::error!("[telnet:{}] write timed out", session_id);
+                    connected.store(false, Ordering::Relaxed);
+                    report_write_failure(&event_tx, "Telnet write timed out").await;
                     break;
                 }
             }
         }
     }
 
+    connected.store(false, Ordering::Relaxed);
+    shutdown.notify_waiters();
     log::info!("[telnet:{}] write loop exited", session_id);
+}
+
+async fn report_write_failure(event_tx: &mpsc::Sender<SessionEvent>, message: &'static str) {
+    let _ = timeout(
+        TERMINAL_EVENT_TIMEOUT,
+        event_tx.send(SessionEvent::Error(message.to_string())),
+    )
+    .await;
+    let _ = timeout(
+        TERMINAL_EVENT_TIMEOUT,
+        event_tx.send(SessionEvent::Closed(message.to_string())),
+    )
+    .await;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -537,7 +632,7 @@ fn base64_encode(data: &[u8]) -> String {
 /// Decode hex-encoded bytes.
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
-    if bytes.len() % 2 != 0 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+    if !bytes.len().is_multiple_of(2) || !bytes.iter().all(u8::is_ascii_hexdigit) {
         return None;
     }
     let nibble = |byte: u8| match byte {
@@ -708,9 +803,9 @@ mod tests {
         // IAC SB NAWS <width_hi> <width_lo> <height_hi> <height_lo> IAC SE
         assert_eq!(resp.len(), 9);
         // Width = 132 = 0x0084
-        assert_eq!(resp[3], 0);   // width high byte
+        assert_eq!(resp[3], 0); // width high byte
         assert_eq!(resp[4], 132); // width low byte
-        assert_eq!(resp[5], 0);   // height high byte
-        assert_eq!(resp[6], 50);  // height low byte
+        assert_eq!(resp[5], 0); // height high byte
+        assert_eq!(resp[6], 50); // height low byte
     }
 }

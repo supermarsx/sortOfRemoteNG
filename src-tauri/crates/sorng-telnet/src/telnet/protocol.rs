@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn encode_line_escapes_iac() {
         // A line containing a literal 0xFF byte
-        let line = std::str::from_utf8(&[b'a', b'b']).unwrap();
+        let line = std::str::from_utf8(b"ab").unwrap();
         let encoded = encode_line(line, true);
         assert_eq!(encoded, vec![b'a', b'b', CR, LF]);
     }

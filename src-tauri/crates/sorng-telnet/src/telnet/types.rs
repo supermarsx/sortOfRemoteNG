@@ -1,7 +1,7 @@
 //! Telnet types: configuration, session metadata, events, and option descriptors.
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{fmt, net::IpAddr};
 
 // ── RFC 854 / 855 command bytes ─────────────────────────────────────────
 
@@ -193,10 +193,17 @@ impl Default for OptionState {
 // ── Configuration ───────────────────────────────────────────────────────
 
 /// Configuration for a new telnet connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TelnetConfig {
     /// Target host.
     pub host: String,
+    /// Non-secret frontend-generated identifier used to correlate events that
+    /// can arrive before the connect command response is delivered.
+    #[serde(default, alias = "clientCorrelationId")]
+    pub client_correlation_id: Option<String>,
+    /// Explicit acknowledgement that Telnet has no transport encryption.
+    #[serde(default, alias = "allowInsecureTransport")]
+    pub allow_insecure_transport: bool,
     /// Target port (default 23).
     #[serde(default = "default_telnet_port")]
     pub port: u16,
@@ -253,6 +260,35 @@ pub struct TelnetConfig {
     pub escape_char: u8,
 }
 
+impl fmt::Debug for TelnetConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TelnetConfig")
+            .field("host", &self.host)
+            .field("client_correlation_id", &self.client_correlation_id)
+            .field("allow_insecure_transport", &self.allow_insecure_transport)
+            .field("port", &self.port)
+            .field("username", &self.username.as_ref().map(|_| "[REDACTED]"))
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("terminal_type", &self.terminal_type)
+            .field("cols", &self.cols)
+            .field("rows", &self.rows)
+            .field("connect_timeout_secs", &self.connect_timeout_secs)
+            .field("local_echo", &self.local_echo)
+            .field("crlf_mode", &self.crlf_mode)
+            .field("binary_mode", &self.binary_mode)
+            .field("suppress_go_ahead", &self.suppress_go_ahead)
+            .field("max_reconnect_attempts", &self.max_reconnect_attempts)
+            .field("reconnect_delay_secs", &self.reconnect_delay_secs)
+            .field("keepalive_interval_secs", &self.keepalive_interval_secs)
+            .field("label", &self.label)
+            .field("environment_entries", &self.environment.len())
+            .field("encoding", &self.encoding)
+            .field("terminal_speed", &self.terminal_speed)
+            .field("escape_char", &self.escape_char)
+            .finish()
+    }
+}
+
 fn default_telnet_port() -> u16 {
     23
 }
@@ -288,6 +324,8 @@ impl Default for TelnetConfig {
     fn default() -> Self {
         Self {
             host: String::new(),
+            client_correlation_id: None,
+            allow_insecure_transport: false,
             port: default_telnet_port(),
             username: None,
             password: None,
@@ -309,6 +347,141 @@ impl Default for TelnetConfig {
             escape_char: default_escape_char(),
         }
     }
+}
+
+impl TelnetConfig {
+    /// Validate the externally supplied connection contract before network I/O.
+    pub fn validate(&self) -> Result<(), TelnetError> {
+        let host = self.host.as_str();
+        if host.is_empty() || host.len() > 253 || host.trim() != host || !valid_telnet_host(host) {
+            return Err(TelnetError::new(
+                TelnetErrorKind::ConnectionRefused,
+                "Invalid Telnet host",
+            ));
+        }
+        if self.port == 0 {
+            return Err(TelnetError::new(
+                TelnetErrorKind::ConnectionRefused,
+                "Telnet port must be non-zero",
+            ));
+        }
+        if self.client_correlation_id.as_ref().is_some_and(|id| {
+            id.is_empty()
+                || id.len() > 64
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        }) {
+            return Err(TelnetError::protocol(
+                "Invalid Telnet client correlation identifier",
+            ));
+        }
+        if !self.allow_insecure_transport {
+            return Err(TelnetError::new(
+                TelnetErrorKind::InsecureTransport,
+                "Telnet is plaintext; explicit insecure-transport acknowledgement is required",
+            ));
+        }
+        if !(1..=60).contains(&self.connect_timeout_secs) {
+            return Err(TelnetError::new(
+                TelnetErrorKind::Timeout,
+                "Telnet connect timeout must be between 1 and 60 seconds",
+            ));
+        }
+        if self.keepalive_interval_secs != 0 && !(5..=3_600).contains(&self.keepalive_interval_secs)
+        {
+            return Err(TelnetError::protocol(
+                "Telnet keepalive must be disabled or between 5 and 3600 seconds",
+            ));
+        }
+        if self.reconnect_delay_secs > 3_600 {
+            return Err(TelnetError::protocol(
+                "Telnet reconnect delay exceeds the allowed limit",
+            ));
+        }
+        if !(1..=1_000).contains(&self.cols) || !(1..=1_000).contains(&self.rows) {
+            return Err(TelnetError::protocol(
+                "Telnet terminal dimensions must be between 1 and 1000",
+            ));
+        }
+        if self.terminal_type.is_empty()
+            || self.terminal_type.len() > 64
+            || !self
+                .terminal_type
+                .bytes()
+                .all(|b| b.is_ascii_graphic() && b != 0xff)
+        {
+            return Err(TelnetError::protocol("Invalid Telnet terminal type"));
+        }
+        if self.terminal_speed.is_empty()
+            || self.terminal_speed.len() > 32
+            || !self
+                .terminal_speed
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b',')
+        {
+            return Err(TelnetError::protocol("Invalid Telnet terminal speed"));
+        }
+        if self
+            .label
+            .as_ref()
+            .is_some_and(|label| label.len() > 256 || label.chars().any(char::is_control))
+        {
+            return Err(TelnetError::protocol("Invalid Telnet session label"));
+        }
+        if !self.encoding.eq_ignore_ascii_case("utf-8") {
+            return Err(TelnetError::protocol(
+                "Only UTF-8 Telnet sessions are currently supported",
+            ));
+        }
+        if self.username.is_some() || self.password.is_some() {
+            return Err(TelnetError::new(
+                TelnetErrorKind::AuthFailed,
+                "Telnet automatic login is unavailable; credentials are never sent implicitly",
+            ));
+        }
+        if !self.environment.is_empty() {
+            return Err(TelnetError::protocol(
+                "Telnet environment negotiation is not implemented",
+            ));
+        }
+        if self.max_reconnect_attempts != 0 {
+            return Err(TelnetError::protocol(
+                "Telnet automatic reconnect is not implemented",
+            ));
+        }
+        if self.local_echo {
+            return Err(TelnetError::protocol(
+                "Backend Telnet local echo is not implemented",
+            ));
+        }
+        if self.binary_mode {
+            return Err(TelnetError::protocol(
+                "Telnet binary mode is unavailable because terminal output is UTF-8 text",
+            ));
+        }
+        if self.escape_char != default_escape_char() {
+            return Err(TelnetError::protocol(
+                "Custom Telnet escape characters are not implemented",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn valid_telnet_host(host: &str) -> bool {
+    if host.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 // ── Session metadata ────────────────────────────────────────────────────
@@ -368,6 +541,7 @@ impl TelnetSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelnetOutputEvent {
     pub session_id: String,
+    pub client_correlation_id: Option<String>,
     pub data: String,
 }
 
@@ -375,6 +549,7 @@ pub struct TelnetOutputEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelnetErrorEvent {
     pub session_id: String,
+    pub client_correlation_id: Option<String>,
     pub message: String,
 }
 
@@ -382,6 +557,7 @@ pub struct TelnetErrorEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelnetClosedEvent {
     pub session_id: String,
+    pub client_correlation_id: Option<String>,
     pub reason: String,
 }
 
@@ -389,6 +565,7 @@ pub struct TelnetClosedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelnetNegotiationEvent {
     pub session_id: String,
+    pub client_correlation_id: Option<String>,
     pub direction: String,
     pub command: String,
     pub option: String,
@@ -421,6 +598,7 @@ pub struct TelnetError {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TelnetErrorKind {
     ConnectionRefused,
+    InsecureTransport,
     Timeout,
     DnsResolution,
     Io,
@@ -667,6 +845,7 @@ mod tests {
     fn output_event_serde() {
         let ev = TelnetOutputEvent {
             session_id: "x".into(),
+            client_correlation_id: None,
             data: "hello".into(),
         };
         let json = serde_json::to_string(&ev).unwrap();
@@ -679,6 +858,7 @@ mod tests {
     fn error_event_serde() {
         let ev = TelnetErrorEvent {
             session_id: "x".into(),
+            client_correlation_id: None,
             message: "boom".into(),
         };
         let json = serde_json::to_string(&ev).unwrap();
@@ -690,6 +870,7 @@ mod tests {
     fn closed_event_serde() {
         let ev = TelnetClosedEvent {
             session_id: "x".into(),
+            client_correlation_id: None,
             reason: "server closed".into(),
         };
         let json = serde_json::to_string(&ev).unwrap();
@@ -700,6 +881,7 @@ mod tests {
     fn negotiation_event_serde() {
         let ev = TelnetNegotiationEvent {
             session_id: "x".into(),
+            client_correlation_id: None,
             direction: "sent".into(),
             command: "WILL".into(),
             option: "SGA".into(),
