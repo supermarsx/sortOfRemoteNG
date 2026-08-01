@@ -184,7 +184,7 @@ impl LifecycleHooks {
     fn should_fail(&self, stage: LifecycleStage) -> bool {
         #[cfg(test)]
         {
-            return self.failure == Some(stage);
+            self.failure == Some(stage)
         }
         #[cfg(not(test))]
         {
@@ -394,6 +394,11 @@ pub struct ProxyCommandState {
     stopping: bool,
 }
 
+struct StderrCaptureCounters {
+    bytes: Arc<AtomicUsize>,
+    truncated: Arc<AtomicBool>,
+}
+
 impl std::fmt::Debug for ProxyCommandState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProxyCommandState")
@@ -419,8 +424,7 @@ impl ProxyCommandState {
         process_tree: Arc<ProcessTreeGuard>,
         control_socket: TcpStream,
         cancelled: Arc<AtomicBool>,
-        stderr_bytes: Arc<AtomicUsize>,
-        stderr_truncated: Arc<AtomicBool>,
+        stderr: StderrCaptureCounters,
     ) -> Self {
         Self {
             session_id: session_id.to_string(),
@@ -430,8 +434,8 @@ impl ProxyCommandState {
             control_socket: Some(control_socket),
             cancelled,
             relay_handles: Vec::new(),
-            stderr_bytes,
-            stderr_truncated,
+            stderr_bytes: stderr.bytes,
+            stderr_truncated: stderr.truncated,
             stopping: false,
         }
     }
@@ -828,8 +832,10 @@ fn spawn_proxy_command_inner(
             process_tree.clone(),
             relay_socket,
             cancelled.clone(),
-            stderr_bytes.clone(),
-            stderr_truncated.clone(),
+            StderrCaptureCounters {
+                bytes: stderr_bytes.clone(),
+                truncated: stderr_truncated.clone(),
+            },
         ),
     );
 
@@ -1283,7 +1289,7 @@ mod tests {
                 .creation_flags(CREATE_NO_WINDOW)
                 .output()
                 .expect("tasklist must be available");
-            return String::from_utf8_lossy(&output.stdout).contains(&pid.to_string());
+            String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
         }
         #[cfg(not(windows))]
         {

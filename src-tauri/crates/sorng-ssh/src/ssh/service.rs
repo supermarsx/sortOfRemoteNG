@@ -2833,7 +2833,7 @@ impl SshService {
         stdin_data: Option<Vec<u8>>,
     ) -> Result<super::integration::SshCommandOutput, String> {
         let mut stdin_data = stdin_data.map(ZeroingCommandInput);
-        if stdin_data.as_ref().map_or(false, |data| {
+        if stdin_data.as_ref().is_some_and(|data| {
             data.0.len() > super::integration::MAX_COMMAND_INPUT_LIMIT_BYTES
         }) {
             return Err(format!(
@@ -5320,7 +5320,7 @@ mod tests {
 
     impl Read for CancellingReader {
         fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
-            let count = self.inner.read(buffer)?;
+            let count = std::io::Read::read(&mut self.inner, buffer)?;
             if count > 0 {
                 self.cancellation.store(true, Ordering::Release);
             }

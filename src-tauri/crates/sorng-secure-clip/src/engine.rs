@@ -3,7 +3,7 @@ use zeroize::Zeroizing;
 
 const MAX_CLIPBOARD_BYTES: usize = 64 * 1024;
 
-#[cfg(any(unix, test))]
+#[cfg(unix)]
 const HELPER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[cfg(any(unix, test))]
@@ -485,7 +485,10 @@ fn read_clipboard_windows() -> Result<String, String> {
             return Err("The OS clipboard text is unavailable".to_string());
         }
         let byte_len = GlobalSize(handle);
-        if byte_len == 0 || byte_len > MAX_CLIPBOARD_BYTES || byte_len % size_of::<u16>() != 0 {
+        if byte_len == 0
+            || byte_len > MAX_CLIPBOARD_BYTES
+            || !byte_len.is_multiple_of(size_of::<u16>())
+        {
             return Err("The OS clipboard text exceeds the secure size limit".to_string());
         }
         let source = GlobalLock(handle).cast::<u16>();
@@ -686,9 +689,8 @@ impl HelperReapJob {
         if let Some(child) = self.child.as_mut() {
             terminate_helper_process_group(child.id());
             let _ = child.kill();
-            match child.try_wait() {
-                Ok(Some(_)) => self.child = None,
-                Ok(None) | Err(_) => {}
+            if let Ok(Some(_)) = child.try_wait() {
+                self.child = None;
             }
         }
 
@@ -1418,7 +1420,8 @@ mod tests {
             .collect();
         let successes = workers
             .into_iter()
-            .filter(|worker| worker.join().expect("worker"))
+            .map(|worker| worker.join().expect("worker"))
+            .filter(|success| *success)
             .count();
 
         assert_eq!(successes, 1);
