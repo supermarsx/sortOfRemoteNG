@@ -11,6 +11,9 @@ use compose_process_boundary::{
     resolve_trusted_executable, ProcessBoundaryError, DEFAULT_OPERATION_TIMEOUT, MAX_CAPTURE_BYTES,
 };
 
+type ProcessEnvironment = Vec<(String, String)>;
+type ComposeBuildInvocation = (Vec<String>, ProcessEnvironment);
+
 fn execute(
     program: &std::path::Path,
     args: &[String],
@@ -240,7 +243,7 @@ impl ComposeManager {
 
     fn build_args(
         config: &ComposeBuildConfig,
-    ) -> DockerResult<(Vec<String>, Vec<(String, String)>)> {
+    ) -> DockerResult<ComposeBuildInvocation> {
         let mut args = compose_prefix(&config.files, config.project_name.as_deref());
         args.push("build".into());
         push_bool_flag(&mut args, config.no_cache, "--no-cache");
@@ -259,7 +262,7 @@ impl ComposeManager {
         Ok((args, environment))
     }
 
-    fn run(args: Vec<String>, environment: Vec<(String, String)>) -> DockerResult<String> {
+    fn run(args: Vec<String>, environment: ProcessEnvironment) -> DockerResult<String> {
         let docker = resolve_trusted_executable("docker").map_err(map_process_error)?;
         let output = execute(
             &docker,
@@ -273,7 +276,7 @@ impl ComposeManager {
         if !output.status.success() {
             return Err(DockerError::compose("Docker Compose command failed"));
         }
-        if output.stdout.truncated {
+        if output.stdout.truncated || output.stderr.truncated {
             return Err(DockerError::compose(
                 "Docker Compose output exceeded the safety limit",
             ));

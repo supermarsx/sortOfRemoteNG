@@ -116,17 +116,6 @@ pub fn resolve_trusted_executable(name: &str) -> Result<PathBuf, ProcessBoundary
     Err(ProcessBoundaryError::ExecutableUnavailable)
 }
 
-pub fn unavailable_executable_path(name: &str) -> PathBuf {
-    #[cfg(windows)]
-    {
-        PathBuf::from(format!(r"C:\__sorng_unavailable__\{}.exe", name))
-    }
-    #[cfg(not(windows))]
-    {
-        PathBuf::from(format!("/__sorng_unavailable__/{}", name))
-    }
-}
-
 pub fn execute(
     program: &Path,
     args: &[String],
@@ -1162,15 +1151,14 @@ mod tests {
             return;
         };
         match mode.to_string_lossy().as_ref() {
-            "environment" => {
+            "environment"
                 if env::var_os("SORNG_SHOULD_HAVE_BEEN_CLEARED").is_some()
-                    || env::var("APP_TOKEN").ok().as_deref() != Some("child-secret")
-                {
-                    std::process::exit(41);
-                }
+                    || env::var("APP_TOKEN").ok().as_deref() != Some("child-secret") =>
+            {
+                std::process::exit(41);
             }
             "tree-hang" => {
-                let _descendant = Command::new(env::current_exe().unwrap())
+                let mut descendant = Command::new(env::current_exe().unwrap())
                     .args([
                         "boundary_descendant_helper",
                         "--nocapture",
@@ -1179,9 +1167,11 @@ mod tests {
                     .spawn()
                     .unwrap();
                 thread::sleep(Duration::from_secs(30));
+                let _ = descendant.kill();
+                let _ = descendant.wait();
             }
             "orphan-pipe" => {
-                let _descendant = Command::new(env::current_exe().unwrap())
+                let descendant = Command::new(env::current_exe().unwrap())
                     .args([
                         "boundary_descendant_helper",
                         "--nocapture",
@@ -1189,6 +1179,12 @@ mod tests {
                     ])
                     .spawn()
                     .unwrap();
+                let _reaper = thread::spawn(move || {
+                    let mut descendant = descendant;
+                    thread::sleep(Duration::from_secs(30));
+                    let _ = descendant.kill();
+                    let _ = descendant.wait();
+                });
             }
             "flood" => {
                 let payload = vec![b'x'; 32 * 1024];

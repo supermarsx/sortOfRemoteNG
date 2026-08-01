@@ -11,14 +11,24 @@ mod process_boundary;
 
 use process_boundary::{
     append_environment_passthrough, execute, resolve_trusted_executable,
-    unavailable_executable_path, ProcessBoundaryError, DEFAULT_OPERATION_TIMEOUT,
-    MAX_CAPTURE_BYTES,
+    ProcessBoundaryError, DEFAULT_OPERATION_TIMEOUT, MAX_CAPTURE_BYTES,
 };
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const EVENTS_TIMEOUT_SECONDS: u64 = 5;
 const WATCH_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OPERATION_TIMEOUT: Duration = Duration::from_secs(3600);
+
+fn unavailable_executable_path(name: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        PathBuf::from(format!(r"C:\__sorng_unavailable__\{}.exe", name))
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(format!("/__sorng_unavailable__/{}", name))
+    }
+}
 
 /// A resolved Docker Compose command surface.
 ///
