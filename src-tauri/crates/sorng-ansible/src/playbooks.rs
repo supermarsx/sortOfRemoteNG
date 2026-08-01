@@ -568,7 +568,10 @@ mod tests {
     fn execution_metadata_never_contains_playbook_secrets() {
         let secret = "deterministic-playbook-secret";
         let mut extra_vars = HashMap::new();
-        extra_vars.insert("password".to_string(), secret.to_string());
+        extra_vars.insert(
+            "password".to_string(),
+            serde_json::Value::String(secret.to_string()),
+        );
         let options = PlaybookRunOptions {
             playbook_path: format!("C:/secret/{secret}.yml"),
             inventory: Some(format!("inventory-{secret}")),
@@ -593,6 +596,7 @@ mod tests {
             timeout_secs: Some(42),
             vault_password_file: Some(format!("vault-{secret}")),
             verbosity: Some(4),
+            env_vars: HashMap::new(),
         };
 
         let metadata = PlaybookManager::execution_metadata(&options);
@@ -603,9 +607,32 @@ mod tests {
 
     #[test]
     fn connection_timeout_is_clamped() {
-        let mut options = PlaybookRunOptions::default();
-        options.playbook_path = "site.yml".to_string();
-        options.timeout_secs = Some(u64::MAX);
+        let options = PlaybookRunOptions {
+            playbook_path: "site.yml".to_string(),
+            inventory: None,
+            limit: None,
+            tags: Vec::new(),
+            skip_tags: Vec::new(),
+            extra_vars: HashMap::new(),
+            extra_vars_files: Vec::new(),
+            forks: None,
+            check_mode: false,
+            diff_mode: false,
+            start_at_task: None,
+            step: false,
+            flush_cache: false,
+            force_handlers: false,
+            use_become: None,
+            become_user: None,
+            become_method: None,
+            remote_user: None,
+            private_key: None,
+            ssh_common_args: None,
+            timeout_secs: Some(u64::MAX),
+            vault_password_file: None,
+            verbosity: None,
+            env_vars: HashMap::new(),
+        };
         let args = PlaybookManager::build_playbook_args(&options);
         let timeout_index = args
             .iter()

@@ -558,7 +558,7 @@ impl AnsibleService {
         })
     }
 
-    pub(crate) fn record_history(&mut self, result: &ExecutionResult, cmd_type: CommandType) {
+    pub fn record_history(&mut self, result: &ExecutionResult, cmd_type: CommandType) {
         self.history.push(ExecutionHistoryEntry {
             id: result.id.clone(),
             command: Self::history_command(&cmd_type).to_string(),

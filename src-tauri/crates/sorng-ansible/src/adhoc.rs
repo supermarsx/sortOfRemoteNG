@@ -446,7 +446,10 @@ mod tests {
     fn execution_metadata_never_contains_ad_hoc_secrets() {
         let secret = "deterministic-adhoc-secret";
         let mut extra_vars = HashMap::new();
-        extra_vars.insert("password".to_string(), secret.to_string());
+        extra_vars.insert(
+            "password".to_string(),
+            serde_json::Value::String(secret.to_string()),
+        );
         let mut env_vars = HashMap::new();
         env_vars.insert("ANSIBLE_TEST_TOKEN".to_string(), secret.to_string());
         let options = AdHocOptions {
