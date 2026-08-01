@@ -530,7 +530,7 @@ mod tests {
         ];
 
         let matches = match_credentials(&items, "https://example.com");
-        assert!(matches.len() >= 1);
+        assert!(!matches.is_empty());
         // First match should have the highest score
         if matches.len() >= 2 {
             assert!(matches[0].score >= matches[1].score);

@@ -557,8 +557,8 @@ mod tests {
         let mut svc = new_svc().await;
         let entry = TotpEntry::new("a", "A");
         let id = svc.add_entry(entry).unwrap();
-        assert_eq!(svc.toggle_favourite(&id).unwrap(), true);
-        assert_eq!(svc.toggle_favourite(&id).unwrap(), false);
+        assert!(svc.toggle_favourite(&id).unwrap());
+        assert!(!svc.toggle_favourite(&id).unwrap());
     }
 
     #[tokio::test]

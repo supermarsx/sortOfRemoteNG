@@ -1942,7 +1942,7 @@ mod tests {
 
     fn make_nv12(y: u8, u: u8, v: u8, w: usize, h: usize) -> Vec<u8> {
         let y_size = w * h;
-        let uv_rows = (h + 1) / 2;
+        let uv_rows = h.div_ceil(2);
         // NV12 UV stride must be even-aligned for interleaved (U,V) pairs.
         let uv_stride = (w + 1) & !1;
         let uv_size = uv_stride * uv_rows;
@@ -2158,8 +2158,8 @@ mod tests {
         let w = 4;
         let h = 3;
         let y = vec![128u8; w * h];
-        let u = vec![128u8; (w / 2) * ((h + 1) / 2)];
-        let v = vec![128u8; (w / 2) * ((h + 1) / 2)];
+        let u = vec![128u8; (w / 2) * h.div_ceil(2)];
+        let v = vec![128u8; (w / 2) * h.div_ceil(2)];
         let rgba = yuv420_planar_to_rgba(&y, &u, &v, w, w / 2, w / 2, w as u32, h as u32);
         assert_eq!(rgba.len(), w * h * 4);
         for pixel in rgba.chunks_exact(4) {

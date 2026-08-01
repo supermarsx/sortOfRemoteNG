@@ -1647,7 +1647,10 @@ mod tests {
         .is_err());
 
         let secret = "do-not-reflect-this-secret";
-        let error = parse_mongo_uri(&format!("mongodb://admin:{secret}@/admin")).unwrap_err();
+        let error = match parse_mongo_uri(&format!("mongodb://admin:{secret}@/admin")) {
+            Err(error) => error,
+            Ok(_) => panic!("credential URI without a host must be rejected"),
+        };
         assert!(!error.message.contains(secret));
     }
 

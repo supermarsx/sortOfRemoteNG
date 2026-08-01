@@ -496,7 +496,7 @@ mod tests {
     fn custom_permission() {
         let mut checker = PermissionChecker::new();
         let custom = Permission::Custom("my.special.perm".into());
-        checker.grant("com.test.ext", &[custom.clone()]);
+        checker.grant("com.test.ext", std::slice::from_ref(&custom));
         assert!(checker.has_permission("com.test.ext", &custom));
     }
 }

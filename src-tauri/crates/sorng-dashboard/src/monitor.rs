@@ -285,8 +285,10 @@ mod tests {
 
     #[test]
     fn test_record_latency_trims_history() {
-        let mut config = DashboardConfig::default();
-        config.max_latency_history = 5;
+        let config = DashboardConfig {
+            max_latency_history: 5,
+            ..Default::default()
+        };
         let mut monitor = HealthMonitor::new(config);
 
         let entry = ConnectionHealthEntry {

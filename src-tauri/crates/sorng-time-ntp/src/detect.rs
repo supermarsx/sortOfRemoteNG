@@ -133,7 +133,7 @@ mod tests {
     // the module compiles and the enum variants are correct.
     #[test]
     fn test_ntp_implementation_variants() {
-        let impls = vec![
+        let impls = [
             NtpImplementation::Chrony,
             NtpImplementation::NtpdClassic,
             NtpImplementation::Systemd,

@@ -298,16 +298,17 @@ mod tests {
         // user could side-step the cool-down by killing the app. We
         // drive the counter into the 5-minute bucket (3 failures) so
         // the assertion has a wide tolerance against test-machine
-        // wall-clock drift, then drop the state value and re-load from
-        // disk.
+        // wall-clock drift, then let the in-memory state leave scope and
+        // re-load from disk.
         let dir = tempdir().unwrap();
-        let mut s = LockoutState::load(dir.path());
-        assert_eq!(s, LockoutState::default(), "fresh dir starts at zero");
-        s.record_failure();
-        s.record_failure();
-        s.record_failure(); // 3 failures → 5-minute schedule
-        s.save(dir.path()).unwrap();
-        drop(s);
+        {
+            let mut s = LockoutState::load(dir.path());
+            assert_eq!(s, LockoutState::default(), "fresh dir starts at zero");
+            s.record_failure();
+            s.record_failure();
+            s.record_failure(); // 3 failures → 5-minute schedule
+            s.save(dir.path()).unwrap();
+        }
 
         let reloaded = LockoutState::load(dir.path());
         assert_eq!(reloaded.failed_attempts, 3);

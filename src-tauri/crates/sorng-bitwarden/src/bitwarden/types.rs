@@ -1507,9 +1507,11 @@ mod tests {
 
     #[test]
     fn session_state_unlocked() {
-        let mut s = SessionState::default();
-        s.status = VaultStatus::Unlocked;
-        s.session_key = Some("test_key".into());
+        let s = SessionState {
+            status: VaultStatus::Unlocked,
+            session_key: Some("test_key".into()),
+            ..Default::default()
+        };
         assert!(s.is_unlocked());
         assert!(s.is_authenticated());
     }

@@ -426,7 +426,7 @@ mod tests {
         assert!(html.contains("https://example.test/foo"));
         assert!(html.contains("tcp connect error"));
         assert!(html.contains("<svg"));
-        assert!(html.contains("text/html") || true); // sanity: html shape
+        assert!(html.contains(r#"<main class="card" role="alert" aria-live="polite">"#));
     }
 
     #[test]

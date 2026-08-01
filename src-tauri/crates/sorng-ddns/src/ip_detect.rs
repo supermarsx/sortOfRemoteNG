@@ -286,7 +286,7 @@ mod tests {
     fn test_ipv6_validation() {
         assert!(is_valid_ipv6("::1"));
         assert!(is_valid_ipv6("2001:db8::1"));
-        assert!(is_valid_ipv6("fe80::1%eth0") == false); // '%' not ideal
+        assert!(!is_valid_ipv6("fe80::1%eth0")); // '%' not ideal
         assert!(!is_valid_ipv6("192.168.1.1"));
         assert!(!is_valid_ipv6(""));
     }

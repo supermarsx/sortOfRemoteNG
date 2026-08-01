@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_summarize_users() {
-        let users = vec![
+        let users = [
             make_user("a", UserRole::Owner, false, false),
             make_user("b", UserRole::Admin, false, false),
             make_user("c", UserRole::User, false, true),
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_active_human_users() {
-        let users = vec![
+        let users = [
             make_user("a", UserRole::User, false, false),
             make_user("b", UserRole::User, true, false),
             make_user("c", UserRole::User, false, true),
