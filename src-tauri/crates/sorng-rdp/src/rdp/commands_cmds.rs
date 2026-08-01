@@ -145,8 +145,10 @@ pub async fn connect_rdp(
     // from the session thread to JS -- no base64, no event+invoke round-trip).
     frame_channel: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
-    // -- Evict any previous session for this connection slot --
-    {
+    // Reserve capacity before creating per-session OS resources. Reconnecting
+    // an existing owned slot transfers its permit, so it cannot be rejected
+    // merely because the service is already at capacity.
+    let session_slot = {
         let mut service = state.lock().await;
         let old_id = if let Some(ref cid) = connection_id {
             // Primary: evict by connection_id (stable frontend slot)
@@ -168,16 +170,31 @@ pub async fn connect_rdp(
                 })
                 .map(|c| c.session.id.clone())
         };
-        if let Some(id) = old_id {
+        let reused_slot = if let Some(id) = old_id {
             log::info!(
                 "Evicting previous session {id} (connection_id={:?}) for {host}:{port}",
                 connection_id
             );
             if let Some(old) = service.connections.remove(&id) {
-                let _ = old.cmd_tx.send(RdpCommand::Shutdown);
+                let RdpActiveConnection {
+                    cmd_tx,
+                    _session_slot,
+                    ..
+                } = old;
+                let _ = cmd_tx.send(RdpCommand::Shutdown);
+                Some(_session_slot)
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        match reused_slot {
+            Some(slot) => slot,
+            None => service.try_reserve_session_slot()?,
         }
-    }
+    };
 
     let session_id = Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = crate::rdp::wake_channel::create_wake_channel()
@@ -311,6 +328,7 @@ pub async fn connect_rdp(
         cmd_tx,
         stats,
         _handle: handle,
+        _session_slot: session_slot,
         cached_password: password,
         cached_domain: domain.clone(),
     };

@@ -21,6 +21,7 @@ use secrecy::{ExposeSecret, SecretString};
 use sorng_core::events::DynEventEmitter;
 use tokio::sync::mpsc;
 
+use super::cert_trust::classify_security_error_for_lifecycle;
 use super::frame_delivery::*;
 use super::frame_store::SharedFrameStoreState;
 #[cfg(feature = "rdp-multimon")]
@@ -28,7 +29,6 @@ use super::multimon::build_display_control_messages;
 use super::network::{
     extract_cert_details, extract_cert_fingerprint, tls_upgrade, BlockingNetworkClient,
 };
-use super::cert_trust::classify_security_error_for_lifecycle;
 use super::session_state::{ChannelSummary, FailureClass, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
@@ -156,6 +156,7 @@ fn redacted_load_balancing_log_message(
         ))
     }
 }
+
 // ---- Deactivation-Reactivation Sequence handler ----
 
 /// Drives a ConnectionActivationSequence to completion after receiving
@@ -2249,12 +2250,10 @@ fn run_active_session_loop(
                                             // the pending batch; the controller
                                             // observes queue depth (pressure) and
                                             // counts the coalesced frame.
-                                            let pending_before = dirty_regions
-                                                .len()
-                                                .min(u16::MAX as usize)
-                                                as u16;
-                                            let _ = frame_flow
-                                                .account_batched_update(pending_before);
+                                            let pending_before =
+                                                dirty_regions.len().min(u16::MAX as usize) as u16;
+                                            let _ =
+                                                frame_flow.account_batched_update(pending_before);
                                             dirty_regions.push((region.left, region.top, rw, rh));
                                         } else if let Some(ref mut comp) = est.compositor {
                                             comp.update_region(
@@ -3154,6 +3153,7 @@ mod runner_tests {
         assert!(!message.contains("highly-secret-routing-token"));
         assert!(redacted_load_balancing_log_message("session-x", "", false).is_none());
     }
+
     /// classify-then-stamp ordering (plan R1): `set_phase("error")` first stamps
     /// the default `ProtocolViolation`, then `set_failure_class` must correct it
     /// to the real class BEFORE the snapshot is emitted. This drives the real
@@ -3218,6 +3218,9 @@ mod runner_tests {
         for pending_before in 0..8 {
             frame_flow.account_batched_update(pending_before);
         }
-        assert_eq!(frame_flow.pressure_state(), FramePressureState::Backpressured);
+        assert_eq!(
+            frame_flow.pressure_state(),
+            FramePressureState::Backpressured
+        );
     }
 }

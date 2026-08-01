@@ -7,6 +7,7 @@ use super::wake_channel::WakeSender;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::cert_trust::ServerCertValidationMode;
 use super::network::{build_credssp_http_client, build_tls_config};
@@ -196,6 +197,8 @@ pub struct RdpActiveConnection {
     pub cmd_tx: WakeSender,
     pub stats: Arc<RdpSessionStats>,
     pub _handle: tokio::task::JoinHandle<()>,
+    /// Admission permit held for the full lifetime of this active session.
+    pub _session_slot: OwnedSemaphorePermit,
     /// Cached password for automatic reconnection (CredSSP re-auth).
     #[allow(dead_code)]
     pub cached_password: SecretString,
@@ -216,6 +219,9 @@ pub struct RdpLogEntry {
 
 pub struct RdpService {
     pub connections: HashMap<String, RdpActiveConnection>,
+    /// Counts both active sessions and connect calls that have passed
+    /// admission but have not yet been inserted into `connections`.
+    pub session_slots: Arc<Semaphore>,
     /// Cached TLS connector -- built once, reused for every connection.
     /// Building a TLS connector loads the system root certificate store which
     /// is very expensive on Windows (200-500 ms).  Caching it avoids paying that
@@ -229,6 +235,11 @@ pub struct RdpService {
     pub log_buffer: VecDeque<RdpLogEntry>,
 }
 
+/// A conservative process-wide ceiling for resource-heavy RDP session
+/// workers. Each admitted session owns one permit before any worker is
+/// spawned and until its active connection record is dropped.
+pub const MAX_RDP_ACTIVE_OR_PENDING_SESSIONS: usize = 16;
+
 impl RdpService {
     pub fn new() -> super::RdpServiceState {
         // Pre-build the TLS connector and HTTP client eagerly so the first
@@ -241,10 +252,26 @@ impl RdpService {
 
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
+            session_slots: Arc::new(Semaphore::new(
+                MAX_RDP_ACTIVE_OR_PENDING_SESSIONS,
+            )),
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,
             log_buffer: VecDeque::with_capacity(1024),
         }))
+    }
+
+    /// Reserve one active-or-pending session slot without waiting. The owned
+    /// permit automatically returns to the pool on every startup error.
+    pub fn try_reserve_session_slot(&self) -> Result<OwnedSemaphorePermit, String> {
+        Arc::clone(&self.session_slots)
+            .try_acquire_owned()
+            .map_err(|_| {
+                format!(
+                    "RDP session limit reached (maximum {} active or starting sessions)",
+                    MAX_RDP_ACTIVE_OR_PENDING_SESSIONS
+                )
+            })
     }
 
     /// Push a log entry into the ring buffer (capped at 1000).

@@ -82,11 +82,15 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
 
     runtime.block_on(async {
         let (cmd_tx, _cmd_rx) = create_wake_channel().expect("wake channel");
+        let session_slot = std::sync::Arc::new(tokio::sync::Semaphore::new(1))
+            .try_acquire_owned()
+            .expect("session slot");
         let connection = RdpActiveConnection {
             session: test_session(),
             cmd_tx,
             stats: Arc::new(RdpSessionStats::new()),
             _handle: tokio::spawn(async {}),
+            _session_slot: session_slot,
             cached_password: SecretString::new("super-secret".to_string()),
             cached_domain: Some("LAB".to_string()),
         };

@@ -11,7 +11,9 @@ use sorng_rdp::rdp::cert_trust::{
     SessionPromptContext,
 };
 use sorng_rdp::rdp::frame_store::SharedFrameStore;
-use sorng_rdp::rdp::session_runner::{run_reconnect_loop_for_test, SessionLoopExit};
+use sorng_rdp::rdp::session_runner::{
+    run_reconnect_loop_for_test, SessionLoopExit, RDP_LOG_CHANNEL_CAPACITY,
+};
 use sorng_rdp::rdp::settings::ResolvedSettings;
 use sorng_rdp::rdp::stats::RdpSessionStats;
 use sorng_rdp::rdp::types::RdpLogEntry;
@@ -163,7 +165,8 @@ fn reconnect_loop_reuses_cached_secret_and_resumes_frames() {
     let frame_store = SharedFrameStore::new();
     let stats = Arc::new(RdpSessionStats::new());
     let (_cmd_tx, mut cmd_rx) = create_wake_channel().expect("wake channel");
-    let (log_tx, _log_rx) = std::sync::mpsc::channel::<RdpLogEntry>();
+    let (log_tx, _log_rx) =
+        std::sync::mpsc::sync_channel::<RdpLogEntry>(RDP_LOG_CHANNEL_CAPACITY);
     let settings = reconnect_settings();
     let cached_password = SecretString::new("opensesame".to_string());
 
