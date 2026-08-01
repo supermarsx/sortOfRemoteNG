@@ -68,8 +68,8 @@ describe("t57 picker reachability", () => {
       expect(descriptor, protocol).toEqual(
         expect.objectContaining({ protocol, category }),
       );
-      const module = await descriptor!.importPanel();
-      expect(module.default, protocol).toBeTypeOf("function");
+      const panelModule = await descriptor!.importPanel();
+      expect(panelModule.default, protocol).toBeTypeOf("function");
     },
   );
 });
