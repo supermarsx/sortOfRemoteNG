@@ -445,9 +445,10 @@ pub struct BearerAuthService {
     providers: HashMap<String, StoredOAuthProvider>,
     /// Single-use OAuth transactions keyed by their CSRF state.
     pending_oauth_flows: HashMap<String, PendingOAuthFlow>,
-    /// Prepared for a future, fully owned provider-login integration. Generic
-    /// OAuth commands remain unregistered and callbacks currently fail closed.
-    _oauth_exchange_client: Arc<dyn OAuthExchangeClient>,
+    /// Exchanges validated, single-use authorization callbacks for provider
+    /// tokens. Returned tokens are not application sessions until a caller
+    /// validates provider identity and explicitly issues one.
+    oauth_exchange_client: Arc<dyn OAuthExchangeClient>,
     /// Active tokens
     tokens: HashMap<String, TokenInfo>,
     /// External JWT policy, keyed by the exact trusted issuer.
@@ -469,7 +470,7 @@ impl BearerAuthService {
         Arc::new(Mutex::new(BearerAuthService {
             providers: HashMap::new(),
             pending_oauth_flows: HashMap::new(),
-            _oauth_exchange_client: oauth_exchange_client,
+            oauth_exchange_client,
             tokens: HashMap::new(),
             jwt_issuers: HashMap::new(),
             revoked_sessions: HashMap::new(),
@@ -680,9 +681,9 @@ impl BearerAuthService {
         Ok(auth_url.to_string())
     }
 
-    /// Consumes an experimental OAuth callback without exchanging its code.
-    /// This deliberately fails closed until a complete identity-validation and
-    /// application-session issuance path exists.
+    /// Consumes an experimental OAuth callback and returns the provider access
+    /// token for caller-owned identity validation. This does not register the
+    /// provider token as an application token or issue an application session.
     #[doc(hidden)]
     pub async fn handle_oauth_callback(
         &mut self,
@@ -714,11 +715,23 @@ impl BearerAuthService {
                 "OAuth callback provider does not match the authorization flow".to_string(),
             );
         }
-        Err(OAUTH_AUTHENTICATION_UNSUPPORTED.to_string())
+
+        let request = OAuthExchangeRequest {
+            token_url: Url::parse(&flow.provider.token_url)
+                .map_err(|_| "OAuth token endpoint is invalid".to_string())?,
+            client_id: flow.provider.client_id.clone(),
+            client_secret: flow.provider.client_secret.clone(),
+            code: code.to_string(),
+            redirect_uri: flow.redirect_uri.clone(),
+            pkce_verifier: flow.pkce_verifier.clone(),
+        };
+        let exchange_client = Arc::clone(&self.oauth_exchange_client);
+        let mut response = exchange_client.exchange(request).await?;
+        Ok(std::mem::take(&mut response.access_token))
     }
 
     /// Completes the unregistered, experimental helper and zeroizes owned
-    /// callback parameters before returning its fail-closed result.
+    /// callback parameters before returning the provider access token.
     #[doc(hidden)]
     pub async fn complete_oauth_flow(
         &mut self,
@@ -991,7 +1004,7 @@ impl BearerAuthService {
 #[cfg(test)]
 mod session_token_tests {
     use super::*;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     // 32-byte (256-bit) secrets — the minimum HS256 secret length.
     const SECRET: &[u8] = b"0123456789abcdef0123456789abcdef";
@@ -1002,10 +1015,7 @@ mod session_token_tests {
         BearerAuthService {
             providers: HashMap::new(),
             pending_oauth_flows: HashMap::new(),
-            oauth_credentials: HashMap::new(),
-            oauth_exchange_client: Arc::new(ReqwestOAuthExchangeClient {
-                client: Client::new(),
-            }),
+            oauth_exchange_client: Arc::new(UnavailableOAuthExchangeClient),
             tokens: HashMap::new(),
             jwt_issuers: HashMap::new(),
             revoked_sessions: HashMap::new(),
@@ -1260,12 +1270,12 @@ mod session_token_tests {
 
     fn oauth_service(calls: Arc<std::sync::atomic::AtomicUsize>) -> BearerAuthService {
         let mut svc = service();
-        svc._oauth_exchange_client = Arc::new(MockOAuthExchangeClient { calls });
+        svc.oauth_exchange_client = Arc::new(MockOAuthExchangeClient { calls });
         svc
     }
 
     #[tokio::test]
-    async fn oauth_state_is_single_use_and_completion_fails_closed_without_exchange() {
+    async fn oauth_state_is_single_use_and_completion_exchanges_without_authorizing() {
         use std::sync::atomic::Ordering;
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut svc = oauth_service(Arc::clone(&calls));
@@ -1286,20 +1296,20 @@ mod session_token_tests {
         assert!(!mismatch.contains("raw-code-secret"));
         assert_eq!(calls.load(Ordering::SeqCst), 0);
 
-        let completion_error = svc
+        let access_token = svc
             .handle_oauth_callback("example", "raw-code-secret", &state)
             .await
-            .unwrap_err();
-        assert_eq!(completion_error, OAUTH_AUTHENTICATION_UNSUPPORTED);
-        assert!(!completion_error.contains("raw-code-secret"));
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+            .unwrap();
+        assert_eq!(access_token, "provider-access-secret");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(svc.pending_oauth_flows.is_empty());
+        assert!(svc.tokens.is_empty());
 
         assert!(svc
             .handle_oauth_callback("example", "another-code", &state)
             .await
             .is_err());
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
