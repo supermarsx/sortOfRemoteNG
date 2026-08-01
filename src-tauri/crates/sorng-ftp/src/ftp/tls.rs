@@ -10,7 +10,9 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
 #[derive(Debug)]
@@ -62,7 +64,15 @@ impl ServerCertVerifier for NoCertificateVerification {
 }
 
 /// Build a `TlsConnector` according to our configuration.
-pub fn build_tls_connector(accept_invalid_certs: bool) -> FtpResult<TlsConnector> {
+pub fn build_tls_connector(
+    accept_invalid_certs: bool,
+    acknowledge_invalid_cert_risk: bool,
+) -> FtpResult<TlsConnector> {
+    if accept_invalid_certs != acknowledge_invalid_cert_risk {
+        return Err(FtpError::invalid_config(
+            "FTPS certificate bypass requires acceptInvalidCerts and acknowledgeInvalidCertRisk to be enabled together",
+        ));
+    }
     let config = if accept_invalid_certs {
         rustls::ClientConfig::builder()
             .dangerous()
@@ -94,10 +104,11 @@ async fn connect_tls(
     connector: TlsConnector,
     host: &str,
     tcp: TcpStream,
+    io_timeout: Duration,
 ) -> FtpResult<TlsStream<TcpStream>> {
-    connector
-        .connect(server_name(host)?, tcp)
+    timeout(io_timeout, connector.connect(server_name(host)?, tcp))
         .await
+        .map_err(|_| FtpError::timeout("FTP TLS handshake timed out"))?
         .map_err(|e| FtpError::tls_failed(format!("TLS handshake failed: {e}")))
 }
 
@@ -109,12 +120,15 @@ pub async fn upgrade_to_tls(
     codec: FtpCodec,
     host: &str,
     accept_invalid_certs: bool,
+    acknowledge_invalid_cert_risk: bool,
+    io_timeout: Duration,
 ) -> FtpResult<FtpCodec> {
     // Re-assemble the owned TcpStream from the split halves.
     let tcp = reunite_plain(codec)?;
 
-    let connector = build_tls_connector(accept_invalid_certs)?;
-    let tls = connect_tls(connector, host, tcp)
+    let connector =
+        build_tls_connector(accept_invalid_certs, acknowledge_invalid_cert_risk)?;
+    let tls = connect_tls(connector, host, tcp, io_timeout)
         .await
         .map_err(|e| FtpError::tls_failed(format!("Explicit TLS handshake: {}", e)))?;
 
@@ -149,9 +163,11 @@ pub async fn wrap_data_stream(
     tcp: TcpStream,
     host: &str,
     accept_invalid_certs: bool,
+    acknowledge_invalid_cert_risk: bool,
+    io_timeout: Duration,
 ) -> FtpResult<TlsStream<TcpStream>> {
-    let connector = build_tls_connector(accept_invalid_certs)?;
-    connect_tls(connector, host, tcp)
+    let connector = build_tls_connector(accept_invalid_certs, acknowledge_invalid_cert_risk)?;
+    connect_tls(connector, host, tcp, io_timeout)
         .await
         .map_err(|e| FtpError::tls_failed(format!("Data channel TLS: {}", e)))
 }

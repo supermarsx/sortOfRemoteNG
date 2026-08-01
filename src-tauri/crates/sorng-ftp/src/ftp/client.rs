@@ -14,10 +14,21 @@ use crate::ftp::tls;
 use crate::ftp::transfer::{self, DataStream};
 use crate::ftp::types::*;
 use chrono::Utc;
+use std::net::IpAddr;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
+use tokio::time::timeout;
 use uuid::Uuid;
 use zeroize::Zeroizing;
+
+const MAX_HOST_BYTES: usize = 253;
+const MAX_USERNAME_BYTES: usize = 1_024;
+const MAX_PASSWORD_BYTES: usize = 4_096;
+const MAX_PATH_BYTES: usize = 8 * 1_024;
+const MAX_LABEL_BYTES: usize = 512;
+const MAX_FEATURES: usize = 128;
+const MAX_LISTING_BYTES: usize = 8 * 1_024 * 1_024;
+const DATA_CHUNK_BYTES: usize = 64 * 1_024;
 
 /// A connected FTP client session.
 pub struct FtpClient {
@@ -37,9 +48,7 @@ impl FtpClient {
         // and every early-return path scrubs the authentication allocation.
         let password = Zeroizing::new(std::mem::take(&mut config.password));
 
-        if config.host.is_empty() {
-            return Err(FtpError::invalid_config("Host must not be empty"));
-        }
+        validate_config(&config, password.as_str())?;
 
         let session_id = Uuid::new_v4().to_string();
         let (mut codec, banner) = connection::connect(&config).await?;
@@ -54,7 +63,15 @@ impl FtpClient {
                     resp.text()
                 )));
             }
-            codec = tls::upgrade_to_tls(codec, &config.host, config.accept_invalid_certs).await?;
+            codec = tls::upgrade_to_tls(
+                codec,
+                &config.host,
+                config.accept_invalid_certs,
+                config.acknowledge_invalid_cert_risk,
+                Duration::from_secs(config.connect_timeout_sec),
+            )
+            .await?;
+            codec.set_io_timeout(Duration::from_secs(config.connect_timeout_sec));
 
             // Protection level
             codec.expect_ok("PBSZ 0").await?;
@@ -94,7 +111,10 @@ impl FtpClient {
 
         // ── SYST ─────────────────────────────────────────────────
         let system_type = match codec.execute("SYST").await {
-            Ok(r) if r.is_success() => Some(r.text().trim_start_matches("215 ").to_string()),
+            Ok(r) if r.is_success() => Some(bounded_text(
+                r.text().trim_start_matches("215 "),
+                MAX_LABEL_BYTES,
+            )),
             _ => None,
         };
 
@@ -112,6 +132,7 @@ impl FtpClient {
 
         // ── Initial CWD ──────────────────────────────────────────
         let initial_dir = if let Some(ref dir) = config.initial_directory {
+            validate_remote_path(dir)?;
             let resp = codec.execute(&format!("CWD {}", dir)).await?;
             if resp.is_success() {
                 Self::get_pwd(&mut codec)
@@ -129,10 +150,10 @@ impl FtpClient {
             host: config.host.clone(),
             port: config.port,
             username: config.username.clone(),
-            security: config.security.clone(),
+            security: config.security,
             connected: true,
             current_directory: initial_dir,
-            server_banner: Some(banner_text),
+            server_banner: Some(bounded_text(&banner_text, 4_096)),
             system_type,
             features: features.raw_features.clone(),
             connected_at: Utc::now(),
@@ -183,6 +204,7 @@ impl FtpClient {
 
     /// Change into `path` and update `current_directory`.
     pub async fn cwd(&mut self, path: &str) -> FtpResult<String> {
+        let path = validate_remote_path(path)?;
         self.codec.expect_ok(&format!("CWD {}", path)).await?;
         let new_pwd = Self::get_pwd(&mut self.codec).await?;
         self.info.current_directory = new_pwd.clone();
@@ -216,6 +238,7 @@ impl FtpClient {
             .iter()
             .skip(1) // skip "211-Features:"
             .filter(|l| !l.starts_with("211"))
+            .take(MAX_FEATURES)
             .map(|l| l.trim().to_uppercase())
             .collect();
 
@@ -259,12 +282,15 @@ impl FtpClient {
     pub async fn open_data_channel(&mut self) -> FtpResult<DataStream> {
         transfer::open_data_channel(
             &mut self.codec,
-            self.config.data_channel_mode,
-            &self.config.security,
-            &self.config.host,
-            self.config.accept_invalid_certs,
-            Duration::from_secs(self.config.data_timeout_sec),
-            self.config.active_bind_address.as_deref(),
+            transfer::DataChannelOptions {
+                mode: self.config.data_channel_mode,
+                security: &self.config.security,
+                host: &self.config.host,
+                accept_invalid_certs: self.config.accept_invalid_certs,
+                acknowledge_invalid_cert_risk: self.config.acknowledge_invalid_cert_risk,
+                data_timeout: Duration::from_secs(self.config.data_timeout_sec),
+                active_bind: self.config.active_bind_address.as_deref(),
+            },
         )
         .await
     }
@@ -287,7 +313,7 @@ impl FtpClient {
     /// Issue MLSD and parse the MLSD fact response.
     async fn mlsd(&mut self, path: Option<&str>) -> FtpResult<Vec<FtpEntry>> {
         let cmd = match path {
-            Some(p) => format!("MLSD {}", p),
+            Some(p) => format!("MLSD {}", validate_remote_path(p)?),
             None => "MLSD".to_string(),
         };
         let data = self.retrieve_data_as_string(&cmd).await?;
@@ -298,7 +324,7 @@ impl FtpClient {
     /// Issue LIST and parse the Unix/Windows output.
     async fn list_raw(&mut self, path: Option<&str>) -> FtpResult<Vec<FtpEntry>> {
         let cmd = match path {
-            Some(p) => format!("LIST {}", p),
+            Some(p) => format!("LIST {}", validate_remote_path(p)?),
             None => "LIST".to_string(),
         };
         let data = self.retrieve_data_as_string(&cmd).await?;
@@ -307,14 +333,23 @@ impl FtpClient {
     }
 
     /// Generic helper: open data channel, send command, collect body as String.
-    pub async fn retrieve_data_as_string(&mut self, cmd: &str) -> FtpResult<String> {
+    pub(crate) async fn retrieve_data_as_string(&mut self, cmd: &str) -> FtpResult<String> {
         let ds = self.open_data_channel().await?;
         let resp = self.codec.execute(cmd).await?;
         if !resp.is_preliminary() && !resp.is_success() {
             return Err(FtpError::from_reply(resp.code, &resp.text()));
         }
 
-        let data = read_data_stream_to_string(ds).await?;
+        let data =
+            match read_data_stream_to_string(ds, Duration::from_secs(self.config.data_timeout_sec))
+                .await
+            {
+                Ok(data) => data,
+                Err(error) => {
+                    self.info.connected = false;
+                    return Err(error);
+                }
+            };
 
         // Read the 226 completion reply.
         let done = self.codec.read_response().await?;
@@ -329,6 +364,7 @@ impl FtpClient {
 
     /// Get the size of a remote file (RFC 3659 SIZE).
     pub async fn size(&mut self, path: &str) -> FtpResult<u64> {
+        let path = validate_remote_path(path)?;
         let resp = self.codec.expect_ok(&format!("SIZE {}", path)).await?;
         let text = resp.text();
         // "213 12345"
@@ -340,6 +376,7 @@ impl FtpClient {
 
     /// Get the modification time of a remote file (RFC 3659 MDTM).
     pub async fn mdtm(&mut self, path: &str) -> FtpResult<String> {
+        let path = validate_remote_path(path)?;
         let resp = self.codec.expect_ok(&format!("MDTM {}", path)).await?;
         let text = resp.text();
         // "213 20260101120000"
@@ -395,7 +432,7 @@ impl FtpClient {
         FtpDiagnostics {
             session_id: self.id.clone(),
             host: self.info.host.clone(),
-            security: self.info.security.clone(),
+            security: self.info.security,
             features: self.features.clone(),
             current_directory: self.info.current_directory.clone(),
             system_type: self.info.system_type.clone(),
@@ -411,7 +448,13 @@ impl FtpClient {
 fn parse_pwd(text: &str) -> FtpResult<String> {
     if let Some(start) = text.find('"') {
         if let Some(end) = text[start + 1..].find('"') {
-            return Ok(text[start + 1..start + 1 + end].to_string());
+            let path = &text[start + 1..start + 1 + end];
+            if path.len() > MAX_PATH_BYTES {
+                return Err(FtpError::protocol_error(
+                    "PWD response path exceeded the configured limit",
+                ));
+            }
+            return Ok(path.to_string());
         }
     }
     Err(FtpError::protocol_error(format!(
@@ -421,17 +464,199 @@ fn parse_pwd(text: &str) -> FtpResult<String> {
 }
 
 /// Read an entire data stream into a UTF-8 string.
-async fn read_data_stream_to_string(ds: DataStream) -> FtpResult<String> {
-    let mut buf = Vec::new();
-    match ds {
-        DataStream::Plain(mut tcp) => {
-            tcp.read_to_end(&mut buf).await?;
+async fn read_data_stream_to_string(ds: DataStream, io_timeout: Duration) -> FtpResult<String> {
+    let buf = match ds {
+        DataStream::Plain(mut tcp) => read_bounded_data(&mut tcp, io_timeout).await?,
+        DataStream::Tls(mut tls) => read_bounded_data(&mut tls, io_timeout).await?,
+    };
+    String::from_utf8(buf).map_err(|_| FtpError::protocol_error("FTP listing was not valid UTF-8"))
+}
+
+async fn read_bounded_data<R>(reader: &mut R, io_timeout: Duration) -> FtpResult<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::with_capacity(DATA_CHUNK_BYTES);
+    let mut chunk = vec![0u8; DATA_CHUNK_BYTES];
+    loop {
+        let count = timeout(io_timeout, reader.read(&mut chunk))
+            .await
+            .map_err(|_| FtpError::timeout("FTP listing read timed out"))??;
+        if count == 0 {
+            break;
         }
-        DataStream::Tls(mut tls) => {
-            tls.read_to_end(&mut buf).await?;
+        if output.len().saturating_add(count) > MAX_LISTING_BYTES {
+            return Err(FtpError::transfer_failed(
+                "FTP listing exceeded the 8 MiB limit",
+            ));
+        }
+        output.extend_from_slice(&chunk[..count]);
+    }
+    Ok(output)
+}
+
+fn bounded_text(value: &str, max_bytes: usize) -> String {
+    value
+        .chars()
+        .scan(0usize, |used, ch| {
+            let next = used.saturating_add(ch.len_utf8());
+            if next > max_bytes {
+                None
+            } else {
+                *used = next;
+                Some(ch)
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn validate_remote_path(path: &str) -> FtpResult<&str> {
+    if path.is_empty() || path.len() > MAX_PATH_BYTES || path.trim().is_empty() {
+        return Err(FtpError::invalid_config(
+            "FTP remote path is empty or exceeds the 8 KiB limit",
+        ));
+    }
+    if path.chars().any(char::is_control) {
+        return Err(FtpError::invalid_config(
+            "FTP remote path contains a control character",
+        ));
+    }
+    Ok(path)
+}
+
+pub(crate) fn normalize_destructive_remote_path(path: &str) -> FtpResult<String> {
+    validate_remote_path(path)?;
+    let slash_normalized = path.replace('\\', "/");
+    let absolute = slash_normalized.starts_with('/');
+    let mut components: Vec<&str> = Vec::new();
+
+    for component in slash_normalized.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                if components.pop().is_none() {
+                    return Err(FtpError::invalid_config(
+                        "Refusing a destructive FTP path that traverses above its root",
+                    ));
+                }
+            }
+            value => components.push(value),
         }
     }
-    String::from_utf8(buf).map_err(|e| FtpError::protocol_error(format!("Data not UTF-8: {}", e)))
+
+    if components.is_empty() {
+        return Err(FtpError::invalid_config(
+            "Refusing a destructive FTP operation on a root-like path",
+        ));
+    }
+
+    let joined = components.join("/");
+    let normalized = if absolute {
+        format!("/{joined}")
+    } else {
+        joined
+    };
+    validate_remote_path(&normalized)?;
+    Ok(normalized)
+}
+
+pub(crate) fn validate_remote_child_name(name: &str) -> FtpResult<&str> {
+    validate_remote_path(name)?;
+    if matches!(name, "." | "..") || name.contains('/') || name.contains('\\') {
+        return Err(FtpError::protocol_error(
+            "FTP directory listing contained an unsafe child name",
+        ));
+    }
+    Ok(name)
+}
+
+fn validate_config(config: &FtpConnectionConfig, password: &str) -> FtpResult<()> {
+    if config.host.is_empty() || config.host.len() > MAX_HOST_BYTES {
+        return Err(FtpError::invalid_config(
+            "FTP host must be between 1 and 253 bytes",
+        ));
+    }
+    if config
+        .host
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(FtpError::invalid_config(
+            "FTP host contains forbidden whitespace or control characters",
+        ));
+    }
+    if config.port == 0 {
+        return Err(FtpError::invalid_config("FTP port must not be zero"));
+    }
+    if config.username.is_empty() || config.username.len() > MAX_USERNAME_BYTES {
+        return Err(FtpError::invalid_config(
+            "FTP username must be between 1 and 1024 bytes",
+        ));
+    }
+    if password.len() > MAX_PASSWORD_BYTES {
+        return Err(FtpError::invalid_config(
+            "FTP password exceeded the 4 KiB limit",
+        ));
+    }
+    if password.chars().any(|ch| matches!(ch, '\r' | '\n' | '\0')) {
+        return Err(FtpError::invalid_config(
+            "FTP password contains a forbidden command delimiter",
+        ));
+    }
+    if config.username.chars().any(|ch| ch.is_control()) {
+        return Err(FtpError::invalid_config(
+            "FTP username contains a forbidden control character",
+        ));
+    }
+    if config.security == FtpSecurityMode::None && !config.allow_plaintext {
+        return Err(FtpError::invalid_config(
+            "Plain FTP is disabled unless allowPlaintext is explicitly enabled",
+        ));
+    }
+    if config.security == FtpSecurityMode::None && config.accept_invalid_certs {
+        return Err(FtpError::invalid_config(
+            "Certificate bypass is only meaningful for FTPS",
+        ));
+    }
+    if config.accept_invalid_certs != config.acknowledge_invalid_cert_risk {
+        return Err(FtpError::invalid_config(
+            "FTPS certificate bypass requires acceptInvalidCerts and acknowledgeInvalidCertRisk to be enabled together",
+        ));
+    }
+    if !(1..=120).contains(&config.connect_timeout_sec) {
+        return Err(FtpError::invalid_config(
+            "FTP connection timeout must be between 1 and 120 seconds",
+        ));
+    }
+    if !(1..=600).contains(&config.data_timeout_sec) {
+        return Err(FtpError::invalid_config(
+            "FTP data timeout must be between 1 and 600 seconds",
+        ));
+    }
+    if config.keepalive_interval_sec != 0 && !(10..=3_600).contains(&config.keepalive_interval_sec)
+    {
+        return Err(FtpError::invalid_config(
+            "FTP keepalive interval must be zero or between 10 and 3600 seconds",
+        ));
+    }
+    if let Some(path) = config.initial_directory.as_deref() {
+        validate_remote_path(path)?;
+    }
+    if config
+        .label
+        .as_ref()
+        .is_some_and(|label| label.len() > MAX_LABEL_BYTES)
+    {
+        return Err(FtpError::invalid_config(
+            "FTP label exceeded the 512-byte limit",
+        ));
+    }
+    if let Some(bind) = config.active_bind_address.as_deref() {
+        bind.parse::<IpAddr>().map_err(|_| {
+            FtpError::invalid_config("Active FTP bind address must be a literal IP")
+        })?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -462,6 +687,8 @@ mod tests {
             port,
             username: "test-user".to_string(),
             password: password.to_string(),
+            security: FtpSecurityMode::None,
+            allow_plaintext: true,
             keepalive_interval_sec: 0,
             ..FtpConnectionConfig::default()
         }
@@ -473,6 +700,42 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(debug.contains("[redacted]"));
         assert!(!debug.contains("debug-secret"));
+    }
+
+    #[test]
+    fn invalid_certificate_bypass_requires_distinct_acknowledgement() {
+        let mut config = FtpConnectionConfig {
+            host: "ftp.example.test".to_string(),
+            accept_invalid_certs: true,
+            ..FtpConnectionConfig::default()
+        };
+        assert!(validate_config(&config, "").is_err());
+
+        config.acknowledge_invalid_cert_risk = true;
+        assert!(validate_config(&config, "").is_ok());
+    }
+
+    #[test]
+    fn password_command_delimiters_are_rejected() {
+        let config = local_config(21, "");
+        assert!(validate_config(&config, "secret\r\nDELE /").is_err());
+        assert!(validate_config(&config, "secret\nNOOP").is_err());
+        assert!(validate_config(&config, "secret\0suffix").is_err());
+    }
+
+    #[test]
+    fn destructive_paths_are_canonicalized_and_root_is_rejected() {
+        assert_eq!(
+            normalize_destructive_remote_path("/safe/./child").unwrap(),
+            "/safe/child"
+        );
+        assert_eq!(
+            normalize_destructive_remote_path("/safe/parent/../child").unwrap(),
+            "/safe/child"
+        );
+        assert!(normalize_destructive_remote_path("/..").is_err());
+        assert!(normalize_destructive_remote_path("/safe/..").is_err());
+        assert!(normalize_destructive_remote_path("../safe").is_err());
     }
 
     #[tokio::test]

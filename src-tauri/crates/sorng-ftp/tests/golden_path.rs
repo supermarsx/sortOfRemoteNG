@@ -23,6 +23,7 @@ fn test_config() -> FtpConnectionConfig {
         username: env_or("FTP_TEST_USER", "testuser"),
         password: env_or("FTP_TEST_PASSWORD", "testpass"),
         security: FtpSecurityMode::None,
+        allow_plaintext: true,
         label: Some("docker-e2e-ftp".to_string()),
         ..Default::default()
     }

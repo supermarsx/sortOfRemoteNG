@@ -8,14 +8,13 @@ use std::fmt;
 // ─── Connection / Session ────────────────────────────────────────────
 
 /// Security mode for the control channel.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
-#[derive(Default)]
 pub enum FtpSecurityMode {
     /// Plain-text FTP (port 21).
-    #[default]
     None,
     /// Explicit FTPS — starts plain then upgrades via AUTH TLS (port 21).
+    #[default]
     Explicit,
     /// Implicit FTPS — TLS from the first byte (port 990).
     Implicit,
@@ -53,6 +52,10 @@ pub struct FtpConnectionConfig {
     pub password: String,
     #[serde(default)]
     pub security: FtpSecurityMode,
+    /// Explicit acknowledgement that credentials and payloads may be sent in
+    /// clear text when `security` is `none`.
+    #[serde(default)]
+    pub allow_plaintext: bool,
     #[serde(default)]
     pub transfer_type: TransferType,
     #[serde(default)]
@@ -72,6 +75,15 @@ pub struct FtpConnectionConfig {
     /// Accept self-signed / untrusted certificates.
     #[serde(default)]
     pub accept_invalid_certs: bool,
+    /// Explicit acknowledgement that accepting an invalid certificate disables
+    /// FTPS server identity verification. This is intentionally distinct from
+    /// the acknowledgement for plain-text FTP.
+    #[serde(default)]
+    pub acknowledge_invalid_cert_risk: bool,
+    /// Keep one deterministic protected staging file when a download fails
+    /// after receiving data. Disabled by default.
+    #[serde(default)]
+    pub retain_incomplete_downloads: bool,
     /// UTF-8 encoding (OPTS UTF8 ON).
     #[serde(default = "default_true")]
     pub utf8: bool,
@@ -93,6 +105,7 @@ impl fmt::Debug for FtpConnectionConfig {
             .field("username", &self.username)
             .field("password", &"[redacted]")
             .field("security", &self.security)
+            .field("allow_plaintext", &self.allow_plaintext)
             .field("transfer_type", &self.transfer_type)
             .field("data_channel_mode", &self.data_channel_mode)
             .field("initial_directory", &self.initial_directory)
@@ -100,6 +113,14 @@ impl fmt::Debug for FtpConnectionConfig {
             .field("data_timeout_sec", &self.data_timeout_sec)
             .field("keepalive_interval_sec", &self.keepalive_interval_sec)
             .field("accept_invalid_certs", &self.accept_invalid_certs)
+            .field(
+                "acknowledge_invalid_cert_risk",
+                &self.acknowledge_invalid_cert_risk,
+            )
+            .field(
+                "retain_incomplete_downloads",
+                &self.retain_incomplete_downloads,
+            )
             .field("utf8", &self.utf8)
             .field("active_bind_address", &self.active_bind_address)
             .field("label", &self.label)
@@ -127,7 +148,8 @@ impl Default for FtpConnectionConfig {
             port: 21,
             username: "anonymous".into(),
             password: "anonymous@".into(),
-            security: FtpSecurityMode::None,
+            security: FtpSecurityMode::Explicit,
+            allow_plaintext: false,
             transfer_type: TransferType::Binary,
             data_channel_mode: DataChannelMode::Passive,
             initial_directory: None,
@@ -135,6 +157,8 @@ impl Default for FtpConnectionConfig {
             data_timeout_sec: default_data_timeout(),
             keepalive_interval_sec: default_keepalive(),
             accept_invalid_certs: false,
+            acknowledge_invalid_cert_risk: false,
+            retain_incomplete_downloads: false,
             utf8: true,
             active_bind_address: None,
             label: None,
@@ -240,7 +264,7 @@ pub enum TransferDirection {
 }
 
 /// Current state of a transfer.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum TransferState {
     Queued,

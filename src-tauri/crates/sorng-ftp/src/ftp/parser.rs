@@ -10,12 +10,44 @@
 
 use crate::ftp::types::{FtpEntry, FtpEntryKind};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
+
+const MAX_LISTING_ENTRIES: usize = 4_096;
+const MAX_LISTING_LINE_BYTES: usize = 8 * 1_024;
+const MAX_NAME_BYTES: usize = 4 * 1_024;
+const MAX_RAW_CHARS: usize = 4_096;
+const MAX_FACTS: usize = 64;
+const MAX_FACT_KEY_BYTES: usize = 128;
+const MAX_FACT_VALUE_BYTES: usize = 4 * 1_024;
+
+lazy_static! {
+    static ref UNIX_LIST_RE: Regex = Regex::new(
+        r"(?x)
+        ^([dlcbps-][rwxsStT-]{9})\s+
+        (\d+)\s+
+        (\S+)\s+
+        (\S+)\s+
+        (\d+)\s+
+        (\w{3}\s+\d{1,2}\s+[\d:]+)\s+
+        (.+)$"
+    )
+    .expect("valid Unix FTP listing regex");
+    static ref WINDOWS_LIST_RE: Regex = Regex::new(
+        r"(?x)
+        ^(\d{2}-\d{2}-\d{2})\s+
+        (\d{1,2}:\d{2}(?:AM|PM)?)\s+
+        (<DIR>|\d+)\s+
+        (.+)$"
+    )
+    .expect("valid Windows FTP listing regex");
+}
 
 /// Parse a full multi-line LIST or MLSD response body.
 pub fn parse_listing(raw: &str) -> Vec<FtpEntry> {
     raw.lines()
+        .take(MAX_LISTING_ENTRIES)
         .filter(|l| !l.trim().is_empty())
         .filter_map(|line| parse_line(line.trim()))
         .filter(|e| e.name != "." && e.name != "..")
@@ -24,6 +56,9 @@ pub fn parse_listing(raw: &str) -> Vec<FtpEntry> {
 
 /// Parse a single line from a listing.
 fn parse_line(line: &str) -> Option<FtpEntry> {
+    if line.len() > MAX_LISTING_LINE_BYTES {
+        return None;
+    }
     // Try MLSD first (contains ";")
     if line.contains(';') && line.contains('=') {
         if let Some(e) = parse_mlsd(line) {
@@ -42,6 +77,9 @@ fn parse_line(line: &str) -> Option<FtpEntry> {
     }
 
     // Fallback: treat the whole line as a filename
+    if !safe_entry_name(line) {
+        return None;
+    }
     Some(FtpEntry {
         name: line.to_string(),
         kind: FtpEntryKind::Unknown,
@@ -51,7 +89,7 @@ fn parse_line(line: &str) -> Option<FtpEntry> {
         owner: None,
         group: None,
         link_target: None,
-        raw: Some(line.to_string()),
+        raw: Some(line.chars().take(MAX_RAW_CHARS).collect()),
         facts: HashMap::new(),
     })
 }
@@ -71,12 +109,17 @@ fn parse_mlsd(line: &str) -> Option<FtpEntry> {
     if name.is_empty() {
         return None;
     }
+    if !safe_entry_name(&name) {
+        return None;
+    }
 
     let mut facts: HashMap<String, String> = HashMap::new();
-    for segment in facts_str.split(';') {
+    for segment in facts_str.split(';').take(MAX_FACTS) {
         let segment = segment.trim();
         if let Some((k, v)) = segment.split_once('=') {
-            facts.insert(k.to_lowercase(), v.to_string());
+            if k.len() <= MAX_FACT_KEY_BYTES && v.len() <= MAX_FACT_VALUE_BYTES {
+                facts.insert(k.to_lowercase(), v.to_string());
+            }
         }
     }
 
@@ -103,7 +146,7 @@ fn parse_mlsd(line: &str) -> Option<FtpEntry> {
         owner: facts.get("unix.owner").cloned(),
         group: facts.get("unix.group").cloned(),
         link_target: None,
-        raw: Some(line.to_string()),
+        raw: Some(line.chars().take(MAX_RAW_CHARS).collect()),
         facts,
     })
 }
@@ -125,20 +168,7 @@ fn parse_mlsd_time(s: &str) -> Option<DateTime<Utc>> {
 /// lrwxrwxrwx   1 user group    42 Jan  1 12:00 link -> target
 /// ```
 fn parse_unix(line: &str) -> Option<FtpEntry> {
-    let re = Regex::new(
-        r"(?x)
-        ^([dlcbps-][rwxsStT-]{9})\s+   # permissions
-        (\d+)\s+                         # link count
-        (\S+)\s+                         # owner
-        (\S+)\s+                         # group
-        (\d+)\s+                         # size
-        (\w{3}\s+\d{1,2}\s+[\d:]+)\s+   # date
-        (.+)$                            # filename (possibly with -> target)
-        ",
-    )
-    .ok()?;
-
-    let caps = re.captures(line)?;
+    let caps = UNIX_LIST_RE.captures(line)?;
 
     let perms = caps.get(1)?.as_str();
     let owner = caps.get(3).map(|m| m.as_str().to_string());
@@ -166,6 +196,9 @@ fn parse_unix(line: &str) -> Option<FtpEntry> {
     } else {
         (name_raw.to_string(), None)
     };
+    if !safe_entry_name(&name) {
+        return None;
+    }
 
     let modified = parse_unix_date(date_str);
 
@@ -178,7 +211,7 @@ fn parse_unix(line: &str) -> Option<FtpEntry> {
         owner,
         group,
         link_target,
-        raw: Some(line.to_string()),
+        raw: Some(line.chars().take(MAX_RAW_CHARS).collect()),
         facts: HashMap::new(),
     })
 }
@@ -223,22 +256,15 @@ fn parse_unix_date(s: &str) -> Option<DateTime<Utc>> {
 /// 01-01-26  12:00PM      <DIR> Directory Name
 /// ```
 fn parse_windows(line: &str) -> Option<FtpEntry> {
-    let re = Regex::new(
-        r"(?x)
-        ^(\d{2}-\d{2}-\d{2})\s+         # date
-        (\d{1,2}:\d{2}(?:AM|PM)?)\s+    # time
-        (<DIR>|\d+)\s+                   # size or <DIR>
-        (.+)$                            # filename
-        ",
-    )
-    .ok()?;
-
-    let caps = re.captures(line)?;
+    let caps = WINDOWS_LIST_RE.captures(line)?;
 
     let date_str = caps.get(1)?.as_str();
     let time_str = caps.get(2)?.as_str();
     let size_or_dir = caps.get(3)?.as_str();
     let name = caps.get(4)?.as_str().to_string();
+    if !safe_entry_name(&name) {
+        return None;
+    }
 
     let (kind, size) = if size_or_dir == "<DIR>" {
         (FtpEntryKind::Directory, 0)
@@ -257,7 +283,7 @@ fn parse_windows(line: &str) -> Option<FtpEntry> {
         owner: None,
         group: None,
         link_target: None,
-        raw: Some(line.to_string()),
+        raw: Some(line.chars().take(MAX_RAW_CHARS).collect()),
         facts: HashMap::new(),
     })
 }
@@ -273,6 +299,16 @@ fn parse_windows_date(date: &str, time: &str) -> Option<DateTime<Utc>> {
         return Some(Utc.from_utc_datetime(&dt));
     }
     None
+}
+
+fn safe_entry_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_NAME_BYTES
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.chars().any(|ch| ch.is_control())
 }
 
 #[cfg(test)]

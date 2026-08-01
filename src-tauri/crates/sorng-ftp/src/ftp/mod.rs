@@ -49,3 +49,7 @@ lazy_static! {
     pub static ref TRANSFER_PROGRESS: StdMutex<HashMap<String, TransferProgress>> =
         StdMutex::new(HashMap::new());
 }
+
+/// Hard bound for global transfer snapshots. Queue items have the same bound,
+/// preventing abandoned progress IDs from growing process memory indefinitely.
+pub(crate) const MAX_TRACKED_TRANSFERS: usize = 2_048;

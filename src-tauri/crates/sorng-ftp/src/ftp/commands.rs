@@ -265,7 +265,7 @@ pub async fn ftp_enqueue_transfer(
     remote_path: String,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    Ok(svc.enqueue_transfer(&session_id, direction, &local_path, &remote_path))
+    svc.enqueue_transfer(&session_id, direction, &local_path, &remote_path)
 }
 
 #[tauri::command]
@@ -337,7 +337,7 @@ pub async fn ftp_add_bookmark(
     bookmark: FtpBookmark,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    Ok(svc.add_bookmark(bookmark))
+    svc.add_bookmark(bookmark)
 }
 
 #[tauri::command]

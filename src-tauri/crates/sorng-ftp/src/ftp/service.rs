@@ -8,6 +8,13 @@ use crate::ftp::types::*;
 use log::info;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use zeroize::Zeroizing;
+
+const MAX_BOOKMARKS: usize = 256;
+const MAX_BOOKMARK_LABEL_BYTES: usize = 512;
+const MAX_BOOKMARK_TAGS: usize = 32;
+const MAX_BOOKMARK_TAG_BYTES: usize = 128;
+const MAX_FILTER_BYTES: usize = 256;
 
 /// Thread-safe state managed by Tauri.
 pub type FtpServiceState = Arc<Mutex<FtpService>>;
@@ -32,12 +39,12 @@ impl FtpService {
 
     /// Connect a new FTP session and add it to the pool.
     pub async fn connect(&mut self, config: FtpConnectionConfig) -> Result<FtpSessionInfo, String> {
-        info!("FTP connecting to {}:{}", config.host, config.port);
         let client = FtpClient::connect(config)
             .await
             .map_err(|e| e.to_string())?;
         let info = client.info.clone();
         self.pool.insert(client).map_err(|e| e.to_string())?;
+        info!("FTP session connected");
         Ok(info)
     }
 
@@ -74,7 +81,10 @@ impl FtpService {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         match client.noop().await {
             Ok(()) => Ok(true),
-            Err(_) => Ok(false),
+            Err(_) => {
+                client.info.connected = false;
+                Ok(false)
+            }
         }
     }
 
@@ -96,6 +106,9 @@ impl FtpService {
 
         // Apply filter
         if let Some(ref filter) = opts.filter {
+            if filter.len() > MAX_FILTER_BYTES {
+                return Err("FTP listing filter exceeded the 256-byte limit".to_string());
+            }
             let pattern = glob::Pattern::new(filter).map_err(|e| e.to_string())?;
             entries.retain(|e| pattern.matches(&e.name));
         }
@@ -286,9 +299,11 @@ impl FtpService {
         direction: TransferDirection,
         local_path: &str,
         remote_path: &str,
-    ) -> String {
+    ) -> Result<String, String> {
+        self.pool.get(session_id).map_err(|e| e.to_string())?;
         self.queue
             .enqueue(session_id, direction, local_path, remote_path)
+            .map_err(|e| e.to_string())
     }
 
     /// Cancel a queued transfer.
@@ -332,10 +347,19 @@ impl FtpService {
     }
 
     /// Add a bookmark.
-    pub fn add_bookmark(&mut self, bookmark: FtpBookmark) -> String {
+    pub fn add_bookmark(&mut self, mut bookmark: FtpBookmark) -> Result<String, String> {
+        validate_bookmark(&bookmark)?;
+        if self.bookmarks.len() >= MAX_BOOKMARKS {
+            return Err("FTP bookmark limit reached".to_string());
+        }
+        if self.bookmarks.iter().any(|item| item.id == bookmark.id) {
+            return Err("FTP bookmark ID already exists".to_string());
+        }
+        let password = Zeroizing::new(std::mem::take(&mut bookmark.config.password));
+        drop(password);
         let id = bookmark.id.clone();
         self.bookmarks.push(bookmark);
-        id
+        Ok(id)
     }
 
     /// Remove a bookmark.
@@ -350,7 +374,10 @@ impl FtpService {
     }
 
     /// Update a bookmark.
-    pub fn update_bookmark(&mut self, bookmark: FtpBookmark) -> Result<(), String> {
+    pub fn update_bookmark(&mut self, mut bookmark: FtpBookmark) -> Result<(), String> {
+        validate_bookmark(&bookmark)?;
+        let password = Zeroizing::new(std::mem::take(&mut bookmark.config.password));
+        drop(password);
         if let Some(b) = self.bookmarks.iter_mut().find(|b| b.id == bookmark.id) {
             *b = bookmark;
             Ok(())
@@ -392,4 +419,25 @@ impl FtpService {
         let client = self.pool.get_mut(session_id).map_err(|e| e.to_string())?;
         client.codec.execute(verb).await.map_err(|e| e.to_string())
     }
+}
+
+fn validate_bookmark(bookmark: &FtpBookmark) -> Result<(), String> {
+    if bookmark.id.is_empty() || bookmark.id.len() > 128 {
+        return Err("FTP bookmark ID is invalid".to_string());
+    }
+    if bookmark.label.is_empty() || bookmark.label.len() > MAX_BOOKMARK_LABEL_BYTES {
+        return Err("FTP bookmark label is invalid".to_string());
+    }
+    if bookmark.tags.len() > MAX_BOOKMARK_TAGS
+        || bookmark
+            .tags
+            .iter()
+            .any(|tag| tag.is_empty() || tag.len() > MAX_BOOKMARK_TAG_BYTES)
+    {
+        return Err("FTP bookmark tags exceed the configured limits".to_string());
+    }
+    if bookmark.config.host.is_empty() || bookmark.config.host.len() > 253 {
+        return Err("FTP bookmark host is invalid".to_string());
+    }
+    Ok(())
 }

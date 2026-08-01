@@ -33,28 +33,57 @@ pub enum DataStream {
     Tls(tokio_rustls::client::TlsStream<TcpStream>),
 }
 
+pub(crate) struct DataChannelOptions<'a> {
+    pub(crate) mode: DataChannelMode,
+    pub(crate) security: &'a FtpSecurityMode,
+    pub(crate) host: &'a str,
+    pub(crate) accept_invalid_certs: bool,
+    pub(crate) acknowledge_invalid_cert_risk: bool,
+    pub(crate) data_timeout: Duration,
+    pub(crate) active_bind: Option<&'a str>,
+}
+
 /// Open a data channel according to the configured mode.
 ///
 /// Returns a connected `DataStream` ready for reading/writing.
-pub async fn open_data_channel(
+pub(crate) async fn open_data_channel(
     codec: &mut FtpCodec,
-    mode: DataChannelMode,
-    security: &FtpSecurityMode,
-    host: &str,
-    accept_invalid_certs: bool,
-    data_timeout: Duration,
-    active_bind: Option<&str>,
+    options: DataChannelOptions<'_>,
 ) -> FtpResult<DataStream> {
+    let DataChannelOptions {
+        mode,
+        security,
+        host,
+        accept_invalid_certs,
+        acknowledge_invalid_cert_risk,
+        data_timeout,
+        active_bind,
+    } = options;
+
+    let control_peer = codec
+        .peer_addr()
+        .ok_or_else(|| FtpError::data_channel("FTP control peer address is unavailable"))?;
     let tcp = match mode {
-        DataChannelMode::Passive => open_pasv(codec, data_timeout).await?,
-        DataChannelMode::ExtendedPassive => open_epsv(codec, host, data_timeout).await?,
-        DataChannelMode::Active => open_port(codec, active_bind, data_timeout).await?,
-        DataChannelMode::ExtendedActive => open_eprt(codec, active_bind, data_timeout).await?,
+        DataChannelMode::Passive => open_pasv(codec, control_peer, data_timeout).await?,
+        DataChannelMode::ExtendedPassive => open_epsv(codec, control_peer, data_timeout).await?,
+        DataChannelMode::Active => {
+            open_port(codec, active_bind, control_peer.ip(), data_timeout).await?
+        }
+        DataChannelMode::ExtendedActive => {
+            open_eprt(codec, active_bind, control_peer.ip(), data_timeout).await?
+        }
     };
 
     // Wrap in TLS if the control channel is secured (PROT P).
     if *security != FtpSecurityMode::None {
-        let tls = tls::wrap_data_stream(tcp, host, accept_invalid_certs).await?;
+        let tls = tls::wrap_data_stream(
+            tcp,
+            host,
+            accept_invalid_certs,
+            acknowledge_invalid_cert_risk,
+            data_timeout,
+        )
+        .await?;
         Ok(DataStream::Tls(tls))
     } else {
         Ok(DataStream::Plain(tcp))
@@ -66,9 +95,14 @@ pub async fn open_data_channel(
 /// Issue `PASV`, parse the response, connect to the returned address.
 ///
 /// Response format: `227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)`
-async fn open_pasv(codec: &mut FtpCodec, data_timeout: Duration) -> FtpResult<TcpStream> {
+async fn open_pasv(
+    codec: &mut FtpCodec,
+    control_peer: SocketAddr,
+    data_timeout: Duration,
+) -> FtpResult<TcpStream> {
     let resp = codec.expect_ok("PASV").await?;
-    let addr = parse_pasv_response(&resp.text())?;
+    let port = parse_pasv_response(&resp.text())?;
+    let addr = SocketAddr::new(control_peer.ip(), port);
     let tcp = timeout(data_timeout, TcpStream::connect(addr))
         .await
         .map_err(|_| FtpError::data_channel("PASV data connect timed out"))?
@@ -77,7 +111,7 @@ async fn open_pasv(codec: &mut FtpCodec, data_timeout: Duration) -> FtpResult<Tc
 }
 
 /// Parse `(h1,h2,h3,h4,p1,p2)` from a 227 response.
-fn parse_pasv_response(text: &str) -> FtpResult<SocketAddr> {
+fn parse_pasv_response(text: &str) -> FtpResult<u16> {
     let re = Regex::new(r"\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)").expect("valid regex literal");
     let caps = re
         .captures(text)
@@ -91,9 +125,11 @@ fn parse_pasv_response(text: &str) -> FtpResult<SocketAddr> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let ip = IpAddr::from([nums[0], nums[1], nums[2], nums[3]]);
     let port = (nums[4] as u16) * 256 + (nums[5] as u16);
-    Ok(SocketAddr::new(ip, port))
+    if port == 0 {
+        return Err(FtpError::protocol_error("PASV returned port zero"));
+    }
+    Ok(port)
 }
 
 // ─── EPSV ────────────────────────────────────────────────────────────
@@ -103,13 +139,13 @@ fn parse_pasv_response(text: &str) -> FtpResult<SocketAddr> {
 /// Response format: `229 Entering Extended Passive Mode (|||port|)`
 async fn open_epsv(
     codec: &mut FtpCodec,
-    host: &str,
+    control_peer: SocketAddr,
     data_timeout: Duration,
 ) -> FtpResult<TcpStream> {
     let resp = codec.expect_ok("EPSV").await?;
     let port = parse_epsv_response(&resp.text())?;
-    let addr = format!("{}:{}", host, port);
-    let tcp = timeout(data_timeout, TcpStream::connect(&addr))
+    let addr = SocketAddr::new(control_peer.ip(), port);
+    let tcp = timeout(data_timeout, TcpStream::connect(addr))
         .await
         .map_err(|_| FtpError::data_channel("EPSV data connect timed out"))?
         .map_err(|e| FtpError::data_channel(format!("EPSV data connect: {}", e)))?;
@@ -121,9 +157,13 @@ fn parse_epsv_response(text: &str) -> FtpResult<u16> {
     let caps = re
         .captures(text)
         .ok_or_else(|| FtpError::protocol_error(format!("Cannot parse EPSV: {}", text)))?;
-    caps[1]
+    let port = caps[1]
         .parse::<u16>()
-        .map_err(|_| FtpError::protocol_error("EPSV port out of range"))
+        .map_err(|_| FtpError::protocol_error("EPSV port out of range"))?;
+    if port == 0 {
+        return Err(FtpError::protocol_error("EPSV returned port zero"));
+    }
+    Ok(port)
 }
 
 // ─── PORT ────────────────────────────────────────────────────────────
@@ -132,10 +172,11 @@ fn parse_epsv_response(text: &str) -> FtpResult<u16> {
 async fn open_port(
     codec: &mut FtpCodec,
     bind_addr: Option<&str>,
+    expected_peer: IpAddr,
     data_timeout: Duration,
 ) -> FtpResult<TcpStream> {
-    let bind = active_bind_host(bind_addr);
-    let listener = TcpListener::bind(format!("{}:0", bind))
+    let bind = validate_active_bind(active_bind_host(bind_addr))?;
+    let listener = TcpListener::bind(SocketAddr::new(bind, 0))
         .await
         .map_err(|e| FtpError::data_channel(format!("PORT bind: {}", e)))?;
     let local = listener
@@ -157,10 +198,15 @@ async fn open_port(
     );
     codec.expect_ok(&cmd).await?;
 
-    let (tcp, _) = timeout(data_timeout, listener.accept())
+    let (tcp, peer) = timeout(data_timeout, listener.accept())
         .await
         .map_err(|_| FtpError::data_channel("PORT accept timed out"))?
         .map_err(|e| FtpError::data_channel(format!("PORT accept: {}", e)))?;
+    if peer.ip() != expected_peer {
+        return Err(FtpError::data_channel(
+            "PORT data connection came from a non-control peer",
+        ));
+    }
     Ok(tcp)
 }
 
@@ -172,10 +218,11 @@ async fn open_port(
 async fn open_eprt(
     codec: &mut FtpCodec,
     bind_addr: Option<&str>,
+    expected_peer: IpAddr,
     data_timeout: Duration,
 ) -> FtpResult<TcpStream> {
-    let bind = active_bind_host(bind_addr);
-    let listener = TcpListener::bind(format!("{}:0", bind))
+    let bind = validate_active_bind(active_bind_host(bind_addr))?;
+    let listener = TcpListener::bind(SocketAddr::new(bind, 0))
         .await
         .map_err(|e| FtpError::data_channel(format!("EPRT bind: {}", e)))?;
     let local = listener
@@ -189,11 +236,33 @@ async fn open_eprt(
     let cmd = format!("EPRT |{}|{}|{}|", af, local.ip(), local.port());
     codec.expect_ok(&cmd).await?;
 
-    let (tcp, _) = timeout(data_timeout, listener.accept())
+    let (tcp, peer) = timeout(data_timeout, listener.accept())
         .await
         .map_err(|_| FtpError::data_channel("EPRT accept timed out"))?
         .map_err(|e| FtpError::data_channel(format!("EPRT accept: {}", e)))?;
+    if peer.ip() != expected_peer {
+        return Err(FtpError::data_channel(
+            "EPRT data connection came from a non-control peer",
+        ));
+    }
     Ok(tcp)
+}
+
+fn validate_active_bind(value: &str) -> FtpResult<IpAddr> {
+    let address = value
+        .parse::<IpAddr>()
+        .map_err(|_| FtpError::invalid_config("Active bind address must be a literal IP"))?;
+    if address.is_unspecified() || address.is_multicast() {
+        return Err(FtpError::invalid_config(
+            "Active bind address must be a specific unicast address",
+        ));
+    }
+    if matches!(address, IpAddr::V4(ip) if ip.is_broadcast()) {
+        return Err(FtpError::invalid_config(
+            "Active bind address must not be broadcast",
+        ));
+    }
+    Ok(address)
 }
 
 #[cfg(test)]

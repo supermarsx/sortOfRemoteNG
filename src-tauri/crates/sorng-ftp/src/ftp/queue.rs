@@ -4,12 +4,17 @@
 use crate::ftp::error::{FtpError, FtpResult};
 use crate::ftp::pool::FtpPool;
 use crate::ftp::types::*;
-use crate::ftp::TRANSFER_PROGRESS;
+use crate::ftp::{MAX_TRACKED_TRANSFERS, TRANSFER_PROGRESS};
 use chrono::Utc;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 use uuid::Uuid;
+
+const MAX_QUEUE_ITEMS: usize = MAX_TRACKED_TRANSFERS;
+const MAX_QUEUE_PATH_BYTES: usize = 8 * 1_024;
+const MAX_SESSION_ID_BYTES: usize = 128;
+const MAX_QUEUE_ERROR_CHARS: usize = 4_096;
 
 /// The transfer queue holding items and configuration.
 pub struct TransferQueue {
@@ -21,6 +26,11 @@ pub struct TransferQueue {
 
 impl TransferQueue {
     pub fn new(config: TransferQueueConfig) -> Self {
+        let mut config = config;
+        config.max_concurrent = config.max_concurrent.clamp(1, 16);
+        config.default_retries = config.default_retries.min(10);
+        config.retry_backoff_sec = config.retry_backoff_sec.clamp(1, 300);
+        config.chunk_size = config.chunk_size.clamp(4 * 1_024, 1_024 * 1_024);
         let semaphore = Arc::new(Semaphore::new(config.max_concurrent));
         Self {
             items: HashMap::new(),
@@ -37,7 +47,24 @@ impl TransferQueue {
         direction: TransferDirection,
         local_path: &str,
         remote_path: &str,
-    ) -> String {
+    ) -> FtpResult<String> {
+        if self.items.len() >= MAX_QUEUE_ITEMS {
+            return Err(FtpError::invalid_config(
+                "FTP transfer queue reached its 2048-item limit",
+            ));
+        }
+        if session_id.is_empty() || session_id.len() > MAX_SESSION_ID_BYTES {
+            return Err(FtpError::invalid_config("FTP queue session ID is invalid"));
+        }
+        if local_path.is_empty()
+            || remote_path.is_empty()
+            || local_path.len() > MAX_QUEUE_PATH_BYTES
+            || remote_path.len() > MAX_QUEUE_PATH_BYTES
+        {
+            return Err(FtpError::invalid_config(
+                "FTP queue path is empty or exceeds the 8 KiB limit",
+            ));
+        }
         let id = Uuid::new_v4().to_string();
         let item = TransferItem {
             id: id.clone(),
@@ -61,14 +88,14 @@ impl TransferQueue {
         };
         self.items.insert(id.clone(), item);
         self.order.push_back(id.clone());
-        id
+        Ok(id)
     }
 
     /// Cancel a queued or in-progress transfer.
     pub fn cancel(&mut self, transfer_id: &str) -> FtpResult<()> {
         if let Some(item) = self.items.get_mut(transfer_id) {
             match item.state {
-                TransferState::Queued | TransferState::InProgress => {
+                TransferState::Queued => {
                     item.state = TransferState::Cancelled;
                     item.completed_at = Some(Utc::now());
                     Ok(())
@@ -89,10 +116,7 @@ impl TransferQueue {
     /// Cancel all pending/in-progress transfers.
     pub fn cancel_all(&mut self) {
         for item in self.items.values_mut() {
-            if matches!(
-                item.state,
-                TransferState::Queued | TransferState::InProgress
-            ) {
+            if matches!(item.state, TransferState::Queued) {
                 item.state = TransferState::Cancelled;
                 item.completed_at = Some(Utc::now());
             }
@@ -107,7 +131,7 @@ impl TransferQueue {
             }
             item.state = TransferState::Queued;
             item.error = None;
-            item.retry_count += 1;
+            item.retry_count = item.retry_count.saturating_add(1);
             item.started_at = None;
             item.completed_at = None;
             self.order.push_back(transfer_id.to_string());
@@ -122,7 +146,7 @@ impl TransferQueue {
 
     /// Remove completed/cancelled/failed items older than `max_age_secs`.
     pub fn prune(&mut self, max_age_secs: i64) {
-        let cutoff = Utc::now() - chrono::Duration::seconds(max_age_secs);
+        let cutoff = Utc::now() - chrono::Duration::seconds(max_age_secs.clamp(0, 31_536_000));
         let to_remove: Vec<String> = self
             .items
             .iter()
@@ -197,7 +221,7 @@ impl TransferQueue {
     pub fn mark_failed(&mut self, id: &str, error: &str) {
         if let Some(item) = self.items.get_mut(id) {
             item.state = TransferState::Failed;
-            item.error = Some(error.to_string());
+            item.error = Some(error.chars().take(MAX_QUEUE_ERROR_CHARS).collect());
             item.completed_at = Some(Utc::now());
         }
     }
@@ -273,9 +297,10 @@ pub async fn process_next(queue: &Arc<Mutex<TransferQueue>>, pool: &Arc<Mutex<Ft
     };
 
     let mut q = queue.lock().await;
-    match result {
+    let retry_delay = match result {
         Ok(transferred) => {
             q.mark_completed(&transfer_id, transferred);
+            None
         }
         Err(e) => {
             let item = q.items.get(&transfer_id);
@@ -283,16 +308,18 @@ pub async fn process_next(queue: &Arc<Mutex<TransferQueue>>, pool: &Arc<Mutex<Ft
 
             if should_retry {
                 q.mark_failed(&transfer_id, &e.to_string());
-                let backoff = q.config.retry_backoff_sec;
+                let backoff = q.config.retry_backoff_sec.clamp(1, 300);
                 let _ = q.retry(&transfer_id);
-                // Backoff delay
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
-                });
+                Some(backoff)
             } else {
                 q.mark_failed(&transfer_id, &e.to_string());
+                None
             }
         }
+    };
+    drop(q);
+    if let Some(backoff) = retry_delay {
+        tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
     }
 
     true
