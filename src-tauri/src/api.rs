@@ -3312,8 +3312,13 @@ mod middleware_tests {
         assert!(!wildcard_cors_allowed(&config));
     }
 
-    #[test]
-    fn request_body_limit_remains_conservative() {
-        assert!(MAX_API_REQUEST_BODY_BYTES <= 512 * 1024);
+    #[tokio::test]
+    async fn request_body_limit_remains_conservative() {
+        let body = axum::body::Body::from(vec![0_u8; MAX_API_REQUEST_BODY_BYTES]);
+        let collected = axum::body::to_bytes(body, 512 * 1024)
+            .await
+            .expect("configured API request body limit must remain within 512 KiB");
+
+        assert_eq!(collected.len(), MAX_API_REQUEST_BODY_BYTES);
     }
 }
