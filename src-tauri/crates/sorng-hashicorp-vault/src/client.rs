@@ -63,7 +63,6 @@ pub struct VaultClient {
 #[derive(Debug, serde::Deserialize)]
 #[allow(dead_code)]
 struct VaultApiResponse<T> {
-    #[serde(default)]
     data: Option<T>,
     #[serde(default)]
     errors: Option<Vec<String>>,
@@ -122,6 +121,15 @@ impl VaultClient {
             req = req.header("X-Vault-Namespace", ns);
         }
         req
+    }
+
+    fn extract_data<T: DeserializeOwned>(body: &Value) -> VaultResult<T> {
+        let response: VaultApiResponse<T> = serde_json::from_value(body.clone()).map_err(|_| {
+            VaultError::parse_error("Vault response data was not valid".to_string())
+        })?;
+        response.data.ok_or_else(|| {
+            VaultError::parse_error("Vault response did not contain data".to_string())
+        })
     }
 
     async fn check_response(
