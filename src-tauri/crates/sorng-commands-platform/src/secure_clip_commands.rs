@@ -1,7 +1,3 @@
-mod engine {
-    pub use crate::secure_clip::engine::*;
-}
-
 mod service {
     pub use crate::secure_clip::service::*;
 }
