@@ -2,6 +2,11 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Select } from "../ui/forms";
+import {
+  AppDataJsonStore,
+  stripCredentialFields,
+  type SanitizedValue,
+} from "../../utils/storage/appDataJsonStore";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -233,18 +238,66 @@ function generateId(): string {
   return `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function loadUserTemplates(): ConnectionTemplate[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ConnectionTemplate[]) : [];
-  } catch {
-    return [];
+function sanitizeUserTemplates(
+  value: unknown,
+): SanitizedValue<ConnectionTemplate[]> {
+  if (!Array.isArray(value)) {
+    throw new Error("Stored connection templates are corrupted");
   }
+  let changed = false;
+  const templates = value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("Stored connection templates contain an invalid entry");
+    }
+    const template = item as Record<string, unknown>;
+    if (
+      typeof template.id !== "string" ||
+      typeof template.name !== "string" ||
+      typeof template.description !== "string" ||
+      typeof template.protocol !== "string" ||
+      typeof template.port !== "number" ||
+      typeof template.category !== "string" ||
+      typeof template.icon !== "string" ||
+      !Array.isArray(template.tags) ||
+      typeof template.createdAt !== "string" ||
+      typeof template.updatedAt !== "string" ||
+      typeof template.usageCount !== "number"
+    ) {
+      throw new Error("Stored connection templates contain invalid fields");
+    }
+    const settings = stripCredentialFields(
+      template.settings &&
+        typeof template.settings === "object" &&
+        !Array.isArray(template.settings)
+        ? template.settings
+        : {},
+    );
+    changed ||= settings.changed;
+    return {
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      protocol: template.protocol,
+      port: template.port,
+      category: template.category,
+      icon: template.icon,
+      settings: settings.value as Record<string, unknown>,
+      tags: template.tags.filter(
+        (tag): tag is string => typeof tag === "string",
+      ),
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt,
+      usageCount: template.usageCount,
+    };
+  });
+  return { value: templates, changed };
 }
 
-function saveUserTemplates(templates: ConnectionTemplate[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
-}
+const templatesStore = new AppDataJsonStore<ConnectionTemplate[]>({
+  key: "connection.templates",
+  legacyLocalStorageKey: STORAGE_KEY,
+  sanitize: sanitizeUserTemplates,
+});
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -257,8 +310,10 @@ export default function ConnectionTemplates({
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [userTemplates, setUserTemplates] =
-    useState<ConnectionTemplate[]>(loadUserTemplates);
+  const [userTemplates, setUserTemplates] = useState<ConnectionTemplate[]>([]);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const templatesRef = useRef<ConnectionTemplate[]>([]);
+  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedTemplate, setSelectedTemplate] =
@@ -277,10 +332,62 @@ export default function ConnectionTemplates({
   ]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  /* ---- persist on change ---- */
+  /* ---- durable load and serialized commits ---- */
   useEffect(() => {
-    saveUserTemplates(userTemplates);
-  }, [userTemplates]);
+    let cancelled = false;
+    templatesStore
+      .load()
+      .then((result) => {
+        if (cancelled) return;
+        const templates = result.value ?? [];
+        templatesRef.current = templates;
+        setUserTemplates(templates);
+        if (result.sanitized) {
+          setPersistenceError(
+            "Secret-bearing template fields were removed during secure storage migration.",
+          );
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPersistenceError(
+            `Connection templates could not be loaded: ${String(error)}`,
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const commitTemplates = useCallback(
+    (
+      update: (current: ConnectionTemplate[]) => ConnectionTemplate[],
+    ): Promise<ConnectionTemplate[]> => {
+      const operation = persistenceQueueRef.current.then(async () => {
+        const result = await templatesStore.save(update(templatesRef.current));
+        templatesRef.current = result.value;
+        setUserTemplates(result.value);
+        setPersistenceError(
+          result.changed
+            ? "Secret-bearing template fields were omitted from durable storage."
+            : null,
+        );
+        return result.value;
+      });
+      persistenceQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      operation.catch((error) => {
+        setPersistenceError(
+          `Connection templates could not be saved: ${String(error)}`,
+        );
+      });
+      return operation;
+    },
+    [],
+  );
 
   /* ---- all templates ---- */
   const allTemplates = [...BUILTIN_TEMPLATES, ...userTemplates];
@@ -302,14 +409,14 @@ export default function ConnectionTemplates({
   const handleUseTemplate = useCallback(
     (tpl: ConnectionTemplate) => {
       /* bump usage count for user templates */
-      setUserTemplates((prev) =>
-        prev.map((u) =>
+      void commitTemplates((current) =>
+        current.map((u) =>
           u.id === tpl.id ? { ...u, usageCount: u.usageCount + 1 } : u,
         ),
-      );
+      ).catch(() => undefined);
       onCreateFromTemplate?.(tpl);
     },
-    [onCreateFromTemplate],
+    [commitTemplates, onCreateFromTemplate],
   );
 
   const resetForm = useCallback(() => {
@@ -346,7 +453,7 @@ export default function ConnectionTemplates({
     setSelectedTemplate(null);
   }, []);
 
-  const handleSaveTemplate = useCallback(() => {
+  const handleSaveTemplate = useCallback(async () => {
     if (!formName.trim()) return;
     const now = new Date().toISOString();
     const settings: Record<string, unknown> = {};
@@ -355,8 +462,8 @@ export default function ConnectionTemplates({
     }
 
     if (editingId) {
-      setUserTemplates((prev) =>
-        prev.map((u) =>
+      await commitTemplates((current) =>
+        current.map((u) =>
           u.id === editingId
             ? {
                 ...u,
@@ -393,7 +500,7 @@ export default function ConnectionTemplates({
         updatedAt: now,
         usageCount: 0,
       };
-      setUserTemplates((prev) => [...prev, newTpl]);
+      await commitTemplates((current) => [...current, newTpl]);
     }
     setShowCreateForm(false);
     resetForm();
@@ -406,15 +513,18 @@ export default function ConnectionTemplates({
     formTags,
     formSettings,
     editingId,
+    commitTemplates,
     resetForm,
   ]);
 
   const handleDeleteTemplate = useCallback(
-    (id: string) => {
-      setUserTemplates((prev) => prev.filter((u) => u.id !== id));
+    async (id: string) => {
+      await commitTemplates((current) =>
+        current.filter((template) => template.id !== id),
+      );
       if (selectedTemplate?.id === id) setSelectedTemplate(null);
     },
-    [selectedTemplate],
+    [commitTemplates, selectedTemplate],
   );
 
   const addSettingRow = useCallback(() => {
@@ -446,28 +556,33 @@ export default function ConnectionTemplates({
     URL.revokeObjectURL(url);
   }, [userTemplates]);
 
-  const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const imported = JSON.parse(
-          reader.result as string,
-        ) as ConnectionTemplate[];
-        if (!Array.isArray(imported)) return;
-        setUserTemplates((prev) => {
-          const ids = new Set(prev.map((t) => t.id));
-          const fresh = imported.filter((t) => !ids.has(t.id));
-          return [...prev, ...fresh];
-        });
-      } catch {
-        /* ignore malformed JSON */
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  }, []);
+  const handleImport = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const imported = JSON.parse(
+            reader.result as string,
+          ) as ConnectionTemplate[];
+          if (!Array.isArray(imported)) return;
+          await commitTemplates((current) => {
+            const ids = new Set(current.map((t) => t.id));
+            const fresh = imported.filter((t) => !ids.has(t.id));
+            return [...current, ...fresh];
+          });
+        } catch (error) {
+          setPersistenceError(
+            `Templates could not be imported: ${String(error)}`,
+          );
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    },
+    [commitTemplates],
+  );
 
   const handleSaveFromExisting = useCallback(async () => {
     try {
@@ -766,6 +881,12 @@ export default function ConnectionTemplates({
           )}
         </div>
       </div>
+
+      {persistenceError && (
+        <div className="mb-3 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          {persistenceError}
+        </div>
+      )}
 
       {/* ---- Search ---- */}
       <input

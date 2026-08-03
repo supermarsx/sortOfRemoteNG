@@ -22,9 +22,9 @@ import {
 import { commandExecutionDisplayStatus } from "../../../utils/ssh/sshCommandEvidence";
 import {
   SSH_COMMAND_HISTORY_SYNC_EVENT,
-  sanitizeSSHCommandHistory,
   sanitizeSSHHistoryString as displayString,
 } from "../../../utils/ssh/sshCommandHistorySanitizer";
+import { getSSHCommandHistoryMemorySnapshot } from "../../../hooks/ssh/useSSHCommandHistory";
 
 export const SSH_COMMAND_HISTORY_STORAGE_KEY = "sshCommandHistory";
 
@@ -94,24 +94,6 @@ function sanitizeLifecycleActivity(
     kind,
     source: "web-terminal-lifecycle",
   };
-}
-
-function readPersistedHistory(): {
-  raw: string | null;
-  entries: SSHCommandHistoryEntry[];
-} {
-  if (typeof window === "undefined") return { raw: null, entries: [] };
-  try {
-    const raw = window.localStorage.getItem(SSH_COMMAND_HISTORY_STORAGE_KEY);
-    if (!raw) return { raw, entries: [] };
-    const parsed: unknown = JSON.parse(raw);
-    return {
-      raw,
-      entries: sanitizeSSHCommandHistory(parsed, { mode: "storage" }),
-    };
-  } catch {
-    return { raw: null, entries: [] };
-  }
 }
 
 function readPersistedLifecycleActivity(): {
@@ -337,13 +319,12 @@ function executionSearchTerms(execution: CommandExecution): string[] {
 }
 
 export const SshSessionsView: React.FC = () => {
-  const initialHistory = useMemo(readPersistedHistory, []);
+  const initialHistory = useMemo(getSSHCommandHistoryMemorySnapshot, []);
   const initialLifecycle = useMemo(readPersistedLifecycleActivity, []);
-  const [entries, setEntries] = useState(initialHistory.entries);
+  const [entries, setEntries] = useState(initialHistory);
   const [lifecycleActivity, setLifecycleActivity] = useState(
     initialLifecycle.records,
   );
-  const rawHistoryRef = useRef(initialHistory.raw);
   const rawLifecycleRef = useRef(initialLifecycle.raw);
   const tabRefs = useRef<Record<SshSessionsTab, HTMLButtonElement | null>>({
     logs: null,
@@ -358,28 +339,35 @@ export const SshSessionsView: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
-    const refresh = () => {
-      const nextHistory = readPersistedHistory();
-      if (nextHistory.raw !== rawHistoryRef.current) {
-        rawHistoryRef.current = nextHistory.raw;
-        setEntries(nextHistory.entries);
-      }
+    const refreshLifecycle = () => {
       const nextLifecycle = readPersistedLifecycleActivity();
       if (nextLifecycle.raw !== rawLifecycleRef.current) {
         rawLifecycleRef.current = nextLifecycle.raw;
         setLifecycleActivity(nextLifecycle.records);
       }
     };
-    window.addEventListener("storage", refresh);
-    window.addEventListener("focus", refresh);
-    window.addEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, refresh);
-    window.addEventListener(SSH_SESSION_ACTIVITY_SYNC_EVENT, refresh);
-    const timer = window.setInterval(refresh, 3000);
+    const refreshHistoryFromMemory = () => {
+      setEntries(getSSHCommandHistoryMemorySnapshot());
+    };
+    window.addEventListener("storage", refreshLifecycle);
+    window.addEventListener("focus", refreshLifecycle);
+    window.addEventListener(
+      SSH_COMMAND_HISTORY_SYNC_EVENT,
+      refreshHistoryFromMemory,
+    );
+    window.addEventListener(SSH_SESSION_ACTIVITY_SYNC_EVENT, refreshLifecycle);
+    const timer = window.setInterval(refreshLifecycle, 3000);
     return () => {
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, refresh);
-      window.removeEventListener(SSH_SESSION_ACTIVITY_SYNC_EVENT, refresh);
+      window.removeEventListener("storage", refreshLifecycle);
+      window.removeEventListener("focus", refreshLifecycle);
+      window.removeEventListener(
+        SSH_COMMAND_HISTORY_SYNC_EVENT,
+        refreshHistoryFromMemory,
+      );
+      window.removeEventListener(
+        SSH_SESSION_ACTIVITY_SYNC_EVENT,
+        refreshLifecycle,
+      );
       window.clearInterval(timer);
     };
   }, []);

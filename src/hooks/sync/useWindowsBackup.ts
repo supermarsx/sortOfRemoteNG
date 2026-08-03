@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useConnections } from "../../contexts/useConnections";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -91,8 +90,6 @@ export type BackupTab =
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useWindowsBackup(isOpen: boolean) {
-  const { state } = useConnections();
-
   // WMI sessions are identifiable by the "winmgmt:" prefix or similar.
   // For now, we track a sessionId the user manually enters/selects.
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -120,9 +117,7 @@ export function useWindowsBackup(isOpen: boolean) {
   const isTauri = useMemo(() => {
     return (
       typeof window !== "undefined" &&
-      Boolean(
-        (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-      )
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__)
     );
   }, []);
 
@@ -130,7 +125,8 @@ export function useWindowsBackup(isOpen: boolean) {
 
   const invokeCmd = useCallback(
     async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
-      if (!isTauri) throw new Error("Windows Backup requires the Tauri runtime.");
+      if (!isTauri)
+        throw new Error("Windows Backup requires the Tauri runtime.");
       if (!sessionId) throw new Error("No WMI session connected.");
       return invoke<T>(cmd, { sessionId, ...args });
     },
@@ -155,8 +151,10 @@ export function useWindowsBackup(isOpen: boolean) {
         const id = await invoke<string>("winmgmt_connect", { config });
         setSessionId(id);
         setHostname(host);
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError(
+          "Unable to connect to the remote Windows host. Sensitive error details were withheld.",
+        );
       } finally {
         setLoading(false);
       }
@@ -186,8 +184,8 @@ export function useWindowsBackup(isOpen: boolean) {
     try {
       const s = await invokeCmd<BackupStatus>("winmgmt_backup_get_status");
       setStatus(s);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Unable to load remote backup status.");
     }
   }, [invokeCmd]);
 
@@ -195,19 +193,23 @@ export function useWindowsBackup(isOpen: boolean) {
     try {
       const sc = await invokeCmd<ShadowCopy[]>("winmgmt_list_shadow_copies");
       setShadowCopies(sc);
-      const ss = await invokeCmd<ShadowStorage[]>("winmgmt_list_shadow_storage");
+      const ss = await invokeCmd<ShadowStorage[]>(
+        "winmgmt_list_shadow_storage",
+      );
       setShadowStorage(ss);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Unable to load remote shadow-copy data.");
     }
   }, [invokeCmd]);
 
   const fetchVersions = useCallback(async () => {
     try {
-      const v = await invokeCmd<BackupVersion[]>("winmgmt_backup_list_versions");
+      const v = await invokeCmd<BackupVersion[]>(
+        "winmgmt_backup_list_versions",
+      );
       setVersions(v);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Unable to load remote backup versions.");
     }
   }, [invokeCmd]);
 
@@ -217,8 +219,8 @@ export function useWindowsBackup(isOpen: boolean) {
       setPolicy(p);
       const items = await invokeCmd<BackupItem[]>("winmgmt_backup_get_items");
       setBackupItems(items);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Unable to load the remote backup policy.");
     }
   }, [invokeCmd]);
 
@@ -226,8 +228,8 @@ export function useWindowsBackup(isOpen: boolean) {
     try {
       const v = await invokeCmd<BackupVolume[]>("winmgmt_backup_list_volumes");
       setVolumes(v);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Unable to load remote backup volumes.");
     }
   }, [invokeCmd]);
 
@@ -248,18 +250,35 @@ export function useWindowsBackup(isOpen: boolean) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, fetchStatus, fetchShadowCopies, fetchVersions, fetchPolicy, fetchVolumes]);
+  }, [
+    sessionId,
+    fetchStatus,
+    fetchShadowCopies,
+    fetchVersions,
+    fetchPolicy,
+    fetchVolumes,
+  ]);
 
   // ── Shadow copy actions ────────────────────────────────
 
   const createShadowCopy = useCallback(
-    async (volume: string) => {
+    async (volume: string, confirmed: boolean) => {
+      if (!confirmed) {
+        setError(
+          "Explicit confirmation is required to create a remote shadow copy.",
+        );
+        return;
+      }
       setLoading(true);
+      setError(null);
       try {
-        await invokeCmd<string>("winmgmt_create_shadow_copy", { volume });
+        await invokeCmd<string>("winmgmt_create_shadow_copy", {
+          confirmed: true,
+          volume,
+        });
         await fetchShadowCopies();
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError("Unable to create the requested remote shadow copy.");
       } finally {
         setLoading(false);
       }
@@ -268,13 +287,23 @@ export function useWindowsBackup(isOpen: boolean) {
   );
 
   const deleteShadowCopy = useCallback(
-    async (shadowId: string) => {
+    async (shadowId: string, confirmed: boolean) => {
+      if (!confirmed) {
+        setError(
+          "Explicit confirmation is required to delete a remote shadow copy.",
+        );
+        return;
+      }
       setLoading(true);
+      setError(null);
       try {
-        await invokeCmd<void>("winmgmt_delete_shadow_copy", { shadowId });
+        await invokeCmd<void>("winmgmt_delete_shadow_copy", {
+          confirmed: true,
+          shadowId,
+        });
         await fetchShadowCopies();
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError("Unable to delete the requested remote shadow copy.");
       } finally {
         setLoading(false);
       }

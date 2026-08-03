@@ -40,6 +40,7 @@ import {
   formatPortableProtocolLabel,
   hasAdvancedProtocolSettings,
 } from "./advancedProtocolPortability";
+import { containsExportSecrets } from "./exportSecurity";
 
 export type { ExportConfig } from "./types";
 
@@ -56,14 +57,7 @@ interface ExportTabProps {
 }
 
 const hasExportableCredentials = (connection: Connection): boolean =>
-  Boolean(
-    connection.password ||
-    connection.privateKey ||
-    connection.passphrase ||
-    connection.totpSecret ||
-    connection.basicAuthPassword ||
-    connection.rustdeskPassword,
-  );
+  containsExportSecrets(connection);
 
 const getEffectiveExportDatabaseIds = (config: ExportConfig): string[] => {
   const exportableOptions = config.databaseOptions.filter(
@@ -482,9 +476,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
     inclusion.includeVpnData &&
     inclusion.includeCredentials &&
     vpnConnections.length > 0;
-  const vpnCredentialsUnprotected =
-    vpnCredentialsRequireProtection &&
-    (config.format !== "json" || !config.encrypted || !config.password);
+  const credentialExportUnprotected =
+    inclusion.includeCredentials && (!config.encrypted || !config.password);
   const compatibilityWarnings = [
     ...(config.format === "json"
       ? []
@@ -495,8 +488,21 @@ const ExportTab: React.FC<ExportTabProps> = ({
               ? t("exportTab.warningMRemoteNGLimited")
               : t("exportTab.warningInventoryOnly"),
         ]),
-    ...(config.format !== "json" && inclusion.includeCredentials
-      ? [t("exportTab.warningPasswordsSkipped")]
+    ...(credentialExportUnprotected
+      ? [
+          t("exportTab.warningCredentialExportBlocked", {
+            defaultValue:
+              "Credential and secret export is blocked until password encryption is enabled and an export password is entered.",
+          }),
+        ]
+      : []),
+    ...(!inclusion.includeCredentials
+      ? [
+          t("exportTab.warningSecretsStripped", {
+            defaultValue:
+              "Passwords, private keys, passphrases, tokens, integration secrets, and secret-bearing sidecar fields will be stripped.",
+          }),
+        ]
       : []),
     ...(vpnCredentialsRequireProtection
       ? [
@@ -722,7 +728,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
     isProcessing ||
     effectiveDatabaseCount === 0 ||
     singleDatabaseFormatBlocked ||
-    vpnCredentialsUnprotected ||
+    credentialExportUnprotected ||
     (config.encrypted && !config.password) ||
     passwordTooWeak;
   const scorePercent = Math.max(8, ((strength.score + 1) / 5) * 100);
@@ -859,9 +865,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
       label: t("exportTab.includePasswords"),
       description: t("exportTab.includeCredentialsDescription", {
         defaultValue:
-          "Keep connection and VPN passwords, keys, tokens, raw configurations, and private paths. VPN credentials require an encrypted JSON export.",
+          "Keep connection, VPN, settings, and sidecar passwords, private keys, passphrases, tokens, and integration secrets. Selecting this requires password encryption.",
       }),
-      disabled: !inclusion.includeConnections && !inclusion.includeVpnData,
     },
     {
       id: "includeSettings",
@@ -1058,13 +1063,18 @@ const ExportTab: React.FC<ExportTabProps> = ({
               data-testid="export-counter-credentials"
             >
               {inclusion.includeCredentials
-                ? t("exportTab.previewCredentialsIncluded", {
-                    count: credentialConnectionCount,
-                    defaultValue: `${credentialConnectionCount} credential-bearing connection(s) included`,
-                  })
+                ? credentialExportUnprotected
+                  ? t("exportTab.previewCredentialsBlocked", {
+                      defaultValue:
+                        "Selected, but blocked until password encryption is configured",
+                    })
+                  : t("exportTab.previewCredentialsIncluded", {
+                      count: credentialConnectionCount,
+                      defaultValue: `${credentialConnectionCount} credential-bearing connection(s) included inside the encrypted export`,
+                    })
                 : t("exportTab.previewCredentialsRedacted", {
                     count: credentialConnectionCount,
-                    defaultValue: `${credentialConnectionCount} credential-bearing connection(s) redacted`,
+                    defaultValue: `${credentialConnectionCount} credential-bearing connection(s) stripped; settings and sidecar secrets are also removed`,
                   })}
             </span>
             <span className="text-[var(--color-textMuted)]">
@@ -1321,8 +1331,8 @@ const ExportTab: React.FC<ExportTabProps> = ({
       if (stepId === "encryption" && config.encrypted && !config.password) {
         return "Enter an encryption password before continuing.";
       }
-      if (stepId === "encryption" && vpnCredentialsUnprotected) {
-        return "VPN credentials require JSON format, encryption, and an export password.";
+      if (stepId === "encryption" && credentialExportUnprotected) {
+        return "Credentials and secrets require password encryption and an export password.";
       }
       if (stepId === "encryption" && passwordTooWeak) {
         return "Use a password that meets the configured minimum strength.";
@@ -1337,7 +1347,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       hasExportContent,
       passwordTooWeak,
       singleDatabaseFormatBlocked,
-      vpnCredentialsUnprotected,
+      credentialExportUnprotected,
     ],
   );
   const wizard = useWizardNavigation(wizardSteps, validateWizardStep);
@@ -1891,10 +1901,15 @@ const ExportTab: React.FC<ExportTabProps> = ({
                 </span>
               </div>
               <p className="text-xs text-[var(--color-textMuted)]">
-                {t("exportTab.encryptionAlwaysOptional", {
-                  defaultValue:
-                    "Always optional, always recommended. The scheme used adapts to the chosen export format.",
-                })}
+                {inclusion.includeCredentials
+                  ? t("exportTab.encryptionRequiredForSecrets", {
+                      defaultValue:
+                        "Required for credentials and secrets. Export remains blocked until encryption and a password are configured.",
+                    })
+                  : t("exportTab.encryptionOptionalWhenStripped", {
+                      defaultValue:
+                        "Optional when credentials are excluded. Plaintext exports are recursively stripped of secret-bearing fields.",
+                    })}
               </p>
 
               {config.encrypted && (

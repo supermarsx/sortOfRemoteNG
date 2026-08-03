@@ -3,10 +3,11 @@
 // Each export format gets the encryption envelope that's most useful
 // for its consumption story:
 //
-//   * Native sortOfRemoteNG formats (JSON / XML / CSV): full AES-GCM +
-//     PBKDF2 envelope produced by webCryptoAes.encryptWithPassword.
-//   * Readable text formats (TXT / Markdown / HTML): a simpler AES-CBC
-//     + PBKDF2 envelope wrapped in JSON. Imports back via decrypt below.
+//   * Native and readable sortOfRemoteNG formats (JSON / XML / CSV /
+//     TXT / Markdown / HTML): authenticated AES-GCM + PBKDF2 envelope
+//     produced by webCryptoAes.encryptWithPassword.
+//   * Legacy AES-CBC exports remain importable through the decrypt helper
+//     below, but new exports never use unauthenticated CBC.
 //   * Excel (.xlsx OOXML): tries the Tauri `crypto_xlsx_encrypt` IPC
 //     so the file opens with Excel's native password prompt. Falls back
 //     to AES-GCM with a warning when the IPC isn't registered.
@@ -14,19 +15,29 @@
 //     IPC so the file imports back into mRemoteNG using its native
 //     scheme. Falls back to AES-GCM with a warning when missing.
 
-import { encryptWithPassword, fromBase64, normalizePbkdf2Iterations, toBase64 } from './webCryptoAes';
+import {
+  encryptWithPassword,
+  fromBase64,
+  normalizePbkdf2Iterations,
+  toBase64,
+  validatePbkdf2Iterations,
+} from "./webCryptoAes";
 
 export type ExportFormat =
-  | 'json'
-  | 'xml'
-  | 'csv'
-  | 'txt'
-  | 'markdown'
-  | 'html'
-  | 'excel'
-  | 'mremoteng';
+  | "json"
+  | "xml"
+  | "csv"
+  | "txt"
+  | "markdown"
+  | "html"
+  | "excel"
+  | "mremoteng";
 
-export type ExportEncryptionScheme = 'aes-gcm' | 'aes-cbc' | 'office' | 'mremoteng';
+export type ExportEncryptionScheme =
+  | "aes-gcm"
+  | "aes-cbc"
+  | "office"
+  | "mremoteng";
 
 export interface EncryptExportInput {
   /** Raw payload bytes from the serializer. */
@@ -60,14 +71,14 @@ export interface EncryptExportResult {
 }
 
 const FORMAT_SCHEMES: Record<ExportFormat, ExportEncryptionScheme> = {
-  json: 'aes-gcm',
-  xml: 'aes-gcm',
-  csv: 'aes-gcm',
-  txt: 'aes-cbc',
-  markdown: 'aes-cbc',
-  html: 'aes-cbc',
-  excel: 'office',
-  mremoteng: 'mremoteng',
+  json: "aes-gcm",
+  xml: "aes-gcm",
+  csv: "aes-gcm",
+  txt: "aes-gcm",
+  markdown: "aes-gcm",
+  html: "aes-gcm",
+  excel: "office",
+  mremoteng: "mremoteng",
 };
 
 export const schemeForFormat = (format: ExportFormat): ExportEncryptionScheme =>
@@ -81,11 +92,29 @@ const getInvoke = (): Promise<
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
-const asBufferSource = (bytes: Uint8Array): BufferSource => bytes as Uint8Array<ArrayBuffer>;
+const asBufferSource = (bytes: Uint8Array): BufferSource =>
+  bytes as Uint8Array<ArrayBuffer>;
 
 const utf8Encode = (s: string): Uint8Array => new TextEncoder().encode(s);
 const utf8Decode = (bytes: Uint8Array | ArrayBuffer): string =>
   new TextDecoder().decode(bytes);
+const MAX_ENCRYPTED_PAYLOAD_BYTES = 64 * 1024 * 1024;
+const MAX_MREMOTENG_ITERATIONS = 2_000_000;
+
+function validateMremotengIterations(iterations: unknown): number {
+  if (
+    typeof iterations !== "number" ||
+    !Number.isSafeInteger(iterations) ||
+    iterations < 1 ||
+    iterations > MAX_MREMOTENG_ITERATIONS
+  ) {
+    throw new DecryptError(
+      "corrupted",
+      `mRemoteNG iterations must be an integer from 1 to ${MAX_MREMOTENG_ITERATIONS}`,
+    );
+  }
+  return iterations;
+}
 
 /**
  * Simple AES-CBC envelope used by the readable text formats. Stored as
@@ -93,10 +122,10 @@ const utf8Decode = (bytes: Uint8Array | ArrayBuffer): string =>
  */
 interface AesCbcEnvelope {
   version: 1;
-  algorithm: 'AES-256-CBC';
+  algorithm: "AES-256-CBC";
   kdf: {
-    name: 'PBKDF2';
-    hash: 'SHA-256';
+    name: "PBKDF2";
+    hash: "SHA-256";
     iterations: number;
     salt: string;
   };
@@ -104,51 +133,57 @@ interface AesCbcEnvelope {
   ciphertext: string;
 }
 
-async function deriveKeyCbc(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
+async function deriveKeyCbc(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+): Promise<CryptoKey> {
   const subtle = getCrypto().subtle;
   const baseKey = await subtle.importKey(
-    'raw',
+    "raw",
     asBufferSource(utf8Encode(password)),
-    'PBKDF2',
+    "PBKDF2",
     false,
-    ['deriveKey'],
+    ["deriveKey"],
   );
   return subtle.deriveKey(
     {
-      name: 'PBKDF2',
+      name: "PBKDF2",
       salt: asBufferSource(salt),
       iterations,
-      hash: 'SHA-256',
+      hash: "SHA-256",
     },
     baseKey,
-    { name: 'AES-CBC', length: 256 },
+    { name: "AES-CBC", length: 256 },
     false,
-    ['encrypt', 'decrypt'],
+    ["encrypt", "decrypt"],
   );
 }
 
-async function encryptAesCbc(input: EncryptExportInput): Promise<EncryptExportResult> {
+async function encryptAesCbc(
+  input: EncryptExportInput,
+): Promise<EncryptExportResult> {
   const iterations = normalizePbkdf2Iterations(input.iterations);
   const crypto = getCrypto();
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(16));
   const key = await deriveKeyCbc(input.password, salt, iterations);
   const cipher = await crypto.subtle.encrypt(
-    { name: 'AES-CBC', iv: asBufferSource(iv) },
+    { name: "AES-CBC", iv: asBufferSource(iv) },
     key,
     asBufferSource(input.payload),
   );
   const envelope: AesCbcEnvelope = {
     version: 1,
-    algorithm: 'AES-256-CBC',
-    kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations, salt: toBase64(salt) },
+    algorithm: "AES-256-CBC",
+    kdf: { name: "PBKDF2", hash: "SHA-256", iterations, salt: toBase64(salt) },
     iv: toBase64(iv),
     ciphertext: toBase64(new Uint8Array(cipher)),
   };
   return {
     bytes: utf8Encode(JSON.stringify(envelope)),
-    scheme: 'aes-cbc',
-    mimeType: 'application/json',
+    scheme: "aes-cbc",
+    mimeType: "application/json",
   };
 }
 
@@ -157,22 +192,31 @@ export async function decryptAesCbcEnvelope(
   password: string,
 ): Promise<Uint8Array> {
   const text =
-    typeof envelopeBytes === 'string' ? envelopeBytes : utf8Decode(envelopeBytes);
+    typeof envelopeBytes === "string"
+      ? envelopeBytes
+      : utf8Decode(envelopeBytes);
   let parsed: AesCbcEnvelope;
   try {
     parsed = JSON.parse(text) as AesCbcEnvelope;
   } catch (e) {
-    throw new DecryptError('corrupted', 'AES-CBC envelope is not valid JSON', e);
+    throw new DecryptError(
+      "corrupted",
+      "AES-CBC envelope is not valid JSON",
+      e,
+    );
   }
   if (
     !parsed ||
-    typeof parsed !== 'object' ||
-    parsed.algorithm !== 'AES-256-CBC' ||
+    typeof parsed !== "object" ||
+    parsed.version !== 1 ||
+    parsed.algorithm !== "AES-256-CBC" ||
     !parsed.kdf ||
-    typeof parsed.iv !== 'string' ||
-    typeof parsed.ciphertext !== 'string'
+    parsed.kdf.name !== "PBKDF2" ||
+    parsed.kdf.hash !== "SHA-256" ||
+    typeof parsed.iv !== "string" ||
+    typeof parsed.ciphertext !== "string"
   ) {
-    throw new DecryptError('corrupted', 'Not a recognized AES-CBC envelope');
+    throw new DecryptError("corrupted", "Not a recognized AES-CBC envelope");
   }
   let salt: Uint8Array;
   let iv: Uint8Array;
@@ -183,15 +227,37 @@ export async function decryptAesCbcEnvelope(
     ciphertext = fromBase64(parsed.ciphertext);
   } catch (e) {
     throw new DecryptError(
-      'corrupted',
-      'AES-CBC envelope fields are not valid base64',
+      "corrupted",
+      "AES-CBC envelope fields are not valid base64",
       e,
     );
   }
-  const key = await deriveKeyCbc(password, salt, parsed.kdf.iterations);
+  if (
+    salt.length !== 16 ||
+    iv.length !== 16 ||
+    ciphertext.length === 0 ||
+    ciphertext.length % 16 !== 0 ||
+    ciphertext.length > MAX_ENCRYPTED_PAYLOAD_BYTES
+  ) {
+    throw new DecryptError(
+      "corrupted",
+      "AES-CBC envelope fields have invalid dimensions",
+    );
+  }
+  let iterations: number;
+  try {
+    iterations = validatePbkdf2Iterations(parsed.kdf.iterations);
+  } catch (e) {
+    throw new DecryptError(
+      "corrupted",
+      "AES-CBC envelope has unsafe PBKDF2 parameters",
+      e,
+    );
+  }
+  const key = await deriveKeyCbc(password, salt, iterations);
   try {
     const plain = await getCrypto().subtle.decrypt(
-      { name: 'AES-CBC', iv: asBufferSource(iv) },
+      { name: "AES-CBC", iv: asBufferSource(iv) },
       key,
       asBufferSource(ciphertext),
     );
@@ -201,40 +267,44 @@ export async function decryptAesCbcEnvelope(
     // both surface as OperationError. Surface as wrong-password since
     // that's the most actionable category for the user.
     throw new DecryptError(
-      'wrong-password',
-      'AES-CBC decryption failed; password is likely incorrect',
+      "wrong-password",
+      "AES-CBC decryption failed; password is likely incorrect",
       e,
     );
   }
 }
 
-async function encryptAesGcm(input: EncryptExportInput): Promise<EncryptExportResult> {
+async function encryptAesGcm(
+  input: EncryptExportInput,
+): Promise<EncryptExportResult> {
   const plaintext = input.payloadString ?? utf8Decode(input.payload);
   const wrapped = await encryptWithPassword(plaintext, input.password, {
     iterations: input.iterations,
   });
   return {
     bytes: utf8Encode(wrapped),
-    scheme: 'aes-gcm',
-    mimeType: 'application/json',
+    scheme: "aes-gcm",
+    mimeType: "application/json",
   };
 }
 
-async function encryptOoxml(input: EncryptExportInput): Promise<EncryptExportResult> {
+async function encryptOoxml(
+  input: EncryptExportInput,
+): Promise<EncryptExportResult> {
   const invoke = await getInvoke();
   if (invoke) {
     try {
-      const base64 = await invoke('crypto_xlsx_encrypt', {
+      const base64 = await invoke("crypto_xlsx_encrypt", {
         payloadBase64: toBase64(input.payload),
         password: input.password,
       });
-      if (typeof base64 === 'string' && base64.length > 0) {
+      if (typeof base64 === "string" && base64.length > 0) {
         return {
           bytes: fromBase64(base64),
-          scheme: 'office',
-          extension: '.xlsx',
+          scheme: "office",
+          extension: ".xlsx",
           mimeType:
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         };
       }
     } catch {
@@ -245,29 +315,31 @@ async function encryptOoxml(input: EncryptExportInput): Promise<EncryptExportRes
   return {
     ...fallback,
     warning:
-      'OOXML password protection is not available in this build; the file was wrapped with AES-GCM instead. Open the .enc.json file with sortOfRemoteNG to decrypt.',
-    warningKey: 'exportEncryption.fallbackOoxml',
-    extension: '.xlsx.enc.json',
-    mimeType: 'application/json',
+      "OOXML password protection is not available in this build; the file was wrapped with AES-GCM instead. Open the .enc.json file with sortOfRemoteNG to decrypt.",
+    warningKey: "exportEncryption.fallbackOoxml",
+    extension: ".xlsx.enc.json",
+    mimeType: "application/json",
   };
 }
 
-async function encryptMremoteng(input: EncryptExportInput): Promise<EncryptExportResult> {
+async function encryptMremoteng(
+  input: EncryptExportInput,
+): Promise<EncryptExportResult> {
   const invoke = await getInvoke();
   const plaintext = input.payloadString ?? utf8Decode(input.payload);
   if (invoke) {
     try {
-      const encrypted = await invoke('mrng_encrypt_document', {
+      const encrypted = await invoke("mrng_encrypt_document", {
         plaintext,
         password: input.password,
         iterations: normalizePbkdf2Iterations(input.iterations),
       });
-      if (typeof encrypted === 'string' && encrypted.length > 0) {
+      if (typeof encrypted === "string" && encrypted.length > 0) {
         return {
           bytes: utf8Encode(encrypted),
-          scheme: 'mremoteng',
-          extension: '.xml',
-          mimeType: 'application/xml',
+          scheme: "mremoteng",
+          extension: ".xml",
+          mimeType: "application/xml",
         };
       }
     } catch {
@@ -278,10 +350,10 @@ async function encryptMremoteng(input: EncryptExportInput): Promise<EncryptExpor
   return {
     ...fallback,
     warning:
-      'mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG.',
-    warningKey: 'exportEncryption.fallbackMremoteng',
-    extension: '.xml.enc.json',
-    mimeType: 'application/json',
+      "mRemoteNG-native encryption is not available in this build; the file was wrapped with AES-GCM instead. mRemoteNG will not be able to open this file directly — open it with sortOfRemoteNG.",
+    warningKey: "exportEncryption.fallbackMremoteng",
+    extension: ".xml.enc.json",
+    mimeType: "application/json",
   };
 }
 
@@ -290,35 +362,35 @@ export async function encryptExport(
   input: EncryptExportInput,
 ): Promise<EncryptExportResult> {
   switch (schemeForFormat(format)) {
-    case 'aes-gcm':
+    case "aes-gcm":
       return encryptAesGcm(input);
-    case 'aes-cbc':
+    case "aes-cbc":
       return encryptAesCbc(input);
-    case 'office':
+    case "office":
       return encryptOoxml(input);
-    case 'mremoteng':
+    case "mremoteng":
       return encryptMremoteng(input);
   }
 }
 
 // ─── Detection / decryption on the import side ────────────────────────
 
-/** Returns true when the text looks like the AES-CBC JSON envelope
- *  produced by encryptExport for TXT / Markdown / HTML formats. */
+/** Returns true when the text looks like a legacy AES-CBC JSON envelope
+ *  produced by older TXT / Markdown / HTML export paths. */
 export function isAesCbcEnvelope(payload: string): boolean {
   try {
     const trimmed = payload.trimStart();
-    if (!trimmed.startsWith('{')) return false;
+    if (!trimmed.startsWith("{")) return false;
     const parsed = JSON.parse(trimmed);
     return (
       parsed &&
-      typeof parsed === 'object' &&
-      parsed.algorithm === 'AES-256-CBC' &&
+      typeof parsed === "object" &&
+      parsed.algorithm === "AES-256-CBC" &&
       parsed.kdf &&
-      parsed.kdf.name === 'PBKDF2' &&
-      typeof parsed.kdf.salt === 'string' &&
-      typeof parsed.iv === 'string' &&
-      typeof parsed.ciphertext === 'string'
+      parsed.kdf.name === "PBKDF2" &&
+      typeof parsed.kdf.salt === "string" &&
+      typeof parsed.iv === "string" &&
+      typeof parsed.ciphertext === "string"
     );
   } catch {
     return false;
@@ -330,7 +402,7 @@ export function isAesCbcEnvelope(payload: string): boolean {
 export function isMremotengEncryptedXml(payload: string): boolean {
   const head = payload.trimStart().slice(0, 1024);
   return (
-    head.startsWith('<?xml') &&
+    head.startsWith("<?xml") &&
     /Confidential\s*=\s*"True"/i.test(head) &&
     /EncryptionEngine\s*=/i.test(head)
   );
@@ -347,17 +419,17 @@ export async function decryptMremotengDocument(
   const invoke = await getInvoke();
   if (!invoke) {
     throw new DecryptError(
-      'unsupported',
-      'mRemoteNG decryption requires the desktop backend.',
+      "unsupported",
+      "mRemoteNG decryption requires the desktop backend.",
     );
   }
   let result: unknown;
   try {
-    result = await invoke('mrng_decrypt_document', {
+    result = await invoke("mrng_decrypt_document", {
       ciphertext,
       password,
       iterations:
-        iterations != null ? normalizePbkdf2Iterations(iterations) : 1000,
+        iterations != null ? validateMremotengIterations(iterations) : 1000,
     });
   } catch (e) {
     // The Rust side returns Err on auth-tag mismatch, malformed envelope,
@@ -365,15 +437,15 @@ export async function decryptMremotengDocument(
     // can't reliably distinguish from corruption without parsing the
     // backend's error string, so default to wrong-password.
     throw new DecryptError(
-      'wrong-password',
+      "wrong-password",
       `mRemoteNG decryption failed: ${e instanceof Error ? e.message : String(e)}`,
       e,
     );
   }
-  if (typeof result !== 'string') {
+  if (typeof result !== "string") {
     throw new DecryptError(
-      'corrupted',
-      'mRemoteNG decryption returned an unexpected payload.',
+      "corrupted",
+      "mRemoteNG decryption returned an unexpected payload.",
     );
   }
   return result;
@@ -382,10 +454,10 @@ export async function decryptMremotengDocument(
 // ─── Classified decryption errors ────────────────────────────────────
 
 export type DecryptErrorKind =
-  | 'wrong-password'
-  | 'corrupted'
-  | 'unsupported'
-  | 'unknown';
+  | "wrong-password"
+  | "corrupted"
+  | "unsupported"
+  | "unknown";
 
 /**
  * Classified error thrown by the decrypt helpers in this module so the
@@ -408,7 +480,7 @@ export class DecryptError extends Error {
   readonly cause?: unknown;
   constructor(kind: DecryptErrorKind, message: string, cause?: unknown) {
     super(message);
-    this.name = 'DecryptError';
+    this.name = "DecryptError";
     this.kind = kind;
     this.cause = cause;
   }
@@ -418,22 +490,23 @@ export class DecryptError extends Error {
  *  that want to surface a localized message. The keys live under
  *  `exportEncryption.decryptErrors.*` in the locale JSON files. */
 export const DECRYPT_ERROR_I18N_KEYS: Record<DecryptErrorKind, string> = {
-  'wrong-password': 'exportEncryption.decryptErrors.wrongPassword',
-  corrupted: 'exportEncryption.decryptErrors.corrupted',
-  unsupported: 'exportEncryption.decryptErrors.unsupported',
-  unknown: 'exportEncryption.decryptErrors.unknown',
+  "wrong-password": "exportEncryption.decryptErrors.wrongPassword",
+  corrupted: "exportEncryption.decryptErrors.corrupted",
+  unsupported: "exportEncryption.decryptErrors.unsupported",
+  unknown: "exportEncryption.decryptErrors.unknown",
 };
 
 /** Default English copy for each DecryptError kind. */
-export const DECRYPT_ERROR_DEFAULT_MESSAGES: Record<DecryptErrorKind, string> = {
-  'wrong-password':
-    'Failed to decrypt file. The password is likely incorrect.',
-  corrupted:
-    'Failed to decrypt file. The encrypted envelope is corrupted or in an unrecognized shape.',
-  unsupported:
-    'This encrypted file uses a scheme that is not available in this build.',
-  unknown: 'Failed to decrypt file.',
-};
+export const DECRYPT_ERROR_DEFAULT_MESSAGES: Record<DecryptErrorKind, string> =
+  {
+    "wrong-password":
+      "Failed to decrypt file. The password is likely incorrect.",
+    corrupted:
+      "Failed to decrypt file. The encrypted envelope is corrupted or in an unrecognized shape.",
+    unsupported:
+      "This encrypted file uses a scheme that is not available in this build.",
+    unknown: "Failed to decrypt file.",
+  };
 
 // ─── Excel OOXML Agile Encryption ────────────────────────────────────
 //

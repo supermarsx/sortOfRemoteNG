@@ -15,7 +15,10 @@ vi.mock("../../src/utils/core/id", () => ({
   generateId: () => `test-id-${++idCounter}`,
 }));
 
-import { useSSHCommandHistory } from "../../src/hooks/ssh/useSSHCommandHistory";
+import {
+  resetSSHCommandHistoryMemoryForTests,
+  useSSHCommandHistory,
+} from "../../src/hooks/ssh/useSSHCommandHistory";
 import { SshSessionsView } from "../../src/components/session/sessionManager/SshSessionsView";
 import type { CommandExecution } from "../../src/types/ssh/sshCommandHistory";
 
@@ -37,6 +40,7 @@ describe("useSSHCommandHistory", () => {
   beforeEach(() => {
     idCounter = 0;
     localStorage.clear();
+    resetSSHCommandHistoryMemoryForTests();
   });
 
   afterEach(() => {
@@ -56,6 +60,7 @@ describe("useSSHCommandHistory", () => {
     expect(() => renderHook(() => useSSHCommandHistory())).not.toThrow();
     const { result } = renderHook(() => useSSHCommandHistory());
     expect(result.current.allEntries).toEqual([]);
+    expect(localStorage.getItem("sshCommandHistory")).toBeNull();
   });
 
   describe("addEntry", () => {
@@ -88,11 +93,7 @@ describe("useSSHCommandHistory", () => {
       expect(
         result.current.second.allEntries.map((entry) => entry.command).sort(),
       ).toEqual(["from first", "from second"]);
-      expect(
-        JSON.parse(localStorage.getItem("sshCommandHistory") ?? "[]")
-          .map((entry: { command: string }) => entry.command)
-          .sort(),
-      ).toEqual(["from first", "from second"]);
+      expect(localStorage.getItem("sshCommandHistory")).toBeNull();
     });
 
     it("stamps every newly recorded execution with its exact time", () => {
@@ -740,7 +741,7 @@ describe("useSSHCommandHistory", () => {
 
       expect(result.current.config.maxEntries).toBe(500);
       // Other defaults untouched
-      expect(result.current.config.persistEnabled).toBe(true);
+      expect(result.current.config.persistEnabled).toBe(false);
     });
   });
 

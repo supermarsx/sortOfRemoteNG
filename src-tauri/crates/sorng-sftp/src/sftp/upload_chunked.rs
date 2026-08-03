@@ -39,6 +39,10 @@ pub(crate) const UPLOAD_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 /// Backpressure depth for the chunk channel. Small so the frontend can't
 /// balloon memory with pending chunks.
 const CHUNK_CHANNEL_DEPTH: usize = 4;
+const MAX_ACTIVE_UPLOADS: usize = 16;
+const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const MAX_DECLARED_UPLOAD_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
+const CHUNK_ACK_TIMEOUT: Duration = Duration::from_secs(120);
 
 // ── Messages to the writer task ──────────────────────────────────────────────
 
@@ -72,10 +76,13 @@ pub(crate) struct UploadHandle {
     #[allow(dead_code)]
     pub(crate) total_bytes: u64,
     pub(crate) bytes_written: Arc<AtomicU64>,
+    pub(crate) next_offset: u64,
     pub(crate) last_activity: Arc<StdMutex<Instant>>,
     pub(crate) chunk_tx: mpsc::Sender<UploadChunkMsg>,
     /// Prevents double-finish / double-abort.
     pub(crate) terminated: Arc<AtomicBool>,
+    /// True only after the writer confirms that a partial remote file was removed.
+    pub(crate) cleanup_confirmed: Arc<AtomicBool>,
 }
 
 impl UploadHandle {
@@ -97,6 +104,13 @@ impl SftpService {
         total_bytes: u64,
         overwrite: bool,
     ) -> Result<String, String> {
+        if self.uploads.len() >= MAX_ACTIVE_UPLOADS {
+            return Err("Too many active SFTP uploads".to_string());
+        }
+        if total_bytes > MAX_DECLARED_UPLOAD_BYTES {
+            return Err("Declared upload size exceeds the supported limit".to_string());
+        }
+        super::transfer::validate_remote_file_path(remote_path)?;
         // Clone the Session so the writer task owns its own handle.
         // ssh2::Session is Clone (internal Arc<Mutex<SessionInner>>); the clone
         // shares the underlying connection.
@@ -143,14 +157,24 @@ impl SftpService {
         let bytes_written = Arc::new(AtomicU64::new(0));
         let last_activity = Arc::new(StdMutex::new(Instant::now()));
         let terminated = Arc::new(AtomicBool::new(false));
+        let cleanup_confirmed = Arc::new(AtomicBool::new(false));
 
         // Spawn the writer task. All ssh2 I/O inside `spawn_blocking`.
         {
             let bytes_written = bytes_written.clone();
             let terminated = terminated.clone();
+            let cleanup_confirmed = cleanup_confirmed.clone();
             let remote_path_writer = remote_path_owned.clone();
             tokio::task::spawn_blocking(move || {
-                writer_loop(sftp, file, chunk_rx, bytes_written, terminated, remote_path_writer);
+                writer_loop(
+                    sftp,
+                    file,
+                    chunk_rx,
+                    bytes_written,
+                    terminated,
+                    cleanup_confirmed,
+                    remote_path_writer,
+                );
             });
         }
 
@@ -159,9 +183,11 @@ impl SftpService {
             session_id: session_id_owned,
             total_bytes,
             bytes_written,
+            next_offset: 0,
             last_activity,
             chunk_tx,
             terminated,
+            cleanup_confirmed,
         };
 
         register_for_sweeper(&upload_id, &handle);
@@ -184,9 +210,12 @@ impl SftpService {
         offset: u64,
         bytes: Vec<u8>,
     ) -> Result<u64, String> {
+        if bytes.is_empty() || bytes.len() > MAX_CHUNK_BYTES {
+            return Err("Upload chunk size is outside supported bounds".to_string());
+        }
         let handle = self
             .uploads
-            .get(upload_id)
+            .get_mut(upload_id)
             .ok_or_else(|| format!("Upload '{}' not found (expired or aborted?)", upload_id))?;
 
         if handle.terminated.load(Ordering::SeqCst) {
@@ -195,22 +224,44 @@ impl SftpService {
             unregister_from_sweeper(upload_id);
             return Err(format!("Upload '{}' already finished/aborted", upload_id));
         }
+        if offset != handle.next_offset {
+            return Err(format!(
+                "Upload chunk offset {} does not match expected offset {}",
+                offset, handle.next_offset
+            ));
+        }
+        let end = offset
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| "Upload offset overflow".to_string())?;
+        if end > handle.total_bytes {
+            return Err("Upload chunk exceeds the declared upload size".to_string());
+        }
 
         handle.touch();
         let tx = handle.chunk_tx.clone();
 
         let (ack_tx, ack_rx) = oneshot::channel();
-        tx.send(UploadChunkMsg::Write {
-            offset,
-            bytes,
-            ack: ack_tx,
-        })
+        tokio::time::timeout(
+            CHUNK_ACK_TIMEOUT,
+            tx.send(UploadChunkMsg::Write {
+                offset,
+                bytes,
+                ack: ack_tx,
+            }),
+        )
         .await
+        .map_err(|_| "Timed out waiting to queue upload chunk".to_string())?
         .map_err(|_| "Writer task closed unexpectedly".to_string())?;
 
-        ack_rx
+        let written = tokio::time::timeout(CHUNK_ACK_TIMEOUT, ack_rx)
             .await
-            .map_err(|_| "Writer task dropped without responding".to_string())?
+            .map_err(|_| "Timed out waiting for upload chunk acknowledgement".to_string())?
+            .map_err(|_| "Writer task dropped without responding".to_string())??;
+        if written != end - offset {
+            return Err("Writer acknowledged an unexpected byte count".to_string());
+        }
+        handle.next_offset = end;
+        Ok(written)
     }
 
     /// Flush, close the remote file, return the final remote path. Removes the handle.
@@ -220,19 +271,31 @@ impl SftpService {
             .remove(upload_id)
             .ok_or_else(|| format!("Upload '{}' not found", upload_id))?;
 
+        if handle.terminated.load(Ordering::SeqCst) {
+            return Err(format!("Upload '{}' already finished/aborted", upload_id));
+        }
+        if handle.next_offset != handle.total_bytes {
+            let _ = self.uploads.insert(upload_id.to_string(), handle);
+            return Err(
+                "Cannot finish upload before all declared bytes are acknowledged".to_string(),
+            );
+        }
         if handle.terminated.swap(true, Ordering::SeqCst) {
             return Err(format!("Upload '{}' already finished/aborted", upload_id));
         }
 
         let (ack_tx, ack_rx) = oneshot::channel();
-        handle
-            .chunk_tx
-            .send(UploadChunkMsg::Finish { ack: ack_tx })
-            .await
-            .map_err(|_| "Writer task closed unexpectedly".to_string())?;
+        tokio::time::timeout(
+            CHUNK_ACK_TIMEOUT,
+            handle.chunk_tx.send(UploadChunkMsg::Finish { ack: ack_tx }),
+        )
+        .await
+        .map_err(|_| "Timed out queueing upload finish".to_string())?
+        .map_err(|_| "Writer task closed unexpectedly".to_string())?;
 
-        let final_path = ack_rx
+        let final_path = tokio::time::timeout(CHUNK_ACK_TIMEOUT, ack_rx)
             .await
+            .map_err(|_| "Timed out waiting for upload finish acknowledgement".to_string())?
             .map_err(|_| "Writer task dropped without responding".to_string())??;
 
         unregister_from_sweeper(upload_id);
@@ -261,25 +324,42 @@ impl SftpService {
         if handle.terminated.swap(true, Ordering::SeqCst) {
             // Already terminated — nothing to do.
             unregister_from_sweeper(upload_id);
-            return Ok(());
+            return if handle.cleanup_confirmed.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(
+                    "Upload is already terminating, but remote partial-file cleanup is unconfirmed"
+                        .to_string(),
+                )
+            };
         }
 
         let (ack_tx, ack_rx) = oneshot::channel();
         // If the writer already exited (e.g. after a previous error) the
         // channel is closed; treat that as best-effort success.
-        if handle
-            .chunk_tx
-            .send(UploadChunkMsg::Abort { ack: ack_tx })
-            .await
-            .is_err()
+        if tokio::time::timeout(
+            CHUNK_ACK_TIMEOUT,
+            handle.chunk_tx.send(UploadChunkMsg::Abort { ack: ack_tx }),
+        )
+        .await
+        .map_err(|_| "Timed out queueing upload abort".to_string())?
+        .is_err()
         {
             warn!("upload_abort id={} writer already gone", upload_id);
             unregister_from_sweeper(upload_id);
-            return Ok(());
+            return if handle.cleanup_confirmed.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(
+                    "Upload writer stopped before remote partial-file cleanup was confirmed"
+                        .to_string(),
+                )
+            };
         }
 
-        let result = ack_rx
+        let result = tokio::time::timeout(CHUNK_ACK_TIMEOUT, ack_rx)
             .await
+            .map_err(|_| "Timed out waiting for upload abort acknowledgement".to_string())?
             .map_err(|_| "Writer task dropped without responding".to_string())?;
 
         unregister_from_sweeper(upload_id);
@@ -355,17 +435,46 @@ impl SftpService {
                         continue;
                     }
                     warn!("sftp upload id={} idle >5min — auto-aborting", id);
-                    if entry.terminated.swap(true, Ordering::SeqCst) {
+                    if entry.terminated.load(Ordering::SeqCst) {
                         continue;
                     }
-                    let (ack_tx, _ack_rx) = oneshot::channel();
-                    // best-effort — don't care if writer is already gone
-                    let _ = entry
-                        .chunk_tx
-                        .send(UploadChunkMsg::Abort { ack: ack_tx })
-                        .await;
-                    if let Ok(mut reg) = UPLOAD_SWEEPER_REGISTRY.lock() {
-                        reg.remove(&id);
+                    let (ack_tx, ack_rx) = oneshot::channel();
+                    let queued = tokio::time::timeout(
+                        CHUNK_ACK_TIMEOUT,
+                        entry.chunk_tx.send(UploadChunkMsg::Abort { ack: ack_tx }),
+                    )
+                    .await;
+                    match queued {
+                        Ok(Ok(())) => match tokio::time::timeout(CHUNK_ACK_TIMEOUT, ack_rx).await {
+                            Ok(Ok(Ok(()))) => {
+                                entry.cleanup_confirmed.store(true, Ordering::SeqCst);
+                                entry.terminated.store(true, Ordering::SeqCst);
+                            }
+                            Ok(Ok(Err(error))) => {
+                                warn!("sftp upload id={} idle abort cleanup failed: {}", id, error);
+                                entry.terminated.store(true, Ordering::SeqCst);
+                            }
+                            Ok(Err(_)) => {
+                                warn!(
+                                    "sftp upload id={} idle abort acknowledgement was dropped",
+                                    id
+                                );
+                            }
+                            Err(_) => {
+                                warn!("sftp upload id={} idle abort acknowledgement timed out", id);
+                            }
+                        },
+                        Ok(Err(_)) => {
+                            warn!("sftp upload id={} idle abort writer is unavailable", id);
+                        }
+                        Err(_) => {
+                            warn!("sftp upload id={} idle abort queueing timed out", id);
+                        }
+                    }
+                    if entry.terminated.load(Ordering::SeqCst) {
+                        if let Ok(mut reg) = UPLOAD_SWEEPER_REGISTRY.lock() {
+                            reg.remove(&id);
+                        }
                     }
                 }
             }
@@ -383,6 +492,7 @@ pub(crate) struct SweeperEntry {
     pub(crate) chunk_tx: mpsc::Sender<UploadChunkMsg>,
     pub(crate) last_activity: Arc<StdMutex<Instant>>,
     pub(crate) terminated: Arc<AtomicBool>,
+    pub(crate) cleanup_confirmed: Arc<AtomicBool>,
 }
 
 lazy_static::lazy_static! {
@@ -398,6 +508,7 @@ pub(crate) fn register_for_sweeper(upload_id: &str, handle: &UploadHandle) {
                 chunk_tx: handle.chunk_tx.clone(),
                 last_activity: handle.last_activity.clone(),
                 terminated: handle.terminated.clone(),
+                cleanup_confirmed: handle.cleanup_confirmed.clone(),
             },
         );
     }
@@ -417,6 +528,7 @@ fn writer_loop(
     mut chunk_rx: mpsc::Receiver<UploadChunkMsg>,
     bytes_written: Arc<AtomicU64>,
     terminated: Arc<AtomicBool>,
+    cleanup_confirmed: Arc<AtomicBool>,
     remote_path: String,
 ) {
     // Blocking loop — we're already on a spawn_blocking thread. Using
@@ -428,8 +540,9 @@ fn writer_loop(
                 let result: Result<u64, String> = (|| {
                     file.seek(SeekFrom::Start(offset))
                         .map_err(|e| format!("Seek to {} failed: {}", offset, e))?;
-                    file.write_all(&bytes)
-                        .map_err(|e| format!("Write of {} bytes at {} failed: {}", len, offset, e))?;
+                    file.write_all(&bytes).map_err(|e| {
+                        format!("Write of {} bytes at {} failed: {}", len, offset, e)
+                    })?;
                     Ok(len)
                 })();
                 if let Ok(n) = &result {
@@ -439,8 +552,7 @@ fn writer_loop(
             }
             UploadChunkMsg::Finish { ack } => {
                 let result: Result<String, String> = (|| {
-                    file.flush()
-                        .map_err(|e| format!("Flush failed: {}", e))?;
+                    file.flush().map_err(|e| format!("Flush failed: {}", e))?;
                     // Drop closes the remote file.
                     drop(file);
                     drop(sftp);
@@ -456,12 +568,14 @@ fn writer_loop(
                 let unlink_result = sftp
                     .unlink(Path::new(&remote_path))
                     .map_err(|e| format!("unlink '{}' failed: {}", remote_path, e));
+                if unlink_result.is_ok() {
+                    cleanup_confirmed.store(true, Ordering::SeqCst);
+                }
                 if let Err(ref e) = unlink_result {
                     warn!("abort: {}", e);
                 }
                 terminated.store(true, Ordering::SeqCst);
-                // Always ack Ok(()) — the upload is gone either way.
-                let _ = ack.send(Ok(()));
+                let _ = ack.send(unlink_result);
                 return;
             }
         }
@@ -469,7 +583,9 @@ fn writer_loop(
     // Channel closed without finish/abort — treat as abort.
     terminated.store(true, Ordering::SeqCst);
     drop(file);
-    let _ = sftp.unlink(Path::new(&remote_path));
+    if sftp.unlink(Path::new(&remote_path)).is_ok() {
+        cleanup_confirmed.store(true, Ordering::SeqCst);
+    }
     warn!(
         "sftp upload writer: channel closed without finish/abort for '{}'",
         remote_path

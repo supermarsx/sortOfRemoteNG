@@ -184,9 +184,7 @@ pub async fn rotate_master_key_full_inner(
     let settings_enc_present = settings_enc_path.exists();
 
     if dek_enc_present && password.is_none() {
-        return Err(
-            "password mode is in effect; supply the password to re-wrap dek.enc".into(),
-        );
+        return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
     }
 
     // ── Step 1: freeze the old DEK ─────────────────────────────────
@@ -211,8 +209,7 @@ pub async fn rotate_master_key_full_inner(
 
     // ── Step 3a: settings.enc ──────────────────────────────────────
     if settings_enc_present {
-        match rewrite_settings(&settings_enc_path, &old_state, enc_state, new_mode, salt).await
-        {
+        match rewrite_settings(&settings_enc_path, &old_state, enc_state, new_mode, salt).await {
             Ok(n) => {
                 report.settings_rewritten = true;
                 report.bytes_rewritten += n;

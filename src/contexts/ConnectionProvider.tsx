@@ -8,6 +8,11 @@ import React, {
 } from "react";
 import { DatabaseManager } from "../utils/connection/databaseManager";
 import { StorageData } from "../utils/storage/storage";
+import {
+  activateConnectionNotes,
+  deleteConnectionNotesSecret,
+  deleteConnectionNotesSecrets,
+} from "../utils/storage/connectionNotesVault";
 import { SettingsManager } from "../utils/settings/settingsManager";
 import {
   ConnectionState,
@@ -299,6 +304,50 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     (action: ConnectionAction) => {
       try {
         switch (action.type) {
+          case "SET_CONNECTIONS": {
+            const previousIds = new Set(
+              connectionsRef.current.map((connection) => connection.id),
+            );
+            const nextIds = new Set(
+              action.payload.map((connection) => connection.id),
+            );
+            const removedIds = [...previousIds].filter(
+              (connectionId) => !nextIds.has(connectionId),
+            );
+            for (const connectionId of nextIds) {
+              if (!previousIds.has(connectionId)) {
+                try {
+                  activateConnectionNotes(connectionId);
+                } catch {
+                  // State replacement still proceeds; note persistence fails
+                  // closed if its bounded lifecycle registry is unavailable.
+                }
+              }
+            }
+            if (removedIds.length > 0) {
+              void deleteConnectionNotesSecrets(removedIds).then(
+                (failures) => {
+                  if (failures > 0) {
+                    settingsManager.logAction(
+                      "warn",
+                      "Bulk secure note cleanup incomplete",
+                      undefined,
+                      `${failures} OS vault note entries could not be deleted.`,
+                    );
+                  }
+                },
+                () => {
+                  settingsManager.logAction(
+                    "warn",
+                    "Bulk secure note cleanup failed",
+                    undefined,
+                    "The bounded OS vault cleanup queue rejected the request.",
+                  );
+                },
+              );
+            }
+            break;
+          }
           case "ADD_TAB_GROUP":
           case "UPDATE_TAB_GROUP":
           case "REMOVE_TAB_GROUP": {
@@ -311,6 +360,12 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           case "ADD_CONNECTION": {
             const conn = action.payload;
+            try {
+              activateConnectionNotes(conn.id);
+            } catch {
+              // Connection creation is authoritative. Notes remain unavailable
+              // until bounded lifecycle capacity becomes available.
+            }
             settingsManager.logAction(
               "info",
               conn.isGroup ? "Folder created" : "Connection created",
@@ -340,6 +395,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
             break;
           }
           case "DELETE_CONNECTION": {
+            void deleteConnectionNotesSecret(action.payload).catch(() => {
+              settingsManager.logAction(
+                "warn",
+                "Secure note cleanup failed",
+                action.payload,
+                "The OS vault note entry could not be deleted and may require retry.",
+              );
+            });
             settingsManager.logAction(
               "info",
               "Connection deleted",

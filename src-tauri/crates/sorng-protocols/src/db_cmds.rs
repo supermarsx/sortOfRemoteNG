@@ -1,5 +1,9 @@
 use super::db::*;
 
+async fn active_db(state: &DbServiceState) -> Result<DbService, String> {
+    DbService::detached_active_from_state(state).await
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn connect_mysql(
@@ -12,10 +16,19 @@ pub async fn connect_mysql(
     proxy: Option<ProxyConfig>,
     openvpn: Option<OpenVPNConfig>,
     ssh_tunnel: Option<SshTunnelConfig>,
+    tls: Option<MySqlTlsConfig>,
 ) -> Result<String, String> {
-    let mut db = state.lock().await;
-    db.connect_mysql(
-        host, port, username, password, database, proxy, openvpn, ssh_tunnel,
+    DbService::connect_mysql_on_state(
+        state.inner(),
+        host,
+        port,
+        username,
+        password,
+        database,
+        proxy,
+        openvpn,
+        ssh_tunnel,
+        tls,
     )
     .await
 }
@@ -25,7 +38,7 @@ pub async fn execute_query(
     state: tauri::State<'_, DbServiceState>,
     query: String,
 ) -> Result<QueryResult, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.execute_query(query).await
 }
 
@@ -37,7 +50,7 @@ pub async fn disconnect_db(state: tauri::State<'_, DbServiceState>) -> Result<()
 
 #[tauri::command]
 pub async fn get_databases(state: tauri::State<'_, DbServiceState>) -> Result<Vec<String>, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.get_databases().await
 }
 
@@ -46,7 +59,7 @@ pub async fn get_tables(
     state: tauri::State<'_, DbServiceState>,
     database: String,
 ) -> Result<Vec<String>, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.get_tables(database).await
 }
 
@@ -56,7 +69,7 @@ pub async fn get_table_structure(
     database: String,
     table: String,
 ) -> Result<QueryResult, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.get_table_structure(database, table).await
 }
 
@@ -65,7 +78,7 @@ pub async fn create_database(
     state: tauri::State<'_, DbServiceState>,
     database: String,
 ) -> Result<(), String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.create_database(database).await
 }
 
@@ -74,7 +87,7 @@ pub async fn drop_database(
     state: tauri::State<'_, DbServiceState>,
     database: String,
 ) -> Result<(), String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.drop_database(database).await
 }
 
@@ -85,7 +98,7 @@ pub async fn create_table(
     table: String,
     columns: Vec<String>,
 ) -> Result<(), String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.create_table(database, table, columns).await
 }
 
@@ -95,7 +108,7 @@ pub async fn drop_table(
     database: String,
     table: String,
 ) -> Result<(), String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.drop_table(database, table).await
 }
 
@@ -107,7 +120,7 @@ pub async fn get_table_data(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<QueryResult, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.get_table_data(database, table, limit, offset).await
 }
 
@@ -119,7 +132,7 @@ pub async fn insert_row(
     columns: Vec<String>,
     values: Vec<String>,
 ) -> Result<u64, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.insert_row(database, table, columns, values).await
 }
 
@@ -132,7 +145,7 @@ pub async fn update_row(
     values: Vec<String>,
     where_clause: String,
 ) -> Result<u64, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.update_row(database, table, columns, values, where_clause)
         .await
 }
@@ -144,7 +157,7 @@ pub async fn delete_row(
     table: String,
     where_clause: String,
 ) -> Result<u64, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.delete_row(database, table, where_clause).await
 }
 
@@ -155,7 +168,7 @@ pub async fn export_table(
     table: String,
     format: String,
 ) -> Result<String, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.export_table(database, table, format).await
 }
 
@@ -168,7 +181,7 @@ pub async fn export_table_chunked(
     chunk_size: Option<u32>,
     max_chunks: Option<u32>,
 ) -> Result<String, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.export_table_chunked(database, table, format, chunk_size, max_chunks)
         .await
 }
@@ -180,7 +193,7 @@ pub async fn export_database(
     format: String,
     include_data: bool,
 ) -> Result<String, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.export_database(database, format, include_data).await
 }
 
@@ -193,7 +206,7 @@ pub async fn export_database_chunked(
     chunk_size: Option<u32>,
     max_chunks: Option<u32>,
 ) -> Result<String, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.export_database_chunked(database, format, include_data, chunk_size, max_chunks)
         .await
 }
@@ -203,7 +216,7 @@ pub async fn import_sql(
     state: tauri::State<'_, DbServiceState>,
     sql_content: String,
 ) -> Result<u64, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.import_sql(sql_content).await
 }
 
@@ -215,8 +228,7 @@ pub async fn import_csv(
     csv_content: String,
     has_header: bool,
 ) -> Result<u64, String> {
-    let db = state.lock().await;
+    let db = active_db(state.inner()).await?;
     db.import_csv(database, table, csv_content, has_header)
         .await
 }
-

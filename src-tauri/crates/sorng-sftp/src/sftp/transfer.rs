@@ -7,19 +7,183 @@ use chrono::Utc;
 use log::warn;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+const MAX_TRANSFER_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
+const MAX_TRANSFER_RETRIES: u32 = 5;
+const MAX_RETRY_DELAY_MS: u64 = 30_000;
+const MAX_REMOTE_PATH_BYTES: usize = 4096;
+const MAX_LOCAL_PATH_BYTES: usize = 32_768;
+const MAX_TRACKED_TRANSFERS: usize = 512;
+
+pub(crate) fn validate_remote_file_path(path: &str) -> Result<(), String> {
+    if path.len() > MAX_REMOTE_PATH_BYTES
+        || !path.starts_with('/')
+        || path == "/"
+        || path.contains('\\')
+        || path.chars().any(|c| c == '\0' || c.is_control())
+        || path
+            .split('/')
+            .any(|component| matches!(component, "." | ".."))
+    {
+        return Err(
+            "Remote file path must be a bounded absolute POSIX path without traversal".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_transfer_request(request: &SftpTransferRequest) -> Result<(), String> {
+    checked_chunk_size(request.chunk_size)?;
+    validate_remote_file_path(&request.remote_path)?;
+    if request.local_path.is_empty()
+        || request.local_path.len() > MAX_LOCAL_PATH_BYTES
+        || request
+            .local_path
+            .chars()
+            .any(|c| c == '\0' || c.is_control())
+        || request.retry_count > MAX_TRANSFER_RETRIES
+        || request.retry_delay_ms > MAX_RETRY_DELAY_MS
+        || matches!(request.bandwidth_limit_kbps, Some(0))
+    {
+        return Err(
+            "Transfer request contains an invalid path, retry, or bandwidth value".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn checked_chunk_size(chunk_size: u64) -> Result<usize, String> {
+    if chunk_size == 0 || chunk_size > MAX_TRANSFER_CHUNK_SIZE {
+        return Err(format!(
+            "Transfer chunk size must be between 1 and {} bytes",
+            MAX_TRANSFER_CHUNK_SIZE
+        ));
+    }
+    usize::try_from(chunk_size).map_err(|_| "Transfer chunk size is unsupported".to_string())
+}
+
+fn regular_local_upload(path: &str) -> Result<std::fs::Metadata, String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("Cannot inspect local file '{}': {}", path, e))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("Refusing to upload local symlink '{}'", path));
+    }
+    if !metadata.is_file() {
+        return Err(format!(
+            "Local upload source '{}' is not a regular file",
+            path
+        ));
+    }
+    Ok(metadata)
+}
+
+fn reject_local_symlink(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
+            "Refusing to write through local symlink '{}'",
+            path.display()
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Cannot inspect local destination '{}': {}",
+            path.display(),
+            error
+        )),
+    }
+}
+
+fn staging_path(destination: &Path, transfer_id: &str) -> Result<PathBuf, String> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Local download destination must have a valid file name".to_string())?;
+    Ok(parent.join(format!(".{}.sorng-part-{}", name, transfer_id)))
+}
+
+struct PartialDownloadGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl PartialDownloadGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PartialDownloadGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn commit_staged_download(
+    staging: &Path,
+    destination: &Path,
+    transfer_id: &str,
+    overwrite: bool,
+) -> Result<(), String> {
+    reject_local_symlink(destination)?;
+    if !destination.exists() {
+        return std::fs::rename(staging, destination).map_err(|e| {
+            format!(
+                "Failed to commit download '{}': {}",
+                destination.display(),
+                e
+            )
+        });
+    }
+    if !overwrite {
+        return Err(format!(
+            "Local destination '{}' appeared during transfer; overwrite is disabled",
+            destination.display()
+        ));
+    }
+
+    let backup = destination.with_extension(format!("sorng-old-{}", transfer_id));
+    std::fs::rename(destination, &backup).map_err(|e| {
+        format!(
+            "Failed to protect existing destination '{}': {}",
+            destination.display(),
+            e
+        )
+    })?;
+    if let Err(error) = std::fs::rename(staging, destination) {
+        let rollback = std::fs::rename(&backup, destination);
+        return Err(match rollback {
+            Ok(()) => format!("Failed to commit download; original restored: {}", error),
+            Err(rollback_error) => format!(
+                "Failed to commit download and restore original '{}': {}; rollback: {}",
+                destination.display(),
+                error,
+                rollback_error
+            ),
+        });
+    }
+    let _ = std::fs::remove_file(backup);
+    Ok(())
+}
 
 impl SftpService {
     // ── Single-file upload (chunked) ─────────────────────────────────────────
 
     pub async fn upload(&mut self, request: SftpTransferRequest) -> Result<TransferResult, String> {
+        validate_transfer_request(&request)?;
         let transfer_id = Uuid::new_v4().to_string();
         let started = Utc::now();
 
         // Validate local file
-        let metadata = std::fs::metadata(&request.local_path)
-            .map_err(|e| format!("Cannot read local file '{}': {}", request.local_path, e))?;
+        let metadata = regular_local_upload(&request.local_path)?;
         let total_bytes = metadata.len();
 
         // Determine starting offset for resume
@@ -29,6 +193,12 @@ impl SftpService {
         } else {
             0
         };
+        if start_offset > total_bytes {
+            return Err(format!(
+                "Cannot resume upload: remote size {} exceeds local size {}",
+                start_offset, total_bytes
+            ));
+        }
 
         // Init progress
         let progress = TransferProgress {
@@ -52,7 +222,19 @@ impl SftpService {
             retry_attempt: 0,
         };
 
-        if let Ok(mut map) = TRANSFER_PROGRESS.lock() {
+        {
+            let mut map = TRANSFER_PROGRESS
+                .lock()
+                .map_err(|_| "SFTP transfer progress state is unavailable".to_string())?;
+            map.retain(|_, item| {
+                !matches!(
+                    &item.status,
+                    TransferStatus::Completed | TransferStatus::Failed | TransferStatus::Cancelled
+                )
+            });
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                return Err("Too many active SFTP transfers".to_string());
+            }
             map.insert(transfer_id.clone(), progress.clone());
         }
 
@@ -80,14 +262,25 @@ impl SftpService {
                     // Optional checksum verification
                     let checksum = if request.verify_checksum {
                         self.update_progress_status(&transfer_id, TransferStatus::Verifying);
+                        let local = match compute_local_checksum(Path::new(&request.local_path)) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                last_error = Some(error);
+                                continue;
+                            }
+                        };
                         match self
                             .checksum(&request.session_id, &request.remote_path)
                             .await
                         {
-                            Ok(c) => Some(c),
-                            Err(e) => {
-                                warn!("Checksum verification failed: {}", e);
-                                None
+                            Ok(remote) if remote == local => Some(local),
+                            Ok(_) => {
+                                last_error = Some("SFTP upload checksum mismatch".to_string());
+                                continue;
+                            }
+                            Err(error) => {
+                                last_error = Some(format!("SFTP upload checksum failed: {error}"));
+                                continue;
                             }
                         }
                     } else {
@@ -142,7 +335,7 @@ impl SftpService {
         total_bytes: u64,
         start_offset: u64,
     ) -> Result<u64, String> {
-        let chunk_size = request.chunk_size as usize;
+        let chunk_size = checked_chunk_size(request.chunk_size)?;
 
         // Open local file
         let mut local_file = std::fs::File::open(&request.local_path)
@@ -267,22 +460,50 @@ impl SftpService {
         &mut self,
         request: SftpTransferRequest,
     ) -> Result<TransferResult, String> {
+        validate_transfer_request(&request)?;
         let transfer_id = Uuid::new_v4().to_string();
         let started = Utc::now();
 
         // Get remote file size
-        let total_bytes = self
-            .remote_file_size(&request.session_id, &request.remote_path)
-            .unwrap_or(0);
+        let total_bytes = self.remote_file_size(&request.session_id, &request.remote_path)?;
 
         // Resume offset
-        let start_offset = if request.resume {
-            std::fs::metadata(&request.local_path)
-                .map(|m| m.len())
-                .unwrap_or(0)
+        let local_path = Path::new(&request.local_path);
+        reject_local_symlink(local_path)?;
+        let resume = request.resume || matches!(request.on_conflict, ConflictResolution::Resume);
+        let start_offset = if resume {
+            match std::fs::symlink_metadata(local_path) {
+                Ok(metadata) if metadata.is_file() => metadata.len(),
+                Ok(_) => {
+                    return Err(format!(
+                        "Local resume destination '{}' is not a regular file",
+                        request.local_path
+                    ));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                Err(error) => {
+                    return Err(format!(
+                        "Cannot inspect local destination '{}': {}",
+                        request.local_path, error
+                    ));
+                }
+            }
         } else {
+            if local_path.exists() && !matches!(request.on_conflict, ConflictResolution::Overwrite)
+            {
+                return Err(format!(
+                    "Local file '{}' exists and conflict policy does not authorize overwrite",
+                    request.local_path
+                ));
+            }
             0
         };
+        if start_offset > total_bytes {
+            return Err(format!(
+                "Cannot resume download: local size {} exceeds remote size {}",
+                start_offset, total_bytes
+            ));
+        }
 
         // Init progress
         let progress = TransferProgress {
@@ -306,7 +527,19 @@ impl SftpService {
             retry_attempt: 0,
         };
 
-        if let Ok(mut map) = TRANSFER_PROGRESS.lock() {
+        {
+            let mut map = TRANSFER_PROGRESS
+                .lock()
+                .map_err(|_| "SFTP transfer progress state is unavailable".to_string())?;
+            map.retain(|_, item| {
+                !matches!(
+                    &item.status,
+                    TransferStatus::Completed | TransferStatus::Failed | TransferStatus::Cancelled
+                )
+            });
+            if map.len() >= MAX_TRACKED_TRANSFERS {
+                return Err("Too many active SFTP transfers".to_string());
+            }
             map.insert(transfer_id.clone(), progress);
         }
 
@@ -333,8 +566,13 @@ impl SftpService {
                 Ok(transferred) => {
                     let checksum = if request.verify_checksum {
                         self.update_progress_status(&transfer_id, TransferStatus::Verifying);
-                        // Local hash
-                        compute_local_checksum(&request.local_path).ok()
+                        match compute_local_checksum(Path::new(&request.local_path)) {
+                            Ok(value) => Some(value),
+                            Err(error) => {
+                                last_error = Some(error);
+                                continue;
+                            }
+                        }
                     } else {
                         None
                     };
@@ -386,7 +624,15 @@ impl SftpService {
         total_bytes: u64,
         start_offset: u64,
     ) -> Result<u64, String> {
-        let chunk_size = request.chunk_size as usize;
+        let chunk_size = checked_chunk_size(request.chunk_size)?;
+        let expected_checksum = if request.verify_checksum {
+            Some(
+                self.checksum(&request.session_id, &request.remote_path)
+                    .await?,
+            )
+        } else {
+            None
+        };
 
         let (sftp, _handle) = self.sftp_channel(&request.session_id)?;
 
@@ -401,18 +647,31 @@ impl SftpService {
                 .map_err(|e| format!("Failed to seek remote file: {}", e))?;
         }
 
-        // Open local file
+        let destination = Path::new(&request.local_path);
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "Failed to create local directory '{}': {}",
+                    parent.display(),
+                    e
+                )
+            })?;
+        }
+        let staged_path = (start_offset == 0)
+            .then(|| staging_path(destination, transfer_id))
+            .transpose()?;
+        let output_path = staged_path.as_deref().unwrap_or(destination);
+        let mut partial_guard = staged_path.clone().map(PartialDownloadGuard::new);
         let mut local_file = if start_offset > 0 {
             std::fs::OpenOptions::new()
                 .append(true)
-                .open(&request.local_path)
+                .open(destination)
                 .map_err(|e| format!("Failed to open local '{}': {}", request.local_path, e))?
         } else {
-            // Ensure parent directory exists
-            if let Some(parent) = Path::new(&request.local_path).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::File::create(&request.local_path)
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(output_path)
                 .map_err(|e| format!("Failed to create local '{}': {}", request.local_path, e))?
         };
 
@@ -477,6 +736,32 @@ impl SftpService {
         local_file
             .flush()
             .map_err(|e| format!("Flush error: {}", e))?;
+        if transferred != total_bytes {
+            return Err(format!(
+                "SFTP download ended at {} bytes; expected {}",
+                transferred, total_bytes
+            ));
+        }
+        drop(local_file);
+        if let Some(expected) = expected_checksum {
+            let actual = compute_local_checksum(output_path)?;
+            if actual != expected {
+                return Err(
+                    "SFTP download checksum mismatch; staged file was discarded".to_string()
+                );
+            }
+        }
+        if let Some(staged) = staged_path.as_deref() {
+            commit_staged_download(
+                staged,
+                destination,
+                transfer_id,
+                matches!(request.on_conflict, ConflictResolution::Overwrite),
+            )?;
+            if let Some(guard) = partial_guard.as_mut() {
+                guard.disarm();
+            }
+        }
 
         // Preserve timestamps
         if request.preserve_timestamps {
@@ -666,9 +951,9 @@ impl SftpService {
 
 // ── Standalone helper ────────────────────────────────────────────────────────
 
-fn compute_local_checksum(path: &str) -> Result<String, String> {
-    let mut file =
-        std::fs::File::open(path).map_err(|e| format!("Cannot open '{}': {}", path, e))?;
+fn compute_local_checksum(path: &Path) -> Result<String, String> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("Cannot open '{}': {}", path.display(), e))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 65536];
     loop {
@@ -679,4 +964,16 @@ fn compute_local_checksum(path: &str) -> Result<String, String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod transfer_safety_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_and_oversized_chunks() {
+        assert!(checked_chunk_size(0).is_err());
+        assert!(checked_chunk_size(MAX_TRANSFER_CHUNK_SIZE + 1).is_err());
+        assert_eq!(checked_chunk_size(64 * 1024).unwrap(), 64 * 1024);
+    }
 }

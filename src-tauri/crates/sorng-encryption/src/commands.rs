@@ -19,6 +19,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_fs::FsExt;
 
@@ -217,6 +218,70 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+const LOCKOUT_PERSISTENCE_ERROR: &str =
+    "password lockout state could not be persisted; retries remain throttled in memory";
+const AUDIT_PERSISTENCE_ERROR: &str = "security audit event could not be persisted";
+
+/// The on-disk lockout receipt survives restarts, while this process-local
+/// copy remains authoritative for the current process. In particular, a
+/// failed save must not let the next attempt reload an older, less restrictive
+/// receipt from disk.
+static LOCKOUT_MEMORY: OnceLock<Mutex<Option<(PathBuf, LockoutState)>>> = OnceLock::new();
+
+fn lockout_memory() -> MutexGuard<'static, Option<(PathBuf, LockoutState)>> {
+    LOCKOUT_MEMORY
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn current_lockout_state(dir: &Path) -> LockoutState {
+    let mut memory = lockout_memory();
+    if let Some((cached_dir, state)) = memory.as_ref() {
+        if cached_dir == dir {
+            return state.clone();
+        }
+    }
+    let state = LockoutState::load(dir);
+    *memory = Some((dir.to_path_buf(), state.clone()));
+    state
+}
+
+fn update_lockout_state(dir: &Path, update: impl FnOnce(&mut LockoutState)) -> LockoutState {
+    let mut memory = lockout_memory();
+    let mut state = match memory.as_ref() {
+        Some((cached_dir, state)) if cached_dir == dir => state.clone(),
+        _ => LockoutState::load(dir),
+    };
+    update(&mut state);
+    *memory = Some((dir.to_path_buf(), state.clone()));
+    state
+}
+
+fn persist_lockout_state_with(
+    dir: &Path,
+    state: &LockoutState,
+    persist: impl FnOnce(&LockoutState, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    persist(state, dir).map_err(|_| LOCKOUT_PERSISTENCE_ERROR.to_string())
+}
+
+fn persist_lockout_state(dir: &Path, state: &LockoutState) -> Result<(), String> {
+    persist_lockout_state_with(dir, state, |state, dir| state.save(dir))
+}
+
+fn record_security_audit(
+    dir: &Path,
+    event: AuditEvent,
+    metadata: serde_json::Value,
+) -> Result<(), String> {
+    surface_audit_result(audit::record(dir, event, metadata))
+}
+
+fn surface_audit_result(result: Result<(), audit::AuditError>) -> Result<(), String> {
+    result.map_err(|_| AUDIT_PERSISTENCE_ERROR.to_string())
+}
+
 // ─── Commands ──────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -280,7 +345,7 @@ pub async fn encryption_setup(
     if state.is_unlocked().await {
         return Ok(UnlockResult::AlreadyUnlocked);
     }
-    ensure_app_data_dir(&app)?;
+    let dir = ensure_app_data_dir(&app)?;
     let dek_path = app_data_path(&app, DEK_ENC_FILENAME)?;
 
     match method {
@@ -292,14 +357,12 @@ pub async fn encryption_setup(
                 .await
                 .map_err(|e| format!("ensure_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
+            record_security_audit(
+                &dir,
+                AuditEvent::SetupCompleted,
+                serde_json::json!({ "method": "vault", "vaultAvailable": true }),
+            )?;
             state.install(dek).await;
-            if let Ok(dir) = app.path().app_data_dir() {
-                let _ = audit::record(
-                    &dir,
-                    AuditEvent::SetupCompleted,
-                    serde_json::json!({ "method": "vault", "vaultAvailable": true }),
-                );
-            }
             Ok(UnlockResult::UnlockedFromVault)
         }
         SetupMethod::Password { password, argon2 } => {
@@ -310,14 +373,12 @@ pub async fn encryption_setup(
             let dek = MasterDek::generate();
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
+            record_security_audit(
+                &dir,
+                AuditEvent::SetupCompleted,
+                serde_json::json!({ "method": "password", "vaultAvailable": false }),
+            )?;
             state.install(dek).await;
-            if let Ok(dir) = app.path().app_data_dir() {
-                let _ = audit::record(
-                    &dir,
-                    AuditEvent::SetupCompleted,
-                    serde_json::json!({ "method": "password", "vaultAvailable": false }),
-                );
-            }
             Ok(UnlockResult::UnlockedFromPassword)
         }
         SetupMethod::VaultAndPassword { password, argon2 } => {
@@ -336,17 +397,15 @@ pub async fn encryption_setup(
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
             let blob = password_wrap::wrap(&password, &dek, argon).map_err(|e| e.to_string())?;
             atomic_write(&dek_path, &blob)?;
+            record_security_audit(
+                &dir,
+                AuditEvent::SetupCompleted,
+                serde_json::json!({
+                    "method": "vault-and-password",
+                    "vaultAvailable": true,
+                }),
+            )?;
             state.install(dek).await;
-            if let Ok(dir) = app.path().app_data_dir() {
-                let _ = audit::record(
-                    &dir,
-                    AuditEvent::SetupCompleted,
-                    serde_json::json!({
-                        "method": "vault-and-password",
-                        "vaultAvailable": true,
-                    }),
-                );
-            }
             Ok(UnlockResult::UnlockedFromVault)
         }
     }
@@ -388,13 +447,13 @@ pub async fn encryption_unlock(
                 .await
                 .map_err(|e| format!("read_dek: {e}"))?;
             let dek = MasterDek::from_bytes(&bytes).ok_or("vault returned wrong-size DEK")?;
-            state.install(dek).await;
-            let _ = app.emit(EVENT_UNLOCKED, ());
-            let _ = audit::record(
+            record_security_audit(
                 &dir,
                 AuditEvent::UnlockSuccess,
                 serde_json::json!({ "method": "vault" }),
-            );
+            )?;
+            state.install(dek).await;
+            let _ = app.emit(EVENT_UNLOCKED, ());
             // Vault unlock is silent and has no failed-attempt history
             // to reset; password-mode lockouts live in their own file
             // and are untouched here.
@@ -406,28 +465,30 @@ pub async fn encryption_unlock(
             // Honour the lockout schedule before doing any KDF work —
             // a brute-force attacker shouldn't be able to keep the CPU
             // busy with Argon2id while waiting out the cool-down.
-            let mut lockout = LockoutState::load(&dir);
+            let lockout = current_lockout_state(&dir);
             if lockout.remaining_cooldown_ms() > 0 {
                 return Ok(UnlockResult::WrongPassword);
             }
             let blob = read_bounded_regular_file(&dek_path, password_wrap::FILE_LEN as u64)?;
             match password_wrap::unwrap(pw, &blob) {
                 Ok(dek) => {
-                    state.install(dek).await;
-                    lockout.record_success();
-                    let _ = lockout.save(&dir);
-                    let _ = app.emit(EVENT_UNLOCKED, ());
-                    let _ = audit::record(
+                    let lockout = update_lockout_state(&dir, LockoutState::record_success);
+                    let lockout_result = persist_lockout_state(&dir, &lockout);
+                    let audit_result = record_security_audit(
                         &dir,
                         AuditEvent::UnlockSuccess,
                         serde_json::json!({ "method": "password" }),
                     );
+                    lockout_result?;
+                    audit_result?;
+                    state.install(dek).await;
+                    let _ = app.emit(EVENT_UNLOCKED, ());
                     Ok(UnlockResult::UnlockedFromPassword)
                 }
                 Err(password_wrap::WrapError::AuthenticationFailed) => {
-                    lockout.record_failure();
-                    let _ = lockout.save(&dir);
-                    let _ = audit::record(
+                    let lockout = update_lockout_state(&dir, LockoutState::record_failure);
+                    let lockout_result = persist_lockout_state(&dir, &lockout);
+                    let audit_result = record_security_audit(
                         &dir,
                         AuditEvent::UnlockFailure,
                         serde_json::json!({
@@ -436,6 +497,8 @@ pub async fn encryption_unlock(
                             "remainingCooldownMs": lockout.remaining_cooldown_ms(),
                         }),
                     );
+                    lockout_result?;
+                    audit_result?;
                     Ok(UnlockResult::WrongPassword)
                 }
                 Err(e) => Err(e.to_string()),
@@ -463,15 +526,14 @@ pub async fn encryption_lock(
 ) -> Result<(), String> {
     state.lock().await;
     let _ = app.emit(EVENT_LOCKED, ());
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = audit::record(
-            &dir,
-            AuditEvent::Locked,
-            serde_json::json!({
-                "reason": reason.unwrap_or_else(|| "unspecified".to_string()),
-            }),
-        );
-    }
+    let dir = ensure_app_data_dir(&app)?;
+    record_security_audit(
+        &dir,
+        AuditEvent::Locked,
+        serde_json::json!({
+            "reason": reason.unwrap_or_else(|| "unspecified".to_string()),
+        }),
+    )?;
     Ok(())
 }
 
@@ -481,7 +543,7 @@ pub async fn encryption_lock(
 #[tauri::command]
 pub async fn encryption_lockout_state(app: AppHandle) -> Result<LockoutSnapshot, String> {
     let dir = ensure_app_data_dir(&app)?;
-    let state = LockoutState::load(&dir);
+    let state = current_lockout_state(&dir);
     Ok(LockoutSnapshot::from(&state))
 }
 
@@ -501,21 +563,15 @@ pub async fn encryption_change_password(
 
     // Validate the old password by unwrapping first; do not touch
     // anything until we have the plaintext DEK in hand.
-    let dek =
-        password_wrap::unwrap(&old_password, &blob).map_err(|e| format!("unwrap: {e}"))?;
+    let dek = password_wrap::unwrap(&old_password, &blob).map_err(|e| format!("unwrap: {e}"))?;
 
     let argon = argon2.unwrap_or(Argon2Params::OWASP);
     argon.validate().map_err(|e| e.to_string())?;
     let new_blob =
         password_wrap::wrap(&new_password, &dek, argon).map_err(|e| format!("wrap: {e}"))?;
     atomic_write(&dek_path, &new_blob)?;
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = audit::record(
-            &dir,
-            AuditEvent::PasswordChanged,
-            serde_json::json!({}),
-        );
-    }
+    let dir = ensure_app_data_dir(&app)?;
+    record_security_audit(&dir, AuditEvent::PasswordChanged, serde_json::json!({}))?;
     // If the live state was previously locked, leave it locked — the
     // caller decides whether to unlock automatically. If already
     // unlocked, the in-memory DEK is unchanged so nothing else needs
@@ -565,10 +621,9 @@ pub async fn encryption_migrate_settings(
 
     // For vault mode the Argon2 salt is unused; just zero-fill.
     let salt = [0u8; crate::envelope::SALT_LEN];
-    let blob =
-        artifact_settings::write(&state, &value, mode, Argon2Params::OWASP, salt)
-            .await
-            .map_err(|e| e.to_string())?;
+    let blob = artifact_settings::write(&state, &value, mode, Argon2Params::OWASP, salt)
+        .await
+        .map_err(|e| e.to_string())?;
     let bytes_out = blob.len();
 
     atomic_write(&destination, &blob)?;
@@ -577,7 +632,7 @@ pub async fn encryption_migrate_settings(
     // the encryption-at-rest guarantee exposed in Settings.
     std::fs::remove_file(&source).map_err(|e| format!("remove plaintext settings.json: {e}"))?;
 
-    let _ = audit::record(
+    record_security_audit(
         &dir,
         AuditEvent::SettingsMigrated,
         serde_json::json!({
@@ -589,7 +644,7 @@ pub async fn encryption_migrate_settings(
                 MasterKeyStorage::VaultAndPassword => "vault-and-password",
             },
         }),
-    );
+    )?;
 
     Ok(MigrationReport {
         source_path: source.to_string_lossy().into_owned(),
@@ -639,18 +694,18 @@ pub async fn encryption_disable_settings(
         .await
         .map_err(|e| e.to_string())?
         .unwrap_or_else(|| serde_json::json!({}));
-    let body = serde_json::to_string_pretty(&value)
-        .map_err(|e| format!("re-serialize settings: {e}"))?;
+    let body =
+        serde_json::to_string_pretty(&value).map_err(|e| format!("re-serialize settings: {e}"))?;
     let bytes_out = body.len();
     atomic_write(&destination, body.as_bytes())?;
     // Now safe to delete the encrypted file.
     std::fs::remove_file(&source).map_err(|e| format!("remove settings.enc: {e}"))?;
 
-    let _ = audit::record(
+    record_security_audit(
         &dir,
         AuditEvent::SettingsDecrypted,
         serde_json::json!({ "bytesIn": bytes_in, "bytesOut": bytes_out }),
-    );
+    )?;
 
     Ok(DisableSettingsReport {
         source_path: source.to_string_lossy().into_owned(),
@@ -695,17 +750,13 @@ pub async fn encryption_rotate_master_key(
     let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
 
     if dek_enc_present && password.is_none() {
-        return Err(
-            "password mode is in effect; supply the password to re-wrap dek.enc"
-                .into(),
-        );
+        return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
     }
 
     // Read each artifact's plaintext via the *current* state, before
     // we install the new DEK.
     let settings_plaintext = if settings_enc_present {
-        let blob = std::fs::read(&settings_enc_path)
-            .map_err(|e| format!("read settings.enc: {e}"))?;
+        let blob = read_bounded_regular_file(&settings_enc_path, MAX_SETTINGS_BYTES)?;
         artifact_settings::read(&state, &blob)
             .await
             .map_err(|e| e.to_string())?
@@ -765,22 +816,18 @@ pub async fn encryption_rotate_master_key(
     }
     if let Some(pw) = password {
         let argon = Argon2Params::OWASP;
-        let dek_owned = MasterDek::from_bytes(&new_bytes)
-            .ok_or("internal: master DEK wrong length")?;
-        let blob =
-            password_wrap::wrap(&pw, &dek_owned, argon).map_err(|e| format!("wrap: {e}"))?;
+        let dek_owned =
+            MasterDek::from_bytes(&new_bytes).ok_or("internal: master DEK wrong length")?;
+        let blob = password_wrap::wrap(&pw, &dek_owned, argon).map_err(|e| format!("wrap: {e}"))?;
         atomic_write(&dek_enc_path, &blob)?;
         dek_enc_updated = true;
     }
 
     // Reset the lockout counter — successful rotation is the strongest
     // possible signal that the user holds the password.
-    let mut lockout = LockoutState::load(&dir);
-    lockout.record_success();
-    let _ = lockout.save(&dir);
-    let _ = app.emit(EVENT_UNLOCKED, ());
-
-    let _ = audit::record(
+    let lockout = update_lockout_state(&dir, LockoutState::record_success);
+    let lockout_result = persist_lockout_state(&dir, &lockout);
+    let audit_result = record_security_audit(
         &dir,
         AuditEvent::KeyRotated,
         serde_json::json!({
@@ -790,6 +837,9 @@ pub async fn encryption_rotate_master_key(
             "dekEncUpdated": dek_enc_updated,
         }),
     );
+    lockout_result?;
+    audit_result?;
+    let _ = app.emit(EVENT_UNLOCKED, ());
 
     Ok(RotateReport {
         artifacts_rewritten,
@@ -829,16 +879,15 @@ pub async fn encryption_export_portable_dek(
     require_renderer_scoped_path(&app, &dest)?;
     atomic_write(&dest, &blob)?;
     let bytes = blob.len() as u64;
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = audit::record(
-            &dir,
-            AuditEvent::PortableExported,
-            serde_json::json!({
-                "destinationPath": destination_path,
-                "bytes": bytes,
-            }),
-        );
-    }
+    let dir = ensure_app_data_dir(&app)?;
+    record_security_audit(
+        &dir,
+        AuditEvent::PortableExported,
+        serde_json::json!({
+            "destinationFile": dest.file_name().and_then(|v| v.to_str()),
+            "bytes": bytes,
+        }),
+    )?;
     Ok(bytes)
 }
 
@@ -857,8 +906,7 @@ pub async fn encryption_import_portable_dek(
     let source = PathBuf::from(&source_path);
     require_renderer_scoped_path(&app, &source)?;
     let blob = read_bounded_regular_file(&source, password_wrap::FILE_LEN as u64)?;
-    let dek = password_wrap::unwrap(&password, &blob)
-        .map_err(|e| format!("unwrap: {e}"))?;
+    let dek = password_wrap::unwrap(&password, &blob).map_err(|e| format!("unwrap: {e}"))?;
 
     // Adopt as the live key.
     let raw = *dek.bytes_for_password_wrap();
@@ -878,23 +926,25 @@ pub async fn encryption_import_portable_dek(
     // Always write `dek.enc` too — it's the cross-machine recipe and
     // protects against the user nuking the vault on cleanup.
     let dek_path = dir.join(DEK_ENC_FILENAME);
-    let dek_local =
-        MasterDek::from_bytes(&raw).ok_or("internal: re-wrap wrong-size DEK")?;
+    let dek_local = MasterDek::from_bytes(&raw).ok_or("internal: re-wrap wrong-size DEK")?;
     let local_wrap = password_wrap::wrap(&password, &dek_local, Argon2Params::OWASP)
         .map_err(|e| format!("re-wrap: {e}"))?;
     atomic_write(&dek_path, &local_wrap)?;
 
     // Reset lockout (successful unwrap counts as proof the user
     // holds the password) and broadcast.
-    let mut lockout = LockoutState::load(&dir);
-    lockout.record_success();
-    let _ = lockout.save(&dir);
-    let _ = app.emit(EVENT_UNLOCKED, ());
-    let _ = audit::record(
+    let lockout = update_lockout_state(&dir, LockoutState::record_success);
+    let lockout_result = persist_lockout_state(&dir, &lockout);
+    let audit_result = record_security_audit(
         &dir,
         AuditEvent::PortableImported,
-        serde_json::json!({ "sourcePath": source_path }),
+        serde_json::json!({
+            "sourceFile": source.file_name().and_then(|value| value.to_str())
+        }),
     );
+    lockout_result?;
+    audit_result?;
+    let _ = app.emit(EVENT_UNLOCKED, ());
 
     Ok(())
 }
@@ -921,22 +971,22 @@ pub async fn encryption_audit_clear(app: AppHandle) -> Result<(), String> {
     let dir = ensure_app_data_dir(&app)?;
     audit::clear(&dir).map_err(|e| e.to_string())?;
     // Re-record the clear so it's visible in `tail -f` immediately.
-    let _ = audit::record(
+    record_security_audit(
         &dir,
         AuditEvent::Locked,
         serde_json::json!({ "note": "audit-log-cleared" }),
-    );
+    )?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn setup_method_password_default_argon2() {
-        let v: SetupMethod =
-            serde_json::from_str(r#"{"password":{"password":"x"}}"#).unwrap();
+        let v: SetupMethod = serde_json::from_str(r#"{"password":{"password":"x"}}"#).unwrap();
         if let SetupMethod::Password { password, argon2 } = v {
             assert_eq!(password, "x");
             assert!(argon2.is_none());
@@ -1024,6 +1074,37 @@ mod tests {
         assert!(s.contains("\"dekEncUpdated\":false"));
     }
 
+    #[test]
+    fn failed_lockout_save_keeps_throttling_in_memory() {
+        let dir = tempdir().unwrap();
+        LockoutState::default().save(dir.path()).unwrap();
+
+        let failed = update_lockout_state(dir.path(), LockoutState::record_failure);
+        let err = persist_lockout_state_with(dir.path(), &failed, |_, _| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "sensitive filesystem detail",
+            ))
+        })
+        .unwrap_err();
+
+        assert_eq!(err, LOCKOUT_PERSISTENCE_ERROR);
+        assert_eq!(LockoutState::load(dir.path()), LockoutState::default());
+        let cached = current_lockout_state(dir.path());
+        assert_eq!(cached.failed_attempts, 1);
+        assert!(cached.remaining_cooldown_ms() > 0);
+    }
+
+    #[test]
+    fn audit_write_failure_is_opaque() {
+        let err = surface_audit_result(Err(audit::AuditError::Write(
+            "sensitive filesystem detail".to_string(),
+        )))
+        .unwrap_err();
+        assert_eq!(err, AUDIT_PERSISTENCE_ERROR);
+        assert!(!err.contains("sensitive"));
+    }
+
     // ─── End-to-end logic tests bypassing the Tauri AppHandle ──
 
     use crate::artifacts::settings as artifact_settings;
@@ -1088,8 +1169,7 @@ mod tests {
         // same bytes — i.e. the master survived the round-trip.
         let enc_state = EncryptionState::new();
         let original = MasterDek::generate();
-        let bytes_before =
-            *original.sub_key(crate::ArtifactKind::Settings).bytes();
+        let bytes_before = *original.sub_key(crate::ArtifactKind::Settings).bytes();
         enc_state.install(original).await;
 
         // Export path: wrap with password.
@@ -1098,19 +1178,12 @@ mod tests {
             .await
             .unwrap();
         let dek_to_wrap = MasterDek::from_bytes(&raw).unwrap();
-        let blob = password_wrap::wrap(
-            "portable-pw",
-            &dek_to_wrap,
-            Argon2Params::OWASP,
-        )
-        .unwrap();
+        let blob = password_wrap::wrap("portable-pw", &dek_to_wrap, Argon2Params::OWASP).unwrap();
 
         // Import path on a fresh state: unwrap and install.
         let target_state = EncryptionState::new();
-        let recovered =
-            password_wrap::unwrap("portable-pw", &blob).unwrap();
-        let bytes_after =
-            *recovered.sub_key(crate::ArtifactKind::Settings).bytes();
+        let recovered = password_wrap::unwrap("portable-pw", &blob).unwrap();
+        let bytes_after = *recovered.sub_key(crate::ArtifactKind::Settings).bytes();
         target_state.install(recovered).await;
 
         assert_eq!(bytes_before, bytes_after);

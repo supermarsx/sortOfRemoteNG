@@ -1,4 +1,4 @@
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { openDB, DBSchema, IDBPDatabase } from "idb";
 
 interface KeyValDB extends DBSchema {
   keyval: {
@@ -7,8 +7,8 @@ interface KeyValDB extends DBSchema {
   };
 }
 
-const DB_NAME = 'mremote-keyval';
-const STORE_NAME = 'keyval';
+const DB_NAME = "mremote-keyval";
+const STORE_NAME = "keyval";
 
 export class IndexedDbService {
   private static dbPromise: Promise<IDBPDatabase<KeyValDB>> | null = null;
@@ -20,7 +20,7 @@ export class IndexedDbService {
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             db.createObjectStore(STORE_NAME);
           }
-        }
+        },
       });
     }
     return this.dbPromise;
@@ -32,12 +32,12 @@ export class IndexedDbService {
   }
 
   private static async migrateFromLocalStorage(): Promise<void> {
-    if (typeof localStorage === 'undefined') return;
+    if (typeof localStorage === "undefined") return;
 
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('mremote-')) {
+      if (key && key.startsWith("mremote-")) {
         keys.push(key);
       }
     }
@@ -62,9 +62,7 @@ export class IndexedDbService {
 
   static async getItem<T>(key: string): Promise<T | null> {
     try {
-      const db = await this.getDB();
-      const raw = await db.get(STORE_NAME, key);
-      return raw ? (JSON.parse(raw) as T) : null;
+      return await this.getItemStrict<T>(key);
     } catch (error) {
       console.error(`Failed to parse IndexedDB key "${key}":`, error);
       return null;
@@ -79,9 +77,7 @@ export class IndexedDbService {
 
   static async setItem<T>(key: string, value: T): Promise<void> {
     try {
-      const db = await this.getDB();
-      const serialized = JSON.stringify(value);
-      await db.put(STORE_NAME, serialized, key);
+      await this.setItemStrict(key, value);
     } catch (error) {
       console.error(`Failed to set IndexedDB key "${key}":`, error);
     }
@@ -95,8 +91,7 @@ export class IndexedDbService {
 
   static async removeItem(key: string): Promise<void> {
     try {
-      const db = await this.getDB();
-      await db.delete(STORE_NAME, key);
+      await this.removeItemStrict(key);
     } catch (error) {
       console.error(`Failed to remove IndexedDB key "${key}":`, error);
     }

@@ -18,6 +18,7 @@ impl SftpService {
         if self.queue.len() >= MAX_QUEUE_ENTRIES {
             return Err("SFTP transfer queue limit reached".to_string());
         }
+        super::transfer::validate_remote_file_path(&request.remote_path)?;
         let id = Uuid::new_v4().to_string();
         let entry = QueueEntry {
             id: id.clone(),
@@ -41,6 +42,9 @@ impl SftpService {
             .iter()
             .position(|e| e.id == queue_id)
             .ok_or_else(|| format!("Queue item '{}' not found", queue_id))?;
+        if matches!(&self.queue[idx].status, TransferStatus::InProgress) {
+            return Err("Cannot remove an in-progress transfer; cancel it first".to_string());
+        }
         self.queue.remove(idx);
         Ok(())
     }

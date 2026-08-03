@@ -71,28 +71,28 @@ impl Argon2Params {
         parallelism: 4,
     };
 
-    /// Sanity-check the parameters against the floor of what
-    /// `argon2::Params::new` will accept, plus a generous ceiling so a
-    /// user accidentally typing "65536 GiB" doesn't lock the process
-    /// for an hour. Returns the offending parameter name on failure.
+    /// Sanity-check parameters against a practical 8 MiB floor and
+    /// resource-safe ceilings. These values are persisted in an
+    /// attacker-modifiable header and must be bounded before Argon2
+    /// allocates memory or starts CPU-intensive work.
     pub fn validate(self) -> Result<(), &'static str> {
-        if self.memory_kib < 8 {
-            return Err("argon2_memory_kib must be at least 8 KiB");
+        if self.memory_kib < 8 * 1024 {
+            return Err("argon2_memory_kib must be at least 8 MiB");
         }
-        if self.memory_kib > 4 * 1024 * 1024 {
-            return Err("argon2_memory_kib above 4 GiB rejected");
+        if self.memory_kib > 256 * 1024 {
+            return Err("argon2_memory_kib above 256 MiB rejected");
         }
         if self.time_cost == 0 {
             return Err("argon2_time_cost must be at least 1");
         }
-        if self.time_cost > 50 {
-            return Err("argon2_time_cost above 50 rejected");
+        if self.time_cost > 10 {
+            return Err("argon2_time_cost above 10 rejected");
         }
         if self.parallelism == 0 {
             return Err("argon2_parallelism must be at least 1");
         }
-        if self.parallelism > 64 {
-            return Err("argon2_parallelism above 64 rejected");
+        if self.parallelism > 16 {
+            return Err("argon2_parallelism above 16 rejected");
         }
         Ok(())
     }
@@ -108,6 +108,8 @@ pub enum WrapError {
     Truncated(usize),
     #[error("dek.enc has trailing data: expected {expected} bytes, got {actual}")]
     TrailingData { expected: usize, actual: usize },
+    #[error("password must not be empty")]
+    EmptyPassword,
     #[error("missing SORNG magic prefix in dek.enc")]
     MissingMagic,
     #[error("unsupported wrapped-DEK version: {0}")]
@@ -125,11 +127,10 @@ pub enum WrapError {
 /// Wrap a master DEK with a password. Caller supplies the desired
 /// Argon2id parameters; salt and nonce are freshly randomised per call
 /// so two writes of the same password+DEK produce different ciphertexts.
-pub fn wrap(
-    password: &str,
-    dek: &MasterDek,
-    params: Argon2Params,
-) -> Result<Vec<u8>, WrapError> {
+pub fn wrap(password: &str, dek: &MasterDek, params: Argon2Params) -> Result<Vec<u8>, WrapError> {
+    if password.is_empty() {
+        return Err(WrapError::EmptyPassword);
+    }
     params.validate().map_err(WrapError::InvalidParams)?;
 
     let mut salt = [0u8; SALT_LEN];
@@ -169,6 +170,9 @@ pub fn wrap(
 /// Decode and unwrap a `dek.enc` blob using the supplied password.
 /// Returns the reconstructed [`MasterDek`] on success.
 pub fn unwrap(password: &str, file_bytes: &[u8]) -> Result<MasterDek, WrapError> {
+    if password.is_empty() {
+        return Err(WrapError::EmptyPassword);
+    }
     if file_bytes.len() < FILE_LEN {
         return Err(WrapError::Truncated(FILE_LEN));
     }
@@ -283,7 +287,10 @@ mod tests {
         let blob = wrap("p", &dek, Argon2Params::OWASP).unwrap();
         for cut in [0, 1, 47, 95] {
             assert!(
-                matches!(unwrap("p", &blob[..cut]), Err(WrapError::Truncated(FILE_LEN))),
+                matches!(
+                    unwrap("p", &blob[..cut]),
+                    Err(WrapError::Truncated(FILE_LEN))
+                ),
                 "cut={cut} should reject as truncated"
             );
         }
@@ -301,6 +308,17 @@ mod tests {
                 actual
             }) if actual == FILE_LEN + 1
         ));
+    }
+
+    #[test]
+    fn empty_password_is_rejected() {
+        let dek = MasterDek::generate();
+        assert!(matches!(
+            wrap("", &dek, Argon2Params::OWASP),
+            Err(WrapError::EmptyPassword)
+        ));
+        let blob = wrap("p", &dek, Argon2Params::OWASP).unwrap();
+        assert!(matches!(unwrap("", &blob), Err(WrapError::EmptyPassword)));
     }
 
     #[test]
@@ -389,7 +407,7 @@ mod tests {
 
     /// Floor params chosen to mirror what a memory-constrained device
     /// (mobile, small CI runner) would negotiate: the validator's
-    /// hard minimum is `memory_kib >= 8` (KiB), `time_cost >= 1`,
+    /// hard minimum is `memory_kib >= 8192` (KiB), `time_cost >= 1`,
     /// `parallelism >= 1`. We pick the smallest practical Argon2id
     /// memory cost (8 MiB = 8192 KiB) which comfortably clears both
     /// the validator floor and the `argon2` crate's `8 * parallelism`
@@ -450,12 +468,12 @@ mod tests {
     #[test]
     fn validator_rejects_below_floor_memory() {
         // Observed floors in validate():
-        //   memory_kib >= 8        (one below: 7 KiB rejected)
+        //   memory_kib >= 8192     (one below: 8191 KiB rejected)
         //   time_cost  >= 1        (one below: 0 rejected)
         //   parallelism >= 1       (one below: 0 rejected)
         // Each sub-case exercises one increment below the floor.
         assert!(Argon2Params {
-            memory_kib: 7,
+            memory_kib: 8 * 1024 - 1,
             time_cost: 1,
             parallelism: 1,
         }
@@ -463,7 +481,7 @@ mod tests {
         .is_err());
 
         assert!(Argon2Params {
-            memory_kib: 8,
+            memory_kib: 8 * 1024,
             time_cost: 0,
             parallelism: 1,
         }
@@ -471,7 +489,7 @@ mod tests {
         .is_err());
 
         assert!(Argon2Params {
-            memory_kib: 8,
+            memory_kib: 8 * 1024,
             time_cost: 1,
             parallelism: 0,
         }
@@ -481,7 +499,7 @@ mod tests {
         // Spot-check: exactly-on-floor passes. This pins the floor at
         // its current value, so any silent floor-raise becomes visible.
         assert!(Argon2Params {
-            memory_kib: 8,
+            memory_kib: 8 * 1024,
             time_cost: 1,
             parallelism: 1,
         }
@@ -492,12 +510,12 @@ mod tests {
     #[test]
     fn validator_rejects_above_ceiling_memory() {
         // Observed ceilings in validate():
-        //   memory_kib  <= 4 * 1024 * 1024 (4 GiB)
-        //   time_cost   <= 50
-        //   parallelism <= 64
+        //   memory_kib  <= 256 * 1024 (256 MiB)
+        //   time_cost   <= 10
+        //   parallelism <= 16
         // Pass one above the ceiling on each axis, expect Err.
         assert!(Argon2Params {
-            memory_kib: 4 * 1024 * 1024 + 1,
+            memory_kib: 256 * 1024 + 1,
             time_cost: 3,
             parallelism: 4,
         }
@@ -506,7 +524,7 @@ mod tests {
 
         assert!(Argon2Params {
             memory_kib: 65_536,
-            time_cost: 51,
+            time_cost: 11,
             parallelism: 4,
         }
         .validate()
@@ -515,16 +533,16 @@ mod tests {
         assert!(Argon2Params {
             memory_kib: 65_536,
             time_cost: 3,
-            parallelism: 65,
+            parallelism: 17,
         }
         .validate()
         .is_err());
 
         // Exactly-on-ceiling passes — pins the ceiling values.
         assert!(Argon2Params {
-            memory_kib: 4 * 1024 * 1024,
-            time_cost: 50,
-            parallelism: 64,
+            memory_kib: 256 * 1024,
+            time_cost: 10,
+            parallelism: 16,
         }
         .validate()
         .is_ok());

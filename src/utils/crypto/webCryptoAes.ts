@@ -6,7 +6,7 @@
 // Legacy `${base64(salt)}.${base64(iv)}.${base64(ciphertext)}` payloads are
 // still accepted by decryptWithPassword for existing exported files.
 
-import { PBKDF2_ITERATIONS } from '../../config';
+import { PBKDF2_ITERATIONS } from "../../config";
 
 export interface PasswordEncryptionOptions {
   iterations?: number;
@@ -14,10 +14,10 @@ export interface PasswordEncryptionOptions {
 
 interface WebCryptoEnvelope {
   version: 2;
-  algorithm: 'AES-256-GCM';
+  algorithm: "AES-256-GCM";
   kdf: {
-    name: 'PBKDF2';
-    hash: 'SHA-256';
+    name: "PBKDF2";
+    hash: "SHA-256";
     iterations: number;
     salt: string;
   };
@@ -26,7 +26,8 @@ interface WebCryptoEnvelope {
 }
 
 const MIN_PBKDF2_ITERATIONS = 10000;
-const MAX_PBKDF2_ITERATIONS = 5000000;
+const MAX_PBKDF2_ITERATIONS = 2000000;
+const MAX_ENCRYPTED_PAYLOAD_BYTES = 64 * 1024 * 1024;
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
@@ -35,17 +36,17 @@ const asBufferSource = (bytes: Uint8Array): BufferSource =>
 
 export function toBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(bytes).toString('base64');
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
   }
-  let binary = '';
+  let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
   return btoa(binary);
 }
 
 export function fromBase64(str: string): Uint8Array {
-  if (typeof Buffer !== 'undefined') {
-    return new Uint8Array(Buffer.from(str, 'base64'));
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(str, "base64"));
   }
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
@@ -61,17 +62,31 @@ export function normalizePbkdf2Iterations(iterations?: number): number {
   );
 }
 
+export function validatePbkdf2Iterations(iterations: unknown): number {
+  if (
+    typeof iterations !== "number" ||
+    !Number.isSafeInteger(iterations) ||
+    iterations < MIN_PBKDF2_ITERATIONS ||
+    iterations > MAX_PBKDF2_ITERATIONS
+  ) {
+    throw new Error(
+      `PBKDF2 iterations must be an integer from ${MIN_PBKDF2_ITERATIONS} to ${MAX_PBKDF2_ITERATIONS}`,
+    );
+  }
+  return iterations;
+}
+
 function parseEnvelope(payload: string): WebCryptoEnvelope | null {
   try {
     const parsed = JSON.parse(payload) as Partial<WebCryptoEnvelope>;
     if (
       parsed?.version === 2 &&
-      parsed.algorithm === 'AES-256-GCM' &&
-      parsed.kdf?.name === 'PBKDF2' &&
-      parsed.kdf.hash === 'SHA-256' &&
-      typeof parsed.kdf.salt === 'string' &&
-      typeof parsed.iv === 'string' &&
-      typeof parsed.ciphertext === 'string'
+      parsed.algorithm === "AES-256-GCM" &&
+      parsed.kdf?.name === "PBKDF2" &&
+      parsed.kdf.hash === "SHA-256" &&
+      typeof parsed.kdf.salt === "string" &&
+      typeof parsed.iv === "string" &&
+      typeof parsed.ciphertext === "string"
     ) {
       return parsed as WebCryptoEnvelope;
     }
@@ -89,18 +104,18 @@ async function deriveKey(
   const crypto = getCrypto();
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     enc.encode(password),
-    'PBKDF2',
+    "PBKDF2",
     false,
-    ['deriveKey'],
+    ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: asBufferSource(salt), iterations, hash: 'SHA-256' },
+    { name: "PBKDF2", salt: asBufferSource(salt), iterations, hash: "SHA-256" },
     keyMaterial,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     false,
-    ['encrypt', 'decrypt'],
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -116,16 +131,16 @@ export async function encryptWithPassword(
   const key = await deriveKey(password, salt, iterations);
   const enc = new TextEncoder();
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: asBufferSource(iv) },
+    { name: "AES-GCM", iv: asBufferSource(iv) },
     key,
     asBufferSource(enc.encode(plaintext)),
   );
   const envelope: WebCryptoEnvelope = {
     version: 2,
-    algorithm: 'AES-256-GCM',
+    algorithm: "AES-256-GCM",
     kdf: {
-      name: 'PBKDF2',
-      hash: 'SHA-256',
+      name: "PBKDF2",
+      hash: "SHA-256",
       iterations,
       salt: toBase64(salt),
     },
@@ -144,23 +159,31 @@ export async function decryptWithPassword(
     const salt = fromBase64(envelope.kdf.salt);
     const iv = fromBase64(envelope.iv);
     const data = fromBase64(envelope.ciphertext);
+    if (
+      salt.length !== 16 ||
+      iv.length !== 12 ||
+      data.length < 16 ||
+      data.length > MAX_ENCRYPTED_PAYLOAD_BYTES
+    ) {
+      throw new Error("Invalid encrypted payload dimensions");
+    }
     const key = await deriveKey(
       password,
       salt,
-      normalizePbkdf2Iterations(envelope.kdf.iterations),
+      validatePbkdf2Iterations(envelope.kdf.iterations),
     );
     const crypto = getCrypto();
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: asBufferSource(iv) },
+      { name: "AES-GCM", iv: asBufferSource(iv) },
       key,
       asBufferSource(data),
     );
     return new TextDecoder().decode(decrypted);
   }
 
-  const parts = payload.split('.');
+  const parts = payload.split(".");
   if (parts.length !== 3) {
-    throw new Error('Invalid encrypted payload format');
+    throw new Error("Invalid encrypted payload format");
   }
   const [saltB64, ivB64, dataB64] = parts;
   const salt = fromBase64(saltB64);
@@ -169,7 +192,7 @@ export async function decryptWithPassword(
   const key = await deriveKey(password, salt, PBKDF2_ITERATIONS);
   const crypto = getCrypto();
   const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: asBufferSource(iv) },
+    { name: "AES-GCM", iv: asBufferSource(iv) },
     key,
     asBufferSource(data),
   );
@@ -178,6 +201,6 @@ export async function decryptWithPassword(
 
 /** Shape check for current JSON envelopes or legacy `salt.iv.ciphertext` payloads. */
 export function isWebCryptoPayload(payload: string): boolean {
-  if (typeof payload !== 'string') return false;
-  return Boolean(parseEnvelope(payload)) || payload.split('.').length === 3;
+  if (typeof payload !== "string") return false;
+  return Boolean(parseEnvelope(payload)) || payload.split(".").length === 3;
 }

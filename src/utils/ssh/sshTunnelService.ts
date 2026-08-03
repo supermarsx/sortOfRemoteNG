@@ -1,5 +1,9 @@
-import { invoke } from '@tauri-apps/api/core';
-import { Connection } from '../../types/connection/connection';
+import { invoke } from "@tauri-apps/api/core";
+import { Connection } from "../../types/connection/connection";
+import {
+  AppDataJsonStore,
+  type SanitizedValue,
+} from "../storage/appDataJsonStore";
 
 export interface SSHTunnelConfig {
   id: string;
@@ -15,9 +19,9 @@ export interface SSHTunnelConfig {
   // Not used for dynamic tunnels
   remotePort?: number;
   // Tunnel type
-  type: 'local' | 'remote' | 'dynamic';
+  type: "local" | "remote" | "dynamic";
   // Status
-  status: 'disconnected' | 'connecting' | 'connected' | 'error';
+  status: "disconnected" | "connecting" | "connected" | "error";
   // Auto-connect when associated connection starts
   autoConnect: boolean;
   // Allow the local forward to bind to a non-loopback (public/LAN) interface.
@@ -44,7 +48,7 @@ export interface SSHTunnelCreateParams {
   // Remote host/port - required for local/remote, not used for dynamic
   remoteHost?: string;
   remotePort?: number;
-  type?: 'local' | 'remote' | 'dynamic';
+  type?: "local" | "remote" | "dynamic";
   autoConnect?: boolean;
   // Opt in to binding the local forward to a non-loopback (public/LAN) interface.
   // Default off = loopback-only (127.0.0.1).
@@ -56,18 +60,98 @@ interface PortForwardConfig {
   local_port: number;
   remote_host: string;
   remote_port: number;
-  direction: 'Local' | 'Remote' | 'Dynamic';
+  direction: "Local" | "Remote" | "Dynamic";
   // Mirrors Rust serde field `allow_non_loopback_bind` (#[serde(default)] = false).
   allow_non_loopback_bind: boolean;
 }
+
+interface PersistedSSHTunnel {
+  id: string;
+  name: string;
+  sshConnectionId: string;
+  localPort: number;
+  remoteHost?: string;
+  remotePort?: number;
+  type: "local" | "remote" | "dynamic";
+  autoConnect: boolean;
+  allowNonLoopbackBind?: boolean;
+  createdAt: string;
+}
+
+const sanitizePersistedTunnels = (
+  value: unknown,
+): SanitizedValue<PersistedSSHTunnel[]> => {
+  if (!Array.isArray(value))
+    throw new Error("Stored SSH tunnels are corrupted");
+  let changed = false;
+  const tunnels = value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error("Stored SSH tunnels contain an invalid entry");
+    }
+    const tunnel = item as Record<string, unknown>;
+    if (
+      typeof tunnel.id !== "string" ||
+      typeof tunnel.name !== "string" ||
+      typeof tunnel.sshConnectionId !== "string" ||
+      typeof tunnel.localPort !== "number" ||
+      !["local", "remote", "dynamic"].includes(String(tunnel.type)) ||
+      typeof tunnel.autoConnect !== "boolean" ||
+      typeof tunnel.createdAt !== "string"
+    ) {
+      throw new Error("Stored SSH tunnels contain invalid fields");
+    }
+    changed ||=
+      "status" in tunnel ||
+      "error" in tunnel ||
+      "actualLocalPort" in tunnel ||
+      "sshSessionId" in tunnel ||
+      "portForwardId" in tunnel ||
+      "password" in tunnel ||
+      "privateKey" in tunnel ||
+      "passphrase" in tunnel;
+    return {
+      id: tunnel.id,
+      name: tunnel.name,
+      sshConnectionId: tunnel.sshConnectionId,
+      localPort: tunnel.localPort,
+      ...(typeof tunnel.remoteHost === "string"
+        ? { remoteHost: tunnel.remoteHost }
+        : {}),
+      ...(typeof tunnel.remotePort === "number"
+        ? { remotePort: tunnel.remotePort }
+        : {}),
+      type: tunnel.type as PersistedSSHTunnel["type"],
+      autoConnect: tunnel.autoConnect,
+      ...(typeof tunnel.allowNonLoopbackBind === "boolean"
+        ? { allowNonLoopbackBind: tunnel.allowNonLoopbackBind }
+        : {}),
+      createdAt: tunnel.createdAt,
+    };
+  });
+  return { value: tunnels, changed };
+};
+
+const tunnelStore = new AppDataJsonStore<PersistedSSHTunnel[]>({
+  key: "ssh.tunnels",
+  legacyLocalStorageKey: "ssh-tunnels",
+  sanitize: sanitizePersistedTunnels,
+});
 
 class SSHTunnelService {
   private static instance: SSHTunnelService;
   private tunnels: Map<string, SSHTunnelConfig> = new Map();
   private listeners: Set<() => void> = new Set();
+  private readonly loadPromise: Promise<void>;
+  private mutationQueue: Promise<void> = Promise.resolve();
+  private persistenceError: Error | null = null;
+  private migrationWarning: string | null = null;
 
   private constructor() {
-    this.loadTunnels();
+    this.loadPromise = this.loadTunnels().catch((error) => {
+      this.persistenceError =
+        error instanceof Error ? error : new Error(String(error));
+      this.notifyListeners();
+    });
   }
 
   static getInstance(): SSHTunnelService {
@@ -78,39 +162,65 @@ class SSHTunnelService {
   }
 
   private async loadTunnels(): Promise<void> {
-    try {
-      const stored = localStorage.getItem('ssh-tunnels');
-      if (stored) {
-        const data = JSON.parse(stored);
-        for (const tunnel of data) {
-          this.tunnels.set(tunnel.id, {
-            ...tunnel,
-            status: 'disconnected',
-            createdAt: new Date(tunnel.createdAt),
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load SSH tunnels:', error);
+    const result = await tunnelStore.load();
+    for (const tunnel of result.value ?? []) {
+      this.tunnels.set(tunnel.id, {
+        ...tunnel,
+        status: "disconnected",
+        createdAt: new Date(tunnel.createdAt),
+      });
     }
+    if (result.sanitized) {
+      this.migrationWarning =
+        "Runtime state and secret-bearing fields were removed during SSH tunnel migration.";
+    }
+    this.notifyListeners();
   }
 
-  private saveTunnels(): void {
-    try {
-      const data = Array.from(this.tunnels.values()).map(t => ({
-        ...t,
-        status: 'disconnected', // Don't persist status
-        error: undefined,
-        actualLocalPort: undefined,
-      }));
-      localStorage.setItem('ssh-tunnels', JSON.stringify(data));
-    } catch (error) {
-      console.error('Failed to save SSH tunnels:', error);
-    }
+  private async ensureLoaded(): Promise<void> {
+    await this.loadPromise;
+    if (this.persistenceError) throw this.persistenceError;
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation);
+    this.mutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async saveTunnels(
+    tunnels: Map<string, SSHTunnelConfig>,
+  ): Promise<void> {
+    const data: PersistedSSHTunnel[] = Array.from(tunnels.values()).map(
+      (tunnel) => ({
+        id: tunnel.id,
+        name: tunnel.name,
+        sshConnectionId: tunnel.sshConnectionId,
+        localPort: tunnel.localPort,
+        remoteHost: tunnel.remoteHost,
+        remotePort: tunnel.remotePort,
+        type: tunnel.type,
+        autoConnect: tunnel.autoConnect,
+        allowNonLoopbackBind: tunnel.allowNonLoopbackBind,
+        createdAt: tunnel.createdAt.toISOString(),
+      }),
+    );
+    await tunnelStore.save(data);
+  }
+
+  getPersistenceError(): string | null {
+    return this.persistenceError?.message ?? null;
+  }
+
+  getMigrationWarning(): string | null {
+    return this.migrationWarning;
   }
 
   private notifyListeners(): void {
-    this.listeners.forEach(listener => listener());
+    this.listeners.forEach((listener) => listener());
   }
 
   subscribe(listener: () => void): () => void {
@@ -128,87 +238,105 @@ class SSHTunnelService {
 
   getTunnelsByConnection(connectionId: string): SSHTunnelConfig[] {
     return Array.from(this.tunnels.values()).filter(
-      t => t.sshConnectionId === connectionId
+      (t) => t.sshConnectionId === connectionId,
     );
   }
 
   async createTunnel(params: SSHTunnelCreateParams): Promise<SSHTunnelConfig> {
-    const id = `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const tunnel: SSHTunnelConfig = {
-      id,
-      name: params.name,
-      sshConnectionId: params.sshConnectionId,
-      localPort: params.localPort || 0,
-      remoteHost: params.remoteHost,
-      remotePort: params.remotePort,
-      type: params.type || 'local',
-      status: 'disconnected',
-      autoConnect: params.autoConnect ?? false,
-      allowNonLoopbackBind: params.allowNonLoopbackBind ?? false,
-      createdAt: new Date(),
-    };
+    return this.enqueueMutation(async () => {
+      await this.ensureLoaded();
+      const id = `tunnel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    this.tunnels.set(id, tunnel);
-    this.saveTunnels();
-    this.notifyListeners();
+      const tunnel: SSHTunnelConfig = {
+        id,
+        name: params.name,
+        sshConnectionId: params.sshConnectionId,
+        localPort: params.localPort || 0,
+        remoteHost: params.remoteHost,
+        remotePort: params.remotePort,
+        type: params.type || "local",
+        status: "disconnected",
+        autoConnect: params.autoConnect ?? false,
+        allowNonLoopbackBind: params.allowNonLoopbackBind ?? false,
+        createdAt: new Date(),
+      };
 
-    return tunnel;
+      const next = new Map(this.tunnels);
+      next.set(id, tunnel);
+      await this.saveTunnels(next);
+      this.tunnels = next;
+      this.notifyListeners();
+      return tunnel;
+    });
   }
 
-  async updateTunnel(id: string, updates: Partial<SSHTunnelCreateParams>): Promise<SSHTunnelConfig | null> {
-    const tunnel = this.tunnels.get(id);
-    if (!tunnel) return null;
+  async updateTunnel(
+    id: string,
+    updates: Partial<SSHTunnelCreateParams>,
+  ): Promise<SSHTunnelConfig | null> {
+    return this.enqueueMutation(async () => {
+      await this.ensureLoaded();
+      const tunnel = this.tunnels.get(id);
+      if (!tunnel) return null;
 
-    // If tunnel is connected, disconnect first
-    if (tunnel.status === 'connected') {
-      await this.disconnectTunnel(id);
-    }
+      // If tunnel is connected, disconnect first
+      if (tunnel.status === "connected") {
+        await this.disconnectTunnel(id);
+      }
 
-    const updated: SSHTunnelConfig = {
-      ...tunnel,
-      name: updates.name ?? tunnel.name,
-      sshConnectionId: updates.sshConnectionId ?? tunnel.sshConnectionId,
-      localPort: updates.localPort ?? tunnel.localPort,
-      remoteHost: updates.remoteHost ?? tunnel.remoteHost,
-      remotePort: updates.remotePort ?? tunnel.remotePort,
-      type: updates.type ?? tunnel.type,
-      autoConnect: updates.autoConnect ?? tunnel.autoConnect,
-      allowNonLoopbackBind:
-        updates.allowNonLoopbackBind ?? tunnel.allowNonLoopbackBind,
-    };
+      const updated: SSHTunnelConfig = {
+        ...tunnel,
+        name: updates.name ?? tunnel.name,
+        sshConnectionId: updates.sshConnectionId ?? tunnel.sshConnectionId,
+        localPort: updates.localPort ?? tunnel.localPort,
+        remoteHost: updates.remoteHost ?? tunnel.remoteHost,
+        remotePort: updates.remotePort ?? tunnel.remotePort,
+        type: updates.type ?? tunnel.type,
+        autoConnect: updates.autoConnect ?? tunnel.autoConnect,
+        allowNonLoopbackBind:
+          updates.allowNonLoopbackBind ?? tunnel.allowNonLoopbackBind,
+      };
 
-    this.tunnels.set(id, updated);
-    this.saveTunnels();
-    this.notifyListeners();
-
-    return updated;
+      const next = new Map(this.tunnels);
+      next.set(id, updated);
+      await this.saveTunnels(next);
+      this.tunnels = next;
+      this.notifyListeners();
+      return updated;
+    });
   }
 
   async deleteTunnel(id: string): Promise<boolean> {
-    const tunnel = this.tunnels.get(id);
-    if (!tunnel) return false;
+    return this.enqueueMutation(async () => {
+      await this.ensureLoaded();
+      const tunnel = this.tunnels.get(id);
+      if (!tunnel) return false;
 
-    // Disconnect if connected
-    if (tunnel.status === 'connected') {
-      await this.disconnectTunnel(id);
-    }
+      // Disconnect if connected
+      if (tunnel.status === "connected") {
+        await this.disconnectTunnel(id);
+      }
 
-    this.tunnels.delete(id);
-    this.saveTunnels();
-    this.notifyListeners();
-
-    return true;
+      const next = new Map(this.tunnels);
+      next.delete(id);
+      await this.saveTunnels(next);
+      this.tunnels = next;
+      this.notifyListeners();
+      return true;
+    });
   }
 
-  async connectTunnel(id: string, sshConnection: Connection): Promise<SSHTunnelConfig> {
+  async connectTunnel(
+    id: string,
+    sshConnection: Connection,
+  ): Promise<SSHTunnelConfig> {
     const tunnel = this.tunnels.get(id);
     if (!tunnel) {
       throw new Error(`Tunnel ${id} not found`);
     }
 
     // Update status to connecting
-    tunnel.status = 'connecting';
+    tunnel.status = "connecting";
     tunnel.error = undefined;
     this.tunnels.set(id, tunnel);
     this.notifyListeners();
@@ -216,30 +344,37 @@ class SSHTunnelService {
     try {
       // Get SSH connection overrides from the connection
       const override = sshConnection.sshConnectionConfigOverride;
-      
+
       // First, connect to the SSH server
-      const sessionId = await invoke<string>('connect_ssh', {
+      const sessionId = await invoke<string>("connect_ssh", {
         config: {
           host: sshConnection.hostname,
           port: sshConnection.port || 22,
-          username: sshConnection.username || '',
+          username: sshConnection.username || "",
           password: sshConnection.password || null,
           private_key_path: sshConnection.privateKey || null,
           private_key_passphrase: sshConnection.passphrase || null,
           jump_hosts: [],
           proxy_config: null,
           openvpn_config: null,
-          connect_timeout: override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
-          keep_alive_interval: override?.keepAliveInterval ?? sshConnection.sshKeepAliveInterval ?? 60,
-          strict_host_key_checking: override?.strictHostKeyChecking ?? !(sshConnection.ignoreSshSecurityErrors ?? false),
-          known_hosts_path: override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
+          connect_timeout:
+            override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
+          keep_alive_interval:
+            override?.keepAliveInterval ??
+            sshConnection.sshKeepAliveInterval ??
+            60,
+          strict_host_key_checking:
+            override?.strictHostKeyChecking ??
+            !(sshConnection.ignoreSshSecurityErrors ?? false),
+          known_hosts_path:
+            override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
           tcp_no_delay: override?.tcpNoDelay ?? true,
           tcp_keepalive: override?.tcpKeepAlive ?? true,
           keepalive_probes: override?.keepAliveProbes ?? 3,
-          ip_protocol: override?.ipProtocol ?? 'any',
+          ip_protocol: override?.ipProtocol ?? "any",
           compression: override?.enableCompression ?? false,
           compression_level: override?.compressionLevel ?? 6,
-          ssh_version: override?.sshVersion ?? '2',
+          ssh_version: override?.sshVersion ?? "2",
           preferred_ciphers: override?.preferredCiphers ?? [],
           preferred_macs: override?.preferredMACs ?? [],
           preferred_kex: override?.preferredKeyExchanges ?? [],
@@ -248,10 +383,15 @@ class SSHTunnelService {
       });
 
       // Determine the local port (use requested or find available)
-      const localPort = tunnel.localPort || await this.findAvailablePort();
+      const localPort = tunnel.localPort || (await this.findAvailablePort());
 
-      if (tunnel.type !== 'dynamic' && (!tunnel.remoteHost || !tunnel.remotePort)) {
-        throw new Error('Remote host and port are required for non-dynamic tunnels');
+      if (
+        tunnel.type !== "dynamic" &&
+        (!tunnel.remoteHost || !tunnel.remotePort)
+      ) {
+        throw new Error(
+          "Remote host and port are required for non-dynamic tunnels",
+        );
       }
 
       // Set up port forwarding.
@@ -261,21 +401,26 @@ class SSHTunnelService {
       // bind unless allow_non_loopback_bind is true.
       const allowNonLoopback = tunnel.allowNonLoopbackBind ?? false;
       const portForwardConfig: PortForwardConfig = {
-        local_host: allowNonLoopback ? '0.0.0.0' : '127.0.0.1',
+        local_host: allowNonLoopback ? "0.0.0.0" : "127.0.0.1",
         local_port: localPort,
-        remote_host: tunnel.type === 'dynamic' ? '127.0.0.1' : tunnel.remoteHost!,
-        remote_port: tunnel.type === 'dynamic' ? 0 : tunnel.remotePort!,
-        direction: tunnel.type === 'local' ? 'Local' :
-                   tunnel.type === 'remote' ? 'Remote' : 'Dynamic',
+        remote_host:
+          tunnel.type === "dynamic" ? "127.0.0.1" : tunnel.remoteHost!,
+        remote_port: tunnel.type === "dynamic" ? 0 : tunnel.remotePort!,
+        direction:
+          tunnel.type === "local"
+            ? "Local"
+            : tunnel.type === "remote"
+              ? "Remote"
+              : "Dynamic",
         allow_non_loopback_bind: allowNonLoopback,
       };
 
-      const portForwardId = await invoke<string>('setup_port_forward', {
+      const portForwardId = await invoke<string>("setup_port_forward", {
         sessionId,
         config: portForwardConfig,
       });
 
-      tunnel.status = 'connected';
+      tunnel.status = "connected";
       tunnel.actualLocalPort = localPort;
       tunnel.sshSessionId = sessionId;
       tunnel.portForwardId = portForwardId;
@@ -285,7 +430,7 @@ class SSHTunnelService {
 
       return tunnel;
     } catch (error) {
-      tunnel.status = 'error';
+      tunnel.status = "error";
       tunnel.error = error instanceof Error ? error.message : String(error);
       this.tunnels.set(id, tunnel);
       this.notifyListeners();
@@ -300,13 +445,13 @@ class SSHTunnelService {
     try {
       // Disconnect the SSH session if we have one
       if (tunnel.sshSessionId) {
-        await invoke('disconnect_ssh', { sessionId: tunnel.sshSessionId });
+        await invoke("disconnect_ssh", { sessionId: tunnel.sshSessionId });
       }
     } catch (error) {
-      console.error('Failed to close SSH tunnel:', error);
+      console.error("Failed to close SSH tunnel:", error);
     }
 
-    tunnel.status = 'disconnected';
+    tunnel.status = "disconnected";
     tunnel.actualLocalPort = undefined;
     tunnel.sshSessionId = undefined;
     tunnel.portForwardId = undefined;
@@ -324,7 +469,7 @@ class SSHTunnelService {
 
   async disconnectAllTunnels(): Promise<void> {
     for (const tunnel of this.tunnels.values()) {
-      if (tunnel.status === 'connected') {
+      if (tunnel.status === "connected") {
         await this.disconnectTunnel(tunnel.id);
       }
     }
@@ -332,7 +477,9 @@ class SSHTunnelService {
 
   // Get available tunnels that can be used for a target connection
   getAvailableTunnelsForConnection(targetProtocol: string): SSHTunnelConfig[] {
-    return Array.from(this.tunnels.values()).filter(t => t.status === 'connected');
+    return Array.from(this.tunnels.values()).filter(
+      (t) => t.status === "connected",
+    );
   }
 
   // Check if a tunnel is using a specific SSH connection

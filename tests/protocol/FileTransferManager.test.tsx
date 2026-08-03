@@ -34,11 +34,48 @@ vi.mock("../../src/utils/file-transfer/fileTransferService", () => ({
 // which imports `sftpApi` from `useSFTPClient`. That in turn pulls in
 // `@tauri-apps/api/core` which is not available under vitest. Stub the
 // adapter module itself so the test isolates the service-mock behaviour.
-vi.mock("../../src/utils/file-transfer/fileTransferAdapters", () => ({
-  TauriSFTPAdapter: class {
-    constructor(public readonly connectionId: string) {}
-  },
-}));
+vi.mock("../../src/utils/file-transfer/fileTransferAdapters", () => {
+  const normalizeRemotePath = (path: string): string => {
+    const normalizedSeparators = path.replace(/\\/g, "/");
+    const isAbsolute = normalizedSeparators.startsWith("/");
+    const segments: string[] = [];
+
+    for (const segment of normalizedSeparators.split("/")) {
+      if (!segment || segment === ".") continue;
+      if (segment === "..") {
+        segments.pop();
+        continue;
+      }
+      segments.push(segment);
+    }
+
+    const normalized = segments.join("/");
+    if (isAbsolute) return normalized ? `/${normalized}` : "/";
+    return normalized || ".";
+  };
+
+  return {
+    normalizeRemotePath,
+    joinRemotePath: (...parts: string[]) =>
+      normalizeRemotePath(parts.join("/")),
+    safeRemoteEntryName: (name: string): string => {
+      if (
+        !name ||
+        name === "." ||
+        name === ".." ||
+        name.includes("/") ||
+        name.includes("\\") ||
+        name.includes("\0")
+      ) {
+        throw new Error("Unsafe remote entry name");
+      }
+      return name;
+    },
+    TauriSFTPAdapter: class {
+      constructor(public readonly connectionId: string) {}
+    },
+  };
+});
 
 describe("FileTransferManager", () => {
   beforeEach(() => {
@@ -134,7 +171,7 @@ describe("FileTransferManager", () => {
     );
 
     await screen.findByText("File Transfer - SFTP");
-    const backdrop = document.body.querySelector('.sor-modal-backdrop');
+    const backdrop = document.body.querySelector(".sor-modal-backdrop");
     expect(backdrop).toBeTruthy();
     if (backdrop) fireEvent.click(backdrop);
 

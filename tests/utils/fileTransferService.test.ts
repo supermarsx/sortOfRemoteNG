@@ -1,5 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
-import { FileTransferService, FileTransferAdapter } from '../../src/utils/file-transfer/fileTransferService';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  FileTransferService,
+  FileTransferAdapter,
+} from "../../src/utils/file-transfer/fileTransferService";
+import type { FileTransferSession } from "../../src/types/connection/connection";
+import { IndexedDbService } from "../../src/utils/storage/indexedDbService";
+import {
+  joinRemotePath,
+  normalizeRemotePath,
+  safeRemoteEntryName,
+} from "../../src/utils/file-transfer/fileTransferAdapters";
 
 function createMockAdapter(): FileTransferAdapter {
   return {
@@ -9,9 +19,9 @@ function createMockAdapter(): FileTransferAdapter {
       let transferred = 0;
       const chunk = total / 5;
       while (transferred < total) {
-        if (signal?.aborted) throw new Error('aborted');
-        await new Promise(res => setTimeout(res, 100));
-        if (signal?.aborted) throw new Error('aborted');
+        if (signal?.aborted) throw new Error("aborted");
+        await new Promise((res) => setTimeout(res, 100));
+        if (signal?.aborted) throw new Error("aborted");
         transferred = Math.min(transferred + chunk, total);
         onProgress?.(transferred, total);
       }
@@ -21,58 +31,100 @@ function createMockAdapter(): FileTransferAdapter {
       let transferred = 0;
       const chunk = total / 5;
       while (transferred < total) {
-        if (signal?.aborted) throw new Error('aborted');
-        await new Promise(res => setTimeout(res, 100));
-        if (signal?.aborted) throw new Error('aborted');
+        if (signal?.aborted) throw new Error("aborted");
+        await new Promise((res) => setTimeout(res, 100));
+        if (signal?.aborted) throw new Error("aborted");
         transferred = Math.min(transferred + chunk, total);
         onProgress?.(transferred, total);
       }
-    }
+    },
   };
 }
 
-async function firstTransfer(service: FileTransferService, id: string) {
-  return (await service.getActiveTransfers(id))[0];
+const TRANSFER_STORAGE_KEY = "mremote-file-transfers";
+
+async function getStoredTransfer(transferId: string) {
+  const sessions =
+    (await IndexedDbService.getItem<FileTransferSession[]>(
+      TRANSFER_STORAGE_KEY,
+    )) ?? [];
+  return sessions.find((session) => session.id === transferId);
 }
 
-describe('FileTransferService', () => {
-  it('tracks uploads and emits progress', async () => {
+describe("FileTransferService", () => {
+  beforeEach(async () => {
+    await IndexedDbService.init();
+    await IndexedDbService.setItem(TRANSFER_STORAGE_KEY, []);
+  });
+
+  it("rejects traversal-shaped remote names and normalizes safe paths", () => {
+    expect(safeRemoteEntryName("report.txt")).toBe("report.txt");
+    expect(() => safeRemoteEntryName("../report.txt")).toThrow();
+    expect(() => safeRemoteEntryName("dir/report.txt")).toThrow();
+    expect(() => normalizeRemotePath("/safe/../escape")).toThrow();
+    expect(joinRemotePath("/safe", "report.txt")).toBe("/safe/report.txt");
+  });
+
+  it("tracks uploads and emits progress", async () => {
     const service = new FileTransferService();
-    service.registerAdapter('c1', createMockAdapter());
-    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+    service.registerAdapter("c1", createMockAdapter());
+    const file = new File(["hello"], "hello.txt", { type: "text/plain" });
 
     const progressSpy = vi.fn();
-    service.on('progress', progressSpy);
+    let transferId = "";
+    service.on("start", (session) => {
+      transferId = session.id;
+    });
+    service.on("progress", progressSpy);
 
-    await service.uploadFile('c1', file, '/remote/hello.txt');
+    await service.uploadFile("c1", file, "/remote/hello.txt");
 
     expect(progressSpy).toHaveBeenCalled();
-    expect((await firstTransfer(service, 'c1')).status).toBe('completed');
+    expect(await service.getActiveTransfers("c1")).toEqual([]);
+    expect(await getStoredTransfer(transferId)).toEqual(
+      expect.objectContaining({ status: "completed" }),
+    );
   });
 
-  it('tracks downloads and emits completion', async () => {
+  it("tracks downloads and emits completion", async () => {
     const service = new FileTransferService();
-    service.registerAdapter('c2', createMockAdapter());
+    service.registerAdapter("c2", createMockAdapter());
+    let transferId = "";
+    service.on("start", (session) => {
+      transferId = session.id;
+    });
 
-    await service.downloadFile('c2', '/remote/file.bin', 'file.bin');
+    await service.downloadFile("c2", "/remote/file.bin", "file.bin");
 
-    expect((await firstTransfer(service, 'c2')).status).toBe('completed');
+    expect(await service.getActiveTransfers("c2")).toEqual([]);
+    expect(await getStoredTransfer(transferId)).toEqual(
+      expect.objectContaining({ status: "completed" }),
+    );
   });
 
-  it('supports cancellation via AbortController', async () => {
+  it("supports cancellation via AbortController", async () => {
     const service = new FileTransferService();
-    service.registerAdapter('c3', createMockAdapter());
-    const file = new File(['hello'], 'hello.txt');
+    service.registerAdapter("c3", createMockAdapter());
+    const file = new File(["hello"], "hello.txt");
 
-    let transferId = '';
-    service.on('start', s => {
+    let transferId = "";
+    const errorSpy = vi.fn();
+    service.on("error", errorSpy);
+    service.on("start", (s) => {
       transferId = s.id;
       setTimeout(() => service.cancelTransfer(transferId), 150);
     });
 
-    await service.uploadFile('c3', file, '/remote/hello.txt');
+    await expect(
+      service.uploadFile("c3", file, "/remote/hello.txt"),
+    ).rejects.toThrow("aborted");
 
-    expect((await firstTransfer(service, 'c3')).status).toBe('cancelled');
+    expect(await service.getActiveTransfers("c3")).toEqual([]);
+    expect(await getStoredTransfer(transferId)).toEqual(
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: transferId, status: "cancelled" }),
+    );
   });
 });
-

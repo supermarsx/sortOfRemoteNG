@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { FileTransferSession } from "../../types/connection/connection";
 import { FileTransferService } from "../../utils/file-transfer/fileTransferService";
-import { TauriSFTPAdapter } from "../../utils/file-transfer/fileTransferAdapters";
+import {
+  TauriSFTPAdapter,
+  joinRemotePath,
+  normalizeRemotePath,
+  safeRemoteEntryName,
+} from "../../utils/file-transfer/fileTransferAdapters";
 
 export interface FileItem {
   name: string;
@@ -74,7 +79,7 @@ export function useFileTransfer(
       try {
         const directoryContents = await fileServiceRef.current.listDirectory(
           connectionId,
-          path,
+          normalizeRemotePath(path),
         );
         setFiles(directoryContents);
       } catch (error) {
@@ -111,7 +116,7 @@ export function useFileTransfer(
   ]);
 
   const navigateToPath = useCallback((path: string) => {
-    setCurrentPath(path);
+    setCurrentPath(normalizeRemotePath(path));
     setSelectedFiles(new Set());
   }, []);
 
@@ -136,8 +141,7 @@ export function useFileTransfer(
   const handleDoubleClick = useCallback(
     (file: FileItem) => {
       if (file.type === "directory") {
-        const newPath =
-          currentPath === "/" ? `/${file.name}` : `${currentPath}/${file.name}`;
+        const newPath = joinRemotePath(currentPath, file.name);
         navigateToPath(newPath);
       }
     },
@@ -154,8 +158,7 @@ export function useFileTransfer(
         return;
       }
       for (const file of Array.from(uploadFiles)) {
-        const remotePath =
-          currentPath === "/" ? `/${file.name}` : `${currentPath}/${file.name}`;
+        const remotePath = joinRemotePath(currentPath, file.name);
         try {
           await fileServiceRef.current.uploadFile(
             connectionId,
@@ -212,10 +215,10 @@ export function useFileTransfer(
       for (const localPath of paths) {
         // Derive remote filename from the basename of the selected path.
         // Handle both POSIX `/` and Windows `\` separators.
-        const baseName =
-          localPath.split(/[\\/]/).filter(Boolean).pop() ?? "upload";
-        const remotePath =
-          currentPath === "/" ? `/${baseName}` : `${currentPath}/${baseName}`;
+        const baseName = safeRemoteEntryName(
+          localPath.split(/[\\/]/).filter(Boolean).pop() ?? "",
+        );
+        const remotePath = joinRemotePath(currentPath, baseName);
         try {
           await adapter.uploadFromPath(localPath, remotePath);
           await loadDirectory(currentPath);
@@ -246,13 +249,13 @@ export function useFileTransfer(
       return;
     }
     for (const fileName of selectedFiles) {
-      const remotePath =
-        currentPath === "/" ? `/${fileName}` : `${currentPath}/${fileName}`;
+      const safeFileName = safeRemoteEntryName(fileName);
+      const remotePath = joinRemotePath(currentPath, safeFileName);
       try {
         await fileServiceRef.current.downloadFile(
           connectionId,
           remotePath,
-          fileName,
+          safeFileName,
         );
         await loadTransfers();
       } catch (error) {
@@ -279,8 +282,7 @@ export function useFileTransfer(
     }
     if (!confirm(`Delete ${selectedFiles.size} selected item(s)?`)) return;
     for (const fileName of selectedFiles) {
-      const remotePath =
-        currentPath === "/" ? `/${fileName}` : `${currentPath}/${fileName}`;
+      const remotePath = joinRemotePath(currentPath, fileName);
       try {
         await fileServiceRef.current.deleteFile(connectionId, remotePath);
       } catch (error) {

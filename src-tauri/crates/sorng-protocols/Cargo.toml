@@ -19,7 +19,7 @@ tokio = { workspace = true }
 vnc-rs = "0.5"
 suppaftp = "4.5"
 ssh2 = { workspace = true }
-sqlx = { workspace = true, features = ["mysql", "runtime-tokio"] }
+sqlx = { workspace = true, features = ["mysql", "runtime-tokio", "tls-rustls"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 sha2 = { workspace = true }
@@ -37,6 +37,8 @@ futures-util = "0.3"
 axum = "0.7"
 flate2 = "1.0"
 hex = { workspace = true }
+zeroize = { workspace = true }
+url = "2"
 # P3: AppHandle + Emitter for the themed-auth POST handler in
 # `http.rs` — emits `proxy-credentials-applied` so the frontend can
 # offer to persist creds the user typed into the inline login form.

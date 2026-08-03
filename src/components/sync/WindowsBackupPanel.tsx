@@ -19,7 +19,11 @@ import {
   Copy,
 } from "lucide-react";
 import { Select } from "../ui/forms";
-import { useWindowsBackup, type BackupTab } from "../../hooks/sync/useWindowsBackup";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+import {
+  useWindowsBackup,
+  type BackupTab,
+} from "../../hooks/sync/useWindowsBackup";
 import EmptyState from "../ui/display/EmptyState";
 
 export interface WindowsBackupPanelProps {
@@ -109,7 +113,11 @@ const ConnectForm: React.FC<{
         onClick={() => onConnect(host, user || undefined, pass || undefined)}
         className="flex items-center gap-2 px-4 py-1.5 text-xs rounded-lg bg-primary text-[var(--color-text)] hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-colors"
       >
-        {loading ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
+        {loading ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <LogIn size={12} />
+        )}
         {t("windowsBackup.connect", "Connect")}
       </button>
     </div>
@@ -118,7 +126,9 @@ const ConnectForm: React.FC<{
 
 // ─── Overview Tab ────────────────────────────────────────────────────
 
-const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr }) => {
+const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({
+  mgr,
+}) => {
   const { t } = useTranslation();
   const { status, policy, shadowCopies } = mgr;
 
@@ -147,7 +157,10 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
             {status.progressPercent != null && (
               <div className="col-span-2">
                 <div className="flex justify-between text-xs mb-1">
-                  <span>{status.currentOperation ?? t("windowsBackup.progress", "Progress")}</span>
+                  <span>
+                    {status.currentOperation ??
+                      t("windowsBackup.progress", "Progress")}
+                  </span>
                   <span>{status.progressPercent.toFixed(0)}%</span>
                 </div>
                 <div className="w-full h-2 bg-[var(--color-bg)] rounded-full overflow-hidden">
@@ -163,7 +176,9 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
                 <span className="text-[var(--color-textSecondary)]">
                   {t("windowsBackup.lastSuccess", "Last successful")}:
                 </span>{" "}
-                <span className="text-success">{status.lastSuccessfulBackup}</span>
+                <span className="text-success">
+                  {status.lastSuccessfulBackup}
+                </span>
               </div>
             )}
             {status.lastFailedBackup && (
@@ -255,10 +270,14 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
             )}
             <div className="flex gap-3">
               {policy.systemStateBackup && (
-                <span className="text-success">✓ {t("windowsBackup.systemState", "System State")}</span>
+                <span className="text-success">
+                  ✓ {t("windowsBackup.systemState", "System State")}
+                </span>
               )}
               {policy.bareMetalRecovery && (
-                <span className="text-success">✓ {t("windowsBackup.bareMetal", "Bare Metal")}</span>
+                <span className="text-success">
+                  ✓ {t("windowsBackup.bareMetal", "Bare Metal")}
+                </span>
               )}
             </div>
           </div>
@@ -270,9 +289,16 @@ const OverviewTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
 
 // ─── Shadow Copies Tab ───────────────────────────────────────────────
 
-const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr }) => {
+const ShadowCopiesTab: React.FC<{
+  mgr: ReturnType<typeof useWindowsBackup>;
+}> = ({ mgr }) => {
   const { t } = useTranslation();
   const [newVolume, setNewVolume] = useState("C:\\");
+  const [pendingAction, setPendingAction] = useState<
+    | { kind: "create"; volume: string }
+    | { kind: "delete"; shadowId: string; label: string }
+    | null
+  >(null);
 
   return (
     <div className="space-y-4">
@@ -291,8 +317,13 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
           />
         </div>
         <button
-          onClick={() => mgr.createShadowCopy(newVolume)}
-          disabled={mgr.loading}
+          onClick={() => {
+            const volume = newVolume.trim();
+            if (volume) {
+              setPendingAction({ kind: "create", volume });
+            }
+          }}
+          disabled={mgr.loading || newVolume.trim().length === 0}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-success text-[var(--color-text)] hover:bg-success/90 disabled:opacity-50 transition-colors"
         >
           <Plus size={12} />
@@ -329,17 +360,40 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
                   </span>
                 </div>
                 <div className="mt-1 text-[10px] text-[var(--color-textSecondary)] space-x-3">
-                  {sc.installDate && <span>{t("windowsBackup.created", "Created")}: {sc.installDate}</span>}
-                  {sc.originatingMachine && <span>{t("windowsBackup.machine", "Machine")}: {sc.originatingMachine}</span>}
-                  {sc.persistent && <span className="text-warning">{t("windowsBackup.persistent", "Persistent")}</span>}
-                  {sc.clientAccessible && <span className="text-success">{t("windowsBackup.accessible", "Accessible")}</span>}
+                  {sc.installDate && (
+                    <span>
+                      {t("windowsBackup.created", "Created")}: {sc.installDate}
+                    </span>
+                  )}
+                  {sc.originatingMachine && (
+                    <span>
+                      {t("windowsBackup.machine", "Machine")}:{" "}
+                      {sc.originatingMachine}
+                    </span>
+                  )}
+                  {sc.persistent && (
+                    <span className="text-warning">
+                      {t("windowsBackup.persistent", "Persistent")}
+                    </span>
+                  )}
+                  {sc.clientAccessible && (
+                    <span className="text-success">
+                      {t("windowsBackup.accessible", "Accessible")}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-0.5 text-[10px] text-[var(--color-textSecondary)] font-mono truncate">
                   {sc.shadowId}
                 </div>
               </div>
               <button
-                onClick={() => mgr.deleteShadowCopy(sc.id)}
+                onClick={() =>
+                  setPendingAction({
+                    kind: "delete",
+                    shadowId: sc.id,
+                    label: sc.shadowId,
+                  })
+                }
                 disabled={mgr.loading}
                 className="flex-shrink-0 p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors"
                 title={t("windowsBackup.deleteShadow", "Delete shadow copy")}
@@ -360,7 +414,9 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
           <div className="space-y-1">
             {mgr.shadowStorage.map((ss, i) => (
               <div key={i} className="flex justify-between text-[10px]">
-                <span className="text-[var(--color-textSecondary)]">{ss.volume}</span>
+                <span className="text-[var(--color-textSecondary)]">
+                  {ss.volume}
+                </span>
                 <span>
                   {formatBytes(ss.usedSpace)} / {formatBytes(ss.maxSpace)}
                 </span>
@@ -369,13 +425,55 @@ const ShadowCopiesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = 
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingAction !== null}
+        title={t(
+          "windowsBackup.confirmShadowActionTitle",
+          "Confirm Remote Shadow-Copy Action",
+        )}
+        message={
+          pendingAction?.kind === "create"
+            ? t(
+                "windowsBackup.confirmCreateShadowMessage",
+                'This changes remote system state on "{{host}}". Create a shadow copy for volume "{{volume}}"?',
+                { host: mgr.hostname, volume: pendingAction.volume },
+              )
+            : t(
+                "windowsBackup.confirmDeleteShadowMessage",
+                'This permanently deletes a shadow copy on "{{host}}". Delete "{{shadowId}}"?',
+                {
+                  host: mgr.hostname,
+                  shadowId: pendingAction?.label ?? "",
+                },
+              )
+        }
+        confirmText={
+          pendingAction?.kind === "delete"
+            ? t("windowsBackup.deleteShadow", "Delete shadow copy")
+            : t("windowsBackup.createShadow", "Create")
+        }
+        variant="warning"
+        onConfirm={() => {
+          const action = pendingAction;
+          setPendingAction(null);
+          if (action?.kind === "create") {
+            void mgr.createShadowCopy(action.volume, true);
+          } else if (action?.kind === "delete") {
+            void mgr.deleteShadowCopy(action.shadowId, true);
+          }
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 };
 
 // ─── Versions Tab ────────────────────────────────────────────────────
 
-const VersionsTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr }) => {
+const VersionsTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({
+  mgr,
+}) => {
   const { t } = useTranslation();
 
   if (mgr.versions.length === 0) {
@@ -409,8 +507,16 @@ const VersionsTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
             </div>
           </div>
           <div className="mt-1 text-[10px] text-[var(--color-textSecondary)] space-x-3">
-            {v.backupTime && <span>{t("windowsBackup.backupTime", "Time")}: {v.backupTime}</span>}
-            {v.backupLocation && <span>{t("windowsBackup.location", "Location")}: {v.backupLocation}</span>}
+            {v.backupTime && (
+              <span>
+                {t("windowsBackup.backupTime", "Time")}: {v.backupTime}
+              </span>
+            )}
+            {v.backupLocation && (
+              <span>
+                {t("windowsBackup.location", "Location")}: {v.backupLocation}
+              </span>
+            )}
           </div>
         </div>
       ))}
@@ -420,7 +526,9 @@ const VersionsTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ m
 
 // ─── Policy Tab ──────────────────────────────────────────────────────
 
-const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr }) => {
+const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({
+  mgr,
+}) => {
   const { t } = useTranslation();
   const { policy, backupItems, showRawOutput, setShowRawOutput } = mgr;
 
@@ -440,29 +548,50 @@ const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr
           <h3 className="text-sm font-medium">
             {policy.configured
               ? t("windowsBackup.policyConfigured", "Backup Policy Configured")
-              : t("windowsBackup.policyNotConfigured", "No Backup Policy Configured")}
+              : t(
+                  "windowsBackup.policyNotConfigured",
+                  "No Backup Policy Configured",
+                )}
           </h3>
         </div>
         {policy.configured && (
           <div className="space-y-2 text-xs">
             {policy.schedule && (
               <div>
-                <span className="text-[var(--color-textSecondary)]">{t("windowsBackup.schedule", "Schedule")}: </span>
+                <span className="text-[var(--color-textSecondary)]">
+                  {t("windowsBackup.schedule", "Schedule")}:{" "}
+                </span>
                 {policy.schedule}
               </div>
             )}
             {policy.backupTarget && (
               <div>
-                <span className="text-[var(--color-textSecondary)]">{t("windowsBackup.target", "Target")}: </span>
+                <span className="text-[var(--color-textSecondary)]">
+                  {t("windowsBackup.target", "Target")}:{" "}
+                </span>
                 {policy.backupTarget}
               </div>
             )}
             <div className="flex gap-3">
-              <span className={policy.systemStateBackup ? "text-success" : "text-[var(--color-textSecondary)]"}>
-                {policy.systemStateBackup ? "✓" : "✗"} {t("windowsBackup.systemState", "System State")}
+              <span
+                className={
+                  policy.systemStateBackup
+                    ? "text-success"
+                    : "text-[var(--color-textSecondary)]"
+                }
+              >
+                {policy.systemStateBackup ? "✓" : "✗"}{" "}
+                {t("windowsBackup.systemState", "System State")}
               </span>
-              <span className={policy.bareMetalRecovery ? "text-success" : "text-[var(--color-textSecondary)]"}>
-                {policy.bareMetalRecovery ? "✓" : "✗"} {t("windowsBackup.bareMetal", "Bare Metal Recovery")}
+              <span
+                className={
+                  policy.bareMetalRecovery
+                    ? "text-success"
+                    : "text-[var(--color-textSecondary)]"
+                }
+              >
+                {policy.bareMetalRecovery ? "✓" : "✗"}{" "}
+                {t("windowsBackup.bareMetal", "Bare Metal Recovery")}
               </span>
             </div>
           </div>
@@ -472,17 +601,24 @@ const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr
       {/* Backup items */}
       {backupItems.length > 0 && (
         <div className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surfaceHover)]">
-          <h4 className="text-xs font-medium mb-2">{t("windowsBackup.backupItems", "Included Items")}</h4>
+          <h4 className="text-xs font-medium mb-2">
+            {t("windowsBackup.backupItems", "Included Items")}
+          </h4>
           <div className="space-y-1">
             {backupItems.map((item, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <HardDrive size={10} className="text-[var(--color-textSecondary)]" />
+                <HardDrive
+                  size={10}
+                  className="text-[var(--color-textSecondary)]"
+                />
                 <span>{item.name}</span>
                 <span className="text-[10px] text-[var(--color-textSecondary)] px-1 py-0.5 rounded bg-[var(--color-bg)]">
                   {item.itemType}
                 </span>
                 {item.size != null && (
-                  <span className="text-[var(--color-textSecondary)]">{formatBytes(item.size)}</span>
+                  <span className="text-[var(--color-textSecondary)]">
+                    {formatBytes(item.size)}
+                  </span>
                 )}
               </div>
             ))}
@@ -510,7 +646,9 @@ const PolicyTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr
 
 // ─── Volumes Tab ─────────────────────────────────────────────────────
 
-const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mgr }) => {
+const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({
+  mgr,
+}) => {
   const { t } = useTranslation();
 
   if (mgr.volumes.length === 0) {
@@ -524,7 +662,10 @@ const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mg
   return (
     <div className="space-y-2">
       {mgr.volumes.map((vol, i) => {
-        const usedPercent = vol.capacity > 0 ? ((vol.capacity - vol.freeSpace) / vol.capacity) * 100 : 0;
+        const usedPercent =
+          vol.capacity > 0
+            ? ((vol.capacity - vol.freeSpace) / vol.capacity) * 100
+            : 0;
         return (
           <div
             key={i}
@@ -535,7 +676,9 @@ const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mg
                 <HardDrive size={12} className="text-primary" />
                 <span>{vol.driveLetter ?? vol.name}</span>
                 {vol.label && (
-                  <span className="text-[var(--color-textSecondary)]">({vol.label})</span>
+                  <span className="text-[var(--color-textSecondary)]">
+                    ({vol.label})
+                  </span>
                 )}
                 {vol.fileSystem && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--color-bg)] text-[var(--color-textSecondary)]">
@@ -544,13 +687,18 @@ const VolumesTab: React.FC<{ mgr: ReturnType<typeof useWindowsBackup> }> = ({ mg
                 )}
               </div>
               <span className="text-xs text-[var(--color-textSecondary)]">
-                {formatBytes(vol.freeSpace)} {t("windowsBackup.free", "free")} / {formatBytes(vol.capacity)}
+                {formatBytes(vol.freeSpace)} {t("windowsBackup.free", "free")} /{" "}
+                {formatBytes(vol.capacity)}
               </span>
             </div>
             <div className="w-full h-1.5 bg-[var(--color-bg)] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${
-                  usedPercent > 90 ? "bg-error" : usedPercent > 70 ? "bg-warning" : "bg-primary"
+                  usedPercent > 90
+                    ? "bg-error"
+                    : usedPercent > 70
+                      ? "bg-warning"
+                      : "bg-primary"
                 }`}
                 style={{ width: `${usedPercent}%` }}
               />
@@ -574,102 +722,134 @@ export const WindowsBackupPanel: React.FC<WindowsBackupPanelProps> = ({
   if (!isOpen) return null;
 
   const tabs: { key: BackupTab; icon: React.ReactNode; label: string }[] = [
-    { key: "overview", icon: <Shield size={12} />, label: t("windowsBackup.tabOverview", "Overview") },
-    { key: "shadowCopies", icon: <Copy size={12} />, label: t("windowsBackup.tabShadowCopies", "Shadow Copies") },
-    { key: "versions", icon: <FolderArchive size={12} />, label: t("windowsBackup.tabVersions", "Versions") },
-    { key: "policy", icon: <Settings size={12} />, label: t("windowsBackup.tabPolicy", "Policy") },
-    { key: "volumes", icon: <HardDrive size={12} />, label: t("windowsBackup.tabVolumes", "Volumes") },
+    {
+      key: "overview",
+      icon: <Shield size={12} />,
+      label: t("windowsBackup.tabOverview", "Overview"),
+    },
+    {
+      key: "shadowCopies",
+      icon: <Copy size={12} />,
+      label: t("windowsBackup.tabShadowCopies", "Shadow Copies"),
+    },
+    {
+      key: "versions",
+      icon: <FolderArchive size={12} />,
+      label: t("windowsBackup.tabVersions", "Versions"),
+    },
+    {
+      key: "policy",
+      icon: <Settings size={12} />,
+      label: t("windowsBackup.tabPolicy", "Policy"),
+    },
+    {
+      key: "volumes",
+      icon: <HardDrive size={12} />,
+      label: t("windowsBackup.tabVolumes", "Volumes"),
+    },
   ];
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-surface)] overflow-hidden">
       {/* Toolbar */}
       <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center gap-2 flex-wrap">
-          {mgr.isConnected ? (
-            <>
-              {/* Tabs */}
-              {tabs.map((tab) => (
-                <TabButton
-                  key={tab.key}
-                  active={mgr.activeTab === tab.key}
-                  onClick={() => mgr.setActiveTab(tab.key)}
-                  icon={tab.icon}
-                  label={tab.label}
-                />
-              ))}
-
-              <div className="flex-1" />
-
-              {/* Auto-refresh */}
-              <Select
-                value={String(mgr.autoRefresh)}
-                onChange={(v) => mgr.setAutoRefresh(Number(v))}
-                variant="form-sm"
-                options={[
-                  { value: "0", label: t("windowsBackup.autoRefreshOff", "Auto: Off") },
-                  { value: "15", label: "15s" },
-                  { value: "30", label: "30s" },
-                  { value: "60", label: "60s" },
-                ]}
+        {mgr.isConnected ? (
+          <>
+            {/* Tabs */}
+            {tabs.map((tab) => (
+              <TabButton
+                key={tab.key}
+                active={mgr.activeTab === tab.key}
+                onClick={() => mgr.setActiveTab(tab.key)}
+                icon={tab.icon}
+                label={tab.label}
               />
+            ))}
 
-              {/* Refresh */}
-              <button
-                onClick={() => mgr.refreshAll()}
-                disabled={mgr.loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surfaceHover)] text-[var(--color-text)] hover:bg-[var(--color-border)] transition-colors"
-              >
-                <RefreshCw size={12} className={mgr.loading ? "animate-spin" : ""} />
-                {t("windowsBackup.refresh", "Refresh")}
-              </button>
+            <div className="flex-1" />
 
-              {/* Disconnect */}
-              <button
-                onClick={() => mgr.disconnect()}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-error hover:bg-error/10 transition-colors"
-              >
-                <LogOut size={12} />
-                {t("windowsBackup.disconnect", "Disconnect")}
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-[var(--color-textSecondary)]">
-              {t("windowsBackup.connectPrompt", "Connect to a remote Windows host to view backup information.")}
-            </span>
-          )}
-        </div>
+            {/* Auto-refresh */}
+            <Select
+              value={String(mgr.autoRefresh)}
+              onChange={(v) => mgr.setAutoRefresh(Number(v))}
+              variant="form-sm"
+              options={[
+                {
+                  value: "0",
+                  label: t("windowsBackup.autoRefreshOff", "Auto: Off"),
+                },
+                { value: "15", label: "15s" },
+                { value: "30", label: "30s" },
+                { value: "60", label: "60s" },
+              ]}
+            />
 
-        {/* Content area */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {/* Error banner */}
-          {mgr.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
-              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-              <span>{mgr.error}</span>
-            </div>
-          )}
-
-          {!mgr.isConnected ? (
-            <div className="max-w-md mx-auto mt-12">
-              <EmptyState
-                icon={HardDrive}
-                message={t("windowsBackup.notConnected", "Not Connected")}
-                hint={t("windowsBackup.connectHint", "Enter the hostname and credentials for a remote Windows server.")}
+            {/* Refresh */}
+            <button
+              onClick={() => mgr.refreshAll()}
+              disabled={mgr.loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-[var(--color-surfaceHover)] text-[var(--color-text)] hover:bg-[var(--color-border)] transition-colors"
+            >
+              <RefreshCw
+                size={12}
+                className={mgr.loading ? "animate-spin" : ""}
               />
-              <div className="mt-6">
-                <ConnectForm onConnect={mgr.connect} loading={mgr.loading} />
-              </div>
+              {t("windowsBackup.refresh", "Refresh")}
+            </button>
+
+            {/* Disconnect */}
+            <button
+              onClick={() => mgr.disconnect()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-error hover:bg-error/10 transition-colors"
+            >
+              <LogOut size={12} />
+              {t("windowsBackup.disconnect", "Disconnect")}
+            </button>
+          </>
+        ) : (
+          <span className="text-xs text-[var(--color-textSecondary)]">
+            {t(
+              "windowsBackup.connectPrompt",
+              "Connect to a remote Windows host to view backup information.",
+            )}
+          </span>
+        )}
+      </div>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Error banner */}
+        {mgr.error && (
+          <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-error/10 border border-error/30 text-xs text-error">
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>{mgr.error}</span>
+          </div>
+        )}
+
+        {!mgr.isConnected ? (
+          <div className="max-w-md mx-auto mt-12">
+            <EmptyState
+              icon={HardDrive}
+              message={t("windowsBackup.notConnected", "Not Connected")}
+              hint={t(
+                "windowsBackup.connectHint",
+                "Enter the hostname and credentials for a remote Windows server.",
+              )}
+            />
+            <div className="mt-6">
+              <ConnectForm onConnect={mgr.connect} loading={mgr.loading} />
             </div>
-          ) : (
-            <>
-              {mgr.activeTab === "overview" && <OverviewTab mgr={mgr} />}
-              {mgr.activeTab === "shadowCopies" && <ShadowCopiesTab mgr={mgr} />}
-              {mgr.activeTab === "versions" && <VersionsTab mgr={mgr} />}
-              {mgr.activeTab === "policy" && <PolicyTab mgr={mgr} />}
-              {mgr.activeTab === "volumes" && <VolumesTab mgr={mgr} />}
-            </>
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            {mgr.activeTab === "overview" && <OverviewTab mgr={mgr} />}
+            {mgr.activeTab === "shadowCopies" && <ShadowCopiesTab mgr={mgr} />}
+            {mgr.activeTab === "versions" && <VersionsTab mgr={mgr} />}
+            {mgr.activeTab === "policy" && <PolicyTab mgr={mgr} />}
+            {mgr.activeTab === "volumes" && <VolumesTab mgr={mgr} />}
+          </>
+        )}
+      </div>
     </div>
   );
 };

@@ -88,6 +88,10 @@ import {
   prepareVpnConnectionForTransfer,
   prepareVpnDataForTransfer,
 } from "../../components/ImportExport/vpnPortability";
+import {
+  containsExportSecrets,
+  stripExportSecrets,
+} from "../../components/ImportExport/exportSecurity";
 
 const DEFAULT_IMPORT_FILTERS: ImportFilterState = {
   search: "",
@@ -337,56 +341,8 @@ const splitTags = (value: string): string[] =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const SECRET_FIELD_NAMES = new Set([
-  "password",
-  "basicauthpassword",
-  "rustdeskpassword",
-  "proxypassword",
-  "privatekey",
-  "passphrase",
-  "totpsecret",
-  "apikey",
-  "accesstoken",
-  "clientsecret",
-  "serviceaccountkey",
-  "presharedkey",
-  "authkey",
-  "authtoken",
-  "seedphrase",
-  "answer",
-  "savedcredentialid",
-  "vaultref",
-  "clientcertificateref",
-  "credentialref",
-  "privatekeycredentialref",
-]);
-
-const SECRET_HEADER_NAMES =
-  /authorization|cookie|token|secret|password|api[-_ ]?key/i;
-
-const normalizeSecretFieldName = (value: string): string =>
-  value.replace(/[^a-z0-9]/gi, "").toLowerCase();
-
-const hasSecretishValue = (value: unknown, fieldName?: string): boolean => {
-  const normalizedFieldName = fieldName
-    ? normalizeSecretFieldName(fieldName)
-    : "";
-  if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
-    return value !== undefined && value !== null && value !== "";
-  }
-  if (Array.isArray(value)) {
-    return value.some((item) => hasSecretishValue(item));
-  }
-  if (value && typeof value === "object") {
-    return Object.entries(value as Record<string, unknown>).some(
-      ([key, nestedValue]) => hasSecretishValue(nestedValue, key),
-    );
-  }
-  return false;
-};
-
 const connectionHasCredentials = (connection: Connection): boolean =>
-  hasSecretishValue(connection);
+  containsExportSecrets(connection);
 
 // mRemoteNG-imported tunnels seed a chain layer whose type follows the
 // §1.4 contract: 'ssh-jump' for SSH targets and 'ssh-tunnel' for non-SSH
@@ -439,105 +395,9 @@ const stripConnectionSshTunnels = (connection: Connection): Connection => {
   };
 };
 
-const redactSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
-  const normalizedFieldName = fieldName
-    ? normalizeSecretFieldName(fieldName)
-    : "";
-  if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
-    return normalizedFieldName.includes("password")
-      ? (SECRET_PLACEHOLDER as T)
-      : undefined;
-  }
-
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => redactSecretFields(item))
-      .filter((item) => item !== undefined) as T;
-  }
-
-  if (value && typeof value === "object") {
-    const next: Record<string, unknown> = {};
-    Object.entries(value as Record<string, unknown>).forEach(
-      ([key, nestedValue]) => {
-        if (
-          key === "httpHeaders" &&
-          nestedValue &&
-          typeof nestedValue === "object"
-        ) {
-          next[key] = Object.fromEntries(
-            Object.entries(nestedValue as Record<string, unknown>).filter(
-              ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
-            ),
-          );
-          return;
-        }
-
-        const redactedValue = redactSecretFields(nestedValue, key);
-        if (redactedValue !== undefined) {
-          next[key] = redactedValue;
-        }
-      },
-    );
-    return next as T;
-  }
-
-  return value;
-};
-
-const redactConnectionSecretsForExport = (
-  connection: Connection,
-): Connection => {
-  return stripArdAppleAccountCredentials(
-    redactSecretFields(connection) ?? { ...connection },
-  );
-};
-
-const stripSecretFields = <T>(value: T, fieldName?: string): T | undefined => {
-  const normalizedFieldName = fieldName
-    ? normalizeSecretFieldName(fieldName)
-    : "";
-  if (normalizedFieldName && SECRET_FIELD_NAMES.has(normalizedFieldName)) {
-    return undefined;
-  }
-
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => stripSecretFields(item))
-      .filter((item) => item !== undefined) as T;
-  }
-
-  if (value && typeof value === "object") {
-    const next: Record<string, unknown> = {};
-    Object.entries(value as Record<string, unknown>).forEach(
-      ([key, nestedValue]) => {
-        if (
-          key === "httpHeaders" &&
-          nestedValue &&
-          typeof nestedValue === "object"
-        ) {
-          next[key] = Object.fromEntries(
-            Object.entries(nestedValue as Record<string, unknown>).filter(
-              ([headerName]) => !SECRET_HEADER_NAMES.test(headerName),
-            ),
-          );
-          return;
-        }
-
-        const strippedValue = stripSecretFields(nestedValue, key);
-        if (strippedValue !== undefined) {
-          next[key] = strippedValue;
-        }
-      },
-    );
-    return next as T;
-  }
-
-  return value;
-};
-
 const stripConnectionCredentials = (connection: Connection): Connection =>
   stripArdAppleAccountCredentials(
-    stripSecretFields(connection) ?? { ...connection },
+    stripExportSecrets(connection) ?? ({} as Connection),
   );
 
 const connectionEndpointKey = (connection: Connection): string =>
@@ -724,7 +584,7 @@ const prepareConnectionsForExport = (
   );
   return inclusion.includeCredentials
     ? portableConnections
-    : portableConnections.map(redactConnectionSecretsForExport);
+    : portableConnections.map(stripConnectionCredentials);
 };
 
 const createEmptyCloneSidecarCounts = (): CloneSidecarCounts => ({
@@ -2311,7 +2171,11 @@ export function useImportExport({
         state.connections,
         exportInclusion,
       ),
-      settings: exportInclusion.includeSettings ? settings : {},
+      settings: exportInclusion.includeSettings
+        ? exportInclusion.includeCredentials
+          ? settings
+          : (stripExportSecrets(settings) ?? {})
+        : {},
       tabGroups: includeTabGroups ? (state.tabGroups ?? []) : [],
       colorTags,
     };
@@ -2329,7 +2193,11 @@ export function useImportExport({
       snapshot.connections,
       exportInclusion,
     ),
-    settings: exportInclusion.includeSettings ? (snapshot.settings ?? {}) : {},
+    settings: exportInclusion.includeSettings
+      ? exportInclusion.includeCredentials
+        ? (snapshot.settings ?? {})
+        : (stripExportSecrets(snapshot.settings ?? {}) ?? {})
+      : {},
     tabGroups: includeTabGroups ? (snapshot.tabGroups ?? []) : [],
     colorTags: includeColorTags ? (snapshot.colorTags ?? {}) : {},
   });
@@ -2389,6 +2257,8 @@ export function useImportExport({
     },
   ): Promise<ExportSidecars> => {
     const sidecars: ExportSidecars = {};
+    const includeSidecarCredentials =
+      options?.includeCredentials ?? inclusion.includeCredentials;
 
     if (inclusion.includeVpnData) {
       const proxyMgr = ProxyOpenVPNManager.getInstance();
@@ -2427,7 +2297,7 @@ export function useImportExport({
       };
       const prepared = prepareVpnDataForTransfer(
         selectedVpnConnections,
-        options?.includeCredentials ?? inclusion.includeCredentials,
+        includeSidecarCredentials,
       );
       sidecars.vpnConnections = prepared.data;
       sidecars.vpnWarnings = prepared.warnings;
@@ -2470,7 +2340,9 @@ export function useImportExport({
         : allChains;
     }
 
-    return sidecars;
+    return includeSidecarCredentials
+      ? sidecars
+      : (stripExportSecrets(sidecars) ?? {});
   };
 
   const loadExportSidecars = async (): Promise<ExportSidecars> =>
@@ -2811,7 +2683,9 @@ export function useImportExport({
       exportInclusion.includeConnections &&
       !exportInclusion.includeCredentials
     ) {
-      warnings.push("Credentials and private secret fields were redacted.");
+      warnings.push(
+        "Credentials and secret-bearing fields were stripped from connections, settings, and sidecars.",
+      );
     }
     if (exportInclusion.includeVpnData && !exportInclusion.includeCredentials) {
       warnings.push(
@@ -3337,22 +3211,6 @@ ${tableRows}
       switch (exportFormat) {
         case "json": {
           const sidecars = await loadExportSidecars();
-          const exportedVpnCount = sidecars.vpnConnections
-            ? sidecars.vpnConnections.openvpn.length +
-              sidecars.vpnConnections.wireguard.length +
-              sidecars.vpnConnections.tailscale.length +
-              sidecars.vpnConnections.zerotier.length
-            : 0;
-          if (
-            exportedVpnCount > 0 &&
-            exportInclusion.includeCredentials &&
-            !shouldUsePasswordEncryption
-          ) {
-            toast.error(
-              "VPN credentials can only be exported in an encrypted JSON file. Enable encryption, enter a password, or exclude credentials.",
-            );
-            return;
-          }
           const warnings = buildExportWarnings(datasets, options, sidecars);
           const exportMetadata = exportInclusion.includeExportMetadata
             ? buildExportMetadata({
@@ -3376,7 +3234,25 @@ ${tableRows}
                   sidecars,
                   exportMetadata,
                 );
-          content = JSON.stringify(payload, null, 2);
+          const protectedPayload = exportInclusion.includeCredentials
+            ? payload
+            : stripExportSecrets(payload);
+          if (!protectedPayload) {
+            toast.error(
+              "Export was blocked because the payload could not be safely stripped.",
+            );
+            return;
+          }
+          if (
+            !shouldUsePasswordEncryption &&
+            containsExportSecrets(protectedPayload)
+          ) {
+            toast.error(
+              "Export was blocked because plaintext secret material remained after sanitization.",
+            );
+            return;
+          }
+          content = JSON.stringify(protectedPayload, null, 2);
 
           filename = generateExportFilename("json");
           mimeType = "application/json";

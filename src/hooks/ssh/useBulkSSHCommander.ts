@@ -7,6 +7,12 @@ import {
 } from "../../data/defaultBulkScripts";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
+import { useToastContext } from "../../contexts/ToastContext";
+import {
+  AppDataJsonStore,
+  containsLikelySecretText,
+  type SanitizedValue,
+} from "../../utils/storage/appDataJsonStore";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -33,10 +39,46 @@ export type ViewMode = "tabs" | "mosaic";
 
 const SCRIPTS_STORAGE_KEY = "bulkSshScripts";
 
+const sanitizeBulkScripts = (
+  value: unknown,
+): SanitizedValue<SavedBulkScript[]> => {
+  if (!Array.isArray(value)) {
+    throw new Error("Stored bulk SSH scripts are corrupted");
+  }
+  let changed = false;
+  const scripts: SavedBulkScript[] = [];
+  for (const item of value) {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      Array.isArray(item) ||
+      typeof (item as SavedBulkScript).id !== "string" ||
+      typeof (item as SavedBulkScript).name !== "string" ||
+      typeof (item as SavedBulkScript).script !== "string"
+    ) {
+      throw new Error("Stored bulk SSH scripts contain an invalid entry");
+    }
+    const script = item as SavedBulkScript;
+    if (containsLikelySecretText(script.script)) {
+      changed = true;
+      continue;
+    }
+    scripts.push(script);
+  }
+  return { value: scripts, changed };
+};
+
+const bulkScriptsStore = new AppDataJsonStore<SavedBulkScript[]>({
+  key: "ssh.bulk-scripts",
+  legacyLocalStorageKey: SCRIPTS_STORAGE_KEY,
+  sanitize: sanitizeBulkScripts,
+});
+
 // ─── Hook ──────────────────────────────────────────────────────────
 
 export function useBulkSSHCommander(isOpen: boolean) {
   const { state } = useConnections();
+  const { toast } = useToastContext();
   const historyMgr = useSSHCommandHistory();
 
   const sshSessions = useMemo(() => {
@@ -72,31 +114,67 @@ export function useBulkSSHCommander(isOpen: boolean) {
   const [newScriptDescription, setNewScriptDescription] = useState("");
   const [newScriptCategory, setNewScriptCategory] = useState("Custom");
   const [scriptFilter, setScriptFilter] = useState("");
+  const [scriptStorageError, setScriptStorageError] = useState<string | null>(
+    null,
+  );
 
   const commandInputRef = useRef<HTMLTextAreaElement>(null);
   const outputListenersRef = useRef<Map<string, () => void>>(new Map());
 
   // ─── Effects ────────────────────────────────────────────────────
 
-  // Load saved scripts from localStorage
+  // Load saved scripts from encrypted app-data storage or browser IndexedDB.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setSavedScripts([...defaultBulkScripts, ...parsed]);
-      } else {
+    let cancelled = false;
+    bulkScriptsStore
+      .load()
+      .then((result) => {
+        if (cancelled) return;
+        setSavedScripts([...defaultBulkScripts, ...(result.value ?? [])]);
+        if (result.sanitized) {
+          const message =
+            "Bulk SSH scripts containing possible credential material were removed during secure storage migration.";
+          setScriptStorageError(message);
+          toast.warning(message);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = `Bulk SSH scripts could not be loaded: ${String(error)}`;
+        setScriptStorageError(message);
+        toast.error(message);
         setSavedScripts(defaultBulkScripts);
-      }
-    } catch {
-      setSavedScripts(defaultBulkScripts);
-    }
-  }, []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
 
-  const saveScriptsToStorage = useCallback((scripts: SavedBulkScript[]) => {
-    const customScripts = scripts.filter((s) => !s.id.startsWith("default-"));
-    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(customScripts));
-  }, []);
+  const saveScriptsToStorage = useCallback(
+    async (scripts: SavedBulkScript[]) => {
+      const customScripts = scripts.filter((s) => !s.id.startsWith("default-"));
+      const unsafe = customScripts.find((script) =>
+        containsLikelySecretText(script.script),
+      );
+      if (unsafe) {
+        const message = `Bulk SSH script "${unsafe.name}" appears to contain literal credential material and was not persisted.`;
+        setScriptStorageError(message);
+        toast.error(message);
+        return false;
+      }
+      try {
+        await bulkScriptsStore.save(customScripts);
+        setScriptStorageError(null);
+        return true;
+      } catch (error) {
+        const message = `Bulk SSH scripts could not be saved: ${String(error)}`;
+        setScriptStorageError(message);
+        toast.error(message);
+        return false;
+      }
+    },
+    [toast],
+  );
 
   // Initialize session outputs when sessions change
   useEffect(() => {
@@ -376,7 +454,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
     commandInputRef.current?.focus();
   }, []);
 
-  const saveCurrentAsScript = useCallback(() => {
+  const saveCurrentAsScript = useCallback(async () => {
     if (!command.trim() || !newScriptName.trim()) return;
 
     const newScript: SavedBulkScript = {
@@ -390,8 +468,8 @@ export function useBulkSSHCommander(isOpen: boolean) {
     };
 
     const updated = [...savedScripts, newScript];
+    if (!(await saveScriptsToStorage(updated))) return;
     setSavedScripts(updated);
-    saveScriptsToStorage(updated);
     setNewScriptName("");
     setNewScriptDescription("");
     setEditingScript(null);
@@ -405,11 +483,11 @@ export function useBulkSSHCommander(isOpen: boolean) {
   ]);
 
   const deleteScript = useCallback(
-    (scriptId: string) => {
+    async (scriptId: string) => {
       if (scriptId.startsWith("default-")) return;
       const updated = savedScripts.filter((s) => s.id !== scriptId);
+      if (!(await saveScriptsToStorage(updated))) return;
       setSavedScripts(updated);
-      saveScriptsToStorage(updated);
     },
     [savedScripts, saveScriptsToStorage],
   );
@@ -471,6 +549,7 @@ export function useBulkSSHCommander(isOpen: boolean) {
     newScriptCategory,
     setNewScriptCategory,
     scriptFilter,
+    scriptStorageError,
     setScriptFilter,
     categories,
     filteredScripts,

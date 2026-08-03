@@ -11,6 +11,94 @@ import {
   parseNativeAdvancedProtocolSettings,
 } from "./advancedProtocolPortability";
 
+const MAX_IMPORT_TEXT_CHARS = 33_554_432;
+const MAX_IMPORT_CONNECTIONS = 20_000;
+const MAX_IMPORT_NESTING_DEPTH = 64;
+const MAX_IMPORT_JSON_NODES = 100_000;
+const MAX_MREMOTENG_DECODED_BYTES = 25_165_824;
+const MAX_MREMOTENG_PLAINTEXT_CODE_UNITS = Math.floor(
+  MAX_MREMOTENG_DECODED_BYTES / 3,
+);
+const MAX_MREMOTENG_ENCODED_CHARS = 33_554_432;
+const MAX_MREMOTENG_ENCRYPTED_FIELDS = 60_000;
+
+const assertImportTextWithinLimit = (content: string): void => {
+  if (content.length > MAX_IMPORT_TEXT_CHARS) {
+    throw new Error(
+      `Import payload exceeds the ${MAX_IMPORT_TEXT_CHARS}-character safety limit`,
+    );
+  }
+};
+
+const assertCanAppendConnection = (
+  currentCount: number,
+  additionalCount = 1,
+): void => {
+  if (
+    !Number.isSafeInteger(currentCount) ||
+    !Number.isSafeInteger(additionalCount) ||
+    additionalCount < 0 ||
+    currentCount > MAX_IMPORT_CONNECTIONS - additionalCount
+  ) {
+    throw new Error(
+      `Import contains more than ${MAX_IMPORT_CONNECTIONS} connections`,
+    );
+  }
+};
+
+const getBoundedXmlElements = (
+  root: ParentNode,
+  selector: string,
+): Element[] => {
+  const nodeList = root.querySelectorAll(selector);
+  if (nodeList.length > MAX_IMPORT_CONNECTIONS) {
+    throw new Error(
+      `Import contains more than ${MAX_IMPORT_CONNECTIONS} XML objects`,
+    );
+  }
+  const nodes = Array.from(nodeList);
+  for (const node of nodes) {
+    let depth = 0;
+    let parent = node.parentElement;
+    while (parent) {
+      depth += 1;
+      if (depth > MAX_IMPORT_NESTING_DEPTH) {
+        throw new Error("XML nesting exceeds the safety limit");
+      }
+      parent = parent.parentElement;
+    }
+  }
+  return nodes;
+};
+
+const assertJsonStructureWithinLimits = (root: unknown): void => {
+  const pending: Array<{ value: unknown; depth: number }> = [
+    { value: root, depth: 0 },
+  ];
+  let visitedNodes = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current) break;
+    visitedNodes += 1;
+    if (visitedNodes > MAX_IMPORT_JSON_NODES) {
+      throw new Error("JSON structure exceeds the aggregate node safety limit");
+    }
+    if (current.depth > MAX_IMPORT_NESTING_DEPTH) {
+      throw new Error("JSON nesting exceeds the safety limit");
+    }
+    if (!current.value || typeof current.value !== "object") continue;
+    const children = Array.isArray(current.value)
+      ? current.value
+      : Object.values(current.value as Record<string, unknown>);
+    if (children.length > MAX_IMPORT_JSON_NODES - pending.length) {
+      throw new Error("JSON structure exceeds the aggregate node safety limit");
+    }
+    for (const child of children) {
+      pending.push({ value: child, depth: current.depth + 1 });
+    }
+  }
+};
+
 export const parseCSVLine = (line: string): string[] => {
   const values: string[] = [];
   let current = "";
@@ -79,7 +167,11 @@ const parsePortOrDefault = (portValue: unknown, protocol: string): number => {
 };
 
 export const importFromCSV = async (content: string): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const lines = content.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length > MAX_IMPORT_CONNECTIONS + 1) {
+    throw new Error("CSV row count exceeds the safety limit");
+  }
   if (lines.length < 2)
     throw new Error("CSV file must have headers and at least one data row");
 
@@ -137,6 +229,7 @@ const parseIsoOrNow = (value: string | null): string => {
  * Parse native sortOfRemoteNG XML exports.
  */
 export const importFromXML = async (content: string): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, "text/xml");
   const parseError = doc.querySelector("parsererror");
@@ -151,7 +244,7 @@ export const importFromXML = async (content: string): Promise<Connection[]> => {
     );
   }
 
-  const nodes = Array.from(root.querySelectorAll("Connection"));
+  const nodes = getBoundedXmlElements(root, "Connection");
   if (nodes.length === 0) {
     throw new Error("Invalid sortOfRemoteNG XML: no Connection nodes found");
   }
@@ -633,9 +726,49 @@ const MRNG_TAG_SIZE = 16;
 const asBufferSource = (bytes: Uint8Array): BufferSource =>
   bytes as Uint8Array<ArrayBuffer>;
 
-const decodeBase64 = (b64: string): Uint8Array => {
+interface MRemoteNGDecodeBudget {
+  remainingDecodedBytes: number;
+}
+
+const createMRemoteNGDecodeBudget = (): MRemoteNGDecodeBudget => ({
+  remainingDecodedBytes: MAX_MREMOTENG_DECODED_BYTES,
+});
+
+const decodeBase64 = (
+  b64: string,
+  budget: MRemoteNGDecodeBudget,
+): Uint8Array => {
+  if (b64.length > MAX_MREMOTENG_ENCODED_CHARS) {
+    throw new Error("mRemoteNG base64 payload exceeds the encoded-size limit");
+  }
   const clean = b64.replace(/\s+/g, "");
-  const bin = atob(clean);
+  if (
+    clean.length === 0 ||
+    clean.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      clean,
+    )
+  ) {
+    throw new Error("mRemoteNG ciphertext is not canonical base64");
+  }
+  const padding = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  const decodedLength = (clean.length / 4) * 3 - padding;
+  if (
+    decodedLength > MAX_MREMOTENG_DECODED_BYTES ||
+    decodedLength > budget.remainingDecodedBytes
+  ) {
+    throw new Error("mRemoteNG ciphertext exceeds the decode safety budget");
+  }
+  budget.remainingDecodedBytes -= decodedLength;
+  let bin: string;
+  try {
+    bin = atob(clean);
+  } catch {
+    throw new Error("mRemoteNG ciphertext is not valid base64");
+  }
+  if (bin.length !== decodedLength) {
+    throw new Error("mRemoteNG base64 length is inconsistent");
+  }
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -697,8 +830,9 @@ async function decryptMRemoteNGBlob(
   payloadB64: string,
   password: string,
   iterations: number,
+  budget: MRemoteNGDecodeBudget,
 ): Promise<Uint8Array> {
-  const data = decodeBase64(payloadB64);
+  const data = decodeBase64(payloadB64, budget);
   const minLen = MRNG_SALT_SIZE + MRNG_NONCE_SIZE + MRNG_TAG_SIZE;
   if (data.length < minLen) {
     throw new Error(
@@ -752,10 +886,19 @@ export async function encryptMRemoteNGBlob(
   password: string,
   iterations: number,
 ): Promise<string> {
+  if (
+    typeof plaintext === "string" &&
+    plaintext.length > MAX_MREMOTENG_PLAINTEXT_CODE_UNITS
+  ) {
+    throw new Error("mRemoteNG plaintext exceeds the encode safety limit");
+  }
   const bytes =
     typeof plaintext === "string"
       ? new TextEncoder().encode(plaintext)
       : plaintext;
+  if (bytes.byteLength > MAX_MREMOTENG_DECODED_BYTES) {
+    throw new Error("mRemoteNG plaintext exceeds the encode safety limit");
+  }
   const salt = crypto.getRandomValues(new Uint8Array(MRNG_SALT_SIZE));
   const nonce = crypto.getRandomValues(new Uint8Array(MRNG_NONCE_SIZE));
   const key = await deriveMRemoteNGKey(password, salt, iterations, ["encrypt"]);
@@ -817,17 +960,34 @@ export interface MRemoteNGPasswordCheck {
   hasProtected: boolean;
 }
 
+const MAX_MREMOTENG_KDF_ITERATIONS = 2_000_000;
+
+function readMRemoteNGKdfIterations(root: Element): number {
+  const raw = root.getAttribute("KdfIterations") ?? "1000";
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new Error("mRemoteNG KdfIterations must be a positive integer");
+  }
+  const iterations = Number(raw);
+  if (
+    !Number.isSafeInteger(iterations) ||
+    iterations > MAX_MREMOTENG_KDF_ITERATIONS
+  ) {
+    throw new Error(
+      `mRemoteNG KdfIterations exceeds the safety limit of ${MAX_MREMOTENG_KDF_ITERATIONS}`,
+    );
+  }
+  return iterations;
+}
+
 export async function verifyMRemoteNGPassword(
   content: string,
   password: string,
 ): Promise<MRemoteNGPasswordCheck> {
+  assertImportTextWithinLimit(content);
   const doc = new DOMParser().parseFromString(content, "text/xml");
   const root = doc.querySelector("Connections");
   if (!root) throw new Error("Not an mRemoteNG file (no <Connections> root)");
-  const iterations = Math.max(
-    1,
-    parseInt(root.getAttribute("KdfIterations") || "1000", 10),
-  );
+  const iterations = readMRemoteNGKdfIterations(root);
   const protectedB64 = (root.getAttribute("Protected") || "").trim();
   if (!protectedB64) {
     return {
@@ -842,6 +1002,7 @@ export async function verifyMRemoteNGPassword(
       protectedB64,
       password,
       iterations,
+      createMRemoteNGDecodeBudget(),
     );
     const text = new TextDecoder().decode(plain);
     if (text === PROTECTED_PLAINTEXT_NO_PASSWORD) {
@@ -892,25 +1053,38 @@ const MRNG_PER_FIELD_PASSWORD_ATTRS = [
 /**
  * Decrypt every per-field encrypted attribute on `<Node>` elements in the
  * given XML document, mutating it in place. Empty values are left as-is.
- * Decryption failures on individual fields are swallowed (the attribute is
- * left untouched) so a partial parse still yields useful structure.
+ * Any field failure aborts the import. Treating ciphertext as a recovered
+ * password would create a plausible-looking but unusable and unsafe result.
  */
 async function decryptPerFieldPasswords(
   doc: Document,
   password: string,
   iterations: number,
+  budget: MRemoteNGDecodeBudget,
 ): Promise<void> {
-  const nodes = Array.from(doc.querySelectorAll("Node"));
+  const nodeList = doc.querySelectorAll("Node");
+  if (
+    nodeList.length > MAX_IMPORT_CONNECTIONS ||
+    nodeList.length * MRNG_PER_FIELD_PASSWORD_ATTRS.length >
+      MAX_MREMOTENG_ENCRYPTED_FIELDS
+  ) {
+    throw new Error("mRemoteNG encrypted field count exceeds the safety limit");
+  }
+  const nodes = Array.from(nodeList);
   for (const node of nodes) {
     for (const attr of MRNG_PER_FIELD_PASSWORD_ATTRS) {
       const enc = node.getAttribute(attr);
       if (!enc) continue;
-      try {
-        const plain = await decryptMRemoteNGBlob(enc, password, iterations);
-        node.setAttribute(attr, new TextDecoder().decode(plain));
-      } catch {
-        // Leave the attribute untouched on failure.
-      }
+      const plain = await decryptMRemoteNGBlob(
+        enc,
+        password,
+        iterations,
+        budget,
+      );
+      node.setAttribute(
+        attr,
+        new TextDecoder("utf-8", { fatal: true }).decode(plain),
+      );
     }
   }
 }
@@ -931,19 +1105,18 @@ export async function decryptMRemoteNGXml(
   content: string,
   password: string,
 ): Promise<string> {
+  assertImportTextWithinLimit(content);
   const doc = new DOMParser().parseFromString(content, "text/xml");
   const root = doc.querySelector("Connections");
   if (!root) throw new Error("Not an mRemoteNG file (no <Connections> root)");
 
   assertSupportedMRemoteNGCipher(root);
-  const iterations = Math.max(
-    1,
-    parseInt(root.getAttribute("KdfIterations") || "1000", 10),
-  );
+  const iterations = readMRemoteNGKdfIterations(root);
   const fullFileAttr = (
     root.getAttribute("FullFileEncryption") || ""
   ).toLowerCase();
   const fullFileEncryption = fullFileAttr === "true" || fullFileAttr === "1";
+  const decodeBudget = createMRemoteNGDecodeBudget();
 
   // Validate password against the Protected sentinel before doing any work.
   const protectedB64 = (root.getAttribute("Protected") || "").trim();
@@ -957,8 +1130,15 @@ export async function decryptMRemoteNGXml(
   if (fullFileEncryption) {
     const body = (root.textContent || "").trim();
     if (!body) throw new Error("FullFileEncryption is on but body is empty");
-    const innerBytes = await decryptMRemoteNGBlob(body, password, iterations);
-    const innerXml = new TextDecoder().decode(innerBytes);
+    const innerBytes = await decryptMRemoteNGBlob(
+      body,
+      password,
+      iterations,
+      decodeBudget,
+    );
+    const innerXml = new TextDecoder("utf-8", { fatal: true }).decode(
+      innerBytes,
+    );
     // Rebuild a parseable document, preserving the original root attributes
     // so any post-processing can still see them.
     const wrapped = `<?xml version="1.0" encoding="utf-8"?><Connections ConfVersion="${root.getAttribute("ConfVersion") || "2.6"}">${innerXml}</Connections>`;
@@ -969,12 +1149,17 @@ export async function decryptMRemoteNGXml(
         "Decrypted body is not valid XML — file may be from an unsupported mRemoteNG version",
       );
     }
-    await decryptPerFieldPasswords(innerDoc, password, iterations);
+    await decryptPerFieldPasswords(
+      innerDoc,
+      password,
+      iterations,
+      decodeBudget,
+    );
     return new XMLSerializer().serializeToString(innerDoc);
   }
 
   // No full-file encryption — just decrypt per-field Password attributes.
-  await decryptPerFieldPasswords(doc, password, iterations);
+  await decryptPerFieldPasswords(doc, password, iterations, decodeBudget);
   return new XMLSerializer().serializeToString(doc);
 }
 
@@ -1031,7 +1216,17 @@ export async function encryptMRemoteNGXml(
 ): Promise<string> {
   const password = opts.password;
   if (!password) throw new Error("encryptMRemoteNGXml requires a password");
-  const iterations = Math.max(1000, opts.iterations ?? 1000);
+  const requestedIterations = opts.iterations ?? 1000;
+  if (
+    !Number.isSafeInteger(requestedIterations) ||
+    requestedIterations < 1 ||
+    requestedIterations > MAX_MREMOTENG_KDF_ITERATIONS
+  ) {
+    throw new Error(
+      `mRemoteNG KdfIterations must be a positive integer no greater than ${MAX_MREMOTENG_KDF_ITERATIONS}`,
+    );
+  }
+  const iterations = Math.max(1000, requestedIterations);
 
   const doc = new DOMParser().parseFromString(plainXml, "text/xml");
   const parseError = doc.querySelector("parsererror");
@@ -1128,6 +1323,7 @@ export const detectMRemoteNGEncryption = (
 export const importFromMRemoteNG = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, "text/xml");
 
@@ -1136,6 +1332,7 @@ export const importFromMRemoteNG = async (
   if (parseError) {
     throw new Error("Invalid XML format: " + parseError.textContent);
   }
+  getBoundedXmlElements(doc, "Node");
 
   const connections: Connection[] = [];
   const folderIdMap = new Map<Element, string>();
@@ -1408,6 +1605,7 @@ export const importFromMRemoteNG = async (
 export const importFromRDCMan = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const parser = new DOMParser();
   const doc = parser.parseFromString(content, "text/xml");
 
@@ -1415,6 +1613,7 @@ export const importFromRDCMan = async (
   if (parseError) {
     throw new Error("Invalid XML format: " + parseError.textContent);
   }
+  getBoundedXmlElements(doc, "group, server");
 
   const connections: Connection[] = [];
 
@@ -1509,6 +1708,7 @@ const parseRDCManServer = (
 export const importFromMobaXterm = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const connections: Connection[] = [];
   const lines = content.split(/\r?\n/);
   let currentSection = "";
@@ -1534,6 +1734,7 @@ export const importFromMobaXterm = async (
         if (currentSubRep && !folderMap.has(currentSubRep)) {
           const folderId = generateId();
           folderMap.set(currentSubRep, folderId);
+          assertCanAppendConnection(connections.length);
           connections.push({
             id: folderId,
             name: currentSubRep.split("\\").pop() || currentSubRep,
@@ -1574,6 +1775,7 @@ export const importFromMobaXterm = async (
         const port = parsePortOrDefault(parts[1], protocol);
         const username = parts[2] || undefined;
 
+        assertCanAppendConnection(connections.length);
         connections.push({
           id: generateId(),
           name: name,
@@ -1600,6 +1802,7 @@ export const importFromMobaXterm = async (
 export const importFromPuTTY = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const connections: Connection[] = [];
   const lines = content.split(/\r?\n/);
   let currentSession: string | null = null;
@@ -1615,6 +1818,7 @@ export const importFromPuTTY = async (
     if (sessionMatch) {
       // Save previous session
       if (currentSession && currentProps.HostName) {
+        assertCanAppendConnection(connections.length);
         connections.push(createPuTTYConnection(currentSession, currentProps));
       }
       currentSession = decodeURIComponent(
@@ -1636,6 +1840,7 @@ export const importFromPuTTY = async (
 
   // Save last session
   if (currentSession && currentProps.HostName) {
+    assertCanAppendConnection(connections.length);
     connections.push(createPuTTYConnection(currentSession, currentProps));
   }
 
@@ -1692,7 +1897,15 @@ const createPuTTYConnection = (
 export const importFromTermius = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const data = JSON.parse(content);
+  assertJsonStructureWithinLimits(data);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Termius import must contain a JSON object");
+  }
+  const groupCount = Array.isArray(data.groups) ? data.groups.length : 0;
+  const hostCount = Array.isArray(data.hosts) ? data.hosts.length : 0;
+  assertCanAppendConnection(groupCount, hostCount);
   const connections: Connection[] = [];
   const groupMap = new Map<string, string>();
 
@@ -1747,7 +1960,15 @@ export const importFromTermius = async (
 export const importFromRoyalTS = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const data = JSON.parse(content);
+  assertJsonStructureWithinLimits(data);
+  if (
+    !Array.isArray(data) &&
+    (!data || typeof data !== "object" || !Array.isArray(data.Objects))
+  ) {
+    throw new Error("Royal TS import must contain an object array");
+  }
   const connections: Connection[] = [];
 
   const mapRoyalType = (type: string): Connection["protocol"] => {
@@ -1766,9 +1987,22 @@ export const importFromRoyalTS = async (
     return map[type] || "rdp";
   };
 
-  const parseObjects = (objects: any[], parentId?: string): void => {
+  const parseObjects = (objects: any[], parentId?: string, depth = 0): void => {
+    if (depth > MAX_IMPORT_NESTING_DEPTH) {
+      throw new Error("Royal TS nesting exceeds the safety limit");
+    }
+    if (
+      !Array.isArray(objects) ||
+      connections.length + objects.length > MAX_IMPORT_CONNECTIONS
+    ) {
+      throw new Error("Royal TS object count exceeds the safety limit");
+    }
     for (const obj of objects) {
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+        throw new Error("Royal TS contains a malformed object");
+      }
       if (obj.Type === "RoyalFolder") {
+        assertCanAppendConnection(connections.length);
         const folderId = generateId();
         connections.push({
           id: folderId,
@@ -1784,9 +2018,10 @@ export const importFromRoyalTS = async (
           updatedAt: new Date().toISOString(),
         });
         if (obj.Objects && Array.isArray(obj.Objects)) {
-          parseObjects(obj.Objects, folderId);
+          parseObjects(obj.Objects, folderId, depth + 1);
         }
       } else {
+        assertCanAppendConnection(connections.length);
         const protocol = mapRoyalType(obj.Type || "");
         connections.push({
           id: generateId(),
@@ -1820,6 +2055,7 @@ export const importFromRoyalTS = async (
 export const importFromSecureCRT = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const connections: Connection[] = [];
 
   // Match each <Session Name="...">...</Session> block
@@ -1873,6 +2109,7 @@ export const importFromSecureCRT = async (
     const port = parsePortOrDefault(rawPort, protocol);
 
     if (hostname || name) {
+      assertCanAppendConnection(connections.length);
       const portableProtocol = mapPortableProtocol(
         protocol === "raw"
           ? body.toLowerCase().includes("raw/udp") ||
@@ -1950,25 +2187,55 @@ const normalizeJsonConnection = (conn: any): Connection => {
 export const importFromJSON = async (
   content: string,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const data = JSON.parse(content);
+  assertJsonStructureWithinLimits(data);
+  const normalizeConnections = (connections: unknown[]): Connection[] => {
+    if (connections.length > MAX_IMPORT_CONNECTIONS) {
+      throw new Error("JSON connection count exceeds the safety limit");
+    }
+    return connections.map((connection) => {
+      if (
+        !connection ||
+        typeof connection !== "object" ||
+        Array.isArray(connection)
+      ) {
+        throw new Error("JSON import contains a malformed connection");
+      }
+      return normalizeJsonConnection(connection);
+    });
+  };
 
   // Handle array format
   if (Array.isArray(data)) {
-    return data.map(normalizeJsonConnection);
+    return normalizeConnections(data);
   }
 
   // Handle native multi-database export package format.
   if (Array.isArray(data?.databases)) {
-    return data.databases
-      .flatMap((database: any) =>
-        Array.isArray(database?.connections) ? database.connections : [],
-      )
-      .map(normalizeJsonConnection);
+    const connections: unknown[] = [];
+    for (const database of data.databases) {
+      if (
+        !database ||
+        typeof database !== "object" ||
+        !Array.isArray(database.connections)
+      ) {
+        throw new Error("JSON import contains a malformed database");
+      }
+      if (
+        connections.length + database.connections.length >
+        MAX_IMPORT_CONNECTIONS
+      ) {
+        throw new Error("JSON connection count exceeds the safety limit");
+      }
+      connections.push(...database.connections);
+    }
+    return normalizeConnections(connections);
   }
 
   // Handle object with connections array
   if (data.connections && Array.isArray(data.connections)) {
-    return importFromJSON(JSON.stringify(data.connections));
+    return normalizeConnections(data.connections);
   }
 
   throw new Error(
@@ -1984,31 +2251,49 @@ export const importConnections = async (
   filename?: string,
   format?: ImportFormat,
 ): Promise<Connection[]> => {
+  assertImportTextWithinLimit(content);
   const detectedFormat = format || detectImportFormat(content, filename);
 
+  let imported: Connection[];
   switch (detectedFormat) {
     case "xml":
-      return importFromXML(content);
+      imported = await importFromXML(content);
+      break;
     case "mremoteng":
-      return importFromMRemoteNG(content);
+      imported = await importFromMRemoteNG(content);
+      break;
     case "rdcman":
-      return importFromRDCMan(content);
+      imported = await importFromRDCMan(content);
+      break;
     case "mobaxterm":
-      return importFromMobaXterm(content);
+      imported = await importFromMobaXterm(content);
+      break;
     case "putty":
-      return importFromPuTTY(content);
+      imported = await importFromPuTTY(content);
+      break;
     case "termius":
-      return importFromTermius(content);
+      imported = await importFromTermius(content);
+      break;
     case "royalts":
-      return importFromRoyalTS(content);
+      imported = await importFromRoyalTS(content);
+      break;
     case "securecrt":
-      return importFromSecureCRT(content);
+      imported = await importFromSecureCRT(content);
+      break;
     case "json":
-      return importFromJSON(content);
+      imported = await importFromJSON(content);
+      break;
     case "csv":
     default:
-      return importFromCSV(content);
+      imported = await importFromCSV(content);
+      break;
   }
+  if (imported.length > MAX_IMPORT_CONNECTIONS) {
+    throw new Error(
+      `Import contains more than ${MAX_IMPORT_CONNECTIONS} connections`,
+    );
+  }
+  return imported;
 };
 
 /**

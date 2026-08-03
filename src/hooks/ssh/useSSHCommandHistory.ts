@@ -15,14 +15,50 @@ import {
 import { commandExecutionDisplayStatus } from "../../utils/ssh/sshCommandEvidence";
 import {
   SSH_COMMAND_HISTORY_SYNC_EVENT,
+  MAX_SSH_HISTORY_COMMAND_CHARS,
+  MAX_SSH_HISTORY_ENTRIES,
+  MAX_SSH_HISTORY_OUTPUT_CHARS,
+  redactSSHCommandHistorySecrets,
   sanitizeSSHCommandHistory,
   sanitizeSSHCommandHistoryEntry,
 } from "../../utils/ssh/sshCommandHistorySanitizer";
+import { SecureStorage } from "../../utils/storage/storage";
 
 // ─── Constants ─────────────────────────────────────────────────
 
 const HISTORY_STORAGE_KEY = "sshCommandHistory";
 const CONFIG_STORAGE_KEY = "sshCommandHistoryConfig";
+const HISTORY_VAULT_SERVICE = "sortofremoteng.ssh-command-history";
+const HISTORY_VAULT_ACCOUNT = "history-v1";
+const MAX_HISTORY_VAULT_BYTES = 512 * 1024;
+
+let memoryHistory: SSHCommandHistoryEntry[] = [];
+
+function purgeLegacyHistoryStorage(): void {
+  try {
+    localStorage.removeItem(HISTORY_STORAGE_KEY);
+  } catch {
+    // Browser storage is optional. History remains memory-only.
+  }
+}
+
+function publishMemoryHistory(entries: SSHCommandHistoryEntry[]): void {
+  memoryHistory = entries;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SSH_COMMAND_HISTORY_SYNC_EVENT));
+  }
+}
+
+export function resetSSHCommandHistoryMemoryForTests(
+  entries: SSHCommandHistoryEntry[] = [],
+): void {
+  memoryHistory = sanitizeSSHCommandHistory(entries);
+  purgeLegacyHistoryStorage();
+}
+
+export function getSSHCommandHistoryMemorySnapshot(): SSHCommandHistoryEntry[] {
+  return redactSSHCommandHistorySecrets(memoryHistory);
+}
 
 // ─── Category auto-detection ───────────────────────────────────
 
@@ -90,59 +126,27 @@ function detectCategory(command: string): SSHCommandCategory {
 // ─── Helpers ───────────────────────────────────────────────────
 
 function loadHistory(): SSHCommandHistoryEntry[] {
-  try {
-    const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
-    if (!stored) return [];
-    return sanitizeSSHCommandHistory(JSON.parse(stored), {
-      mode: "storage",
-      fallbackCategory: detectCategory,
-    });
-  } catch {
-    return [];
-  }
-}
-
-function dispatchHistorySync(): void {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SSH_COMMAND_HISTORY_SYNC_EVENT));
-  }
+  purgeLegacyHistoryStorage();
+  return memoryHistory;
 }
 
 function saveHistory(entries: SSHCommandHistoryEntry[]): void {
-  try {
-    const serialized = JSON.stringify(entries);
-    if (localStorage.getItem(HISTORY_STORAGE_KEY) === serialized) return;
-    localStorage.setItem(HISTORY_STORAGE_KEY, serialized);
-    dispatchHistorySync();
-  } catch {
-    // Quota exceeded — trim oldest non-starred entries and retry
-    const trimmed = [...entries]
-      .sort((a, b) => {
-        if (a.starred !== b.starred) return a.starred ? -1 : 1;
-        return (
-          new Date(b.lastExecutedAt).getTime() -
-          new Date(a.lastExecutedAt).getTime()
-        );
-      })
-      .slice(0, Math.floor(entries.length * 0.75));
-    try {
-      const serialized = JSON.stringify(trimmed);
-      if (localStorage.getItem(HISTORY_STORAGE_KEY) === serialized) return;
-      localStorage.setItem(HISTORY_STORAGE_KEY, serialized);
-      dispatchHistorySync();
-    } catch {
-      // give up silently
-    }
-  }
+  publishMemoryHistory(entries);
 }
 
 function loadConfig(): SSHCommandHistoryConfig {
+  const defaults = { ...defaultHistoryConfig, persistEnabled: false };
   try {
     const stored = localStorage.getItem(CONFIG_STORAGE_KEY);
-    if (!stored) return defaultHistoryConfig;
-    return { ...defaultHistoryConfig, ...JSON.parse(stored) };
+    if (!stored) return defaults;
+    const parsed = JSON.parse(stored) as Partial<SSHCommandHistoryConfig>;
+    return {
+      ...defaults,
+      ...parsed,
+      persistEnabled: parsed.persistEnabled === true,
+    };
   } catch {
-    return defaultHistoryConfig;
+    return defaults;
   }
 }
 
@@ -187,18 +191,70 @@ function enforceRetention(
     result = result.filter((e) => e.starred || e.lastExecutedAt >= cutoffStr);
   }
 
-  // Enforce max entries
-  if (result.length > config.maxEntries) {
+  const configuredMax = Number.isFinite(config.maxEntries)
+    ? Math.max(0, Math.floor(config.maxEntries))
+    : 0;
+  const maxEntries = Math.min(configuredMax, MAX_SSH_HISTORY_ENTRIES);
+  if (result.length > maxEntries) {
     // Keep starred entries, then most recent
     const starred = result.filter((e) => e.starred);
     const unstarred = result
       .filter((e) => !e.starred)
       .sort((a, b) => b.lastExecutedAt.localeCompare(a.lastExecutedAt));
-    const keep = config.maxEntries - starred.length;
-    result = [...starred, ...unstarred.slice(0, Math.max(0, keep))];
+    const boundedStarred = starred.slice(0, maxEntries);
+    const keep = maxEntries - boundedStarred.length;
+    result = [...boundedStarred, ...unstarred.slice(0, Math.max(0, keep))];
   }
 
   return result;
+}
+
+function serializeHistoryForVault(
+  entries: SSHCommandHistoryEntry[],
+  config: SSHCommandHistoryConfig,
+): string {
+  let safe = enforceRetention(
+    redactSSHCommandHistorySecrets(entries, config.maxOutputSize),
+    config,
+  );
+  while (safe.length > 0) {
+    const serialized = JSON.stringify(safe);
+    if (
+      new TextEncoder().encode(serialized).byteLength <= MAX_HISTORY_VAULT_BYTES
+    ) {
+      return serialized;
+    }
+    safe = safe.slice(0, -1);
+  }
+  return "[]";
+}
+
+async function loadHistoryFromVault(
+  config: SSHCommandHistoryConfig,
+): Promise<SSHCommandHistoryEntry[]> {
+  const serialized = await SecureStorage.vaultReadSecret(
+    HISTORY_VAULT_SERVICE,
+    HISTORY_VAULT_ACCOUNT,
+  );
+  if (
+    new TextEncoder().encode(serialized).byteLength > MAX_HISTORY_VAULT_BYTES
+  ) {
+    throw new Error("SSH history vault payload exceeds the safety limit");
+  }
+  return enforceRetention(
+    redactSSHCommandHistorySecrets(
+      sanitizeSSHCommandHistory(JSON.parse(serialized), {
+        mode: "storage",
+        maxOutputSize: Math.min(
+          config.maxOutputSize,
+          MAX_SSH_HISTORY_OUTPUT_CHARS,
+        ),
+        fallbackCategory: detectCategory,
+      }),
+      config.maxOutputSize,
+    ),
+    config,
+  );
 }
 
 // ─── Export helpers ────────────────────────────────────────────
@@ -290,32 +346,89 @@ export function useSSHCommandHistory(sessionId?: string) {
   // Arrow-key navigation index (-1 = not navigating, 0 = most recent)
   const [navigationIndex, setNavigationIndex] = useState(-1);
   const navigationSnapshotRef = useRef<string>("");
+  const vaultLoadPendingRef = useRef(config.persistEnabled);
+  const vaultGenerationRef = useRef(0);
+  const [vaultRevision, setVaultRevision] = useState(0);
+  const commitEntries = useCallback(
+    (
+      update:
+        | SSHCommandHistoryEntry[]
+        | ((current: SSHCommandHistoryEntry[]) => SSHCommandHistoryEntry[]),
+    ) => {
+      const next =
+        typeof update === "function" ? update(loadHistory()) : update;
+      saveHistory(next);
+      setEntries(next);
+    },
+    [],
+  );
 
-  // ── Persist on change ───────────────────────────────────────
+  // ── Secure persistence ──────────────────────────────────────
 
   useEffect(() => {
-    if (config.persistEnabled) {
-      const enforced = enforceRetention(entries, config);
-      // Only save if retention actually trimmed something
-      if (enforced.length !== entries.length) {
-        setEntries(enforced);
-      }
-      saveHistory(enforced.length !== entries.length ? enforced : entries);
+    const enforced = enforceRetention(entries, config);
+    if (enforced.length !== entries.length) {
+      commitEntries(enforced);
     }
-  }, [entries, config]);
+  }, [entries, config, commitEntries]);
 
   useEffect(() => {
     const syncHistory = () => setEntries(loadHistory());
-    const syncFromStorage = (event: StorageEvent) => {
-      if (event.key === HISTORY_STORAGE_KEY) syncHistory();
-    };
     window.addEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, syncHistory);
-    window.addEventListener("storage", syncFromStorage);
     return () => {
       window.removeEventListener(SSH_COMMAND_HISTORY_SYNC_EVENT, syncHistory);
-      window.removeEventListener("storage", syncFromStorage);
     };
   }, []);
+
+  useEffect(() => {
+    const generation = ++vaultGenerationRef.current;
+    if (!config.persistEnabled) {
+      vaultLoadPendingRef.current = false;
+      void SecureStorage.vaultDeleteSecret(
+        HISTORY_VAULT_SERVICE,
+        HISTORY_VAULT_ACCOUNT,
+      ).catch(() => undefined);
+      return;
+    }
+
+    let cancelled = false;
+    vaultLoadPendingRef.current = true;
+    void loadHistoryFromVault(config)
+      .then((loaded) => {
+        if (cancelled || generation !== vaultGenerationRef.current) return;
+        commitEntries((current) => {
+          const commands = new Set(
+            current.map((entry) => entry.command.trim()),
+          );
+          return enforceRetention(
+            [
+              ...current,
+              ...loaded.filter((entry) => !commands.has(entry.command.trim())),
+            ],
+            config,
+          );
+        });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled || generation !== vaultGenerationRef.current) return;
+        vaultLoadPendingRef.current = false;
+        setVaultRevision((revision) => revision + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config, commitEntries]);
+
+  useEffect(() => {
+    if (!config.persistEnabled || vaultLoadPendingRef.current) return;
+    const serialized = serializeHistoryForVault(entries, config);
+    void SecureStorage.vaultStoreSecret(
+      HISTORY_VAULT_SERVICE,
+      HISTORY_VAULT_ACCOUNT,
+      serialized,
+    ).catch(() => undefined);
+  }, [entries, config, vaultRevision]);
 
   useEffect(() => {
     saveConfig(config);
@@ -475,22 +588,34 @@ export function useSSHCommandHistory(sessionId?: string) {
 
   const addEntry = useCallback(
     (command: string, executions: CommandExecution[]) => {
+      const boundedCommand = command
+        .slice(0, MAX_SSH_HISTORY_COMMAND_CHARS)
+        .trim();
+      if (!boundedCommand) return;
       const recordedAt = new Date().toISOString();
-      const stampedExecutions = executions.map((execution) => ({
+      const maxOutputSize = Math.min(
+        MAX_SSH_HISTORY_OUTPUT_CHARS,
+        Math.max(0, Math.floor(config.maxOutputSize)),
+      );
+      const stampedExecutions = executions.slice(-20).map((execution) => ({
         ...execution,
         executedAt: execution.executedAt ?? recordedAt,
         output:
           config.trackOutput && execution.output !== undefined
-            ? truncateOutput(execution.output, config.maxOutputSize)
+            ? truncateOutput(execution.output, maxOutputSize)
             : undefined,
         stderr:
           config.trackOutput && execution.stderr !== undefined
-            ? truncateOutput(execution.stderr, config.maxOutputSize)
+            ? truncateOutput(execution.stderr, maxOutputSize)
             : undefined,
+        errorMessage:
+          execution.errorMessage === undefined
+            ? undefined
+            : truncateOutput(execution.errorMessage, maxOutputSize),
       }));
       const updateEntries = (prev: SSHCommandHistoryEntry[]) => {
         // Check for duplicate
-        const existing = prev.find((e) => e.command.trim() === command.trim());
+        const existing = prev.find((e) => e.command.trim() === boundedCommand);
 
         if (existing) {
           // Update existing entry
@@ -502,7 +627,7 @@ export function useSSHCommandHistory(sessionId?: string) {
                   executionCount: e.executionCount + 1,
                   executions: [...e.executions, ...stampedExecutions].slice(
                     -20,
-                  ), // keep last 20 executions per entry
+                  ),
                 }
               : e,
           );
@@ -511,11 +636,11 @@ export function useSSHCommandHistory(sessionId?: string) {
 
         // New entry
         const category = config.autoCategorize
-          ? detectCategory(command)
+          ? detectCategory(boundedCommand)
           : "unknown";
         const newEntry: SSHCommandHistoryEntry = {
           id: generateId(),
-          command: command.trim(),
+          command: boundedCommand,
           createdAt: recordedAt,
           lastExecutedAt: recordedAt,
           executionCount: 1,
@@ -527,69 +652,78 @@ export function useSSHCommandHistory(sessionId?: string) {
 
         return enforceRetention([newEntry, ...prev], config);
       };
-      if (config.persistEnabled) {
-        const next = updateEntries(loadHistory());
-        saveHistory(next);
-        setEntries(loadHistory());
-      } else {
-        setEntries(updateEntries);
-      }
+      commitEntries(updateEntries);
     },
-    [config],
+    [config, commitEntries],
   );
 
   // ── Toggle star ─────────────────────────────────────────────
 
-  const toggleStar = useCallback((entryId: string) => {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, starred: !e.starred } : e)),
-    );
-  }, []);
+  const toggleStar = useCallback(
+    (entryId: string) => {
+      commitEntries((prev) =>
+        prev.map((e) => (e.id === entryId ? { ...e, starred: !e.starred } : e)),
+      );
+    },
+    [commitEntries],
+  );
 
   // ── Update tags ─────────────────────────────────────────────
 
-  const updateTags = useCallback((entryId: string, tags: string[]) => {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, tags } : e)),
-    );
-  }, []);
+  const updateTags = useCallback(
+    (entryId: string, tags: string[]) => {
+      commitEntries((prev) =>
+        prev.map((e) => (e.id === entryId ? { ...e, tags } : e)),
+      );
+    },
+    [commitEntries],
+  );
 
   // ── Update note ─────────────────────────────────────────────
 
-  const updateNote = useCallback((entryId: string, note: string) => {
-    setEntries((prev) =>
-      prev.map((e) => (e.id === entryId ? { ...e, note } : e)),
-    );
-  }, []);
+  const updateNote = useCallback(
+    (entryId: string, note: string) => {
+      commitEntries((prev) =>
+        prev.map((e) => (e.id === entryId ? { ...e, note } : e)),
+      );
+    },
+    [commitEntries],
+  );
 
   // ── Update category ─────────────────────────────────────────
 
   const updateCategory = useCallback(
     (entryId: string, category: SSHCommandCategory) => {
-      setEntries((prev) =>
+      commitEntries((prev) =>
         prev.map((e) => (e.id === entryId ? { ...e, category } : e)),
       );
     },
-    [],
+    [commitEntries],
   );
 
   // ── Delete entry ────────────────────────────────────────────
 
-  const deleteEntry = useCallback((entryId: string) => {
-    setEntries((prev) => prev.filter((e) => e.id !== entryId));
-    setSelectedEntryId((prev) => (prev === entryId ? null : prev));
-  }, []);
+  const deleteEntry = useCallback(
+    (entryId: string) => {
+      commitEntries((prev) => prev.filter((e) => e.id !== entryId));
+      setSelectedEntryId((prev) => (prev === entryId ? null : prev));
+    },
+    [commitEntries],
+  );
 
   // ── Delete all (with optional filter) ───────────────────────
 
-  const clearHistory = useCallback((keepStarred = true) => {
-    if (keepStarred) {
-      setEntries((prev) => prev.filter((e) => e.starred));
-    } else {
-      setEntries([]);
-    }
-    setSelectedEntryId(null);
-  }, []);
+  const clearHistory = useCallback(
+    (keepStarred = true) => {
+      if (keepStarred) {
+        commitEntries((prev) => prev.filter((e) => e.starred));
+      } else {
+        commitEntries([]);
+      }
+      setSelectedEntryId(null);
+    },
+    [commitEntries],
+  );
 
   // ── Arrow-key history navigation ────────────────────────────
 
@@ -653,18 +787,22 @@ export function useSSHCommandHistory(sessionId?: string) {
         );
       }
 
+      const safeExportEntries = redactSSHCommandHistorySecrets(
+        exportEntries,
+        config.maxOutputSize,
+      );
       switch (options.format) {
         case "json":
-          return exportAsJSON(exportEntries, options);
+          return exportAsJSON(safeExportEntries, options);
         case "shell":
-          return exportAsShell(exportEntries);
+          return exportAsShell(safeExportEntries);
         case "csv":
-          return exportAsCSV(exportEntries, options);
+          return exportAsCSV(safeExportEntries, options);
         default:
-          return exportAsJSON(exportEntries, options);
+          return exportAsJSON(safeExportEntries, options);
       }
     },
-    [filteredEntries],
+    [filteredEntries, config.maxOutputSize],
   );
 
   // ── Import ──────────────────────────────────────────────────
@@ -684,7 +822,7 @@ export function useSSHCommandHistory(sessionId?: string) {
           return result;
         }
 
-        setEntries((prev) => {
+        commitEntries((prev) => {
           const existingCommands = new Set(prev.map((e) => e.command.trim()));
           const usedIds = new Set(prev.map((entry) => entry.id));
           const newEntries: SSHCommandHistoryEntry[] = [];
@@ -732,7 +870,7 @@ export function useSSHCommandHistory(sessionId?: string) {
 
       return result;
     },
-    [config],
+    [config, commitEntries],
   );
 
   // ── Config updates ──────────────────────────────────────────

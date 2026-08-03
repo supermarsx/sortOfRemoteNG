@@ -16,7 +16,10 @@ import {
   SSH_SESSION_ACTIVITY_STORAGE_KEY,
 } from "../../src/utils/ssh/sshSessionActivity";
 import type { SSHCommandHistoryEntry } from "../../src/types/ssh/sshCommandHistory";
-import { useSSHCommandHistory } from "../../src/hooks/ssh/useSSHCommandHistory";
+import {
+  resetSSHCommandHistoryMemoryForTests,
+  useSSHCommandHistory,
+} from "../../src/hooks/ssh/useSSHCommandHistory";
 
 const SSH_HISTORY_FIXTURE: SSHCommandHistoryEntry[] = [
   {
@@ -67,6 +70,7 @@ const SSH_HISTORY_FIXTURE: SSHCommandHistoryEntry[] = [
 
 describe("SshSessionsView", () => {
   beforeEach(() => {
+    resetSSHCommandHistoryMemoryForTests();
     window.localStorage.removeItem(SSH_COMMAND_HISTORY_STORAGE_KEY);
     window.localStorage.removeItem(SSH_SESSION_ACTIVITY_STORAGE_KEY);
   });
@@ -79,10 +83,7 @@ describe("SshSessionsView", () => {
   });
 
   it("distinguishes dispatch evidence from proven remote completion", () => {
-    window.localStorage.setItem(
-      SSH_COMMAND_HISTORY_STORAGE_KEY,
-      JSON.stringify(SSH_HISTORY_FIXTURE),
-    );
+    resetSSHCommandHistoryMemoryForTests(SSH_HISTORY_FIXTURE);
 
     render(<SshSessionsView />);
 
@@ -180,6 +181,9 @@ describe("SshSessionsView", () => {
 
     expect(screen.getByText("Command dispatch: uptime")).toBeInTheDocument();
     expect(screen.getByText("Live SSH")).toBeInTheDocument();
+    expect(
+      window.localStorage.getItem(SSH_COMMAND_HISTORY_STORAGE_KEY),
+    ).toBeNull();
   });
 
   it("updates immediately for same-window lifecycle writes", () => {
@@ -256,27 +260,24 @@ describe("SshSessionsView", () => {
   });
 
   it("discards invalid records and strips unsafe display controls", () => {
-    window.localStorage.setItem(
-      SSH_COMMAND_HISTORY_STORAGE_KEY,
-      JSON.stringify([
-        null,
-        { command: { nested: "not displayable" } },
-        {
-          ...SSH_HISTORY_FIXTURE[0],
-          command: "echo\u202E safe",
-          note: "deploy\u0000 note",
-          executions: [
-            {
-              ...SSH_HISTORY_FIXTURE[0].executions[0],
-              source: "web-terminal-script",
-              evidence: "remote-completion",
-              status: "success",
-              output: "<script>alert(1)</script>\u0007",
-            },
-          ],
-        },
-      ]),
-    );
+    resetSSHCommandHistoryMemoryForTests([
+      null,
+      { command: { nested: "not displayable" } },
+      {
+        ...SSH_HISTORY_FIXTURE[0],
+        command: "echo\u202E safe",
+        note: "deploy\u0000 note",
+        executions: [
+          {
+            ...SSH_HISTORY_FIXTURE[0].executions[0],
+            source: "web-terminal-script",
+            evidence: "remote-completion",
+            status: "success",
+            output: "<script>alert(1)</script>\u0007",
+          },
+        ],
+      },
+    ] as SSHCommandHistoryEntry[]);
 
     const { container } = render(<SshSessionsView />);
     expect(
@@ -328,10 +329,7 @@ describe("SshSessionsView", () => {
     const { evidence: _evidence, ...legacyExecution } = legacy.executions[0];
     legacy.executions = [legacyExecution as (typeof legacy.executions)[number]];
     legacy.executionCount = 1;
-    window.localStorage.setItem(
-      SSH_COMMAND_HISTORY_STORAGE_KEY,
-      JSON.stringify([legacy]),
-    );
+    resetSSHCommandHistoryMemoryForTests([legacy]);
 
     render(<SshSessionsView />);
 
@@ -360,10 +358,7 @@ describe("SshSessionsView", () => {
       },
     ];
     imported.executionCount = 1;
-    window.localStorage.setItem(
-      SSH_COMMAND_HISTORY_STORAGE_KEY,
-      JSON.stringify([imported]),
-    );
+    resetSSHCommandHistoryMemoryForTests([imported]);
 
     render(<SshSessionsView />);
 
@@ -390,18 +385,15 @@ describe("SshSessionsView", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    window.localStorage.setItem(
-      SSH_COMMAND_HISTORY_STORAGE_KEY,
-      JSON.stringify([
-        SSH_HISTORY_FIXTURE[0],
-        {
-          ...SSH_HISTORY_FIXTURE[0],
-          command: "hostname",
-          createdAt: "2026-01-03T12:00:00.000Z",
-          lastExecutedAt: "2026-01-03T12:00:00.000Z",
-        },
-      ]),
-    );
+    resetSSHCommandHistoryMemoryForTests([
+      SSH_HISTORY_FIXTURE[0],
+      {
+        ...SSH_HISTORY_FIXTURE[0],
+        command: "hostname",
+        createdAt: "2026-01-03T12:00:00.000Z",
+        lastExecutedAt: "2026-01-03T12:00:00.000Z",
+      },
+    ]);
 
     render(<SshSessionsView />);
     fireEvent.click(screen.getByTestId("ssh-sessions-tab-history"));

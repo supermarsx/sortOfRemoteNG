@@ -1,64 +1,87 @@
-import { EventEmitter } from 'events';
-import type { FileTransferSession } from '../../types/connection/connection';
-import { generateId } from '../core/id';
-import { FileTransferAdapter, FileItem } from './fileTransferAdapters';
-import { IndexedDbService } from '../storage/indexedDbService';
+import { EventEmitter } from "events";
+import type { FileTransferSession } from "../../types/connection/connection";
+import { generateId } from "../core/id";
+import {
+  FileTransferAdapter,
+  FileItem,
+  normalizeRemotePath,
+} from "./fileTransferAdapters";
+import { IndexedDbService } from "../storage/indexedDbService";
 
-export type { FileTransferAdapter, FileItem } from './fileTransferAdapters';
+export type { FileTransferAdapter, FileItem } from "./fileTransferAdapters";
 
 export class FileTransferService extends EventEmitter {
   private adapters = new Map<string, FileTransferAdapter>();
   private controllers = new Map<string, AbortController>();
-  private readonly storageKey = 'mremote-file-transfers';
+  private readonly storageKey = "mremote-file-transfers";
+  private readonly maxStoredSessions = 500;
   // Serialize IndexedDB writes to prevent read-modify-write race conditions
   private saveMutex: Promise<void> = Promise.resolve();
 
   private async loadSessions(): Promise<FileTransferSession[]> {
-    return (await IndexedDbService.getItem<FileTransferSession[]>(this.storageKey)) || [];
+    return (
+      (await IndexedDbService.getItem<FileTransferSession[]>(
+        this.storageKey,
+      )) || []
+    );
   }
 
   private async saveSession(session: FileTransferSession): Promise<void> {
     // Chain on the mutex so concurrent saves are serialized
     this.saveMutex = this.saveMutex.then(async () => {
       const sessions = await this.loadSessions();
-      const index = sessions.findIndex(s => s.id === session.id);
+      const index = sessions.findIndex((s) => s.id === session.id);
       if (index >= 0) {
         sessions[index] = { ...session };
       } else {
         sessions.push({ ...session });
       }
+      if (sessions.length > this.maxStoredSessions) {
+        sessions.sort(
+          (a, b) =>
+            new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+        );
+        sessions.splice(0, sessions.length - this.maxStoredSessions);
+      }
       await IndexedDbService.setItem(this.storageKey, sessions);
-    }).catch(err => {
-      console.error('Failed to save file transfer session:', err);
     });
     await this.saveMutex;
   }
 
-  private async getSession(id: string): Promise<FileTransferSession | undefined> {
+  private async getSession(
+    id: string,
+  ): Promise<FileTransferSession | undefined> {
     const sessions = await this.loadSessions();
-    return sessions.find(s => s.id === id);
+    return sessions.find((s) => s.id === id);
   }
 
   registerAdapter(connectionId: string, adapter: FileTransferAdapter) {
+    if (!connectionId || connectionId.length > 512) {
+      throw new Error("Connection identifier is invalid");
+    }
     this.adapters.set(connectionId, adapter);
+  }
+
+  unregisterAdapter(connectionId: string): void {
+    this.adapters.delete(connectionId);
   }
 
   async listDirectory(
     connectionId: string,
     path: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<FileItem[]> {
     const adapter = this.adapters.get(connectionId);
-    if (!adapter) throw new Error('No adapter registered for connection');
-    return adapter.list(path, options?.signal);
+    if (!adapter) throw new Error("No adapter registered for connection");
+    return adapter.list(normalizeRemotePath(path), options?.signal);
   }
 
   private createSession(
     connectionId: string,
-    type: 'upload' | 'download',
+    type: "upload" | "download",
     localPath: string,
     remotePath: string,
-    totalSize: number
+    totalSize: number,
   ): [string, FileTransferSession, AbortController] {
     const transferId = generateId();
     const controller = new AbortController();
@@ -69,7 +92,7 @@ export class FileTransferService extends EventEmitter {
       localPath,
       remotePath,
       progress: 0,
-      status: 'pending',
+      status: "pending",
       startTime: new Date(),
       totalSize,
       transferredSize: 0,
@@ -83,52 +106,69 @@ export class FileTransferService extends EventEmitter {
     connectionId: string,
     file: File,
     remotePath: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<void> {
     const adapter = this.adapters.get(connectionId);
-    if (!adapter) throw new Error('No adapter registered for connection');
+    if (!adapter) throw new Error("No adapter registered for connection");
+    const safeRemotePath = normalizeRemotePath(remotePath);
     const [id, session, controller] = this.createSession(
       connectionId,
-      'upload',
+      "upload",
       file.name,
-      remotePath,
-      file.size
+      safeRemotePath,
+      file.size,
     );
-    if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
-    session.status = 'active';
-    this.emit('start', session);
+    const forwardAbort = () => controller.abort();
+    options?.signal?.addEventListener("abort", forwardAbort, { once: true });
+    if (options?.signal?.aborted) forwardAbort();
+    session.status = "active";
+    this.emit("start", session);
     await this.saveSession(session);
 
     try {
       await adapter.upload(
         file,
-        remotePath,
+        safeRemotePath,
         (transferred, total) => {
-          session.transferredSize = transferred;
-          session.totalSize = total;
-          session.progress = (transferred / total) * 100;
+          const safeTotal = Number.isFinite(total) && total >= 0 ? total : 0;
+          const safeTransferred =
+            Number.isFinite(transferred) && transferred >= 0
+              ? Math.min(transferred, safeTotal)
+              : 0;
+          session.transferredSize = safeTransferred;
+          session.totalSize = safeTotal;
+          session.progress = safeTotal
+            ? (safeTransferred / safeTotal) * 100
+            : 0;
           void this.saveSession(session);
-          this.emit('progress', { id, progress: session.progress, transferred, total });
+          this.emit("progress", {
+            id,
+            progress: session.progress,
+            transferred,
+            total,
+          });
         },
-        controller.signal
+        controller.signal,
       );
-      session.status = 'completed';
+      session.status = "completed";
     } catch (err) {
       if (controller.signal.aborted) {
-        session.status = 'cancelled';
+        session.status = "cancelled";
       } else {
-        session.status = 'error';
+        session.status = "error";
         session.error = (err as Error).message;
       }
+      throw err;
     } finally {
       session.endTime = new Date();
       await this.saveSession(session);
-      if (session.status === 'completed') {
-        this.emit('end', session);
-      } else if (this.listenerCount('error') > 0) {
-        this.emit('error', session);
+      if (session.status === "completed") {
+        this.emit("end", session);
+      } else if (this.listenerCount("error") > 0) {
+        this.emit("error", session);
       }
       this.controllers.delete(id);
+      options?.signal?.removeEventListener("abort", forwardAbort);
     }
   }
 
@@ -136,58 +176,74 @@ export class FileTransferService extends EventEmitter {
     connectionId: string,
     remotePath: string,
     localPath: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<void> {
     const adapter = this.adapters.get(connectionId);
-    if (!adapter) throw new Error('No adapter registered for connection');
+    if (!adapter) throw new Error("No adapter registered for connection");
+    const safeRemotePath = normalizeRemotePath(remotePath);
     const [id, session, controller] = this.createSession(
       connectionId,
-      'download',
+      "download",
       localPath,
-      remotePath,
-      0
+      safeRemotePath,
+      0,
     );
-    if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
-    session.status = 'active';
-    this.emit('start', session);
+    const forwardAbort = () => controller.abort();
+    options?.signal?.addEventListener("abort", forwardAbort, { once: true });
+    if (options?.signal?.aborted) forwardAbort();
+    session.status = "active";
+    this.emit("start", session);
     await this.saveSession(session);
 
     try {
       await adapter.download(
-        remotePath,
+        safeRemotePath,
         localPath,
         (transferred, total) => {
           session.transferredSize = transferred;
           session.totalSize = total;
           session.progress = total ? (transferred / total) * 100 : 0;
           void this.saveSession(session);
-          this.emit('progress', { id, progress: session.progress, transferred, total });
+          this.emit("progress", {
+            id,
+            progress: session.progress,
+            transferred,
+            total,
+          });
         },
-        controller.signal
+        controller.signal,
       );
-      session.status = 'completed';
+      session.status = "completed";
     } catch (err) {
       if (controller.signal.aborted) {
-        session.status = 'cancelled';
+        session.status = "cancelled";
       } else {
-        session.status = 'error';
+        session.status = "error";
         session.error = (err as Error).message;
       }
+      throw err;
     } finally {
       session.endTime = new Date();
       await this.saveSession(session);
-      if (session.status === 'completed') {
-        this.emit('end', session);
-      } else if (this.listenerCount('error') > 0) {
-        this.emit('error', session);
+      if (session.status === "completed") {
+        this.emit("end", session);
+      } else if (this.listenerCount("error") > 0) {
+        this.emit("error", session);
       }
       this.controllers.delete(id);
+      options?.signal?.removeEventListener("abort", forwardAbort);
     }
   }
 
-  async getActiveTransfers(connectionId: string): Promise<FileTransferSession[]> {
+  async getActiveTransfers(
+    connectionId: string,
+  ): Promise<FileTransferSession[]> {
     const sessions = await this.loadSessions();
-    return sessions.filter(t => t.connectionId === connectionId);
+    return sessions.filter(
+      (t) =>
+        t.connectionId === connectionId &&
+        (t.status === "pending" || t.status === "active"),
+    );
   }
 
   cancelTransfer(transferId: string): void {
@@ -195,29 +251,35 @@ export class FileTransferService extends EventEmitter {
     if (controller) controller.abort();
   }
 
-  async resumeTransfer(transferId: string, file?: File | Buffer): Promise<void> {
+  async resumeTransfer(
+    transferId: string,
+    file?: File | Buffer,
+  ): Promise<void> {
     const session = await this.getSession(transferId);
-    if (!session) throw new Error('Transfer session not found');
-    if (session.status === 'completed') return;
+    if (!session) throw new Error("Transfer session not found");
+    if (session.status === "completed") return;
     const adapter = this.adapters.get(session.connectionId);
-    if (!adapter) throw new Error('No adapter registered for connection');
+    if (!adapter) throw new Error("No adapter registered for connection");
 
     const controller = new AbortController();
     this.controllers.set(transferId, controller);
-    session.status = 'active';
+    session.status = "active";
     session.error = undefined;
     await this.saveSession(session);
-    this.emit('start', session);
+    this.emit("start", session);
 
     const progressHandler = (transferred: number, total: number) => {
       const already = session.transferredSize || 0;
       session.totalSize = total || session.totalSize;
-      session.transferredSize = Math.min(already + transferred, session.totalSize);
+      session.transferredSize = Math.min(
+        already + transferred,
+        session.totalSize,
+      );
       session.progress = session.totalSize
         ? (session.transferredSize / session.totalSize) * 100
         : 0;
       void this.saveSession(session);
-      this.emit('progress', {
+      this.emit("progress", {
         id: transferId,
         progress: session.progress,
         transferred: session.transferredSize,
@@ -226,8 +288,8 @@ export class FileTransferService extends EventEmitter {
     };
 
     try {
-      if (session.type === 'upload') {
-        if (!file) throw new Error('File required to resume upload');
+      if (session.type === "upload") {
+        if (!file) throw new Error("File required to resume upload");
         await adapter.upload(
           file as any,
           session.remotePath,
@@ -242,21 +304,22 @@ export class FileTransferService extends EventEmitter {
           controller.signal,
         );
       }
-      session.status = 'completed';
+      session.status = "completed";
     } catch (err) {
       if (controller.signal.aborted) {
-        session.status = 'cancelled';
+        session.status = "cancelled";
       } else {
-        session.status = 'error';
+        session.status = "error";
         session.error = (err as Error).message;
       }
+      throw err;
     } finally {
       session.endTime = new Date();
       await this.saveSession(session);
-      if (session.status === 'completed') {
-        this.emit('end', session);
-      } else if (this.listenerCount('error') > 0) {
-        this.emit('error', session);
+      if (session.status === "completed") {
+        this.emit("end", session);
+      } else if (this.listenerCount("error") > 0) {
+        this.emit("error", session);
       }
       this.controllers.delete(transferId);
     }
@@ -265,37 +328,44 @@ export class FileTransferService extends EventEmitter {
   // Optional adapter-specific helpers
   async deleteFile(connectionId: string, remotePath: string): Promise<void> {
     const adapter: any = this.adapters.get(connectionId);
-    await adapter?.delete?.(remotePath);
+    if (!adapter?.delete) throw new Error("Adapter does not support delete");
+    await adapter.delete(normalizeRemotePath(remotePath));
   }
 
   async createDirectory(connectionId: string, path: string): Promise<void> {
     const adapter: any = this.adapters.get(connectionId);
-    await adapter?.mkdir?.(path);
+    if (!adapter?.mkdir) throw new Error("Adapter does not support mkdir");
+    await adapter.mkdir(normalizeRemotePath(path));
   }
 
   async renameFile(
     connectionId: string,
     oldPath: string,
-    newPath: string
+    newPath: string,
   ): Promise<void> {
     const adapter: any = this.adapters.get(connectionId);
-    await adapter?.rename?.(oldPath, newPath);
+    if (!adapter?.rename) throw new Error("Adapter does not support rename");
+    await adapter.rename(
+      normalizeRemotePath(oldPath),
+      normalizeRemotePath(newPath),
+    );
   }
 
   async changePermissions(
     connectionId: string,
     path: string,
-    permissions: string
+    permissions: string,
   ): Promise<void> {
     const adapter: any = this.adapters.get(connectionId);
-    await adapter?.chmod?.(path, permissions);
+    if (!adapter?.chmod) throw new Error("Adapter does not support chmod");
+    await adapter.chmod(normalizeRemotePath(path), permissions);
   }
 
   async scpUpload(
     connectionId: string,
     localFile: File,
     remotePath: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<void> {
     return this.uploadFile(connectionId, localFile, remotePath, options);
   }
@@ -304,9 +374,8 @@ export class FileTransferService extends EventEmitter {
     connectionId: string,
     remotePath: string,
     localPath: string,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ): Promise<void> {
     return this.downloadFile(connectionId, remotePath, localPath, options);
   }
 }
-

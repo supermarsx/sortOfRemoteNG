@@ -1,96 +1,121 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { detectLanguage } from '../../utils/recording/scriptSyntax';
-import { defaultScripts } from '../../data/defaultScripts';
-import type { ManagedScript, ScriptLanguage, OSTag } from '../../components/recording/ScriptManager';
-import { SCRIPTS_STORAGE_KEY } from '../../components/recording/ScriptManager';
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { detectLanguage } from "../../utils/recording/scriptSyntax";
+import { defaultScripts } from "../../data/defaultScripts";
+import type {
+  ManagedScript,
+  ScriptLanguage,
+  OSTag,
+} from "../../components/recording/ScriptManager";
+import { SCRIPTS_STORAGE_KEY } from "../../components/recording/ScriptManager";
+import { useToastContext } from "../../contexts/ToastContext";
+import {
+  buildManagedScriptsSnapshot,
+  managedScriptsStore,
+  resolveManagedScripts,
+} from "../../utils/recording/managedScriptPersistence";
 
 export function useScriptManager(onClose: () => void) {
+  const { toast } = useToastContext();
   const [scripts, setScripts] = useState<ManagedScript[]>([]);
-  const [selectedScript, setSelectedScript] = useState<ManagedScript | null>(null);
+  const [selectedScript, setSelectedScript] = useState<ManagedScript | null>(
+    null,
+  );
   const [isEditing, setIsEditing] = useState(false);
-  const [searchFilter, setSearchFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [languageFilter, setLanguageFilter] = useState<ScriptLanguage | ''>('');
-  const [osTagFilter, setOsTagFilter] = useState<OSTag | ''>('');
+  const [searchFilter, setSearchFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [languageFilter, setLanguageFilter] = useState<ScriptLanguage | "">("");
+  const [osTagFilter, setOsTagFilter] = useState<OSTag | "">("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   // Edit form state
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editScript, setEditScript] = useState('');
-  const [editLanguage, setEditLanguage] = useState<ScriptLanguage>('auto');
-  const [editCategory, setEditCategory] = useState('Custom');
-  const [editOsTags, setEditOsTags] = useState<OSTag[]>(['agnostic']);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editScript, setEditScript] = useState("");
+  const [editLanguage, setEditLanguage] = useState<ScriptLanguage>("auto");
+  const [editCategory, setEditCategory] = useState("Custom");
+  const [editOsTags, setEditOsTags] = useState<OSTag[]>(["agnostic"]);
 
-  // Load scripts from localStorage
+  // Load scripts from encrypted app-data storage or browser IndexedDB.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && typeof parsed === 'object' && 'customScripts' in parsed) {
-          const { customScripts = [], modifiedDefaults = [], deletedDefaultIds = [] } = parsed;
-          const activeDefaults = defaultScripts
-            .filter(d => !deletedDefaultIds.includes(d.id))
-            .map(d => modifiedDefaults.find((m: ManagedScript) => m.id === d.id) || d);
-          setScripts([...activeDefaults, ...customScripts]);
-        } else if (Array.isArray(parsed)) {
-          setScripts([...defaultScripts, ...parsed]);
-        } else {
-          setScripts(defaultScripts);
+    let cancelled = false;
+    managedScriptsStore
+      .load()
+      .then((result) => {
+        if (cancelled) return;
+        setScripts(resolveManagedScripts(defaultScripts, result.value));
+        if (result.sanitized) {
+          const message =
+            "Unsafe script entries or credential material were removed during secure storage migration.";
+          setStorageError(message);
+          toast.warning(message);
         }
-      } else {
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = `Scripts could not be loaded: ${String(error)}`;
+        setStorageError(message);
+        toast.error(message);
         setScripts(defaultScripts);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
+
+  const saveScripts = useCallback(
+    async (newScripts: ManagedScript[]) => {
+      try {
+        await managedScriptsStore.save(
+          buildManagedScriptsSnapshot(newScripts, defaultScripts),
+        );
+        setScripts(newScripts);
+        setStorageError(null);
+        return true;
+      } catch (error) {
+        const message = `Scripts could not be saved: ${String(error)}`;
+        setStorageError(message);
+        toast.error(message);
+        return false;
       }
-    } catch {
-      setScripts(defaultScripts);
-    }
-  }, []);
-
-  // Save scripts to localStorage
-  const saveScripts = useCallback((newScripts: ManagedScript[]) => {
-    const defaultIds = defaultScripts.map(s => s.id);
-    const remainingDefaultIds = newScripts.filter(s => s.id.startsWith('default-')).map(s => s.id);
-    const deletedDefaultIds = defaultIds.filter(id => !remainingDefaultIds.includes(id));
-    const customScripts = newScripts.filter(s => !s.id.startsWith('default-'));
-    const modifiedDefaults = newScripts.filter(s => s.id.startsWith('default-'));
-
-    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
-      customScripts,
-      modifiedDefaults,
-      deletedDefaultIds
-    }));
-    setScripts(newScripts);
-  }, []);
+    },
+    [toast],
+  );
 
   // Derived data
   const categories = useMemo(() => {
-    const cats = new Set(scripts.map(s => s.category));
+    const cats = new Set(scripts.map((s) => s.category));
     return Array.from(cats).sort();
   }, [scripts]);
 
   const filteredScripts = useMemo(() => {
-    return scripts.filter(script => {
-      const matchesSearch = !searchFilter ||
+    return scripts.filter((script) => {
+      const matchesSearch =
+        !searchFilter ||
         script.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
         script.description.toLowerCase().includes(searchFilter.toLowerCase()) ||
         script.script.toLowerCase().includes(searchFilter.toLowerCase());
-      const matchesCategory = !categoryFilter || script.category === categoryFilter;
-      const matchesLanguage = !languageFilter || script.language === languageFilter;
-      const matchesOsTag = !osTagFilter || (script.osTags && script.osTags.includes(osTagFilter));
-      return matchesSearch && matchesCategory && matchesLanguage && matchesOsTag;
+      const matchesCategory =
+        !categoryFilter || script.category === categoryFilter;
+      const matchesLanguage =
+        !languageFilter || script.language === languageFilter;
+      const matchesOsTag =
+        !osTagFilter || (script.osTags && script.osTags.includes(osTagFilter));
+      return (
+        matchesSearch && matchesCategory && matchesLanguage && matchesOsTag
+      );
     });
   }, [scripts, searchFilter, categoryFilter, languageFilter, osTagFilter]);
 
   // Handlers
   const handleNewScript = useCallback(() => {
     setSelectedScript(null);
-    setEditName('');
-    setEditDescription('');
-    setEditScript('');
-    setEditLanguage('auto');
-    setEditCategory('Custom');
-    setEditOsTags(['agnostic']);
+    setEditName("");
+    setEditDescription("");
+    setEditScript("");
+    setEditLanguage("auto");
+    setEditCategory("Custom");
+    setEditOsTags(["agnostic"]);
     setIsEditing(true);
   }, []);
 
@@ -101,17 +126,18 @@ export function useScriptManager(onClose: () => void) {
     setEditScript(script.script);
     setEditLanguage(script.language);
     setEditCategory(script.category);
-    setEditOsTags(script.osTags || ['agnostic']);
+    setEditOsTags(script.osTags || ["agnostic"]);
     setIsEditing(true);
   }, []);
 
-  const handleSaveScript = useCallback(() => {
+  const handleSaveScript = useCallback(async () => {
     if (!editName.trim() || !editScript.trim()) return;
 
-    const finalLanguage = editLanguage === 'auto' ? detectLanguage(editScript) : editLanguage;
+    const finalLanguage =
+      editLanguage === "auto" ? detectLanguage(editScript) : editLanguage;
 
     if (selectedScript) {
-      const updated = scripts.map(s =>
+      const updated = scripts.map((s) =>
         s.id === selectedScript.id
           ? {
               ...s,
@@ -123,9 +149,9 @@ export function useScriptManager(onClose: () => void) {
               osTags: editOsTags,
               updatedAt: new Date().toISOString(),
             }
-          : s
+          : s,
       );
-      saveScripts(updated);
+      if (!(await saveScripts(updated))) return;
     } else {
       const newScript: ManagedScript = {
         id: Date.now().toString(),
@@ -138,20 +164,34 @@ export function useScriptManager(onClose: () => void) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      saveScripts([...scripts, newScript]);
+      if (!(await saveScripts([...scripts, newScript]))) return;
     }
 
     setIsEditing(false);
     setSelectedScript(null);
-  }, [editName, editDescription, editScript, editLanguage, editCategory, editOsTags, selectedScript, scripts, saveScripts]);
+  }, [
+    editName,
+    editDescription,
+    editScript,
+    editLanguage,
+    editCategory,
+    editOsTags,
+    selectedScript,
+    scripts,
+    saveScripts,
+  ]);
 
-  const handleDeleteScript = useCallback((scriptId: string) => {
-    saveScripts(scripts.filter(s => s.id !== scriptId));
-    if (selectedScript?.id === scriptId) {
-      setSelectedScript(null);
-      setIsEditing(false);
-    }
-  }, [scripts, selectedScript, saveScripts]);
+  const handleDeleteScript = useCallback(
+    async (scriptId: string) => {
+      if (!(await saveScripts(scripts.filter((s) => s.id !== scriptId))))
+        return;
+      if (selectedScript?.id === scriptId) {
+        setSelectedScript(null);
+        setIsEditing(false);
+      }
+    },
+    [scripts, selectedScript, saveScripts],
+  );
 
   const handleCopyScript = useCallback(async (script: ManagedScript) => {
     try {
@@ -159,7 +199,7 @@ export function useScriptManager(onClose: () => void) {
       setCopiedId(script.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (error) {
-      console.error('Failed to copy script:', error);
+      console.error("Failed to copy script:", error);
     }
   }, []);
 
@@ -170,12 +210,12 @@ export function useScriptManager(onClose: () => void) {
 
   const handleDuplicateScript = useCallback((script: ManagedScript) => {
     setSelectedScript(null);
-    setEditName(script.name + ' (Copy)');
+    setEditName(script.name + " (Copy)");
     setEditDescription(script.description);
     setEditScript(script.script);
     setEditLanguage(script.language);
     setEditCategory(script.category);
-    setEditOsTags(script.osTags || ['agnostic']);
+    setEditOsTags(script.osTags || ["agnostic"]);
     setIsEditing(true);
   }, []);
 
@@ -185,8 +225,8 @@ export function useScriptManager(onClose: () => void) {
   }, []);
 
   const toggleOsTag = useCallback((tag: OSTag) => {
-    setEditOsTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    setEditOsTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   }, []);
 
@@ -200,6 +240,7 @@ export function useScriptManager(onClose: () => void) {
     languageFilter,
     osTagFilter,
     copiedId,
+    storageError,
     editName,
     editDescription,
     editScript,

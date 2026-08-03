@@ -16,6 +16,16 @@ export interface BackupStatus {
   nextScheduledTime?: number;
   backupCount: number;
   totalSizeBytes: number;
+  lastTargetResults?: BackupTargetResult[];
+}
+
+export interface BackupTargetResult {
+  targetId: string;
+  status: "success" | "skipped_unchanged" | "disabled" | "failed";
+  payloadHashWritten?: string;
+  bytesWritten?: number;
+  filePath?: string;
+  errorMessage?: string;
 }
 
 export interface BackupListItem {
@@ -51,6 +61,240 @@ interface BackupRestorePayload {
   connections?: Connection[];
   settings?: Partial<GlobalSettings>;
   timestamp?: number;
+}
+
+export interface BackupRunMetadata {
+  id: string;
+  checksum: string;
+  targetId?: string;
+  backupType?: string;
+}
+
+export type BackupCommandInvoker = (
+  command: string,
+  args?: Record<string, unknown>,
+) => Promise<unknown>;
+
+export const BACKUP_TARGET_RECOVERY_GUIDANCE =
+  "This backup does not identify its destination, so it cannot be changed safely. Open Backup Settings, confirm the original destination, and refresh Available Backups. If it remains unidentified, create a replacement backup and remove the legacy files manually from that destination.";
+
+const tauriBackupInvoker: BackupCommandInvoker = (command, args) =>
+  invoke<unknown>(command, args);
+
+const describeBackupError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+export const requireBackupTargetId = (targetId?: string): string => {
+  const exactTargetId = targetId?.trim();
+  if (!exactTargetId) {
+    throw new Error(BACKUP_TARGET_RECOVERY_GUIDANCE);
+  }
+  return exactTargetId;
+};
+
+export async function restoreBackupCopy<T>(
+  backupId: string,
+  targetId: string | undefined,
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+): Promise<T> {
+  const exactTargetId = requireBackupTargetId(targetId);
+  return (await invokeCommand("backup_restore", {
+    backupId,
+    targetId: exactTargetId,
+  })) as T;
+}
+
+export async function restoreBackupTransaction<T>(
+  backupId: string,
+  targetId: string | undefined,
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+): Promise<T> {
+  const exactTargetId = requireBackupTargetId(targetId);
+  return (await invokeCommand("backup_restore", {
+    backupId,
+    targetId: exactTargetId,
+    apply: true,
+  })) as T;
+}
+
+export async function deleteBackupCopy(
+  backupId: string,
+  targetId: string | undefined,
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+): Promise<void> {
+  const exactTargetId = requireBackupTargetId(targetId);
+  await invokeCommand("backup_delete", {
+    backupId,
+    targetId: exactTargetId,
+  });
+}
+
+export async function readBackupStatusWithRetry(
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+  attempts = 2,
+): Promise<BackupStatus> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < Math.max(1, attempts); attempt += 1) {
+    try {
+      return (await invokeCommand("backup_get_status")) as BackupStatus;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(describeBackupError(lastError));
+}
+
+export interface TestBackupTargetDiscovery {
+  targetIds: string[];
+  status?: BackupStatus;
+  warning?: string;
+}
+
+export async function discoverTestBackupTargets(
+  metadata: BackupRunMetadata,
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+): Promise<TestBackupTargetDiscovery> {
+  const targetIds = new Set<string>();
+  const primaryTargetId = metadata.targetId?.trim();
+  if (primaryTargetId) targetIds.add(primaryTargetId);
+
+  let status: BackupStatus | undefined;
+  let statusError: unknown;
+  try {
+    status = await readBackupStatusWithRetry(invokeCommand);
+  } catch (error) {
+    statusError = error;
+  }
+
+  const successfulResults = (status?.lastTargetResults ?? []).filter(
+    (result) => result.status === "success",
+  );
+  const unidentifiedResults = successfulResults.filter(
+    (result) => !result.targetId?.trim(),
+  );
+  successfulResults.forEach((result) => {
+    const targetId = result.targetId?.trim();
+    if (targetId) targetIds.add(targetId);
+  });
+
+  const statusIsComplete =
+    successfulResults.length > 0 && unidentifiedResults.length === 0;
+  const listingTargetIds = new Set<string>();
+  let listingError: unknown;
+  if (!statusIsComplete) {
+    try {
+      const rawListings = await invokeCommand("backup_list_all_targets");
+      if (!Array.isArray(rawListings)) {
+        throw new Error("backup_list_all_targets returned an invalid payload");
+      }
+      (rawListings as DestinationListing[]).forEach((listing) => {
+        (listing.backups ?? []).forEach((backup) => {
+          if (backup.id !== metadata.id) return;
+          const targetId =
+            backup.targetId?.trim() || listing.targetId?.trim() || undefined;
+          if (targetId) {
+            listingTargetIds.add(targetId);
+            targetIds.add(targetId);
+          }
+        });
+      });
+    } catch (error) {
+      listingError = error;
+    }
+  }
+
+  const listingIsComplete =
+    !statusIsComplete &&
+    listingTargetIds.size > 0 &&
+    (!status || listingTargetIds.size >= successfulResults.length);
+  const discoveryIsComplete = statusIsComplete || listingIsComplete;
+  if (discoveryIsComplete) {
+    return { targetIds: [...targetIds], status };
+  }
+
+  const details: string[] = [];
+  if (statusError) {
+    details.push(`Status lookup failed: ${describeBackupError(statusError)}.`);
+  } else if (successfulResults.length === 0) {
+    details.push("The completed run reported no successful destinations.");
+  } else if (unidentifiedResults.length > 0) {
+    details.push(
+      `${unidentifiedResults.length} successful destination result(s) had no target identity.`,
+    );
+  }
+  if (listingError) {
+    details.push(
+      `Backup listing failed: ${describeBackupError(listingError)}.`,
+    );
+  } else if (listingTargetIds.size === 0) {
+    details.push("The backup was not present in the destination listing.");
+  }
+
+  return {
+    targetIds: [...targetIds],
+    status,
+    warning: `Could not enumerate every destination that received test backup "${metadata.id}". Known exact copies were cleaned where possible, but other copies may remain. Refresh Available Backups and delete any remaining copies of this ID from their listed destinations. ${details.join(" ")}`,
+  };
+}
+
+export async function verifyAndCleanupTestBackupCopies(
+  backupId: string,
+  targetIds: string[],
+  invokeCommand: BackupCommandInvoker = tauriBackupInvoker,
+): Promise<number> {
+  const exactTargetIds = [
+    ...new Set(targetIds.map((targetId) => requireBackupTargetId(targetId))),
+  ];
+  if (exactTargetIds.length === 0) {
+    throw new Error(
+      `No exact destination could be identified for test backup "${backupId}". Refresh Available Backups and remove any listed copy manually.`,
+    );
+  }
+
+  const verificationFailures: string[] = [];
+  const cleanupFailures: string[] = [];
+  for (const targetId of exactTargetIds) {
+    try {
+      const restored = await restoreBackupCopy<{ connections?: unknown[] }>(
+        backupId,
+        targetId,
+        invokeCommand,
+      );
+      if (
+        !Array.isArray(restored?.connections) ||
+        restored.connections.length === 0
+      ) {
+        verificationFailures.push(`${targetId}: no connections were restored`);
+      }
+    } catch (error) {
+      verificationFailures.push(`${targetId}: ${describeBackupError(error)}`);
+    }
+
+    try {
+      await deleteBackupCopy(backupId, targetId, invokeCommand);
+    } catch (error) {
+      cleanupFailures.push(`${targetId}: ${describeBackupError(error)}`);
+    }
+  }
+
+  if (verificationFailures.length > 0 || cleanupFailures.length > 0) {
+    const messages: string[] = [];
+    if (verificationFailures.length > 0) {
+      messages.push(
+        `Verification failed for ${verificationFailures.join("; ")}.`,
+      );
+    }
+    if (cleanupFailures.length > 0) {
+      messages.push(
+        `Cleanup failed for ${cleanupFailures.join("; ")}. Refresh Available Backups and delete those exact destination copies manually.`,
+      );
+    }
+    throw new Error(messages.join(" "));
+  }
+
+  return exactTargetIds.length;
 }
 
 // ─── Formatting helpers ─────────────────────────────────────────────
@@ -105,6 +349,13 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
     success: boolean;
     message: string;
   } | null>(null);
+  const [restoreResult, setRestoreResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [restoringBackupKey, setRestoringBackupKey] = useState<string | null>(
+    null,
+  );
   const [showBackupList, setShowBackupList] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -140,8 +391,14 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
           .flatMap((listing) =>
             (listing.backups ?? []).map((backup) => ({
               ...backup,
-              targetId: backup.targetId ?? listing.targetId,
-              targetLabel: backup.targetLabel ?? listing.targetLabel,
+              targetId:
+                backup.targetId?.trim() ||
+                listing.targetId?.trim() ||
+                undefined,
+              targetLabel:
+                backup.targetLabel?.trim() ||
+                listing.targetLabel?.trim() ||
+                undefined,
             })),
           )
           .sort((a, b) => b.createdAt - a.createdAt);
@@ -214,43 +471,28 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         timestamp: Date.now(),
       };
 
-      const metadata = await invoke<{ id: string; checksum: string }>(
-        "backup_run_now",
-        {
-          backupType: "test",
-          data: testData,
-        },
+      const metadata = await invoke<BackupRunMetadata>("backup_run_now", {
+        backupType: "test",
+        data: testData,
+      });
+
+      const discovery = await discoverTestBackupTargets(metadata);
+      const verifiedTargetCount = await verifyAndCleanupTestBackupCopies(
+        metadata.id,
+        discovery.targetIds,
       );
 
-      const restored = await invoke<{ connections: unknown[] }>(
-        "backup_restore",
-        {
-          backupId: metadata.id,
-        },
-      );
-
-      await invoke("backup_delete", { backupId: metadata.id });
-
-      if (restored && restored.connections && restored.connections.length > 0) {
-        setTestResult({
-          success: true,
-          message: t(
-            "backup.testSuccess",
-            "Backup test passed! Data integrity verified.",
-          ),
-        });
-      } else {
-        setTestResult({
-          success: false,
-          message: t(
-            "backup.testFailed",
-            "Backup test failed: Data verification failed.",
-          ),
-        });
+      if (discovery.warning) {
+        throw new Error(discovery.warning);
       }
-
-      const status = await invoke<BackupStatus>("backup_get_status");
-      setBackupStatus(status);
+      setTestResult({
+        success: true,
+        message: t(
+          "backup.testSuccess",
+          "Backup test passed! Data integrity verified across {{count}} destination(s).",
+          { count: verifiedTargetCount },
+        ),
+      });
     } catch (error) {
       setTestResult({
         success: false,
@@ -259,12 +501,28 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         }),
       });
     } finally {
+      try {
+        const status = await invoke<BackupStatus>("backup_get_status");
+        setBackupStatus(status);
+      } catch (error) {
+        console.error("Failed to refresh backup status after test:", error);
+      }
       setIsTesting(false);
     }
   }, [t]);
 
   const handleRestoreBackup = useCallback(
     async (backupId: string, targetId?: string) => {
+      let exactTargetId: string;
+      try {
+        exactTargetId = requireBackupTargetId(targetId);
+      } catch (error) {
+        setRestoreResult({
+          success: false,
+          message: t("backup.targetRequired", BACKUP_TARGET_RECOVERY_GUIDANCE),
+        });
+        return;
+      }
       if (
         !confirm(
           t(
@@ -275,15 +533,13 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
       ) {
         return;
       }
+      setRestoringBackupKey(`${exactTargetId}:${backupId}`);
+      setRestoreResult(null);
       try {
-        // `targetId` pins the read to a specific destination so the
-        // user controls which copy gets restored when the same
-        // backup ID exists at multiple destinations. Passing
-        // `undefined` falls back to the legacy "find-first" path.
-        const data = await invoke<BackupRestorePayload>("backup_restore", {
+        const data = await restoreBackupTransaction<BackupRestorePayload>(
           backupId,
-          targetId,
-        });
+          exactTargetId,
+        );
         const restoredConnections = Array.isArray(data?.connections)
           ? data.connections.map((conn: any) => ({
               ...conn,
@@ -292,36 +548,16 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
             }))
           : [];
 
-        const applied: string[] = [];
-        const failed: string[] = [];
         const hadConnections = Array.isArray(data?.connections);
         const hadSettings = Boolean(
           data?.settings && Object.keys(data.settings).length > 0,
         );
-
-        if (hadConnections) {
-          try {
-            dispatch({ type: "SET_CONNECTIONS", payload: restoredConnections });
-            applied.push(
-              t("backup.restoreConnections", "{{count}} connection(s)", {
-                count: restoredConnections.length,
-              }),
-            );
-          } catch (error) {
-            failed.push(
-              t("backup.restoreConnectionsFailed", "connections: {{error}}", {
-                error: String(error),
-              }),
-            );
-          }
-        }
-
+        const hydrationFailures: string[] = [];
         if (hadSettings && data?.settings) {
           try {
             await settingsManager.saveSettings(data.settings);
-            applied.push(t("backup.restoreSettings", "settings"));
           } catch (error) {
-            failed.push(
+            hydrationFailures.push(
               t("backup.restoreSettingsFailed", "settings: {{error}}", {
                 error: String(error),
               }),
@@ -329,58 +565,69 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
           }
         }
 
-        if (applied.length === 0 && failed.length === 0) {
-          alert(
-            t(
-              "backup.restoreEmpty",
-              "Backup restored no supported data. No connections or settings were found.",
+        // Do not advance the window's connection snapshot after a
+        // settings hydration failure. The backend has already committed
+        // the complete candidate atomically, so a restart can hydrate
+        // both sections from one durable state instead of leaving a
+        // deliberately partial window.
+        if (hydrationFailures.length === 0 && hadConnections) {
+          try {
+            dispatch({ type: "SET_CONNECTIONS", payload: restoredConnections });
+          } catch (error) {
+            hydrationFailures.push(
+              t("backup.restoreConnectionsFailed", "connections: {{error}}", {
+                error: String(error),
+              }),
+            );
+          }
+        }
+
+        if (hydrationFailures.length > 0) {
+          setRestoreResult({
+            success: false,
+            message: t(
+              "backup.restoreCommittedRefreshFailed",
+              "The backup was committed safely, but this window could not refresh: {{error}}. Restart the app before making further changes.",
+              { error: hydrationFailures.join("; ") },
             ),
-          );
-          return;
-        }
-
-        if (failed.length > 0 && applied.length > 0) {
-          alert(
-            t(
-              "backup.restorePartial",
-              "Backup partially restored: {{applied}}. Failed: {{failed}}",
-              {
-                applied: applied.join(", "),
-                failed: failed.join("; "),
-              },
+          });
+        } else {
+          setRestoreResult({
+            success: true,
+            message: t(
+              "backup.restoreSuccessTransactional",
+              "Backup restored and committed atomically.",
             ),
-          );
-          return;
+          });
         }
-
-        if (failed.length > 0) {
-          alert(
-            t("backup.restoreFailed", "Failed to restore backup: {{error}}", {
-              error: failed.join("; "),
-            }),
-          );
-          return;
-        }
-
-        alert(
-          t("backup.restoreSuccessDetailed", "Backup restored: {{applied}}.", {
-            applied: applied.join(", "),
-          }),
-        );
       } catch (error) {
         console.error("Restore failed:", error);
-        alert(
-          t("backup.restoreFailed", "Failed to restore backup: {{error}}", {
-            error: String(error),
-          }),
-        );
+        setRestoreResult({
+          success: false,
+          message: t(
+            "backup.restoreFailed",
+            "Failed to restore backup: {{error}}",
+            {
+              error: String(error),
+            },
+          ),
+        });
+      } finally {
+        setRestoringBackupKey(null);
       }
     },
     [t, dispatch, settingsManager],
   );
 
   const handleDeleteBackup = useCallback(
-    async (backupId: string) => {
+    async (backupId: string, targetId?: string) => {
+      let exactTargetId: string;
+      try {
+        exactTargetId = requireBackupTargetId(targetId);
+      } catch {
+        alert(t("backup.targetRequired", BACKUP_TARGET_RECOVERY_GUIDANCE));
+        return;
+      }
       if (
         !confirm(
           t(
@@ -392,12 +639,17 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
         return;
       }
       try {
-        await invoke("backup_delete", { backupId });
+        await deleteBackupCopy(backupId, exactTargetId);
         await fetchBackupList();
         const status = await invoke<BackupStatus>("backup_get_status");
         setBackupStatus(status);
       } catch (error) {
         console.error("Delete failed:", error);
+        alert(
+          t("backup.deleteFailed", "Failed to delete backup: {{error}}", {
+            error: String(error),
+          }),
+        );
       }
     },
     [t, fetchBackupList],
@@ -412,6 +664,8 @@ export function useBackupStatus({ onBackupNow }: UseBackupStatusOptions = {}) {
     isBackingUp,
     isTesting,
     testResult,
+    restoreResult,
+    restoringBackupKey,
     showBackupList,
     setShowBackupList,
     dropdownRef,

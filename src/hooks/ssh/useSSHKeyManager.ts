@@ -30,7 +30,7 @@ const getKeysDirectory = async (): Promise<string> => {
   const appData = await appDataDir();
   const keysDir = await join(appData, "ssh-keys");
   if (!(await exists(keysDir))) {
-    await mkdir(keysDir, { recursive: true });
+    await mkdir(keysDir, { recursive: true, mode: 0o700 });
   }
   return keysDir;
 };
@@ -107,7 +107,9 @@ export function useSSHKeyManager(
   const saveKeysMetadata = useCallback(async (keysToSave: SSHKey[]) => {
     const keysDir = await getKeysDirectory();
     const metadataPath = await join(keysDir, "keys.json");
-    await writeTextFile(metadataPath, JSON.stringify(keysToSave, null, 2));
+    await writeTextFile(metadataPath, JSON.stringify(keysToSave, null, 2), {
+      mode: 0o600,
+    });
   }, []);
 
   const loadKeys = useCallback(async () => {
@@ -183,8 +185,14 @@ export function useSSHKeyManager(
         { keyType: "ed25519", bits: undefined, passphrase: undefined },
       );
 
-      await writeTextFile(selectedPath, privateKey);
-      await writeTextFile(`${selectedPath}.pub`, publicKey);
+      await writeTextFile(selectedPath, privateKey, {
+        mode: 0o600,
+        createNew: true,
+      });
+      await writeTextFile(`${selectedPath}.pub`, publicKey, {
+        mode: 0o644,
+        createNew: true,
+      });
 
       setError(`Key saved to: ${selectedPath}`);
       setTimeout(() => setError(null), 3000);
@@ -228,8 +236,14 @@ export function useSSHKeyManager(
       const privateKeyPath = await join(keysDir, `${sanitizedName}`);
       const publicKeyPath = await join(keysDir, `${sanitizedName}.pub`);
 
-      await writeTextFile(privateKeyPath, privateKey);
-      await writeTextFile(publicKeyPath, publicKey);
+      await writeTextFile(privateKeyPath, privateKey, {
+        mode: 0o600,
+        createNew: true,
+      });
+      await writeTextFile(publicKeyPath, publicKey, {
+        mode: 0o644,
+        createNew: true,
+      });
 
       const newKey: SSHKey = {
         id: crypto.randomUUID(),
@@ -296,9 +310,15 @@ export function useSSHKeyManager(
       const newPrivateKeyPath = await join(keysDir, sanitizedName);
       const newPublicKeyPath = await join(keysDir, `${sanitizedName}.pub`);
 
-      await writeTextFile(newPrivateKeyPath, privateKey);
+      await writeTextFile(newPrivateKeyPath, privateKey, {
+        mode: 0o600,
+        createNew: true,
+      });
       if (publicKey && publicKey !== "(Public key not available)") {
-        await writeTextFile(newPublicKeyPath, publicKey);
+        await writeTextFile(newPublicKeyPath, publicKey, {
+          mode: 0o644,
+          createNew: true,
+        });
       }
 
       let keyType: "ed25519" | "rsa" = "ed25519";
@@ -339,10 +359,16 @@ export function useSSHKeyManager(
       if (!filePath) return;
 
       const privateKey = await readTextFile(key.privateKeyPath);
-      await writeTextFile(filePath, privateKey);
+      await writeTextFile(filePath, privateKey, {
+        mode: 0o600,
+        createNew: true,
+      });
 
       if (key.publicKey && key.publicKey !== "(Public key not available)") {
-        await writeTextFile(`${filePath}.pub`, key.publicKey);
+        await writeTextFile(`${filePath}.pub`, key.publicKey, {
+          mode: 0o644,
+          createNew: true,
+        });
       }
     } catch (err) {
       setError(`Failed to export key: ${err}`);

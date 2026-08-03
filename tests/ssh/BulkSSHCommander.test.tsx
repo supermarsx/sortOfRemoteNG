@@ -2,6 +2,11 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BulkSSHCommander } from "../../src/components/ssh/BulkSSHCommander";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
+import { ToastProvider } from "../../src/contexts/ToastContext";
+import {
+  getSSHCommandHistoryMemorySnapshot,
+  resetSSHCommandHistoryMemoryForTests,
+} from "../../src/hooks/ssh/useSSHCommandHistory";
 import { invoke } from "@tauri-apps/api/core";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
@@ -120,17 +125,23 @@ const ensureLocalStorage = () => {
 
 const renderComponent = (isOpen = true) => {
   return render(
-    <ConnectionProvider>
-      <BulkSSHCommander isOpen={isOpen} onClose={mockOnClose} />
-    </ConnectionProvider>,
+    <ToastProvider>
+      <ConnectionProvider>
+        <BulkSSHCommander isOpen={isOpen} onClose={mockOnClose} />
+      </ConnectionProvider>
+    </ToastProvider>,
   );
 };
 
 describe("BulkSSHCommander", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(invoke).mockReset();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
     ensureLocalStorage();
     if (typeof localStorage?.clear === "function") localStorage.clear();
+    resetSSHCommandHistoryMemoryForTests();
   });
 
   describe("Basic Rendering", () => {
@@ -258,7 +269,7 @@ describe("BulkSSHCommander", () => {
       expect(sendButton).toBeDisabled();
     });
 
-    it("persists accepted input as dispatched without claiming completion", async () => {
+    it("records accepted input as dispatched without claiming completion", async () => {
       Object.defineProperty(window, "__TAURI_INTERNALS__", {
         configurable: true,
         value: {},
@@ -272,14 +283,12 @@ describe("BulkSSHCommander", () => {
       fireEvent.click(screen.getByText("Send"));
 
       await waitFor(() => {
-        const stored = JSON.parse(
-          localStorage.getItem("sshCommandHistory") ?? "[]",
-        );
+        const stored = getSSHCommandHistoryMemorySnapshot();
         expect(stored).toHaveLength(1);
         expect(stored[0].executions).toHaveLength(2);
         expect(
           stored[0].executions.every(
-            (execution: Record<string, unknown>) =>
+            (execution) =>
               execution.status === "pending" &&
               execution.source === "bulk-dispatch" &&
               execution.evidence === "dispatch-accepted" &&
@@ -288,13 +297,14 @@ describe("BulkSSHCommander", () => {
           ),
         ).toBe(true);
       });
+      expect(localStorage.getItem("sshCommandHistory")).toBeNull();
       expect(
         screen.getAllByText(/remote completion is not tracked/i),
       ).toHaveLength(2);
       delete (window as any).__TAURI_INTERNALS__;
     });
 
-    it("persists rejected input as dispatch failed rather than cancelled execution", async () => {
+    it("records rejected input as dispatch failed rather than cancelled execution", async () => {
       Object.defineProperty(window, "__TAURI_INTERNALS__", {
         configurable: true,
         value: {},
@@ -308,9 +318,7 @@ describe("BulkSSHCommander", () => {
       fireEvent.click(screen.getByText("Send"));
 
       await waitFor(() => {
-        const stored = JSON.parse(
-          localStorage.getItem("sshCommandHistory") ?? "[]",
-        );
+        const stored = getSSHCommandHistoryMemorySnapshot();
         expect(stored[0].executions).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
@@ -321,6 +329,7 @@ describe("BulkSSHCommander", () => {
           ]),
         );
       });
+      expect(localStorage.getItem("sshCommandHistory")).toBeNull();
       expect(screen.queryByText(/command sent successfully/i)).toBeNull();
       delete (window as any).__TAURI_INTERNALS__;
     });
@@ -342,13 +351,13 @@ describe("BulkSSHCommander", () => {
       ).toBeInTheDocument();
     });
 
-    it("should show default scripts", () => {
+    it("should show default scripts", async () => {
       renderComponent();
       const scriptsButton = screen.getByText("Scripts");
       fireEvent.click(scriptsButton);
 
-      expect(screen.getByText("System Info")).toBeInTheDocument();
-      expect(screen.getByText("Disk Usage")).toBeInTheDocument();
+      expect(await screen.findByText("System Info")).toBeInTheDocument();
+      expect(await screen.findByText("Disk Usage")).toBeInTheDocument();
     });
   });
 
@@ -440,6 +449,10 @@ describe("BulkSSHCommander", () => {
 describe("BulkSSHCommander with no sessions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(invoke).mockReset();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
+    resetSSHCommandHistoryMemoryForTests();
   });
 
   it("should show no sessions message when no SSH sessions", () => {
@@ -455,9 +468,11 @@ describe("BulkSSHCommander with no sessions", () => {
     }));
 
     render(
-      <ConnectionProvider>
-        <BulkSSHCommander isOpen={true} onClose={mockOnClose} />
-      </ConnectionProvider>,
+      <ToastProvider>
+        <ConnectionProvider>
+          <BulkSSHCommander isOpen={true} onClose={mockOnClose} />
+        </ConnectionProvider>
+      </ToastProvider>,
     );
 
     // The session count should show 0
@@ -466,11 +481,16 @@ describe("BulkSSHCommander with no sessions", () => {
 
 describe("BulkSSHCommander Script Storage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(invoke).mockReset();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
     ensureLocalStorage();
     if (typeof localStorage?.clear === "function") localStorage.clear();
+    resetSSHCommandHistoryMemoryForTests();
   });
 
-  it("should load saved scripts from localStorage", () => {
+  it("should migrate saved scripts from localStorage", async () => {
     const customScript = {
       id: "custom-1",
       name: "Custom Script",
@@ -486,6 +506,6 @@ describe("BulkSSHCommander Script Storage", () => {
     const scriptsButton = screen.getByText("Scripts");
     fireEvent.click(scriptsButton);
 
-    expect(screen.getByText("Custom Script")).toBeInTheDocument();
+    expect(await screen.findByText("Custom Script")).toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -122,7 +123,7 @@ const defaultConfig: ExportConfig = {
   },
 };
 
-function renderExportTab(overrides?: {
+async function renderExportTab(overrides?: {
   connections?: Connection[];
   config?: ExportConfig;
   isProcessing?: boolean;
@@ -142,6 +143,7 @@ function renderExportTab(overrides?: {
       handleExport={handleExport}
     />,
   );
+  await waitForVpnInventoryLoad();
 
   return {
     ...result,
@@ -159,6 +161,29 @@ function advanceExportTo(stepId: string) {
   throw new Error(`Unable to reach export wizard step ${stepId}`);
 }
 
+async function waitForVpnInventoryLoad() {
+  await waitFor(() => {
+    expect(mockListOpenVPN).toHaveBeenCalled();
+    expect(mockListWireGuard).toHaveBeenCalled();
+    expect(mockListTailscale).toHaveBeenCalled();
+    expect(mockListZeroTier).toHaveBeenCalled();
+  });
+
+  await act(async () => {
+    await Promise.all(
+      [
+        mockListOpenVPN,
+        mockListWireGuard,
+        mockListTailscale,
+        mockListZeroTier,
+      ].map((mock) => {
+        const results = mock.mock.results;
+        return results[results.length - 1]?.value;
+      }),
+    );
+  });
+}
+
 describe("ExportTab", () => {
   beforeEach(() => {
     mockListOpenVPN.mockReset();
@@ -171,7 +196,7 @@ describe("ExportTab", () => {
     mockListZeroTier.mockResolvedValue([]);
   });
 
-  it("labels advanced protocols and warns when mRemoteNG cannot preserve settings", () => {
+  it("labels advanced protocols and warns when mRemoteNG cannot preserve settings", async () => {
     const rawUdp: Connection = {
       ...connections[0],
       id: "raw-udp",
@@ -180,7 +205,7 @@ describe("ExportTab", () => {
       port: 9000,
       rawSocketSettings: createDefaultRawSocketSettings("udp"),
     };
-    renderExportTab({
+    await renderExportTab({
       connections: [rawUdp],
       config: { ...defaultConfig, format: "mremoteng" },
     });
@@ -196,8 +221,8 @@ describe("ExportTab", () => {
     expect(connectionSection).toHaveTextContent("RAW/UDP");
   });
 
-  it("orders conditional selection pages and renumbers later steps without gaps", () => {
-    const { rerender, onConfigChange, handleExport } = renderExportTab();
+  it("orders conditional selection pages and renumbers later steps without gaps", async () => {
+    const { rerender, onConfigChange, handleExport } = await renderExportTab();
 
     expect(screen.getByTestId("export-wizard-step-group")).toHaveAttribute(
       "aria-label",
@@ -251,8 +276,8 @@ describe("ExportTab", () => {
     );
   });
 
-  it("shows connection totals and lets the user switch export formats", () => {
-    const { onConfigChange } = renderExportTab();
+  it("shows connection totals and lets the user switch export formats", async () => {
+    const { onConfigChange } = await renderExportTab();
     advanceExportTo("format");
 
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
@@ -297,12 +322,12 @@ describe("ExportTab", () => {
       "1",
     );
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "1",
+      "2",
     );
   });
 
-  it("renders export scope controls and disables locked encrypted databases", () => {
-    const { onConfigChange } = renderExportTab({
+  it("renders export scope controls and disables locked encrypted databases", async () => {
+    const { onConfigChange } = await renderExportTab({
       config: {
         ...defaultConfig,
         scopeMode: "selected",
@@ -400,8 +425,8 @@ describe("ExportTab", () => {
     expect(onConfigChange).toHaveBeenCalledWith({ scopeMode: "all" });
   });
 
-  it("shows format-aware compatibility warnings", () => {
-    renderExportTab({
+  it("shows format-aware compatibility warnings", async () => {
+    await renderExportTab({
       config: {
         ...defaultConfig,
         format: "mremoteng",
@@ -415,9 +440,6 @@ describe("ExportTab", () => {
       "exportTab.warningMRemoteNGLimited",
     );
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
-      "exportTab.warningPasswordsSkipped",
-    );
-    expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
       "exportTab.warningSidecarsLimited",
     );
     expect(screen.getByTestId("export-format-warnings")).toHaveTextContent(
@@ -425,12 +447,12 @@ describe("ExportTab", () => {
     );
     advanceExportTo("review");
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "4",
+      "3",
     );
   });
 
-  it("propagates include-passwords, encryption, and password changes", () => {
-    const { onConfigChange, rerender } = renderExportTab();
+  it("propagates include-passwords, encryption, and password changes", async () => {
+    const { onConfigChange, rerender } = await renderExportTab();
     advanceExportTo("content");
 
     fireEvent.click(
@@ -506,11 +528,7 @@ describe("ExportTab", () => {
       includeTabGroups: false,
       includeColorTags: false,
     };
-    renderExportTab({ config: vpnOnlyConfig, connections: [] });
-
-    await waitFor(() => {
-      expect(mockListOpenVPN).toHaveBeenCalled();
-    });
+    await renderExportTab({ config: vpnOnlyConfig, connections: [] });
     advanceExportTo("content");
     expect(
       screen.getByRole("checkbox", { name: "exportTab.includePasswords" }),
@@ -524,12 +542,12 @@ describe("ExportTab", () => {
     advanceExportTo("encryption");
     fireEvent.click(screen.getByTestId("export-wizard-next"));
     expect(screen.getByTestId("export-wizard-error")).toHaveTextContent(
-      /VPN credentials require JSON format, encryption, and an export password/i,
+      /Credentials and secrets require password encryption and an export password/i,
     );
   });
 
-  it("disables export until the config is valid and then submits", () => {
-    const { handleExport, rerender } = renderExportTab({
+  it("disables export until the config is valid and then submits", async () => {
+    const { handleExport, rerender } = await renderExportTab({
       connections: [],
       config: {
         ...defaultConfig,
@@ -626,8 +644,8 @@ describe("ExportTab", () => {
     expect(screen.getByTestId("export-confirm")).toBeDisabled();
   });
 
-  it("propagates extended content and key-derivation options", () => {
-    const { onConfigChange, rerender } = renderExportTab({
+  it("propagates extended content and key-derivation options", async () => {
+    const { onConfigChange, rerender } = await renderExportTab({
       config: {
         ...defaultConfig,
         encrypted: true,
@@ -677,12 +695,12 @@ describe("ExportTab", () => {
     );
     advanceExportTo("review");
     expect(screen.getByTestId("export-counter-warnings")).toHaveTextContent(
-      "3",
+      "4",
     );
   });
 
-  it("renders a specific folder filter and updates included folder ids", () => {
-    const { onConfigChange } = renderExportTab({
+  it("renders a specific folder filter and updates included folder ids", async () => {
+    const { onConfigChange } = await renderExportTab({
       connections: [
         ...connections,
         {
@@ -717,8 +735,8 @@ describe("ExportTab", () => {
     });
   });
 
-  it("shows entropy and password-pattern feedback", () => {
-    renderExportTab({
+  it("shows entropy and password-pattern feedback", async () => {
+    await renderExportTab({
       config: {
         ...defaultConfig,
         encrypted: true,
@@ -736,8 +754,8 @@ describe("ExportTab", () => {
     );
   });
 
-  it("disables export when settings enforce a minimum password score", () => {
-    renderExportTab({
+  it("disables export when settings enforce a minimum password score", async () => {
+    await renderExportTab({
       config: {
         ...defaultConfig,
         encrypted: true,

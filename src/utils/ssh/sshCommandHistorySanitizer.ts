@@ -8,6 +8,7 @@ import {
   type SSHCommandHistoryEntry,
 } from "../../types/ssh/sshCommandHistory";
 import { generateId } from "../core/id";
+import { redactSecrets } from "../errors/redact";
 import { commandExecutionDisplayStatus } from "./sshCommandEvidence";
 
 export const SSH_COMMAND_HISTORY_SYNC_EVENT =
@@ -16,6 +17,16 @@ export const SSH_COMMAND_HISTORY_SYNC_EVENT =
 const UNSAFE_BIDI_CONTROLS = new Set([
   0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069,
 ]);
+const SECRET_ARGUMENT_PATTERN =
+  /(^|\s)((?:--?)(?:password|passwd|passphrase|secret|token|api[_-]?key|authorization)(?:\s+))("[^"]*"|'[^']*'|\S+)/gi;
+const BEARER_PATTERN = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
+const URL_CREDENTIAL_PATTERN =
+  /\b([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)([^@\s/]+)(@)/gi;
+
+export const MAX_SSH_HISTORY_ENTRIES = 250;
+export const MAX_SSH_HISTORY_EXECUTIONS_PER_ENTRY = 20;
+export const MAX_SSH_HISTORY_OUTPUT_CHARS = 16_384;
+export const MAX_SSH_HISTORY_COMMAND_CHARS = 8_192;
 
 type SanitizeMode = "storage" | "import";
 
@@ -53,6 +64,20 @@ export function sanitizeSSHHistoryString(
     : withoutControls.replace(/[\r\n\t]/g, " ");
   const bounded = normalized.slice(0, maxLength);
   return options.required && !bounded.trim() ? undefined : bounded;
+}
+
+export function redactSSHHistoryString(value: string): string {
+  return redactSecrets(value)
+    .replace(
+      SECRET_ARGUMENT_PATTERN,
+      (_match, leading: string, flag: string) => `${leading}${flag}[redacted]`,
+    )
+    .replace(BEARER_PATTERN, (_match, prefix: string) => `${prefix}[redacted]`)
+    .replace(
+      URL_CREDENTIAL_PATTERN,
+      (_match, prefix: string, _password: string, suffix: string) =>
+        `${prefix}[redacted]${suffix}`,
+    );
 }
 
 const validDate = (value: unknown, fallback?: string): string | undefined => {
@@ -151,10 +176,17 @@ export function sanitizeSSHCommandHistoryEntry(
   options: SanitizeOptions = {},
 ): SSHCommandHistoryEntry | null {
   if (!isRecord(value)) return null;
-  const command = sanitizeSSHHistoryString(value.command, 8192, {
-    required: true,
-  })?.trim();
-  if (!command) return null;
+  const command = sanitizeSSHHistoryString(
+    value.command,
+    MAX_SSH_HISTORY_COMMAND_CHARS,
+    {
+      required: true,
+    },
+  );
+  const redactedCommand = command
+    ? redactSSHHistoryString(command).trim()
+    : undefined;
+  if (!redactedCommand) return null;
   const now = new Date().toISOString();
   const createdAt = validDate(value.createdAt, now) ?? now;
   const lastExecutedAt =
@@ -169,18 +201,18 @@ export function sanitizeSSHCommandHistoryEntry(
         .filter(
           (execution): execution is CommandExecution => execution !== null,
         )
-        .slice(-20)
+        .slice(-MAX_SSH_HISTORY_EXECUTIONS_PER_ENTRY)
     : [];
   const category =
     typeof value.category === "string" &&
     SSHCommandCategories.includes(value.category as SSHCommandCategory)
       ? (value.category as SSHCommandCategory)
-      : (options.fallbackCategory?.(command) ?? "unknown");
+      : (options.fallbackCategory?.(redactedCommand) ?? "unknown");
   return {
     id:
       sanitizeSSHHistoryString(value.id, 512, { required: true })?.trim() ??
       generateId(),
-    command,
+    command: redactedCommand,
     createdAt,
     lastExecutedAt,
     executionCount:
@@ -210,4 +242,53 @@ export function sanitizeSSHCommandHistory(
   return value
     .map((entry) => sanitizeSSHCommandHistoryEntry(entry, options))
     .filter((entry): entry is SSHCommandHistoryEntry => entry !== null);
+}
+
+export function redactSSHCommandHistorySecrets(
+  entries: readonly SSHCommandHistoryEntry[],
+  maxOutputSize = MAX_SSH_HISTORY_OUTPUT_CHARS,
+): SSHCommandHistoryEntry[] {
+  const boundedOutputSize = Math.min(
+    MAX_SSH_HISTORY_OUTPUT_CHARS,
+    Math.max(0, Math.floor(maxOutputSize)),
+  );
+  const redacted = entries.slice(0, MAX_SSH_HISTORY_ENTRIES).map((entry) => ({
+    ...entry,
+    command: redactSSHHistoryString(entry.command),
+    note:
+      entry.note === undefined ? undefined : redactSSHHistoryString(entry.note),
+    tags: entry.tags.map(redactSSHHistoryString),
+    executions: entry.executions
+      .slice(-MAX_SSH_HISTORY_EXECUTIONS_PER_ENTRY)
+      .map((execution) => ({
+        ...execution,
+        sessionName: redactSSHHistoryString(execution.sessionName),
+        hostname: redactSSHHistoryString(execution.hostname),
+        output:
+          execution.output === undefined
+            ? undefined
+            : redactSSHHistoryString(execution.output).slice(
+                0,
+                boundedOutputSize,
+              ),
+        stderr:
+          execution.stderr === undefined
+            ? undefined
+            : redactSSHHistoryString(execution.stderr).slice(
+                0,
+                boundedOutputSize,
+              ),
+        errorMessage:
+          execution.errorMessage === undefined
+            ? undefined
+            : redactSSHHistoryString(execution.errorMessage).slice(
+                0,
+                boundedOutputSize,
+              ),
+      })),
+  }));
+  return sanitizeSSHCommandHistory(redacted, {
+    mode: "storage",
+    maxOutputSize: boundedOutputSize,
+  });
 }

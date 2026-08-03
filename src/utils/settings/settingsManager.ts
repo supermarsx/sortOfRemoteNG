@@ -448,7 +448,6 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     port: 8080,
     useRandomPort: false,
     authentication: false,
-    apiKey: "",
     corsEnabled: true,
     rateLimiting: true,
     startOnLaunch: false,
@@ -808,6 +807,13 @@ export class SettingsManager {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (key in raw) out[key] = (raw as Record<string, unknown>)[key];
     }
+    const restApi = out.restApi;
+    if (restApi && typeof restApi === "object" && !Array.isArray(restApi)) {
+      const safeRestApi = { ...(restApi as Record<string, unknown>) };
+      delete safeRestApi.apiKey;
+      delete safeRestApi.jwtSecret;
+      out.restApi = safeRestApi;
+    }
     return out as Partial<GlobalSettings>;
   }
 
@@ -863,18 +869,30 @@ export class SettingsManager {
    * window-geometry save) can react. It never throws on the no-Tauri path.
    */
   private async persistSettings(patch: Partial<GlobalSettings>): Promise<void> {
+    const safePatch = { ...patch } as Partial<GlobalSettings> & {
+      restApi?: GlobalSettings["restApi"] & Record<string, unknown>;
+    };
+    if (safePatch.restApi) {
+      const restApi = { ...safePatch.restApi } as Record<string, unknown>;
+      delete restApi.apiKey;
+      delete restApi.jwtSecret;
+      safePatch.restApi = restApi as GlobalSettings["restApi"];
+    }
     const invoke = await tauriInvoke();
     if (!invoke) {
       // No Tauri disk — retain the full blob in the module-level store so
       // a subsequent read in the same session round-trips.
-      _inMemorySettingsStore = { ...this.settings };
+      _inMemorySettingsStore = {
+        ...this.settings,
+        ...(safePatch as Partial<GlobalSettings>),
+      };
       return;
     }
 
     let sawFailure = false;
     for (let attempt = 1; attempt <= SETTINGS_WRITE_MAX_ATTEMPTS; attempt++) {
       try {
-        await invoke("write_app_settings", { patch });
+        await invoke("write_app_settings", { patch: safePatch });
         if (sawFailure) {
           // Recovered after one or more failed attempts.
           dispatchWriteRecovered(attempt, SETTINGS_WRITE_MAX_ATTEMPTS);

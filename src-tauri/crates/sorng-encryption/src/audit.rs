@@ -120,9 +120,9 @@ impl AuditEvent {
     }
 }
 
-/// Errors raised by audit IO. Distinct from broader encryption errors
-/// so callers can downgrade audit failures to log-and-continue (an
-/// audit-log IO error should never fail an unlock).
+/// Errors raised by audit IO. Command callers map these to an opaque,
+/// user-visible persistence failure so security events are never dropped
+/// silently and filesystem details never cross the API boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum AuditError {
     #[error("audit log directory could not be created: {0}")]
@@ -136,10 +136,7 @@ pub enum AuditError {
 }
 
 /// Append one entry to the audit log. Creates the directory and file
-/// if needed. Returns an error rather than panicking on disk failure;
-/// the typical caller pattern is
-/// `let _ = audit::record(...);` so an audit failure doesn't cascade
-/// into a user-visible error.
+/// if needed. Returns an error rather than panicking on disk failure.
 pub fn record(
     app_data_dir: &Path,
     event: AuditEvent,
@@ -154,15 +151,14 @@ pub fn record(
     // any prior backup) and start a fresh active log. The single-
     // backup policy keeps disk usage bounded at ≤ 2×budget while
     // preserving enough history for forensic review.
-    let _ = rotate_if_oversize(&path, MAX_LOG_BYTES);
+    rotate_if_oversize(&path, MAX_LOG_BYTES)?;
 
     let entry = AuditEntry {
         ts: now_iso_8601(),
         event: event.tag().to_string(),
         metadata,
     };
-    let mut line =
-        serde_json::to_string(&entry).map_err(|e| AuditError::Serde(e.to_string()))?;
+    let mut line = serde_json::to_string(&entry).map_err(|e| AuditError::Serde(e.to_string()))?;
     if line.len() > MAX_LINE_BYTES - 1 {
         line.truncate(MAX_LINE_BYTES - "…[truncated]".len() - 1);
         line.push_str("…[truncated]");
@@ -178,6 +174,8 @@ pub fn record(
     f.write_all(line.as_bytes())
         .map_err(|e| AuditError::Write(e.to_string()))?;
     f.flush().map_err(|e| AuditError::Write(e.to_string()))?;
+    f.sync_data()
+        .map_err(|e| AuditError::Write(e.to_string()))?;
     Ok(())
 }
 
@@ -201,8 +199,10 @@ pub fn rotate_if_oversize(path: &Path, max_bytes: u64) -> Result<bool, AuditErro
     }
     let bak = path.with_extension("log.0.bak");
     // Overwrite any prior backup — single-backup retention.
-    if bak.exists() {
-        let _ = std::fs::remove_file(&bak);
+    match std::fs::remove_file(&bak) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(AuditError::Write(e.to_string())),
     }
     std::fs::rename(path, &bak).map_err(|e| AuditError::Write(e.to_string()))?;
     Ok(true)
@@ -250,10 +250,7 @@ fn now_iso_8601() -> String {
     // for this. Subsecond precision is intentionally dropped — audit
     // entries are at human-event granularity, never sub-second.
     let (y, mo, da, h, mi, s) = secs_to_civil(d);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, mo, da, h, mi, s
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, da, h, mi, s)
 }
 
 /// Convert Unix epoch seconds to a (year, month, day, hour, minute,
@@ -327,12 +324,7 @@ mod tests {
     fn read_tail_returns_newest_n() {
         let dir = tempdir().unwrap();
         for i in 0..5 {
-            record(
-                dir.path(),
-                AuditEvent::UnlockSuccess,
-                json!({ "n": i }),
-            )
-            .unwrap();
+            record(dir.path(), AuditEvent::UnlockSuccess, json!({ "n": i })).unwrap();
         }
         let entries = read_tail(dir.path(), 3).unwrap();
         // We dropped the oldest 2 → indices 2..5 remain, n in [2,3,4].
@@ -364,22 +356,15 @@ mod tests {
     #[test]
     fn jsonl_format_is_one_event_per_line() {
         let dir = tempdir().unwrap();
-        record(
-            dir.path(),
-            AuditEvent::Locked,
-            json!({}),
-        )
-        .unwrap();
+        record(dir.path(), AuditEvent::Locked, json!({})).unwrap();
         record(
             dir.path(),
             AuditEvent::KeyRotated,
             json!({ "artifactsRewritten": 1 }),
         )
         .unwrap();
-        let text = std::fs::read_to_string(
-            dir.path().join(LOGS_SUBDIR).join(AUDIT_LOG_FILENAME),
-        )
-        .unwrap();
+        let text =
+            std::fs::read_to_string(dir.path().join(LOGS_SUBDIR).join(AUDIT_LOG_FILENAME)).unwrap();
         let line_count = text.lines().count();
         assert_eq!(line_count, 2);
         for line in text.lines() {
@@ -398,10 +383,8 @@ mod tests {
             json!({ "extra": huge }),
         )
         .unwrap();
-        let text = std::fs::read_to_string(
-            dir.path().join(LOGS_SUBDIR).join(AUDIT_LOG_FILENAME),
-        )
-        .unwrap();
+        let text =
+            std::fs::read_to_string(dir.path().join(LOGS_SUBDIR).join(AUDIT_LOG_FILENAME)).unwrap();
         let first = text.lines().next().unwrap();
         // Bounded above by our 4 KiB ceiling + the truncation suffix.
         assert!(first.len() <= MAX_LINE_BYTES);
@@ -444,12 +427,7 @@ mod tests {
         // independently-parseable lines, with no truncation between them.
         let dir = tempdir().unwrap();
         for i in 0..50 {
-            record(
-                dir.path(),
-                AuditEvent::UnlockSuccess,
-                json!({ "i": i }),
-            )
-            .unwrap();
+            record(dir.path(), AuditEvent::UnlockSuccess, json!({ "i": i })).unwrap();
         }
         let entries = read_tail(dir.path(), 100).unwrap();
         assert_eq!(entries.len(), 50);

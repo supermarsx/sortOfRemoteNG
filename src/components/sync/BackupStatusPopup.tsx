@@ -128,22 +128,22 @@ const StatusSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   );
 };
 
-const TestResultBanner: React.FC<{
-  testResult: { success: boolean; message: string };
-}> = ({ testResult }) => (
+const OperationResultBanner: React.FC<{
+  result: { success: boolean; message: string };
+}> = ({ result }) => (
   <div
-    className={`p-3 rounded-lg mb-4 ${testResult.success ? "bg-success/20 border border-success" : "bg-error/20 border border-error"}`}
+    className={`p-3 rounded-lg mb-4 ${result.success ? "bg-success/20 border border-success" : "bg-error/20 border border-error"}`}
   >
     <div className="flex items-center gap-2">
-      {testResult.success ? (
+      {result.success ? (
         <FileCheck className="w-4 h-4 text-success" />
       ) : (
         <AlertCircle className="w-4 h-4 text-error" />
       )}
       <span
-        className={`text-sm ${testResult.success ? "text-success" : "text-error"}`}
+        className={`text-sm ${result.success ? "text-success" : "text-error"}`}
       >
-        {testResult.message}
+        {result.message}
       </span>
     </div>
   </div>
@@ -191,54 +191,67 @@ const BackupList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         </p>
       ) : (
         <div className="space-y-2 max-h-48 overflow-y-auto">
-          {mgr.backupList.map((backup) => (
-            <div
-              key={backup.id}
-              className="sor-status-item flex items-center justify-between p-2"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-xs text-[var(--color-textSecondary)] truncate">
-                  {backup.filename}
+          {mgr.backupList.map((backup) => {
+            const backupKey = `${backup.targetId ?? "legacy"}:${backup.id}`;
+            const isRestoring = mgr.restoringBackupKey === backupKey;
+            return (
+              <div
+                key={backupKey}
+                className="sor-status-item flex items-center justify-between p-2"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-[var(--color-textSecondary)] truncate">
+                    {backup.filename}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)] flex-wrap">
+                    <span>{formatRelativeTime(backup.createdAt)}</span>
+                    <span>•</span>
+                    <span>{formatBytes(backup.sizeBytes)}</span>
+                    {backup.encrypted && (
+                      <span className="text-warning">🔒</span>
+                    )}
+                    {backup.targetLabel && (
+                      <span
+                        className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium"
+                        title={
+                          backup.targetId
+                            ? `Destination: ${backup.targetLabel} (${backup.targetId})`
+                            : `Destination: ${backup.targetLabel}`
+                        }
+                      >
+                        {backup.targetLabel}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)] flex-wrap">
-                  <span>{formatRelativeTime(backup.createdAt)}</span>
-                  <span>•</span>
-                  <span>{formatBytes(backup.sizeBytes)}</span>
-                  {backup.encrypted && <span className="text-warning">🔒</span>}
-                  {backup.targetLabel && (
-                    <span
-                      className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium"
-                      title={
-                        backup.targetId
-                          ? `Destination: ${backup.targetLabel} (${backup.targetId})`
-                          : `Destination: ${backup.targetLabel}`
-                      }
-                    >
-                      {backup.targetLabel}
-                    </span>
-                  )}
+                <div className="flex items-center gap-1 ml-2">
+                  <button
+                    onClick={() =>
+                      mgr.handleRestoreBackup(backup.id, backup.targetId)
+                    }
+                    disabled={mgr.restoringBackupKey !== null}
+                    className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={mgr.t("backup.restore", "Restore")}
+                  >
+                    {isRestoring ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() =>
+                      mgr.handleDeleteBackup(backup.id, backup.targetId)
+                    }
+                    className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-error"
+                    title={mgr.t("backup.delete", "Delete")}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-1 ml-2">
-                <button
-                  onClick={() =>
-                    mgr.handleRestoreBackup(backup.id, backup.targetId)
-                  }
-                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-success"
-                  title={mgr.t("backup.restore", "Restore")}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => mgr.handleDeleteBackup(backup.id)}
-                  className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-error"
-                  title={mgr.t("backup.delete", "Delete")}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -278,7 +291,12 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
           />
           <div className="p-4">
             <StatusSection mgr={mgr} />
-            {mgr.testResult && <TestResultBanner testResult={mgr.testResult} />}
+            {mgr.testResult && (
+              <OperationResultBanner result={mgr.testResult} />
+            )}
+            {mgr.restoreResult && (
+              <OperationResultBanner result={mgr.restoreResult} />
+            )}
             <ActionButtons mgr={mgr} />
             <BackupList mgr={mgr} />
           </div>

@@ -1054,9 +1054,9 @@ describe("useImportExport", () => {
 
     const { text } = await getLastDownloadedText();
     const exportedConnection = JSON.parse(text).connections[0];
-    expect(exportedConnection.password).toBe("***ENCRYPTED***");
-    expect(exportedConnection.basicAuthPassword).toBe("***ENCRYPTED***");
-    expect(exportedConnection.rustdeskPassword).toBe("***ENCRYPTED***");
+    expect(exportedConnection).not.toHaveProperty("password");
+    expect(exportedConnection).not.toHaveProperty("basicAuthPassword");
+    expect(exportedConnection).not.toHaveProperty("rustdeskPassword");
     expect(exportedConnection).not.toHaveProperty("privateKey");
     expect(exportedConnection).not.toHaveProperty("passphrase");
     expect(exportedConnection).not.toHaveProperty("totpSecret");
@@ -1073,8 +1073,10 @@ describe("useImportExport", () => {
     });
     expect(exportedConnection.rdpSettings.gateway).toMatchObject({
       hostname: "gateway.example.com",
-      password: "***ENCRYPTED***",
     });
+    expect(exportedConnection.rdpSettings.gateway).not.toHaveProperty(
+      "password",
+    );
     expect(exportedConnection.rdpSettings.gateway).not.toHaveProperty(
       "accessToken",
     );
@@ -1114,7 +1116,7 @@ describe("useImportExport", () => {
         await result.current.handleExport();
       });
 
-      let downloaded = await getLastDownloadedText();
+      const downloaded = await getLastDownloadedText();
       let exportedConnection = JSON.parse(downloaded.text).connections[0];
       expect(exportedConnection.ardSettings.crossPlatformFallback).toEqual({
         enabled: true,
@@ -1126,13 +1128,19 @@ describe("useImportExport", () => {
       expect(exportedConnection).not.toHaveProperty("username");
       expect(exportedConnection).not.toHaveProperty("password");
 
-      act(() => result.current.setIncludePasswords(true));
+      act(() => {
+        result.current.setExportEncrypted(true);
+        result.current.setExportPassword("ard-portable-secret");
+        result.current.setIncludePasswords(true);
+      });
       await act(async () => {
         await result.current.handleExport();
       });
 
-      downloaded = await getLastDownloadedText();
-      exportedConnection = JSON.parse(downloaded.text).connections[0];
+      const plaintextBeforeEncryption = mockEncryptWithPassword.mock.calls[
+        mockEncryptWithPassword.mock.calls.length - 1
+      ]?.[0] as string;
+      exportedConnection = JSON.parse(plaintextBeforeEncryption).connections[0];
       expect(exportedConnection.ardSettings.appleAccountIdentifier).toBe(
         "owner@example.test",
       );
@@ -1662,9 +1670,9 @@ describe("useImportExport", () => {
     expect(blob.type).toBe("text/plain");
     expect(text).toContain("sortOfRemoteNG connection inventory");
     expect(text).toContain("Total items: 2");
-    expect(text).toContain("Credential-bearing connections: 1");
+    expect(text).toContain("Credential-bearing connections: 0");
     expect(text).toContain("- [Connection] Server A");
-    expect(text).toContain("Credentials: present (not included)");
+    expect(text).not.toContain("Credentials: present");
 
     restoreBlob();
   });

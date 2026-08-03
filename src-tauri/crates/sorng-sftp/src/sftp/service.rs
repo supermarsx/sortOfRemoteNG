@@ -7,8 +7,10 @@ use log::{info, warn};
 use secrecy::ExposeSecret;
 use ssh2::Session;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::net::TcpStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -46,7 +48,124 @@ enum HostKeyAction {
     AcceptAndPersist,
 }
 
+static KNOWN_HOSTS_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const MAX_SESSIONS: usize = 32;
+const MAX_HOST_CHARS: usize = 253;
+const MAX_USERNAME_CHARS: usize = 256;
+const MAX_CONNECTION_TIMEOUT_SECS: u64 = 120;
+const MAX_RESOLVED_ADDRESSES: usize = 16;
+
+async fn connect_tcp_with_timeout(
+    host: &str,
+    port: u16,
+    timeout: std::time::Duration,
+) -> Result<TcpStream, String> {
+    let network_host = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    let endpoint = if network_host.contains(':') {
+        format!("[{network_host}]:{port}")
+    } else {
+        format!("{network_host}:{port}")
+    };
+    let deadline = tokio::time::Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| "SFTP connection timeout is too large".to_string())?;
+    let resolved = tokio::time::timeout_at(deadline, tokio::net::lookup_host((network_host, port)))
+        .await
+        .map_err(|_| format!("SFTP address resolution for {endpoint} timed out"))?
+        .map_err(|error| format!("SFTP address resolution for {endpoint} failed: {error}"))?;
+    let addresses: Vec<_> = resolved.take(MAX_RESOLVED_ADDRESSES).collect();
+    if addresses.is_empty() {
+        return Err(format!(
+            "SFTP address resolution for {endpoint} returned no addresses"
+        ));
+    }
+
+    let address_count = addresses.len();
+    let mut last_error = None;
+    for (index, address) in addresses.into_iter().enumerate() {
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let attempts_left = (address_count - index) as u32;
+        let attempt_budget = deadline.duration_since(now) / attempts_left;
+        match tokio::time::timeout(attempt_budget, tokio::net::TcpStream::connect(address)).await {
+            Ok(Ok(stream)) => {
+                return stream
+                    .into_std()
+                    .map_err(|error| format!("SFTP socket setup for {endpoint} failed: {error}"));
+            }
+            Ok(Err(error)) => last_error = Some(format!("{address}: {error}")),
+            Err(_) => last_error = Some(format!("{address}: timed out")),
+        }
+    }
+    Err(format!(
+        "TCP connection to {endpoint} failed for every resolved address{}",
+        last_error
+            .map(|error| format!(" (last error: {error})"))
+            .unwrap_or_default()
+    ))
+}
+
+struct EphemeralPrivateKey {
+    path: PathBuf,
+}
+
+impl EphemeralPrivateKey {
+    fn create(key_data: &str) -> Result<Self, String> {
+        for _ in 0..4 {
+            let path = std::env::temp_dir().join(format!("sorng-sftp-key-{}", Uuid::new_v4()));
+            let mut options = OpenOptions::new();
+            options.create_new(true).write(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = match options.open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "Cannot create secure temporary private-key file: {error}"
+                    ));
+                }
+            };
+            if let Err(error) = file
+                .write_all(key_data.as_bytes())
+                .and_then(|_| file.sync_all())
+            {
+                drop(file);
+                let _ = std::fs::remove_file(&path);
+                return Err(format!(
+                    "Cannot write secure temporary private-key file: {error}"
+                ));
+            }
+            return Ok(Self { path });
+        }
+        Err("Cannot allocate secure temporary private-key file".to_string())
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for EphemeralPrivateKey {
+    fn drop(&mut self) {
+        if let Ok(file) = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&self.path)
+        {
+            let _ = file.sync_all();
+        }
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
 
 /// Pure host-key policy decision. Returns the action to take, or an actionable
 /// rejection reason. `Ignore` is handled by the caller before this is reached.
@@ -73,11 +192,14 @@ fn decide_host_key_action(
             KnownHostsPolicy::Strict => {
                 Err("host is not in known_hosts and the policy is Strict.".to_string())
             }
-            // AcceptNew and Ask both trust-on-first-use for unknown hosts;
-            // neither ever silently accepts a *changed* key (Mismatch above).
-            KnownHostsPolicy::AcceptNew | KnownHostsPolicy::Ask => {
-                Ok(HostKeyAction::AcceptAndPersist)
-            }
+            // AcceptNew is the explicit trust-on-first-use policy. Ask must fail
+            // closed until SFTP has an interactive host-key confirmation channel.
+            // Neither policy accepts a changed key (Mismatch above).
+            KnownHostsPolicy::AcceptNew => Ok(HostKeyAction::AcceptAndPersist),
+            KnownHostsPolicy::Ask => Err(
+                "host is unknown and Ask requires interactive confirmation, but SFTP has no host-key confirmation channel"
+                    .to_string(),
+            ),
             // Reached only if a caller forgets to short-circuit Ignore.
             KnownHostsPolicy::Ignore => Ok(HostKeyAction::Accept),
         },
@@ -142,24 +264,49 @@ impl SftpService {
         if self.sessions.len() >= MAX_SESSIONS {
             return Err("SFTP session limit reached; disconnect an existing session".to_string());
         }
+        if config.host.is_empty()
+            || config.host.chars().count() > MAX_HOST_CHARS
+            || config
+                .host
+                .chars()
+                .any(|c| c.is_control() || c.is_whitespace())
+            || config.username.is_empty()
+            || config.username.chars().count() > MAX_USERNAME_CHARS
+            || config.username.chars().any(char::is_control)
+        {
+            return Err("SFTP host or username is invalid".to_string());
+        }
+        if !(1..=MAX_CONNECTION_TIMEOUT_SECS).contains(&config.timeout_secs) {
+            return Err(format!(
+                "SFTP timeout must be between 1 and {} seconds",
+                MAX_CONNECTION_TIMEOUT_SECS
+            ));
+        }
         let addr = format!("{}:{}", config.host, config.port);
         info!("SFTP connecting to {}", addr);
 
         // TCP connection with timeout
-        let tcp = TcpStream::connect_timeout(
-            &addr
-                .parse()
-                .map_err(|e| format!("Invalid address '{}': {}", addr, e))?,
+        let tcp = connect_tcp_with_timeout(
+            &config.host,
+            config.port,
             std::time::Duration::from_secs(config.timeout_secs),
         )
-        .map_err(|e| format!("TCP connection to {} failed: {}", addr, e))?;
+        .await?;
 
         tcp.set_nonblocking(false)
             .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        let io_timeout = Some(std::time::Duration::from_secs(config.timeout_secs));
+        tcp.set_read_timeout(io_timeout)
+            .map_err(|e| format!("Failed to set SFTP read timeout: {e}"))?;
+        tcp.set_write_timeout(io_timeout)
+            .map_err(|e| format!("Failed to set SFTP write timeout: {e}"))?;
 
         // SSH handshake
         let mut session =
             Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+        session.set_timeout(
+            u32::try_from(config.timeout_secs.saturating_mul(1000)).unwrap_or(u32::MAX),
+        );
 
         if config.compress {
             session.set_compress(true);
@@ -272,9 +419,9 @@ impl SftpService {
 
         let known_hosts_path = Self::known_hosts_path();
 
-        let (host_key, key_type) = session
-            .host_key()
-            .ok_or_else(|| "Host-key verification failed: server presented no host key".to_string())?;
+        let (host_key, key_type) = session.host_key().ok_or_else(|| {
+            "Host-key verification failed: server presented no host key".to_string()
+        })?;
         let host_key = host_key.to_vec();
 
         let check_result = {
@@ -283,8 +430,10 @@ impl SftpService {
                 .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
             // A missing/unreadable known_hosts file is fine — every host is
             // then "NotFound" and handled per-policy below.
-            let _ = known_hosts
-                .read_file(Path::new(&known_hosts_path), ssh2::KnownHostFileKind::OpenSSH);
+            let _ = known_hosts.read_file(
+                Path::new(&known_hosts_path),
+                ssh2::KnownHostFileKind::OpenSSH,
+            );
             known_hosts.check_port(&config.host, config.port, &host_key)
         };
 
@@ -360,11 +509,23 @@ impl SftpService {
         host_key: &[u8],
         key_type: ssh2::HostKeyType,
     ) -> Result<(), String> {
+        let _write_guard = KNOWN_HOSTS_WRITE_LOCK
+            .lock()
+            .map_err(|_| "known_hosts write lock is unavailable".to_string())?;
+        if matches!(
+            std::fs::symlink_metadata(known_hosts_path),
+            Ok(metadata) if metadata.file_type().is_symlink()
+        ) {
+            return Err("Refusing to update a symlinked known_hosts file".to_string());
+        }
         let mut known_hosts = session
             .known_hosts()
             .map_err(|e| format!("Failed to create known_hosts handle: {}", e))?;
 
-        let _ = known_hosts.read_file(Path::new(known_hosts_path), ssh2::KnownHostFileKind::OpenSSH);
+        let _ = known_hosts.read_file(
+            Path::new(known_hosts_path),
+            ssh2::KnownHostFileKind::OpenSSH,
+        );
 
         let entry_name = if port == 22 {
             host.to_string()
@@ -387,8 +548,17 @@ impl SftpService {
         }
 
         known_hosts
-            .write_file(Path::new(known_hosts_path), ssh2::KnownHostFileKind::OpenSSH)
+            .write_file(
+                Path::new(known_hosts_path),
+                ssh2::KnownHostFileKind::OpenSSH,
+            )
             .map_err(|e| format!("Failed to write known_hosts file: {}", e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(known_hosts_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("Failed to protect known_hosts permissions: {e}"))?;
+        }
 
         Ok(())
     }
@@ -421,26 +591,12 @@ impl SftpService {
                 .private_key_passphrase
                 .as_ref()
                 .map(|p| p.expose_secret().as_str());
-            // ssh2 doesn't expose userauth_pubkey_memory; write to temp file
-            let tmp_dir = std::env::temp_dir();
-            let tmp_key = tmp_dir.join(format!("sorng_sftp_key_{}", uuid::Uuid::new_v4()));
-            if std::fs::write(&tmp_key, key_data.expose_secret().as_bytes()).is_ok() {
-                // Restrict permissions on the temp key file (Unix only)
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
-                        &tmp_key,
-                        std::fs::Permissions::from_mode(0o600),
-                    );
-                }
-                let result =
-                    session.userauth_pubkey_file(&config.username, None, &tmp_key, passphrase);
-                let _ = std::fs::remove_file(&tmp_key);
-                result.map_err(|e| format!("Public-key (memory) auth failed: {}", e))?;
-                if session.authenticated() {
-                    return Ok("publickey-memory".to_string());
-                }
+            let tmp_key = EphemeralPrivateKey::create(key_data.expose_secret())?;
+            session
+                .userauth_pubkey_file(&config.username, None, tmp_key.path(), passphrase)
+                .map_err(|e| format!("Public-key (memory) auth failed: {}", e))?;
+            if session.authenticated() {
+                return Ok("publickey-memory".to_string());
             }
         }
 
@@ -535,6 +691,18 @@ impl SftpService {
     // ── Disconnect ───────────────────────────────────────────────────────────
 
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), String> {
+        let upload_ids: Vec<String> = self
+            .uploads
+            .iter()
+            .filter(|(_, upload)| upload.session_id == session_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut upload_cleanup_error = None;
+        for upload_id in upload_ids {
+            if let Err(error) = self.upload_abort(&upload_id).await {
+                upload_cleanup_error = Some(error);
+            }
+        }
         let handle = self
             .sessions
             .remove(session_id)
@@ -551,7 +719,12 @@ impl SftpService {
             .disconnect(None, "Client disconnecting", None);
 
         info!("SFTP session {} disconnected", session_id);
-        Ok(())
+        match upload_cleanup_error {
+            Some(error) => Err(format!(
+                "SFTP session disconnected, but a partial upload could not be removed: {error}"
+            )),
+            None => Ok(()),
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -710,15 +883,18 @@ mod host_key_tests {
     }
 
     #[test]
-    fn unknown_host_is_tofu_under_accept_new_and_ask() {
-        for policy in [KnownHostsPolicy::AcceptNew, KnownHostsPolicy::Ask] {
-            assert_eq!(
-                decide_host_key_action(HostKeyCheck::NotFound, policy),
-                Ok(HostKeyAction::AcceptAndPersist),
-                "{:?} should trust-on-first-use and persist",
-                policy
-            );
-        }
+    fn unknown_host_is_tofu_under_accept_new() {
+        assert_eq!(
+            decide_host_key_action(HostKeyCheck::NotFound, KnownHostsPolicy::AcceptNew),
+            Ok(HostKeyAction::AcceptAndPersist),
+        );
+    }
+
+    #[test]
+    fn unknown_host_ask_fails_without_confirmation_channel() {
+        let error = decide_host_key_action(HostKeyCheck::NotFound, KnownHostsPolicy::Ask)
+            .expect_err("Ask must not silently trust an unknown host");
+        assert!(error.contains("interactive confirmation"));
     }
 
     #[test]

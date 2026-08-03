@@ -45,7 +45,10 @@ const ensureLocalStorage = () => {
 
 // ── Import (after mocks) ──────────────────────────────────────
 
-import { useSSHCommandHistory } from "../../src/hooks/ssh/useSSHCommandHistory";
+import {
+  resetSSHCommandHistoryMemoryForTests,
+  useSSHCommandHistory,
+} from "../../src/hooks/ssh/useSSHCommandHistory";
 import type {
   SSHCommandHistoryEntry,
   CommandExecution,
@@ -57,6 +60,7 @@ describe("useSSHCommandHistory", () => {
   beforeEach(() => {
     ensureLocalStorage();
     localStorage.clear();
+    resetSSHCommandHistoryMemoryForTests();
   });
 
   afterEach(() => {
@@ -861,7 +865,7 @@ describe("useSSHCommandHistory", () => {
   // ─── Persistence ──────────────────────────────────────────
 
   describe("persistence", () => {
-    it("should persist entries to localStorage", () => {
+    it("keeps command history out of localStorage", () => {
       const { result } = renderHook(() => useSSHCommandHistory());
 
       act(() => {
@@ -876,13 +880,11 @@ describe("useSSHCommandHistory", () => {
       });
 
       const stored = localStorage.getItem("sshCommandHistory");
-      expect(stored).not.toBeNull();
-      const parsed = JSON.parse(stored!);
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0].command).toBe("persisted cmd");
+      expect(stored).toBeNull();
+      expect(result.current.allEntries[0].command).toBe("persisted cmd");
     });
 
-    it("should load entries from localStorage on mount", () => {
+    it("purges legacy plaintext history instead of loading it", () => {
       const entry: SSHCommandHistoryEntry = {
         id: "test-id",
         command: "pre-existing",
@@ -897,8 +899,8 @@ describe("useSSHCommandHistory", () => {
       localStorage.setItem("sshCommandHistory", JSON.stringify([entry]));
 
       const { result } = renderHook(() => useSSHCommandHistory());
-      expect(result.current.allEntries).toHaveLength(1);
-      expect(result.current.allEntries[0].command).toBe("pre-existing");
+      expect(result.current.allEntries).toEqual([]);
+      expect(localStorage.getItem("sshCommandHistory")).toBeNull();
     });
   });
 

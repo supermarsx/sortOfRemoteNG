@@ -144,8 +144,14 @@ export function useSecuritySettings(
           passphrase: undefined,
         },
       );
-      await writeTextFile(selectedPath, privateKey);
-      await writeTextFile(`${selectedPath}.pub`, publicKey);
+      await writeTextFile(selectedPath, privateKey, {
+        mode: 0o600,
+        createNew: true,
+      });
+      await writeTextFile(`${selectedPath}.pub`, publicKey, {
+        mode: 0o644,
+        createNew: true,
+      });
       setKeyGenSuccess(`Key saved to: ${selectedPath}`);
       setTimeout(() => setKeyGenSuccess(null), 5000);
     } catch (err) {
@@ -190,7 +196,10 @@ export function useSecuritySettings(
         "-----END SORTOFREMOTENG COLLECTION KEY-----",
       ].join("\n");
 
-      await writeTextFile(selectedPath, keyFileContent);
+      await writeTextFile(selectedPath, keyFileContent, {
+        mode: 0o600,
+        createNew: true,
+      });
       setCollectionKeySuccess(`Key file saved to: ${selectedPath}`);
       setTimeout(() => setCollectionKeySuccess(null), 5000);
     } catch (err) {

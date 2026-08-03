@@ -26,6 +26,54 @@ export interface FileTransferAdapter {
   ): Promise<void>;
 }
 
+const MAX_BROWSER_CHUNK_BYTES = 8 * 1024 * 1024;
+const MAX_REMOTE_PATH_BYTES = 4096;
+const MAX_REMOTE_PATH_SEGMENTS = 256;
+const MAX_DIRECTORY_ENTRIES = 10_000;
+
+export function safeRemoteEntryName(name: string): string {
+  if (
+    name.length === 0 ||
+    name.length > 255 ||
+    name === "." ||
+    name === ".." ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    name.includes("\0")
+  ) {
+    throw new Error("Remote entry name is not a safe path component");
+  }
+  return name;
+}
+
+export function normalizeRemotePath(path: string): string {
+  if (
+    path.length > MAX_REMOTE_PATH_BYTES ||
+    !path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes("\0") ||
+    [...path].some((character) => character < " ")
+  ) {
+    throw new Error("Remote path must be an absolute POSIX path");
+  }
+  const parts = path.split("/").filter(Boolean);
+  if (
+    parts.length > MAX_REMOTE_PATH_SEGMENTS ||
+    parts.some((part) => part === "." || part === ".." || part.length > 255)
+  ) {
+    throw new Error("Remote path traversal is not allowed");
+  }
+  return parts.length === 0 ? "/" : `/${parts.join("/")}`;
+}
+
+export function joinRemotePath(parent: string, child: string): string {
+  const normalizedParent = normalizeRemotePath(parent);
+  const safeChild = safeRemoteEntryName(child);
+  return normalizedParent === "/"
+    ? `/${safeChild}`
+    : `${normalizedParent}/${safeChild}`;
+}
+
 // NOTE: the legacy browser FTPAdapter was retired in t3-e20 — the Rust
 // backend (`sorng-ftp`, `ftp_*` invoke commands) is the sole FTP path.
 // Frontend callers should route FTP file-transfer through those commands.
@@ -51,23 +99,41 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
   constructor(private readonly connectionId: string) {}
 
   private async getSessionId(): Promise<string> {
-    if (this.resolvedSessionId) return this.resolvedSessionId;
-
     // First try: treat the passed connectionId as an SFTP session id directly.
     // Most upstream call sites pass the backend session id already.
     try {
       const sessions = await sftpApi.listSessions();
-      const direct = sessions.find((s) => s.id === this.connectionId);
+      if (this.resolvedSessionId) {
+        const cached = sessions.find(
+          (session) =>
+            session.id === this.resolvedSessionId &&
+            session.connected &&
+            (session.id === this.connectionId ||
+              session.label === this.connectionId),
+        );
+        if (cached) return cached.id;
+        this.resolvedSessionId = null;
+      }
+      const direct = sessions.find(
+        (s) => s.id === this.connectionId && s.connected,
+      );
       if (direct) {
         this.resolvedSessionId = direct.id;
         return direct.id;
       }
       // Fallback: label-match so callers that only know the app-level
       // connection id can still resolve.
-      const byLabel = sessions.find((s) => s.label === this.connectionId);
-      if (byLabel) {
-        this.resolvedSessionId = byLabel.id;
-        return byLabel.id;
+      const byLabel = sessions.filter(
+        (s) => s.label === this.connectionId && s.connected,
+      );
+      if (byLabel.length > 1) {
+        throw new Error(
+          `Multiple active SFTP sessions use connection label '${this.connectionId}'`,
+        );
+      }
+      if (byLabel.length === 1) {
+        this.resolvedSessionId = byLabel[0].id;
+        return byLabel[0].id;
       }
     } catch (err) {
       throw new Error(
@@ -84,13 +150,14 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
     );
   }
 
-  private static mapEntry(entry: SftpDirEntry): FileItem {
-    const isDir =
-      entry.entryType === "directory" ||
-      (entry.entryType === "symlink" && entry.linkTarget?.endsWith("/"));
+  private static mapEntry(entry: SftpDirEntry): FileItem | null {
+    if (entry.entryType !== "file" && entry.entryType !== "directory") {
+      return null;
+    }
+    const name = safeRemoteEntryName(entry.name);
     return {
-      name: entry.name,
-      type: isDir ? "directory" : "file",
+      name,
+      type: entry.entryType,
       size: entry.size,
       modified:
         entry.modified != null ? new Date(entry.modified * 1000) : new Date(0),
@@ -101,8 +168,16 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
   async list(path: string, signal?: AbortSignal): Promise<FileItem[]> {
     const sessionId = await this.getSessionId();
     if (signal?.aborted) throw new Error("aborted");
-    const entries = await sftpApi.listDirectory(sessionId, path);
-    return entries.map(TauriSFTPAdapter.mapEntry);
+    const entries = await sftpApi.listDirectory(
+      sessionId,
+      normalizeRemotePath(path),
+    );
+    if (entries.length > MAX_DIRECTORY_ENTRIES) {
+      throw new Error("Remote directory listing exceeds the supported limit");
+    }
+    return entries
+      .map(TauriSFTPAdapter.mapEntry)
+      .filter((entry): entry is FileItem => entry !== null);
   }
 
   /**
@@ -138,6 +213,15 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
       );
     }
     const webFile = file as Blob & { size: number };
+    if (
+      !Number.isSafeInteger(webFile.size) ||
+      webFile.size < 0 ||
+      !Number.isSafeInteger(chunkSize) ||
+      chunkSize <= 0 ||
+      chunkSize > MAX_BROWSER_CHUNK_BYTES
+    ) {
+      throw new Error("Upload size or chunk size is outside supported bounds");
+    }
 
     const sessionId = await this.getSessionId();
     if (signal?.aborted) throw new Error("aborted");
@@ -145,7 +229,7 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
     const totalBytes = webFile.size;
     const uploadId = await sftpApi.uploadBegin(
       sessionId,
-      remotePath,
+      normalizeRemotePath(remotePath),
       totalBytes,
       true,
     );
@@ -156,6 +240,9 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
 
     const flushChunk = async (bytes: Uint8Array) => {
       if (bytes.length === 0) return;
+      if (offset + bytes.length > totalBytes) {
+        throw new Error("Upload stream exceeded its declared file size");
+      }
       await sftpApi.uploadChunk(uploadId, offset, bytes);
       offset += bytes.length;
       onProgress?.(offset, totalBytes);
@@ -168,7 +255,7 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
         // Upload may have already been cleaned up by the backend sweeper, or
         // the network dropped entirely. Log and continue so we propagate the
         // original cause — do not crash on abort-of-abort.
-         
+
         console.warn(
           `[TauriSFTPAdapter] sftp_upload_abort(${uploadId}) failed:`,
           abortErr,
@@ -181,7 +268,7 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
       // Pump the ReadableStream. Each read() may return a chunk of any size;
       // we buffer into `pending` and flush exactly `chunkSize` at a time to
       // match the backend's backpressure contract (4 in-flight chunks).
-       
+
       while (true) {
         if (signal?.aborted) {
           await bestEffortAbort(new Error("aborted"));
@@ -190,6 +277,11 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
         const { done, value } = await reader.read();
         if (done) break;
         if (!value || value.length === 0) continue;
+        if (value.length > MAX_BROWSER_CHUNK_BYTES) {
+          await bestEffortAbort(
+            new Error("Upload stream produced an oversized chunk"),
+          );
+        }
 
         // Append value to pending.
         if (pending.length === 0) {
@@ -218,8 +310,18 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
         await flushChunk(pending);
         pending = new Uint8Array(0);
       }
+      if (offset !== totalBytes) {
+        throw new Error(
+          `Upload stream ended at ${offset} bytes; expected ${totalBytes}`,
+        );
+      }
 
-      await sftpApi.uploadFinish(uploadId);
+      const finalPath = await sftpApi.uploadFinish(uploadId);
+      if (normalizeRemotePath(finalPath) !== normalizeRemotePath(remotePath)) {
+        throw new Error(
+          "Backend acknowledged an unexpected upload destination",
+        );
+      }
       // Terminal progress tick (covers the case where totalBytes is 0).
       onProgress?.(totalBytes, totalBytes);
     } catch (err) {
@@ -250,10 +352,11 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
   ): Promise<void> {
     const sessionId = await this.getSessionId();
     if (signal?.aborted) throw new Error("aborted");
+    const safeRemotePath = normalizeRemotePath(remotePath);
     const result = await sftpApi.upload({
       sessionId,
       localPath,
-      remotePath,
+      remotePath: safeRemotePath,
       direction: "upload",
     });
     if (!result.success) {
@@ -273,10 +376,17 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
   ): Promise<void> {
     const sessionId = await this.getSessionId();
     if (signal?.aborted) throw new Error("aborted");
+    if (
+      localPath.length === 0 ||
+      localPath.length > 32_768 ||
+      localPath.includes("\0")
+    ) {
+      throw new Error("Local download path is invalid");
+    }
     const result = await sftpApi.download({
       sessionId,
       localPath,
-      remotePath,
+      remotePath: normalizeRemotePath(remotePath),
       direction: "download",
     });
     if (!result.success) {
@@ -287,17 +397,22 @@ export class TauriSFTPAdapter implements FileTransferAdapter {
 
   async delete(remotePath: string): Promise<void> {
     const sessionId = await this.getSessionId();
-    await sftpApi.deleteFile(sessionId, remotePath);
+    await sftpApi.deleteFile(sessionId, normalizeRemotePath(remotePath));
   }
 
   async mkdir(path: string): Promise<void> {
     const sessionId = await this.getSessionId();
-    await sftpApi.mkdir(sessionId, path, null);
+    await sftpApi.mkdir(sessionId, normalizeRemotePath(path), null);
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
     const sessionId = await this.getSessionId();
-    await sftpApi.rename(sessionId, oldPath, newPath, false);
+    await sftpApi.rename(
+      sessionId,
+      normalizeRemotePath(oldPath),
+      normalizeRemotePath(newPath),
+      false,
+    );
   }
 }
 

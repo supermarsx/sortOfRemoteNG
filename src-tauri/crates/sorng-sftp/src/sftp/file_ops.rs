@@ -9,6 +9,19 @@ use std::path::Path;
 const MAX_TREE_ENTRIES: usize = 50_000;
 const MAX_TEXT_WRITE_BYTES: usize = 10 * 1024 * 1024;
 
+fn reject_dangerous_remote_path(path: &str, allow_root: bool) -> Result<(), String> {
+    if path.len() > 4096
+        || !path.starts_with('/')
+        || (!allow_root && path == "/")
+        || path.contains('\\')
+        || path.chars().any(|c| c == '\0' || c.is_control())
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+    {
+        return Err("Remote path is unsafe or outside supported bounds".to_string());
+    }
+    Ok(())
+}
+
 /// Convert an ssh2 `FileStat` + path into our richer `SftpFileStat`.
 pub(crate) fn stat_to_file_stat(
     path: &str,
@@ -156,11 +169,20 @@ impl SftpService {
         new_path: &str,
         overwrite: bool,
     ) -> Result<(), String> {
+        reject_dangerous_remote_path(old_path, false)?;
+        reject_dangerous_remote_path(new_path, false)?;
         let (sftp, _handle) = self.sftp_channel(session_id)?;
 
         if overwrite {
-            // Remove target first if it exists (SFTP rename does not overwrite)
-            let _ = sftp.unlink(Path::new(new_path));
+            match sftp.lstat(Path::new(new_path)) {
+                Ok(stat) if entry_type_from_stat(&stat) != SftpEntryType::File => {
+                    return Err("Refusing to overwrite a non-regular remote target".to_string());
+                }
+                Ok(_) => sftp
+                    .unlink(Path::new(new_path))
+                    .map_err(|e| format!("Failed to remove existing rename target: {e}"))?,
+                Err(_) => {}
+            }
         }
 
         sftp.rename(
@@ -181,7 +203,14 @@ impl SftpService {
     // ── unlink (delete file) ─────────────────────────────────────────────────
 
     pub async fn delete_file(&mut self, session_id: &str, path: &str) -> Result<(), String> {
+        reject_dangerous_remote_path(path, false)?;
         let (sftp, _handle) = self.sftp_channel(session_id)?;
+        let stat = sftp
+            .lstat(Path::new(path))
+            .map_err(|e| format!("Cannot inspect remote delete target: {e}"))?;
+        if entry_type_from_stat(&stat) != SftpEntryType::File {
+            return Err("Refusing to delete a non-regular remote file target".to_string());
+        }
         sftp.unlink(Path::new(path))
             .map_err(|e| format!("delete '{}' failed: {}", path, e))?;
         info!("SFTP deleted file: {}", path);
@@ -191,6 +220,7 @@ impl SftpService {
     // ── Delete directory tree recursively ────────────────────────────────────
 
     pub async fn delete_recursive(&mut self, session_id: &str, path: &str) -> Result<u64, String> {
+        reject_dangerous_remote_path(path, false)?;
         // We need to collect all entries first, then delete bottom-up
         let entries = self.collect_tree(session_id, path)?;
         let mut count: u64 = 0;
@@ -520,6 +550,7 @@ impl SftpService {
         if content.len() > MAX_TEXT_WRITE_BYTES {
             return Err("Text write exceeds the supported size".to_string());
         }
+        reject_dangerous_remote_path(path, false)?;
         let (sftp, handle) = self.sftp_channel(session_id)?;
         let mut file = sftp
             .create(Path::new(path))
