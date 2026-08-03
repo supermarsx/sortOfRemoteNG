@@ -5,6 +5,10 @@ use crate::types::*;
 use crate::vmrest::VmRestClient;
 use crate::vmrun::VmRun;
 
+fn requested_writable(value: Option<bool>) -> bool {
+    value == Some(true)
+}
+
 /// Enable shared folders on a VM.
 pub async fn enable_shared_folders(vmrun: &VmRun, vmx_path: &str) -> VmwResult<()> {
     vmrun.enable_shared_folders(vmx_path).await
@@ -47,14 +51,13 @@ pub async fn add_shared_folder(
     vmx_path: &str,
     req: SharedFolderRequest,
 ) -> VmwResult<()> {
+    let writable = requested_writable(req.writable);
     vmrun
         .add_shared_folder(vmx_path, &req.name, &req.host_path)
         .await?;
-    if !req.writable.unwrap_or(true) {
-        vmrun
-            .set_shared_folder_state(vmx_path, &req.name, &req.host_path, false)
-            .await?;
-    }
+    vmrun
+        .set_shared_folder_state(vmx_path, &req.name, &req.host_path, writable)
+        .await?;
     Ok(())
 }
 
@@ -74,4 +77,16 @@ pub async fn set_shared_folder_state(
     vmrun
         .set_shared_folder_state(vmx_path, name, host_path, writable)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requested_writable;
+
+    #[test]
+    fn shared_folder_write_access_requires_explicit_true() {
+        assert!(!requested_writable(None));
+        assert!(!requested_writable(Some(false)));
+        assert!(requested_writable(Some(true)));
+    }
 }

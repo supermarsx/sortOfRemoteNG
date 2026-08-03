@@ -1,8 +1,22 @@
 import React from "react";
-import { beforeEach, describe, it, expect } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CertificateInfoPopup } from "../../src/components/security/CertificateInfoPopup";
-import type { CertIdentity, SshHostKeyIdentity, TrustRecord, TrustRecordType } from "../../src/utils/auth/trustStore";
+import type {
+  CertIdentity,
+  SshHostKeyIdentity,
+  TrustRecord,
+  TrustRecordType,
+} from "../../src/utils/auth/trustStore";
+
+const trustStoreMocks = vi.hoisted(() => ({
+  updateTrustRecordNickname: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/utils/auth/trustStore")>()),
+  updateTrustRecordNickname: trustStoreMocks.updateTrustRecordNickname,
+}));
 
 const sshIdentity: SshHostKeyIdentity = {
   fingerprint: "SHA256:test-fingerprint",
@@ -63,6 +77,7 @@ const renderPopup = ({
 describe("CertificateInfoPopup", () => {
   beforeEach(() => {
     localStorage.clear();
+    trustStoreMocks.updateTrustRecordNickname.mockClear();
   });
 
   it("renders popover content", () => {
@@ -115,11 +130,9 @@ describe("CertificateInfoPopup", () => {
     expect(screen.getByText("PEM Certificate")).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Show PEM Certificate" }),
+      screen.getByText("Show PEM Certificate").closest("button")!,
     );
-    expect(
-      screen.getByRole("button", { name: "Hide PEM Certificate" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Hide PEM Certificate")).toBeInTheDocument();
   });
 
   it("renders SSH detail English fallbacks and toggle states", () => {
@@ -133,31 +146,17 @@ describe("CertificateInfoPopup", () => {
     expect(screen.getByText("Key Type")).toBeInTheDocument();
     expect(screen.getByText("Key Bits")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show Public Key" }));
-    expect(
-      screen.getByRole("button", { name: "Hide Public Key" }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Show Public Key").closest("button")!);
+    expect(screen.getByText("Hide Public Key")).toBeInTheDocument();
   });
 
-  it("updates nicknames using the general certificate trust record type", () => {
+  it("updates nicknames using the native general certificate trust record type", async () => {
     const trustRecord: TrustRecord = {
       host: "cert.internal:443",
       type: "certificate",
       identity: certIdentity,
       userApproved: true,
     };
-
-    localStorage.setItem(
-      "trustStore",
-      JSON.stringify({
-        "certificate:cert.internal:443": trustRecord,
-        "tls:cert.internal:443": {
-          ...trustRecord,
-          type: "tls",
-          identity: { ...certIdentity, fingerprint: "SHA256:legacy" },
-        },
-      }),
-    );
 
     renderPopup({
       type: "certificate",
@@ -173,9 +172,16 @@ describe("CertificateInfoPopup", () => {
     });
     fireEvent.click(screen.getByTitle("Save"));
 
-    const store = JSON.parse(localStorage.getItem("trustStore") ?? "{}");
-    expect(store["certificate:cert.internal:443"].nickname).toBe("Prod Certificate");
-    expect(store["tls:cert.internal:443"].nickname).toBeUndefined();
+    await waitFor(() =>
+      expect(trustStoreMocks.updateTrustRecordNickname).toHaveBeenCalledWith(
+        "cert.internal",
+        443,
+        "certificate",
+        "Prod Certificate",
+        undefined,
+      ),
+    );
+    expect(localStorage.getItem("trustStore")).toBeNull();
   });
 
   it("closes on outside click and ignores trigger clicks", () => {

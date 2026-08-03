@@ -44,13 +44,13 @@ export interface VmwDesktopConfig {
   vmrestUsername?: string | null;
   /** vmrest basic-auth password (secret — persisted via the OS vault, not config JSON). */
   vmrestPassword?: string | null;
-  /** Skip TLS certificate verification for the vmrest HTTPS endpoint. */
+  /** Reserved compatibility flag; vmrest is local HTTP-only and this must remain false. */
   vmrestSkipTlsVerify: boolean;
   /** Whether to also launch vmrest if it is not already running. */
   autoStartVmrest: boolean;
   /** Timeout for CLI commands (seconds). */
   timeoutSecs: number;
-  /** Optional HTTP proxy URL used for vmrest API calls. */
+  /** Reserved compatibility field; proxies are rejected for plaintext vmrest. */
   proxyUrl?: string | null;
 }
 

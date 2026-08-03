@@ -1,6 +1,16 @@
-use reqwest::Client;
+use reqwest::{Client, Response};
 use serde_json::Value;
+use std::net::IpAddr;
 use std::time::Duration;
+use url::Url;
+
+const MAX_API_URL_BYTES: usize = 2 * 1024;
+const MAX_API_PATH_BYTES: usize = 8 * 1024;
+const MAX_API_TOKEN_BYTES: usize = 16 * 1024;
+const MAX_API_BODY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_QUERY_VALUE_BYTES: usize = 4 * 1024;
+const MAX_LOGIN_USERNAME_BYTES: usize = 1024;
+const MAX_LOGIN_PASSWORD_BYTES: usize = 64 * 1024;
 
 /// HTTP client for RustDesk Server Pro REST API.
 ///
@@ -21,107 +31,222 @@ impl std::fmt::Debug for RustDeskApiClient {
 }
 
 impl RustDeskApiClient {
-    pub fn new(base_url: String, token: String) -> Self {
+    pub fn new(base_url: String, token: String) -> Result<Self, String> {
+        let base_url = base_url.trim().trim_end_matches('/').to_string();
+        if base_url.is_empty()
+            || base_url.len() > MAX_API_URL_BYTES
+            || base_url.chars().any(char::is_control)
+        {
+            return Err(
+                "RustDesk API URL is empty, too long, or contains control characters".to_string(),
+            );
+        }
+        if token.is_empty()
+            || token.len() > MAX_API_TOKEN_BYTES
+            || token.chars().any(char::is_control)
+        {
+            return Err(
+                "RustDesk API token is empty, too long, or contains control characters".to_string(),
+            );
+        }
+
+        let parsed = Url::parse(&base_url)
+            .map_err(|_| "RustDesk API URL is not a valid absolute URL".to_string())?;
+        if parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            return Err(
+                "RustDesk API URL must have a host and must not contain credentials, a query, or a fragment"
+                    .to_string(),
+            );
+        }
+        match parsed.scheme() {
+            "https" => {}
+            "http" if is_loopback_host(parsed.host_str().unwrap_or_default()) => {}
+            _ => {
+                return Err(
+                    "RustDesk API requires HTTPS; plain HTTP is allowed only for loopback hosts"
+                        .to_string(),
+                )
+            }
+        }
+
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .unwrap_or_default();
+            .map_err(|e| format!("Failed to create RustDesk API client: {}", e))?;
 
-        let base_url = base_url.trim_end_matches('/').to_string();
-
-        Self {
+        Ok(Self {
             base_url,
             token,
             client,
-        }
+        })
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}/api{}", self.base_url, path)
     }
 
+    fn validate_path(path: &str) -> Result<(), String> {
+        if !path.starts_with('/')
+            || path.starts_with("//")
+            || path.len() > MAX_API_PATH_BYTES
+            || path.contains('\\')
+            || path.contains('#')
+            || path.chars().any(char::is_control)
+        {
+            return Err(
+                "RustDesk API path is invalid, option-like, too long, or contains unsafe characters"
+                    .to_string(),
+            );
+        }
+        Ok(())
+    }
+
+    fn query_value(label: &str, value: &str) -> Result<String, String> {
+        if value.len() > MAX_QUERY_VALUE_BYTES || value.chars().any(char::is_control) {
+            return Err(format!(
+                "RustDesk API {} query value is too long or contains control characters",
+                label
+            ));
+        }
+        Ok(value.to_string())
+    }
+
+    fn pagination(page: Option<u32>, page_size: Option<u32>) -> Result<(u32, u32), String> {
+        let page = page.unwrap_or(1);
+        let page_size = page_size.unwrap_or(100);
+        if page == 0 || page > 1_000_000 {
+            return Err("RustDesk API page must be between 1 and 1000000".to_string());
+        }
+        if page_size == 0 || page_size > 1_000 {
+            return Err("RustDesk API page size must be between 1 and 1000".to_string());
+        }
+        Ok((page, page_size))
+    }
+
+    fn query_path(base_path: &str, params: &[(&str, String)]) -> Result<String, String> {
+        if base_path.contains('?') {
+            return Err("RustDesk API query base path must not contain a query".to_string());
+        }
+        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+        for (name, value) in params {
+            serializer.append_pair(name, value);
+        }
+        let query = serializer.finish();
+        let path = if query.is_empty() {
+            base_path.to_string()
+        } else {
+            format!("{base_path}?{query}")
+        };
+        Self::validate_path(&path)?;
+        Ok(path)
+    }
+
+    fn serialize_body(body: &Value) -> Result<Vec<u8>, String> {
+        let encoded = serde_json::to_vec(body)
+            .map_err(|e| format!("Failed to serialize RustDesk API request: {}", e))?;
+        if encoded.len() > MAX_API_BODY_BYTES {
+            return Err("RustDesk API request body exceeds the 8 MiB limit".to_string());
+        }
+        Ok(encoded)
+    }
+
+    async fn read_json_response(
+        mut response: Response,
+        operation: &'static str,
+    ) -> Result<Value, String> {
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!(
+                "RustDesk API {} returned HTTP {}",
+                operation, status
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_API_BODY_BYTES as u64)
+        {
+            return Err("RustDesk API response exceeds the 8 MiB limit".to_string());
+        }
+
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| format!("Failed to read RustDesk API response: {}", e))?
+        {
+            if body.len().saturating_add(chunk.len()) > MAX_API_BODY_BYTES {
+                return Err("RustDesk API response exceeds the 8 MiB limit".to_string());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        if body.is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_slice(&body)
+            .map_err(|e| format!("Failed to parse RustDesk API JSON: {}", e))
+    }
+
     // ── Low-level request helpers ───────────────────────────────────
 
     pub async fn get(&self, path: &str) -> Result<Value, String> {
+        Self::validate_path(path)?;
         let resp = self
             .client
             .get(self.url(path))
             .bearer_auth(&self.token)
             .send()
             .await
-            .map_err(|e| format!("GET {} failed: {}", path, e))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(format!("GET {} returned {}: {}", path, status, body));
-        }
-        resp.json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))
+            .map_err(|e| format!("RustDesk API GET request failed: {}", e))?;
+        Self::read_json_response(resp, "GET").await
     }
 
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value, String> {
+        Self::validate_path(path)?;
+        let body = Self::serialize_body(body)?;
         let resp = self
             .client
             .post(self.url(path))
             .bearer_auth(&self.token)
-            .json(body)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
             .send()
             .await
-            .map_err(|e| format!("POST {} failed: {}", path, e))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(format!("POST {} returned {}: {}", path, status, body_text));
-        }
-        resp.json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))
+            .map_err(|e| format!("RustDesk API POST request failed: {}", e))?;
+        Self::read_json_response(resp, "POST").await
     }
 
     pub async fn put(&self, path: &str, body: &Value) -> Result<Value, String> {
+        Self::validate_path(path)?;
+        let body = Self::serialize_body(body)?;
         let resp = self
             .client
             .put(self.url(path))
             .bearer_auth(&self.token)
-            .json(body)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
             .send()
             .await
-            .map_err(|e| format!("PUT {} failed: {}", path, e))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(format!("PUT {} returned {}: {}", path, status, body_text));
-        }
-        resp.json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))
+            .map_err(|e| format!("RustDesk API PUT request failed: {}", e))?;
+        Self::read_json_response(resp, "PUT").await
     }
 
     pub async fn delete(&self, path: &str) -> Result<Value, String> {
+        Self::validate_path(path)?;
         let resp = self
             .client
             .delete(self.url(path))
             .bearer_auth(&self.token)
             .send()
             .await
-            .map_err(|e| format!("DELETE {} failed: {}", path, e))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(format!(
-                "DELETE {} returned {}: {}",
-                path, status, body_text
-            ));
-        }
-        resp.json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse JSON: {}", e))
+            .map_err(|e| format!("RustDesk API DELETE request failed: {}", e))?;
+        Self::read_json_response(resp, "DELETE").await
     }
 
     // ── Health / Connectivity ───────────────────────────────────────
@@ -155,29 +280,33 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = id {
-            params.push(format!("id={}", v));
+            params.push(("id", Self::query_value("device ID", v)?));
         }
         if let Some(v) = device_name {
-            params.push(format!("device_name={}", v));
+            params.push(("device_name", Self::query_value("device name", v)?));
         }
         if let Some(v) = user_name {
-            params.push(format!("user_name={}", v));
+            params.push(("user_name", Self::query_value("user name", v)?));
         }
         if let Some(v) = group_name {
-            params.push(format!("group_name={}", v));
+            params.push(("group_name", Self::query_value("group name", v)?));
         }
         if let Some(v) = device_group_name {
-            params.push(format!("device_group_name={}", v));
+            params.push((
+                "device_group_name",
+                Self::query_value("device group name", v)?,
+            ));
         }
         if let Some(v) = offline_days {
-            params.push(format!("offline_days={}", v));
+            params.push(("offline_days", v.to_string()));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        let path = format!("/peers?{}", params.join("&"));
+        let path = Self::query_path("/peers", &params)?;
         self.get(&path).await
     }
 
@@ -235,17 +364,19 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = name {
-            params.push(format!("name={}", v));
+            params.push(("name", Self::query_value("user name", v)?));
         }
         if let Some(v) = group_name {
-            params.push(format!("group_name={}", v));
+            params.push(("group_name", Self::query_value("group name", v)?));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        self.get(&format!("/users?{}", params.join("&"))).await
+        let path = Self::query_path("/users", &params)?;
+        self.get(&path).await
     }
 
     pub async fn create_user(
@@ -314,7 +445,10 @@ impl RustDeskApiClient {
 
     pub async fn list_user_groups(&self, name: Option<&str>) -> Result<Value, String> {
         let path = match name {
-            Some(n) => format!("/user-groups?name={}", n),
+            Some(n) => Self::query_path(
+                "/user-groups",
+                &[("name", Self::query_value("user group name", n)?)],
+            )?,
             None => "/user-groups".to_string(),
         };
         self.get(&path).await
@@ -375,7 +509,10 @@ impl RustDeskApiClient {
 
     pub async fn list_device_groups(&self, name: Option<&str>) -> Result<Value, String> {
         let path = match name {
-            Some(n) => format!("/device-groups?name={}", n),
+            Some(n) => Self::query_path(
+                "/device-groups",
+                &[("name", Self::query_value("device group name", n)?)],
+            )?,
             None => "/device-groups".to_string(),
         };
         self.get(&path).await
@@ -445,7 +582,10 @@ impl RustDeskApiClient {
 
     pub async fn list_address_books(&self, name: Option<&str>) -> Result<Value, String> {
         let path = match name {
-            Some(n) => format!("/ab?name={}", n),
+            Some(n) => Self::query_path(
+                "/ab",
+                &[("name", Self::query_value("address book name", n)?)],
+            )?,
             None => "/ab".to_string(),
         };
         self.get(&path).await
@@ -495,9 +635,12 @@ impl RustDeskApiClient {
         ab_guid: &str,
         peer_id: Option<&str>,
     ) -> Result<Value, String> {
+        let base_path = format!("/ab/{}/peers", ab_guid);
         let path = match peer_id {
-            Some(p) => format!("/ab/{}/peers?peer_id={}", ab_guid, p),
-            None => format!("/ab/{}/peers", ab_guid),
+            Some(p) => {
+                Self::query_path(&base_path, &[("peer_id", Self::query_value("peer ID", p)?)])?
+            }
+            None => base_path,
         };
         self.get(&path).await
     }
@@ -612,7 +755,11 @@ impl RustDeskApiClient {
     }
 
     pub async fn get_strategy(&self, name: &str) -> Result<Value, String> {
-        self.get(&format!("/strategies?name={}", name)).await
+        let path = Self::query_path(
+            "/strategies",
+            &[("name", Self::query_value("strategy name", name)?)],
+        )?;
+        self.get(&path).await
     }
 
     pub async fn enable_strategy(&self, guid: &str) -> Result<Value, String> {
@@ -685,21 +832,22 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = remote {
-            params.push(format!("remote={}", v));
+            params.push(("remote", Self::query_value("remote ID", v)?));
         }
         if let Some(v) = conn_type {
-            params.push(format!("conn_type={}", v));
+            params.push(("conn_type", v.to_string()));
         }
         if let Some(v) = days_ago {
-            params.push(format!("days_ago={}", v));
+            params.push(("days_ago", v.to_string()));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        self.get(&format!("/audits/conn?{}", params.join("&")))
-            .await
+        let path = Self::query_path("/audits/conn", &params)?;
+        self.get(&path).await
     }
 
     pub async fn list_file_audits(
@@ -709,18 +857,19 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = remote {
-            params.push(format!("remote={}", v));
+            params.push(("remote", Self::query_value("remote ID", v)?));
         }
         if let Some(v) = days_ago {
-            params.push(format!("days_ago={}", v));
+            params.push(("days_ago", v.to_string()));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        self.get(&format!("/audits/file?{}", params.join("&")))
-            .await
+        let path = Self::query_path("/audits/file", &params)?;
+        self.get(&path).await
     }
 
     pub async fn list_alarm_audits(
@@ -730,18 +879,19 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = device {
-            params.push(format!("device={}", v));
+            params.push(("device", Self::query_value("device ID", v)?));
         }
         if let Some(v) = days_ago {
-            params.push(format!("days_ago={}", v));
+            params.push(("days_ago", v.to_string()));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        self.get(&format!("/audits/alarm?{}", params.join("&")))
-            .await
+        let path = Self::query_path("/audits/alarm", &params)?;
+        self.get(&path).await
     }
 
     pub async fn list_console_audits(
@@ -751,24 +901,37 @@ impl RustDeskApiClient {
         page: Option<u32>,
         page_size: Option<u32>,
     ) -> Result<Value, String> {
-        let mut params = Vec::new();
+        let (page, page_size) = Self::pagination(page, page_size)?;
+        let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(v) = operator {
-            params.push(format!("operator={}", v));
+            params.push(("operator", Self::query_value("operator", v)?));
         }
         if let Some(v) = days_ago {
-            params.push(format!("days_ago={}", v));
+            params.push(("days_ago", v.to_string()));
         }
-        params.push(format!("current={}", page.unwrap_or(1)));
-        params.push(format!("pageSize={}", page_size.unwrap_or(100)));
+        params.push(("current", page.to_string()));
+        params.push(("pageSize", page_size.to_string()));
 
-        self.get(&format!("/audits/console?{}", params.join("&")))
-            .await
+        let path = Self::query_path("/audits/console", &params)?;
+        self.get(&path).await
     }
 
     // ── Login / Auth ────────────────────────────────────────────────
 
     /// Authenticate with username/password and get a token.
     pub async fn login(&self, username: &str, password: &str) -> Result<Value, String> {
+        if username.is_empty()
+            || username.len() > MAX_LOGIN_USERNAME_BYTES
+            || username.chars().any(char::is_control)
+        {
+            return Err("RustDesk login username is empty, too long, or invalid".to_string());
+        }
+        if password.is_empty()
+            || password.len() > MAX_LOGIN_PASSWORD_BYTES
+            || password.chars().any(|ch| matches!(ch, '\0' | '\r' | '\n'))
+        {
+            return Err("RustDesk login password is empty, too long, or invalid".to_string());
+        }
         let body = serde_json::json!({
             "username": username,
             "password": password,
@@ -782,13 +945,14 @@ impl RustDeskApiClient {
             .await
             .map_err(|e| format!("Login failed: {}", e))?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(format!("Login returned {}: {}", status, body_text));
-        }
-        resp.json::<Value>()
-            .await
-            .map_err(|e| format!("Failed to parse login response: {}", e))
+        Self::read_json_response(resp, "login").await
     }
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false)
 }

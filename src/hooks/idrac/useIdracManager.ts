@@ -5,6 +5,7 @@
  * refresh polling, and all user actions for Dell iDRAC BMCs.
  */
 
+import { toSafeManagementError } from "../../utils/security/managementInvoke";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
@@ -74,7 +75,11 @@ export type IdracTab =
   | "telemetry"
   | "racadm";
 
-export type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
+export type ConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "error";
 
 export interface IdracInitialConnection {
   host: string;
@@ -194,10 +199,13 @@ export function useIdracManager(
   initialConnection?: IdracInitialConnection,
 ) {
   // ---- Connection form state ----
-  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("disconnected");
   const [host, setHost] = useState(initialConnection?.host ?? "");
   const [port, setPort] = useState(initialConnection?.port ?? 443);
-  const [username, setUsername] = useState(initialConnection?.username ?? "root");
+  const [username, setUsername] = useState(
+    initialConnection?.username ?? "root",
+  );
   const [password, setPassword] = useState(initialConnection?.password ?? "");
   const [insecure, setInsecure] = useState(initialConnection?.insecure ?? true);
   const [forceProtocol, setForceProtocol] = useState(
@@ -223,7 +231,9 @@ export function useIdracManager(
 
   // ---- Thermal ----
   const [thermalData, setThermalData] = useState<ThermalData | null>(null);
-  const [thermalSummary, setThermalSummary] = useState<ThermalSummary | null>(null);
+  const [thermalSummary, setThermalSummary] = useState<ThermalSummary | null>(
+    null,
+  );
 
   // ---- Hardware ----
   const [processors, setProcessors] = useState<Processor[]>([]);
@@ -231,14 +241,18 @@ export function useIdracManager(
   const [pcieDevices, setPcieDevices] = useState<PcieDevice[]>([]);
 
   // ---- Storage ----
-  const [storageControllers, setStorageControllers] = useState<StorageController[]>([]);
+  const [storageControllers, setStorageControllers] = useState<
+    StorageController[]
+  >([]);
   const [virtualDisks, setVirtualDisks] = useState<VirtualDisk[]>([]);
   const [physicalDisks, setPhysicalDisks] = useState<PhysicalDisk[]>([]);
   const [enclosures, setEnclosures] = useState<StorageEnclosure[]>([]);
 
   // ---- Network ----
   const [networkAdapters, setNetworkAdapters] = useState<NetworkAdapter[]>([]);
-  const [networkConfig, setNetworkConfig] = useState<IdracNetworkConfig | null>(null);
+  const [networkConfig, setNetworkConfig] = useState<IdracNetworkConfig | null>(
+    null,
+  );
 
   // ---- Firmware ----
   const [firmware, setFirmware] = useState<FirmwareInventory[]>([]);
@@ -270,12 +284,19 @@ export function useIdracManager(
   const [certificates, setCertificates] = useState<IdracCertificate[]>([]);
 
   // ---- Health ----
-  const [healthRollup, setHealthRollup] = useState<ServerHealthRollup | null>(null);
+  const [healthRollup, setHealthRollup] = useState<ServerHealthRollup | null>(
+    null,
+  );
 
   // ---- Telemetry ----
-  const [powerTelemetry, setPowerTelemetry] = useState<PowerTelemetry | null>(null);
-  const [thermalTelemetry, setThermalTelemetry] = useState<ThermalTelemetry | null>(null);
-  const [telemetryReports, setTelemetryReports] = useState<TelemetryReport[]>([]);
+  const [powerTelemetry, setPowerTelemetry] = useState<PowerTelemetry | null>(
+    null,
+  );
+  const [thermalTelemetry, setThermalTelemetry] =
+    useState<ThermalTelemetry | null>(null);
+  const [telemetryReports, setTelemetryReports] = useState<TelemetryReport[]>(
+    [],
+  );
 
   // ---- RACADM ----
   const [racadmOutput, setRacadmOutput] = useState<RacadmResult | null>(null);
@@ -285,7 +306,9 @@ export function useIdracManager(
   const [dataError, setDataError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showConfirmAction, setShowConfirmAction] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<(() => Promise<void>) | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    (() => Promise<void>) | null
+  >(null);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmTitle, setConfirmTitle] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -307,17 +330,21 @@ export function useIdracManager(
     if (mountedRef.current) fn();
   }, []);
 
-  const tryInvoke = useCallback(async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
-    try {
-      if (args === undefined) {
-        return await invoke<T>(cmd);
+  const tryInvoke = useCallback(
+    async <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
+      try {
+        if (args === undefined) {
+          return await invoke<T>(cmd);
+        }
+        return await invoke<T>(cmd, args);
+      } catch (e) {
+        throw new Error(
+          toSafeManagementError(e, "The iDRAC operation failed."),
+        );
       }
-      return await invoke<T>(cmd, args);
-    } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message ?? String(e);
-      throw new Error(msg);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // ── Connection ───────────────────────────────────
 
@@ -462,8 +489,12 @@ export function useIdracManager(
     try {
       const [ctrls, vds, pds, encs] = await Promise.all([
         tryInvoke<StorageController[]>("idrac_list_storage_controllers"),
-        tryInvoke<VirtualDisk[]>("idrac_list_virtual_disks", { controllerId: null }),
-        tryInvoke<PhysicalDisk[]>("idrac_list_physical_disks", { controllerId: null }),
+        tryInvoke<VirtualDisk[]>("idrac_list_virtual_disks", {
+          controllerId: null,
+        }),
+        tryInvoke<PhysicalDisk[]>("idrac_list_physical_disks", {
+          controllerId: null,
+        }),
         tryInvoke<StorageEnclosure[]>("idrac_list_enclosures"),
       ]);
       safe(() => {
@@ -518,7 +549,9 @@ export function useIdracManager(
 
   const loadVirtualMedia = useCallback(async () => {
     try {
-      const media = await tryInvoke<VirtualMediaStatus[]>("idrac_list_virtual_media");
+      const media = await tryInvoke<VirtualMediaStatus[]>(
+        "idrac_list_virtual_media",
+      );
       safe(() => setVirtualMedia(media));
     } catch (e) {
       safe(() => setDataError((e as Error).message));
@@ -583,7 +616,9 @@ export function useIdracManager(
 
   const loadCertificates = useCallback(async () => {
     try {
-      const certs = await tryInvoke<IdracCertificate[]>("idrac_list_certificates");
+      const certs = await tryInvoke<IdracCertificate[]>(
+        "idrac_list_certificates",
+      );
       safe(() => setCertificates(certs));
     } catch (e) {
       safe(() => setDataError((e as Error).message));
@@ -618,77 +653,94 @@ export function useIdracManager(
 
   // ── Load data for active tab ─────────────────────
 
-  const loadTabData = useCallback(async (tab: IdracTab) => {
-    safe(() => {
-      setLoading(true);
-      setDataError(null);
-    });
-    try {
-      switch (tab) {
-        case "dashboard":
-          await loadDashboard();
-          break;
-        case "system":
-          await loadSystem();
-          break;
-        case "power":
-          await loadPower();
-          break;
-        case "thermal":
-          await loadThermal();
-          break;
-        case "hardware":
-          await loadHardware();
-          break;
-        case "storage":
-          await loadStorage();
-          break;
-        case "network":
-          await loadNetwork();
-          break;
-        case "firmware":
-          await loadFirmware();
-          break;
-        case "lifecycle":
-          await loadLifecycle();
-          break;
-        case "virtual-media":
-          await loadVirtualMedia();
-          break;
-        case "console":
-          await loadConsole();
-          break;
-        case "event-log":
-          await loadEventLog();
-          break;
-        case "users":
-          await loadUsers();
-          break;
-        case "bios":
-          await loadBios();
-          break;
-        case "certificates":
-          await loadCertificates();
-          break;
-        case "health":
-          await loadHealth();
-          break;
-        case "telemetry":
-          await loadTelemetry();
-          break;
-        case "racadm":
-          // nothing to pre-load
-          break;
+  const loadTabData = useCallback(
+    async (tab: IdracTab) => {
+      safe(() => {
+        setLoading(true);
+        setDataError(null);
+      });
+      try {
+        switch (tab) {
+          case "dashboard":
+            await loadDashboard();
+            break;
+          case "system":
+            await loadSystem();
+            break;
+          case "power":
+            await loadPower();
+            break;
+          case "thermal":
+            await loadThermal();
+            break;
+          case "hardware":
+            await loadHardware();
+            break;
+          case "storage":
+            await loadStorage();
+            break;
+          case "network":
+            await loadNetwork();
+            break;
+          case "firmware":
+            await loadFirmware();
+            break;
+          case "lifecycle":
+            await loadLifecycle();
+            break;
+          case "virtual-media":
+            await loadVirtualMedia();
+            break;
+          case "console":
+            await loadConsole();
+            break;
+          case "event-log":
+            await loadEventLog();
+            break;
+          case "users":
+            await loadUsers();
+            break;
+          case "bios":
+            await loadBios();
+            break;
+          case "certificates":
+            await loadCertificates();
+            break;
+          case "health":
+            await loadHealth();
+            break;
+          case "telemetry":
+            await loadTelemetry();
+            break;
+          case "racadm":
+            // nothing to pre-load
+            break;
+        }
+      } finally {
+        safe(() => setLoading(false));
       }
-    } finally {
-      safe(() => setLoading(false));
-    }
-  }, [
-    safe, loadDashboard, loadSystem, loadPower, loadThermal,
-    loadHardware, loadStorage, loadNetwork, loadFirmware,
-    loadLifecycle, loadVirtualMedia, loadConsole, loadEventLog,
-    loadUsers, loadBios, loadCertificates, loadHealth, loadTelemetry,
-  ]);
+    },
+    [
+      safe,
+      loadDashboard,
+      loadSystem,
+      loadPower,
+      loadThermal,
+      loadHardware,
+      loadStorage,
+      loadNetwork,
+      loadFirmware,
+      loadLifecycle,
+      loadVirtualMedia,
+      loadConsole,
+      loadEventLog,
+      loadUsers,
+      loadBios,
+      loadCertificates,
+      loadHealth,
+      loadTelemetry,
+    ],
+  );
 
   // ── Refresh current tab ──────────────────────────
 
@@ -750,7 +802,10 @@ export function useIdracManager(
 
   const createVirtualDisk = useCallback(
     async (params: CreateVirtualDiskParams) => {
-      const jobId = await tryInvoke<string | null>("idrac_create_virtual_disk", { params });
+      const jobId = await tryInvoke<string | null>(
+        "idrac_create_virtual_disk",
+        { params },
+      );
       await loadStorage();
       return jobId;
     },
@@ -769,7 +824,9 @@ export function useIdracManager(
 
   const updateFirmware = useCallback(
     async (params: FirmwareUpdateParams) => {
-      const jobId = await tryInvoke<string | null>("idrac_update_firmware", { params });
+      const jobId = await tryInvoke<string | null>("idrac_update_firmware", {
+        params,
+      });
       await loadFirmware();
       return jobId;
     },
@@ -816,7 +873,10 @@ export function useIdracManager(
 
   const updateBiosAttributes = useCallback(
     async (attrs: Record<string, unknown>) => {
-      const jobId = await tryInvoke<string | null>("idrac_set_bios_attributes", { attributes: attrs });
+      const jobId = await tryInvoke<string | null>(
+        "idrac_set_bios_attributes",
+        { attributes: attrs },
+      );
       await loadBios();
       return jobId;
     },
@@ -908,7 +968,9 @@ export function useIdracManager(
 
   const racadmExecute = useCallback(
     async (command: string) => {
-      const result = await tryInvoke<RacadmResult>("idrac_racadm_execute", { command });
+      const result = await tryInvoke<RacadmResult>("idrac_racadm_execute", {
+        command,
+      });
       safe(() => setRacadmOutput(result));
       return result;
     },

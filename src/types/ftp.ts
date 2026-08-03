@@ -17,6 +17,7 @@ export interface FtpConnectionConfig {
   username: string;
   password: string;
   security: FtpSecurityMode;
+  allowPlaintext: boolean;
   transferType: FtpTransferType;
   dataChannelMode: FtpDataChannelMode;
   initialDirectory: string | null;
@@ -24,6 +25,17 @@ export interface FtpConnectionConfig {
   dataTimeoutSec: number;
   keepaliveIntervalSec: number;
   acceptInvalidCerts: boolean;
+  /**
+   * Separate, explicit acknowledgement required when `acceptInvalidCerts` is
+   * enabled. It must never be inferred from the certificate-bypass toggle.
+   */
+  acknowledgeInvalidCertRisk: boolean;
+  /**
+   * Keep partially downloaded files after a failed transfer. The saved
+   * connection UI intentionally does not expose this until it can explain the
+   * disk-retention and local-data privacy consequences.
+   */
+  retainIncompleteDownloads: boolean;
   utf8: boolean;
   activeBindAddress: string | null;
   label: string | null;
@@ -79,6 +91,8 @@ export interface FtpListOptions {
  */
 export interface FtpSavedConnectionOptions {
   ftpSecurity?: FtpSecurityMode;
+  /** Explicit, persisted consent to send credentials and files over plain FTP. */
+  ftpAllowPlaintext?: boolean;
   ftpDataChannelMode?: Extract<
     FtpDataChannelMode,
     "passive" | "extendedPassive"
@@ -86,6 +100,11 @@ export interface FtpSavedConnectionOptions {
   ftpConnectTimeoutSec?: number;
   ftpDataTimeoutSec?: number;
   ftpAcceptInvalidCerts?: boolean;
+  /**
+   * Explicit per-connection consent for invalid FTPS certificates. Missing on
+   * legacy profiles by design, so those profiles fail closed.
+   */
+  ftpAcknowledgeInvalidCertRisk?: boolean;
   ftpUtf8?: boolean;
 }
 

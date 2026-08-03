@@ -305,6 +305,10 @@ describe("WebTerminal", () => {
       expect(mockTerminal.writeln).toHaveBeenCalledWith(
         "\x1b[90mUser: testuser\x1b[0m",
       );
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
     });
 
     it("should call connect_ssh with correct parameters", async () => {
@@ -333,6 +337,10 @@ describe("WebTerminal", () => {
             tcp_keepalive: true,
           }),
         });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
       });
     });
 
@@ -404,6 +412,10 @@ describe("WebTerminal", () => {
             connectionIds: [],
           },
         }),
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
       });
     });
 
@@ -863,16 +875,18 @@ describe("WebTerminal", () => {
 
       expect(await screen.findByText("Unknown Host Key")).toBeInTheDocument();
 
-      await act(async () => {
+      const connectionRejection =
+        expect(connectAttempt).rejects.toThrow(timeoutMessage);
+      act(() => {
         rejectConnect(new Error(timeoutMessage));
-        await expect(connectAttempt).rejects.toThrow(timeoutMessage);
-        await promptListener;
       });
+      await connectionRejection;
 
       await waitFor(() => {
         expect(screen.getByText("Error")).toBeInTheDocument();
         expect(screen.queryByText("Unknown Host Key")).not.toBeInTheDocument();
       });
+      await expect(promptListener).resolves.toBeUndefined();
       expect(
         mockInvoke.mock.calls.some(([command]) => command === "start_shell"),
       ).toBe(false);
@@ -882,10 +896,7 @@ describe("WebTerminal", () => {
         ),
       ).toBe(false);
 
-      await act(async () => {
-        view.unmount();
-        await Promise.resolve();
-      });
+      view.unmount();
     });
   });
 

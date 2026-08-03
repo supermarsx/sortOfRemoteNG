@@ -45,6 +45,9 @@ pub fn is_command(command: &str) -> bool {
             | "restart_app"
             | "clear_app_data"
             | "factory_reset"
+            | "scan_shortcuts"
+            | "check_shortcut"
+            | "delete_shortcut"
             | "add_user"
             | "verify_user"
             | "list_users"
@@ -1345,6 +1348,9 @@ define_command_group!(
         app_shell_commands::restart_app,
         app_shell_commands::clear_app_data,
         app_shell_commands::factory_reset,
+        app_shell_commands::scan_shortcuts,
+        app_shell_commands::check_shortcut,
+        app_shell_commands::delete_shortcut,
         app_auth_commands::add_user,
         app_auth_commands::verify_user,
         app_auth_commands::list_users,
@@ -2836,6 +2842,19 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_ipc_is_scoped_recognized_and_registered() {
+        for command in ["scan_shortcuts", "check_shortcut", "delete_shortcut"] {
+            assert!(is_command(command), "{command} is not publicly recognized");
+            assert!(
+                GROUP_A_COMMANDS.contains(&command),
+                "{command} is not registered in the core app-shell group"
+            );
+        }
+        assert!(!is_command("delete_file"));
+        assert!(!GROUP_A_COMMANDS.contains(&"delete_file"));
+    }
+
+    #[test]
     fn generated_command_groups_are_unique_recognized_and_exactly_routed() {
         let groups = [
             GROUP_A_COMMANDS,
@@ -3007,6 +3026,25 @@ mod tests {
         "get_nx_session_count",
     ];
 
+    #[test]
+    fn destructive_master_key_rotation_commands_are_not_exposed() {
+        let source = include_str!("core_handler.rs");
+        for (module, command) in [
+            ("encryption_commands", "encryption_rotate_master_key"),
+            (
+                "encryption_rotation_commands",
+                "encryption_rotate_master_key_full",
+            ),
+        ] {
+            assert!(!is_command(command), "{command} must remain unavailable");
+            let registration = format!("{module}::{command},");
+            assert!(
+                !source.contains(&registration),
+                "{command} must not be present in generate_handler"
+            );
+        }
+    }
+
     #[cfg(feature = "ops")]
     const POWERSHELL_SESSION_COMMANDS: &[&str] = &[
         "open_powershell_session",
@@ -3067,25 +3105,6 @@ mod tests {
         assert_eq!(XDMCP_COMMANDS.len(), 10);
         assert_eq!(X2GO_COMMANDS.len(), 15);
         assert_eq!(NX_COMMANDS.len(), 14);
-    }
-
-    #[test]
-    fn destructive_master_key_rotation_commands_are_not_exposed() {
-        let source = include_str!("core_handler.rs");
-        for (module, command) in [
-            ("encryption_commands", "encryption_rotate_master_key"),
-            (
-                "encryption_rotation_commands",
-                "encryption_rotate_master_key_full",
-            ),
-        ] {
-            assert!(!is_command(command), "{command} must remain unavailable");
-            let registration = format!("{module}::{command},");
-            assert!(
-                !source.contains(&registration),
-                "{command} must not be present in generate_handler"
-            );
-        }
     }
 
     #[cfg(feature = "ops")]

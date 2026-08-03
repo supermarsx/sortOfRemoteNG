@@ -210,13 +210,13 @@ pub fn get_appdata_path() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn check_file_exists(path: String) -> Result<bool, String> {
-    sorng_app_shell::commands::check_file_exists(path)
+pub fn check_shortcut(path: String) -> Result<bool, String> {
+    sorng_app_shell::commands::check_shortcut(path)
 }
 
 #[tauri::command]
-pub fn delete_file(path: String) -> Result<(), String> {
-    sorng_app_shell::commands::delete_file(path)
+pub fn delete_shortcut(path: String) -> Result<(), String> {
+    sorng_app_shell::commands::delete_shortcut(path)
 }
 
 #[tauri::command]

@@ -8,6 +8,7 @@ use crate::error::{VmwError, VmwErrorKind, VmwResult};
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::net::IpAddr;
 
 /// HTTP client for the vmrest daemon.
 #[derive(Debug, Clone)]
@@ -36,20 +37,27 @@ impl VmRestClient {
         skip_tls_verify: bool,
         proxy_url: Option<&str>,
     ) -> VmwResult<Self> {
-        let mut builder = HttpClient::builder().timeout(std::time::Duration::from_secs(60));
         if skip_tls_verify {
-            // Opt-in only: vmrest ships a self-signed cert when run over HTTPS.
-            builder = builder.danger_accept_invalid_certs(true);
+            return Err(VmwError::new(
+                VmwErrorKind::InvalidConfig,
+                "TLS certificate verification cannot be disabled: vmrest_skip_tls_verify=true requires an explicit runtime acknowledgement contract",
+            ));
         }
-        if let Some(proxy_url) = proxy_url.map(str::trim).filter(|s| !s.is_empty()) {
-            let proxy = reqwest::Proxy::all(proxy_url)
-                .map_err(|e| VmwError::http(format!("invalid proxy URL: {e}")))?;
-            builder = builder.proxy(proxy);
+        let host = normalize_loopback_host(host)?;
+        if proxy_url.is_some_and(|value| !value.trim().is_empty()) {
+            return Err(VmwError::new(
+                VmwErrorKind::InvalidConfig,
+                "vmrest is an HTTP-only local management endpoint; proxies are not permitted",
+            ));
         }
-        let http = builder.build().map_err(VmwError::http)?;
+        let http = HttpClient::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .no_proxy()
+            .build()
+            .map_err(VmwError::http)?;
         Ok(Self {
             http,
-            base_url: format!("http://{}:{}/api", host, port),
+            base_url: format!("http://{host}:{port}/api"),
             username: username.to_string(),
             password: password.to_string(),
         })
@@ -378,6 +386,63 @@ impl VmRestClient {
     /// DELETE /vmnet/{name} — delete a virtual network.
     pub async fn delete_network(&self, name: &str) -> VmwResult<Value> {
         self.delete(&format!("/vmnet/{name}")).await
+    }
+}
+
+fn normalize_loopback_host(host: &str) -> VmwResult<String> {
+    let host = host.trim();
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    let address = unbracketed.parse::<IpAddr>().map_err(|_| {
+        VmwError::new(
+            VmwErrorKind::InvalidConfig,
+            "vmrest requires a literal loopback IP address",
+        )
+    })?;
+    if !address.is_loopback() {
+        return Err(VmwError::new(
+            VmwErrorKind::InvalidConfig,
+            "vmrest HTTP transport is restricted to the local loopback interface",
+        ));
+    }
+    Ok(match address {
+        IpAddr::V4(address) => address.to_string(),
+        IpAddr::V6(address) => format!("[{address}]"),
+    })
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::VmRestClient;
+
+    #[test]
+    fn accepts_literal_loopback_vmrest_endpoints() {
+        let ipv4 = VmRestClient::new("127.0.0.1", 8697, "user", "secret", false, None).unwrap();
+        assert_eq!(ipv4.base_url, "http://127.0.0.1:8697/api");
+
+        let ipv6 = VmRestClient::new("::1", 8697, "user", "secret", false, None).unwrap();
+        assert_eq!(ipv6.base_url, "http://[::1]:8697/api");
+    }
+
+    #[test]
+    fn rejects_remote_or_dns_vmrest_endpoints() {
+        assert!(VmRestClient::new("192.0.2.10", 8697, "user", "secret", false, None).is_err());
+        assert!(VmRestClient::new("localhost", 8697, "user", "secret", false, None).is_err());
+    }
+
+    #[test]
+    fn rejects_proxies_for_plaintext_vmrest_credentials() {
+        assert!(VmRestClient::new(
+            "127.0.0.1",
+            8697,
+            "user",
+            "secret",
+            false,
+            Some("http://127.0.0.1:8080")
+        )
+        .is_err());
     }
 }
 

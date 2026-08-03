@@ -34,7 +34,9 @@ export const idracRuntimeDescriptor = {
   testPath: "tests/idrac/IdracSessionPanel.test.tsx",
   importPanel: () => import("../../components/idrac/IdracSessionPanel"),
 } satisfies BuiltInManagementRuntimeDescriptor<"idrac"> & {
-  importPanel: () => Promise<{ default: ComponentType<IdracSessionPanelProps> }>;
+  importPanel: () => Promise<{
+    default: ComponentType<IdracSessionPanelProps>;
+  }>;
 };
 
 export const iloRuntimeDescriptor = {

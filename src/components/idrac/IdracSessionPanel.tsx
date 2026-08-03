@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, X } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
 import { useConnections } from "../../contexts/useConnections";
 import type {
   Connection,
@@ -69,9 +69,7 @@ const IdracSessionPanel: React.FC<IdracSessionPanelProps> = ({
 
   const teardown = useCallback(
     () =>
-      teardownIdracRuntime(session.id, () =>
-        invoke<void>("idrac_disconnect"),
-      ),
+      teardownIdracRuntime(session.id, () => invoke<void>("idrac_disconnect")),
     [session.id],
   );
 
@@ -91,7 +89,7 @@ const IdracSessionPanel: React.FC<IdracSessionPanelProps> = ({
 
     setLeaseReady(true);
     return () => {
-      void teardown();
+      void teardown().catch(() => undefined);
     };
   }, [session.id, teardown, updateSession, validationError]);
 

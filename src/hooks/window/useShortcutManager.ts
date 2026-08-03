@@ -32,9 +32,7 @@ const STORAGE_KEY = "sortofremoteng-shortcuts";
 function isTauri(): boolean {
   return (
     typeof window !== "undefined" &&
-    Boolean(
-      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-    )
+    Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__)
   );
 }
 
@@ -54,8 +52,7 @@ export function useShortcutManager(isOpen: boolean) {
   const [shortcutName, setShortcutName] = useState("");
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
-  const [selectedFolder, setSelectedFolder] =
-    useState<FolderPreset>("desktop");
+  const [selectedFolder, setSelectedFolder] = useState<FolderPreset>("desktop");
   const [customFolderPath, setCustomFolderPath] = useState("");
 
   // UI state
@@ -87,7 +84,7 @@ export function useShortcutManager(isOpen: boolean) {
           const checked = await Promise.all(
             parsed.map(async (shortcut) => {
               try {
-                const exists = await invoke<boolean>("check_file_exists", {
+                const exists = await invoke<boolean>("check_shortcut", {
                   path: shortcut.path,
                 });
                 return { ...shortcut, exists };
@@ -209,10 +206,8 @@ export function useShortcutManager(isOpen: boolean) {
       let collectionId: string | undefined;
       let connectionId: string | undefined;
       if (scanned.arguments) {
-        const collectionMatch =
-          scanned.arguments.match(/--collection\s+(\S+)/);
-        const connectionMatch =
-          scanned.arguments.match(/--connection\s+(\S+)/);
+        const collectionMatch = scanned.arguments.match(/--collection\s+(\S+)/);
+        const connectionMatch = scanned.arguments.match(/--connection\s+(\S+)/);
         if (collectionMatch) collectionId = collectionMatch[1];
         if (connectionMatch) connectionId = connectionMatch[1];
       }
@@ -330,10 +325,7 @@ export function useShortcutManager(isOpen: boolean) {
               "Open connection {{name}}",
               { name: shortcutName.trim() },
             )
-          : t(
-              "shortcuts.description.launchApp",
-              "Launch sortOfRemoteNG",
-            ),
+          : t("shortcuts.description.launchApp", "Launch sortOfRemoteNG"),
         folderPath,
       });
 
@@ -371,7 +363,7 @@ export function useShortcutManager(isOpen: boolean) {
   const handleDeleteShortcut = async (shortcut: ShortcutInfo) => {
     if (isTauri() && shortcut.exists) {
       try {
-        await invoke("delete_file", { path: shortcut.path });
+        await invoke("delete_shortcut", { path: shortcut.path });
       } catch (error) {
         console.warn("Failed to delete shortcut file:", error);
       }
@@ -418,7 +410,7 @@ export function useShortcutManager(isOpen: boolean) {
     try {
       if (editingShortcut.exists) {
         try {
-          await invoke("delete_file", { path: editingShortcut.path });
+          await invoke("delete_shortcut", { path: editingShortcut.path });
         } catch (error) {
           console.warn("Failed to delete old shortcut:", error);
         }
@@ -438,10 +430,7 @@ export function useShortcutManager(isOpen: boolean) {
               "Open connection {{name}}",
               { name: shortcutName.trim() },
             )
-          : t(
-              "shortcuts.description.launchApp",
-              "Launch sortOfRemoteNG",
-            ),
+          : t("shortcuts.description.launchApp", "Launch sortOfRemoteNG"),
         folderPath,
       });
 
@@ -459,9 +448,7 @@ export function useShortcutManager(isOpen: boolean) {
           s.id === editingShortcut.id ? updatedShortcut : s,
         ),
       );
-      setStatusMessage(
-        t("shortcuts.updated", "Shortcut updated successfully"),
-      );
+      setStatusMessage(t("shortcuts.updated", "Shortcut updated successfully"));
       setEditingShortcut(null);
       resetForm();
     } catch (error) {
@@ -520,10 +507,16 @@ export function useShortcutManager(isOpen: boolean) {
     let cancelled = false;
     databaseManager
       .getAllDatabases()
-      .then((c) => { if (!cancelled) setCollections(c); })
-      .catch(() => { if (!cancelled) setCollections([]); });
+      .then((c) => {
+        if (!cancelled) setCollections(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCollections([]);
+      });
     loadShortcuts();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [databaseManager, isOpen, loadShortcuts]);
 
   // ─── Return ─────────────────────────────────────────────────────

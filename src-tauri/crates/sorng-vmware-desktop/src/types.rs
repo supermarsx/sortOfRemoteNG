@@ -331,8 +331,39 @@ pub struct SharedFolderRequest {
     pub vmx_path: String,
     pub name: String,
     pub host_path: String,
+    /// Write access is opt-in. Missing legacy values remain read-only.
+    #[serde(default)]
     pub writable: Option<bool>,
     pub enabled: Option<bool>,
+}
+
+#[cfg(test)]
+mod shared_folder_request_safety_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn missing_writable_choice_deserializes_as_read_only_request() {
+        let request: SharedFolderRequest = serde_json::from_value(json!({
+            "vmxPath": "vm.vmx",
+            "name": "documents",
+            "hostPath": "/srv/documents"
+        }))
+        .unwrap();
+        assert_eq!(request.writable, None);
+    }
+
+    #[test]
+    fn explicit_writable_choice_survives_deserialization() {
+        let request: SharedFolderRequest = serde_json::from_value(json!({
+            "vmxPath": "vm.vmx",
+            "name": "documents",
+            "hostPath": "/srv/documents",
+            "writable": true
+        }))
+        .unwrap();
+        assert_eq!(request.writable, Some(true));
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { useCallback, useRef, useState } from "react";
+import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
 import type {
   BootDevice,
   ChassisControl,
@@ -23,7 +23,7 @@ import type {
   SolConfig,
   SolSession,
   WatchdogTimer,
-} from '../../types/ipmi';
+} from "../../types/ipmi";
 
 /**
  * IPMI client hook — backed by the real Rust `sorng-ipmi` crate via Tauri
@@ -38,21 +38,22 @@ export function useIPMIClient() {
   const connectingRef = useRef(false);
 
   const toMsg = (e: unknown) =>
-    typeof e === 'string' ? e : (e as Error)?.message ?? String(e);
+    typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
 
   // ── Connection ─────────────────────────────────────────────────────
 
   const connect = useCallback(
     async (config: IpmiSessionConfig): Promise<string> => {
-      if (connectingRef.current) throw new Error('IPMI connect already in progress');
+      if (connectingRef.current)
+        throw new Error("IPMI connect already in progress");
       connectingRef.current = true;
       setIsConnecting(true);
       setError(null);
       try {
-        const id = await invoke<string>('ipmi_connect', { config });
+        const id = await invoke<string>("ipmi_connect", { config });
         setSessionId(id);
         try {
-          const info = await invoke<IpmiSessionInfo>('ipmi_get_session', {
+          const info = await invoke<IpmiSessionInfo>("ipmi_get_session", {
             sessionId: id,
           });
           setSessionInfo(info);
@@ -74,9 +75,9 @@ export function useIPMIClient() {
   const disconnect = useCallback(async () => {
     if (!sessionId) return;
     try {
-      await invoke<void>('ipmi_disconnect', { sessionId });
+      await invoke<void>("ipmi_disconnect", { sessionId });
     } catch (e) {
-      console.warn('ipmi_disconnect failed:', e);
+      console.warn("ipmi_disconnect failed:", e);
     } finally {
       setSessionId(null);
       setSessionInfo(null);
@@ -84,18 +85,19 @@ export function useIPMIClient() {
   }, [sessionId]);
 
   const disconnectAll = useCallback(async () => {
-    await invoke<void>('ipmi_disconnect_all');
+    await invoke<void>("ipmi_disconnect_all");
     setSessionId(null);
     setSessionInfo(null);
   }, []);
 
   const listSessions = useCallback(
-    () => invoke<IpmiSessionInfo[]>('ipmi_list_sessions'),
+    () => invoke<IpmiSessionInfo[]>("ipmi_list_sessions"),
     [],
   );
 
   const ping = useCallback(
-    (host: string, port?: number) => invoke<boolean>('ipmi_ping', { host, port }),
+    (host: string, port?: number) =>
+      invoke<boolean>("ipmi_ping", { host, port }),
     [],
   );
 
@@ -105,45 +107,46 @@ export function useIPMIClient() {
   // semantically equivalent to depending on `sessionId` directly and keeps
   // react-hooks/exhaustive-deps happy without render loops.
   const need = useCallback((): string => {
-    if (!sessionId) throw new Error('IPMI not connected');
+    if (!sessionId) throw new Error("IPMI not connected");
     return sessionId;
   }, [sessionId]);
 
   const getChassisStatus = useCallback(
-    () => invoke<ChassisStatus>('ipmi_get_chassis_status', { sessionId: need() }),
+    () =>
+      invoke<ChassisStatus>("ipmi_get_chassis_status", { sessionId: need() }),
     [need],
   );
 
   const chassisControl = useCallback(
     (action: ChassisControl) =>
-      invoke<void>('ipmi_chassis_control', { sessionId: need(), action }),
+      invoke<void>("ipmi_chassis_control", { sessionId: need(), action }),
     [need],
   );
 
   const powerOn = useCallback(
-    () => invoke<void>('ipmi_power_on', { sessionId: need() }),
+    () => invoke<void>("ipmi_power_on", { sessionId: need() }),
     [need],
   );
   const powerOff = useCallback(
-    () => invoke<void>('ipmi_power_off', { sessionId: need() }),
+    () => invoke<void>("ipmi_power_off", { sessionId: need() }),
     [need],
   );
   const powerCycle = useCallback(
-    () => invoke<void>('ipmi_power_cycle', { sessionId: need() }),
+    () => invoke<void>("ipmi_power_cycle", { sessionId: need() }),
     [need],
   );
   const hardReset = useCallback(
-    () => invoke<void>('ipmi_hard_reset', { sessionId: need() }),
+    () => invoke<void>("ipmi_hard_reset", { sessionId: need() }),
     [need],
   );
   const softShutdown = useCallback(
-    () => invoke<void>('ipmi_soft_shutdown', { sessionId: need() }),
+    () => invoke<void>("ipmi_soft_shutdown", { sessionId: need() }),
     [need],
   );
 
   const chassisIdentify = useCallback(
     (duration?: number, force?: boolean) =>
-      invoke<void>('ipmi_chassis_identify', {
+      invoke<void>("ipmi_chassis_identify", {
         sessionId: need(),
         duration,
         force,
@@ -153,7 +156,7 @@ export function useIPMIClient() {
 
   const setBootDevice = useCallback(
     (device: BootDevice, persistent?: boolean, efi?: boolean) =>
-      invoke<void>('ipmi_set_boot_device', {
+      invoke<void>("ipmi_set_boot_device", {
         sessionId: need(),
         device,
         persistent,
@@ -163,26 +166,27 @@ export function useIPMIClient() {
   );
 
   const getDeviceId = useCallback(
-    () => invoke<IpmiDeviceId>('ipmi_get_device_id', { sessionId: need() }),
+    () => invoke<IpmiDeviceId>("ipmi_get_device_id", { sessionId: need() }),
     [need],
   );
 
   // ── Sensors / SDR ──────────────────────────────────────────────────
 
   const getAllSdrRecords = useCallback(
-    () => invoke<SdrRecord[]>('ipmi_get_all_sdr_records', { sessionId: need() }),
+    () =>
+      invoke<SdrRecord[]>("ipmi_get_all_sdr_records", { sessionId: need() }),
     [need],
   );
 
   const readSensor = useCallback(
     (sensor: SdrFullSensor) =>
-      invoke<SensorReading>('ipmi_read_sensor', { sessionId: need(), sensor }),
+      invoke<SensorReading>("ipmi_read_sensor", { sessionId: need(), sensor }),
     [need],
   );
 
   const getSensorThresholds = useCallback(
     (sensorNumber: number, sdr: SdrFullSensor) =>
-      invoke<SensorThresholds>('ipmi_get_sensor_thresholds', {
+      invoke<SensorThresholds>("ipmi_get_sensor_thresholds", {
         sessionId: need(),
         sensorNumber,
         sdr,
@@ -193,20 +197,20 @@ export function useIPMIClient() {
   // ── SEL ────────────────────────────────────────────────────────────
 
   const getSelInfo = useCallback(
-    () => invoke<SelInfo>('ipmi_get_sel_info', { sessionId: need() }),
+    () => invoke<SelInfo>("ipmi_get_sel_info", { sessionId: need() }),
     [need],
   );
   const getAllSelEntries = useCallback(
-    () => invoke<SelEntry[]>('ipmi_get_all_sel_entries', { sessionId: need() }),
+    () => invoke<SelEntry[]>("ipmi_get_all_sel_entries", { sessionId: need() }),
     [need],
   );
   const clearSel = useCallback(
-    () => invoke<void>('ipmi_clear_sel', { sessionId: need() }),
+    () => invoke<void>("ipmi_clear_sel", { sessionId: need() }),
     [need],
   );
   const deleteSelEntry = useCallback(
     (recordId: number) =>
-      invoke<number>('ipmi_delete_sel_entry', { sessionId: need(), recordId }),
+      invoke<number>("ipmi_delete_sel_entry", { sessionId: need(), recordId }),
     [need],
   );
 
@@ -214,7 +218,10 @@ export function useIPMIClient() {
 
   const getFruInfo = useCallback(
     (deviceId?: number) =>
-      invoke<FruDeviceInfo>('ipmi_get_fru_info', { sessionId: need(), deviceId }),
+      invoke<FruDeviceInfo>("ipmi_get_fru_info", {
+        sessionId: need(),
+        deviceId,
+      }),
     [need],
   );
 
@@ -222,12 +229,12 @@ export function useIPMIClient() {
 
   const getSolConfig = useCallback(
     (channel?: number) =>
-      invoke<SolConfig>('ipmi_get_sol_config', { sessionId: need(), channel }),
+      invoke<SolConfig>("ipmi_get_sol_config", { sessionId: need(), channel }),
     [need],
   );
   const activateSol = useCallback(
     (instance?: number, encrypt?: boolean, auth?: boolean) =>
-      invoke<SolSession>('ipmi_activate_sol', {
+      invoke<SolSession>("ipmi_activate_sol", {
         sessionId: need(),
         instance,
         encrypt,
@@ -237,18 +244,19 @@ export function useIPMIClient() {
   );
   const deactivateSol = useCallback(
     (instance?: number) =>
-      invoke<void>('ipmi_deactivate_sol', { sessionId: need(), instance }),
+      invoke<void>("ipmi_deactivate_sol", { sessionId: need(), instance }),
     [need],
   );
 
   // ── Watchdog ───────────────────────────────────────────────────────
 
   const getWatchdogTimer = useCallback(
-    () => invoke<WatchdogTimer>('ipmi_get_watchdog_timer', { sessionId: need() }),
+    () =>
+      invoke<WatchdogTimer>("ipmi_get_watchdog_timer", { sessionId: need() }),
     [need],
   );
   const resetWatchdogTimer = useCallback(
-    () => invoke<void>('ipmi_reset_watchdog_timer', { sessionId: need() }),
+    () => invoke<void>("ipmi_reset_watchdog_timer", { sessionId: need() }),
     [need],
   );
 
@@ -256,7 +264,7 @@ export function useIPMIClient() {
 
   const getLanConfig = useCallback(
     (channel?: number) =>
-      invoke<LanConfig>('ipmi_get_lan_config', { sessionId: need(), channel }),
+      invoke<LanConfig>("ipmi_get_lan_config", { sessionId: need(), channel }),
     [need],
   );
 
@@ -264,17 +272,17 @@ export function useIPMIClient() {
 
   const listUsers = useCallback(
     (channel?: number) =>
-      invoke<IpmiUser[]>('ipmi_list_users', { sessionId: need(), channel }),
+      invoke<IpmiUser[]>("ipmi_list_users", { sessionId: need(), channel }),
     [need],
   );
   const setUserName = useCallback(
     (userId: number, name: string) =>
-      invoke<void>('ipmi_set_user_name', { sessionId: need(), userId, name }),
+      invoke<void>("ipmi_set_user_name", { sessionId: need(), userId, name }),
     [need],
   );
   const setUserPassword = useCallback(
     (userId: number, password: string) =>
-      invoke<void>('ipmi_set_user_password', {
+      invoke<void>("ipmi_set_user_password", {
         sessionId: need(),
         userId,
         password,
@@ -283,12 +291,12 @@ export function useIPMIClient() {
   );
   const enableUser = useCallback(
     (userId: number) =>
-      invoke<void>('ipmi_enable_user', { sessionId: need(), userId }),
+      invoke<void>("ipmi_enable_user", { sessionId: need(), userId }),
     [need],
   );
   const disableUser = useCallback(
     (userId: number) =>
-      invoke<void>('ipmi_disable_user', { sessionId: need(), userId }),
+      invoke<void>("ipmi_disable_user", { sessionId: need(), userId }),
     [need],
   );
 
@@ -296,7 +304,7 @@ export function useIPMIClient() {
 
   const rawCommand = useCallback(
     (netfn: number, cmd: number, data?: number[]) =>
-      invoke<RawIpmiResponse>('ipmi_raw_command', {
+      invoke<RawIpmiResponse>("ipmi_raw_command", {
         sessionId: need(),
         netfn,
         cmd,
@@ -312,7 +320,7 @@ export function useIPMIClient() {
       cmd: number,
       data?: number[],
     ) =>
-      invoke<RawIpmiResponse>('ipmi_bridged_command', {
+      invoke<RawIpmiResponse>("ipmi_bridged_command", {
         sessionId: need(),
         targetChannel,
         targetAddress,
@@ -325,7 +333,7 @@ export function useIPMIClient() {
 
   const getPefCapabilities = useCallback(
     () =>
-      invoke<PefCapabilities>('ipmi_get_pef_capabilities', {
+      invoke<PefCapabilities>("ipmi_get_pef_capabilities", {
         sessionId: need(),
       }),
     [need],
@@ -333,19 +341,19 @@ export function useIPMIClient() {
 
   const getChannelInfo = useCallback(
     (channel: number) =>
-      invoke<ChannelInfo>('ipmi_get_channel_info', {
+      invoke<ChannelInfo>("ipmi_get_channel_info", {
         sessionId: need(),
         channel,
       }),
     [need],
   );
   const listChannels = useCallback(
-    () => invoke<ChannelInfo[]>('ipmi_list_channels', { sessionId: need() }),
+    () => invoke<ChannelInfo[]>("ipmi_list_channels", { sessionId: need() }),
     [need],
   );
   const getChannelCipherSuites = useCallback(
     (channel: number) =>
-      invoke<CipherSuite[]>('ipmi_get_channel_cipher_suites', {
+      invoke<CipherSuite[]>("ipmi_get_channel_cipher_suites", {
         sessionId: need(),
         channel,
       }),

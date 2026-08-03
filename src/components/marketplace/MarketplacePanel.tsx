@@ -11,6 +11,18 @@ import type {
 
 type Tab = "browse" | "installed" | "updates" | "repositories";
 
+function safeRemoteUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:"
+      ? parsed.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 const CATEGORIES: { value: PluginCategory | ""; label: string }[] = [
   { value: "", label: "All Categories" },
   { value: "connection", label: "Connection" },
@@ -171,8 +183,13 @@ export default function MarketplacePanel() {
       onKeyDown={(e) => e.key === "Enter" && openDetail(p.id)}
     >
       <div className="sor-plugin-icon">
-        {p.iconUrl ? (
-          <img src={p.iconUrl} alt="" />
+        {safeRemoteUrl(p.iconUrl ?? undefined) ? (
+          <img
+            src={safeRemoteUrl(p.iconUrl ?? undefined) ?? undefined}
+            alt=""
+            referrerPolicy="no-referrer"
+            loading="lazy"
+          />
         ) : (
           <span className="sor-plugin-icon-placeholder">🧩</span>
         )}
@@ -478,8 +495,13 @@ export default function MarketplacePanel() {
 
           <div className="sor-detail-header">
             <div className="sor-plugin-icon-lg">
-              {p.iconUrl ? (
-                <img src={p.iconUrl} alt="" />
+              {safeRemoteUrl(p.iconUrl ?? undefined) ? (
+                <img
+                  src={safeRemoteUrl(p.iconUrl ?? undefined) ?? undefined}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                />
               ) : (
                 <span className="sor-plugin-icon-placeholder">🧩</span>
               )}
@@ -509,14 +531,19 @@ export default function MarketplacePanel() {
             {/* screenshots placeholder */}
             {p.screenshotUrls.length > 0 && (
               <div className="sor-screenshots">
-                {p.screenshotUrls.map((url, i) => (
-                  <img
-                    key={url}
-                    src={url}
-                    alt={`${p.name} screenshot ${i + 1}`}
-                    className="sor-screenshot"
-                  />
-                ))}
+                {p.screenshotUrls.map((url, i) => {
+                  const safeUrl = safeRemoteUrl(url);
+                  return safeUrl ? (
+                    <img
+                      key={safeUrl}
+                      src={safeUrl}
+                      alt={`${p.name} screenshot ${i + 1}`}
+                      className="sor-screenshot"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                    />
+                  ) : null;
+                })}
               </div>
             )}
 
@@ -532,11 +559,16 @@ export default function MarketplacePanel() {
               <dd>{new Date(p.publishedAt).toLocaleDateString()}</dd>
               <dt>{t("marketplace.updated")}</dt>
               <dd>{new Date(p.updatedAt).toLocaleDateString()}</dd>
-              {p.homepage && (
+              {safeRemoteUrl(p.homepage ?? undefined) && (
                 <>
                   <dt>{t("marketplace.homepage")}</dt>
                   <dd>
-                    <a href={p.homepage} target="_blank" rel="noreferrer">
+                    <a
+                      href={safeRemoteUrl(p.homepage ?? undefined) ?? undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      referrerPolicy="no-referrer"
+                    >
                       {p.homepage}
                     </a>
                   </dd>

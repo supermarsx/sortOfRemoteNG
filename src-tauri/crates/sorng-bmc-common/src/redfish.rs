@@ -45,16 +45,11 @@ impl RedfishClient {
     /// Build a new Redfish client (does NOT authenticate yet).
     pub fn new(config: &RedfishConfig) -> BmcResult<Self> {
         if config.insecure {
-            tracing::warn!(
-                security_event = "insecure_tls",
-                component = "bmc.redfish",
-                host = %config.host,
-                port = config.port,
-                "TLS verification disabled (danger_accept_invalid_certs=true) for Redfish client"
-            );
+            return Err(BmcError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
         }
         let client = Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .map_err(|e| BmcError::connection(format!("Failed to build HTTP client: {e}")))?;

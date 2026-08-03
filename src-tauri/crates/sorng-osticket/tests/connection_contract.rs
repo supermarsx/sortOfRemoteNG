@@ -1,3 +1,4 @@
+use sorng_osticket::client::OsticketClient;
 use sorng_osticket::error::OsticketErrorKind;
 use sorng_osticket::service::OsticketService;
 use sorng_osticket::types::OsticketConnectionConfig;
@@ -8,6 +9,7 @@ use std::thread::{self, JoinHandle};
 struct ExpectedResponse {
     status: &'static str,
     body: &'static str,
+    content_length: Option<usize>,
 }
 
 struct MockHttpServer {
@@ -41,11 +43,12 @@ impl MockHttpServer {
                     "missing osTicket API key: {request}"
                 );
 
+                let content_length = expected.content_length.unwrap_or(expected.body.len());
                 write!(
                     stream,
                     "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     expected.status,
-                    expected.body.len(),
+                    content_length,
                     expected.body
                 )
                 .expect("write response");
@@ -62,6 +65,33 @@ impl MockHttpServer {
     }
 }
 
+#[test]
+fn insecure_tls_requires_a_matching_runtime_acknowledgement() {
+    let mut cfg = OsticketConnectionConfig {
+        name: "TLS acknowledgement contract".into(),
+        host: "https://helpdesk.example.test".into(),
+        api_key: "test-key".into(),
+        timeout_seconds: 5,
+        skip_tls_verify: true,
+        acknowledge_invalid_cert_risk: false,
+        proxy_url: None,
+    };
+    assert!(OsticketClient::from_config(&cfg).is_err());
+    cfg.acknowledge_invalid_cert_risk = true;
+    let client = OsticketClient::from_config(&cfg).expect("matching acknowledgement is accepted");
+    let config_debug = format!("{cfg:?}");
+    let client_debug = format!("{client:?}");
+    assert!(!config_debug.contains("test-key"));
+    assert!(!config_debug.contains("helpdesk.example.test"));
+    assert!(!client_debug.contains("test-key"));
+    assert!(!client_debug.contains("helpdesk.example.test"));
+
+    cfg.skip_tls_verify = false;
+    assert!(OsticketClient::from_config(&cfg).is_err());
+    cfg.acknowledge_invalid_cert_risk = false;
+    assert!(OsticketClient::from_config(&cfg).is_ok());
+}
+
 fn config(server: &MockHttpServer) -> OsticketConnectionConfig {
     OsticketConnectionConfig {
         name: "osTicket contract".into(),
@@ -69,6 +99,7 @@ fn config(server: &MockHttpServer) -> OsticketConnectionConfig {
         api_key: "osticket-key".into(),
         timeout_seconds: 2,
         skip_tls_verify: false,
+        acknowledge_invalid_cert_risk: false,
         proxy_url: None,
     }
 }
@@ -79,10 +110,12 @@ async fn connect_and_ping_use_ticket_probe_api_key_and_map_lifecycle() {
         ExpectedResponse {
             status: "200 OK",
             body: r#"{"tickets":[]}"#,
+            content_length: None,
         },
         ExpectedResponse {
             status: "204 No Content",
             body: "",
+            content_length: None,
         },
     ]);
     let mut service = OsticketService::new();
@@ -111,6 +144,7 @@ async fn connect_rejects_non_success_without_inserting_connection() {
     let server = MockHttpServer::start(vec![ExpectedResponse {
         status: "403 Forbidden",
         body: r#"{"error":"API key denied"}"#,
+        content_length: None,
     }]);
     let mut service = OsticketService::new();
 
@@ -119,7 +153,26 @@ async fn connect_rejects_non_success_without_inserting_connection() {
         .await
         .expect_err("403 must fail connect");
     assert_eq!(error.kind, OsticketErrorKind::Forbidden);
-    assert!(error.message.contains("API key denied"));
+    assert!(error.message.contains("HTTP 403"));
+    assert!(!error.message.contains("API key denied"));
     assert!(service.list_connections().is_empty());
+    server.finish();
+}
+
+#[tokio::test]
+async fn ping_rejects_oversized_content_length_without_buffering_the_body() {
+    let server = MockHttpServer::start(vec![ExpectedResponse {
+        status: "200 OK",
+        body: "{}",
+        content_length: Some(8 * 1024 * 1024 + 1),
+    }]);
+    let client = OsticketClient::from_config(&config(&server)).expect("client builds");
+
+    let error = client
+        .ping()
+        .await
+        .expect_err("oversized response must be rejected");
+    assert_eq!(error.kind, OsticketErrorKind::ParseError);
+    assert!(error.message.contains("8 MiB safety limit"));
     server.finish();
 }

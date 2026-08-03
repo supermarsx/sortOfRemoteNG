@@ -7,11 +7,7 @@ import type { WindowsService } from "../../src/types/windows/winmgmt";
 
 const { servicesT } = vi.hoisted(() => ({
   servicesT: vi.fn(
-    (
-      _key: string,
-      fallback: string,
-      values?: Record<string, unknown>,
-    ) =>
+    (_key: string, fallback: string, values?: Record<string, unknown>) =>
       fallback.replace(/{{(\w+)}}/g, (_match, name: string) =>
         String(values?.[name] ?? `{{${name}}}`),
       ),
@@ -50,7 +46,11 @@ describe("ServicesPanel", () => {
 
   it("renders labeled controls, announces status, and fetches services on mount", async () => {
     const services: WindowsService[] = [
-      makeService({ name: "Spooler", displayName: "Print Spooler", state: "stopped" }),
+      makeService({
+        name: "Spooler",
+        displayName: "Print Spooler",
+        state: "stopped",
+      }),
       makeService({
         name: "W32Time",
         displayName: "Windows Time",
@@ -75,19 +75,33 @@ describe("ServicesPanel", () => {
 
     render(<ServicesPanel ctx={ctx} />);
 
-    expect(await screen.findByRole("table", { name: /Windows services list/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("table", { name: /Windows services list/i }),
+    ).toBeInTheDocument();
     expect(cmd).toHaveBeenCalledWith("winmgmt_list_services");
 
-    expect(screen.getByRole("textbox", { name: /Search services/i })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: /Filter services/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Refresh services/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: /Search services/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /Filter services/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Refresh services/i }),
+    ).toBeInTheDocument();
 
-    expect(screen.getByRole("status")).toHaveTextContent("Showing 2 of 2 services");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Showing 2 of 2 services",
+    );
   });
 
   it("supports filtering, marks selected rows, and exposes start action busy state", async () => {
     const services: WindowsService[] = [
-      makeService({ name: "Spooler", displayName: "Print Spooler", state: "stopped" }),
+      makeService({
+        name: "Spooler",
+        displayName: "Print Spooler",
+        state: "stopped",
+      }),
       makeService({
         name: "W32Time",
         displayName: "Windows Time",
@@ -109,7 +123,8 @@ describe("ServicesPanel", () => {
           resolveStart = () => resolve(0);
         });
       }
-      if (command === "winmgmt_get_service_dependencies") return Promise.resolve([]);
+      if (command === "winmgmt_get_service_dependencies")
+        return Promise.resolve([]);
       return Promise.resolve(0);
     });
 
@@ -122,39 +137,51 @@ describe("ServicesPanel", () => {
     render(<ServicesPanel ctx={ctx} />);
     await screen.findByRole("table", { name: /Windows services list/i });
 
-    fireEvent.change(screen.getByRole("combobox", { name: /Filter services/i }), {
-      target: { value: "running" },
-    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: /Filter services/i }),
+      {
+        target: { value: "running" },
+      },
+    );
 
     expect(screen.queryByText("Print Spooler")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Showing 1 of 2 services");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Showing 1 of 2 services",
+    );
 
-    fireEvent.change(screen.getByRole("combobox", { name: /Filter services/i }), {
-      target: { value: "all" },
-    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: /Filter services/i }),
+      {
+        target: { value: "all" },
+      },
+    );
 
     const spoolerName = await screen.findByText("Print Spooler");
     fireEvent.click(spoolerName);
     const spoolerRow = spoolerName.closest("tr");
     expect(spoolerRow).toHaveAttribute("aria-selected", "true");
 
-    const startButton = screen.getByRole("button", { name: /Start service Print Spooler/i });
+    const startButton = screen.getByRole("button", {
+      name: /Start service Print Spooler/i,
+    });
     fireEvent.click(startButton);
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
 
-    expect(cmd).toHaveBeenCalledWith("winmgmt_start_service", { name: "Spooler" });
+    expect(cmd).toHaveBeenCalledWith("winmgmt_start_service", {
+      confirmed: true,
+      name: "Spooler",
+    });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Start service Print Spooler/i })).toHaveAttribute(
-        "aria-busy",
-        "true",
-      );
+      expect(
+        screen.getByRole("button", { name: /Start service Print Spooler/i }),
+      ).toHaveAttribute("aria-busy", "true");
     });
 
     resolveStart();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Start service Print Spooler/i })).toHaveAttribute(
-        "aria-busy",
-        "false",
-      );
+      expect(
+        screen.getByRole("button", { name: /Start service Print Spooler/i }),
+      ).toHaveAttribute("aria-busy", "false");
     });
   });
   it("routes every visible ServicesPanel manifest candidate through translation fallbacks", async () => {
@@ -204,7 +231,10 @@ describe("ServicesPanel", () => {
       ["windows.services.refreshServices", "Refresh services"],
       ["windows.services.refresh", "Refresh"],
       ["windows.services.tableLabel", "Windows services list"],
-      ["windows.services.tableCaption", "Windows services and their current state"],
+      [
+        "windows.services.tableCaption",
+        "Windows services and their current state",
+      ],
       ["windows.services.columns.name", "Name"],
       ["windows.services.columns.status", "Status"],
       ["windows.services.columns.startup", "Startup"],
@@ -228,5 +258,4 @@ describe("ServicesPanel", () => {
     }
     expect(servicesT).not.toHaveBeenCalledWith(expect.anything(), "PID");
   });
-
 });

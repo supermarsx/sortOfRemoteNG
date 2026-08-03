@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
 import type {
   SmcConfigSafe,
   SmcPlatform,
@@ -151,9 +151,7 @@ export interface UseSmcReturn extends UseSmcState {
 
   // Node Manager (Intel)
   getNodeManagerPolicies: () => Promise<NodeManagerPolicy[]>;
-  getNodeManagerStats: (
-    domain?: string,
-  ) => Promise<NodeManagerStats>;
+  getNodeManagerStats: (domain?: string) => Promise<NodeManagerStats>;
 
   // Reset
   resetBmc: () => Promise<void>;
@@ -172,22 +170,19 @@ export function useSupermicro(): UseSmcReturn {
   const [config, setConfig] = useState<SmcConfigSafe | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const wrap = useCallback(
-    async <T>(fn: () => Promise<T>): Promise<T> => {
-      setLoading(true);
-      setError(null);
-      try {
-        return await fn();
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message;
+      setError(msg);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -256,16 +251,13 @@ export function useSupermicro(): UseSmcReturn {
   );
 
   const setAssetTag = useCallback(
-    (tag: string) =>
-      wrap(() => invoke<void>("smc_set_asset_tag", { tag })),
+    (tag: string) => wrap(() => invoke<void>("smc_set_asset_tag", { tag })),
     [wrap],
   );
 
   const setIndicatorLed = useCallback(
     (state: string) =>
-      wrap(() =>
-        invoke<void>("smc_set_indicator_led", { ledState: state }),
-      ),
+      wrap(() => invoke<void>("smc_set_indicator_led", { ledState: state })),
     [wrap],
   );
 
@@ -295,8 +287,7 @@ export function useSupermicro(): UseSmcReturn {
   );
 
   const getThermalSummary = useCallback(
-    () =>
-      wrap(() => invoke<SmcThermalSummary>("smc_get_thermal_summary")),
+    () => wrap(() => invoke<SmcThermalSummary>("smc_get_thermal_summary")),
     [wrap],
   );
 
@@ -316,65 +307,49 @@ export function useSupermicro(): UseSmcReturn {
 
   const getStorageControllers = useCallback(
     () =>
-      wrap(() =>
-        invoke<SmcStorageController[]>("smc_get_storage_controllers"),
-      ),
+      wrap(() => invoke<SmcStorageController[]>("smc_get_storage_controllers")),
     [wrap],
   );
 
   const getVirtualDisks = useCallback(
-    () =>
-      wrap(() => invoke<SmcVirtualDisk[]>("smc_get_virtual_disks")),
+    () => wrap(() => invoke<SmcVirtualDisk[]>("smc_get_virtual_disks")),
     [wrap],
   );
 
   const getPhysicalDisks = useCallback(
-    () =>
-      wrap(() => invoke<SmcPhysicalDisk[]>("smc_get_physical_disks")),
+    () => wrap(() => invoke<SmcPhysicalDisk[]>("smc_get_physical_disks")),
     [wrap],
   );
 
   // ── Network ─────────────────────────────────────────────────────
 
   const getNetworkAdapters = useCallback(
-    () =>
-      wrap(() =>
-        invoke<SmcNetworkAdapter[]>("smc_get_network_adapters"),
-      ),
+    () => wrap(() => invoke<SmcNetworkAdapter[]>("smc_get_network_adapters")),
     [wrap],
   );
 
   const getBmcNetwork = useCallback(
-    () =>
-      wrap(() => invoke<SmcNetworkAdapter[]>("smc_get_bmc_network")),
+    () => wrap(() => invoke<SmcNetworkAdapter[]>("smc_get_bmc_network")),
     [wrap],
   );
 
   // ── Firmware ────────────────────────────────────────────────────
 
   const getFirmwareInventory = useCallback(
-    () =>
-      wrap(() =>
-        invoke<SmcFirmwareItem[]>("smc_get_firmware_inventory"),
-      ),
+    () => wrap(() => invoke<SmcFirmwareItem[]>("smc_get_firmware_inventory")),
     [wrap],
   );
 
   // ── Virtual Media ───────────────────────────────────────────────
 
   const getVirtualMediaStatus = useCallback(
-    () =>
-      wrap(() =>
-        invoke<SmcVirtualMedia[]>("smc_get_virtual_media_status"),
-      ),
+    () => wrap(() => invoke<SmcVirtualMedia[]>("smc_get_virtual_media_status")),
     [wrap],
   );
 
   const insertVirtualMedia = useCallback(
     (slot: string, imageUrl: string) =>
-      wrap(() =>
-        invoke<void>("smc_insert_virtual_media", { slot, imageUrl }),
-      ),
+      wrap(() => invoke<void>("smc_insert_virtual_media", { slot, imageUrl })),
     [wrap],
   );
 
@@ -399,14 +374,12 @@ export function useSupermicro(): UseSmcReturn {
   // ── Event Logs ──────────────────────────────────────────────────
 
   const getEventLog = useCallback(
-    () =>
-      wrap(() => invoke<SmcEventLogEntry[]>("smc_get_event_log")),
+    () => wrap(() => invoke<SmcEventLogEntry[]>("smc_get_event_log")),
     [wrap],
   );
 
   const getAuditLog = useCallback(
-    () =>
-      wrap(() => invoke<SmcEventLogEntry[]>("smc_get_audit_log")),
+    () => wrap(() => invoke<SmcEventLogEntry[]>("smc_get_audit_log")),
     [wrap],
   );
 
@@ -424,33 +397,25 @@ export function useSupermicro(): UseSmcReturn {
 
   const createUser = useCallback(
     (username: string, password: string, role: string) =>
-      wrap(() =>
-        invoke<void>("smc_create_user", { username, password, role }),
-      ),
+      wrap(() => invoke<void>("smc_create_user", { username, password, role })),
     [wrap],
   );
 
   const updatePassword = useCallback(
     (userId: string, newPassword: string) =>
-      wrap(() =>
-        invoke<void>("smc_update_password", { userId, newPassword }),
-      ),
+      wrap(() => invoke<void>("smc_update_password", { userId, newPassword })),
     [wrap],
   );
 
   const deleteUser = useCallback(
-    (userId: string) =>
-      wrap(() => invoke<void>("smc_delete_user", { userId })),
+    (userId: string) => wrap(() => invoke<void>("smc_delete_user", { userId })),
     [wrap],
   );
 
   // ── BIOS ────────────────────────────────────────────────────────
 
   const getBiosAttributes = useCallback(
-    () =>
-      wrap(() =>
-        invoke<SmcBiosAttribute[]>("smc_get_bios_attributes"),
-      ),
+    () => wrap(() => invoke<SmcBiosAttribute[]>("smc_get_bios_attributes")),
     [wrap],
   );
 
@@ -469,9 +434,7 @@ export function useSupermicro(): UseSmcReturn {
 
   const setBootOverride = useCallback(
     (target: string, mode?: string) =>
-      wrap(() =>
-        invoke<void>("smc_set_boot_override", { target, mode }),
-      ),
+      wrap(() => invoke<void>("smc_set_boot_override", { target, mode })),
     [wrap],
   );
 
@@ -492,24 +455,20 @@ export function useSupermicro(): UseSmcReturn {
       country?: string;
       email?: string;
       keySize?: number;
-    }) =>
-      wrap(() => invoke<string>("smc_generate_csr", { params })),
+    }) => wrap(() => invoke<string>("smc_generate_csr", { params })),
     [wrap],
   );
 
   const importCertificate = useCallback(
     (certPem: string) =>
-      wrap(() =>
-        invoke<void>("smc_import_certificate", { certPem }),
-      ),
+      wrap(() => invoke<void>("smc_import_certificate", { certPem })),
     [wrap],
   );
 
   // ── Health ──────────────────────────────────────────────────────
 
   const getHealthRollup = useCallback(
-    () =>
-      wrap(() => invoke<SmcHealthRollup>("smc_get_health_rollup")),
+    () => wrap(() => invoke<SmcHealthRollup>("smc_get_health_rollup")),
     [wrap],
   );
 
@@ -521,8 +480,7 @@ export function useSupermicro(): UseSmcReturn {
   // ── Security ────────────────────────────────────────────────────
 
   const getSecurityStatus = useCallback(
-    () =>
-      wrap(() => invoke<SmcSecurityStatus>("smc_get_security_status")),
+    () => wrap(() => invoke<SmcSecurityStatus>("smc_get_security_status")),
     [wrap],
   );
 
@@ -534,8 +492,7 @@ export function useSupermicro(): UseSmcReturn {
   );
 
   const activateLicense = useCallback(
-    (key: string) =>
-      wrap(() => invoke<void>("smc_activate_license", { key })),
+    (key: string) => wrap(() => invoke<void>("smc_activate_license", { key })),
     [wrap],
   );
 
@@ -543,9 +500,7 @@ export function useSupermicro(): UseSmcReturn {
 
   const getNodeManagerPolicies = useCallback(
     () =>
-      wrap(() =>
-        invoke<NodeManagerPolicy[]>("smc_get_node_manager_policies"),
-      ),
+      wrap(() => invoke<NodeManagerPolicy[]>("smc_get_node_manager_policies")),
     [wrap],
   );
 

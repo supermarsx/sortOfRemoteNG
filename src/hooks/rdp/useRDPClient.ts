@@ -1701,15 +1701,30 @@ export function useRDPClient(session: ConnectionSession) {
 
   // ─── Trust accept / reject ─────────────────────────────────────────
 
-  const handleTrustAccept = useCallback(() => {
+  const handleTrustAccept = useCallback(async () => {
     const conn = connectionRef.current;
     const sess = sessionRef.current;
     if (certIdentity && conn) {
       const port = conn.port || 3389;
-      trustIdentity(sess.hostname, port, "rdp", certIdentity, true, conn.id);
+      try {
+        await trustIdentity(
+          sess.hostname,
+          port,
+          "rdp",
+          certIdentity,
+          true,
+          conn.id,
+        );
+      } catch {
+        setStatusMessage(
+          "Certificate trust could not be saved. The connection was closed.",
+        );
+        cleanup();
+        return;
+      }
     }
     setTrustPrompt(null);
-  }, [certIdentity]);
+  }, [certIdentity, cleanup]);
 
   const handleTrustReject = useCallback(() => {
     setTrustPrompt(null);
@@ -2089,60 +2104,100 @@ export function useRDPClient(session: ConnectionSession) {
     );
 
     track(
-      listen<RdpCertFingerprintEvent>("rdp://cert-fingerprint", (event) => {
-        const fp = event.payload;
-        if (fp.session_id !== sessionIdRef.current) return;
-        setCertFingerprint(fp.fingerprint);
+      listen<RdpCertFingerprintEvent>(
+        "rdp://cert-fingerprint",
+        async (event) => {
+          const fp = event.payload;
+          if (fp.session_id !== sessionIdRef.current) return;
+          setCertFingerprint(fp.fingerprint);
 
-        const now = new Date().toISOString();
-        const identity: CertIdentity = {
-          fingerprint: fp.fingerprint,
-          subject: fp.subject || fp.host,
-          issuer: fp.issuer,
-          firstSeen: now,
-          lastSeen: now,
-          validFrom: fp.valid_from,
-          validTo: fp.valid_to,
-          serial: fp.serial,
-          signatureAlgorithm: fp.signature_algorithm,
-          san: fp.san,
-          pem: fp.pem,
-        };
-        setCertIdentity(identity);
+          const now = new Date().toISOString();
+          const identity: CertIdentity = {
+            fingerprint: fp.fingerprint,
+            subject: fp.subject || fp.host,
+            issuer: fp.issuer,
+            firstSeen: now,
+            lastSeen: now,
+            validFrom: fp.valid_from,
+            validTo: fp.valid_to,
+            serial: fp.serial,
+            signatureAlgorithm: fp.signature_algorithm,
+            san: fp.san,
+            pem: fp.pem,
+          };
+          setCertIdentity(identity);
 
-        const conn = connectionRef.current;
-        const connId = conn?.id;
-        const currentSettings = settingsRef.current;
-        // Legacy TLS is a last-resort compatibility fallback for older settings
-        // shapes that do not yet have inherited RDP/root policies.
-        const policy = resolveEffectiveTrustPolicy(
-          conn?.rdpTrustPolicy,
-          currentSettings.rdpTrustPolicy,
-          currentSettings.trustPolicy,
-          currentSettings.tlsTrustPolicy ?? "always-ask",
-        );
-        const result = verifyIdentity(
-          fp.host,
-          fp.port,
-          "rdp",
-          identity,
-          connId,
-        );
+          const conn = connectionRef.current;
+          const connId = conn?.id;
+          const currentSettings = settingsRef.current;
+          // Legacy TLS is a last-resort compatibility fallback for older settings
+          // shapes that do not yet have inherited RDP/root policies.
+          const policy = resolveEffectiveTrustPolicy(
+            conn?.rdpTrustPolicy,
+            currentSettings.rdpTrustPolicy,
+            currentSettings.trustPolicy,
+            currentSettings.tlsTrustPolicy ?? "always-ask",
+          );
+          let result: TrustVerifyResult;
+          try {
+            result = await verifyIdentity(
+              fp.host,
+              fp.port,
+              "rdp",
+              identity,
+              connId,
+            );
+          } catch {
+            setStatusMessage(
+              "Certificate trust verification is unavailable. The connection was closed.",
+            );
+            cleanup();
+            return;
+          }
 
-        if (result.status === "trusted") return;
+          if (result.status === "trusted") return;
 
-        if (result.status === "first-use" && policy === "tofu") {
-          trustIdentity(fp.host, fp.port, "rdp", identity, false, connId);
-          return;
-        }
+          if (result.status === "first-use" && policy === "tofu") {
+            try {
+              await trustIdentity(
+                fp.host,
+                fp.port,
+                "rdp",
+                identity,
+                false,
+                connId,
+              );
+            } catch {
+              setStatusMessage(
+                "Certificate trust could not be saved. The connection was closed.",
+              );
+              cleanup();
+            }
+            return;
+          }
 
-        if (result.status === "first-use" && policy === "always-trust") {
-          trustIdentity(fp.host, fp.port, "rdp", identity, false, connId);
-          return;
-        }
+          if (result.status === "first-use" && policy === "always-trust") {
+            try {
+              await trustIdentity(
+                fp.host,
+                fp.port,
+                "rdp",
+                identity,
+                false,
+                connId,
+              );
+            } catch {
+              setStatusMessage(
+                "Certificate trust could not be saved. The connection was closed.",
+              );
+              cleanup();
+            }
+            return;
+          }
 
-        setTrustPrompt(result);
-      }),
+          setTrustPrompt(result);
+        },
+      ),
     );
 
     track(
@@ -2299,7 +2354,7 @@ export function useRDPClient(session: ConnectionSession) {
         audioCtx = null;
       }
     };
-  }, [dispatch, isClipboardDirectionEnabled]);
+  }, [cleanup, dispatch, isClipboardDirectionEnabled]);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
 

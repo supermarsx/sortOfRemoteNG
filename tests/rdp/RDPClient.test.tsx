@@ -14,7 +14,13 @@ import {
 } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
-import { getStoredIdentity } from "../../src/utils/auth/trustStore";
+import {
+  getStoredIdentity,
+  type TrustIdentity,
+  type TrustRecord,
+  type TrustRecordType,
+  type TrustVerifyResult,
+} from "../../src/utils/auth/trustStore";
 import { useRDPClient } from "../../src/hooks/rdp/useRDPClient";
 import {
   hasSessionLifecycleActorAttempt,
@@ -49,6 +55,78 @@ vi.mock("@tauri-apps/api/event", () => ({
     },
   ),
 }));
+
+const trustStoreMocks = vi.hoisted(() => ({
+  records: new Map<
+    string,
+    import("../../src/utils/auth/trustStore").TrustRecord
+  >(),
+}));
+
+vi.mock("../../src/utils/auth/trustStore", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/utils/auth/trustStore")>();
+  const key = (
+    host: string,
+    port: number,
+    type: TrustRecordType,
+    connectionId?: string,
+  ) => `${connectionId ?? ""}\0${type}\0${host}\0${port}`;
+
+  return {
+    ...actual,
+    getStoredIdentity: vi.fn(
+      (
+        host: string,
+        port: number,
+        type: TrustRecordType,
+        connectionId?: string,
+      ): TrustRecord | undefined =>
+        trustStoreMocks.records.get(key(host, port, type, connectionId)),
+    ),
+    verifyIdentity: vi.fn(
+      async (
+        host: string,
+        port: number,
+        type: TrustRecordType,
+        received: TrustIdentity,
+        connectionId?: string,
+      ): Promise<TrustVerifyResult> => {
+        const stored = trustStoreMocks.records.get(
+          key(host, port, type, connectionId),
+        );
+        if (!stored) return { status: "first-use", identity: received };
+        if (stored.identity.fingerprint === received.fingerprint) {
+          return { status: "trusted" };
+        }
+        return {
+          status: "mismatch",
+          stored: stored.identity,
+          received,
+        };
+      },
+    ),
+    trustIdentity: vi.fn(
+      async (
+        host: string,
+        port: number,
+        type: TrustRecordType,
+        identity: TrustIdentity,
+        userApproved = true,
+        connectionId?: string,
+      ): Promise<void> => {
+        trustStoreMocks.records.set(key(host, port, type, connectionId), {
+          host: `${host}:${port}`,
+          hostname: host,
+          port,
+          type,
+          identity,
+          userApproved,
+        });
+      },
+    ),
+  };
+});
 
 vi.mock("../../src/utils/network/vpnRuntimeCapabilities", () => ({
   loadVpnRuntimeCapabilities: vi.fn(async () => [
@@ -1919,6 +1997,7 @@ describe("RDPClient", () => {
 
   describe("Certificate Trust", () => {
     it("stores first-use RDP certificate fingerprints as rdp records", async () => {
+      trustStoreMocks.records.clear();
       renderWithProviders(mockSession);
 
       await waitFor(() => {

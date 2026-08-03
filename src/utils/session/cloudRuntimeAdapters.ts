@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeManagement as invoke } from "../security/managementInvoke";
 
 import type { Connection } from "../../types/connection/connection";
 import {
@@ -17,14 +17,10 @@ export interface CloudRuntimeAdapter {
   validate: (connection: Connection) => string | null;
   summary: (connection: Connection) => string;
   connect: (connection: Connection) => Promise<BuiltInCloudRuntimeHandle>;
-  disconnect: (
-    handle: BuiltInCloudRuntimeHandle | undefined,
-  ) => Promise<void>;
+  disconnect: (handle: BuiltInCloudRuntimeHandle | undefined) => Promise<void>;
 }
 
-const defaultGcpScopes = [
-  "https://www.googleapis.com/auth/cloud-platform",
-];
+const defaultGcpScopes = ["https://www.googleapis.com/auth/cloud-platform"];
 
 const runtimeConnection = (connection: Connection): Connection =>
   normalizeCloudConnectionForPersistence(connection);
@@ -44,10 +40,7 @@ export const gcpRuntimeAdapter: CloudRuntimeAdapter = {
   },
   summary(connection) {
     const settings = runtimeConnection(connection).gcpSettings;
-    return [
-      settings?.projectId,
-      settings?.zone ?? settings?.region,
-    ]
+    return [settings?.projectId, settings?.zone ?? settings?.region]
       .filter(Boolean)
       .join(" / ");
   },
@@ -60,9 +53,7 @@ export const gcpRuntimeAdapter: CloudRuntimeAdapter = {
         service_account_key: normalized.password!,
         region: settings.region ?? null,
         zone: settings.zone ?? null,
-        scopes: settings.scopes?.length
-          ? settings.scopes
-          : defaultGcpScopes,
+        scopes: settings.scopes?.length ? settings.scopes : defaultGcpScopes,
         endpoint_override: settings.endpointOverride ?? null,
       },
     });
@@ -252,14 +243,12 @@ export const scalewayRuntimeAdapter: CloudRuntimeAdapter = {
     const normalized = runtimeConnection(connection);
     return wave6ConnectSession("connect_scaleway", {
       api_key: normalized.password,
-      organization_id:
-        normalized.scalewaySettings?.organizationId ?? null,
+      organization_id: normalized.scalewaySettings?.organizationId ?? null,
       project_name: normalized.scalewaySettings?.projectName ?? null,
       region: normalized.scalewaySettings?.region ?? null,
     });
   },
-  disconnect: (handle) =>
-    wave6DisconnectSession("disconnect_scaleway", handle),
+  disconnect: (handle) => wave6DisconnectSession("disconnect_scaleway", handle),
 };
 
 export const linodeRuntimeAdapter: CloudRuntimeAdapter = {
@@ -270,8 +259,7 @@ export const linodeRuntimeAdapter: CloudRuntimeAdapter = {
       ? null
       : "Linode requires an API key in the saved password field.",
   summary: (connection) =>
-    runtimeConnection(connection).linodeSettings?.region ||
-    "Linode account",
+    runtimeConnection(connection).linodeSettings?.region || "Linode account",
   connect: (connection) => {
     const normalized = runtimeConnection(connection);
     return wave6ConnectSession("connect_linode", {

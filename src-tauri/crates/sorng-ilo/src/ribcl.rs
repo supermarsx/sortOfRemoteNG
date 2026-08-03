@@ -48,8 +48,13 @@ impl RibclClient {
         insecure: bool,
         timeout_secs: u64,
     ) -> IloResult<Self> {
+        if insecure {
+            return Err(IloError::new(
+                crate::error::IloErrorKind::SecurityError,
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let client = Client::builder()
-            .danger_accept_invalid_certs(insecure)
             .timeout(Duration::from_secs(timeout_secs))
             .build()
             .map_err(|e| IloError::ribcl(format!("Failed to build HTTP client: {e}")))?;

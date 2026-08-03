@@ -69,6 +69,11 @@ pub struct WsmanClient {
 impl WsmanClient {
     /// Build a new WSMAN client.
     pub fn new(config: &IdracConfig) -> IdracResult<Self> {
+        if config.insecure {
+            return Err(IdracError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let (username, password) = match &config.auth {
             crate::types::IdracAuthMethod::Basic { username, password }
             | crate::types::IdracAuthMethod::Session { username, password } => {
@@ -77,7 +82,6 @@ impl WsmanClient {
         };
 
         let client = Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .map_err(|e| IdracError::wsman(format!("Failed to build HTTP client: {e}")))?;

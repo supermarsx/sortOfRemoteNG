@@ -1,13 +1,41 @@
 import React, { useState, useCallback } from "react";
 import { Mgr, RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
 import PopoverSurface from "../../ui/overlays/PopoverSurface";
-import { Check, Fingerprint, Info, Pencil, ShieldCheck, ShieldAlert, ShieldOff, Tag, X } from "lucide-react";
-import { updateTrustRecordNickname, getAllTrustRecords } from "../../../utils/auth/trustStore";
+import {
+  Check,
+  Fingerprint,
+  Info,
+  Pencil,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldOff,
+  Tag,
+  X,
+} from "lucide-react";
+import {
+  updateTrustRecordNickname,
+  getAllTrustRecords,
+} from "../../../utils/auth/trustStore";
 
 const CERT_MODES = [
-  { value: "validate" as const, label: "Validate", icon: ShieldCheck, color: "var(--color-success)" },
-  { value: "warn" as const, label: "Warn", icon: ShieldAlert, color: "var(--color-warning)" },
-  { value: "ignore" as const, label: "Ignore", icon: ShieldOff, color: "var(--color-error)" },
+  {
+    value: "validate" as const,
+    label: "Validate",
+    icon: ShieldCheck,
+    color: "var(--color-success)",
+  },
+  {
+    value: "warn" as const,
+    label: "Warn",
+    icon: ShieldAlert,
+    color: "var(--color-warning)",
+  },
+  {
+    value: "ignore" as const,
+    label: "Ignore",
+    icon: ShieldOff,
+    color: "var(--color-error)",
+  },
 ];
 
 function getCertModeInfo(mode: string) {
@@ -26,13 +54,21 @@ const HostInfoPopover: React.FC<{
 
   // Look up existing nickname from trust store
   const existingRecord = getAllTrustRecords(p.connectionId).find(
-    (r) => r.host === trustKey && r.type === "rdp"
+    (r) => r.host === trustKey && r.type === "rdp",
   );
-  const [certNickname, setCertNickname] = useState(existingRecord?.nickname ?? "");
+  const [certNickname, setCertNickname] = useState(
+    existingRecord?.nickname ?? "",
+  );
   const [nickDraft, setNickDraft] = useState(certNickname);
 
-  const saveNickname = useCallback(() => {
-    updateTrustRecordNickname(host, port, "rdp", nickDraft, p.connectionId);
+  const saveNickname = useCallback(async () => {
+    await updateTrustRecordNickname(
+      host,
+      port,
+      "rdp",
+      nickDraft,
+      p.connectionId,
+    );
     setCertNickname(nickDraft);
     setEditingNick(false);
   }, [host, port, nickDraft, p.connectionId]);
@@ -52,7 +88,10 @@ const HostInfoPopover: React.FC<{
       </button>
       <PopoverSurface
         isOpen={mgr.showHostInfo}
-        onClose={() => { mgr.setShowHostInfo(false); setEditingCert(false); }}
+        onClose={() => {
+          mgr.setShowHostInfo(false);
+          setEditingCert(false);
+        }}
         anchorRef={mgr.hostInfoRef}
         className="sor-popover-panel w-72 overflow-hidden"
         dataTestId="rdp-host-info-popover"
@@ -114,8 +153,7 @@ const HostInfoPopover: React.FC<{
               {p.sessionHostname}
             </div>
             <div className="text-[10px] text-[var(--color-textSecondary)]">
-              Status:{" "}
-              <span className="capitalize">{p.connectionStatus}</span>
+              Status: <span className="capitalize">{p.connectionStatus}</span>
             </div>
             <div className="text-[10px] text-[var(--color-textSecondary)]">
               Resolution: {p.desktopSize.width}x{p.desktopSize.height} ·{" "}
@@ -130,7 +168,10 @@ const HostInfoPopover: React.FC<{
             </div>
             {/* Cert friendly name */}
             <div className="flex items-start space-x-2">
-              <Tag size={12} className="text-[var(--color-textSecondary)] flex-shrink-0 mt-0.5" />
+              <Tag
+                size={12}
+                className="text-[var(--color-textSecondary)] flex-shrink-0 mt-0.5"
+              />
               {editingNick ? (
                 <div className="flex items-center space-x-1 flex-1 min-w-0">
                   <input
@@ -139,26 +180,43 @@ const HostInfoPopover: React.FC<{
                     onChange={(e) => setNickDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveNickname();
-                      if (e.key === "Escape") { setNickDraft(certNickname); setEditingNick(false); }
+                      if (e.key === "Escape") {
+                        setNickDraft(certNickname);
+                        setEditingNick(false);
+                      }
                     }}
                     className="sor-form-input-xs flex-1"
                     placeholder="Certificate nickname"
                     autoFocus
                   />
-                  <button onClick={saveNickname} className="p-0.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+                  <button
+                    onClick={saveNickname}
+                    className="p-0.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  >
                     <Check size={11} />
                   </button>
-                  <button onClick={() => { setNickDraft(certNickname); setEditingNick(false); }} className="p-0.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+                  <button
+                    onClick={() => {
+                      setNickDraft(certNickname);
+                      setEditingNick(false);
+                    }}
+                    className="p-0.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  >
                     <X size={11} />
                   </button>
                 </div>
               ) : (
                 <div className="flex items-center justify-between flex-1 min-w-0">
                   <span className="text-[10px] text-[var(--color-textSecondary)] truncate">
-                    {certNickname || <span className="italic">No nickname</span>}
+                    {certNickname || (
+                      <span className="italic">No nickname</span>
+                    )}
                   </span>
                   <button
-                    onClick={() => { setNickDraft(certNickname); setEditingNick(true); }}
+                    onClick={() => {
+                      setNickDraft(certNickname);
+                      setEditingNick(true);
+                    }}
                     className="p-0.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] flex-shrink-0"
                     data-tooltip="Edit certificate nickname"
                   >
@@ -208,7 +266,9 @@ const HostInfoPopover: React.FC<{
                           background: isActive
                             ? `color-mix(in srgb, ${mode.color} 18%, transparent)`
                             : "transparent",
-                          color: isActive ? mode.color : "var(--color-textMuted)",
+                          color: isActive
+                            ? mode.color
+                            : "var(--color-textMuted)",
                           border: `1px solid ${isActive ? `color-mix(in srgb, ${mode.color} 35%, transparent)` : "var(--color-border)"}`,
                         }}
                         data-tooltip={`${mode.label} server certificate`}

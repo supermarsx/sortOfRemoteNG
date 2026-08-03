@@ -4,7 +4,15 @@ import {
   getAllTrustRecords,
   getAllPerConnectionTrustRecords,
   removeIdentity,
-  clearAllTrustRecords,
+  clearEntireTrustStore,
+  ensureTrustStoreReady,
+  getTrustStoreAvailability,
+  parseTrustRecordAddress,
+  retryTrustStoreHydration,
+  setTrustRecordPolicy,
+  setTrustRecordRevoked,
+  type TrustPolicy,
+  updateTrustRecordNickname,
   type TrustRecord,
   type ConnectionTrustGroup,
 } from "../../utils/auth/trustStore";
@@ -47,6 +55,9 @@ export function useTrustVerificationSettings(
     ConnectionTrustGroup[]
   >(() => getAllPerConnectionTrustRecords());
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const [storeLoading, setStoreLoading] = useState(true);
+  const [storeError, setStoreError] = useState<string>();
+  const [busyRecord, setBusyRecord] = useState<string>();
   const { state: connectionState } = useConnections();
 
   const refreshRecords = useCallback(() => {
@@ -54,11 +65,43 @@ export function useTrustVerificationSettings(
     setConnectionGroups(getAllPerConnectionTrustRecords());
   }, []);
 
+  const loadRecords = useCallback(
+    async (retry = false) => {
+      setStoreLoading(true);
+      setStoreError(undefined);
+      try {
+        if (retry) await retryTrustStoreHydration();
+        else await ensureTrustStoreReady();
+        refreshRecords();
+      } catch {
+        setStoreError(
+          "The native Trust Center could not be loaded. Trust-dependent connections remain blocked.",
+        );
+      } finally {
+        setStoreLoading(false);
+      }
+    },
+    [refreshRecords],
+  );
+
   useEffect(() => {
-    window.addEventListener("trustStoreChanged", refreshRecords);
-    return () =>
-      window.removeEventListener("trustStoreChanged", refreshRecords);
-  }, [refreshRecords]);
+    const handleChanged = () => {
+      const availability = getTrustStoreAvailability();
+      if (availability.state === "ready") {
+        refreshRecords();
+        setStoreError(undefined);
+        setStoreLoading(false);
+      } else if (availability.state === "error") {
+        setStoreError(
+          "The native Trust Center could not be loaded. Trust-dependent connections remain blocked.",
+        );
+        setStoreLoading(false);
+      }
+    };
+    window.addEventListener("trustStoreChanged", handleChanged);
+    void loadRecords();
+    return () => window.removeEventListener("trustStoreChanged", handleChanged);
+  }, [loadRecords, refreshRecords]);
 
   /** Resolve a connection ID to its name, falling back to a truncated ID. */
   const connectionName = useCallback(
@@ -75,22 +118,104 @@ export function useTrustVerificationSettings(
   );
 
   const handleRemoveRecord = useCallback(
-    (record: TrustRecord, connectionId?: string) => {
-      const [host, portStr] = record.host.split(":");
-      const port = parseInt(portStr, 10);
-      removeIdentity(host, port, record.type, connectionId);
-      refreshRecords();
+    async (record: TrustRecord, connectionId?: string) => {
+      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
+      setBusyRecord(operationKey);
+      setStoreError(undefined);
+      try {
+        const { host, port } = parseTrustRecordAddress(record);
+        await removeIdentity(host, port, record.type, connectionId);
+        refreshRecords();
+      } catch {
+        setStoreError("The trust record could not be removed safely.");
+      } finally {
+        setBusyRecord(undefined);
+      }
     },
     [refreshRecords],
   );
 
-  const handleClearAll = useCallback(() => {
-    clearAllTrustRecords();
-    // Also clear all per-connection stores
-    connectionGroups.forEach((g) => clearAllTrustRecords(g.connectionId));
-    refreshRecords();
-    setShowConfirmClear(false);
-  }, [connectionGroups, refreshRecords]);
+  const handleClearAll = useCallback(async () => {
+    setBusyRecord("clear-all");
+    setStoreError(undefined);
+    try {
+      await clearEntireTrustStore();
+      refreshRecords();
+      setShowConfirmClear(false);
+    } catch {
+      setStoreError("The Trust Center could not be cleared safely.");
+    } finally {
+      setBusyRecord(undefined);
+    }
+  }, [refreshRecords]);
+
+  const handleSetRevoked = useCallback(
+    async (record: TrustRecord, revoked: boolean, connectionId?: string) => {
+      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
+      setBusyRecord(operationKey);
+      setStoreError(undefined);
+      try {
+        await setTrustRecordRevoked(record, revoked, connectionId);
+        refreshRecords();
+      } catch {
+        setStoreError(
+          revoked
+            ? "The trust record could not be revoked safely."
+            : "The trust record could not be reinstated safely.",
+        );
+      } finally {
+        setBusyRecord(undefined);
+      }
+    },
+    [refreshRecords],
+  );
+
+  const handleSetPolicy = useCallback(
+    async (
+      record: TrustRecord,
+      policy: TrustPolicy | undefined,
+      connectionId?: string,
+    ) => {
+      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
+      setBusyRecord(operationKey);
+      setStoreError(undefined);
+      try {
+        await setTrustRecordPolicy(record, policy, connectionId);
+        refreshRecords();
+      } catch {
+        setStoreError("The scoped trust policy could not be saved safely.");
+      } finally {
+        setBusyRecord(undefined);
+      }
+    },
+    [refreshRecords],
+  );
+
+  const handleUpdateNickname = useCallback(
+    async (record: TrustRecord, nickname: string, connectionId?: string) => {
+      const operationKey = `${connectionId ?? "global"}:${record.type}:${record.host}`;
+      setBusyRecord(operationKey);
+      setStoreError(undefined);
+      try {
+        const { host, port } = parseTrustRecordAddress(record);
+        await updateTrustRecordNickname(
+          host,
+          port,
+          record.type,
+          nickname,
+          connectionId,
+        );
+        refreshRecords();
+        return true;
+      } catch {
+        setStoreError("The trust record nickname could not be saved.");
+        return false;
+      } finally {
+        setBusyRecord(undefined);
+      }
+    },
+    [refreshRecords],
+  );
 
   const totalCount =
     trustRecords.length +
@@ -103,11 +228,18 @@ export function useTrustVerificationSettings(
     connectionGroups,
     showConfirmClear,
     setShowConfirmClear,
+    storeLoading,
+    storeError,
+    busyRecord,
+    retryLoad: () => loadRecords(true),
     refreshRecords,
     connectionName,
     ...classifiedTrustRecords,
     handleRemoveRecord,
     handleClearAll,
+    handleSetRevoked,
+    handleSetPolicy,
+    handleUpdateNickname,
     totalCount,
   };
 }

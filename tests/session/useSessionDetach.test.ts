@@ -170,7 +170,7 @@ describe("useSessionDetach", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  it("saves session payload to localStorage on detach", async () => {
+  it("persists only bounded opaque detached-session metadata", async () => {
     const { result } = renderDetach();
     await act(async () => {
       await result.current.handleSessionDetach("s1");
@@ -178,14 +178,22 @@ describe("useSessionDetach", () => {
     const stored = localStorage.getItem("detached-session-s1");
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored!);
-    expect(parsed.session.id).toBe("s1");
-    expect(parsed.session.layout).toEqual(
+    expect(parsed).toEqual(
       expect.objectContaining({
-        isDetached: true,
-        windowId: "detached-s1",
+        version: 2,
+        sessionId: "s1",
+        connectionId: "conn-s1",
+        ownerWindowId: "detached-s1",
+        layout: expect.objectContaining({
+          isDetached: true,
+          windowId: "detached-s1",
+        }),
+        savedAt: expect.any(Number),
       }),
     );
-    expect(parsed.savedAt).toBeTypeOf("number");
+    expect(parsed).not.toHaveProperty("session");
+    expect(parsed).not.toHaveProperty("connection");
+    expect(parsed).not.toHaveProperty("terminalBuffer");
   });
 
   it("dispatches UPDATE_SESSION with isDetached=true and windowId", async () => {
@@ -286,13 +294,9 @@ describe("useSessionDetach", () => {
       sessionId: "be-new",
     });
     expect(
-      JSON.parse(localStorage.getItem("detached-session-race-rdp")!).session,
-    ).toEqual(
-      expect.objectContaining({
-        backendSessionId: "be-new",
-        shellId: "replacement-viewer",
-      }),
-    );
+      JSON.parse(localStorage.getItem("detached-session-race-rdp")!)
+        .backendSessionId,
+    ).toBe("be-new");
     expect(rendered.dispatch).toHaveBeenLastCalledWith({
       type: "UPDATE_SESSION",
       payload: expect.objectContaining({
@@ -312,7 +316,6 @@ describe("useSessionDetach", () => {
   });
 
   it("awaits the latest WinRM backend handoff before persisting or opening", async () => {
-    autoReplyTerminalBuffer = false;
     const opening = makeSession("ps-race", "winrm", {
       backendSessionId: undefined,
       status: "connecting",
@@ -334,19 +337,9 @@ describe("useSessionDetach", () => {
     act(() => {
       detachPromise = rendered.result.current.handleSessionDetach("ps-race");
     });
-    await waitFor(() => {
-      expect(mockEmit).toHaveBeenCalledWith("request-terminal-buffer", {
-        sessionId: "ps-race",
-      });
-    });
-
+    await new Promise((resolve) => setTimeout(resolve, 50));
     act(() => {
       rendered.updateProps({ sessions: [opened], visibleSessions: [opened] });
-      terminalBufferListeners.forEach((handler) =>
-        handler({
-          payload: { sessionId: "ps-race", buffer: "latest-buffer" },
-        }),
-      );
     });
     await act(async () => detachPromise);
 
@@ -356,13 +349,9 @@ describe("useSessionDetach", () => {
     const stored = JSON.parse(
       localStorage.getItem("detached-session-ps-race")!,
     );
-    expect(stored.session).toEqual(
-      expect.objectContaining({
-        backendSessionId: "ps-backend-new",
-        status: "connected",
-        terminalBuffer: "latest-buffer",
-      }),
-    );
+    expect(stored.backendSessionId).toBe("ps-backend-new");
+    expect(stored).not.toHaveProperty("session");
+    expect(stored).not.toHaveProperty("terminalBuffer");
     expect(rendered.dispatch).toHaveBeenLastCalledWith({
       type: "UPDATE_SESSION",
       payload: expect.objectContaining({
@@ -391,14 +380,18 @@ describe("useSessionDetach", () => {
     );
   });
 
-  it("emits request-terminal-buffer for SSH sessions", async () => {
+  it("does not copy terminal buffers into detached persistence", async () => {
     const { result } = renderDetach();
     await act(async () => {
       await result.current.handleSessionDetach("s1");
     });
-    expect(mockEmit).toHaveBeenCalledWith("request-terminal-buffer", {
-      sessionId: "s1",
-    });
+    expect(mockEmit).not.toHaveBeenCalledWith(
+      "request-terminal-buffer",
+      expect.anything(),
+    );
+    const stored = JSON.parse(localStorage.getItem("detached-session-s1")!);
+    expect(stored).not.toHaveProperty("terminalBuffer");
+    expect(stored).not.toHaveProperty("session");
   });
 
   it("does not emit request-terminal-buffer for RDP sessions", async () => {
@@ -641,7 +634,7 @@ describe("useSessionDetach", () => {
     expect(mockWebviewCreate).toHaveBeenCalledOnce();
     expect(
       JSON.parse(localStorage.getItem("detached-session-winrm-delayed")!)
-        .session.backendSessionId,
+        .backendSessionId,
     ).toBe("powershell-delayed-actor");
   });
 

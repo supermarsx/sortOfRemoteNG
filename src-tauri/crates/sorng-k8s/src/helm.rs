@@ -5,7 +5,36 @@
 use crate::error::{K8sError, K8sResult};
 use crate::types::*;
 use log::{debug, info};
-use std::process::Command;
+use std::{
+    fs::OpenOptions,
+    io::{self, Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+const MAX_HELM_STDOUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_HELM_STDERR_BYTES: usize = 4 * 1024 * 1024;
+const MAX_HELM_VALUES_BYTES: usize = 8 * 1024 * 1024;
+const MAX_HELM_SECRET_BYTES: usize = 64 * 1024;
+const MAX_HELM_POSITIONAL_BYTES: usize = 4 * 1024;
+const MAX_HELM_RUNTIME: Duration = Duration::from_secs(30 * 60);
+
+struct CapturedOutput {
+    bytes: Vec<u8>,
+    exceeded_limit: bool,
+}
+
+struct TempValuesFile {
+    path: PathBuf,
+}
+
+impl Drop for TempValuesFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
 
 /// Helm CLI wrapper for release management.
 pub struct HelmManager;
@@ -13,25 +42,16 @@ pub struct HelmManager;
 impl HelmManager {
     /// Check if the helm binary is available.
     pub fn is_available() -> bool {
-        Command::new("helm")
-            .arg("version")
-            .arg("--short")
-            .output()
-            .is_ok()
+        let mut cmd = Command::new("helm");
+        cmd.args(["version", "--short"]);
+        Self::run_cmd(&mut cmd).is_ok()
     }
 
     /// Get helm version.
     pub fn version() -> K8sResult<String> {
-        let output = Command::new("helm")
-            .args(["version", "--short"])
-            .output()
-            .map_err(|e| K8sError::helm(format!("Failed to run helm: {}", e)))?;
-        if !output.status.success() {
-            return Err(K8sError::helm(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let mut cmd = Command::new("helm");
+        cmd.args(["version", "--short"]);
+        Ok(Self::run_cmd(&mut cmd)?.trim().to_string())
     }
 
     /// List releases in a namespace (or all namespaces).
@@ -62,6 +82,7 @@ impl HelmManager {
         namespace: &str,
         kubeconfig: Option<&str>,
     ) -> K8sResult<HelmRelease> {
+        Self::validate_positional("release name", name)?;
         let mut cmd = Command::new("helm");
         cmd.args(["status", name, "--namespace", namespace, "--output", "json"]);
         if let Some(kc) = kubeconfig {
@@ -79,6 +100,7 @@ impl HelmManager {
         namespace: &str,
         kubeconfig: Option<&str>,
     ) -> K8sResult<Vec<HelmHistory>> {
+        Self::validate_positional("release name", name)?;
         let mut cmd = Command::new("helm");
         cmd.args([
             "history",
@@ -116,6 +138,8 @@ impl HelmManager {
 
     /// Install a Helm chart.
     pub fn install(config: &HelmInstallConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
+        Self::validate_positional("release name", &config.release_name)?;
+        Self::validate_positional("chart", &config.chart)?;
         let mut cmd = Command::new("helm");
         cmd.args(["install", &config.release_name, &config.chart]);
         cmd.args(["--namespace", &config.namespace]);
@@ -166,14 +190,9 @@ impl HelmManager {
             cmd.args(["--kubeconfig", kc]);
         }
 
-        // Write inline values to a temp file if non-null
-        if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
-            let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp =
-                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
-            std::fs::write(&tmp, &values_str)
-                .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
-            cmd.args(["--values", tmp.to_str().unwrap_or("")]);
+        let temp_values = Self::write_temp_values(&config.values)?;
+        if let Some(ref values) = temp_values {
+            cmd.arg("--values").arg(&values.path);
         }
 
         info!(
@@ -185,6 +204,8 @@ impl HelmManager {
 
     /// Upgrade a Helm release.
     pub fn upgrade(config: &HelmUpgradeConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
+        Self::validate_positional("release name", &config.release_name)?;
+        Self::validate_positional("chart", &config.chart)?;
         let mut cmd = Command::new("helm");
         cmd.args(["upgrade", &config.release_name, &config.chart]);
         cmd.args(["--namespace", &config.namespace]);
@@ -244,13 +265,9 @@ impl HelmManager {
             cmd.args(["--kubeconfig", kc]);
         }
 
-        if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
-            let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp =
-                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
-            std::fs::write(&tmp, &values_str)
-                .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
-            cmd.args(["--values", tmp.to_str().unwrap_or("")]);
+        let temp_values = Self::write_temp_values(&config.values)?;
+        if let Some(ref values) = temp_values {
+            cmd.arg("--values").arg(&values.path);
         }
 
         info!(
@@ -262,6 +279,7 @@ impl HelmManager {
 
     /// Rollback a Helm release.
     pub fn rollback(config: &HelmRollbackConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
+        Self::validate_positional("release name", &config.release_name)?;
         let mut cmd = Command::new("helm");
         cmd.args([
             "rollback",
@@ -302,6 +320,7 @@ impl HelmManager {
 
     /// Uninstall a Helm release.
     pub fn uninstall(config: &HelmUninstallConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
+        Self::validate_positional("release name", &config.release_name)?;
         let mut cmd = Command::new("helm");
         cmd.args(["uninstall", &config.release_name]);
         cmd.args(["--namespace", &config.namespace]);
@@ -337,6 +356,7 @@ impl HelmManager {
         all: bool,
         kubeconfig: Option<&str>,
     ) -> K8sResult<serde_json::Value> {
+        Self::validate_positional("release name", name)?;
         let mut cmd = Command::new("helm");
         cmd.args([
             "get",
@@ -364,6 +384,7 @@ impl HelmManager {
         namespace: &str,
         kubeconfig: Option<&str>,
     ) -> K8sResult<String> {
+        Self::validate_positional("release name", name)?;
         let mut cmd = Command::new("helm");
         cmd.args(["get", "manifest", name, "--namespace", namespace]);
         if let Some(kc) = kubeconfig {
@@ -374,6 +395,8 @@ impl HelmManager {
 
     /// Template a chart (render without installing).
     pub fn template(config: &HelmTemplateConfig, kubeconfig: Option<&str>) -> K8sResult<String> {
+        Self::validate_positional("release name", &config.release_name)?;
+        Self::validate_positional("chart", &config.chart)?;
         let mut cmd = Command::new("helm");
         cmd.args(["template", &config.release_name, &config.chart]);
         cmd.args(["--namespace", &config.namespace]);
@@ -406,13 +429,9 @@ impl HelmManager {
             cmd.args(["--kubeconfig", kc]);
         }
 
-        if config.values != serde_json::Value::Null && config.values != serde_json::json!({}) {
-            let values_str = serde_json::to_string(&config.values).unwrap_or_default();
-            let tmp =
-                std::env::temp_dir().join(format!("helm-values-{}.json", uuid::Uuid::new_v4()));
-            std::fs::write(&tmp, &values_str)
-                .map_err(|e| K8sError::helm(format!("Failed to write temp values: {}", e)))?;
-            cmd.args(["--values", tmp.to_str().unwrap_or("")]);
+        let temp_values = Self::write_temp_values(&config.values)?;
+        if let Some(ref values) = temp_values {
+            cmd.arg("--values").arg(&values.path);
         }
 
         Self::run_cmd(&mut cmd)
@@ -447,16 +466,26 @@ impl HelmManager {
 
     /// Add a Helm repository.
     pub fn add_repo(repo: &HelmRepository) -> K8sResult<String> {
+        Self::validate_positional("repository name", &repo.name)?;
+        Self::validate_positional("repository URL", &repo.url)?;
+        if Self::url_has_embedded_credentials(&repo.url) {
+            return Err(K8sError::helm(
+                "Repository URL credentials are not allowed; use username and password fields",
+            ));
+        }
         let mut cmd = Command::new("helm");
         cmd.args(["repo", "add", &repo.name, &repo.url]);
         if let Some(ref user) = repo.username {
             cmd.args(["--username", user]);
         }
-        if let Some(ref pass) = repo.password {
-            cmd.args(["--password", pass]);
-        }
         if let Some(ref ca) = repo.ca_file {
             cmd.args(["--ca-file", ca]);
+        }
+        if let Some(ref cert) = repo.cert_file {
+            cmd.args(["--cert-file", cert]);
+        }
+        if let Some(ref key) = repo.key_file {
+            cmd.args(["--key-file", key]);
         }
         if repo.insecure_skip_tls_verify == Some(true) {
             cmd.arg("--insecure-skip-tls-verify");
@@ -464,12 +493,19 @@ impl HelmManager {
         if repo.pass_credentials_all == Some(true) {
             cmd.arg("--pass-credentials");
         }
-        info!("Adding Helm repo '{}' ({})", repo.name, repo.url);
-        Self::run_cmd(&mut cmd)
+        info!("Adding Helm repo '{}'", repo.name);
+        if let Some(ref password) = repo.password {
+            Self::validate_secret(password)?;
+            cmd.arg("--password-stdin");
+            Self::run_cmd_with_secret(&mut cmd, password)
+        } else {
+            Self::run_cmd(&mut cmd)
+        }
     }
 
     /// Remove a Helm repository.
     pub fn remove_repo(name: &str) -> K8sResult<String> {
+        Self::validate_positional("repository name", name)?;
         let mut cmd = Command::new("helm");
         cmd.args(["repo", "remove", name]);
         info!("Removing Helm repo '{}'", name);
@@ -486,6 +522,7 @@ impl HelmManager {
 
     /// Search for charts in repositories.
     pub fn search_charts(keyword: &str, all_versions: bool) -> K8sResult<Vec<HelmChart>> {
+        Self::validate_positional("search keyword", keyword)?;
         let mut cmd = Command::new("helm");
         cmd.args(["search", "repo", keyword, "--output", "json"]);
         if all_versions {
@@ -526,15 +563,218 @@ impl HelmManager {
     // ── Internal ────────────────────────────────────────────────────────
 
     fn run_cmd(cmd: &mut Command) -> K8sResult<String> {
-        debug!("Running: {:?}", cmd);
-        let output = cmd
-            .output()
-            .map_err(|e| K8sError::helm(format!("Failed to execute helm: {}", e)))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(K8sError::helm(format!("helm command failed: {}", stderr)));
+        Self::run_cmd_internal(cmd, None)
+    }
+
+    fn run_cmd_with_secret(cmd: &mut Command, secret: &str) -> K8sResult<String> {
+        Self::run_cmd_internal(cmd, Some(secret))
+    }
+
+    fn run_cmd_internal(cmd: &mut Command, secret: Option<&str>) -> K8sResult<String> {
+        debug!("Running Helm subprocess");
+        if secret.is_some() {
+            cmd.stdin(Stdio::piped());
+        } else {
+            cmd.stdin(Stdio::null());
         }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| K8sError::helm(format!("Failed to execute Helm: {}", e)))?;
+
+        if let Some(secret) = secret {
+            let Some(mut stdin) = child.stdin.take() else {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(K8sError::helm("Failed to open Helm standard input"));
+            };
+            if stdin
+                .write_all(secret.as_bytes())
+                .and_then(|_| stdin.write_all(b"\n"))
+                .is_err()
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(K8sError::helm("Failed to provide Helm credentials"));
+            }
+        }
+
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(K8sError::helm("Failed to capture Helm output"));
+        };
+        let Some(stderr) = child.stderr.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(K8sError::helm("Failed to capture Helm errors"));
+        };
+
+        let stdout_thread =
+            thread::spawn(move || Self::capture_reader(stdout, MAX_HELM_STDOUT_BYTES));
+        let stderr_thread =
+            thread::spawn(move || Self::capture_reader(stderr, MAX_HELM_STDERR_BYTES));
+
+        let started = Instant::now();
+        let mut timed_out = false;
+        let mut wait_error = None;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) if started.elapsed() >= MAX_HELM_RUNTIME => {
+                    timed_out = true;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(25)),
+                Err(error) => {
+                    wait_error = Some(error.to_string());
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+            }
+        };
+
+        let stdout_result = stdout_thread.join();
+        let stderr_result = stderr_thread.join();
+        let stdout = stdout_result
+            .map_err(|_| K8sError::helm("Helm stdout reader failed"))?
+            .map_err(|e| K8sError::helm(format!("Failed to read Helm stdout: {}", e)))?;
+        let stderr = stderr_result
+            .map_err(|_| K8sError::helm("Helm stderr reader failed"))?
+            .map_err(|e| K8sError::helm(format!("Failed to read Helm stderr: {}", e)))?;
+
+        if timed_out {
+            return Err(K8sError::helm(
+                "Helm command exceeded the 30 minute runtime limit",
+            ));
+        }
+        if let Some(error) = wait_error {
+            return Err(K8sError::helm(format!(
+                "Failed while waiting for Helm: {}",
+                error
+            )));
+        }
+        if stdout.exceeded_limit {
+            return Err(K8sError::helm("Helm stdout exceeded the 32 MiB limit"));
+        }
+        if stderr.exceeded_limit {
+            return Err(K8sError::helm("Helm stderr exceeded the 4 MiB limit"));
+        }
+
+        let stdout = Self::redact_secret(&stdout.bytes, secret);
+        if !status
+            .ok_or_else(|| K8sError::helm("Helm command ended without a status"))?
+            .success()
+        {
+            let stderr = Self::redact_secret(&stderr.bytes, secret);
+            let detail = if stderr.trim().is_empty() {
+                "no error details were returned".to_string()
+            } else {
+                stderr
+            };
+            return Err(K8sError::helm(format!("Helm command failed: {}", detail)));
+        }
+        Ok(stdout)
+    }
+
+    fn capture_reader<R: Read>(mut reader: R, limit: usize) -> io::Result<CapturedOutput> {
+        let mut bytes = Vec::with_capacity(limit.min(64 * 1024));
+        let mut buffer = [0_u8; 8192];
+        let mut exceeded_limit = false;
+
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            let remaining = limit.saturating_sub(bytes.len());
+            let retained = count.min(remaining);
+            bytes.extend_from_slice(&buffer[..retained]);
+            exceeded_limit |= retained < count;
+        }
+
+        Ok(CapturedOutput {
+            bytes,
+            exceeded_limit,
+        })
+    }
+
+    fn redact_secret(bytes: &[u8], secret: Option<&str>) -> String {
+        let output = String::from_utf8_lossy(bytes).to_string();
+        match secret {
+            Some(secret) if !secret.is_empty() => output.replace(secret, "[REDACTED]"),
+            _ => output,
+        }
+    }
+
+    fn validate_positional(label: &str, value: &str) -> K8sResult<()> {
+        if value.is_empty()
+            || value.len() > MAX_HELM_POSITIONAL_BYTES
+            || value.starts_with('-')
+            || value.chars().any(char::is_control)
+        {
+            return Err(K8sError::helm(format!(
+                "Invalid Helm {} positional value",
+                label
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_secret(secret: &str) -> K8sResult<()> {
+        if secret.len() > MAX_HELM_SECRET_BYTES
+            || secret.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0))
+        {
+            return Err(K8sError::helm("Invalid Helm repository password"));
+        }
+        Ok(())
+    }
+
+    fn url_has_embedded_credentials(url: &str) -> bool {
+        let Some((_, remainder)) = url.split_once("://") else {
+            return false;
+        };
+        remainder
+            .split(['/', '?', '#'])
+            .next()
+            .map(|authority| authority.contains('@'))
+            .unwrap_or(false)
+    }
+
+    fn write_temp_values(value: &serde_json::Value) -> K8sResult<Option<TempValuesFile>> {
+        if value == &serde_json::Value::Null
+            || matches!(value, serde_json::Value::Object(values) if values.is_empty())
+        {
+            return Ok(None);
+        }
+
+        let bytes = serde_json::to_vec(value)
+            .map_err(|_| K8sError::helm("Failed to serialize inline Helm values"))?;
+        if bytes.len() > MAX_HELM_VALUES_BYTES {
+            return Err(K8sError::helm("Inline Helm values exceed the 8 MiB limit"));
+        }
+
+        let path = std::env::temp_dir().join(format!("sorng-helm-{}.json", uuid::Uuid::new_v4()));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let mut file = options
+            .open(&path)
+            .map_err(|e| K8sError::helm(format!("Failed to create Helm values file: {}", e)))?;
+        let values_file = TempValuesFile { path };
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| K8sError::helm(format!("Failed to write Helm values file: {}", e)))?;
+        Ok(Some(values_file))
     }
 
     fn parse_release(val: &serde_json::Value) -> Option<HelmRelease> {
@@ -594,5 +834,50 @@ impl HelmManager {
             "pending-rollback" => HelmReleaseStatus::PendingRollback,
             _ => HelmReleaseStatus::Unknown,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_option_like_positional_values() {
+        assert!(HelmManager::validate_positional("release name", "--debug").is_err());
+        assert!(HelmManager::validate_positional("release name", "safe-release").is_ok());
+    }
+
+    #[test]
+    fn rejects_password_line_injection() {
+        assert!(HelmManager::validate_secret("secret\n--debug").is_err());
+        assert!(HelmManager::validate_secret("safe-secret").is_ok());
+    }
+
+    #[test]
+    fn detects_repository_url_credentials() {
+        assert!(HelmManager::url_has_embedded_credentials(
+            "https://user:secret@example.com/charts"
+        ));
+        assert!(!HelmManager::url_has_embedded_credentials(
+            "https://example.com/charts"
+        ));
+    }
+
+    #[test]
+    fn redacts_stdin_secret_from_captured_output() {
+        let output = HelmManager::redact_secret(b"failure for secret-value", Some("secret-value"));
+        assert_eq!(output, "failure for [REDACTED]");
+    }
+
+    #[test]
+    fn temporary_values_file_is_removed_on_drop() {
+        let values = serde_json::json!({"replicas": 2});
+        let values_file = HelmManager::write_temp_values(&values)
+            .expect("temp values should be created")
+            .expect("non-empty values should have a file");
+        let path = values_file.path.clone();
+        assert!(path.is_file());
+        drop(values_file);
+        assert!(!path.exists());
     }
 }

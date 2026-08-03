@@ -12,8 +12,15 @@ import {
   Key,
   Shield,
 } from "lucide-react";
-import type { CertIdentity, SshHostKeyIdentity, TrustRecordType } from "../../utils/auth/trustStore";
-import { formatFingerprint, isCertificateTrustRecordType } from "../../utils/auth/trustStore";
+import type {
+  CertIdentity,
+  SshHostKeyIdentity,
+  TrustRecordType,
+} from "../../utils/auth/trustStore";
+import {
+  formatFingerprint,
+  isCertificateTrustRecordType,
+} from "../../utils/auth/trustStore";
 import { Modal } from "../ui/overlays/Modal";
 
 const TRUST_TYPE_LABELS: Record<
@@ -21,10 +28,16 @@ const TRUST_TYPE_LABELS: Record<
   { display: string; sentence: string }
 > = {
   https: { display: "HTTPS Certificate", sentence: "HTTPS certificate" },
-  certificate: { display: "General Certificate", sentence: "general certificate" },
+  certificate: {
+    display: "General Certificate",
+    sentence: "general certificate",
+  },
   rdp: { display: "RDP Certificate", sentence: "RDP certificate" },
   ssh: { display: "Host Key", sentence: "host key" },
-  tls: { display: "Legacy TLS Certificate", sentence: "legacy TLS certificate" },
+  tls: {
+    display: "Legacy TLS Certificate",
+    sentence: "legacy TLS certificate",
+  },
 };
 
 interface TrustWarningDialogProps {
@@ -65,6 +78,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
   const isCertificateType = isCertificateTrustRecordType(type);
   const typeLabels = TRUST_TYPE_LABELS[type];
   const [rememberDecision, setRememberDecision] = useState(false);
+  const [replacementVerified, setReplacementVerified] = useState(false);
 
   return (
     <Modal
@@ -114,13 +128,13 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 />
                 <div className="text-sm text-error">
                   <p className="font-medium">
-                    The {typeLabels.sentence} presented by this server has changed
-                    since the last connection.
+                    The {typeLabels.sentence} presented by this server has
+                    changed since the last connection.
                   </p>
                   <p className="mt-1 text-error/80">
                     This could indicate a man-in-the-middle attack, or the
-                    server&apos;s {typeLabels.sentence} was legitimately rotated.
-                    Proceed only if you trust this change.
+                    server&apos;s {typeLabels.sentence} was legitimately
+                    rotated. Proceed only if you trust this change.
                   </p>
                 </div>
               </div>
@@ -132,7 +146,10 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-[var(--color-textMuted)] font-medium mb-2">
                     Previously Stored
                   </p>
-                  <IdentitySummary identity={storedIdentity} isCertificateType={isCertificateType} />
+                  <IdentitySummary
+                    identity={storedIdentity}
+                    isCertificateType={isCertificateType}
+                  />
                 </div>
 
                 {/* Received now */}
@@ -140,9 +157,28 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                   <p className="text-xs text-error font-medium mb-2">
                     Received Now
                   </p>
-                  <IdentitySummary identity={receivedIdentity} isCertificateType={isCertificateType} accentClass="text-error" />
+                  <IdentitySummary
+                    identity={receivedIdentity}
+                    isCertificateType={isCertificateType}
+                    accentClass="text-error"
+                  />
                 </div>
               </div>
+              <label className="flex items-start gap-2 rounded-lg border border-error/40 bg-error/10 p-3">
+                <input
+                  type="checkbox"
+                  checked={replacementVerified}
+                  onChange={(event) =>
+                    setReplacementVerified(event.target.checked)
+                  }
+                  className="mt-0.5 rounded border-[var(--color-border)]"
+                />
+                <span className="text-xs text-error">
+                  I independently verified the new SHA-256 fingerprint with the
+                  server administrator. Replacing the stored identity is a
+                  security-sensitive action.
+                </span>
+              </label>
             </>
           ) : (
             <>
@@ -154,12 +190,15 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 presented a {typeLabels.sentence} that has not been seen before.
               </p>
               <div className="bg-[var(--color-background)] rounded-lg p-3">
-                <IdentitySummary identity={receivedIdentity} isCertificateType={isCertificateType} />
+                <IdentitySummary
+                  identity={receivedIdentity}
+                  isCertificateType={isCertificateType}
+                />
               </div>
               <p className="text-xs text-[var(--color-textSecondary)]">
-                If you trust this server, accept the {typeLabels.sentence} to remember
-                it for future connections. Any change to this {typeLabels.sentence}{" "}
-                will trigger a warning.
+                If you trust this server, accept the {typeLabels.sentence} to
+                remember it for future connections. Any change to this{" "}
+                {typeLabels.sentence} will trigger a warning.
               </p>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -186,18 +225,17 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
           </button>
           <button
             onClick={() => onAccept(isMismatch ? undefined : rememberDecision)}
+            disabled={isMismatch && !replacementVerified}
             className={`flex items-center gap-2 px-4 py-2 text-sm text-[var(--color-text)] rounded-lg transition-colors ${
               isMismatch
                 ? "bg-error hover:bg-error/90"
                 : "bg-primary hover:bg-primary/90"
-            }`}
+            } disabled:cursor-not-allowed disabled:opacity-40`}
           >
             {isMismatch ? (
               <>
                 <AlertTriangle size={14} />
-                <span>
-                  Trust New {typeLabels.display} &amp; Continue
-                </span>
+                <span>Trust New {typeLabels.display} &amp; Continue</span>
               </>
             ) : (
               <>
@@ -257,20 +295,32 @@ function IdentitySummary({
       {isCertificateType && isCertIdentity(identity) && (
         <>
           {identity.subject && (
-            <SummaryRow icon={<Server size={10} />} label="Subject" value={identity.subject} />
+            <SummaryRow
+              icon={<Server size={10} />}
+              label="Subject"
+              value={identity.subject}
+            />
           )}
           {identity.issuer && (
-            <SummaryRow icon={<FileKey size={10} />} label="Issuer" value={identity.issuer} />
+            <SummaryRow
+              icon={<FileKey size={10} />}
+              label="Issuer"
+              value={identity.issuer}
+            />
           )}
           {identity.san && identity.san.length > 0 && (
             <div>
               <div className="flex items-center gap-1 mb-0.5">
                 <Globe size={10} className="text-[var(--color-textMuted)]" />
-                <span className="text-[10px] text-[var(--color-textMuted)]">SANs</span>
+                <span className="text-[10px] text-[var(--color-textMuted)]">
+                  SANs
+                </span>
               </div>
               <ul className="text-[11px] text-[var(--color-textSecondary)] list-none m-0 p-0 space-y-0.5">
                 {identity.san.map((name, i) => (
-                  <li key={`san-${name}-${i}`} className="font-mono break-all">{name}</li>
+                  <li key={`san-${name}-${i}`} className="font-mono break-all">
+                    {name}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -279,7 +329,9 @@ function IdentitySummary({
             <div>
               <div className="flex items-center gap-1 mb-0.5">
                 <Clock size={10} className="text-[var(--color-textMuted)]" />
-                <span className="text-[10px] text-[var(--color-textMuted)]">Validity</span>
+                <span className="text-[10px] text-[var(--color-textMuted)]">
+                  Validity
+                </span>
               </div>
               {identity.validFrom && (
                 <p className="text-[11px] text-[var(--color-textSecondary)]">
@@ -302,10 +354,18 @@ function IdentitySummary({
       {!isCertificateType && !isCertIdentity(identity) && (
         <>
           {(identity as SshHostKeyIdentity).keyType && (
-            <SummaryRow icon={<Key size={10} />} label="Key Type" value={(identity as SshHostKeyIdentity).keyType!} />
+            <SummaryRow
+              icon={<Key size={10} />}
+              label="Key Type"
+              value={(identity as SshHostKeyIdentity).keyType!}
+            />
           )}
           {(identity as SshHostKeyIdentity).keyBits != null && (
-            <SummaryRow icon={<Shield size={10} />} label="Key Bits" value={String((identity as SshHostKeyIdentity).keyBits)} />
+            <SummaryRow
+              icon={<Shield size={10} />}
+              label="Key Bits"
+              value={String((identity as SshHostKeyIdentity).keyBits)}
+            />
           )}
         </>
       )}
@@ -333,9 +393,13 @@ function SummaryRow({
     <div>
       <div className="flex items-center gap-1 mb-0.5">
         <span className="text-[var(--color-textMuted)]">{icon}</span>
-        <span className="text-[10px] text-[var(--color-textMuted)]">{label}</span>
+        <span className="text-[10px] text-[var(--color-textMuted)]">
+          {label}
+        </span>
       </div>
-      <p className="text-[11px] text-[var(--color-textSecondary)] break-all">{value}</p>
+      <p className="text-[11px] text-[var(--color-textSecondary)] break-all">
+        {value}
+      </p>
     </div>
   );
 }

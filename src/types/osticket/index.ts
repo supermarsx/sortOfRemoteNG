@@ -33,6 +33,8 @@ export interface OsticketConnectionConfig {
   api_key: string;
   timeout_seconds?: number;
   skip_tls_verify?: boolean;
+  /** Runtime-only acknowledgement for one insecure connection attempt. */
+  acknowledge_invalid_cert_risk?: boolean;
   proxy_url?: string;
 }
 

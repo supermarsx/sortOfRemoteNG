@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Search, RefreshCw, Loader2, XCircle, AlertCircle,
+  Search,
+  RefreshCw,
+  Loader2,
+  XCircle,
+  AlertCircle,
   ArrowUpDown,
 } from "lucide-react";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
 import type { WindowsProcess } from "../../../types/windows/winmgmt";
 
@@ -30,6 +35,8 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selected, setSelected] = useState<number | null>(null);
   const [terminating, setTerminating] = useState<number | null>(null);
+  const [pendingTermination, setPendingTermination] =
+    useState<WindowsProcess | null>(null);
 
   const fetchProcesses = useCallback(async () => {
     setLoading(true);
@@ -37,8 +44,10 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
     try {
       const list = await ctx.cmd<WindowsProcess[]>("winmgmt_list_processes");
       setProcesses(list);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError(
+        "Unable to load remote processes. Sensitive error details were withheld.",
+      );
     } finally {
       setLoading(false);
     }
@@ -52,10 +61,13 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
     async (pid: number) => {
       setTerminating(pid);
       try {
-        await ctx.cmd<number>("winmgmt_terminate_process", { pid });
+        await ctx.cmd<number>("winmgmt_terminate_process", {
+          confirmed: true,
+          pid,
+        });
         await fetchProcesses();
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError("Unable to terminate the selected process.");
       } finally {
         setTerminating(null);
       }
@@ -140,7 +152,10 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
         </button>
-        <span className="text-xs text-[var(--color-textMuted)] ml-auto" id="processes-summary">
+        <span
+          className="text-xs text-[var(--color-textMuted)] ml-auto"
+          id="processes-summary"
+        >
           {processSummary}
         </span>
         <div className="sr-only" role="status" aria-live="polite">
@@ -207,8 +222,12 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
                     onSort={toggleSort}
                     className="w-16"
                   />
-                  <th scope="col" className="px-3 py-2 font-medium w-20">Owner</th>
-                  <th scope="col" className="px-3 py-2 font-medium w-10">Action</th>
+                  <th scope="col" className="px-3 py-2 font-medium w-20">
+                    Owner
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium w-10">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -243,7 +262,7 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            terminateProcess(proc.processId);
+                            setPendingTermination(proc);
                           }}
                           disabled={terminating === proc.processId}
                           aria-label={`Terminate process ${proc.name} (${proc.processId})`}
@@ -302,10 +321,7 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
                 label="Priority"
                 value={String(selectedProc.priority)}
               />
-              <DetailRow
-                label="Owner"
-                value={selectedProc.owner || "N/A"}
-              />
+              <DetailRow label="Owner" value={selectedProc.owner || "N/A"} />
               {selectedProc.executablePath && (
                 <DetailRow
                   label="Path"
@@ -324,6 +340,26 @@ const ProcessesPanel: React.FC<ProcessesPanelProps> = ({ ctx }) => {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingTermination !== null}
+        title="Confirm Remote Process Termination"
+        message={
+          pendingTermination
+            ? `This changes remote system state and may cause data loss. Terminate "${pendingTermination.name}" (PID ${pendingTermination.processId})?`
+            : ""
+        }
+        confirmText="Terminate"
+        variant="warning"
+        onConfirm={() => {
+          const process = pendingTermination;
+          setPendingTermination(null);
+          if (process) {
+            void terminateProcess(process.processId);
+          }
+        }}
+        onCancel={() => setPendingTermination(null)}
+      />
     </div>
   );
 };
@@ -339,11 +375,7 @@ const SortHeader: React.FC<{
   <th
     scope="col"
     aria-sort={
-      current === sk
-        ? dir === "asc"
-          ? "ascending"
-          : "descending"
-        : "none"
+      current === sk ? (dir === "asc" ? "ascending" : "descending") : "none"
     }
     className={`px-3 py-2 font-medium select-none ${className || ""}`}
   >

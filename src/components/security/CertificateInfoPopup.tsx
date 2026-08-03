@@ -25,9 +25,7 @@ import type {
   TrustRecord,
   TrustRecordType,
 } from "../../utils/auth/trustStore";
-import {
-  formatFingerprint,
-} from "../../utils/auth/trustStore";
+import { formatFingerprint } from "../../utils/auth/trustStore";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useCertificateInfoPopup } from "../../hooks/security/useCertificateInfoPopup";
 
@@ -55,7 +53,14 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
-  const mgr = useCertificateInfoPopup(type, host, port, currentIdentity, trustRecord, connectionId);
+  const mgr = useCertificateInfoPopup(
+    type,
+    host,
+    port,
+    currentIdentity,
+    trustRecord,
+    connectionId,
+  );
 
   const trustStatus = mgr.getTrustStatus();
   const TrustIcon = TRUST_ICONS[trustStatus.icon];
@@ -112,65 +117,74 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
 
           {/* Nickname */}
           {trustRecord && (
-            <div className="flex items-center gap-2 text-xs">
-              {mgr.editingNick ? (
-                <>
-                  <input
-                    autoFocus
-                    type="text"
-                    value={mgr.nickDraft}
-                    onChange={(e) => mgr.setNickDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        mgr.saveNickname(mgr.nickDraft.trim());
-                      } else if (e.key === "Escape") {
-                        mgr.cancelEditing();
-                      }
-                    }}
-                    placeholder={t("certificateInfo.nickname.placeholder", {
-                      defaultValue: "Add a nickname…",
-                    })}
-                    className="flex-1 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary text-xs"
-                  />
-                  <button
-                    onClick={() => mgr.saveNickname(mgr.nickDraft.trim())}
-                    className="text-success hover:text-success p-0.5"
-                    title={t("certificateInfo.action.save", {
-                      defaultValue: "Save",
-                    })}
-                  >
-                    <Check size={12} />
-                  </button>
-                  <button
-                    onClick={mgr.cancelEditing}
-                    className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
-                    title={t("certificateInfo.action.cancel", {
-                      defaultValue: "Cancel",
-                    })}
-                  >
-                    <X size={12} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="text-[var(--color-textMuted)] italic truncate">
-                    {mgr.savedNick ||
-                      t("certificateInfo.nickname.none", {
-                        defaultValue: "No nickname",
+            <>
+              <div className="flex items-center gap-2 text-xs">
+                {mgr.editingNick ? (
+                  <>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={mgr.nickDraft}
+                      onChange={(e) => mgr.setNickDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          void mgr.saveNickname(mgr.nickDraft.trim());
+                        } else if (e.key === "Escape") {
+                          mgr.cancelEditing();
+                        }
+                      }}
+                      placeholder={t("certificateInfo.nickname.placeholder", {
+                        defaultValue: "Add a nickname…",
                       })}
-                  </span>
-                  <button
-                    onClick={mgr.startEditing}
-                    className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
-                    title={t("certificateInfo.action.editNickname", {
-                      defaultValue: "Edit nickname",
-                    })}
-                  >
-                    <Pencil size={10} />
-                  </button>
-                </>
+                      className="flex-1 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-primary text-xs"
+                    />
+                    <button
+                      onClick={() =>
+                        void mgr.saveNickname(mgr.nickDraft.trim())
+                      }
+                      className="text-success hover:text-success p-0.5"
+                      title={t("certificateInfo.action.save", {
+                        defaultValue: "Save",
+                      })}
+                    >
+                      <Check size={12} />
+                    </button>
+                    <button
+                      onClick={mgr.cancelEditing}
+                      className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
+                      title={t("certificateInfo.action.cancel", {
+                        defaultValue: "Cancel",
+                      })}
+                    >
+                      <X size={12} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[var(--color-textMuted)] italic truncate">
+                      {mgr.savedNick ||
+                        t("certificateInfo.nickname.none", {
+                          defaultValue: "No nickname",
+                        })}
+                    </span>
+                    <button
+                      onClick={mgr.startEditing}
+                      className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5"
+                      title={t("certificateInfo.action.editNickname", {
+                        defaultValue: "Edit nickname",
+                      })}
+                    >
+                      <Pencil size={10} />
+                    </button>
+                  </>
+                )}
+              </div>
+              {mgr.nicknameError && (
+                <p role="alert" className="mt-1 text-xs text-danger">
+                  {mgr.nicknameError}
+                </p>
               )}
-            </div>
+            </>
           )}
 
           {!mgr.identity ? (
@@ -222,9 +236,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                   <p>
                     {t("certificateInfo.date.firstSeen", {
                       defaultValue: "First seen: {{date}}",
-                      date: new Date(
-                        mgr.identity.firstSeen,
-                      ).toLocaleString(),
+                      date: new Date(mgr.identity.firstSeen).toLocaleString(),
                     })}
                   </p>
                 )}
@@ -232,9 +244,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                   <p>
                     {t("certificateInfo.date.lastSeen", {
                       defaultValue: "Last seen: {{date}}",
-                      date: new Date(
-                        mgr.identity.lastSeen,
-                      ).toLocaleString(),
+                      date: new Date(mgr.identity.lastSeen).toLocaleString(),
                     })}
                   </p>
                 )}
@@ -248,18 +258,14 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                     <span>
                       {trustRecord.history.length === 1
                         ? t("certificateInfo.history.previousIdentity.one", {
-                            defaultValue:
-                              "{{historyCount}} previous identity",
+                            defaultValue: "{{historyCount}} previous identity",
                             historyCount: trustRecord.history.length,
                           })
-                        : t(
-                            "certificateInfo.history.previousIdentity.other",
-                            {
-                              defaultValue:
-                                "{{historyCount}} previous identities",
-                              historyCount: trustRecord.history.length,
-                            },
-                          )}
+                        : t("certificateInfo.history.previousIdentity.other", {
+                            defaultValue:
+                              "{{historyCount}} previous identities",
+                            historyCount: trustRecord.history.length,
+                          })}
                     </span>
                   </summary>
                   <div className="mt-2 space-y-2">
@@ -273,8 +279,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                         </p>
                         <p className="text-[var(--color-textMuted)] mt-1">
                           {t("certificateInfo.date.seen", {
-                            defaultValue:
-                              "Seen: {{firstDate}} — {{lastDate}}",
+                            defaultValue: "Seen: {{firstDate}} — {{lastDate}}",
                             firstDate: new Date(
                               prev.firstSeen,
                             ).toLocaleDateString(),
@@ -308,8 +313,12 @@ function Row({
 }) {
   return (
     <div className="flex items-start gap-2 text-xs">
-      <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">{icon}</span>
-      <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">{label}</span>
+      <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
+        {icon}
+      </span>
+      <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">
+        {label}
+      </span>
       <span className="text-[var(--color-textSecondary)] break-all">
         {value}
       </span>
@@ -321,7 +330,9 @@ function Row({
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <div className="pt-2 border-t border-[var(--color-border)]">
-      <span className="text-xs font-medium text-[var(--color-textMuted)]">{children}</span>
+      <span className="text-xs font-medium text-[var(--color-textMuted)]">
+        {children}
+      </span>
     </div>
   );
 }
@@ -343,10 +354,19 @@ function TlsCertDetails({
 
   const expired = isExpired(identity);
   const expiringSoon = isExpiringSoon(identity);
-  const isCurrentlyValid = !expired && !expiringSoon && !!identity.validFrom && !!identity.validTo;
+  const isCurrentlyValid =
+    !expired && !expiringSoon && !!identity.validFrom && !!identity.validTo;
 
-  const hasSubjectDetails = identity.subjectCn || identity.subjectOrg || identity.subjectOu || identity.subjectCountry || identity.subjectState || identity.subjectLocality || identity.subjectEmail;
-  const hasIssuerDetails = identity.issuerCn || identity.issuerOrg || identity.issuerCountry;
+  const hasSubjectDetails =
+    identity.subjectCn ||
+    identity.subjectOrg ||
+    identity.subjectOu ||
+    identity.subjectCountry ||
+    identity.subjectState ||
+    identity.subjectLocality ||
+    identity.subjectEmail;
+  const hasIssuerDetails =
+    identity.issuerCn || identity.issuerOrg || identity.issuerCountry;
 
   return (
     <>
@@ -361,22 +381,46 @@ function TlsCertDetails({
           {hasSubjectDetails ? (
             <>
               {identity.subjectCn && (
-                <Row icon={<Server size={12} />} label="CN" value={identity.subjectCn} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="CN"
+                  value={identity.subjectCn}
+                />
               )}
               {identity.subjectOrg && (
-                <Row icon={<Server size={12} />} label="O" value={identity.subjectOrg} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="O"
+                  value={identity.subjectOrg}
+                />
               )}
               {identity.subjectOu && (
-                <Row icon={<Server size={12} />} label="OU" value={identity.subjectOu} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="OU"
+                  value={identity.subjectOu}
+                />
               )}
               {identity.subjectCountry && (
-                <Row icon={<Server size={12} />} label="C" value={identity.subjectCountry} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="C"
+                  value={identity.subjectCountry}
+                />
               )}
               {identity.subjectState && (
-                <Row icon={<Server size={12} />} label="ST" value={identity.subjectState} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="ST"
+                  value={identity.subjectState}
+                />
               )}
               {identity.subjectLocality && (
-                <Row icon={<Server size={12} />} label="L" value={identity.subjectLocality} />
+                <Row
+                  icon={<Server size={12} />}
+                  label="L"
+                  value={identity.subjectLocality}
+                />
               )}
               {identity.subjectEmail && (
                 <Row
@@ -413,13 +457,25 @@ function TlsCertDetails({
           {hasIssuerDetails ? (
             <>
               {identity.issuerCn && (
-                <Row icon={<FileKey size={12} />} label="CN" value={identity.issuerCn} />
+                <Row
+                  icon={<FileKey size={12} />}
+                  label="CN"
+                  value={identity.issuerCn}
+                />
               )}
               {identity.issuerOrg && (
-                <Row icon={<FileKey size={12} />} label="O" value={identity.issuerOrg} />
+                <Row
+                  icon={<FileKey size={12} />}
+                  label="O"
+                  value={identity.issuerOrg}
+                />
               )}
               {identity.issuerCountry && (
-                <Row icon={<FileKey size={12} />} label="C" value={identity.issuerCountry} />
+                <Row
+                  icon={<FileKey size={12} />}
+                  label="C"
+                  value={identity.issuerCountry}
+                />
               )}
             </>
           ) : (
@@ -510,7 +566,11 @@ function TlsCertDetails({
       )}
 
       {/* ── Key & Algorithm section ──────────────────────────── */}
-      {(identity.version != null || identity.keyAlgorithm || identity.keySize != null || identity.signatureAlgorithm || identity.serial) && (
+      {(identity.version != null ||
+        identity.keyAlgorithm ||
+        identity.keySize != null ||
+        identity.signatureAlgorithm ||
+        identity.serial) && (
         <>
           <SectionHeading>
             {t("certificateInfo.section.keyAndAlgorithm", {
@@ -580,10 +640,14 @@ function TlsCertDetails({
             <span className="text-[var(--color-textMuted)] flex-shrink-0 mt-0.5">
               <Globe size={12} />
             </span>
-            <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">SANs</span>
+            <span className="text-[var(--color-textMuted)] flex-shrink-0 w-16">
+              SANs
+            </span>
             <ul className="text-[var(--color-textSecondary)] break-all list-none m-0 p-0 space-y-0.5">
               {identity.san.map((name, i) => (
-                <li key={i} className="font-mono">{name}</li>
+                <li key={i} className="font-mono">
+                  {name}
+                </li>
               ))}
             </ul>
           </div>
@@ -598,14 +662,18 @@ function TlsCertDetails({
               defaultValue: "Certificate Chain",
             })}
           </SectionHeading>
-          <details open={showChain} onToggle={(e) => setShowChain((e.target as HTMLDetailsElement).open)}>
+          <details
+            open={showChain}
+            onToggle={(e) =>
+              setShowChain((e.target as HTMLDetailsElement).open)
+            }
+          >
             <summary className="text-xs text-[var(--color-textMuted)] cursor-pointer hover:text-[var(--color-textSecondary)] flex items-center gap-1">
               <FileKey size={10} />
               <span>
                 {identity.chain.length === 1
                   ? t("certificateInfo.chain.certificateCount.one", {
-                      defaultValue:
-                        "{{certificateCount}} certificate in chain",
+                      defaultValue: "{{certificateCount}} certificate in chain",
                       certificateCount: identity.chain.length,
                     })
                   : t("certificateInfo.chain.certificateCount.other", {
@@ -624,13 +692,16 @@ function TlsCertDetails({
                   <p className="text-xs text-[var(--color-textSecondary)]">
                     <span className="font-medium">{entry.subject}</span>
                     {" \u2192 "}
-                    <span className="text-[var(--color-textMuted)]">{entry.issuer}</span>
+                    <span className="text-[var(--color-textMuted)]">
+                      {entry.issuer}
+                    </span>
                   </p>
                   <p className="text-[10px] font-mono text-[var(--color-textMuted)] break-all">
                     {formatFingerprint(entry.fingerprint)}
                   </p>
                   <p className="text-[10px] text-[var(--color-textMuted)]">
-                    {new Date(entry.validFrom).toLocaleDateString()} — {new Date(entry.validTo).toLocaleDateString()}
+                    {new Date(entry.validFrom).toLocaleDateString()} —{" "}
+                    {new Date(entry.validTo).toLocaleDateString()}
                   </p>
                 </div>
               ))}

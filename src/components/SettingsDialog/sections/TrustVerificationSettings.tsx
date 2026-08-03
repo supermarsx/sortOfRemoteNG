@@ -14,11 +14,13 @@ import {
   Link2,
   ChevronRight,
   Monitor,
+  RefreshCw,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
 import {
   formatFingerprint,
   resolveEffectiveTrustPolicy,
-  updateTrustRecordNickname,
   type TrustPolicy,
   type TrustRecord,
 } from "../../../utils/auth/trustStore";
@@ -48,28 +50,28 @@ const POLICY_OPTIONS: {
   label: string;
   description: string;
 }[] = [
-    {
-      value: "tofu",
-      label: "Trust On First Use (TOFU)",
-      description:
-        "Prompt on first connection, then remember accepted identities and warn on later changes.",
-    },
-    {
-      value: "always-ask",
-      label: "Always Ask",
-      description: "Prompt for confirmation on every new identity.",
-    },
-    {
-      value: "always-trust",
-      label: "Always Trust",
-      description: "Never check — accept everything without verification.",
-    },
-    {
-      value: "strict",
-      label: "Strict",
-      description: "Reject unless the identity has been manually pre-approved.",
-    },
-  ];
+  {
+    value: "tofu",
+    label: "Trust On First Use (TOFU)",
+    description:
+      "Prompt on first connection, then remember accepted identities and warn on later changes.",
+  },
+  {
+    value: "always-ask",
+    label: "Always Ask",
+    description: "Prompt for confirmation on every new identity.",
+  },
+  {
+    value: "always-trust",
+    label: "Always Trust",
+    description: "Never check — accept everything without verification.",
+  },
+  {
+    value: "strict",
+    label: "Strict",
+    description: "Reject unless the identity has been manually pre-approved.",
+  },
+];
 
 const CONCRETE_POLICY_OPTIONS = POLICY_OPTIONS.map((option) => ({
   value: option.value,
@@ -94,7 +96,9 @@ const TrustCenterHeading: React.FC = () => (
 );
 
 function policyLabel(value: TrustPolicy): string {
-  return POLICY_OPTIONS.find((option) => option.value === value)?.label ?? value;
+  return (
+    POLICY_OPTIONS.find((option) => option.value === value)?.label ?? value
+  );
 }
 
 function policyDescription(value: TrustPolicy | undefined): string | undefined {
@@ -251,9 +255,9 @@ const PolicyExplanations: React.FC = () => (
             Always Ask
           </span>
           <p className="mt-0.5">
-            Every time a new or previously unseen identity is encountered you will
-            be prompted to manually approve or reject it. Use this when you prefer
-            explicit confirmation for every identity, for example in
+            Every time a new or previously unseen identity is encountered you
+            will be prompted to manually approve or reject it. Use this when you
+            prefer explicit confirmation for every identity, for example in
             high-security environments.
           </p>
         </div>
@@ -263,8 +267,8 @@ const PolicyExplanations: React.FC = () => (
           </span>
           <p className="mt-0.5">
             All certificates and host keys are accepted without any verification
-            or prompts. This is convenient for development or lab environments but
-            should{" "}
+            or prompts. This is convenient for development or lab environments
+            but should{" "}
             <em className="text-[var(--color-textSecondary)] not-italic font-medium">
               never
             </em>{" "}
@@ -277,8 +281,8 @@ const PolicyExplanations: React.FC = () => (
           <p className="mt-0.5">
             Connections are only allowed if the host&apos;s identity has been
             manually pre-approved and stored beforehand. Any unknown or changed
-            identity is immediately rejected. Ideal when you manage a fixed set of
-            known servers and want maximum security.
+            identity is immediately rejected. Ideal when you manage a fixed set
+            of known servers and want maximum security.
           </p>
         </div>
       </div>
@@ -328,7 +332,9 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             min={0}
             max={365}
           />
-          <span className="text-xs text-[var(--color-textSecondary)]">days</span>
+          <span className="text-xs text-[var(--color-textSecondary)]">
+            days
+          </span>
         </div>
       </div>
     </Card>
@@ -340,11 +346,10 @@ const ClearAllButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.showConfirmClear) {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-xs text-error">
-          Clear all stored identities?
-        </span>
+        <span className="text-xs text-error">Clear all stored identities?</span>
         <button
-          onClick={mgr.handleClearAll}
+          onClick={() => void mgr.handleClearAll()}
+          disabled={mgr.busyRecord === "clear-all"}
           className="px-3 py-1 text-xs bg-error hover:bg-error/90 text-[var(--color-text)] rounded transition-colors"
         >
           Yes, clear all
@@ -405,11 +410,22 @@ const TrustRecordGroupSection: React.FC<TrustRecordGroupSectionProps> = ({
           <TrustRecordRow
             key={`${recordKeyPrefix}-${record.host}-${index}`}
             record={record}
-            connectionId={connectionId}
             onRemove={(selectedRecord) =>
               mgr.handleRemoveRecord(selectedRecord, connectionId)
             }
-            onUpdated={mgr.refreshRecords}
+            onSetRevoked={(selectedRecord, revoked) =>
+              mgr.handleSetRevoked(selectedRecord, revoked, connectionId)
+            }
+            onSetPolicy={(selectedRecord, policy) =>
+              mgr.handleSetPolicy(selectedRecord, policy, connectionId)
+            }
+            onUpdateNickname={(selectedRecord, nickname) =>
+              mgr.handleUpdateNickname(selectedRecord, nickname, connectionId)
+            }
+            busy={
+              mgr.busyRecord ===
+              `${connectionId ?? "global"}:${record.type}:${record.host}`
+            }
           />
         ))}
       </div>
@@ -477,10 +493,11 @@ function renderTrustRecordGroups(
             by default: the certificate is pinned the first time you connect and
             the connection is rejected if it changes later (possible
             man-in-the-middle). These backends run without a prompt, so
-            &ldquo;Always Ask&rdquo; also behaves as trust-on-first-use for them.
-            Remove a record below to re-pin on the next connection. To keep the
-            old &ldquo;accept any certificate&rdquo; behaviour for a specific
-            host, set that connection&apos;s trust policy to{" "}
+            &ldquo;Always Ask&rdquo; fails closed for them because they cannot
+            display an interactive approval prompt. Remove a record below to
+            re-pin on the next connection. To keep the old &ldquo;accept any
+            certificate&rdquo; behaviour for a specific host, set that
+            connection&apos;s trust policy to{" "}
             <span className="text-[var(--color-textSecondary)] font-medium">
               Always Trust
             </span>
@@ -503,10 +520,42 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <ClearAllButton mgr={mgr} />
     </div>
 
-    {mgr.totalCount === 0 ? (
+    {mgr.storeError && (
+      <div className="sor-settings-card border border-error/40 bg-error/10 flex items-center justify-between gap-3">
+        <p className="text-xs text-error">{mgr.storeError}</p>
+        <button
+          onClick={() => void mgr.retryLoad()}
+          disabled={mgr.storeLoading}
+          className="flex items-center gap-1 rounded bg-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-textSecondary)] disabled:opacity-40"
+        >
+          <RefreshCw
+            size={12}
+            className={mgr.storeLoading ? "animate-spin" : ""}
+          />
+          Retry
+        </button>
+      </div>
+    )}
+
+    {mgr.storeLoading ? (
       <div className="sor-settings-card py-6 text-center">
-        <ShieldCheck size={24} className="text-[var(--color-textMuted)] mx-auto mb-2" />
-        <p className="text-sm text-[var(--color-textMuted)]">No stored identities yet.</p>
+        <RefreshCw
+          size={20}
+          className="mx-auto mb-2 animate-spin text-[var(--color-textMuted)]"
+        />
+        <p className="text-sm text-[var(--color-textMuted)]">
+          Loading the native Trust Center...
+        </p>
+      </div>
+    ) : mgr.storeError ? null : mgr.totalCount === 0 ? (
+      <div className="sor-settings-card py-6 text-center">
+        <ShieldCheck
+          size={24}
+          className="text-[var(--color-textMuted)] mx-auto mb-2"
+        />
+        <p className="text-sm text-[var(--color-textMuted)]">
+          No stored identities yet.
+        </p>
         <p className="text-xs text-[var(--color-textMuted)] mt-1">
           Identities will appear here as you connect to servers.
         </p>
@@ -579,29 +628,32 @@ export const TrustVerificationSettings: React.FC<
 /** A single trust record row with remove action. */
 function TrustRecordRow({
   record,
-  connectionId,
   onRemove,
-  onUpdated,
+  onSetRevoked,
+  onSetPolicy,
+  onUpdateNickname,
+  busy,
 }: {
   record: TrustRecord;
-  connectionId?: string;
   onRemove: (r: TrustRecord) => void;
-  onUpdated: () => void;
+  onSetRevoked: (r: TrustRecord, revoked: boolean) => void;
+  onSetPolicy: (r: TrustRecord, policy: TrustPolicy | undefined) => void;
+  onUpdateNickname: (r: TrustRecord, nickname: string) => Promise<boolean>;
+  busy: boolean;
 }) {
   const [editingNick, setEditingNick] = React.useState(false);
   const [nickDraft, setNickDraft] = React.useState(record.nickname ?? "");
+  const nicknameSavePending = React.useRef(false);
 
-  const saveNickname = () => {
-    const [h, p] = record.host.split(":");
-    updateTrustRecordNickname(
-      h,
-      parseInt(p, 10),
-      record.type,
-      nickDraft.trim(),
-      connectionId,
-    );
-    setEditingNick(false);
-    onUpdated();
+  const saveNickname = async () => {
+    if (busy || nicknameSavePending.current) return;
+    nicknameSavePending.current = true;
+    try {
+      const saved = await onUpdateNickname(record, nickDraft.trim());
+      if (saved) setEditingNick(false);
+    } finally {
+      nicknameSavePending.current = false;
+    }
   };
 
   return (
@@ -652,6 +704,11 @@ function TrustRecordRow({
               approved
             </span>
           )}
+          {record.revoked && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-error/20 text-error border border-error/40">
+              revoked
+            </span>
+          )}
           {record.history && record.history.length > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/50 text-warning border border-warning/50 flex items-center gap-0.5">
               <AlertTriangle size={8} />
@@ -668,9 +725,45 @@ function TrustRecordRow({
           · Last: {new Date(record.identity.lastSeen).toLocaleDateString()}
         </p>
       </div>
+      <select
+        value={record.hostPolicy ?? "inherit"}
+        onChange={(event) =>
+          onSetPolicy(
+            record,
+            event.target.value === "inherit"
+              ? undefined
+              : (event.target.value as TrustPolicy),
+          )
+        }
+        disabled={busy || record.revoked}
+        className="sor-settings-input sor-settings-input-compact max-w-28 text-xs disabled:opacity-40"
+        title="Scoped policy for this stored identity"
+      >
+        <option value="inherit">Inherit</option>
+        <option value="tofu">TOFU</option>
+        <option value="always-ask">Always Ask</option>
+        <option value="strict">Strict</option>
+      </select>
+      <button
+        onClick={() => onSetRevoked(record, !record.revoked)}
+        disabled={busy}
+        className={`p-1 transition-colors flex-shrink-0 disabled:opacity-40 ${
+          record.revoked
+            ? "text-[var(--color-textMuted)] hover:text-success"
+            : "text-[var(--color-textMuted)] hover:text-warning"
+        }`}
+        title={
+          record.revoked
+            ? "Reinstate stored identity"
+            : "Revoke stored identity"
+        }
+      >
+        {record.revoked ? <RotateCcw size={14} /> : <Ban size={14} />}
+      </button>
       <button
         onClick={() => onRemove(record)}
-        className="text-[var(--color-textMuted)] hover:text-error p-1 transition-colors flex-shrink-0"
+        disabled={busy}
+        className="text-[var(--color-textMuted)] hover:text-error p-1 transition-colors flex-shrink-0 disabled:opacity-40"
         title="Remove stored identity"
       >
         <Trash2 size={14} />

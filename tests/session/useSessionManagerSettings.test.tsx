@@ -30,6 +30,7 @@ const connectionMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   reconnectIntegrationSession: vi.fn(),
   releaseIntegrationSession: vi.fn(),
+  genericTimerProtocols: new Set<string>(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -63,6 +64,18 @@ vi.mock("../../src/utils/recording/scriptEngine", () => ({
     }),
   },
 }));
+
+vi.mock("../../src/utils/session/protocolAvailability", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/utils/session/protocolAvailability")
+  >("../../src/utils/session/protocolAvailability");
+  return {
+    ...actual,
+    usesLegacyGenericTimer: (protocol: string) =>
+      connectionMocks.genericTimerProtocols.has(protocol) ||
+      actual.usesLegacyGenericTimer(protocol),
+  };
+});
 
 vi.mock("../../src/utils/connection/statusChecker", () => ({
   StatusChecker: {
@@ -114,6 +127,7 @@ describe("useSessionManager settings effects", () => {
     vi.clearAllMocks();
     clearRuntimeConnectionsForTests();
     SettingsManager.resetInstance();
+    connectionMocks.genericTimerProtocols.clear();
     connectionMocks.state = { sessions: [], connections: [] };
     connectionMocks.executeScriptsForTrigger.mockResolvedValue(undefined);
     connectionMocks.invoke.mockResolvedValue(undefined);
@@ -140,14 +154,12 @@ describe("useSessionManager settings effects", () => {
     }
   });
 
-  it("fails closed for unsupported and management-only protocols", () => {
+  it("keeps registered runtimes available and fails closed for unknown protocols", () => {
     expect(getUnsupportedDirectSessionMessage("spice")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("xdmcp")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("x2go")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("nx")).toBeNull();
-    expect(getUnsupportedDirectSessionMessage("ilo")).toMatch(
-      /management-only.*no registered interactive saved-connection route/i,
-    );
+    expect(getUnsupportedDirectSessionMessage("ilo")).toBeNull();
     expect(getUnsupportedDirectSessionMessage("unknown-protocol")).toMatch(
       /no registered frontend session runtime/i,
     );
@@ -161,6 +173,238 @@ describe("useSessionManager settings effects", () => {
     expect(isSingletonIntegrationProtocol("integration:keepass")).toBe(false);
     expect(isSingletonIntegrationProtocol("integration:mssql")).toBe(false);
     expect(isSingletonIntegrationProtocol("integration:ansible")).toBe(false);
+  });
+
+  it("merges generic completion into the current session and connection", async () => {
+    vi.useFakeTimers();
+    try {
+      connectionMocks.genericTimerProtocols.add("ssh");
+      const connection = makeConnection({
+        id: "conn-generic-current",
+        connectionCount: 1,
+      });
+      const { result, rerender } = renderHook(() => useSessionManager());
+      let connectPromise!: Promise<void>;
+
+      act(() => {
+        connectPromise = result.current.handleConnect(connection);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const addedSession = connectionMocks.dispatch.mock.calls.find(
+        ([action]) => action.type === "ADD_SESSION",
+      )?.[0].payload as ConnectionSession;
+      const currentSession = {
+        ...addedSession,
+        backendSessionId: "backend-current",
+        metrics: {
+          connectionTime: 10,
+          dataTransferred: 42,
+          latency: 5,
+          throughput: 100,
+        },
+      };
+      const currentConnection = {
+        ...connection,
+        name: "Current connection name",
+        connectionCount: 7,
+      };
+      connectionMocks.state = {
+        sessions: [currentSession],
+        connections: [currentConnection],
+      };
+      connectionMocks.dispatch.mockClear();
+      rerender();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+        await connectPromise;
+      });
+
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_SESSION",
+        payload: expect.objectContaining({
+          id: addedSession.id,
+          backendSessionId: "backend-current",
+          status: "connected",
+          metrics: expect.objectContaining({ dataTransferred: 0 }),
+        }),
+      });
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "UPDATE_CONNECTION",
+        payload: expect.objectContaining({
+          id: connection.id,
+          name: "Current connection name",
+          connectionCount: 8,
+        }),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a generic completion on close without resurrecting the session", async () => {
+    vi.useFakeTimers();
+    try {
+      connectionMocks.genericTimerProtocols.add("ssh");
+      const connection = makeConnection({
+        id: "conn-generic-close",
+        warnOnClose: false,
+      });
+      const { result, rerender } = renderHook(() => useSessionManager());
+      let connectPromise!: Promise<void>;
+
+      act(() => {
+        connectPromise = result.current.handleConnect(connection);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const addedSession = connectionMocks.dispatch.mock.calls.find(
+        ([action]) => action.type === "ADD_SESSION",
+      )?.[0].payload as ConnectionSession;
+      connectionMocks.state = {
+        sessions: [addedSession],
+        connections: [connection],
+      };
+      connectionMocks.dispatch.mockClear();
+      rerender();
+
+      await act(async () => {
+        await result.current.handleSessionClose(addedSession.id);
+        await connectPromise;
+      });
+      connectionMocks.state = { sessions: [], connections: [connection] };
+      rerender();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+
+      expect(connectionMocks.dispatch).toHaveBeenCalledWith({
+        type: "REMOVE_SESSION",
+        payload: addedSession.id,
+      });
+      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "UPDATE_SESSION",
+          payload: expect.objectContaining({
+            id: addedSession.id,
+            status: "connected",
+          }),
+        }),
+      );
+      expect(connectionMocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "UPDATE_CONNECTION" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("services simultaneous close confirmations in FIFO order", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      confirmCloseActiveTab: true,
+      warnOnClose: false,
+    });
+    const firstConnection = makeConnection({
+      id: "conn-confirm-first",
+      warnOnClose: false,
+    });
+    const secondConnection = makeConnection({
+      id: "conn-confirm-second",
+      warnOnClose: true,
+    });
+    const firstSession = makeSession({
+      id: "session-confirm-first",
+      connectionId: firstConnection.id,
+      name: "First session",
+    });
+    const secondSession = makeSession({
+      id: "session-confirm-second",
+      connectionId: secondConnection.id,
+      name: "Second session",
+    });
+    connectionMocks.state = {
+      sessions: [firstSession, secondSession],
+      connections: [firstConnection, secondConnection],
+    };
+    const { result } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId(firstSession.id));
+
+    let firstClose!: Promise<boolean>;
+    let secondClose!: Promise<boolean>;
+    act(() => {
+      firstClose = result.current.handleSessionClose(firstSession.id);
+      secondClose = result.current.handleSessionClose(secondSession.id);
+    });
+
+    expect(result.current.confirmDialog?.props.message).toContain(
+      "First session",
+    );
+    let firstResult = false;
+    await act(async () => {
+      result.current.confirmDialog?.props.onConfirm();
+      firstResult = await firstClose;
+    });
+    expect(result.current.confirmDialog?.props.message).toBe(
+      "dialogs.confirmClose",
+    );
+    let secondResult = false;
+    await act(async () => {
+      result.current.confirmDialog?.props.onConfirm();
+      secondResult = await secondClose;
+    });
+
+    expect([firstResult, secondResult]).toEqual([true, true]);
+    const removedSessionIds = connectionMocks.dispatch.mock.calls
+      .filter(([action]) => action.type === "REMOVE_SESSION")
+      .map(([action]) => action.payload);
+    expect(removedSessionIds).toEqual([firstSession.id, secondSession.id]);
+  });
+
+  it("resolves the active and queued confirmations false on unmount", async () => {
+    SettingsManager.getInstance().applyInMemory({
+      confirmCloseActiveTab: true,
+      warnOnClose: true,
+    });
+    const firstConnection = makeConnection({ id: "conn-unmount-first" });
+    const secondConnection = makeConnection({ id: "conn-unmount-second" });
+    const firstSession = makeSession({
+      id: "session-unmount-first",
+      connectionId: firstConnection.id,
+      name: "Unmount first",
+    });
+    const secondSession = makeSession({
+      id: "session-unmount-second",
+      connectionId: secondConnection.id,
+      name: "Unmount second",
+    });
+    connectionMocks.state = {
+      sessions: [firstSession, secondSession],
+      connections: [firstConnection, secondConnection],
+    };
+    const { result, unmount } = renderHook(() => useSessionManager());
+    act(() => result.current.setActiveSessionId(firstSession.id));
+
+    let firstClose!: Promise<boolean>;
+    let secondClose!: Promise<boolean>;
+    act(() => {
+      firstClose = result.current.handleSessionClose(firstSession.id);
+      secondClose = result.current.handleSessionClose(secondSession.id);
+    });
+    act(() => unmount());
+
+    await expect(Promise.all([firstClose, secondClose])).resolves.toEqual([
+      false,
+      false,
+    ]);
   });
 
   it.each([
@@ -222,8 +466,8 @@ describe("useSessionManager settings effects", () => {
   it("keeps Quick Connect credentials in volatile runtime memory", async () => {
     const { result } = renderHook(() => useSessionManager());
 
-    act(() => {
-      result.current.handleQuickConnect({
+    await act(async () => {
+      await result.current.handleQuickConnect({
         hostname: "quick.example.test",
         protocol: "telnet",
         username: "operator",
@@ -489,10 +733,10 @@ describe("useSessionManager settings effects", () => {
       expect(result.current.confirmDialog).not.toBeNull();
     });
 
-    act(() => {
+    await act(async () => {
       (result.current.confirmDialog as any).props.onConfirm();
+      await connectPromise;
     });
-    await connectPromise;
 
     expect(connectionMocks.dispatch).toHaveBeenCalledWith({
       type: "REMOVE_SESSION",

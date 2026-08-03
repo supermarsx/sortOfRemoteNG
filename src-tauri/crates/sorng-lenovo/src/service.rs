@@ -39,48 +39,6 @@ impl Default for LenovoService {
     }
 }
 
-#[cfg(test)]
-mod t57_secret_hardening_tests {
-    use super::*;
-
-    const SENTINEL: &str = "T57_LENOVO_SENTINEL_SECRET";
-
-    #[tokio::test]
-    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
-        let config = LenovoConfig {
-            host: "lenovo.test".to_string(),
-            port: 443,
-            username: "operator".to_string(),
-            password: SENTINEL.to_string(),
-            auth_method: LenovoAuthMethod::Session,
-            protocol: Some(LenovoProtocol::Redfish),
-            insecure: true,
-            timeout_secs: 30,
-            ipmi_port: 623,
-            generation: Some(XccGeneration::Xcc2),
-        };
-
-        let internal_json = serde_json::to_string(&config).unwrap();
-        assert!(!internal_json.contains(SENTINEL));
-        assert!(!internal_json.contains("\"password\""));
-
-        let client = LenovoClient::new(&config).unwrap();
-        let public_json =
-            serde_json::to_string(&client.get_config_safe()).unwrap();
-        assert!(!public_json.contains(SENTINEL));
-        assert!(!public_json.contains("\"password\""));
-
-        let mut service = LenovoService {
-            client: Some(client),
-        };
-        service.disconnect().await.unwrap();
-
-        assert!(service.client.is_none());
-        assert!(service.get_config().is_err());
-        assert!(!service.is_connected());
-    }
-}
-
 impl LenovoService {
     pub fn new() -> Self {
         Self { client: None }
@@ -406,5 +364,46 @@ impl LenovoService {
     pub async fn reset_controller(&self) -> LenovoResult<()> {
         let rf = self.require_client()?.require_redfish()?;
         rf.reset_controller().await
+    }
+}
+
+#[cfg(test)]
+mod t57_secret_hardening_tests {
+    use super::*;
+
+    const SENTINEL: &str = "T57_LENOVO_SENTINEL_SECRET";
+
+    #[tokio::test]
+    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
+        let config = LenovoConfig {
+            host: "lenovo.test".to_string(),
+            port: 443,
+            username: "operator".to_string(),
+            password: SENTINEL.to_string(),
+            auth_method: LenovoAuthMethod::Session,
+            protocol: Some(LenovoProtocol::Redfish),
+            insecure: false,
+            timeout_secs: 30,
+            ipmi_port: 623,
+            generation: Some(XccGeneration::Xcc2),
+        };
+
+        let internal_json = serde_json::to_string(&config).unwrap();
+        assert!(!internal_json.contains(SENTINEL));
+        assert!(!internal_json.contains("\"password\""));
+
+        let client = LenovoClient::new(&config).unwrap();
+        let public_json = serde_json::to_string(&client.get_config_safe()).unwrap();
+        assert!(!public_json.contains(SENTINEL));
+        assert!(!public_json.contains("\"password\""));
+
+        let mut service = LenovoService {
+            client: Some(client),
+        };
+        service.disconnect().await.unwrap();
+
+        assert!(service.client.is_none());
+        assert!(service.get_config().is_err());
+        assert!(!service.is_connected());
     }
 }

@@ -53,9 +53,9 @@ impl RustDeskService {
 
         // 4. Check service running
         if binary.installed {
-            let running = self.check_service_running().await;
-            if !running {
-                issues.push(DiagnosticsIssue {
+            match self.check_service_running().await {
+                Ok(true) => {}
+                Ok(false) => issues.push(DiagnosticsIssue {
                     severity: IssueSeverity::Warning,
                     component: "service".to_string(),
                     message: "RustDesk service is not running".to_string(),
@@ -63,7 +63,13 @@ impl RustDeskService {
                         "Start the RustDesk service or run 'rustdesk --install-service'"
                             .to_string(),
                     ),
-                });
+                }),
+                Err(_) => issues.push(DiagnosticsIssue {
+                    severity: IssueSeverity::Warning,
+                    component: "service".to_string(),
+                    message: "RustDesk service status is unavailable".to_string(),
+                    suggestion: Some("Check the platform service manager manually".to_string()),
+                }),
             }
         }
 
@@ -72,6 +78,14 @@ impl RustDeskService {
             match self.check_server_health().await {
                 Ok(true) => {
                     let latency = self.measure_server_latency().await.ok();
+                    issues.push(DiagnosticsIssue {
+                        severity: IssueSeverity::Info,
+                        component: "relay".to_string(),
+                        message: "RustDesk relay health was not tested".to_string(),
+                        suggestion: Some(
+                            "Verify relay reachability with a real RustDesk connection".to_string(),
+                        ),
+                    });
                     if let Some(ms) = latency {
                         if ms > 5000 {
                             issues.push(DiagnosticsIssue {
@@ -88,7 +102,7 @@ impl RustDeskService {
                         reachable: true,
                         version: None,
                         api_accessible: true,
-                        relay_ok: true,
+                        relay_ok: false,
                         latency_ms: latency,
                         error: None,
                     })
@@ -127,7 +141,13 @@ impl RustDeskService {
         // Re-fetch binary info after possible version detection
         let binary = self.get_binary_info().clone();
 
-        // Detect NAT type (stub -- would need a STUN check)
+        issues.push(DiagnosticsIssue {
+            severity: IssueSeverity::Info,
+            component: "network".to_string(),
+            message: "NAT type is unavailable because no bounded STUN probe is configured"
+                .to_string(),
+            suggestion: None,
+        });
         let nat_type = None;
 
         let config_valid = binary.installed
@@ -150,7 +170,7 @@ impl RustDeskService {
         if !self.is_available() {
             return false;
         }
-        self.check_service_running().await
+        self.check_service_running().await.unwrap_or(false)
     }
 
     /// Check server API health.

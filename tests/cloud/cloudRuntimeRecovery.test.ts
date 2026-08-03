@@ -43,7 +43,7 @@ describe("cloud runtime recovery", () => {
     invokeMock.mockReset();
   });
 
-  it("releases a lease after connect and disconnect both reject", async () => {
+  it("retains a failed lease until disconnect cleanup succeeds", async () => {
     expect(claimBuiltInCloudRuntime("gcp", "failed-session")).toBe(true);
 
     await expect(
@@ -56,13 +56,16 @@ describe("cloud runtime recovery", () => {
       throw new Error("disconnect failed");
     });
     await expect(
-      teardownBuiltInCloudRuntime(
-        "gcp",
-        "failed-session",
-        disconnect,
-      ),
-    ).resolves.toBeUndefined();
+      teardownBuiltInCloudRuntime("gcp", "failed-session", disconnect),
+    ).rejects.toThrow("disconnect failed");
     expect(disconnect).toHaveBeenCalledWith(undefined);
+
+    expect(claimBuiltInCloudRuntime("gcp", "failed-session")).toBe(true);
+    const retryDisconnect = vi.fn(async () => undefined);
+    await expect(
+      teardownBuiltInCloudRuntime("gcp", "failed-session", retryDisconnect),
+    ).resolves.toBeUndefined();
+    expect(retryDisconnect).toHaveBeenCalledWith(undefined);
 
     expect(claimBuiltInCloudRuntime("gcp", "failed-session")).toBe(true);
     await teardownBuiltInCloudRuntime(
@@ -72,22 +75,29 @@ describe("cloud runtime recovery", () => {
     );
   });
 
-  it("releases an authenticated handle after disconnect failure and reopens", async () => {
+  it("retains an authenticated handle until disconnect retry succeeds", async () => {
     expect(claimBuiltInCloudRuntime("azure", "azure-first")).toBe(true);
     expect(claimBuiltInCloudRuntime("azure", "azure-blocked")).toBe(false);
 
-    await connectBuiltInCloudRuntime(
-      "azure",
-      "azure-first",
-      async () => ({ backendSessionId: "azure-handle" }),
-    );
+    await connectBuiltInCloudRuntime("azure", "azure-first", async () => ({
+      backendSessionId: "azure-handle",
+    }));
     const disconnect = vi.fn(async () => {
       throw new Error("token cleanup failed");
     });
     await expect(
       teardownBuiltInCloudRuntime("azure", "azure-first", disconnect),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("token cleanup failed");
     expect(disconnect).toHaveBeenCalledWith({
+      backendSessionId: "azure-handle",
+    });
+
+    expect(claimBuiltInCloudRuntime("azure", "azure-reopened")).toBe(false);
+    const retryDisconnect = vi.fn(async () => undefined);
+    await expect(
+      teardownBuiltInCloudRuntime("azure", "azure-first", retryDisconnect),
+    ).resolves.toBeUndefined();
+    expect(retryDisconnect).toHaveBeenCalledWith({
       backendSessionId: "azure-handle",
     });
 
@@ -181,9 +191,9 @@ describe("cloud runtime recovery", () => {
     expect(reopened.cloudProvider).toBeUndefined();
     expect(reopened.digitalOceanSettings).toEqual({ region: "lon1" });
     expect(reopened.password).toBe("T57_REOPENED_TOKEN");
-    expect(
-      JSON.stringify({ ...reopened, password: undefined }),
-    ).not.toContain("T57_REOPENED_TOKEN");
+    expect(JSON.stringify({ ...reopened, password: undefined })).not.toContain(
+      "T57_REOPENED_TOKEN",
+    );
     expect(digitalOceanRuntimeAdapter.validate(reopened)).toBeNull();
   });
 });

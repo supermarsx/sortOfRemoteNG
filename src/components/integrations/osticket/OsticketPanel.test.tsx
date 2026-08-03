@@ -93,10 +93,62 @@ describe("OsticketPanel", () => {
             api_key: "SECRET_KEY",
             timeout_seconds: 30,
             skip_tls_verify: false,
+            acknowledge_invalid_cert_risk: false,
           }),
         }),
       ),
     );
+  });
+
+  it("requires a one-shot acknowledgement before an insecure TLS attempt", async () => {
+    const { container } = render(<OsticketPanel isOpen onClose={() => {}} />);
+    await waitFor(() =>
+      expect(
+        screen.getByPlaceholderText("https://helpdesk.example.com"),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.change(
+      screen.getByPlaceholderText("https://helpdesk.example.com"),
+      { target: { value: "https://helpdesk.example.com" } },
+    );
+    fireEvent.change(container.querySelector('input[type="password"]')!, {
+      target: { value: "SECRET_KEY" },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Skip TLS certificate verification/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Connect$/i }));
+
+    expect(
+      await screen.findByText("Insecure TLS connection"),
+    ).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "osticket_connect",
+      expect.anything(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I understand the risks" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue insecurely" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "osticket_connect",
+        expect.objectContaining({
+          config: expect.objectContaining({
+            skip_tls_verify: true,
+            acknowledge_invalid_cert_risk: true,
+          }),
+        }),
+      ),
+    );
+    expect(persisted).not.toContain("acknowledge_invalid_cert_risk");
   });
 
   it("stores the api key in the vault, never in the config blob", async () => {

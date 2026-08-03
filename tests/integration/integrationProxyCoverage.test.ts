@@ -65,7 +65,7 @@ const FRONTEND_PROXY_CASES = [
     name: "Exchange",
     hookFile: "src/hooks/integration/exchange/useExchangeConnection.ts",
     typeFile: "src/types/exchange/index.ts",
-    helperCall: 'withGlobalHttpProxy(attemptConfig, "camel")',
+    helperCall: 'withGlobalHttpProxy(config, "camel")',
     typeField: "proxyUrl?:",
   },
   {
@@ -91,7 +91,7 @@ const FRONTEND_PROXY_CASES = [
     name: "Jira",
     hookFile: "src/hooks/integration/jira/useJiraConnection.ts",
     typeFile: "src/types/jira/index.ts",
-    helperCall: "withGlobalHttpProxy(config)",
+    helperCall: "withGlobalHttpProxy(attemptConfig)",
     typeField: "proxy_url?:",
   },
   {
@@ -126,7 +126,7 @@ const FRONTEND_PROXY_CASES = [
     name: "osTicket",
     hookFile: "src/hooks/integration/osticket/useOsticketConnection.ts",
     typeFile: "src/types/osticket/index.ts",
-    helperCall: "withGlobalHttpProxy(config)",
+    helperCall: "withGlobalHttpProxy(attemptConfig)",
     typeField: "proxy_url?:",
   },
   {
@@ -285,6 +285,7 @@ const RUST_PROXY_CASES = [
       "src-tauri/crates/sorng-vmware-desktop/src/vmrest.rs",
     ],
     wire: "commandArg",
+    proxyPolicy: "rejectLoopbackPlaintext",
   },
 ] as const;
 
@@ -316,15 +317,26 @@ describe("integration HTTP proxy coverage contract", () => {
   );
 
   it.each(RUST_PROXY_CASES)(
-    "$name accepts proxy data at the Tauri boundary and applies reqwest::Proxy",
-    ({ typeFile, proxyFiles, wire }) => {
+    "$name enforces its declared proxy transport policy",
+    (testCase) => {
+      const { typeFile, proxyFiles, wire } = testCase;
       const typeSource = readWorkspaceFile(typeFile);
       const proxySource = proxyFiles.map(readWorkspaceFile).join("\n");
 
       expect(typeSource).toContain("proxy_url");
       expect(proxySource).toContain("proxy_url");
-      expect(proxySource).toContain("reqwest::Proxy::all");
-      expect(proxySource).toMatch(/builder\s*=\s*builder\.proxy\(proxy\)/);
+      if (
+        "proxyPolicy" in testCase &&
+        testCase.proxyPolicy === "rejectLoopbackPlaintext"
+      ) {
+        expect(proxySource).toContain(
+          "vmrest is an HTTP-only local management endpoint; proxies are not permitted",
+        );
+        expect(proxySource).toContain("normalize_loopback_host");
+      } else {
+        expect(proxySource).toContain("reqwest::Proxy::all");
+        expect(proxySource).toMatch(/builder\s*=\s*builder\.proxy\(proxy\)/);
+      }
 
       if (wire === "camel") {
         expect(typeSource).toContain('rename_all = "camelCase"');

@@ -111,6 +111,18 @@ function singletonIntegrationConflictMessage(
   return `${label} uses one process-wide native session at a time. Disconnect or close the active ${label} session before you ${action} a different saved instance.`;
 }
 
+type SessionDialogRequest = {
+  message: string;
+  showCancel: boolean;
+  resolve: (value: boolean) => void;
+};
+
+type GenericCompletionTimer = {
+  completionTimer: ReturnType<typeof setTimeout>;
+  timeoutTimer?: ReturnType<typeof setTimeout>;
+  resolve: (completed: boolean) => void;
+};
+
 /**
  * Manages connection sessions and exposes helpers for session workflows.
  *
@@ -128,8 +140,14 @@ export const useSessionManager = () => {
   // Keep a ref to the latest state so timer callbacks can read current sessions
   const stateRef = useRef(state);
   stateRef.current = state;
-  // Store active timeout IDs so they can be cleared on unmount
+  // Reconnect timers are independent, while generic connection-completion
+  // timers are owned by their session so close/replacement can cancel them.
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const genericCompletionTimersRef = useRef(
+    new Map<string, GenericCompletionTimer>(),
+  );
+  const endingSessionIdsRef = useRef(new Set<string>());
+  const isUnmountedRef = useRef(false);
   const pendingReconnectsRef = useRef(new Set<string>());
   const reconnectsInFlightRef = useRef(new Set<string>());
   const permissionRequestRef = useRef<Promise<NotificationPermission> | null>(
@@ -141,17 +159,35 @@ export const useSessionManager = () => {
       authoritativeSession?: ConnectionSession,
     ) => Promise<boolean>
   >(async () => false);
-  const [dialogState, setDialogState] = useState<{
-    message: string;
-    showCancel: boolean;
-    resolve: (value: boolean) => void;
-  } | null>(null);
+  const dialogQueueRef = useRef<SessionDialogRequest[]>([]);
+  const dialogStateRef = useRef<SessionDialogRequest | null>(null);
+  const [dialogState, setDialogState] = useState<SessionDialogRequest | null>(
+    null,
+  );
 
   // Dialog helper used by confirm/alert wrappers
-  const showDialog = (message: string, showCancel: boolean) =>
-    new Promise<boolean>((resolve) => {
-      setDialogState({ message, showCancel, resolve });
+  const showDialog = (message: string, showCancel: boolean) => {
+    if (isUnmountedRef.current) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const request = { message, showCancel, resolve };
+      if (dialogStateRef.current) {
+        dialogQueueRef.current.push(request);
+        return;
+      }
+      dialogStateRef.current = request;
+      setDialogState(request);
     });
+  };
+
+  const settleDialog = (value: boolean) => {
+    const request = dialogStateRef.current;
+    if (!request) return;
+
+    const next = dialogQueueRef.current.shift() ?? null;
+    dialogStateRef.current = next;
+    setDialogState(next);
+    request.resolve(value);
+  };
 
   // Convenient wrappers around showDialog
   const showConfirm = (message: string) => showDialog(message, true);
@@ -164,11 +200,48 @@ export const useSessionManager = () => {
     return id;
   };
 
+  const cancelGenericCompletionTimer = (
+    sessionId: string,
+    expected?: GenericCompletionTimer,
+    settlePending = true,
+  ) => {
+    const entry = genericCompletionTimersRef.current.get(sessionId);
+    if (!entry || (expected && entry !== expected)) return;
+
+    genericCompletionTimersRef.current.delete(sessionId);
+    clearTimeout(entry.completionTimer);
+    if (entry.timeoutTimer) clearTimeout(entry.timeoutTimer);
+    if (settlePending) entry.resolve(false);
+  };
+
+  const markSessionEnding = (sessionId: string) => {
+    endingSessionIdsRef.current.add(sessionId);
+    cancelGenericCompletionTimer(sessionId);
+  };
+
   useEffect(() => {
+    isUnmountedRef.current = false;
+    const genericCompletionTimers = genericCompletionTimersRef.current;
     return () => {
+      isUnmountedRef.current = true;
       // Clear any active timers when the hook unmounts
       timers.current.forEach(clearTimeout);
       timers.current = [];
+
+      for (const entry of genericCompletionTimers.values()) {
+        clearTimeout(entry.completionTimer);
+        if (entry.timeoutTimer) clearTimeout(entry.timeoutTimer);
+        entry.resolve(false);
+      }
+      genericCompletionTimers.clear();
+
+      const pendingDialogs = [
+        ...(dialogStateRef.current ? [dialogStateRef.current] : []),
+        ...dialogQueueRef.current,
+      ];
+      dialogStateRef.current = null;
+      dialogQueueRef.current = [];
+      pendingDialogs.forEach((request) => request.resolve(false));
     };
   }, []);
 
@@ -250,8 +323,14 @@ export const useSessionManager = () => {
   const connectSession = async (
     session: ConnectionSession,
     connection: Connection,
-  ) => {
-    if (hasSessionVpnCleanupQuarantine(session)) return;
+  ): Promise<boolean> => {
+    if (
+      isUnmountedRef.current ||
+      endingSessionIdsRef.current.has(session.id) ||
+      hasSessionVpnCleanupQuarantine(session)
+    ) {
+      return false;
+    }
     const settings = settingsManager.getSettings();
     const startTime = Date.now();
 
@@ -271,85 +350,133 @@ export const useSessionManager = () => {
       console.error("Script execution failed:", error);
     }
 
+    if (isUnmountedRef.current || endingSessionIdsRef.current.has(session.id)) {
+      return false;
+    }
+
     if (connection.statusCheck?.enabled) {
       statusChecker.startChecking(connection);
     }
 
+    const runtimeCapabilities = await loadRuntimeCapabilities();
+    const runtimeUnavailableMessage = getRuntimeProtocolUnavailableMessage(
+      connection.protocol,
+      runtimeCapabilities,
+    );
+    if (runtimeUnavailableMessage) {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          id: session.id,
+          status: "error",
+          errorMessage: runtimeUnavailableMessage,
+        },
+      });
+      return false;
+    }
+
     if (!usesGenericSessionTimer(connection.protocol)) {
-      return;
+      return true;
     }
 
     const timeout = (connection.timeout ?? settings.connectionTimeout) * 1000;
-    let connectionTimer: ReturnType<typeof setTimeout>;
-    const connectionPromise = new Promise<void>((resolve) => {
-      connectionTimer = startTimer(() => {
-        const connectionTime = Date.now() - startTime;
+    cancelGenericCompletionTimer(session.id);
+    let timerEntry!: GenericCompletionTimer;
+    const connectionPromise = new Promise<boolean>((resolve) => {
+      const completionTimer = setTimeout(() => {
+        if (genericCompletionTimersRef.current.get(session.id) !== timerEntry) {
+          resolve(false);
+          return;
+        }
+        genericCompletionTimersRef.current.delete(session.id);
+        if (timerEntry.timeoutTimer) clearTimeout(timerEntry.timeoutTimer);
 
-        settingsManager.recordPerformanceMetric({
+        const currentState = stateRef.current;
+        const currentSession = currentState.sessions.find(
+          (candidate) => candidate.id === session.id,
+        );
+        if (
+          !currentSession ||
+          endingSessionIdsRef.current.has(session.id) ||
+          (currentSession.status !== "connecting" &&
+            currentSession.status !== "reconnecting")
+        ) {
+          resolve(false);
+          return;
+        }
+        const currentConnection = resolveRuntimeConnection(
+          currentState.connections,
+          currentSession.connectionId,
+        );
+        if (!currentConnection) {
+          resolve(false);
+          return;
+        }
+
+        const connectionTime = Date.now() - startTime;
+        const metrics = {
           connectionTime,
           dataTransferred: 0,
           latency: Math.random() * 50 + 10,
           throughput: Math.random() * 1000 + 500,
+        };
+
+        settingsManager.recordPerformanceMetric({
+          ...metrics,
           cpuUsage: Math.random() * 30 + 10,
           memoryUsage: Math.random() * 50 + 20,
           timestamp: Date.now(),
         });
 
-        // Read the CURRENT session from state to avoid overwriting
-        // fields set by protocol hooks (e.g. backendSessionId).
-        const currentSession = stateRef.current.sessions.find(
-          (s) => s.id === session.id,
-        );
-        if (currentSession) {
-          dispatch({
-            type: "UPDATE_SESSION",
-            payload: {
-              ...currentSession,
-              status: "connected",
-              metrics: {
-                connectionTime,
-                dataTransferred: 0,
-                latency: Math.random() * 50 + 10,
-                throughput: Math.random() * 1000 + 500,
-              },
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: {
+            ...currentSession,
+            status: "connected",
+            metrics: {
+              ...currentSession.metrics,
+              ...metrics,
             },
-          });
-        }
+          },
+        });
 
         dispatch({
           type: "UPDATE_CONNECTION",
           payload: {
-            ...connection,
+            ...currentConnection,
             lastConnected: new Date().toISOString(),
-            connectionCount: (connection.connectionCount || 0) + 1,
+            connectionCount: (currentConnection.connectionCount || 0) + 1,
           },
         });
 
         settingsManager.logAction(
           "info",
           "Connection established",
-          connection.id,
+          currentConnection.id,
           `Connected successfully in ${connectionTime}ms`,
           connectionTime,
         );
-        resolve();
+        resolve(true);
       }, 2000);
+      timerEntry = { completionTimer, resolve };
+      genericCompletionTimersRef.current.set(session.id, timerEntry);
     });
-    let raced: Promise<void>;
+    let raced: Promise<boolean>;
     if (timeout === 0) {
       raced = connectionPromise;
     } else {
       const { promise, timer: timeoutTimer } = raceWithTimeout(
         connectionPromise,
         timeout,
-        () => clearTimeout(connectionTimer),
+        () => cancelGenericCompletionTimer(session.id, timerEntry, false),
       );
+      timerEntry.timeoutTimer = timeoutTimer;
       raced = promise;
-      timers.current.push(timeoutTimer);
     }
 
     try {
-      await raced;
+      const completed = await raced;
+      if (!completed) return false;
     } catch (error) {
       const safeError = sanitizeBehaviorText(
         error instanceof Error ? error.message : "Unknown error",
@@ -386,6 +513,7 @@ export const useSessionManager = () => {
         reason: "error",
       });
     }
+    return true;
   };
 
   /**
@@ -394,9 +522,12 @@ export const useSessionManager = () => {
    */
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
-    const unsupportedMessage = getUnsupportedDirectSessionMessage(
-      connection.protocol,
-    );
+    const runtimeCapabilities = await loadRuntimeCapabilities();
+    const unsupportedMessage =
+      getRuntimeProtocolUnavailableMessage(
+        connection.protocol,
+        runtimeCapabilities,
+      ) ?? getUnsupportedDirectSessionMessage(connection.protocol);
 
     // Check for existing session for protocols that should reuse connections
     const reuseSessionProtocols = ["ssh", "http", "https"];
@@ -500,6 +631,7 @@ export const useSessionManager = () => {
         : {}),
     };
 
+    endingSessionIdsRef.current.delete(session.id);
     dispatch({ type: "ADD_SESSION", payload: session });
     await lifecycle.emitStarted(session, connection, { reason: "user" });
 
@@ -523,8 +655,10 @@ export const useSessionManager = () => {
       return;
     }
 
-    await connectSession(session, connection);
-    await lifecycle.emitInitialStatus(session, connection);
+    const completed = await connectSession(session, connection);
+    if (completed) {
+      await lifecycle.emitInitialStatus(session, connection);
+    }
   };
 
   const reconnectSession = async (
@@ -615,6 +749,7 @@ export const useSessionManager = () => {
       `Attempt ${updatedSession.reconnectAttempts}/${updatedSession.maxReconnectAttempts}`,
     );
 
+    endingSessionIdsRef.current.delete(updatedSession.id);
     await connectSession(updatedSession, connection);
   };
 
@@ -808,6 +943,7 @@ export const useSessionManager = () => {
       isToolProtocol(session.protocol) ||
       isWinmgmtProtocol(session.protocol)
     ) {
+      markSessionEnding(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       return true;
     }
@@ -852,6 +988,7 @@ export const useSessionManager = () => {
         });
         return false;
       }
+      markSessionEnding(sessionId);
       lifecycle.beginEnding(sessionId);
       dispatch({ type: "REMOVE_SESSION", payload: sessionId });
       releaseRuntimeConnection(session.connectionId);
@@ -986,6 +1123,7 @@ export const useSessionManager = () => {
 
     // From this point onward every user-facing close policy has been accepted.
     // Cancelling in-flight rules here cannot bypass a confirmation dialog.
+    markSessionEnding(sessionId);
     lifecycle.beginEnding(sessionId);
 
     if (connection) {
@@ -1468,6 +1606,7 @@ export const useSessionManager = () => {
         : undefined,
     };
 
+    endingSessionIdsRef.current.delete(restoredSession.id);
     dispatch({ type: "ADD_SESSION", payload: restoredSession });
     setActiveSessionId(restoredSession.id);
 
@@ -1493,18 +1632,8 @@ export const useSessionManager = () => {
     <ConfirmDialog
       isOpen={true}
       message={dialogState.message}
-      onConfirm={() => {
-        dialogState.resolve(true);
-        setDialogState(null);
-      }}
-      onCancel={
-        dialogState.showCancel
-          ? () => {
-              dialogState.resolve(false);
-              setDialogState(null);
-            }
-          : undefined
-      }
+      onConfirm={() => settleDialog(true)}
+      onCancel={dialogState.showCancel ? () => settleDialog(false) : undefined}
     />
   ) : null;
 
@@ -1522,3 +1651,7 @@ export const useSessionManager = () => {
     confirmDialog,
   };
 };
+import {
+  getRuntimeProtocolUnavailableMessage,
+  loadRuntimeCapabilities,
+} from "../../utils/runtime/runtimeCapabilities";

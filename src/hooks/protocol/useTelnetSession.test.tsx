@@ -89,19 +89,35 @@ beforeEach(() => {
 });
 
 describe("useTelnetSession", () => {
-  it("connects through the native service, streams output, and sends exact input", async () => {
+  it("connects after approval without forwarding saved plaintext credentials", async () => {
     const { result } = renderHook(() => useTelnetSession(createSession()));
 
+    await waitFor(() =>
+      expect(result.current.status).toBe("approval-required"),
+    );
+    expect(result.current.requiresInsecureApproval).toBe(true);
+    expect(result.current.savedCredentialsIgnored).toBe(true);
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "connect_telnet",
+      expect.anything(),
+    );
+
+    act(() => {
+      result.current.approveInsecureTransport();
+    });
+
     await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(result.current.requiresInsecureApproval).toBe(false);
     expect(mocks.invoke).toHaveBeenCalledWith("connect_telnet", {
       config: expect.objectContaining({
         host: "switch.example.test",
         port: 2323,
-        username: "operator",
-        password: "secret",
+        username: null,
+        password: null,
         connect_timeout_secs: 9,
-        max_reconnect_attempts: 2,
+        max_reconnect_attempts: 0,
         reconnect_delay_secs: 4,
+        allow_insecure_transport: true,
       }),
     });
     expect(mocks.dispatch).toHaveBeenCalledWith({
@@ -142,7 +158,7 @@ describe("useTelnetSession", () => {
     });
   });
 
-  it("reattaches a live backend and surfaces backend closure truthfully", async () => {
+  it("reattaches without taking disconnect ownership and surfaces closure", async () => {
     mocks.invoke.mockImplementation((command: string) => {
       if (command === "is_telnet_connected") return Promise.resolve(true);
       return Promise.resolve(undefined);
@@ -156,7 +172,21 @@ describe("useTelnetSession", () => {
       ),
     );
 
+    await waitFor(() =>
+      expect(result.current.status).toBe("approval-required"),
+    );
+    expect(result.current.requiresInsecureApproval).toBe(true);
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "is_telnet_connected",
+      expect.anything(),
+    );
+
+    act(() => {
+      result.current.approveInsecureTransport();
+    });
+
     await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(result.current.requiresInsecureApproval).toBe(false);
     expect(mocks.invoke).toHaveBeenCalledWith("is_telnet_connected", {
       sessionId: "backend-telnet-existing",
     });
@@ -176,8 +206,9 @@ describe("useTelnetSession", () => {
 
     unmount();
     expect(mocks.unlisten).toHaveBeenCalledTimes(3);
-    expect(mocks.invoke).toHaveBeenCalledWith("disconnect_telnet", {
-      sessionId: "backend-telnet-existing",
-    });
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "disconnect_telnet",
+      expect.anything(),
+    );
   });
 });

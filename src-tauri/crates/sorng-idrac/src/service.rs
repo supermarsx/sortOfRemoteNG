@@ -42,49 +42,6 @@ impl Default for IdracService {
     }
 }
 
-#[cfg(test)]
-mod t57_secret_hardening_tests {
-    use super::*;
-
-    const SENTINEL: &str = "T57_IDRAC_SENTINEL_SECRET";
-
-    #[tokio::test]
-    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
-        let config = IdracConfig {
-            host: "idrac.test".to_string(),
-            port: 443,
-            auth: IdracAuthMethod::Session {
-                username: "operator".to_string(),
-                password: SENTINEL.to_string(),
-            },
-            insecure: true,
-            force_protocol: Some(IdracProtocol::Redfish),
-            timeout_secs: 30,
-        };
-
-        let internal_json = serde_json::to_string(&config).unwrap();
-        assert!(!internal_json.contains(SENTINEL));
-        assert!(!internal_json.contains("\"password\""));
-
-        let client = IdracClient::new(&config).unwrap();
-        let public_json =
-            serde_json::to_string(&client.get_config_safe()).unwrap();
-        assert!(!public_json.contains(SENTINEL));
-        assert!(!public_json.contains("\"password\""));
-
-        let mut service = IdracService {
-            client: Some(client),
-            config: Some(config),
-        };
-        service.disconnect().await.unwrap();
-
-        assert!(service.client.is_none());
-        assert!(service.config.is_none());
-        assert!(service.get_config().is_none());
-        assert!(!service.is_connected());
-    }
-}
-
 impl IdracService {
     pub fn new() -> Self {
         Self {
@@ -749,5 +706,47 @@ impl IdracService {
             thermal_summary,
             health_rollup,
         })
+    }
+}
+
+#[cfg(test)]
+mod t57_secret_hardening_tests {
+    use super::*;
+
+    const SENTINEL: &str = "T57_IDRAC_SENTINEL_SECRET";
+
+    #[tokio::test]
+    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
+        let config = IdracConfig {
+            host: "idrac.test".to_string(),
+            port: 443,
+            auth: IdracAuthMethod::Session {
+                username: "operator".to_string(),
+                password: SENTINEL.to_string(),
+            },
+            insecure: false,
+            force_protocol: Some(IdracProtocol::Redfish),
+            timeout_secs: 30,
+        };
+
+        let internal_json = serde_json::to_string(&config).unwrap();
+        assert!(!internal_json.contains(SENTINEL));
+        assert!(!internal_json.contains("\"password\""));
+
+        let client = IdracClient::new(&config).unwrap();
+        let public_json = serde_json::to_string(&client.get_config_safe()).unwrap();
+        assert!(!public_json.contains(SENTINEL));
+        assert!(!public_json.contains("\"password\""));
+
+        let mut service = IdracService {
+            client: Some(client),
+            config: Some(config),
+        };
+        service.disconnect().await.unwrap();
+
+        assert!(service.client.is_none());
+        assert!(service.config.is_none());
+        assert!(service.get_config().is_none());
+        assert!(!service.is_connected());
     }
 }

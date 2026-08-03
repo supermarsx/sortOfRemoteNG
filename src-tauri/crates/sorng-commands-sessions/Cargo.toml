@@ -20,3 +20,4 @@ tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+zeroize = { workspace = true }

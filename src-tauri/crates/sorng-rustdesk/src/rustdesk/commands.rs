@@ -42,7 +42,7 @@ pub async fn rustdesk_check_service_running(
     state: tauri::State<'_, RustDeskServiceState>,
 ) -> Result<bool, String> {
     let mut svc = state.lock().await;
-    Ok(svc.check_service_running().await)
+    svc.check_service_running().await
 }
 
 #[tauri::command]
@@ -80,8 +80,7 @@ pub async fn rustdesk_configure_server(
     config: RustDeskServerConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.configure_server(config);
-    Ok(())
+    svc.configure_server(config)
 }
 
 #[tauri::command]
@@ -100,8 +99,7 @@ pub async fn rustdesk_set_client_config(
     config: RustDeskClientConfig,
 ) -> Result<(), String> {
     let mut svc = state.lock().await;
-    svc.set_client_config(config);
-    Ok(())
+    svc.set_client_config(config)
 }
 
 #[tauri::command]
@@ -370,14 +368,14 @@ pub async fn rustdesk_record_file_transfer(
     total_bytes: u64,
 ) -> Result<String, String> {
     let mut svc = state.lock().await;
-    Ok(svc.record_file_transfer(
+    svc.record_file_transfer(
         &session_id,
         direction,
         &local_path,
         &remote_path,
         &file_name,
         total_bytes,
-    ))
+    )
 }
 
 #[tauri::command]

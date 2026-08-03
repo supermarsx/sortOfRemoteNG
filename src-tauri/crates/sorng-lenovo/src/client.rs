@@ -22,6 +22,11 @@ pub struct LenovoClient {
 impl LenovoClient {
     /// Create a new client (not yet connected).
     pub fn new(config: &LenovoConfig) -> LenovoResult<Self> {
+        if config.insecure {
+            return Err(LenovoError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         Ok(Self {
             redfish: None,
             legacy_rest: None,

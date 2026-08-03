@@ -19,8 +19,12 @@ pub struct LegacyRestClient {
 impl LegacyRestClient {
     /// Create a new IMM2 legacy REST client.
     pub fn new(config: &LenovoConfig) -> LenovoResult<Self> {
+        if config.insecure {
+            return Err(LenovoError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
             .timeout(std::time::Duration::from_secs(config.timeout_secs))
             .build()
             .map_err(|e| LenovoError::connection(format!("Failed to create HTTP client: {e}")))?;

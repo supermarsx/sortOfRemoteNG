@@ -1,11 +1,23 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Search, RefreshCw, Play, Square, RotateCw, Loader2,
-  ChevronDown, ChevronRight, AlertCircle,
+  Search,
+  RefreshCw,
+  Play,
+  Square,
+  RotateCw,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  AlertCircle,
 } from "lucide-react";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
-import type { WindowsService, ServiceState, ServiceStartMode } from "../../../types/windows/winmgmt";
+import type {
+  WindowsService,
+  ServiceState,
+  ServiceStartMode,
+} from "../../../types/windows/winmgmt";
 
 const STATE_COLORS: Record<ServiceState, string> = {
   running: "text-green-400",
@@ -48,6 +60,11 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
     name: string;
     action: ServiceAction;
   } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    action: ServiceAction;
+    name: string;
+    displayName: string;
+  } | null>(null);
   const [deps, setDeps] = useState<string[] | null>(null);
 
   const fetchServices = useCallback(async () => {
@@ -56,8 +73,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
     try {
       const list = await ctx.cmd<WindowsService[]>("winmgmt_list_services");
       setServices(list);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError(
+        "Unable to load remote services. Sensitive error details were withheld.",
+      );
     } finally {
       setLoading(false);
     }
@@ -71,10 +90,13 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
     async (action: ServiceAction, name: string) => {
       setActionLoading({ name, action });
       try {
-        await ctx.cmd<number>(`winmgmt_${action}_service`, { name });
+        await ctx.cmd<number>(`winmgmt_${action}_service`, {
+          confirmed: true,
+          name,
+        });
         await fetchServices();
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError(`Unable to ${action} the selected service.`);
       } finally {
         setActionLoading(null);
       }
@@ -149,19 +171,26 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
           aria-label={t("windows.services.filterAria", "Filter services")}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
-          <option value="all">{t("windows.services.filters.all", "All")}</option>
-          <option value="running">{t("windows.services.filters.running", "Running")}</option>
-          <option value="stopped">{t("windows.services.filters.stopped", "Stopped")}</option>
-          <option value="auto">{t("windows.services.filters.autoStart", "Auto Start")}</option>
-          <option value="disabled">{t("windows.services.filters.disabled", "Disabled")}</option>
+          <option value="all">
+            {t("windows.services.filters.all", "All")}
+          </option>
+          <option value="running">
+            {t("windows.services.filters.running", "Running")}
+          </option>
+          <option value="stopped">
+            {t("windows.services.filters.stopped", "Stopped")}
+          </option>
+          <option value="auto">
+            {t("windows.services.filters.autoStart", "Auto Start")}
+          </option>
+          <option value="disabled">
+            {t("windows.services.filters.disabled", "Disabled")}
+          </option>
         </select>
         <button
           onClick={fetchServices}
           disabled={loading}
-          aria-label={t(
-            "windows.services.refreshServices",
-            "Refresh services",
-          )}
+          aria-label={t("windows.services.refreshServices", "Refresh services")}
           aria-busy={loading}
           className="p-1.5 rounded-md hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] transition-colors"
           title={t("windows.services.refresh", "Refresh")}
@@ -239,8 +268,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
               <tbody>
                 {filtered.map((svc) => {
                   const serviceBusy = actionLoading?.name === svc.name;
-                  const startBusy = serviceBusy && actionLoading?.action === "start";
-                  const stopBusy = serviceBusy && actionLoading?.action === "stop";
+                  const startBusy =
+                    serviceBusy && actionLoading?.action === "start";
+                  const stopBusy =
+                    serviceBusy && actionLoading?.action === "stop";
                   const restartBusy =
                     serviceBusy && actionLoading?.action === "restart";
 
@@ -288,7 +319,11 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("start", svc.name);
+                                setPendingAction({
+                                  action: "start",
+                                  name: svc.name,
+                                  displayName: svc.displayName,
+                                });
                               }}
                               disabled={serviceBusy}
                               aria-busy={startBusy}
@@ -298,7 +333,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                                 { service: svc.displayName },
                               )}
                               className="p-1 rounded hover:bg-green-500/20 text-green-400"
-                              title={t("windows.services.actions.start", "Start")}
+                              title={t(
+                                "windows.services.actions.start",
+                                "Start",
+                              )}
                             >
                               {startBusy ? (
                                 <Loader2 size={12} className="animate-spin" />
@@ -312,7 +350,11 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  doAction("stop", svc.name);
+                                  setPendingAction({
+                                    action: "stop",
+                                    name: svc.name,
+                                    displayName: svc.displayName,
+                                  });
                                 }}
                                 disabled={serviceBusy}
                                 aria-busy={stopBusy}
@@ -322,7 +364,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                                   { service: svc.displayName },
                                 )}
                                 className="p-1 rounded hover:bg-red-500/20 text-red-400"
-                                title={t("windows.services.actions.stop", "Stop")}
+                                title={t(
+                                  "windows.services.actions.stop",
+                                  "Stop",
+                                )}
                               >
                                 {stopBusy ? (
                                   <Loader2 size={12} className="animate-spin" />
@@ -333,7 +378,11 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  doAction("restart", svc.name);
+                                  setPendingAction({
+                                    action: "restart",
+                                    name: svc.name,
+                                    displayName: svc.displayName,
+                                  });
                                 }}
                                 disabled={serviceBusy}
                                 aria-busy={restartBusy}
@@ -343,7 +392,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
                                   { service: svc.displayName },
                                 )}
                                 className="p-1 rounded hover:bg-blue-500/20 text-blue-400"
-                                title={t("windows.services.actions.restart", "Restart")}
+                                title={t(
+                                  "windows.services.actions.restart",
+                                  "Restart",
+                                )}
                               >
                                 {restartBusy ? (
                                   <Loader2 size={12} className="animate-spin" />
@@ -396,7 +448,10 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
               />
               {selectedSvc.description && (
                 <DetailRow
-                  label={t("windows.services.detail.description", "Description")}
+                  label={t(
+                    "windows.services.detail.description",
+                    "Description",
+                  )}
                   value={selectedSvc.description}
                 />
               )}
@@ -437,6 +492,33 @@ const ServicesPanel: React.FC<ServicesPanelProps> = ({ ctx }) => {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingAction !== null}
+        title={t(
+          "windows.services.confirmActionTitle",
+          "Confirm Remote Service Action",
+        )}
+        message={t(
+          "windows.services.confirmActionMessage",
+          'This changes remote system state. {{action}} service "{{displayName}}" ({{name}})?',
+          {
+            action: pendingAction?.action ?? "",
+            displayName: pendingAction?.displayName ?? "",
+            name: pendingAction?.name ?? "",
+          },
+        )}
+        confirmText={pendingAction?.action ?? t("common.confirm", "Confirm")}
+        variant="warning"
+        onConfirm={() => {
+          const action = pendingAction;
+          setPendingAction(null);
+          if (action) {
+            void doAction(action.action, action.name);
+          }
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 };

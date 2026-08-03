@@ -40,7 +40,7 @@ export const vmwDesktopHostApi = {
       vmxPath,
       name,
       hostPath,
-      writable: writable ?? null,
+      writable: writable === true,
     }),
   removeSharedFolder: (vmxPath: string, name: string) =>
     invoke<void>("vmwd_remove_shared_folder", { vmxPath, name }),

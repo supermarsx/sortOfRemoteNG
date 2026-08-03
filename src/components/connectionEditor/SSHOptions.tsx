@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { AlertTriangle, Key, Fingerprint, Trash2, Pencil } from "lucide-react";
 import { PasswordInput, Textarea } from "../ui/forms";
 import { InfoTooltip } from "../ui/InfoTooltip";
@@ -12,6 +12,7 @@ import {
   removeIdentity,
   clearAllTrustRecords,
   formatFingerprint,
+  parseTrustRecordAddress,
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../utils/auth/trustStore";
@@ -184,8 +185,8 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                         </label>
                         <button
                           type="button"
-                          onClick={() => {
-                            clearAllTrustRecords(formData.id);
+                          onClick={async () => {
+                            await clearAllTrustRecords(formData.id);
                             setFormData({ ...formData }); // force re-render
                           }}
                           className="text-xs text-[var(--color-textMuted)] hover:text-error transition-colors"
@@ -195,7 +196,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                       </div>
                       <div className="space-y-1.5 max-h-40 overflow-y-auto">
                         {records.map((record, i) => {
-                          const [host, portStr] = record.host.split(":");
+                          const address = parseTrustRecordAddress(record);
                           return (
                             <div
                               key={`record-${record.host}-${i}`}
@@ -225,10 +226,10 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                               />
                               <button
                                 type="button"
-                                onClick={() => {
-                                  removeIdentity(
-                                    host,
-                                    parseInt(portStr, 10),
+                                onClick={async () => {
+                                  await removeIdentity(
+                                    address.host,
+                                    address.port,
                                     record.type,
                                     formData.id,
                                   );
@@ -444,6 +445,25 @@ function NicknameEditButton({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(record.nickname ?? "");
+  const savingRef = useRef(false);
+  const saveNickname = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const address = parseTrustRecordAddress(record);
+      await updateTrustRecordNickname(
+        address.host,
+        address.port,
+        record.type,
+        draft.trim(),
+        connectionId,
+      );
+      setEditing(false);
+      onSaved();
+    } finally {
+      savingRef.current = false;
+    }
+  };
   if (editing) {
     return (
       <input
@@ -453,33 +473,14 @@ function NicknameEditButton({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
-            const [h, p] = record.host.split(":");
-            updateTrustRecordNickname(
-              h,
-              parseInt(p, 10),
-              record.type,
-              draft.trim(),
-              connectionId,
-            );
-            setEditing(false);
-            onSaved();
+            e.preventDefault();
+            void saveNickname();
           } else if (e.key === "Escape") {
             setDraft(record.nickname ?? "");
             setEditing(false);
           }
         }}
-        onBlur={() => {
-          const [h, p] = record.host.split(":");
-          updateTrustRecordNickname(
-            h,
-            parseInt(p, 10),
-            record.type,
-            draft.trim(),
-            connectionId,
-          );
-          setEditing(false);
-          onSaved();
-        }}
+        onBlur={() => void saveNickname()}
         placeholder="Nickname…"
         className="sor-form-input-xs w-24 text-[var(--color-textSecondary)]"
       />

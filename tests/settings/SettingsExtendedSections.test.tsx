@@ -80,6 +80,9 @@ vi.mock("../../src/utils/auth/trustStore", () => ({
     },
   ]),
   getAllPerConnectionTrustRecords: vi.fn(() => []),
+  ensureTrustStoreReady: vi.fn(() => Promise.resolve()),
+  retryTrustStoreHydration: vi.fn(() => Promise.resolve()),
+  getTrustStoreAvailability: vi.fn(() => ({ state: "ready" })),
   removeIdentity: vi.fn(),
   clearAllTrustRecords: vi.fn(),
   resolveEffectiveTrustPolicy: vi.fn(

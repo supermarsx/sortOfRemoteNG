@@ -10,6 +10,7 @@ import {
   removeIdentity,
   clearAllTrustRecords,
   formatFingerprint,
+  parseTrustRecordAddress,
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../utils/auth/trustStore";
@@ -151,22 +152,27 @@ export function useRDPOptions(
   /* Load trust records */
   useEffect(() => {
     if (formData.isGroup || formData.protocol !== "rdp") return;
-    try {
-      const connRecords = formData.id ? getAllTrustRecords(formData.id) : [];
-      const globalRecords = getAllTrustRecords();
-      const all = [...connRecords, ...globalRecords].filter(
-        (r) => r.type === "rdp",
-      );
-      const seen = new Set<string>();
-      const deduped = all.filter((r) => {
-        if (seen.has(r.identity.fingerprint)) return false;
-        seen.add(r.identity.fingerprint);
-        return true;
-      });
-      setRdpTrustRecords(deduped);
-    } catch {
-      /* ignore */
-    }
+    const refresh = () => {
+      try {
+        const connRecords = formData.id ? getAllTrustRecords(formData.id) : [];
+        const globalRecords = getAllTrustRecords();
+        const all = [...connRecords, ...globalRecords].filter(
+          (r) => r.type === "rdp",
+        );
+        const seen = new Set<string>();
+        const deduped = all.filter((r) => {
+          if (seen.has(r.identity.fingerprint)) return false;
+          seen.add(r.identity.fingerprint);
+          return true;
+        });
+        setRdpTrustRecords(deduped);
+      } catch {
+        setRdpTrustRecords([]);
+      }
+    };
+    refresh();
+    window.addEventListener("trustStoreChanged", refresh);
+    return () => window.removeEventListener("trustStoreChanged", refresh);
   }, [formData.isGroup, formData.protocol, formData.id]);
 
   /* Derived */
@@ -200,12 +206,11 @@ export function useRDPOptions(
 
   /* Trust handlers */
   const handleRemoveTrust = useCallback(
-    (record: TrustRecord) => {
+    async (record: TrustRecord) => {
       try {
-        const [host, portStr] = record.host.split(":");
-        const port = parseInt(portStr, 10) || 3389;
-        removeIdentity(host, port, "rdp", formData.id);
-        removeIdentity(host, port, "rdp");
+        const { host, port } = parseTrustRecordAddress(record);
+        await removeIdentity(host, port, "rdp", formData.id);
+        await removeIdentity(host, port, "rdp");
         setRdpTrustRecords((prev) =>
           prev.filter(
             (r) => r.identity.fingerprint !== record.identity.fingerprint,
@@ -218,9 +223,9 @@ export function useRDPOptions(
     [formData.id],
   );
 
-  const handleClearAllRdpTrust = useCallback(() => {
+  const handleClearAllRdpTrust = useCallback(async () => {
     try {
-      if (formData.id) clearAllTrustRecords(formData.id);
+      if (formData.id) await clearAllTrustRecords(formData.id);
       setRdpTrustRecords([]);
     } catch {
       /* ignore */
@@ -228,11 +233,10 @@ export function useRDPOptions(
   }, [formData.id]);
 
   const handleSaveNickname = useCallback(
-    (record: TrustRecord) => {
+    async (record: TrustRecord) => {
       try {
-        const [host, portStr] = record.host.split(":");
-        const port = parseInt(portStr, 10) || 3389;
-        updateTrustRecordNickname(
+        const { host, port } = parseTrustRecordAddress(record);
+        await updateTrustRecordNickname(
           host,
           port,
           "rdp",

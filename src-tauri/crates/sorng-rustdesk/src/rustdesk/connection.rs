@@ -1,24 +1,55 @@
-use chrono::Utc;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use std::time::Duration;
 use tokio::process::Command;
 use uuid::Uuid;
 
 use super::service::{ConnectionRecord, RustDeskService};
 use super::types::*;
 
+const RUSTDESK_ARGV_SECRET_ERROR: &str =
+    "This RustDesk operation is disabled because the installed CLI only accepts its secret in the OS-visible process argument list. Use the RustDesk client UI for password or assignment-token operations.";
+
+fn reject_argv_secret(value: Option<&str>) -> Result<(), String> {
+    if value.is_some() {
+        return Err(RUSTDESK_ARGV_SECRET_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn validate_rustdesk_target(remote_id: &str) -> Result<(), String> {
+    if remote_id.trim().is_empty()
+        || remote_id.len() > 256
+        || remote_id.starts_with('-')
+        || remote_id.starts_with('/')
+        || remote_id.chars().any(char::is_control)
+    {
+        return Err(
+            "RustDesk target is empty, option-like, too long, or contains control characters"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 impl RustDeskService {
     // ── Remote Desktop Connection ───────────────────────────────────
 
     /// Initiate a new RustDesk connection (remote desktop, file transfer, tunnel, etc.).
     pub async fn connect(&mut self, request: RustDeskConnectRequest) -> Result<String, String> {
+        validate_rustdesk_target(&request.remote_id)?;
+        reject_argv_secret(request.password.as_deref())?;
+        self.connections
+            .retain(|_, record| !record._handle.is_finished());
+        if self.connections.len() >= Self::MAX_TRACKED_CONNECTIONS {
+            return Err("RustDesk connection tracker reached its 256-session limit".to_string());
+        }
         let path = self
             .binary_path()
             .ok_or("RustDesk binary not found. Please install RustDesk.")?
             .to_string();
 
         let session_id = Uuid::new_v4().to_string();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
 
         let session = RustDeskSession {
             id: session_id.clone(),
@@ -35,23 +66,51 @@ impl RustDeskService {
             force_relay: request.force_relay.unwrap_or(false),
             tunnel_local_port: request.tunnel_local_port,
             tunnel_remote_port: request.tunnel_remote_port,
-            password_protected: request.password.is_some(),
+            password_protected: false,
             remote_device_name: None,
             remote_os: None,
         };
 
         let args = self.build_connection_args(&request);
-        let path_clone = path.clone();
-        let remote_id = request.remote_id.clone();
-        let sid = session_id.clone();
+        let mut command = Command::new(&path);
+        command
+            .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("Failed to start RustDesk client: {}", e))?;
+        let process_id = child.id();
+        match tokio::time::timeout(Duration::from_millis(250), child.wait()).await {
+            Ok(Ok(status)) => {
+                return Err(format!(
+                    "RustDesk client exited before launch completed with status {}",
+                    status
+                ))
+            }
+            Ok(Err(e)) => return Err(format!("Failed to monitor RustDesk client launch: {}", e)),
+            Err(_) => {}
+        }
 
         let handle = tokio::task::spawn(async move {
-            Self::run_connection_process(path_clone, args, remote_id, sid, shutdown_rx).await;
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                }
+                status = child.wait() => {
+                    if let Err(e) = status {
+                        log::error!("Failed to wait for RustDesk client process: {}", e);
+                    }
+                }
+            }
         });
 
         let record = ConnectionRecord {
             session,
-            process_id: None,
+            process_id,
             shutdown_tx,
             _handle: handle,
         };
@@ -97,76 +156,7 @@ impl RustDeskService {
             }
         }
 
-        if let Some(ref pwd) = request.password {
-            args.push("--password".to_string());
-            args.push(pwd.clone());
-        }
-
         args
-    }
-
-    /// Spawn the RustDesk process and monitor it until shutdown.
-    async fn run_connection_process(
-        rustdesk_path: String,
-        args: Vec<String>,
-        remote_id: String,
-        _session_id: String,
-        mut shutdown_rx: tokio::sync::mpsc::Receiver<()>,
-    ) {
-        match Command::new(&rustdesk_path)
-            .args(&args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(mut child) => {
-                log::info!("RustDesk process started for remote: {}", remote_id);
-
-                // Monitor stdout
-                if let Some(stdout) = child.stdout.take() {
-                    let rid = remote_id.clone();
-                    tokio::task::spawn(async move {
-                        let reader = BufReader::new(stdout);
-                        let mut lines = reader.lines();
-                        while let Ok(Some(line)) = lines.next_line().await {
-                            log::debug!("RustDesk [{}] stdout: {}", rid, line);
-                        }
-                    });
-                }
-
-                // Monitor stderr
-                if let Some(stderr) = child.stderr.take() {
-                    let rid = remote_id.clone();
-                    tokio::task::spawn(async move {
-                        let reader = BufReader::new(stderr);
-                        let mut lines = reader.lines();
-                        while let Ok(Some(line)) = lines.next_line().await {
-                            log::warn!("RustDesk [{}] stderr: {}", rid, line);
-                        }
-                    });
-                }
-
-                tokio::select! {
-                    _ = shutdown_rx.recv() => {
-                        log::info!("Shutting down RustDesk connection to {}", remote_id);
-                        let _ = child.kill().await;
-                    }
-                    status = child.wait() => {
-                        match status {
-                            Ok(exit) => log::info!(
-                                "RustDesk process for {} exited: {:?}", remote_id, exit
-                            ),
-                            Err(e) => log::error!(
-                                "Error waiting for RustDesk process {}: {}", remote_id, e
-                            ),
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to start RustDesk process: {}", e);
-            }
-        }
     }
 
     // ── Direct IP Connection ────────────────────────────────────────
@@ -203,39 +193,17 @@ impl RustDeskService {
 
     /// Create a TCP tunnel through a RustDesk connection.
     pub async fn create_tunnel(&mut self, request: CreateTunnelRequest) -> Result<String, String> {
-        let connect_request = RustDeskConnectRequest {
-            remote_id: request.remote_id.clone(),
-            password: request.password.clone(),
-            connection_type: RustDeskConnectionType::PortForward,
-            quality: None,
-            view_only: None,
-            enable_audio: None,
-            enable_clipboard: None,
-            enable_file_transfer: None,
-            codec: None,
-            force_relay: None,
-            tunnel_local_port: Some(request.local_port),
-            tunnel_remote_port: Some(request.remote_port),
-        };
-        let session_id = self.connect(connect_request).await?;
-
-        let tunnel = RustDeskTunnel {
-            id: Uuid::new_v4().to_string(),
-            session_id: session_id.clone(),
-            local_port: request.local_port,
-            remote_port: request.remote_port,
-            remote_host: request
-                .remote_host
-                .unwrap_or_else(|| "localhost".to_string()),
-            active: true,
-            bytes_sent: 0,
-            bytes_received: 0,
-            created_at: Utc::now(),
-        };
-
-        let tunnel_id = tunnel.id.clone();
-        self.tunnels.insert(tunnel_id.clone(), tunnel);
-        Ok(tunnel_id)
+        validate_rustdesk_target(&request.remote_id)?;
+        reject_argv_secret(request.password.as_deref())?;
+        if request.local_port == 0 || request.remote_port == 0 {
+            return Err("RustDesk tunnel ports must be non-zero".to_string());
+        }
+        if let Some(host) = request.remote_host.as_deref() {
+            if host.trim().is_empty() || host.len() > 253 || host.chars().any(char::is_control) {
+                return Err("RustDesk tunnel host is empty, too long, or invalid".to_string());
+            }
+        }
+        Err("RustDesk CLI tunnel lifecycle cannot be verified or monitored; refusing to report an active tunnel".to_string())
     }
 
     /// Close a TCP tunnel.
@@ -258,50 +226,23 @@ impl RustDeskService {
         session_id: &str,
         event: RustDeskInputEvent,
     ) -> Result<(), String> {
-        let record = self
+        let _record = self
             .connections
             .get(session_id)
             .ok_or_else(|| format!("Session {} not found", session_id))?;
-
-        if !record.session.connected {
-            return Err("Session is not connected".to_string());
-        }
-
-        // RustDesk CLI doesn't support real-time input injection;
-        // this requires the RustDesk native protocol integration.
-        // For now we log the intent — full integration requires the
-        // rendezvous/relay WebSocket protocol.
-        log::debug!(
-            "Input event {:?} for session {} (type={:?})",
-            event.data,
-            session_id,
-            event.input_type,
-        );
-
-        Ok(())
+        let _ = event;
+        Err(
+            "RustDesk input injection is unavailable without native protocol integration"
+                .to_string(),
+        )
     }
 
     // ── Set Permanent Password via CLI ──────────────────────────────
 
     /// Set the permanent (unattended) password on the local RustDesk client.
     pub async fn set_permanent_password(&self, password: &str) -> Result<(), String> {
-        let path = self
-            .binary_path()
-            .ok_or("RustDesk binary not found")?
-            .to_string();
-
-        let output = Command::new(&path)
-            .args(["--password", password])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to set password: {}", e))?;
-
-        if output.status.success() {
-            Ok(())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("Failed to set password: {}", stderr))
-        }
+        let _ = password;
+        Err(RUSTDESK_ARGV_SECRET_ERROR.to_string())
     }
 
     // ── Install Service via CLI ─────────────────────────────────────
@@ -313,17 +254,13 @@ impl RustDeskService {
             .ok_or("RustDesk binary not found")?
             .to_string();
 
-        let output = Command::new(&path)
-            .arg("--install-service")
-            .output()
-            .await
-            .map_err(|e| format!("Failed to install service: {}", e))?;
-
-        if output.status.success() {
+        let (status, _) =
+            Self::run_bounded_command(&path, &["--install-service"], Duration::from_secs(120))
+                .await?;
+        if status.success() {
             Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("Failed to install service: {}", stderr))
+            Err("RustDesk service installation returned a non-zero status".to_string())
         }
     }
 
@@ -334,17 +271,13 @@ impl RustDeskService {
             .ok_or("RustDesk binary not found")?
             .to_string();
 
-        let output = Command::new(&path)
-            .args(["--silent-install", "1"])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to silent install: {}", e))?;
-
-        if output.status.success() {
+        let (status, _) =
+            Self::run_bounded_command(&path, &["--silent-install", "1"], Duration::from_secs(120))
+                .await?;
+        if status.success() {
             Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(format!("Silent install failed: {}", stderr))
+            Err("RustDesk silent installation returned a non-zero status".to_string())
         }
     }
 
@@ -359,39 +292,35 @@ impl RustDeskService {
         address_book_name: Option<&str>,
         device_group_name: Option<&str>,
     ) -> Result<String, String> {
-        let path = self
-            .binary_path()
-            .ok_or("RustDesk binary not found")?
-            .to_string();
+        let _ = (
+            token,
+            user_name,
+            strategy_name,
+            address_book_name,
+            device_group_name,
+        );
+        Err(RUSTDESK_ARGV_SECRET_ERROR.to_string())
+    }
+}
 
-        let mut args = vec![
-            "--assign".to_string(),
-            "--token".to_string(),
-            token.to_string(),
-        ];
-        if let Some(v) = user_name {
-            args.push("--user_name".to_string());
-            args.push(v.to_string());
-        }
-        if let Some(v) = strategy_name {
-            args.push("--strategy_name".to_string());
-            args.push(v.to_string());
-        }
-        if let Some(v) = address_book_name {
-            args.push("--address_book_name".to_string());
-            args.push(v.to_string());
-        }
-        if let Some(v) = device_group_name {
-            args.push("--device_group_name".to_string());
-            args.push(v.to_string());
-        }
+#[cfg(test)]
+mod process_safety_tests {
+    use super::*;
 
-        let output = Command::new(&path)
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("Assign failed: {}", e))?;
+    #[test]
+    fn secret_cli_operations_fail_closed() {
+        assert_eq!(
+            reject_argv_secret(Some("secret-sentinel")).expect_err("secret must be rejected"),
+            RUSTDESK_ARGV_SECRET_ERROR
+        );
+        assert!(reject_argv_secret(None).is_ok());
+    }
 
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    #[test]
+    fn option_like_remote_targets_are_rejected() {
+        for target in ["--password", "/option", "remote\nnext", ""] {
+            assert!(validate_rustdesk_target(target).is_err(), "{target:?}");
+        }
+        assert!(validate_rustdesk_target("123 456 789").is_ok());
     }
 }

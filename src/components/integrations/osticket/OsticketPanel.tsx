@@ -18,6 +18,8 @@ import type { IntegrationPanelProps } from "../../../types/integrations/registry
 import type { OsticketConnectionConfig } from "../../../types/osticket";
 import { useOsticketConnection } from "../../../hooks/integration/osticket/useOsticketConnection";
 import { useIntegrationConfigStore } from "../../../hooks/integrations/useIntegrationConfigStore";
+import { useInsecureTlsAck } from "../../../hooks/security/useInsecureTlsAck";
+import { InsecureTlsWarningModal } from "../../security/InsecureTlsWarningModal";
 import { osticketCategoryTabs } from "./registry";
 
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -54,9 +56,20 @@ const OsticketPanel: React.FC<IntegrationPanelProps> = ({
   } = useOsticketConnection();
 
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [tlsPromptOpen, setTlsPromptOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(
     osticketCategoryTabs[0]?.categoryKey ?? null,
   );
+  const effectiveTlsSkip =
+    form.skipTlsVerify && /^https:\/\//i.test(form.host.trim());
+  const {
+    needsAck: needsTlsAck,
+    acknowledge: acknowledgeTls,
+    reset: resetTlsAck,
+  } = useInsecureTlsAck({
+    configId: instanceId ?? `osticket:${form.host.trim()}`,
+    insecure: effectiveTlsSkip,
+  });
 
   // Prefill the form from a persisted instance when opened against one.
   useEffect(() => {
@@ -98,48 +111,66 @@ const OsticketPanel: React.FC<IntegrationPanelProps> = ({
     };
   }, [form]);
 
-  const handleConnect = useCallback(async () => {
-    setError(null);
-    try {
-      const config = buildConfig();
-      const fields = { skipTlsVerify: String(config.skip_tls_verify) };
+  const connectOnce = useCallback(
+    async (acknowledged: boolean) => {
+      setError(null);
+      try {
+        const config = {
+          ...buildConfig(),
+          acknowledge_invalid_cert_risk: effectiveTlsSkip && acknowledged,
+        };
+        const fields = { skipTlsVerify: String(config.skip_tls_verify) };
 
-      // Persist host + API key (encrypted) and use the instance id as the stable
-      // connection id, so reconnecting a saved instance reuses its id.
-      let id = instanceId ?? null;
-      if (id) {
-        await updateInstance(id, {
-          integrationKey: "osticket",
-          name: config.name,
-          host: config.host,
-          fields,
-          secret: config.api_key,
-        });
-      } else {
-        const created = await createInstance({
-          integrationKey: "osticket",
-          name: config.name,
-          host: config.host,
-          fields,
-          secret: config.api_key,
-        });
-        id = created.id;
+        // Persist host + API key (encrypted) and use the instance id as the stable
+        // connection id, so reconnecting a saved instance reuses its id.
+        let id = instanceId ?? null;
+        if (id) {
+          await updateInstance(id, {
+            integrationKey: "osticket",
+            name: config.name,
+            host: config.host,
+            fields,
+            secret: config.api_key,
+          });
+        } else {
+          const created = await createInstance({
+            integrationKey: "osticket",
+            name: config.name,
+            host: config.host,
+            fields,
+            secret: config.api_key,
+          });
+          id = created.id;
+        }
+
+        await connect(id, config);
+        setActiveTab(osticketCategoryTabs[0]?.categoryKey ?? null);
+      } catch {
+        // `connect` already surfaced the error via the hook; persistence failures
+        // fall through here too and leave the form editable.
+      } finally {
+        resetTlsAck();
       }
+    },
+    [
+      buildConfig,
+      effectiveTlsSkip,
+      instanceId,
+      createInstance,
+      updateInstance,
+      connect,
+      resetTlsAck,
+      setError,
+    ],
+  );
 
-      await connect(id, config);
-      setActiveTab(osticketCategoryTabs[0]?.categoryKey ?? null);
-    } catch {
-      // `connect` already surfaced the error via the hook; persistence failures
-      // fall through here too and leave the form editable.
+  const handleConnect = useCallback(() => {
+    if (needsTlsAck) {
+      setTlsPromptOpen(true);
+      return;
     }
-  }, [
-    buildConfig,
-    instanceId,
-    createInstance,
-    updateInstance,
-    connect,
-    setError,
-  ]);
+    void connectOnce(false);
+  }, [connectOnce, needsTlsAck]);
 
   const ActiveTab = useMemo(() => {
     if (!connectionId || !activeTab) return null;
@@ -154,6 +185,22 @@ const OsticketPanel: React.FC<IntegrationPanelProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-surface)]">
+      <InsecureTlsWarningModal
+        key={tlsPromptOpen ? "open" : "closed"}
+        isOpen={tlsPromptOpen}
+        kind="integration"
+        endpoint={form.host.trim() || "osTicket endpoint"}
+        connectionName={form.name.trim() || undefined}
+        onAcknowledge={() => {
+          acknowledgeTls();
+          setTlsPromptOpen(false);
+          void connectOnce(true);
+        }}
+        onCancel={() => {
+          setTlsPromptOpen(false);
+          resetTlsAck();
+        }}
+      />
       <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
           <LifeBuoy className="h-5 w-5 text-primary" />

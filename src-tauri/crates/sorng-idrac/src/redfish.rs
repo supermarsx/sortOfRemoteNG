@@ -22,8 +22,12 @@ pub struct RedfishClient {
 impl RedfishClient {
     /// Build a new Redfish client (does NOT authenticate yet).
     pub fn new(config: &IdracConfig) -> IdracResult<Self> {
+        if config.insecure {
+            return Err(IdracError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         let client = Client::builder()
-            .danger_accept_invalid_certs(config.insecure)
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
             .map_err(|e| IdracError::connection(format!("Failed to build HTTP client: {e}")))?;

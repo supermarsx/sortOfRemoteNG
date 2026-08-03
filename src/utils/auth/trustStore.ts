@@ -1,29 +1,20 @@
 /**
- * Trust Store — TOFU (Trust On First Use) management for HTTPS/RDP/general/
- * legacy TLS certificates and SSH host key fingerprints.
+ * Native-backed TOFU trust store.
  *
- * On first connection the identity (cert fingerprint / host key) is stored.
- * On subsequent connections the stored identity is compared with the one
- * presented by the server.  A mismatch triggers a warning that lets the
- * user decide whether to continue (and optionally update the stored
- * identity).
+ * Trust decisions and mutations always go through the durable Rust service.
+ * The in-memory cache exists only for synchronous display consumers and stays
+ * unavailable until native hydration succeeds. Legacy localStorage records
+ * are migration input only and are never consulted for a trust decision.
  */
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { invoke } from "@tauri-apps/api/core";
 
-/** How to handle first-time identity encounters. */
-export type TrustPolicy =
-  | 'tofu'            // Trust On First Use — prompt once, then remember accepted identities
-  | 'always-ask'      // Always ask the user before trusting
-  | 'always-trust'    // Accept anything without checking
-  | 'strict';         // Reject if not pre-approved (manual pinning)
+export type TrustPolicy = "tofu" | "always-ask" | "always-trust" | "strict";
 
-export type InheritableTrustPolicy = TrustPolicy | 'inherit';
+export type InheritableTrustPolicy = TrustPolicy | "inherit";
 
-export type TrustRecordType = 'https' | 'certificate' | 'rdp' | 'ssh' | 'tls';
-export type CertificateTrustRecordType = Exclude<TrustRecordType, 'ssh'>;
+export type TrustRecordType = "https" | "certificate" | "rdp" | "ssh" | "tls";
+export type CertificateTrustRecordType = Exclude<TrustRecordType, "ssh">;
 
 export interface CertChainEntry {
   subject: string;
@@ -34,208 +25,1255 @@ export interface CertChainEntry {
 }
 
 export interface CertIdentity {
-  /** SHA-256 fingerprint of the DER-encoded certificate */
   fingerprint: string;
-  /** Subject CN / SAN — informational (full DN string) */
   subject?: string;
-  /** Issuer CN — informational (full DN string) */
   issuer?: string;
-  /** ISO date string — when the cert was first seen */
   firstSeen: string;
-  /** ISO date string — most recent time the cert was seen */
   lastSeen: string;
-  /** Cert not-before (ISO) */
   validFrom?: string;
-  /** Cert not-after  (ISO) */
   validTo?: string;
-  /** PEM-encoded certificate (for display) */
   pem?: string;
-  /** Serial number */
   serial?: string;
-  /** Signature algorithm */
   signatureAlgorithm?: string;
-  /** Subject Alternative Names */
   san?: string[];
-
-  // ── Subject DN components ──────────────────────────────────
-  /** Subject Common Name */
   subjectCn?: string;
-  /** Subject Organization */
   subjectOrg?: string;
-  /** Subject Organizational Unit */
   subjectOu?: string;
-  /** Subject Country */
   subjectCountry?: string;
-  /** Subject State / Province */
   subjectState?: string;
-  /** Subject Locality */
   subjectLocality?: string;
-  /** Subject Email */
   subjectEmail?: string;
-
-  // ── Issuer DN components ───────────────────────────────────
-  /** Issuer Common Name */
   issuerCn?: string;
-  /** Issuer Organization */
   issuerOrg?: string;
-  /** Issuer Country */
   issuerCountry?: string;
-
-  // ── Key & version info ─────────────────────────────────────
-  /** Key algorithm (e.g. "RSA", "ECDSA", "Ed25519") */
   keyAlgorithm?: string;
-  /** Key size in bits (e.g. 2048, 4096, 256) */
   keySize?: number;
-  /** Certificate version (1, 2, or 3) */
   version?: number;
-
-  // ── Certificate chain ──────────────────────────────────────
-  /** Intermediate / root certificates in the chain */
   chain?: CertChainEntry[];
 }
 
 export interface SshHostKeyIdentity {
-  /** The host key fingerprint (SHA-256 base64, e.g. "SHA256:...") */
   fingerprint: string;
-  /** Key type (e.g. "ssh-ed25519", "ecdsa-sha2-nistp256") */
   keyType?: string;
-  /** Number of bits (e.g. 256, 4096) */
   keyBits?: number;
-  /** ISO date string — when first seen */
   firstSeen: string;
-  /** ISO date string — most recent time seen */
   lastSeen: string;
-  /** Raw base64 public key */
   publicKey?: string;
 }
 
 export type TrustIdentity = CertIdentity | SshHostKeyIdentity;
-export type TrustIdentityFor<T extends TrustRecordType> = T extends 'ssh'
+export type TrustIdentityFor<T extends TrustRecordType> = T extends "ssh"
   ? SshHostKeyIdentity
   : CertIdentity;
 
 export interface TrustRecord {
-  /** Target host identifier: "hostname:port" */
+  /** Display form, including the port. IPv6 hosts are bracketed. */
   host: string;
-  /** Protocol family */
+  /** Structured endpoint fields supplied by the native adapter. */
+  hostname?: string;
+  port?: number;
   type: TrustRecordType;
-  /** The memorized identity */
   identity: TrustIdentity;
-  /** User explicitly approved this identity */
   userApproved: boolean;
-  /** Optional user-assigned nickname / label */
   nickname?: string;
-  /** Previous identities (when user chose to update) */
   history?: TrustIdentity[];
+  revoked?: boolean;
+  hostPolicy?: TrustPolicy;
+  trustExpires?: string;
 }
 
 export type TrustVerifyResult =
-  | { status: 'trusted' }
-  | { status: 'first-use'; identity: TrustIdentity }
-  | { status: 'mismatch'; stored: TrustIdentity; received: TrustIdentity }
-  | { status: 'expired'; identity: CertIdentity };
+  | { status: "trusted" }
+  | { status: "first-use"; identity: TrustIdentity }
+  | {
+      status: "mismatch";
+      stored: TrustIdentity;
+      received: TrustIdentity;
+    }
+  | { status: "expired"; identity: CertIdentity };
 
-// ---------------------------------------------------------------------------
-// Storage key
-// ---------------------------------------------------------------------------
-const TRUST_STORE_KEY = 'trustStore';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function hostKey(host: string, port: number, type: TrustRecordType): string {
-  return `${type}:${host}:${port}`;
+export interface ConnectionTrustGroup {
+  connectionId: string;
+  records: TrustRecord[];
 }
 
-export function isCertificateTrustRecordType(type: TrustRecordType): type is CertificateTrustRecordType {
-  return type === 'certificate' || type === 'https' || type === 'rdp' || type === 'tls';
+interface NativeCertChainEntry {
+  subject: string;
+  issuer: string;
+  fingerprint: string;
+  valid_from: string;
+  valid_to: string;
 }
 
-function connectionStoreKey(connectionId: string): string {
-  return `trustStore:${connectionId}`;
+interface NativeIdentity {
+  kind: "tls" | "ssh";
+  fingerprint: string;
+  first_seen: string;
+  last_seen: string;
+  subject?: string | null;
+  issuer?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  pem?: string | null;
+  serial?: string | null;
+  signature_algorithm?: string | null;
+  san?: string[] | null;
+  subject_cn?: string | null;
+  subject_org?: string | null;
+  subject_ou?: string | null;
+  subject_country?: string | null;
+  subject_state?: string | null;
+  subject_locality?: string | null;
+  subject_email?: string | null;
+  issuer_cn?: string | null;
+  issuer_org?: string | null;
+  issuer_country?: string | null;
+  key_algorithm?: string | null;
+  key_size?: number | null;
+  version?: number | null;
+  chain?: NativeCertChainEntry[] | null;
+  chain_fingerprints?: string[];
+  key_type?: string | null;
+  key_bits?: number | null;
+  public_key?: string | null;
+  algorithms_offered?: string[];
 }
 
-function loadStore(connectionId?: string): Record<string, TrustRecord> {
+interface NativeHistoryEntry {
+  identity: NativeIdentity;
+  changed_at: string;
+  reason: string;
+  approved_by?: string | null;
+  note?: string | null;
+  verification_count: number;
+  trust_score: number;
+}
+
+interface NativeTrustRecord {
+  host: string;
+  record_type: string;
+  identity: NativeIdentity;
+  user_approved: boolean;
+  nickname?: string | null;
+  history: NativeHistoryEntry[];
+  host_policy?: string | null;
+  trust_expires?: string | null;
+  revoked?: boolean;
+}
+
+interface NativeTrustVerifyResult {
+  status: string;
+  identity?: NativeIdentity;
+  stored?: NativeIdentity;
+  presented?: NativeIdentity;
+}
+
+interface CachedTrustRecord {
+  nativeHost: string;
+  connectionId?: string;
+  record: TrustRecord;
+}
+
+const LEGACY_GLOBAL_KEY = "trustStore";
+const LEGACY_CONNECTION_PREFIX = "trustStore:";
+const NATIVE_CONNECTION_PREFIX = "@sorng/connection/v1/";
+const MAX_LEGACY_STORE_BYTES = 8 * 1024 * 1024;
+const MAX_LEGACY_RECORDS = 2_000;
+const MAX_TOTAL_LEGACY_MIGRATIONS = 5_000;
+const MAX_LEGACY_HISTORY = 256;
+const MAX_CONNECTION_STORES = 500;
+const MAX_HOST_LENGTH = 253;
+const MAX_NATIVE_HOST_LENGTH = 8_192;
+const MAX_FINGERPRINT_LENGTH = 512;
+const MAX_NICKNAME_LENGTH = 512;
+const MAX_PEM_BYTES = 1536 * 1024;
+const MAX_PUBLIC_KEY_BYTES = 64 * 1024;
+const MAX_IDENTITY_FIELD_BYTES = 4_096;
+const MAX_SAN_ENTRIES = 256;
+const MAX_CHAIN_ENTRIES = 32;
+const MAX_PENDING_MUTATIONS = 128;
+const MAX_HYDRATION_RETRY_DELAY_MS = 30_000;
+const NATIVE_INVOKE_DEADLINE_MS = 20_000;
+const MAX_NATIVE_IN_FLIGHT = 32;
+const VALID_RECORD_TYPES = new Set<TrustRecordType>([
+  "https",
+  "certificate",
+  "rdp",
+  "ssh",
+  "tls",
+]);
+const VALID_TRUST_POLICIES = new Set<TrustPolicy>([
+  "tofu",
+  "always-ask",
+  "always-trust",
+  "strict",
+]);
+
+let globalCache = new Map<string, CachedTrustRecord>();
+let connectionCache = new Map<string, Map<string, CachedTrustRecord>>();
+let hydrated = false;
+let hydrationPromise: Promise<void> | null = null;
+let mutationTail: Promise<unknown> = Promise.resolve();
+let pendingMutations = 0;
+let hydrationFailureCount = 0;
+let nextHydrationAttemptAt = 0;
+let hydrationState: "idle" | "loading" | "ready" | "error" = "idle";
+let nextNativeOperationId = 1;
+
+interface NativeTrustOperation {
+  timedOut: boolean;
+  settled: Promise<void>;
+}
+
+const nativeTrustOperations = new Map<number, NativeTrustOperation>();
+
+export interface TrustStoreAvailability {
+  state: "idle" | "loading" | "ready" | "error";
+  retryCount: number;
+  retryAfterMs: number;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asOptionalString(
+  value: unknown,
+  maximumLength = MAX_HOST_LENGTH,
+): string | undefined {
+  return typeof value === "string" && value.length <= maximumLength
+    ? value
+    : undefined;
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function boundedNativeString(
+  value: unknown,
+  maximumLength: number,
+  required = false,
+): string | undefined {
+  if (
+    typeof value !== "string" ||
+    value.length > maximumLength ||
+    value.includes("\0") ||
+    (required && value.length === 0)
+  ) {
+    if (required || value != null) {
+      throw new Error("Malformed bounded native trust identity");
+    }
+    return undefined;
+  }
+  return value;
+}
+
+function boundedNativeStrings(
+  value: unknown,
+  maximumEntries: number,
+  maximumLength: number,
+): string[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value) || value.length > maximumEntries) {
+    throw new Error("Malformed bounded native trust identity list");
+  }
+  return value.map((entry) => {
+    const normalized = boundedNativeString(entry, maximumLength, true);
+    if (!normalized)
+      throw new Error("Malformed bounded native trust identity list");
+    return normalized;
+  });
+}
+
+function boundedNativeInteger(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value == null) return undefined;
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new Error("Invalid bounded trust identity number");
+  }
+  return value;
+}
+
+class NativeTrustDeadlineError extends Error {}
+
+function allocateNativeOperationId(): number {
+  for (let attempts = 0; attempts <= MAX_NATIVE_IN_FLIGHT; attempts += 1) {
+    const operationId = nextNativeOperationId;
+    nextNativeOperationId =
+      nextNativeOperationId >= Number.MAX_SAFE_INTEGER
+        ? 1
+        : nextNativeOperationId + 1;
+    if (!nativeTrustOperations.has(operationId)) return operationId;
+  }
+  throw new NativeTrustDeadlineError(
+    "The native Trust Center operation limit is exhausted",
+  );
+}
+
+async function invokeTrustNative<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  if (
+    Array.from(nativeTrustOperations.values()).some(
+      (operation) => operation.timedOut,
+    )
+  ) {
+    throw new NativeTrustDeadlineError(
+      "A timed-out native Trust Center operation is still completing",
+    );
+  }
+  if (nativeTrustOperations.size >= MAX_NATIVE_IN_FLIGHT) {
+    throw new NativeTrustDeadlineError(
+      "Too many native Trust Center operations are in flight",
+    );
+  }
+
+  const operationId = allocateNativeOperationId();
+  const nativeWork = invoke<T>(command, args);
+  const operation: NativeTrustOperation = {
+    timedOut: false,
+    settled: Promise.resolve(),
+  };
+  operation.settled = nativeWork.then(
+    () => undefined,
+    () => undefined,
+  );
+  nativeTrustOperations.set(operationId, operation);
+  void operation.settled.finally(() => {
+    nativeTrustOperations.delete(operationId);
+  });
+
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    deadline = setTimeout(
+      () =>
+        reject(
+          new NativeTrustDeadlineError(
+            "The native Trust Center operation exceeded its UI deadline",
+          ),
+        ),
+      NATIVE_INVOKE_DEADLINE_MS,
+    );
+  });
+
   try {
-    const key = connectionId ? connectionStoreKey(connectionId) : TRUST_STORE_KEY;
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    return await Promise.race([nativeWork, timeout]);
+  } catch (error) {
+    if (error instanceof NativeTrustDeadlineError) {
+      // Tauri invoke cannot be cancelled. Keep the original Promise tracked and
+      // reject all retries without spawning new native work until every timed
+      // out operation settles.
+      operation.timedOut = true;
+    }
+    throw error;
+  } finally {
+    if (deadline !== undefined) clearTimeout(deadline);
+  }
+}
+
+function boundedNativeChain(value: unknown): CertChainEntry[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value) || value.length > MAX_CHAIN_ENTRIES) {
+    throw new Error("Malformed bounded native certificate chain");
+  }
+  return value.map((entry) => {
+    if (!isObject(entry)) {
+      throw new Error("Malformed bounded native certificate chain");
+    }
+    return {
+      subject: boundedNativeString(
+        entry.subject,
+        MAX_IDENTITY_FIELD_BYTES,
+        true,
+      )!,
+      issuer: boundedNativeString(
+        entry.issuer,
+        MAX_IDENTITY_FIELD_BYTES,
+        true,
+      )!,
+      fingerprint: boundedNativeString(
+        entry.fingerprint,
+        MAX_FINGERPRINT_LENGTH,
+        true,
+      )!,
+      validFrom: boundedNativeString(entry.valid_from, 128, true)!,
+      validTo: boundedNativeString(entry.valid_to, 128, true)!,
+    };
+  });
+}
+
+function normalizeHost(host: string): string {
+  const normalized = host.trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > MAX_HOST_LENGTH ||
+    normalized.includes("\0")
+  ) {
+    throw new Error("Invalid trust-store host");
+  }
+  return normalized;
+}
+
+function normalizePort(port: number): number {
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("Invalid trust-store port");
+  }
+  return port;
+}
+
+function normalizeConnectionId(connectionId?: string): string | undefined {
+  if (connectionId === undefined) return undefined;
+  const normalized = connectionId.trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > MAX_HOST_LENGTH ||
+    normalized.includes("\0")
+  ) {
+    throw new Error("Invalid trust-store connection ID");
+  }
+  return normalized;
+}
+
+function formatHostPort(host: string, port: number): string {
+  const normalizedHost = normalizeHost(host);
+  const normalizedPort = normalizePort(port);
+  const displayHost =
+    normalizedHost.includes(":") &&
+    !(normalizedHost.startsWith("[") && normalizedHost.endsWith("]"))
+      ? `[${normalizedHost}]`
+      : normalizedHost;
+  return `${displayHost}:${normalizedPort}`;
+}
+
+function parseHostPort(value: string): { host: string; port: number } | null {
+  if (value.length === 0 || value.length > MAX_HOST_LENGTH + 8) return null;
+
+  if (value.startsWith("[")) {
+    const closingBracket = value.lastIndexOf("]:");
+    if (closingBracket <= 1) return null;
+    const host = value.slice(1, closingBracket);
+    const port = Number(value.slice(closingBracket + 2));
+    try {
+      return { host: normalizeHost(host), port: normalizePort(port) };
+    } catch {
+      return null;
+    }
+  }
+
+  const separator = value.lastIndexOf(":");
+  if (separator <= 0) return null;
+  const host = value.slice(0, separator);
+  const port = Number(value.slice(separator + 1));
+  try {
+    return { host: normalizeHost(host), port: normalizePort(port) };
   } catch {
-    // corrupted — reset
+    return null;
   }
-  return {};
 }
 
-function saveStore(store: Record<string, TrustRecord>, connectionId?: string): void {
-  const key = connectionId ? connectionStoreKey(connectionId) : TRUST_STORE_KEY;
-  localStorage.setItem(key, JSON.stringify(store));
+export function parseTrustRecordAddress(record: TrustRecord): {
+  host: string;
+  port: number;
+} {
+  if (record.hostname !== undefined && record.port !== undefined) {
+    return {
+      host: normalizeHost(record.hostname),
+      port: normalizePort(record.port),
+    };
+  }
+  const parsed = parseHostPort(record.host);
+  if (!parsed) throw new Error("Trust record has an invalid endpoint");
+  return parsed;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+function encodeNativeHost(
+  host: string,
+  port: number,
+  connectionId?: string,
+): string {
+  const normalizedHost = normalizeHost(host);
+  const normalizedPort = normalizePort(port);
+  const normalizedConnectionId = normalizeConnectionId(connectionId);
+  if (!normalizedConnectionId)
+    return formatHostPort(normalizedHost, normalizedPort);
+  return `${NATIVE_CONNECTION_PREFIX}${encodeURIComponent(
+    normalizedConnectionId,
+  )}/${encodeURIComponent(normalizedHost)}/${normalizedPort}`;
+}
 
-/** Notify listeners that the trust store changed. */
+function decodeNativeHost(nativeHost: string): {
+  host: string;
+  port: number;
+  connectionId?: string;
+} | null {
+  if (!nativeHost.startsWith(NATIVE_CONNECTION_PREFIX)) {
+    return parseHostPort(nativeHost);
+  }
+
+  const parts = nativeHost.slice(NATIVE_CONNECTION_PREFIX.length).split("/");
+  if (parts.length !== 3) return null;
+  try {
+    const connectionId = normalizeConnectionId(decodeURIComponent(parts[0]));
+    const host = normalizeHost(decodeURIComponent(parts[1]));
+    const port = normalizePort(Number(parts[2]));
+    if (!connectionId) return null;
+    return { connectionId, host, port };
+  } catch {
+    return null;
+  }
+}
+
+function recordCacheKey(
+  host: string,
+  port: number,
+  type: TrustRecordType,
+): string {
+  return `${type}\0${normalizeHost(host).toLocaleLowerCase()}\0${normalizePort(port)}`;
+}
+
+function cloneIdentity<T extends TrustIdentity>(identity: T): T {
+  const clone = { ...identity } as T & {
+    san?: string[];
+    chain?: CertChainEntry[];
+  };
+  if ("san" in identity && identity.san) clone.san = [...identity.san];
+  if ("chain" in identity && identity.chain) {
+    clone.chain = identity.chain.map((entry) => ({ ...entry }));
+  }
+  return clone as T;
+}
+
+function cloneRecord(record: TrustRecord): TrustRecord {
+  return {
+    ...record,
+    identity: cloneIdentity(record.identity),
+    history: record.history?.map((identity) => cloneIdentity(identity)),
+  };
+}
+
+function fromNativeIdentity(identity: NativeIdentity): TrustIdentity {
+  if (!isObject(identity)) throw new Error("Malformed native trust identity");
+  if (
+    (identity.kind !== "tls" && identity.kind !== "ssh") ||
+    !boundedNativeString(identity.fingerprint, MAX_FINGERPRINT_LENGTH, true) ||
+    !boundedNativeString(identity.first_seen, 128, true) ||
+    !boundedNativeString(identity.last_seen, 128, true)
+  ) {
+    throw new Error("Malformed native trust identity");
+  }
+
+  if (identity.kind === "ssh") {
+    return {
+      fingerprint: identity.fingerprint,
+      keyType: boundedNativeString(identity.key_type, 128),
+      keyBits: boundedNativeInteger(identity.key_bits, 1, 1_048_576),
+      firstSeen: identity.first_seen,
+      lastSeen: identity.last_seen,
+      publicKey: boundedNativeString(identity.public_key, MAX_PUBLIC_KEY_BYTES),
+    };
+  }
+
+  return {
+    fingerprint: identity.fingerprint,
+    subject: boundedNativeString(identity.subject, MAX_IDENTITY_FIELD_BYTES),
+    issuer: boundedNativeString(identity.issuer, MAX_IDENTITY_FIELD_BYTES),
+    firstSeen: identity.first_seen,
+    lastSeen: identity.last_seen,
+    validFrom: identity.valid_from ?? undefined,
+    validTo: identity.valid_to ?? undefined,
+    pem: boundedNativeString(identity.pem, MAX_PEM_BYTES),
+    serial: boundedNativeString(identity.serial, 512),
+    signatureAlgorithm: boundedNativeString(identity.signature_algorithm, 256),
+    san: boundedNativeStrings(
+      identity.san,
+      MAX_SAN_ENTRIES,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectCn: boundedNativeString(
+      identity.subject_cn,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectOrg: boundedNativeString(
+      identity.subject_org,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectOu: boundedNativeString(
+      identity.subject_ou,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectCountry: boundedNativeString(identity.subject_country, 128),
+    subjectState: boundedNativeString(
+      identity.subject_state,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectLocality: boundedNativeString(
+      identity.subject_locality,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subjectEmail: boundedNativeString(
+      identity.subject_email,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    issuerCn: boundedNativeString(identity.issuer_cn, MAX_IDENTITY_FIELD_BYTES),
+    issuerOrg: boundedNativeString(
+      identity.issuer_org,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    issuerCountry: boundedNativeString(identity.issuer_country, 128),
+    keyAlgorithm: boundedNativeString(identity.key_algorithm, 256),
+    keySize: boundedNativeInteger(identity.key_size, 1, 1_048_576),
+    version: boundedNativeInteger(identity.version, 0, 4),
+    chain: boundedNativeChain(identity.chain),
+  };
+}
+
+function toNativeIdentity(
+  type: TrustRecordType,
+  identity: TrustIdentity,
+): NativeIdentity {
+  if (
+    typeof identity.fingerprint !== "string" ||
+    identity.fingerprint.length === 0 ||
+    identity.fingerprint.length > MAX_FINGERPRINT_LENGTH
+  ) {
+    throw new Error("Invalid trust identity fingerprint");
+  }
+  const now = new Date().toISOString();
+  const firstSeen = identity.firstSeen || now;
+  const lastSeen = identity.lastSeen || now;
+  if (
+    firstSeen.length > 128 ||
+    lastSeen.length > 128 ||
+    firstSeen.includes("\0") ||
+    lastSeen.includes("\0")
+  ) {
+    throw new Error("Invalid trust identity timestamps");
+  }
+
+  if (type === "ssh") {
+    const ssh = identity as SshHostKeyIdentity;
+    return {
+      kind: "ssh",
+      fingerprint: ssh.fingerprint,
+      key_type: boundedNativeString(ssh.keyType, 128),
+      key_bits: boundedNativeInteger(ssh.keyBits, 1, 1_048_576),
+      first_seen: firstSeen,
+      last_seen: lastSeen,
+      public_key: boundedNativeString(ssh.publicKey, MAX_PUBLIC_KEY_BYTES),
+      algorithms_offered: [],
+    };
+  }
+
+  const cert = identity as CertIdentity;
+  if (cert.chain && cert.chain.length > MAX_CHAIN_ENTRIES) {
+    throw new Error("Certificate chain exceeds the Trust Center safety limit");
+  }
+  const chain = cert.chain?.map((entry) => ({
+    subject: boundedNativeString(
+      entry.subject,
+      MAX_IDENTITY_FIELD_BYTES,
+      true,
+    )!,
+    issuer: boundedNativeString(entry.issuer, MAX_IDENTITY_FIELD_BYTES, true)!,
+    fingerprint: boundedNativeString(
+      entry.fingerprint,
+      MAX_FINGERPRINT_LENGTH,
+      true,
+    )!,
+    valid_from: boundedNativeString(entry.validFrom, 128, true)!,
+    valid_to: boundedNativeString(entry.validTo, 128, true)!,
+  }));
+  return {
+    kind: "tls",
+    fingerprint: cert.fingerprint,
+    subject: boundedNativeString(cert.subject, MAX_IDENTITY_FIELD_BYTES),
+    issuer: boundedNativeString(cert.issuer, MAX_IDENTITY_FIELD_BYTES),
+    first_seen: firstSeen,
+    last_seen: lastSeen,
+    valid_from: cert.validFrom,
+    valid_to: cert.validTo,
+    pem: boundedNativeString(cert.pem, MAX_PEM_BYTES),
+    serial: boundedNativeString(cert.serial, 512),
+    signature_algorithm: boundedNativeString(cert.signatureAlgorithm, 256),
+    san: boundedNativeStrings(
+      cert.san,
+      MAX_SAN_ENTRIES,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subject_cn: boundedNativeString(cert.subjectCn, MAX_IDENTITY_FIELD_BYTES),
+    subject_org: boundedNativeString(cert.subjectOrg, MAX_IDENTITY_FIELD_BYTES),
+    subject_ou: boundedNativeString(cert.subjectOu, MAX_IDENTITY_FIELD_BYTES),
+    subject_country: boundedNativeString(cert.subjectCountry, 128),
+    subject_state: boundedNativeString(
+      cert.subjectState,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subject_locality: boundedNativeString(
+      cert.subjectLocality,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    subject_email: boundedNativeString(
+      cert.subjectEmail,
+      MAX_IDENTITY_FIELD_BYTES,
+    ),
+    issuer_cn: boundedNativeString(cert.issuerCn, MAX_IDENTITY_FIELD_BYTES),
+    issuer_org: boundedNativeString(cert.issuerOrg, MAX_IDENTITY_FIELD_BYTES),
+    issuer_country: boundedNativeString(cert.issuerCountry, 128),
+    key_algorithm: boundedNativeString(cert.keyAlgorithm, 256),
+    key_size: boundedNativeInteger(cert.keySize, 1, 1_048_576),
+    version: boundedNativeInteger(cert.version, 0, 4),
+    chain,
+    chain_fingerprints: chain?.map((entry) => entry.fingerprint) ?? [],
+  };
+}
+
+function mapNativeRecord(nativeRecord: NativeTrustRecord): CachedTrustRecord {
+  if (
+    !isObject(nativeRecord) ||
+    typeof nativeRecord.host !== "string" ||
+    nativeRecord.host.length > MAX_NATIVE_HOST_LENGTH ||
+    nativeRecord.host.includes("\0") ||
+    typeof nativeRecord.record_type !== "string" ||
+    !VALID_RECORD_TYPES.has(nativeRecord.record_type as TrustRecordType) ||
+    typeof nativeRecord.user_approved !== "boolean" ||
+    !Array.isArray(nativeRecord.history) ||
+    nativeRecord.history.length > MAX_LEGACY_HISTORY
+  ) {
+    throw new Error("Malformed native trust record");
+  }
+
+  const type = nativeRecord.record_type as TrustRecordType;
+  if (
+    (type === "ssh" && nativeRecord.identity.kind !== "ssh") ||
+    (type !== "ssh" && nativeRecord.identity.kind !== "tls")
+  ) {
+    throw new Error("Native trust record identity type mismatch");
+  }
+
+  const endpoint = decodeNativeHost(nativeRecord.host);
+  if (!endpoint) throw new Error("Malformed native trust record endpoint");
+  const history = nativeRecord.history.map((entry) => {
+    if (!isObject(entry) || !isObject(entry.identity)) {
+      throw new Error("Malformed native trust history");
+    }
+    return fromNativeIdentity(entry.identity);
+  });
+
+  return {
+    nativeHost: nativeRecord.host,
+    connectionId: endpoint.connectionId,
+    record: {
+      host: formatHostPort(endpoint.host, endpoint.port),
+      hostname: endpoint.host,
+      port: endpoint.port,
+      type,
+      identity: fromNativeIdentity(nativeRecord.identity),
+      userApproved: nativeRecord.user_approved,
+      nickname: boundedNativeString(nativeRecord.nickname, MAX_NICKNAME_LENGTH),
+      history: history.length > 0 ? history : undefined,
+      revoked: nativeRecord.revoked === true,
+      hostPolicy: VALID_TRUST_POLICIES.has(
+        nativeRecord.host_policy as TrustPolicy,
+      )
+        ? (nativeRecord.host_policy as TrustPolicy)
+        : undefined,
+      trustExpires: boundedNativeString(nativeRecord.trust_expires, 128),
+    },
+  };
+}
+
+function installNativeRecords(records: NativeTrustRecord[]): void {
+  if (!Array.isArray(records) || records.length > MAX_LEGACY_RECORDS) {
+    throw new Error("Malformed native trust-store response");
+  }
+
+  const nextGlobal = new Map<string, CachedTrustRecord>();
+  const nextConnections = new Map<string, Map<string, CachedTrustRecord>>();
+  for (const nativeRecord of records) {
+    const cached = mapNativeRecord(nativeRecord);
+    const address = parseTrustRecordAddress(cached.record);
+    const key = recordCacheKey(address.host, address.port, cached.record.type);
+    if (cached.connectionId) {
+      let scoped = nextConnections.get(cached.connectionId);
+      if (!scoped) {
+        scoped = new Map();
+        nextConnections.set(cached.connectionId, scoped);
+      }
+      if (scoped.has(key)) throw new Error("Duplicate native trust record");
+      scoped.set(key, cached);
+    } else {
+      if (nextGlobal.has(key)) throw new Error("Duplicate native trust record");
+      nextGlobal.set(key, cached);
+    }
+  }
+
+  globalCache = nextGlobal;
+  connectionCache = nextConnections;
+}
+
+function clearCache(): void {
+  hydrated = false;
+  globalCache = new Map();
+  connectionCache = new Map();
+}
+
+function cachedRecord(
+  host: string,
+  port: number,
+  type: TrustRecordType,
+  connectionId?: string,
+): CachedTrustRecord | undefined {
+  const key = recordCacheKey(host, port, type);
+  const normalizedConnectionId = normalizeConnectionId(connectionId);
+  return normalizedConnectionId
+    ? connectionCache.get(normalizedConnectionId)?.get(key)
+    : globalCache.get(key);
+}
+
 function notifyTrustStoreChanged(): void {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('trustStoreChanged'));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("trustStoreChanged"));
   }
 }
 
-/**
- * Check a received identity against the trust store.
- *
- * @param connectionId  When provided the identity is looked up in the
- *                      per-connection store instead of the global one.
- * @returns A `TrustVerifyResult` indicating whether the identity is trusted,
- *          seen for the first time, or differs from what was stored.
- */
-export function verifyIdentity<T extends TrustRecordType>(
+async function refreshNativeCache(notify = true): Promise<void> {
+  try {
+    const records = await invokeTrustNative<NativeTrustRecord[]>(
+      "trust_get_all_records",
+    );
+    installNativeRecords(records);
+    hydrated = true;
+    if (notify) notifyTrustStoreChanged();
+  } catch (error) {
+    clearCache();
+    throw error;
+  }
+}
+
+function markTrustStoreUnavailable(): Error {
+  clearCache();
+  hydrationState = "error";
+  hydrationFailureCount = Math.min(hydrationFailureCount + 1, 16);
+  const delay = Math.min(
+    MAX_HYDRATION_RETRY_DELAY_MS,
+    1_000 * 2 ** Math.min(hydrationFailureCount - 1, 5),
+  );
+  nextHydrationAttemptAt = Date.now() + delay;
+  notifyTrustStoreChanged();
+  return new Error(
+    "The native Trust Center is unavailable. Trust decisions remain blocked until it recovers.",
+  );
+}
+
+function legacyIdentity(
+  value: unknown,
+  type: TrustRecordType,
+): TrustIdentity | null {
+  if (!isObject(value)) return null;
+  const fingerprint = asOptionalString(
+    value.fingerprint,
+    MAX_FINGERPRINT_LENGTH,
+  );
+  if (!fingerprint) return null;
+  const now = new Date().toISOString();
+  const firstSeen = asOptionalString(value.firstSeen, 128) ?? now;
+  const lastSeen = asOptionalString(value.lastSeen, 128) ?? firstSeen;
+
+  if (type === "ssh") {
+    return {
+      fingerprint,
+      firstSeen,
+      lastSeen,
+      keyType: asOptionalString(value.keyType, 128),
+      keyBits: asOptionalNumber(value.keyBits),
+      publicKey: asOptionalString(value.publicKey, 1024 * 1024),
+    };
+  }
+
+  const san = Array.isArray(value.san)
+    ? value.san
+        .filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.length <= MAX_HOST_LENGTH,
+        )
+        .slice(0, 1_000)
+    : undefined;
+  const chain = Array.isArray(value.chain)
+    ? value.chain
+        .filter(isObject)
+        .slice(0, 64)
+        .map((entry) => ({
+          subject: asOptionalString(entry.subject) ?? "",
+          issuer: asOptionalString(entry.issuer) ?? "",
+          fingerprint:
+            asOptionalString(entry.fingerprint, MAX_FINGERPRINT_LENGTH) ?? "",
+          validFrom: asOptionalString(entry.validFrom, 128) ?? "",
+          validTo: asOptionalString(entry.validTo, 128) ?? "",
+        }))
+        .filter((entry) => entry.fingerprint.length > 0)
+    : undefined;
+
+  return {
+    fingerprint,
+    firstSeen,
+    lastSeen,
+    subject: asOptionalString(value.subject),
+    issuer: asOptionalString(value.issuer),
+    validFrom: asOptionalString(value.validFrom, 128),
+    validTo: asOptionalString(value.validTo, 128),
+    pem: asOptionalString(value.pem, 2 * 1024 * 1024),
+    serial: asOptionalString(value.serial, 512),
+    signatureAlgorithm: asOptionalString(value.signatureAlgorithm, 256),
+    san,
+    subjectCn: asOptionalString(value.subjectCn),
+    subjectOrg: asOptionalString(value.subjectOrg),
+    subjectOu: asOptionalString(value.subjectOu),
+    subjectCountry: asOptionalString(value.subjectCountry, 128),
+    subjectState: asOptionalString(value.subjectState),
+    subjectLocality: asOptionalString(value.subjectLocality),
+    subjectEmail: asOptionalString(value.subjectEmail),
+    issuerCn: asOptionalString(value.issuerCn),
+    issuerOrg: asOptionalString(value.issuerOrg),
+    issuerCountry: asOptionalString(value.issuerCountry, 128),
+    keyAlgorithm: asOptionalString(value.keyAlgorithm, 256),
+    keySize: asOptionalNumber(value.keySize),
+    version: asOptionalNumber(value.version),
+    chain,
+  };
+}
+
+function legacyRecord(value: unknown): {
+  host: string;
+  port: number;
+  record: TrustRecord;
+} | null {
+  if (!isObject(value)) return null;
+  if (
+    typeof value.type !== "string" ||
+    !VALID_RECORD_TYPES.has(value.type as TrustRecordType) ||
+    typeof value.host !== "string" ||
+    typeof value.userApproved !== "boolean"
+  ) {
+    return null;
+  }
+  const type = value.type as TrustRecordType;
+  const endpoint = parseHostPort(value.host);
+  const identity = legacyIdentity(value.identity, type);
+  if (!endpoint || !identity) return null;
+  const historyValues = Array.isArray(value.history)
+    ? value.history.slice(0, MAX_LEGACY_HISTORY)
+    : [];
+  const history: TrustIdentity[] = [];
+  for (const entry of historyValues) {
+    const parsed = legacyIdentity(entry, type);
+    if (!parsed) return null;
+    history.push(parsed);
+  }
+  return {
+    ...endpoint,
+    record: {
+      host: formatHostPort(endpoint.host, endpoint.port),
+      hostname: endpoint.host,
+      port: endpoint.port,
+      type,
+      identity,
+      userApproved: value.userApproved,
+      nickname: asOptionalString(value.nickname, MAX_NICKNAME_LENGTH),
+      history: history.length > 0 ? history : undefined,
+    },
+  };
+}
+
+async function migrateLegacyLocalStorage(): Promise<void> {
+  if (typeof window === "undefined" || !window.localStorage) return;
+
+  const keys: string[] = [];
+  try {
+    for (
+      let index = 0;
+      index < window.localStorage.length &&
+      keys.length < MAX_CONNECTION_STORES + 1;
+      index += 1
+    ) {
+      const key = window.localStorage.key(index);
+      if (
+        key === LEGACY_GLOBAL_KEY ||
+        (key?.startsWith(LEGACY_CONNECTION_PREFIX) &&
+          key.length > LEGACY_CONNECTION_PREFIX.length)
+      ) {
+        keys.push(key);
+      }
+    }
+  } catch {
+    return;
+  }
+
+  let migratedRecords = 0;
+  for (const storageKey of keys) {
+    const connectionId =
+      storageKey === LEGACY_GLOBAL_KEY
+        ? undefined
+        : storageKey.slice(LEGACY_CONNECTION_PREFIX.length);
+    let raw: string | null = null;
+    try {
+      raw = window.localStorage.getItem(storageKey);
+    } catch {
+      continue;
+    }
+    if (!raw || raw.length > MAX_LEGACY_STORE_BYTES) continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    if (!isObject(parsed)) continue;
+    const values = Object.values(parsed);
+    if (values.length > MAX_LEGACY_RECORDS) continue;
+    if (migratedRecords + values.length > MAX_TOTAL_LEGACY_MIGRATIONS) break;
+    const records = values.map(legacyRecord);
+    if (records.some((record) => record === null)) continue;
+
+    let complete = true;
+    for (const parsedRecord of records) {
+      if (!parsedRecord) {
+        complete = false;
+        break;
+      }
+      const { host, port, record } = parsedRecord;
+      if (cachedRecord(host, port, record.type, connectionId)) continue;
+      try {
+        const nativeHost = encodeNativeHost(host, port, connectionId);
+        const nativeIdentity = toNativeIdentity(record.type, record.identity);
+        await invokeTrustNative<void>("trust_store_identity_with_reason", {
+          host: nativeHost,
+          recordType: record.type,
+          identity: nativeIdentity,
+          userApproved: record.userApproved,
+          reason: "migrated",
+          approvedBy: "legacy-local-storage-migration",
+          note: "Migrated from the legacy frontend trust store",
+          migrationHistory:
+            record.history?.map((identity) =>
+              toNativeIdentity(record.type, identity),
+            ) ?? [],
+          nickname: record.nickname ?? null,
+        });
+        const nativeRecord: NativeTrustRecord = {
+          host: nativeHost,
+          record_type: record.type,
+          identity: nativeIdentity,
+          user_approved: record.userApproved,
+          nickname: record.nickname,
+          history:
+            record.history?.map((identity) => ({
+              identity: toNativeIdentity(record.type, identity),
+              changed_at: new Date().toISOString(),
+              reason: "migrated",
+              approved_by: "legacy-local-storage-migration",
+              note: null,
+              verification_count: 0,
+              trust_score: 0,
+            })) ?? [],
+        };
+        const cached = mapNativeRecord(nativeRecord);
+        const key = recordCacheKey(host, port, record.type);
+        if (connectionId) {
+          let scoped = connectionCache.get(connectionId);
+          if (!scoped) {
+            scoped = new Map();
+            connectionCache.set(connectionId, scoped);
+          }
+          scoped.set(key, cached);
+        } else {
+          globalCache.set(key, cached);
+        }
+        migratedRecords += 1;
+      } catch {
+        complete = false;
+        break;
+      }
+    }
+
+    if (complete) {
+      try {
+        if (window.localStorage.getItem(storageKey) === raw) {
+          window.localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // The durable native migration succeeded. Leaving a legacy copy is
+        // safe because it is never read for trust decisions.
+      }
+    }
+  }
+}
+
+async function hydrateTrustStore(): Promise<void> {
+  await refreshNativeCache(false);
+  await migrateLegacyLocalStorage();
+  await refreshNativeCache(false);
+  hydrated = true;
+  hydrationState = "ready";
+  hydrationFailureCount = 0;
+  nextHydrationAttemptAt = 0;
+  notifyTrustStoreChanged();
+}
+
+export async function ensureTrustStoreReady(): Promise<void> {
+  if (hydrated) return;
+  if (Date.now() < nextHydrationAttemptAt) {
+    throw new Error(
+      "The native Trust Center is temporarily unavailable. Retry from the Trust Center.",
+    );
+  }
+  if (!hydrationPromise) {
+    hydrationState = "loading";
+    notifyTrustStoreChanged();
+    hydrationPromise = hydrateTrustStore()
+      .catch(() => {
+        throw markTrustStoreUnavailable();
+      })
+      .finally(() => {
+        hydrationPromise = null;
+      });
+  }
+  return hydrationPromise;
+}
+
+export function getTrustStoreAvailability(): TrustStoreAvailability {
+  return {
+    state: hydrationState,
+    retryCount: hydrationFailureCount,
+    retryAfterMs: Math.max(0, nextHydrationAttemptAt - Date.now()),
+  };
+}
+
+export async function retryTrustStoreHydration(): Promise<void> {
+  nextHydrationAttemptAt = 0;
+  await ensureTrustStoreReady();
+}
+
+function startHydrationForDisplay(): void {
+  void ensureTrustStoreReady().catch(() => {
+    // Display consumers remain empty. Connection decisions call the async API
+    // and receive the failure explicitly.
+  });
+}
+
+function serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+  if (pendingMutations >= MAX_PENDING_MUTATIONS) {
+    return Promise.reject(
+      new Error("Too many Trust Center operations are already queued"),
+    );
+  }
+  pendingMutations += 1;
+  const result = mutationTail.then(operation, operation);
+  const tracked = result.finally(() => {
+    pendingMutations -= 1;
+  });
+  mutationTail = tracked.then(
+    () => undefined,
+    () => undefined,
+  );
+  return tracked;
+}
+
+export async function verifyIdentity<T extends TrustRecordType>(
   host: string,
   port: number,
   type: T,
   received: TrustIdentityFor<T>,
   connectionId?: string,
-): TrustVerifyResult {
-  const store = loadStore(connectionId);
-  const key = hostKey(host, port, type);
-  const record = store[key];
-
-  if (!record) {
-    return { status: 'first-use', identity: received };
-  }
-
-  if (record.identity.fingerprint === received.fingerprint) {
-    // Fingerprint matches — update lastSeen and backfill any fields
-    // that were missing when the identity was first stored (e.g. certs
-    // stored before we started capturing subject/issuer/validity/SANs).
-    record.identity.lastSeen = new Date().toISOString();
-    const stored = record.identity as unknown as Record<string, unknown>;
-    const recv = received as unknown as Record<string, unknown>;
-    for (const key of Object.keys(recv)) {
-      if (key !== 'firstSeen' && key !== 'lastSeen' && recv[key] != null && stored[key] == null) {
-        stored[key] = recv[key];
-      }
+): Promise<TrustVerifyResult> {
+  await ensureTrustStoreReady();
+  const existing = cachedRecord(host, port, type, connectionId);
+  const nativeHost =
+    existing?.nativeHost ?? encodeNativeHost(host, port, connectionId);
+  const nativeIdentity = toNativeIdentity(type, received);
+  try {
+    const result = await invokeTrustNative<NativeTrustVerifyResult>(
+      "trust_verify_identity",
+      {
+        host: nativeHost,
+        recordType: type,
+        identity: nativeIdentity,
+      },
+    );
+    if (!isObject(result) || typeof result.status !== "string") {
+      throw new Error("Malformed native trust verification response");
     }
-    saveStore(store, connectionId);
-    return { status: 'trusted' };
+    switch (result.status) {
+      case "trusted": {
+        if (
+          type !== "ssh" &&
+          (received as CertIdentity).validTo &&
+          new Date((received as CertIdentity).validTo as string).getTime() <
+            Date.now()
+        ) {
+          return {
+            status: "expired",
+            identity: received as CertIdentity,
+          };
+        }
+        return { status: "trusted" };
+      }
+      case "first-use":
+        return {
+          status: "first-use",
+          identity: result.identity
+            ? fromNativeIdentity(result.identity)
+            : received,
+        };
+      case "mismatch":
+      case "chain-mismatch":
+      case "rotation-grace":
+        if (!result.stored) {
+          throw new Error("Native mismatch response omitted stored identity");
+        }
+        return {
+          status: "mismatch",
+          stored: fromNativeIdentity(result.stored),
+          received: result.presented
+            ? fromNativeIdentity(result.presented)
+            : received,
+        };
+      case "expired":
+        if (type === "ssh") {
+          throw new Error("Native trust store returned an invalid SSH expiry");
+        }
+        return {
+          status: "expired",
+          identity: result.presented
+            ? (fromNativeIdentity(result.presented) as CertIdentity)
+            : (received as CertIdentity),
+        };
+      case "revoked":
+      case "pending-threshold":
+      case "pending-verification":
+        throw new Error(
+          `Native trust policy rejected identity (${result.status})`,
+        );
+      default:
+        throw new Error("Unknown native trust verification status");
+    }
+  } catch {
+    throw markTrustStoreUnavailable();
   }
-
-  // Fingerprint mismatch!
-  return {
-    status: 'mismatch',
-    stored: record.identity,
-    received,
-  };
 }
 
-/**
- * Store (memorize) an identity as trusted.
- * If a previous identity existed it is moved to history.
- *
- * @param connectionId  When provided the identity is stored in the
- *                      per-connection store instead of the global one.
- */
 export function trustIdentity<T extends TrustRecordType>(
   host: string,
   port: number,
@@ -243,152 +1281,226 @@ export function trustIdentity<T extends TrustRecordType>(
   identity: TrustIdentityFor<T>,
   userApproved = true,
   connectionId?: string,
-): void {
-  const store = loadStore(connectionId);
-  const key = hostKey(host, port, type);
-  const existing = store[key];
-  const now = new Date().toISOString();
-
-  identity.lastSeen = now;
-  if (!identity.firstSeen) identity.firstSeen = now;
-
-  const history: TrustIdentity[] = existing?.history ? [...existing.history] : [];
-  if (existing && existing.identity.fingerprint !== identity.fingerprint) {
-    history.push(existing.identity);
-  }
-
-  store[key] = {
-    host: `${host}:${port}`,
-    type,
-    identity,
-    userApproved,
-    history: history.length > 0 ? history : undefined,
-  };
-  saveStore(store, connectionId);
-  notifyTrustStoreChanged();
+): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const existing = cachedRecord(host, port, type, connectionId);
+    const nativeIdentity = toNativeIdentity(type, identity);
+    try {
+      await invokeTrustNative<void>("trust_store_identity", {
+        host:
+          existing?.nativeHost ?? encodeNativeHost(host, port, connectionId),
+        recordType: type,
+        identity: nativeIdentity,
+        userApproved,
+      });
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
 }
 
-/**
- * Remove a stored trust record.
- */
-export function removeIdentity(host: string, port: number, type: TrustRecordType, connectionId?: string): void {
-  const store = loadStore(connectionId);
-  const key = hostKey(host, port, type);
-  delete store[key];
-  saveStore(store, connectionId);
-  notifyTrustStoreChanged();
+export function removeIdentity(
+  host: string,
+  port: number,
+  type: TrustRecordType,
+  connectionId?: string,
+): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const existing = cachedRecord(host, port, type, connectionId);
+    if (!existing) return;
+    try {
+      await invokeTrustNative<void>("trust_remove_identity", {
+        host: existing.nativeHost,
+        recordType: type,
+      });
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
 }
 
-/**
- * Get the stored trust record for a host (or undefined).
- */
 export function getStoredIdentity(
   host: string,
   port: number,
   type: TrustRecordType,
   connectionId?: string,
 ): TrustRecord | undefined {
-  const store = loadStore(connectionId);
-  return store[hostKey(host, port, type)];
+  startHydrationForDisplay();
+  if (!hydrated) return undefined;
+  const cached = cachedRecord(host, port, type, connectionId);
+  return cached ? cloneRecord(cached.record) : undefined;
 }
 
-/**
- * Get all trust records.  When connectionId is provided, returns only
- * that connection's records.
- */
 export function getAllTrustRecords(connectionId?: string): TrustRecord[] {
-  const store = loadStore(connectionId);
-  return Object.values(store);
+  startHydrationForDisplay();
+  if (!hydrated) return [];
+  const normalizedConnectionId = normalizeConnectionId(connectionId);
+  const values = normalizedConnectionId
+    ? connectionCache.get(normalizedConnectionId)?.values()
+    : globalCache.values();
+  return values ? Array.from(values, (entry) => cloneRecord(entry.record)) : [];
 }
 
-/** Entry returned by {@link getAllPerConnectionTrustRecords}. */
-export interface ConnectionTrustGroup {
-  connectionId: string;
-  records: TrustRecord[];
-}
-
-/**
- * Scan localStorage for every per-connection trust store and return the
- * records grouped by connection ID.
- */
 export function getAllPerConnectionTrustRecords(): ConnectionTrustGroup[] {
-  const PREFIX = 'trustStore:';
-  const groups: ConnectionTrustGroup[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const storageKey = localStorage.key(i);
-    if (!storageKey || !storageKey.startsWith(PREFIX)) continue;
-    const connectionId = storageKey.slice(PREFIX.length);
-    if (!connectionId) continue;
+  startHydrationForDisplay();
+  if (!hydrated) return [];
+  return Array.from(connectionCache.entries(), ([connectionId, records]) => ({
+    connectionId,
+    records: Array.from(records.values(), (entry) => cloneRecord(entry.record)),
+  }));
+}
+
+export function clearAllTrustRecords(connectionId?: string): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const normalizedConnectionId = normalizeConnectionId(connectionId);
+    const targets = normalizedConnectionId
+      ? Array.from(connectionCache.get(normalizedConnectionId)?.values() ?? [])
+      : Array.from(globalCache.values());
     try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) continue;
-      const store: Record<string, TrustRecord> = JSON.parse(raw);
-      const records = Object.values(store);
-      if (records.length > 0) {
-        groups.push({ connectionId, records });
+      for (const target of targets) {
+        await invokeTrustNative<void>("trust_remove_identity", {
+          host: target.nativeHost,
+          recordType: target.record.type,
+        });
       }
+      await refreshNativeCache();
     } catch {
-      // corrupted entry — skip
+      throw markTrustStoreUnavailable();
     }
-  }
-  return groups;
+  });
 }
 
-/**
- * Clear every trust record.  When connectionId is provided, only the
- * per-connection store is cleared.
- */
-export function clearAllTrustRecords(connectionId?: string): void {
-  if (connectionId) {
-    localStorage.removeItem(connectionStoreKey(connectionId));
-  } else {
-    localStorage.removeItem(TRUST_STORE_KEY);
-  }
-  notifyTrustStoreChanged();
+export function clearEntireTrustStore(): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    try {
+      await invokeTrustNative<void>("trust_clear_all");
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
 }
 
-/**
- * Update the nickname of a stored trust record.
- */
+export function setTrustRecordRevoked(
+  record: TrustRecord,
+  revoked: boolean,
+  connectionId?: string,
+): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const address = parseTrustRecordAddress(record);
+    const existing = cachedRecord(
+      address.host,
+      address.port,
+      record.type,
+      connectionId,
+    );
+    if (!existing) throw new Error("Trust record not found");
+    try {
+      await invokeTrustNative<void>(
+        revoked ? "trust_revoke_identity" : "trust_reinstate_identity",
+        {
+          host: existing.nativeHost,
+          recordType: record.type,
+        },
+      );
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
+}
+
+export function setTrustRecordPolicy(
+  record: TrustRecord,
+  policy: TrustPolicy | undefined,
+  connectionId?: string,
+): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const address = parseTrustRecordAddress(record);
+    const existing = cachedRecord(
+      address.host,
+      address.port,
+      record.type,
+      connectionId,
+    );
+    if (!existing) throw new Error("Trust record not found");
+    try {
+      await invokeTrustNative<void>("trust_set_host_policy", {
+        host: existing.nativeHost,
+        recordType: record.type,
+        policy: policy ?? null,
+        config: null,
+      });
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
+}
+
 export function updateTrustRecordNickname(
   host: string,
   port: number,
   type: TrustRecordType,
   nickname: string,
   connectionId?: string,
-): void {
-  const store = loadStore(connectionId);
-  const key = hostKey(host, port, type);
-  const record = store[key];
-  if (!record) return;
-  record.nickname = nickname || undefined;
-  saveStore(store, connectionId);
-  notifyTrustStoreChanged();
+): Promise<void> {
+  return serializeMutation(async () => {
+    await ensureTrustStoreReady();
+    const existing = cachedRecord(host, port, type, connectionId);
+    if (!existing) throw new Error("Trust record not found");
+    const normalizedNickname = nickname.trim();
+    if (normalizedNickname.length > MAX_NICKNAME_LENGTH) {
+      throw new Error("Trust record nickname is too long");
+    }
+    try {
+      await invokeTrustNative<void>("trust_update_nickname", {
+        host: existing.nativeHost,
+        recordType: type,
+        nickname: normalizedNickname || null,
+      });
+      await refreshNativeCache();
+    } catch {
+      throw markTrustStoreUnavailable();
+    }
+  });
 }
 
-/**
- * Format a fingerprint for display (colon-separated hex).
- */
+export function isCertificateTrustRecordType(
+  type: TrustRecordType,
+): type is CertificateTrustRecordType {
+  return (
+    type === "certificate" ||
+    type === "https" ||
+    type === "rdp" ||
+    type === "tls"
+  );
+}
+
 export function formatFingerprint(fp: string): string {
-  // Already formatted or is a SHA256:base64 string
-  if (fp.includes(':') || fp.startsWith('SHA256:')) return fp;
-  // Hex string — insert colons every 2 chars
-  return fp.match(/.{1,2}/g)?.join(':') ?? fp;
+  if (fp.includes(":") || fp.startsWith("SHA256:")) return fp;
+  return fp.match(/.{1,2}/g)?.join(":") ?? fp;
 }
 
-function isConcreteTrustPolicy(policy: InheritableTrustPolicy | undefined): policy is TrustPolicy {
-  return policy !== undefined && policy !== 'inherit';
+function isConcreteTrustPolicy(
+  policy: InheritableTrustPolicy | undefined,
+): policy is TrustPolicy {
+  return policy !== undefined && policy !== "inherit";
 }
 
-/**
- * Resolve a concrete trust policy from connection, category, then root policy.
- * Missing values and explicit inheritance both defer to the next level.
- */
 export function resolveEffectiveTrustPolicy(
   connectionPolicy: InheritableTrustPolicy | undefined,
   categoryPolicy: InheritableTrustPolicy | undefined,
   rootPolicy: InheritableTrustPolicy | undefined,
-  fallbackPolicy: TrustPolicy = 'always-ask',
+  fallbackPolicy: TrustPolicy = "always-ask",
 ): TrustPolicy {
   if (isConcreteTrustPolicy(connectionPolicy)) return connectionPolicy;
   if (isConcreteTrustPolicy(categoryPolicy)) return categoryPolicy;
@@ -396,13 +1508,21 @@ export function resolveEffectiveTrustPolicy(
   return fallbackPolicy;
 }
 
-/**
- * Determine effective trust policy for a connection, falling back to global.
- * Compatibility wrapper for the pre-inheritance two-level call sites.
- */
 export function getEffectiveTrustPolicy(
   connectionPolicy: InheritableTrustPolicy | undefined,
   globalPolicy: InheritableTrustPolicy | undefined,
 ): TrustPolicy {
   return resolveEffectiveTrustPolicy(connectionPolicy, globalPolicy, undefined);
+}
+
+/** Test-only cache reset. Production code should never bypass hydration. */
+export function resetTrustStoreCacheForTests(): void {
+  clearCache();
+  hydrationPromise = null;
+  mutationTail = Promise.resolve();
+  pendingMutations = 0;
+  hydrationFailureCount = 0;
+  nextHydrationAttemptAt = 0;
+  hydrationState = "idle";
+  nativeTrustOperations.clear();
 }

@@ -149,13 +149,15 @@ describe("FTP DTO and path contracts", () => {
     });
   });
 
-  it("builds the exact camelCase backend config without copying it onto the session", () => {
-    expect(buildFtpConnectionConfig(connection, createSession())).toEqual({
+  it("normalizes unapproved plaintext to explicit TLS without downgrading credentials", () => {
+    const config = buildFtpConnectionConfig(connection, createSession());
+    expect(config).toEqual({
       host: "ftp.example.test",
       port: 2121,
       username: "release",
       password: "ftp-secret-value",
-      security: "none",
+      security: "explicit",
+      allowPlaintext: false,
       transferType: "binary",
       dataChannelMode: "passive",
       initialDirectory: "/incoming",
@@ -163,10 +165,13 @@ describe("FTP DTO and path contracts", () => {
       dataTimeoutSec: 30,
       keepaliveIntervalSec: 0,
       acceptInvalidCerts: false,
+      acknowledgeInvalidCertRisk: false,
+      retainIncompleteDownloads: false,
       utf8: true,
       activeBindAddress: null,
       label: "Release mirror",
     });
+    expect(config.password).toBe(connection.password);
   });
 
   it("normalizes child and parent paths", () => {

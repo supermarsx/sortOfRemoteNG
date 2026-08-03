@@ -3,7 +3,7 @@
 //! `IloClient` owns one or more protocol backends (Redfish, RIBCL, IPMI)
 //! and routes requests to the best available backend based on iLO generation.
 
-use crate::error::{IloError, IloResult};
+use crate::error::{IloError, IloErrorKind, IloResult};
 use crate::redfish::IloRedfishClient;
 use crate::ribcl::RibclClient;
 use crate::types::*;
@@ -23,6 +23,12 @@ pub struct IloClient {
 impl IloClient {
     /// Build a new client from config.
     pub fn new(config: &IloConfig) -> IloResult<Self> {
+        if config.insecure {
+            return Err(IloError::new(
+                IloErrorKind::SecurityError,
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         Ok(Self {
             redfish: None,
             ribcl: None,

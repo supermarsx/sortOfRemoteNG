@@ -15,6 +15,9 @@ pub struct OsticketConnectionConfig {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub skip_tls_verify: bool,
+    /// Runtime-only acknowledgement for this insecure connection attempt.
+    #[serde(default, skip_serializing)]
+    pub acknowledge_invalid_cert_risk: bool,
     #[serde(default)]
     pub proxy_url: Option<String>,
 }
@@ -29,9 +32,10 @@ impl fmt::Debug for OsticketConnectionConfig {
             .field("timeout_seconds", &self.timeout_seconds)
             .field("skip_tls_verify", &self.skip_tls_verify)
             .field(
-                "proxy_url",
-                &self.proxy_url.as_ref().map(|_| "[REDACTED]"),
+                "acknowledge_invalid_cert_risk",
+                &self.acknowledge_invalid_cert_risk,
             )
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| "[REDACTED]"))
             .finish()
     }
 }

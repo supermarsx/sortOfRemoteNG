@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFrameRenderer, type FrameRenderer } from '../../src/components/rdp/rdpRenderers';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createFrameRenderer,
+  type FrameRenderer,
+} from "../../src/components/rdp/rdpRenderers";
 
 type WorkerMessage = { data: unknown };
 type WorkerMessageHandler = ((event: WorkerMessage) => void) | null;
@@ -11,11 +14,13 @@ type RawBufferRenderer = FrameRenderer & {
 const workerBlobs = new Map<string, string>();
 const workers: MockWorker[] = [];
 const decodedChunks: MockEncodedVideoChunk[] = [];
-const NAL_MAGIC = 0x4E414C48;
+const NAL_MAGIC = 0x4e414c48;
 
 let originalCreateObjectURL: typeof URL.createObjectURL | undefined;
 let originalRevokeObjectURL: typeof URL.revokeObjectURL | undefined;
-let originalTransferControlToOffscreen: HTMLCanvasElement['transferControlToOffscreen'] | undefined;
+let originalTransferControlToOffscreen:
+  | HTMLCanvasElement["transferControlToOffscreen"]
+  | undefined;
 let hadTransferControlToOffscreen = false;
 
 class MockImageData {
@@ -23,13 +28,19 @@ class MockImageData {
   width: number;
   height: number;
 
-  constructor(dataOrWidth: Uint8ClampedArray | number, widthOrHeight: number, height?: number) {
+  constructor(
+    dataOrWidth: Uint8ClampedArray | number,
+    widthOrHeight: number,
+    height?: number,
+  ) {
     if (dataOrWidth instanceof Uint8ClampedArray) {
       this.data = dataOrWidth;
       this.width = widthOrHeight;
       this.height = height ?? dataOrWidth.length / (4 * widthOrHeight);
       if (this.data.length !== this.width * this.height * 4) {
-        throw new Error(`Invalid ImageData payload length: ${this.data.length}`);
+        throw new Error(
+          `Invalid ImageData payload length: ${this.data.length}`,
+        );
       }
       return;
     }
@@ -45,17 +56,21 @@ class MockBlob {
   readonly type: string;
 
   constructor(parts: BlobPart[], options?: BlobPropertyBag) {
-    this.source = parts.map((part) => String(part)).join('');
-    this.type = options?.type ?? '';
+    this.source = parts.map((part) => String(part)).join("");
+    this.type = options?.type ?? "";
   }
 }
 
 class MockEncodedVideoChunk {
-  type: 'key' | 'delta';
+  type: "key" | "delta";
   timestamp: number;
   data: Uint8Array;
 
-  constructor(init: { type: 'key' | 'delta'; timestamp: number; data: Uint8Array }) {
+  constructor(init: {
+    type: "key" | "delta";
+    timestamp: number;
+    data: Uint8Array;
+  }) {
     this.type = init.type;
     this.timestamp = init.timestamp;
     this.data = init.data;
@@ -96,7 +111,7 @@ class MockOffscreenCanvas {
   }
 
   getContext(kind: string): ReturnType<typeof create2dContext> | null {
-    if (kind === '2d') {
+    if (kind === "2d") {
       this.ctx2d ??= create2dContext(this);
       return this.ctx2d;
     }
@@ -130,11 +145,11 @@ class MockWorker implements WorkerEventSink {
     this.pending = source
       ? Promise.resolve().then(() => {
           const run = new Function(
-            'self',
-            'console',
-            'ImageData',
-            'VideoDecoder',
-            'EncodedVideoChunk',
+            "self",
+            "console",
+            "ImageData",
+            "VideoDecoder",
+            "EncodedVideoChunk",
             source,
           );
           run(
@@ -145,10 +160,11 @@ class MockWorker implements WorkerEventSink {
             globalThis.EncodedVideoChunk,
           );
         })
-      : Promise.reject(new Error(`No worker blob registered for ${url}`))
-      .catch((error) => {
-        this.errors.push(error);
-      });
+      : Promise.reject(new Error(`No worker blob registered for ${url}`)).catch(
+          (error) => {
+            this.errors.push(error);
+          },
+        );
 
     workers.push(this);
   }
@@ -208,7 +224,7 @@ function asOffsetUint8View(buffer: ArrayBuffer): Uint8Array {
 function getWorker(renderer: unknown): MockWorker {
   const worker = (renderer as { worker?: MockWorker }).worker;
   if (!worker) {
-    throw new Error('Expected renderer to expose a worker instance');
+    throw new Error("Expected renderer to expose a worker instance");
   }
   return worker;
 }
@@ -220,22 +236,31 @@ async function waitForWorkersToDrain(): Promise<void> {
   }
 }
 
-describe('rdp worker blobs', () => {
+describe("rdp worker blobs", () => {
   beforeEach(() => {
     workerBlobs.clear();
     workers.length = 0;
     decodedChunks.length = 0;
 
-    vi.stubGlobal('ImageData', MockImageData as typeof ImageData);
-    vi.stubGlobal('Blob', MockBlob as unknown as typeof Blob);
-    vi.stubGlobal('OffscreenCanvas', MockOffscreenCanvas as unknown as typeof OffscreenCanvas);
-    vi.stubGlobal('Worker', MockWorker as unknown as typeof Worker);
-    vi.stubGlobal('VideoDecoder', MockVideoDecoder as unknown as typeof VideoDecoder);
-    vi.stubGlobal('EncodedVideoChunk', MockEncodedVideoChunk as unknown as typeof EncodedVideoChunk);
+    vi.stubGlobal("ImageData", MockImageData as typeof ImageData);
+    vi.stubGlobal("Blob", MockBlob as unknown as typeof Blob);
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      MockOffscreenCanvas as unknown as typeof OffscreenCanvas,
+    );
+    vi.stubGlobal("Worker", MockWorker as unknown as typeof Worker);
+    vi.stubGlobal(
+      "VideoDecoder",
+      MockVideoDecoder as unknown as typeof VideoDecoder,
+    );
+    vi.stubGlobal(
+      "EncodedVideoChunk",
+      MockEncodedVideoChunk as unknown as typeof EncodedVideoChunk,
+    );
 
     originalCreateObjectURL = URL.createObjectURL;
     originalRevokeObjectURL = URL.revokeObjectURL;
-    Object.defineProperty(URL, 'createObjectURL', {
+    Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       writable: true,
       value: vi.fn((blob: MockBlob) => {
@@ -244,7 +269,7 @@ describe('rdp worker blobs', () => {
         return url;
       }),
     });
-    Object.defineProperty(URL, 'revokeObjectURL', {
+    Object.defineProperty(URL, "revokeObjectURL", {
       configurable: true,
       writable: true,
       value: vi.fn(),
@@ -252,25 +277,32 @@ describe('rdp worker blobs', () => {
 
     hadTransferControlToOffscreen = Object.prototype.hasOwnProperty.call(
       HTMLCanvasElement.prototype,
-      'transferControlToOffscreen',
+      "transferControlToOffscreen",
     );
-    originalTransferControlToOffscreen = HTMLCanvasElement.prototype.transferControlToOffscreen;
-    Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', {
-      configurable: true,
-      writable: true,
-      value(this: HTMLCanvasElement) {
-        return new MockOffscreenCanvas(this.width, this.height);
+    originalTransferControlToOffscreen =
+      HTMLCanvasElement.prototype.transferControlToOffscreen;
+    Object.defineProperty(
+      HTMLCanvasElement.prototype,
+      "transferControlToOffscreen",
+      {
+        configurable: true,
+        writable: true,
+        value(this: HTMLCanvasElement) {
+          return new MockOffscreenCanvas(this.width, this.height);
+        },
       },
-    });
+    );
 
     const getContextMock = ((kind: string) => {
-      if (kind === '2d') {
+      if (kind === "2d") {
         return {} as CanvasRenderingContext2D;
       }
       return null;
     }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(getContextMock);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      getContextMock,
+    );
   });
 
   afterEach(() => {
@@ -281,43 +313,53 @@ describe('rdp worker blobs', () => {
     decodedChunks.length = 0;
 
     if (originalCreateObjectURL) {
-      Object.defineProperty(URL, 'createObjectURL', {
+      Object.defineProperty(URL, "createObjectURL", {
         configurable: true,
         writable: true,
         value: originalCreateObjectURL,
       });
     } else {
-      delete (URL as { createObjectURL?: typeof URL.createObjectURL }).createObjectURL;
+      delete (URL as { createObjectURL?: typeof URL.createObjectURL })
+        .createObjectURL;
     }
 
     if (originalRevokeObjectURL) {
-      Object.defineProperty(URL, 'revokeObjectURL', {
+      Object.defineProperty(URL, "revokeObjectURL", {
         configurable: true,
         writable: true,
         value: originalRevokeObjectURL,
       });
     } else {
-      delete (URL as { revokeObjectURL?: typeof URL.revokeObjectURL }).revokeObjectURL;
+      delete (URL as { revokeObjectURL?: typeof URL.revokeObjectURL })
+        .revokeObjectURL;
     }
 
     if (hadTransferControlToOffscreen && originalTransferControlToOffscreen) {
-      Object.defineProperty(HTMLCanvasElement.prototype, 'transferControlToOffscreen', {
-        configurable: true,
-        writable: true,
-        value: originalTransferControlToOffscreen,
-      });
+      Object.defineProperty(
+        HTMLCanvasElement.prototype,
+        "transferControlToOffscreen",
+        {
+          configurable: true,
+          writable: true,
+          value: originalTransferControlToOffscreen,
+        },
+      );
     } else {
-      delete (HTMLCanvasElement.prototype as { transferControlToOffscreen?: HTMLCanvasElement['transferControlToOffscreen'] }).transferControlToOffscreen;
+      delete (
+        HTMLCanvasElement.prototype as {
+          transferControlToOffscreen?: HTMLCanvasElement["transferControlToOffscreen"];
+        }
+      ).transferControlToOffscreen;
     }
   });
 
-  it('parses RGBA batches inside the offscreen paint worker blob without ReferenceError', async () => {
-    const canvas = document.createElement('canvas');
+  it("parses RGBA batches inside the offscreen paint worker blob without ReferenceError", async () => {
+    const canvas = document.createElement("canvas");
     canvas.width = 8;
     canvas.height = 8;
 
-    const renderer = createFrameRenderer('offscreen-worker', canvas);
-    expect(renderer.type).toBe('offscreen-worker');
+    const renderer = createFrameRenderer("offscreen-worker", canvas);
+    expect(renderer.type).toBe("offscreen-worker");
 
     renderer.paintRegion(1, 2, 2, 2, new Uint8ClampedArray(16).fill(0xaa));
     renderer.present();
@@ -326,16 +368,16 @@ describe('rdp worker blobs', () => {
     expect(getWorker(renderer).errors).toEqual([]);
   });
 
-  it('parses view-like RGBA batches inside the offscreen paint worker blob', async () => {
-    const canvas = document.createElement('canvas');
+  it("parses view-like RGBA batches inside the offscreen paint worker blob", async () => {
+    const canvas = document.createElement("canvas");
     canvas.width = 8;
     canvas.height = 8;
 
-    const renderer = createFrameRenderer('offscreen-worker', canvas);
-    expect(renderer.type).toBe('offscreen-worker');
+    const renderer = createFrameRenderer("offscreen-worker", canvas);
+    expect(renderer.type).toBe("offscreen-worker");
 
     getWorker(renderer).postMessage({
-      type: 'frames',
+      type: "frames",
       buffers: [asOffsetUint8View(buildRgbaRectBuffer())],
     });
     await waitForWorkersToDrain();
@@ -343,47 +385,69 @@ describe('rdp worker blobs', () => {
     expect(getWorker(renderer).errors).toEqual([]);
   });
 
-  it('parses RGBA and NAL buffers inside the WebCodecs worker blob without ReferenceError', async () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 16;
-    canvas.height = 16;
+  it("parses RGBA and NAL buffers inside the WebCodecs worker blob without ReferenceError", async () => {
+    const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 16;
 
-    const renderer = createFrameRenderer(
-      'webcodecs-worker',
-      canvas,
-      { width: 16, height: 16 },
-    ) as unknown as RawBufferRenderer;
-    expect(renderer.type).toBe('webcodecs-worker');
+      const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+        width: 16,
+        height: 16,
+      }) as unknown as RawBufferRenderer;
+      expect(renderer.type).toBe("webcodecs-worker");
 
-    renderer.pushRawBuffer(buildRgbaRectBuffer());
-    renderer.pushRawBuffer(buildNalBuffer());
-    await waitForWorkersToDrain();
+      renderer.pushRawBuffer(buildRgbaRectBuffer());
+      renderer.pushRawBuffer(buildNalBuffer());
+      await waitForWorkersToDrain();
 
-    renderer.pushRawBuffer(buildNalBuffer(4, 4));
-    await waitForWorkersToDrain();
+      renderer.pushRawBuffer(buildNalBuffer(4, 4));
+      await waitForWorkersToDrain();
 
-    expect(getWorker(renderer).errors).toEqual([]);
+      expect(getWorker(renderer).errors).toEqual([]);
+      expect(warningSpy.mock.calls).toEqual([
+        ["[WebCodecs worker] WebGL2 unavailable, falling back to Canvas2D"],
+      ]);
+    } finally {
+      warningSpy.mockRestore();
+    }
   });
 
-  it('parses view-like RGBA and NAL buffers inside the WebCodecs worker blob', async () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 16;
-    canvas.height = 16;
+  it("parses view-like RGBA and NAL buffers inside the WebCodecs worker blob", async () => {
+    const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 16;
 
-    const renderer = createFrameRenderer(
-      'webcodecs-worker',
-      canvas,
-      { width: 16, height: 16 },
-    );
-    expect(renderer.type).toBe('webcodecs-worker');
+      const renderer = createFrameRenderer("webcodecs-worker", canvas, {
+        width: 16,
+        height: 16,
+      });
+      expect(renderer.type).toBe("webcodecs-worker");
 
-    const worker = getWorker(renderer);
-    worker.postMessage({ type: 'frame', data: asOffsetUint8View(buildRgbaRectBuffer()) });
-    worker.postMessage({ type: 'frame', data: asOffsetUint8View(buildNalBuffer()) });
-    await waitForWorkersToDrain();
+      const worker = getWorker(renderer);
+      worker.postMessage({
+        type: "frame",
+        data: asOffsetUint8View(buildRgbaRectBuffer()),
+      });
+      worker.postMessage({
+        type: "frame",
+        data: asOffsetUint8View(buildNalBuffer()),
+      });
+      await waitForWorkersToDrain();
 
-    expect(worker.errors).toEqual([]);
-    expect(decodedChunks).toHaveLength(1);
-    expect(Array.from(decodedChunks[0].data)).toEqual([0x65, 0x88, 0x84, 0x21]);
+      expect(worker.errors).toEqual([]);
+      expect(decodedChunks).toHaveLength(1);
+      expect(Array.from(decodedChunks[0].data)).toEqual([
+        0x65, 0x88, 0x84, 0x21,
+      ]);
+      expect(warningSpy.mock.calls).toEqual([
+        ["[WebCodecs worker] WebGL2 unavailable, falling back to Canvas2D"],
+      ]);
+    } finally {
+      warningSpy.mockRestore();
+    }
   });
 });

@@ -1,215 +1,290 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import {
-  verifyIdentity,
-  trustIdentity,
-  removeIdentity,
-  getStoredIdentity,
-  getAllTrustRecords,
-  isCertificateTrustRecordType,
-  resolveEffectiveTrustPolicy,
-  getEffectiveTrustPolicy,
-} from "../../src/utils/auth/trustStore";
-import type { SshHostKeyIdentity, CertIdentity } from "../../src/utils/auth/trustStore";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const makeSshIdentity = (fp: string): SshHostKeyIdentity => ({
-  fingerprint: fp,
+const native = vi.hoisted(() => ({
+  records: [] as Array<Record<string, any>>,
+  failReads: false,
+  invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+}));
+
+import {
+  ensureTrustStoreReady,
+  getAllTrustRecords,
+  getEffectiveTrustPolicy,
+  getStoredIdentity,
+  isCertificateTrustRecordType,
+  removeIdentity,
+  resetTrustStoreCacheForTests,
+  resolveEffectiveTrustPolicy,
+  trustIdentity,
+  verifyIdentity,
+} from "../../src/utils/auth/trustStore";
+import type {
+  CertIdentity,
+  SshHostKeyIdentity,
+} from "../../src/utils/auth/trustStore";
+
+const makeSshIdentity = (fingerprint: string): SshHostKeyIdentity => ({
+  fingerprint,
   keyType: "ssh-ed25519",
   firstSeen: new Date().toISOString(),
   lastSeen: new Date().toISOString(),
 });
 
-const makeTlsIdentity = (fp: string): CertIdentity => ({
-  fingerprint: fp,
+const makeTlsIdentity = (fingerprint: string): CertIdentity => ({
+  fingerprint,
   subject: "example.com",
-  issuer: "Let's Encrypt",
+  issuer: "Test CA",
   firstSeen: new Date().toISOString(),
   lastSeen: new Date().toISOString(),
 });
 
-describe("trustStore", () => {
+function nativeRecord(args: Record<string, any>) {
+  return {
+    host: args.host,
+    record_type: args.recordType,
+    identity: args.identity,
+    user_approved: args.userApproved,
+    nickname: args.nickname ?? null,
+    history:
+      args.migrationHistory?.map((identity: unknown) => ({
+        identity,
+        changed_at: new Date().toISOString(),
+        reason: "migrated",
+        approved_by: "test",
+        note: null,
+        verification_count: 0,
+        trust_score: 0,
+      })) ?? [],
+  };
+}
+
+function installNativeMock() {
+  native.invoke.mockImplementation(
+    async (command: string, args: Record<string, any> = {}) => {
+      if (command === "trust_get_all_records") {
+        if (native.failReads) throw new Error("native trust store unavailable");
+        return structuredClone(native.records);
+      }
+      if (command === "trust_verify_identity") {
+        if (native.failReads) throw new Error("native trust store unavailable");
+        const record = native.records.find(
+          (candidate) =>
+            candidate.host === args.host &&
+            candidate.record_type === args.recordType,
+        );
+        if (!record) return { status: "first-use", identity: args.identity };
+        if (record.identity.fingerprint === args.identity.fingerprint) {
+          return { status: "trusted" };
+        }
+        return {
+          status: "mismatch",
+          stored: record.identity,
+          presented: args.identity,
+        };
+      }
+      if (
+        command === "trust_store_identity" ||
+        command === "trust_store_identity_with_reason"
+      ) {
+        const index = native.records.findIndex(
+          (candidate) =>
+            candidate.host === args.host &&
+            candidate.record_type === args.recordType,
+        );
+        const next = nativeRecord(args);
+        if (index >= 0) {
+          const previous = native.records[index];
+          next.history = [
+            ...previous.history,
+            {
+              identity: previous.identity,
+              changed_at: new Date().toISOString(),
+              reason: "user_accepted",
+              approved_by: null,
+              note: null,
+              verification_count: 0,
+              trust_score: 0,
+            },
+          ];
+          native.records[index] = next;
+        } else {
+          native.records.push(next);
+        }
+        return;
+      }
+      if (command === "trust_remove_identity") {
+        native.records = native.records.filter(
+          (candidate) =>
+            candidate.host !== args.host ||
+            candidate.record_type !== args.recordType,
+        );
+        return;
+      }
+      if (command === "trust_update_nickname") {
+        const record = native.records.find(
+          (candidate) =>
+            candidate.host === args.host &&
+            candidate.record_type === args.recordType,
+        );
+        if (!record) throw new Error("not found");
+        record.nickname = args.nickname;
+        return;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    },
+  );
+}
+
+describe("native-backed trustStore", () => {
   beforeEach(() => {
     localStorage.clear();
+    native.records = [];
+    native.failReads = false;
+    native.invoke.mockReset();
+    installNativeMock();
+    resetTrustStoreCacheForTests();
   });
 
-  describe("verifyIdentity", () => {
-    it("returns first-use for unknown hosts", () => {
-      const identity = makeSshIdentity("SHA256:abc123");
-      const result = verifyIdentity("myhost", 22, "ssh", identity);
-      expect(result.status).toBe("first-use");
-    });
-
-    it("returns trusted for matching fingerprints", () => {
-      const identity = makeSshIdentity("SHA256:abc123");
-      trustIdentity("myhost", 22, "ssh", identity);
-
-      const result = verifyIdentity("myhost", 22, "ssh", identity);
-      expect(result.status).toBe("trusted");
-    });
-
-    it("returns mismatch for changed fingerprints", () => {
-      const original = makeSshIdentity("SHA256:original");
-      trustIdentity("myhost", 22, "ssh", original);
-
-      const changed = makeSshIdentity("SHA256:changed");
-      const result = verifyIdentity("myhost", 22, "ssh", changed);
-      expect(result.status).toBe("mismatch");
-      if (result.status === "mismatch") {
-        expect(result.stored.fingerprint).toBe("SHA256:original");
-        expect(result.received.fingerprint).toBe("SHA256:changed");
-      }
-    });
+  it("fails closed while native hydration is unavailable", async () => {
+    native.failReads = true;
+    expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
+    await expect(
+      verifyIdentity("host", 22, "ssh", makeSshIdentity("SHA256:a")),
+    ).rejects.toThrow(
+      "The native Trust Center is unavailable. Trust decisions remain blocked until it recovers.",
+    );
+    expect(getAllTrustRecords()).toEqual([]);
   });
 
-  describe("trustIdentity", () => {
-    it("stores a new identity", () => {
-      const identity = makeSshIdentity("SHA256:new");
-      trustIdentity("newhost", 22, "ssh", identity);
+  it("verifies first use, matches, and mismatches through native commands", async () => {
+    const original = makeSshIdentity("SHA256:original");
+    expect((await verifyIdentity("host", 22, "ssh", original)).status).toBe(
+      "first-use",
+    );
 
-      const record = getStoredIdentity("newhost", 22, "ssh");
-      expect(record).toBeDefined();
-      expect(record!.identity.fingerprint).toBe("SHA256:new");
-    });
+    await trustIdentity("host", 22, "ssh", original);
+    expect((await verifyIdentity("host", 22, "ssh", original)).status).toBe(
+      "trusted",
+    );
 
-    it("moves previous identity to history on update", () => {
-      const first = makeTlsIdentity("SHA256:first");
-      trustIdentity("host", 443, "tls", first);
-
-      const second = makeTlsIdentity("SHA256:second");
-      trustIdentity("host", 443, "tls", second);
-
-      const record = getStoredIdentity("host", 443, "tls");
-      expect(record!.identity.fingerprint).toBe("SHA256:second");
-      expect(record!.history).toHaveLength(1);
-      expect(record!.history![0].fingerprint).toBe("SHA256:first");
-    });
-
-    it("stores certificate, HTTPS, RDP, SSH, and legacy TLS records separately", () => {
-      trustIdentity("host", 443, "certificate", makeTlsIdentity("SHA256:certificate"));
-      trustIdentity("host", 443, "https", makeTlsIdentity("SHA256:https"));
-      trustIdentity("host", 443, "rdp", makeTlsIdentity("SHA256:rdp"));
-      trustIdentity("host", 443, "ssh", makeSshIdentity("SHA256:ssh"));
-      trustIdentity("host", 443, "tls", makeTlsIdentity("SHA256:legacy-tls"));
-
-      expect(getStoredIdentity("host", 443, "certificate")!.identity.fingerprint).toBe("SHA256:certificate");
-      expect(getStoredIdentity("host", 443, "https")!.identity.fingerprint).toBe("SHA256:https");
-      expect(getStoredIdentity("host", 443, "rdp")!.identity.fingerprint).toBe("SHA256:rdp");
-      expect(getStoredIdentity("host", 443, "ssh")!.identity.fingerprint).toBe("SHA256:ssh");
-      expect(getStoredIdentity("host", 443, "tls")!.identity.fingerprint).toBe("SHA256:legacy-tls");
-      expect(getAllTrustRecords().map((record) => record.type).sort()).toEqual([
-        "certificate",
-        "https",
-        "rdp",
-        "ssh",
-        "tls",
-      ]);
-    });
-
-    it("uses certificate-prefixed storage keys for general certificates", () => {
-      trustIdentity("cert.example", 8443, "certificate", makeTlsIdentity("SHA256:certificate"));
-
-      const rawStore = localStorage.getItem("trustStore");
-      expect(rawStore).toBeTruthy();
-      expect(Object.keys(JSON.parse(rawStore!))).toContain("certificate:cert.example:8443");
-    });
-
-    it("does not use legacy TLS records as certificate, HTTPS, or RDP fallback", () => {
-      const identity = makeTlsIdentity("SHA256:legacy-only");
-      trustIdentity("legacy.example", 443, "tls", identity);
-
-      expect(getStoredIdentity("legacy.example", 443, "certificate")).toBeUndefined();
-      expect(getStoredIdentity("legacy.example", 443, "https")).toBeUndefined();
-      expect(getStoredIdentity("legacy.example", 443, "rdp")).toBeUndefined();
-      expect(verifyIdentity("legacy.example", 443, "certificate", identity).status).toBe("first-use");
-      expect(verifyIdentity("legacy.example", 443, "https", identity).status).toBe("first-use");
-      expect(verifyIdentity("legacy.example", 443, "rdp", identity).status).toBe("first-use");
-    });
+    const changed = makeSshIdentity("SHA256:changed");
+    const result = await verifyIdentity("host", 22, "ssh", changed);
+    expect(result.status).toBe("mismatch");
+    if (result.status === "mismatch") {
+      expect(result.stored.fingerprint).toBe("SHA256:original");
+      expect(result.received.fingerprint).toBe("SHA256:changed");
+    }
   });
 
-  describe("removeIdentity", () => {
-    it("removes stored record", () => {
-      const identity = makeSshIdentity("SHA256:remove-me");
-      trustIdentity("host", 22, "ssh", identity);
-      expect(getStoredIdentity("host", 22, "ssh")).toBeDefined();
-
-      removeIdentity("host", 22, "ssh");
-      expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
-    });
+  it("keeps global and per-connection native records isolated", async () => {
+    await trustIdentity(
+      "host",
+      22,
+      "ssh",
+      makeSshIdentity("SHA256:scoped"),
+      true,
+      "connection-1",
+    );
+    expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
+    expect(
+      getStoredIdentity("host", 22, "ssh", "connection-1")?.identity
+        .fingerprint,
+    ).toBe("SHA256:scoped");
   });
 
-  describe("getAllTrustRecords", () => {
-    it("returns all stored records", () => {
-      trustIdentity("host1", 22, "ssh", makeSshIdentity("SHA256:a"));
-      trustIdentity("host2", 443, "tls", makeTlsIdentity("SHA256:b"));
-
-      const records = getAllTrustRecords();
-      expect(records).toHaveLength(2);
-    });
-
-    it("keeps legacy TLS records typed as tls", () => {
-      trustIdentity("legacy.example", 443, "tls", makeTlsIdentity("SHA256:legacy"));
-
-      const [record] = getAllTrustRecords();
-      expect(record.type).toBe("tls");
-      expect(record.identity.fingerprint).toBe("SHA256:legacy");
-    });
-
-    it("returns empty array when store is clean", () => {
-      expect(getAllTrustRecords()).toHaveLength(0);
-    });
+  it("removes records durably before changing the display cache", async () => {
+    await trustIdentity("host", 22, "ssh", makeSshIdentity("SHA256:remove"));
+    await removeIdentity("host", 22, "ssh");
+    expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
+    expect(native.records).toHaveLength(0);
   });
 
-  describe("per-connection isolation", () => {
-    it("isolates trust records by connectionId", () => {
-      const identity = makeSshIdentity("SHA256:conn-specific");
-      trustIdentity("host", 22, "ssh", identity, true, "conn-1");
+  it("migrates legacy records and only then removes localStorage", async () => {
+    const identity = makeTlsIdentity("SHA256:legacy");
+    localStorage.setItem(
+      "trustStore",
+      JSON.stringify({
+        "https:legacy.example:443": {
+          host: "legacy.example:443",
+          type: "https",
+          identity,
+          userApproved: true,
+          history: [makeTlsIdentity("SHA256:older")],
+          nickname: "Legacy endpoint",
+        },
+      }),
+    );
 
-      expect(getStoredIdentity("host", 22, "ssh")).toBeUndefined();
-      expect(getStoredIdentity("host", 22, "ssh", "conn-1")).toBeDefined();
-    });
+    await ensureTrustStoreReady();
+
+    expect(localStorage.getItem("trustStore")).toBeNull();
+    const record = getStoredIdentity("legacy.example", 443, "https");
+    expect(record?.identity.fingerprint).toBe("SHA256:legacy");
+    expect(record?.history?.[0].fingerprint).toBe("SHA256:older");
+    expect(record?.nickname).toBe("Legacy endpoint");
   });
 
-  describe("certificate record type helpers", () => {
-    it("classifies general certificates, HTTPS, RDP, and legacy TLS as certificate records", () => {
-      expect(isCertificateTrustRecordType("certificate")).toBe(true);
-      expect(isCertificateTrustRecordType("https")).toBe(true);
-      expect(isCertificateTrustRecordType("rdp")).toBe(true);
-      expect(isCertificateTrustRecordType("tls")).toBe(true);
-      expect(isCertificateTrustRecordType("ssh")).toBe(false);
+  it("retains legacy data when durable migration fails", async () => {
+    localStorage.setItem(
+      "trustStore",
+      JSON.stringify({
+        "ssh:legacy:22": {
+          host: "legacy:22",
+          type: "ssh",
+          identity: makeSshIdentity("SHA256:legacy"),
+          userApproved: true,
+        },
+      }),
+    );
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "trust_get_all_records") return [];
+      throw new Error("durable write failed");
     });
+
+    await ensureTrustStoreReady();
+    expect(localStorage.getItem("trustStore")).not.toBeNull();
+    expect(getStoredIdentity("legacy", 22, "ssh")).toBeUndefined();
   });
 
-  describe("resolveEffectiveTrustPolicy", () => {
-    it("prefers concrete connection policy over category and root policies", () => {
-      expect(resolveEffectiveTrustPolicy("strict", "tofu", "always-trust")).toBe("strict");
-    });
-
-    it("inherits from category policy when connection policy is missing or inherit", () => {
-      expect(resolveEffectiveTrustPolicy(undefined, "tofu", "always-trust")).toBe("tofu");
-      expect(resolveEffectiveTrustPolicy("inherit", "tofu", "always-trust")).toBe("tofu");
-    });
-
-    it("inherits from root policy when category policy is missing or inherit", () => {
-      expect(resolveEffectiveTrustPolicy(undefined, undefined, "always-trust")).toBe("always-trust");
-      expect(resolveEffectiveTrustPolicy("inherit", "inherit", "strict")).toBe("strict");
-    });
-
-    it("falls back to always-ask when no concrete policy is available", () => {
-      expect(resolveEffectiveTrustPolicy(undefined, "inherit", undefined)).toBe("always-ask");
-    });
+  it("preserves record type separation", async () => {
+    await trustIdentity(
+      "host",
+      443,
+      "certificate",
+      makeTlsIdentity("SHA256:certificate"),
+    );
+    await trustIdentity("host", 443, "https", makeTlsIdentity("SHA256:https"));
+    await trustIdentity("host", 443, "rdp", makeTlsIdentity("SHA256:rdp"));
+    await trustIdentity("host", 443, "tls", makeTlsIdentity("SHA256:tls"));
+    expect(
+      getAllTrustRecords()
+        .map((record) => record.type)
+        .sort(),
+    ).toEqual(["certificate", "https", "rdp", "tls"]);
   });
 
-  describe("getEffectiveTrustPolicy", () => {
-    it("falls back to always-ask when no connection or global policy is set", () => {
-      expect(getEffectiveTrustPolicy(undefined, undefined)).toBe("always-ask");
-    });
+  it("classifies certificate record types", () => {
+    expect(isCertificateTrustRecordType("certificate")).toBe(true);
+    expect(isCertificateTrustRecordType("https")).toBe(true);
+    expect(isCertificateTrustRecordType("rdp")).toBe(true);
+    expect(isCertificateTrustRecordType("tls")).toBe(true);
+    expect(isCertificateTrustRecordType("ssh")).toBe(false);
+  });
 
-    it("treats inherit as a compatibility fallback value", () => {
-      expect(getEffectiveTrustPolicy("inherit", "tofu")).toBe("tofu");
-      expect(getEffectiveTrustPolicy("inherit", "inherit")).toBe("always-ask");
-    });
-
-    it("prefers connection policy over global policy", () => {
-      expect(getEffectiveTrustPolicy("strict", "always-ask")).toBe("strict");
-    });
+  it("resolves inherited policies without involving mutable storage", () => {
+    expect(resolveEffectiveTrustPolicy("strict", "tofu", "always-trust")).toBe(
+      "strict",
+    );
+    expect(resolveEffectiveTrustPolicy("inherit", "tofu", "always-trust")).toBe(
+      "tofu",
+    );
+    expect(resolveEffectiveTrustPolicy(undefined, undefined, undefined)).toBe(
+      "always-ask",
+    );
+    expect(getEffectiveTrustPolicy("inherit", "strict")).toBe("strict");
   });
 });

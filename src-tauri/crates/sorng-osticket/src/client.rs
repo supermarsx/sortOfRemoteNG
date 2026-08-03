@@ -6,6 +6,56 @@ use std::fmt;
 use crate::error::{OsticketError, OsticketErrorKind, OsticketResult};
 use crate::types::OsticketConnectionConfig;
 
+const MAX_RESPONSE_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+fn transport_error(error: reqwest::Error) -> OsticketError {
+    let (kind, message) = if error.is_timeout() {
+        (OsticketErrorKind::Timeout, "osTicket request timed out")
+    } else if error.is_connect() {
+        (
+            OsticketErrorKind::ConnectionFailed,
+            "Unable to connect to osTicket",
+        )
+    } else {
+        (OsticketErrorKind::Other, "osTicket request failed")
+    };
+    OsticketError::new(kind, message)
+}
+
+async fn read_bounded_response(mut response: Response) -> OsticketResult<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BODY_BYTES as u64)
+    {
+        return Err(OsticketError::new(
+            OsticketErrorKind::ParseError,
+            "osTicket response exceeds the 8 MiB safety limit",
+        ));
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(transport_error)? {
+        let remaining_probe = MAX_RESPONSE_BODY_BYTES + 1 - body.len();
+        let take = chunk.len().min(remaining_probe);
+        body.try_reserve(take).map_err(|_| {
+            OsticketError::new(
+                OsticketErrorKind::ParseError,
+                "Unable to buffer the osTicket response safely",
+            )
+        })?;
+        body.extend_from_slice(&chunk[..take]);
+
+        if body.len() > MAX_RESPONSE_BODY_BYTES {
+            return Err(OsticketError::new(
+                OsticketErrorKind::ParseError,
+                "osTicket response exceeds the 8 MiB safety limit",
+            ));
+        }
+    }
+
+    Ok(body)
+}
+
 /// Low-level osTicket HTTP client.
 #[derive(Clone)]
 pub struct OsticketClient {
@@ -27,8 +77,20 @@ impl fmt::Debug for OsticketClient {
 #[allow(dead_code)]
 impl OsticketClient {
     pub fn from_config(cfg: &OsticketConnectionConfig) -> OsticketResult<Self> {
+        let effective_tls_skip = cfg.skip_tls_verify
+            && cfg
+                .host
+                .trim()
+                .get(..8)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"));
+        if effective_tls_skip != cfg.acknowledge_invalid_cert_risk {
+            return Err(OsticketError::validation(
+                "TLS certificate verification bypass requires an explicit runtime acknowledgement for this connection attempt",
+            ));
+        }
+
         let mut builder = Client::builder()
-            .danger_accept_invalid_certs(cfg.skip_tls_verify)
+            .danger_accept_invalid_certs(effective_tls_skip)
             .timeout(std::time::Duration::from_secs(cfg.timeout_seconds));
         if let Some(proxy_url) = cfg
             .proxy_url
@@ -83,7 +145,8 @@ impl OsticketClient {
             .get(self.url(path))
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_response(resp).await
     }
 
@@ -98,7 +161,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .query(params)
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_response(resp).await
     }
 
@@ -113,7 +177,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_response(resp).await
     }
 
@@ -128,7 +193,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_empty(resp).await
     }
 
@@ -143,7 +209,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_response(resp).await
     }
 
@@ -158,7 +225,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_response(resp).await
     }
 
@@ -168,37 +236,37 @@ impl OsticketClient {
             .delete(self.url(path))
             .headers(self.default_headers())
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_empty(resp).await
     }
 
     async fn handle_response<T: DeserializeOwned>(&self, resp: Response) -> OsticketResult<T> {
         let status = resp.status();
+        let body = read_bounded_response(resp).await?;
         if status.is_success() {
-            let text = resp.text().await?;
-            serde_json::from_str(&text).map_err(|e| {
+            serde_json::from_slice(&body).map_err(|_| {
                 OsticketError::new(
                     OsticketErrorKind::ParseError,
-                    format!("{}: {}", e, &text[..text.len().min(200)]),
+                    "osTicket returned an invalid JSON response",
                 )
             })
         } else {
-            let body = resp.text().await.unwrap_or_default();
-            Err(self.status_error(status, body))
+            Err(self.status_error(status))
         }
     }
 
     async fn handle_empty(&self, resp: Response) -> OsticketResult<()> {
         let status = resp.status();
+        let _ = read_bounded_response(resp).await?;
         if status.is_success() {
             Ok(())
         } else {
-            let body = resp.text().await.unwrap_or_default();
-            Err(self.status_error(status, body))
+            Err(self.status_error(status))
         }
     }
 
-    fn status_error(&self, status: StatusCode, body: String) -> OsticketError {
+    fn status_error(&self, status: StatusCode) -> OsticketError {
         let kind = match status.as_u16() {
             401 => OsticketErrorKind::AuthError,
             403 => OsticketErrorKind::Forbidden,
@@ -209,7 +277,7 @@ impl OsticketClient {
         };
         OsticketError::new(
             kind,
-            format!("{}: {}", status, &body[..body.len().min(500)]),
+            format!("osTicket request failed with HTTP {}", status.as_u16()),
         )
     }
 
@@ -221,7 +289,8 @@ impl OsticketClient {
             .headers(self.default_headers())
             .query(&[("limit", "1")])
             .send()
-            .await?;
+            .await
+            .map_err(transport_error)?;
         self.handle_empty(resp).await?;
         Ok(crate::types::OsticketConnectionStatus {
             connected: true,

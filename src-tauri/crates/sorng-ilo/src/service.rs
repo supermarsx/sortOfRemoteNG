@@ -42,49 +42,6 @@ impl Default for IloService {
     }
 }
 
-#[cfg(test)]
-mod t57_secret_hardening_tests {
-    use super::*;
-
-    const SENTINEL: &str = "T57_ILO_SENTINEL_SECRET";
-
-    #[tokio::test]
-    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
-        let config = IloConfig {
-            host: "ilo.test".to_string(),
-            port: 443,
-            username: "operator".to_string(),
-            password: SENTINEL.to_string(),
-            auth_method: IloAuthMethod::Session,
-            insecure: true,
-            protocol: Some(IloProtocol::Redfish),
-            timeout_secs: 30,
-            ipmi_port: 623,
-        };
-
-        let internal_json = serde_json::to_string(&config).unwrap();
-        assert!(!internal_json.contains(SENTINEL));
-        assert!(!internal_json.contains("\"password\""));
-
-        let client = IloClient::new(&config).unwrap();
-        let public_json =
-            serde_json::to_string(&client.get_config_safe()).unwrap();
-        assert!(!public_json.contains(SENTINEL));
-        assert!(!public_json.contains("\"password\""));
-
-        let mut service = IloService {
-            client: Some(client),
-            config: Some(config),
-        };
-        service.disconnect().await.unwrap();
-
-        assert!(service.client.is_none());
-        assert!(service.config.is_none());
-        assert!(service.get_config().is_none());
-        assert!(!service.is_connected());
-    }
-}
-
 impl IloService {
     pub fn new() -> Self {
         Self {
@@ -489,5 +446,47 @@ impl IloService {
             return Ok(());
         }
         Err(IloError::unsupported("No protocol available for iLO reset"))
+    }
+}
+
+#[cfg(test)]
+mod t57_secret_hardening_tests {
+    use super::*;
+
+    const SENTINEL: &str = "T57_ILO_SENTINEL_SECRET";
+
+    #[tokio::test]
+    async fn public_config_omits_secret_and_disconnect_drops_runtime_state() {
+        let config = IloConfig {
+            host: "ilo.test".to_string(),
+            port: 443,
+            username: "operator".to_string(),
+            password: SENTINEL.to_string(),
+            auth_method: IloAuthMethod::Session,
+            insecure: false,
+            protocol: Some(IloProtocol::Redfish),
+            timeout_secs: 30,
+            ipmi_port: 623,
+        };
+
+        let internal_json = serde_json::to_string(&config).unwrap();
+        assert!(!internal_json.contains(SENTINEL));
+        assert!(!internal_json.contains("\"password\""));
+
+        let client = IloClient::new(&config).unwrap();
+        let public_json = serde_json::to_string(&client.get_config_safe()).unwrap();
+        assert!(!public_json.contains(SENTINEL));
+        assert!(!public_json.contains("\"password\""));
+
+        let mut service = IloService {
+            client: Some(client),
+            config: Some(config),
+        };
+        service.disconnect().await.unwrap();
+
+        assert!(service.client.is_none());
+        assert!(service.config.is_none());
+        assert!(service.get_config().is_none());
+        assert!(!service.is_connected());
     }
 }

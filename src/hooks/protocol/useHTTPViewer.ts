@@ -53,14 +53,49 @@ export function useHTTPViewer(session: ConnectionSession) {
   const buildTargetUrl = useCallback(() => {
     if (!connection) return "";
     const protocol = session.protocol === "https" ? "https" : "http";
-    const port = connection.port || (session.protocol === "https" ? 443 : 80);
-    const host = connection.hostname;
-    const portSuffix =
-      (protocol === "https" && port === 443) ||
-      (protocol === "http" && port === 80)
-        ? ""
-        : `:${port}`;
-    return `${protocol}://${host}${portSuffix}`;
+    const defaultPort = session.protocol === "https" ? 443 : 80;
+    const port = Number(connection.port || defaultPort);
+    const rawHost = connection.hostname.trim();
+    if (
+      !rawHost ||
+      Array.from(rawHost).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return (
+          codePoint <= 0x1f ||
+          codePoint === 0x7f ||
+          character.trim() === "" ||
+          "/@?#\\".includes(character)
+        );
+      }) ||
+      !Number.isSafeInteger(port) ||
+      port < 1 ||
+      port > 65_535
+    ) {
+      return "";
+    }
+    const host =
+      rawHost.includes(":") &&
+      !rawHost.startsWith("[") &&
+      !rawHost.endsWith("]")
+        ? `[${rawHost}]`
+        : rawHost;
+    const portSuffix = port === defaultPort ? "" : `:${port}`;
+    try {
+      const target = new URL(`${protocol}://${host}${portSuffix}/`);
+      if (
+        target.protocol !== `${protocol}:` ||
+        target.username ||
+        target.password ||
+        target.pathname !== "/" ||
+        target.search ||
+        target.hash
+      ) {
+        return "";
+      }
+      return target.origin;
+    } catch {
+      return "";
+    }
   }, [connection, session.protocol]);
 
   const resolveCredentials = useCallback((): {
@@ -110,6 +145,11 @@ export function useHTTPViewer(session: ConnectionSession) {
 
     try {
       const targetUrl = buildTargetUrl();
+      if (!targetUrl) {
+        throw new Error(
+          "Connection host or port is not a valid HTTP authority",
+        );
+      }
       setCurrentUrl(targetUrl);
       setIsSecure(targetUrl.startsWith("https"));
 
@@ -138,9 +178,14 @@ export function useHTTPViewer(session: ConnectionSession) {
         setStatus("connected");
       }
     } catch (err) {
-      console.error("Failed to initialize HTTP proxy:", err);
+      const safeMessage =
+        err instanceof Error &&
+        err.message === "Connection host or port is not a valid HTTP authority"
+          ? err.message
+          : "Failed to initialize HTTP proxy";
+      console.error("Failed to initialize HTTP proxy");
       setStatus("error");
-      setError(err instanceof Error ? err.message : String(err));
+      setError(safeMessage);
     }
   }, [
     connection,
@@ -210,7 +255,7 @@ export function useHTTPViewer(session: ConnectionSession) {
   const openExternal = useCallback(() => {
     const targetUrl = buildTargetUrl();
     if (targetUrl) {
-      window.open(targetUrl, "_blank");
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
     }
   }, [buildTargetUrl]);
 

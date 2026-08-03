@@ -1,8 +1,22 @@
 import React from "react";
-import { beforeEach, describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HTTPOptions } from "../../src/components/connectionEditor/HTTPOptions";
 import type { Connection } from "../../src/types/connection/connection";
+
+const trustStoreMocks = vi.hoisted(() => ({
+  getAllTrustRecords: vi.fn(),
+}));
+
+vi.mock("../../src/utils/auth/trustStore", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/utils/auth/trustStore")
+  >("../../src/utils/auth/trustStore");
+  return {
+    ...actual,
+    getAllTrustRecords: trustStoreMocks.getAllTrustRecords,
+  };
+});
 
 const makeFormData = (): Partial<Connection> => ({
   id: "http-1",
@@ -34,6 +48,8 @@ const RecordingWrapper = ({ initial }: { initial: Partial<Connection> }) => {
 describe("HTTPOptions", () => {
   beforeEach(() => {
     localStorage.clear();
+    trustStoreMocks.getAllTrustRecords.mockReset();
+    trustStoreMocks.getAllTrustRecords.mockReturnValue([]);
   });
 
   it("adds a custom header via modal", async () => {
@@ -151,31 +167,28 @@ describe("HTTPOptions", () => {
   });
 
   it("shows only explicit HTTPS trust records in the HTTPS editor", () => {
-    localStorage.setItem(
-      "trustStore:http-1",
-      JSON.stringify({
-        "https:example.com:443": {
-          host: "example.com:443",
-          type: "https",
-          identity: {
-            fingerprint: "SHA256:https-cert",
-            firstSeen: "2026-01-01T00:00:00.000Z",
-            lastSeen: "2026-01-01T00:00:00.000Z",
-          },
-          userApproved: true,
+    trustStoreMocks.getAllTrustRecords.mockReturnValue([
+      {
+        host: "example.com:443",
+        type: "https",
+        identity: {
+          fingerprint: "SHA256:https-cert",
+          firstSeen: "2026-01-01T00:00:00.000Z",
+          lastSeen: "2026-01-01T00:00:00.000Z",
         },
-        "tls:legacy.example.com:443": {
-          host: "legacy.example.com:443",
-          type: "tls",
-          identity: {
-            fingerprint: "SHA256:legacy-cert",
-            firstSeen: "2026-01-01T00:00:00.000Z",
-            lastSeen: "2026-01-01T00:00:00.000Z",
-          },
-          userApproved: true,
+        userApproved: true,
+      },
+      {
+        host: "legacy.example.com:443",
+        type: "tls",
+        identity: {
+          fingerprint: "SHA256:legacy-cert",
+          firstSeen: "2026-01-01T00:00:00.000Z",
+          lastSeen: "2026-01-01T00:00:00.000Z",
         },
-      }),
-    );
+        userApproved: true,
+      },
+    ]);
 
     render(
       <RecordingWrapper
@@ -194,5 +207,6 @@ describe("HTTPOptions", () => {
     expect(
       screen.queryByText("legacy.example.com:443"),
     ).not.toBeInTheDocument();
+    expect(trustStoreMocks.getAllTrustRecords).toHaveBeenCalledWith("http-1");
   });
 });

@@ -472,7 +472,11 @@ mod e2e {
             .send()
             .await
             .expect("ssh request");
-        assert_eq!(resp.status().as_u16(), 403, "disabled capability must be 403");
+        assert_eq!(
+            resp.status().as_u16(),
+            403,
+            "disabled capability must be 403"
+        );
         let body: serde_json::Value = resp.json().await.expect("403 body");
         assert_eq!(body["error"], "capability_disabled");
         assert_eq!(body["capability"], "ssh");
@@ -485,7 +489,11 @@ mod e2e {
             .send()
             .await
             .expect("whoami request");
-        assert_eq!(resp.status().as_u16(), 200, "enabled capability must be 200");
+        assert_eq!(
+            resp.status().as_u16(),
+            200,
+            "enabled capability must be 200"
+        );
     }
 
     // ── 7. Loopback vs remote bind + forced auth (resolver + live bind) ─────
@@ -519,7 +527,10 @@ mod e2e {
         // 127.0.0.1. (We do not bind 0.0.0.0 in tests — CI/host-policy gated.)
         let srv = start_test_server(auth_on(), &[]).await;
         let resp = http()
-            .get(format!("http://127.0.0.1:{}/health", srv.base.rsplit(':').next().unwrap()))
+            .get(format!(
+                "http://127.0.0.1:{}/health",
+                srv.base.rsplit(':').next().unwrap()
+            ))
             .send()
             .await
             .expect("loopback health");
@@ -539,7 +550,12 @@ mod e2e {
             let bearer = BearerAuthService::new();
             let guard = bearer.lock().await;
             guard
-                .issue_session_token(srv.jwt_secret.as_bytes(), READONLY_USER, Role::Readonly, 600)
+                .issue_session_token(
+                    srv.jwt_secret.as_bytes(),
+                    READONLY_USER,
+                    Role::Readonly,
+                    600,
+                )
                 .expect("issue readonly token")
                 .token
         };
@@ -582,12 +598,7 @@ mod e2e {
         // Hand-crafted `alg:none` token claiming admin — classic bypass attempt.
         let header = br#"{"alg":"none","typ":"JWT"}"#;
         let payload = br#"{"sub":"attacker","role":"admin","iat":0,"exp":9999999999}"#;
-        let alg_none = format!(
-            "{}.{}.{}",
-            b64url(header),
-            b64url(payload),
-            b64url(b"sig")
-        );
+        let alg_none = format!("{}.{}.{}", b64url(header), b64url(payload), b64url(b"sig"));
         let resp = http()
             .get(srv.url("/auth/whoami"))
             .bearer_auth(&alg_none)
@@ -616,7 +627,11 @@ mod e2e {
             .send()
             .await
             .expect("tampered request");
-        assert_eq!(resp.status().as_u16(), 401, "tampered signature must be rejected");
+        assert_eq!(
+            resp.status().as_u16(),
+            401,
+            "tampered signature must be rejected"
+        );
     }
 
     // ── 10. logout revokes the token ────────────────────────────────────────
@@ -694,7 +709,14 @@ mod e2e {
         let raw = resp.text().await.expect("users body");
         assert!(raw.contains(ADMIN_USER), "usernames should be listed");
         assert!(raw.contains(READONLY_USER));
-        for forbidden in ["password_hash", "password", "$argon2", "$2a$", "$2b$", "$2y$"] {
+        for forbidden in [
+            "password_hash",
+            "password",
+            "$argon2",
+            "$2a$",
+            "$2b$",
+            "$2y$",
+        ] {
             assert!(
                 !raw.contains(forbidden),
                 "response leaked credential material ({forbidden}): {raw}"
@@ -715,6 +737,9 @@ mod e2e {
             .await
             .expect("whoami body");
         assert!(!who.contains(&srv.api_key), "api key leaked in whoami");
-        assert!(!who.contains(&srv.jwt_secret), "jwt secret leaked in whoami");
+        assert!(
+            !who.contains(&srv.jwt_secret),
+            "jwt secret leaked in whoami"
+        );
     }
 }

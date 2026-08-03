@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CloudSessionPanel } from "../../src/components/cloud/CloudSessionPanel";
@@ -8,6 +14,7 @@ import type {
 } from "../../src/types/connection/connection";
 import type { CloudRuntimeAdapter } from "../../src/utils/session/cloudRuntimeAdapters";
 import { resetBuiltInCloudRuntimeLeasesForTests } from "../../src/utils/session/builtInCloudRuntimeRegistry";
+import { loadCloudRuntimeInventory } from "../../src/utils/session/cloudRuntimeInventoryAdapters";
 import { resolveRuntimeConnection } from "../../src/utils/session/runtimeConnectionRegistry";
 
 const dispatch = vi.fn();
@@ -17,7 +24,12 @@ vi.mock("../../src/contexts/useConnections", () => ({
 vi.mock("../../src/utils/session/runtimeConnectionRegistry", () => ({
   resolveRuntimeConnection: vi.fn(),
 }));
+vi.mock("../../src/utils/session/cloudRuntimeInventoryAdapters", () => ({
+  cloudInventoryLabel: () => "Compute Engine instances",
+  loadCloudRuntimeInventory: vi.fn(),
+}));
 const resolveConnection = vi.mocked(resolveRuntimeConnection);
+const loadInventory = vi.mocked(loadCloudRuntimeInventory);
 
 const saved = (protocol: Connection["protocol"] = "gcp") =>
   ({
@@ -50,6 +62,8 @@ describe("CloudSessionPanel", () => {
   beforeEach(() => {
     dispatch.mockReset();
     resolveConnection.mockReset();
+    loadInventory.mockReset();
+    loadInventory.mockResolvedValue([]);
     resetBuiltInCloudRuntimeLeasesForTests();
   });
   afterEach(() => resetBuiltInCloudRuntimeLeasesForTests());
@@ -66,7 +80,9 @@ describe("CloudSessionPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(runtime.connect).toHaveBeenCalledWith(connection));
+    await waitFor(() =>
+      expect(runtime.connect).toHaveBeenCalledWith(connection),
+    );
     await waitFor(() =>
       expect(dispatch).toHaveBeenCalledWith({
         type: "UPDATE_SESSION",
@@ -135,5 +151,76 @@ describe("CloudSessionPanel", () => {
     });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(runtime.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps inventory unverified until a manual provider refresh", async () => {
+    const connection = saved();
+    const runtime = adapter();
+    resolveConnection.mockReturnValue(connection);
+    loadInventory.mockResolvedValue([
+      {
+        id: "instance-1",
+        name: "api-primary",
+        status: "RUNNING",
+        location: "europe-west1-b",
+        type: "e2-medium",
+      },
+    ]);
+
+    render(
+      <CloudSessionPanel
+        adapter={runtime}
+        session={session()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        "Runtime initialized locally. Refresh to verify inventory with the provider.",
+      ),
+    ).toBeInTheDocument();
+    expect(loadInventory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByText("api-primary")).toBeInTheDocument();
+    expect(screen.getByText("RUNNING")).toBeInTheDocument();
+    expect(loadInventory).toHaveBeenCalledWith("gcp", connection, {
+      backendSessionId: "backend-a",
+    });
+  });
+
+  it("surfaces inventory failures and allows an explicit retry", async () => {
+    resolveConnection.mockReturnValue(saved());
+    loadInventory
+      .mockRejectedValueOnce(new Error("Provider inventory unavailable"))
+      .mockResolvedValueOnce([
+        {
+          id: "instance-2",
+          name: "worker-primary",
+          status: "ACTIVE",
+        },
+      ]);
+
+    render(
+      <CloudSessionPanel
+        adapter={adapter()}
+        session={session()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await screen.findByText(
+      "Runtime initialized locally. Refresh to verify inventory with the provider.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      await screen.findByText("Provider inventory unavailable"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("worker-primary")).toBeInTheDocument();
+    expect(loadInventory).toHaveBeenCalledTimes(2);
   });
 });

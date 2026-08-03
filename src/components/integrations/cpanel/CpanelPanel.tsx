@@ -37,24 +37,27 @@ const DEFAULT_WHM_PORT = 2087;
 const DEFAULT_CPANEL_PORT = 2083;
 const DEFAULT_TIMEOUT_SECS = 30;
 
-const AUTH_MODES: { value: CpanelAuthMode; label: string; defaultLabel: string }[] =
-  [
-    {
-      value: "password",
-      label: "integrations.cpanel.authModes.password",
-      defaultLabel: "Username + password",
-    },
-    {
-      value: "api_token",
-      label: "integrations.cpanel.authModes.apiToken",
-      defaultLabel: "WHM API token",
-    },
-    {
-      value: "user_api_token",
-      label: "integrations.cpanel.authModes.userApiToken",
-      defaultLabel: "cPanel user API token",
-    },
-  ];
+const AUTH_MODES: {
+  value: CpanelAuthMode;
+  label: string;
+  defaultLabel: string;
+}[] = [
+  {
+    value: "password",
+    label: "integrations.cpanel.authModes.password",
+    defaultLabel: "Username + password",
+  },
+  {
+    value: "api_token",
+    label: "integrations.cpanel.authModes.apiToken",
+    defaultLabel: "WHM API token",
+  },
+  {
+    value: "user_api_token",
+    label: "integrations.cpanel.authModes.userApiToken",
+    defaultLabel: "cPanel user API token",
+  },
+];
 
 const emptyForm = {
   name: "",
@@ -71,7 +74,10 @@ const emptyForm = {
 
 type FormState = typeof emptyForm;
 
-const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) => {
+const CpanelPanel: React.FC<IntegrationPanelProps> = ({
+  isOpen,
+  instanceId,
+}) => {
   const { t } = useTranslation();
   const {
     isLoading: storeLoading,
@@ -164,9 +170,7 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
         use_tls: form.useTls,
         accept_invalid_certs: form.acceptInvalidCerts,
         acknowledge_invalid_cert_risk:
-          form.useTls &&
-          form.acceptInvalidCerts &&
-          acknowledgeInvalidCertRisk
+          form.useTls && form.acceptInvalidCerts && acknowledgeInvalidCertRisk
             ? true
             : undefined,
         auth_mode: form.authMode,
@@ -455,7 +459,10 @@ const CpanelPanel: React.FC<IntegrationPanelProps> = ({ isOpen, instanceId }) =>
                         : "text-[var(--color-textSecondary)]"
                     }`}
                   >
-                    {t(`integrations.cpanel.tabs.${tab.categoryKey}`, tab.label)}
+                    {t(
+                      `integrations.cpanel.tabs.${tab.categoryKey}`,
+                      tab.label,
+                    )}
                   </button>
                 ))}
               </div>

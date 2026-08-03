@@ -10163,6 +10163,7 @@ dependencies = [
  "ssh2",
  "tauri",
  "tauri-plugin-autostart",
+ "tauri-plugin-fs",
  "tempfile",
  "tokio",
  "tokio-rustls",
@@ -10313,6 +10314,7 @@ dependencies = [
  "serde_json",
  "sorng-app-domains",
  "tauri",
+ "zeroize",
 ]
 
 [[package]]

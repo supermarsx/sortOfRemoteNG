@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Search, RefreshCw, Loader2, AlertCircle, Play, Square,
-  ToggleLeft, ToggleRight, Clock,
+  Search,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  Play,
+  Square,
+  ToggleLeft,
+  ToggleRight,
+  Clock,
 } from "lucide-react";
 import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 import type { WinmgmtContext } from "../WinmgmtWrapper";
-import type { ScheduledTask, ScheduledTaskState } from "../../../types/windows/winmgmt";
+import type {
+  ScheduledTask,
+  ScheduledTaskState,
+} from "../../../types/windows/winmgmt";
 
 const STATE_COLORS: Record<ScheduledTaskState, string> = {
   ready: "text-green-400",
@@ -17,6 +27,7 @@ const STATE_COLORS: Record<ScheduledTaskState, string> = {
 };
 
 type FilterMode = "all" | "ready" | "running" | "disabled";
+type TaskAction = "run" | "stop" | "enable" | "disable";
 
 interface ScheduledTasksPanelProps {
   ctx: WinmgmtContext;
@@ -38,7 +49,16 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
   const [filter, setFilter] = useState<FilterMode>("all");
   const [selected, setSelected] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [confirmDisable, setConfirmDisable] = useState<ScheduledTask | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    action: TaskAction;
+    task: ScheduledTask;
+  } | null>(null);
+  const actionLabels: Record<TaskAction, string> = {
+    run: t("windows.scheduledTasks.actions.run", "Run"),
+    stop: t("windows.scheduledTasks.actions.stop", "Stop"),
+    enable: t("windows.scheduledTasks.actions.enable", "Enable"),
+    disable: t("windows.scheduledTasks.actions.disable", "Disable"),
+  };
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -46,8 +66,10 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
     try {
       const list = await ctx.cmd<ScheduledTask[]>("winmgmt_list_tasks");
       setTasks(list);
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError(
+        "Unable to load remote scheduled tasks. Sensitive error details were withheld.",
+      );
     } finally {
       setLoading(false);
     }
@@ -58,17 +80,18 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
   }, [fetchTasks]);
 
   const doAction = useCallback(
-    async (action: string, task: ScheduledTask) => {
+    async (action: TaskAction, task: ScheduledTask) => {
       const key = `${task.taskPath}\\${task.taskName}`;
       setActionLoading(key);
       try {
         await ctx.cmd(`winmgmt_${action}_task`, {
+          confirmed: true,
           taskPath: task.taskPath,
           taskName: task.taskName,
         });
         await fetchTasks();
-      } catch (err) {
-        setError(String(err));
+      } catch {
+        setError(`Unable to ${action} the selected scheduled task.`);
       } finally {
         setActionLoading(null);
       }
@@ -109,7 +132,10 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("windows.scheduledTasks.searchTasks", "Search tasks…")}
+            placeholder={t(
+              "windows.scheduledTasks.searchTasks",
+              "Search tasks…",
+            )}
             className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none focus:border-[var(--color-accent)]"
           />
         </div>
@@ -118,7 +144,9 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
           onChange={(e) => setFilter(e.target.value as FilterMode)}
           className="text-xs px-2 py-1.5 rounded-md bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
-          <option value="all">{t("windows.scheduledTasks.filters.all", "All")}</option>
+          <option value="all">
+            {t("windows.scheduledTasks.filters.all", "All")}
+          </option>
           <option value="ready">{stateLabels.ready}</option>
           <option value="running">{stateLabels.running}</option>
           <option value="disabled">{stateLabels.disabled}</option>
@@ -201,9 +229,7 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                           {task.taskPath}
                         </div>
                       </td>
-                      <td
-                        className={`px-3 py-1.5 ${STATE_COLORS[task.state]}`}
-                      >
+                      <td className={`px-3 py-1.5 ${STATE_COLORS[task.state]}`}>
                         {stateLabels[task.state]}
                       </td>
                       <td className="px-3 py-1.5 text-[var(--color-textSecondary)] font-mono whitespace-nowrap">
@@ -222,11 +248,14 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("run", task);
+                                setPendingAction({ action: "run", task });
                               }}
                               disabled={actionLoading === key}
                               className="p-1 rounded hover:bg-green-500/20 text-green-400"
-                              title={t("windows.scheduledTasks.actions.run", "Run")}
+                              title={t(
+                                "windows.scheduledTasks.actions.run",
+                                "Run",
+                              )}
                             >
                               {actionLoading === key ? (
                                 <Loader2 size={12} className="animate-spin" />
@@ -239,11 +268,14 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("stop", task);
+                                setPendingAction({ action: "stop", task });
                               }}
                               disabled={actionLoading === key}
                               className="p-1 rounded hover:bg-red-500/20 text-red-400"
-                              title={t("windows.scheduledTasks.actions.stop", "Stop")}
+                              title={t(
+                                "windows.scheduledTasks.actions.stop",
+                                "Stop",
+                              )}
                             >
                               <Square size={12} />
                             </button>
@@ -252,7 +284,7 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setConfirmDisable(task);
+                                setPendingAction({ action: "disable", task });
                               }}
                               disabled={actionLoading === key}
                               aria-label={t(
@@ -277,7 +309,7 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                doAction("enable", task);
+                                setPendingAction({ action: "enable", task });
                               }}
                               disabled={actionLoading === key}
                               aria-label={t(
@@ -377,7 +409,7 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                 </h4>
                 {selectedTask.actions.map((a, i) => (
                   <div
-                    key={`action-${(a.execute || '').slice(0, 50)}-${i}`}
+                    key={`action-${(a.execute || "").slice(0, 50)}-${i}`}
                     className="text-xs text-[var(--color-textSecondary)] p-1.5 bg-[var(--color-background)] rounded mb-1"
                   >
                     <div className="font-mono text-[10px] truncate">
@@ -408,19 +440,13 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
                     <div>{trigger.triggerType}</div>
                     {trigger.startBoundary && (
                       <div className="text-[var(--color-textMuted)]">
-                        {t(
-                          "windows.scheduledTasks.detail.start",
-                          "Start:",
-                        )}{" "}
+                        {t("windows.scheduledTasks.detail.start", "Start:")}{" "}
                         {trigger.startBoundary}
                       </div>
                     )}
                     {trigger.repetitionInterval && (
                       <div className="text-[var(--color-textMuted)]">
-                        {t(
-                          "windows.scheduledTasks.detail.repeat",
-                          "Repeat:",
-                        )}{" "}
+                        {t("windows.scheduledTasks.detail.repeat", "Repeat:")}{" "}
                         {trigger.repetitionInterval}
                       </div>
                     )}
@@ -433,25 +459,34 @@ const ScheduledTasksPanel: React.FC<ScheduledTasksPanelProps> = ({ ctx }) => {
       </div>
 
       <ConfirmDialog
-        isOpen={confirmDisable !== null}
+        isOpen={pendingAction !== null}
         title={t(
-          "windows.scheduledTasks.confirmDisableTitle",
-          "Disable Task",
+          "windows.scheduledTasks.confirmActionTitle",
+          "Confirm Remote Task Action",
         )}
         message={t(
-          "windows.scheduledTasks.confirmDisableMessage",
-          'Are you sure you want to disable "{{task}}"?',
-          { task: confirmDisable?.taskName ?? "" },
+          "windows.scheduledTasks.confirmActionMessage",
+          'This changes remote system state. {{action}} scheduled task "{{path}}\\{{task}}"?',
+          {
+            action: pendingAction ? actionLabels[pendingAction.action] : "",
+            path: pendingAction?.task.taskPath ?? "",
+            task: pendingAction?.task.taskName ?? "",
+          },
         )}
-        confirmText={t("windows.scheduledTasks.actions.disable", "Disable")}
+        confirmText={
+          pendingAction
+            ? actionLabels[pendingAction.action]
+            : t("common.confirm", "Confirm")
+        }
         variant="warning"
         onConfirm={() => {
-          if (confirmDisable) {
-            doAction("disable", confirmDisable);
+          const action = pendingAction;
+          setPendingAction(null);
+          if (action) {
+            void doAction(action.action, action.task);
           }
-          setConfirmDisable(null);
         }}
-        onCancel={() => setConfirmDisable(null)}
+        onCancel={() => setPendingAction(null)}
       />
     </div>
   );

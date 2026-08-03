@@ -211,7 +211,11 @@ describe("FTPClient", () => {
     });
     render(<FTPClient session={session} />);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("FTP upload failed");
+    expect(
+      screen
+        .getAllByRole("alert")
+        .some((alert) => alert.textContent?.includes("FTP upload failed")),
+    ).toBe(true);
     expect(screen.queryByText(/completed/)).not.toBeInTheDocument();
   });
 });

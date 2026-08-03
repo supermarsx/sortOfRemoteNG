@@ -199,7 +199,10 @@ function renderUnifiedSessionManagerHook({
       value={{
         state,
         dispatch: vi.fn(),
+        dispatchAndFlush: vi.fn(async () => {}),
+        persistence: { dirty: false, saving: false, error: null },
         saveData: vi.fn(async () => {}),
+        flushPendingSave: vi.fn(async () => {}),
         loadData: vi.fn(async () => {}),
       }}
     >
@@ -251,7 +254,10 @@ function renderManagerWithConnectionState({
         value={{
           state,
           dispatch,
+          dispatchAndFlush: vi.fn(async () => {}),
+          persistence: { dirty: false, saving: false, error: null },
           saveData: vi.fn(async () => {}),
+          flushPendingSave: vi.fn(async () => {}),
           loadData: vi.fn(async () => {}),
         }}
       >

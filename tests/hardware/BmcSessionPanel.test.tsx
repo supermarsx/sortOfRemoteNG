@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BmcSessionPanel } from "../../src/components/hardware/BmcSessionPanel";
@@ -20,17 +26,17 @@ vi.mock("../../src/utils/session/runtimeConnectionRegistry", () => ({
 const resolveConnection = vi.mocked(resolveRuntimeConnection);
 
 const saved = (protocol: Connection["protocol"] = "ilo"): Connection => ({
-    id: "saved",
-    name: "Rack controller",
-    protocol,
-    hostname: "rack-bmc.example.test",
-    port: 443,
-    username: "operator",
-    password: "secret",
-    isGroup: false,
-    createdAt: "2026-07-29T00:00:00.000Z",
-    updatedAt: "2026-07-29T00:00:00.000Z",
-  });
+  id: "saved",
+  name: "Rack controller",
+  protocol,
+  hostname: "rack-bmc.example.test",
+  port: 443,
+  username: "operator",
+  password: "secret",
+  isGroup: false,
+  createdAt: "2026-07-29T00:00:00.000Z",
+  updatedAt: "2026-07-29T00:00:00.000Z",
+});
 
 const session = (id = "a") =>
   ({
@@ -48,6 +54,10 @@ const adapter = (
   displayName: "HPE iLO",
   connect: vi.fn().mockResolvedValue(undefined),
   disconnect: vi.fn().mockResolvedValue(undefined),
+  loadOverview: vi.fn().mockResolvedValue({
+    refreshedAt: "2026-07-29T00:00:00.000Z",
+    sections: [],
+  }),
   ...overrides,
 });
 

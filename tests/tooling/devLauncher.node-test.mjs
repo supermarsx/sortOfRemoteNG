@@ -9,7 +9,10 @@ import {
   parseDevPort,
 } from "../../scripts/dev-port.mjs";
 import { resolveDevServerPlan } from "../../scripts/dev-server.mjs";
-import { buildTauriLaunchPlan } from "../../scripts/tauri-dev.mjs";
+import {
+  buildDevSecurityOverride,
+  buildTauriLaunchPlan,
+} from "../../scripts/tauri-dev.mjs";
 
 test("standalone browser dev climbs to the first free port", async () => {
   const checked = [];
@@ -116,4 +119,16 @@ test("Tauri launch plan keeps port, devUrl, environment, and origin equal", () =
   assert.equal(override.build.devUrl, plan.devUrl);
   assert.deepEqual(override.app.security, securityOverride);
   assert.deepEqual(plan.tauriArgs.slice(-2), ["--features", "full-dev"]);
+});
+
+test("Tauri development preserves the native window close contract", () => {
+  const security = buildDevSecurityOverride(3042);
+  const [capability] = security.capabilities;
+
+  assert.deepEqual(capability.windows, ["main", "detached-*"]);
+  assert.ok(capability.permissions.includes("core:window:allow-close"));
+  assert.ok(capability.permissions.includes("core:window:allow-destroy"));
+  assert.deepEqual(capability.remote, {
+    urls: ["http://localhost:3042"],
+  });
 });

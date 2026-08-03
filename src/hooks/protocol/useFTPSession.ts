@@ -38,6 +38,14 @@ export const buildFtpConnectionConfig = (
 ): FtpConnectionConfig => {
   const saved = connection as SavedFtpConnection;
   const username = saved.username?.trim() || "anonymous";
+  const security = saved.ftpSecurity ?? "explicit";
+  const allowPlaintext =
+    security === "none" && saved.ftpAllowPlaintext === true;
+  if (security === "none" && !allowPlaintext) {
+    throw new Error(
+      "Plain FTP requires explicit per-connection consent. Enable plaintext FTP in this connection's Security settings, or use verified FTPS.",
+    );
+  }
   const configuredDataMode = (
     saved as Connection & { ftpDataChannelMode?: string }
   ).ftpDataChannelMode;
@@ -50,6 +58,15 @@ export const buildFtpConnectionConfig = (
       "Active FTP data channels are unavailable because the native backend cannot complete PORT/EPRT transfers safely. Choose Passive or Extended Passive.",
     );
   }
+  const acceptInvalidCerts =
+    security !== "none" && saved.ftpAcceptInvalidCerts === true;
+  const acknowledgeInvalidCertRisk =
+    acceptInvalidCerts && saved.ftpAcknowledgeInvalidCertRisk === true;
+  if (acceptInvalidCerts && !acknowledgeInvalidCertRisk) {
+    throw new Error(
+      "This saved FTPS profile requests invalid certificate acceptance without the required risk acknowledgement. Open the connection's Security settings and either restore certificate validation or explicitly acknowledge the interception risk.",
+    );
+  }
 
   return {
     host: saved.hostname || session.hostname,
@@ -58,7 +75,8 @@ export const buildFtpConnectionConfig = (
     password:
       saved.password ??
       (username.toLowerCase() === "anonymous" ? "anonymous@" : ""),
-    security: saved.ftpSecurity ?? "none",
+    security,
+    allowPlaintext,
     // Direct upload/download intentionally use binary mode in the backend.
     // Do not expose an ASCII toggle that those operations would ignore.
     transferType: "binary",
@@ -72,7 +90,11 @@ export const buildFtpConnectionConfig = (
     // The crate currently stores a keepalive interval but never starts its
     // NOOP worker. Disable the inert setting until the backend owns a worker.
     keepaliveIntervalSec: 0,
-    acceptInvalidCerts: saved.ftpAcceptInvalidCerts ?? false,
+    acceptInvalidCerts,
+    acknowledgeInvalidCertRisk,
+    // Failed transfers must not leave potentially sensitive partial files on
+    // disk until the UI has a dedicated, clearly disclosed retention policy.
+    retainIncompleteDownloads: false,
     utf8: saved.ftpUtf8 ?? true,
     activeBindAddress: null,
     label: saved.name || null,
@@ -531,5 +553,10 @@ export function useFTPSession(session: ConnectionSession) {
     uploadFile,
     downloadFile,
     disconnect,
+    sanitizeError: toErrorText,
+    tlsCertificateValidationDisabled: Boolean(
+      sessionInfo?.security !== "none" &&
+      (connection as SavedFtpConnection | undefined)?.ftpAcceptInvalidCerts,
+    ),
   };
 }

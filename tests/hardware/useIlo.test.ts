@@ -47,11 +47,14 @@ describe("useIlo", () => {
       host: "10.0.0.1",
       generation: "ilo5",
     });
-    expect(invoke).toHaveBeenCalledWith("ilo_connect", expect.objectContaining({
-      host: "10.0.0.1",
-      username: "admin",
-      password: "pass",
-    }));
+    expect(invoke).toHaveBeenCalledWith(
+      "ilo_connect",
+      expect.objectContaining({
+        host: "10.0.0.1",
+        username: "admin",
+        password: "pass",
+      }),
+    );
   });
 
   it("connect failure sets error and stays disconnected", async () => {

@@ -1,5 +1,4 @@
-import { useCallback, useRef } from "react";
-import { listen, emit } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { resolveConnectionRetryAttempts } from "../../utils/behavior/legacyBehavior";
@@ -8,13 +7,94 @@ import {
   Connection,
   ConnectionSession,
 } from "../../types/connection/connection";
-import { isWinmgmtProtocol } from "../../components/windows/WindowsToolPanel.helpers";
 import { generateId } from "../../utils/core/id";
 import type { WindowId } from "../../types/windowManager";
 import {
   advanceSessionLifecycleAuthority,
   hasSessionLifecycleActorAttempt,
 } from "../../utils/session/sessionLifecycle";
+
+const DETACHED_SESSION_STORAGE_PREFIX = "detached-session-";
+const DETACHED_SESSION_METADATA_VERSION = 2;
+const MAX_OPAQUE_ID_LENGTH = 512;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isOpaqueId = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= MAX_OPAQUE_ID_LENGTH &&
+  /^[A-Za-z0-9._:-]+$/.test(value);
+
+function isSafeDetachedSessionMetadata(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const layout = value.layout;
+  const allowedRootKeys = new Set([
+    "version",
+    "sessionId",
+    "connectionId",
+    "backendSessionId",
+    "ownerWindowId",
+    "layout",
+    "savedAt",
+  ]);
+  if (Object.keys(value).some((key) => !allowedRootKeys.has(key))) return false;
+  if (
+    value.version !== DETACHED_SESSION_METADATA_VERSION ||
+    !isOpaqueId(value.sessionId) ||
+    !isOpaqueId(value.connectionId) ||
+    !isOpaqueId(value.ownerWindowId) ||
+    (value.backendSessionId !== undefined &&
+      !isOpaqueId(value.backendSessionId)) ||
+    typeof value.savedAt !== "number" ||
+    !Number.isFinite(value.savedAt) ||
+    !isRecord(layout)
+  ) {
+    return false;
+  }
+  const allowedLayoutKeys = new Set([
+    "x",
+    "y",
+    "width",
+    "height",
+    "zIndex",
+    "isDetached",
+    "windowId",
+  ]);
+  if (
+    Object.keys(layout).some((key) => !allowedLayoutKeys.has(key)) ||
+    layout.isDetached !== true ||
+    layout.windowId !== value.ownerWindowId
+  ) {
+    return false;
+  }
+  return ["x", "y", "width", "height", "zIndex"].every(
+    (key) =>
+      typeof layout[key] === "number" && Number.isFinite(layout[key] as number),
+  );
+}
+
+function purgeLegacyDetachedSessionPayloads(): void {
+  try {
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(DETACHED_SESSION_STORAGE_PREFIX)) continue;
+      const stored = localStorage.getItem(key);
+      let safe = false;
+      if (stored && stored.length <= 4_096) {
+        try {
+          safe = isSafeDetachedSessionMetadata(JSON.parse(stored));
+        } catch {
+          safe = false;
+        }
+      }
+      if (!safe) localStorage.removeItem(key);
+    }
+  } catch {
+    // Browser storage can be unavailable. Detached state then remains runtime-only.
+  }
+}
 
 export function useSessionDetach(
   sessions: ConnectionSession[],
@@ -33,6 +113,10 @@ export function useSessionDetach(
   visibleSessionsRef.current = visibleSessions;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+
+  useEffect(() => {
+    purgeLegacyDetachedSessionPayloads();
+  }, []);
 
   const handleSessionDetach = useCallback(
     async (sessionId: string) => {
@@ -169,48 +253,9 @@ export function useSessionDetach(
         }
       }
 
-      // Request terminal buffer before detaching (only for terminal-based protocols)
-      let terminalBuffer = "";
-      if (
-        session.protocol !== "rdp" &&
-        session.protocol !== "raw" &&
-        session.protocol !== "rlogin" &&
-        !isWinmgmtProtocol(session.protocol)
-      ) {
-        try {
-          let resolveBuffer: (value: string) => void;
-          const bufferPromise = new Promise<string>((resolve) => {
-            resolveBuffer = resolve;
-          });
-          const timeout = setTimeout(() => resolveBuffer(""), 1000);
-
-          // Store the listen promise so cleanup always works even if component
-          // flow reaches cleanup before the listen() promise resolves.
-          const listenPromise = listen<{ sessionId: string; buffer: string }>(
-            "terminal-buffer-response",
-            (event) => {
-              if (event.payload.sessionId === sessionId) {
-                clearTimeout(timeout);
-                resolveBuffer(event.payload.buffer);
-              }
-            },
-          );
-
-          await emit("request-terminal-buffer", { sessionId });
-          terminalBuffer = await bufferPromise;
-
-          // Guaranteed cleanup: chain on the promise so unlisten is called
-          // whether listen() resolved before or after bufferPromise.
-          listenPromise.then((fn) => fn()).catch(() => {});
-        } catch (error) {
-          console.warn("Failed to get terminal buffer:", error);
-        }
-      }
-
       // PowerShell's native session must be detached explicitly and awaited.
-      // In particular, its open can finish during the terminal-buffer wait
-      // above; reading through the ref here hands off that exact latest actor
-      // before the detached viewer is persisted or opened.
+      // Sensitive terminal state is never copied into browser persistence.
+      // The detached viewer must recover it from the exact native actor.
       if (session.protocol === "winrm") {
         if (
           !(await detachLatestBackend(
@@ -269,9 +314,9 @@ export function useSessionDetach(
         windowLabel,
       );
       const currentConnection = getLatestConnection(currentSession);
-      const sessionWithBuffer: ConnectionSession = {
+      const detachedSession: ConnectionSession = {
         ...currentSession,
-        terminalBuffer,
+        terminalBuffer: undefined,
         layout: {
           x: currentSession.layout?.x ?? 0,
           y: currentSession.layout?.y ?? 0,
@@ -283,26 +328,39 @@ export function useSessionDetach(
         },
       };
       try {
+        if (
+          !isOpaqueId(detachedSession.id) ||
+          !isOpaqueId(detachedSession.connectionId) ||
+          !isOpaqueId(windowLabel) ||
+          (detachedSession.backendSessionId !== undefined &&
+            !isOpaqueId(detachedSession.backendSessionId))
+        ) {
+          console.error(
+            "Failed to persist detached session metadata: invalid opaque identifier",
+          );
+          return;
+        }
         const payload = {
-          session: sessionWithBuffer,
-          connection: currentConnection || null,
+          version: DETACHED_SESSION_METADATA_VERSION,
+          sessionId: detachedSession.id,
+          connectionId: detachedSession.connectionId,
+          backendSessionId: detachedSession.backendSessionId,
+          ownerWindowId: windowLabel,
+          layout: detachedSession.layout,
           savedAt: Date.now(),
         };
         localStorage.setItem(
           `detached-session-${session.id}`,
           JSON.stringify(payload),
         );
-        console.log(
-          `[detach] saved to localStorage, backendSessionId=${sessionWithBuffer.backendSessionId}`,
-        );
       } catch (error) {
-        console.error("Failed to persist detached session payload:", error);
+        console.error("Failed to persist detached session metadata:", error);
       }
 
       // Publish the same latest snapshot before any window-management awaits.
       // UPDATE_SESSION is reducer-merged, providing an additional guard if a
       // newer lifecycle field lands between this handoff and React's commit.
-      dispatch({ type: "UPDATE_SESSION", payload: sessionWithBuffer });
+      dispatch({ type: "UPDATE_SESSION", payload: detachedSession });
 
       if (activeSessionIdRef.current === sessionId) {
         const remaining = visibleSessionsRef.current.filter(
@@ -311,7 +369,7 @@ export function useSessionDetach(
         setActiveSessionId(remaining[0]?.id);
       }
 
-      const url = `/detached?sessionId=${session.id}`;
+      const url = `/detached?sessionId=${encodeURIComponent(session.id)}`;
       const windowTitle = `sortOfRemoteNG - ${currentSession.name || "Detached Session"}`;
       const isTauri =
         typeof window !== "undefined" &&

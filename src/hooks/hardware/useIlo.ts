@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
 import type {
   IloConfigSafe,
   BmcSystemInfo,
@@ -176,22 +176,19 @@ export function useIlo(): UseIloReturn {
   const [config, setConfig] = useState<IloConfigSafe | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const wrap = useCallback(
-    async <T>(fn: () => Promise<T>): Promise<T> => {
-      setLoading(true);
-      setError(null);
-      try {
-        return await fn();
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message;
+      setError(msg);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -320,9 +317,7 @@ export function useIlo(): UseIloReturn {
 
   const getStorageControllers = useCallback(
     () =>
-      wrap(() =>
-        invoke<BmcStorageController[]>("ilo_get_storage_controllers"),
-      ),
+      wrap(() => invoke<BmcStorageController[]>("ilo_get_storage_controllers")),
     [wrap],
   );
 
@@ -339,8 +334,7 @@ export function useIlo(): UseIloReturn {
   // ── Network ─────────────────────────────────────────────────────
 
   const getNetworkAdapters = useCallback(
-    () =>
-      wrap(() => invoke<BmcNetworkAdapter[]>("ilo_get_network_adapters")),
+    () => wrap(() => invoke<BmcNetworkAdapter[]>("ilo_get_network_adapters")),
     [wrap],
   );
 
@@ -352,16 +346,14 @@ export function useIlo(): UseIloReturn {
   // ── Firmware ────────────────────────────────────────────────────
 
   const getFirmwareInventory = useCallback(
-    () =>
-      wrap(() => invoke<BmcFirmwareItem[]>("ilo_get_firmware_inventory")),
+    () => wrap(() => invoke<BmcFirmwareItem[]>("ilo_get_firmware_inventory")),
     [wrap],
   );
 
   // ── Virtual Media ───────────────────────────────────────────────
 
   const getVirtualMediaStatus = useCallback(
-    () =>
-      wrap(() => invoke<BmcVirtualMedia[]>("ilo_get_virtual_media_status")),
+    () => wrap(() => invoke<BmcVirtualMedia[]>("ilo_get_virtual_media_status")),
     [wrap],
   );
 
@@ -425,9 +417,7 @@ export function useIlo(): UseIloReturn {
 
   const createUser = useCallback(
     (username: string, password: string, role: string) =>
-      wrap(() =>
-        invoke<void>("ilo_create_user", { username, password, role }),
-      ),
+      wrap(() => invoke<void>("ilo_create_user", { username, password, role })),
     [wrap],
   );
 
@@ -438,8 +428,7 @@ export function useIlo(): UseIloReturn {
   );
 
   const deleteUser = useCallback(
-    (userId: string) =>
-      wrap(() => invoke<void>("ilo_delete_user", { userId })),
+    (userId: string) => wrap(() => invoke<void>("ilo_delete_user", { userId })),
     [wrap],
   );
 
@@ -458,7 +447,9 @@ export function useIlo(): UseIloReturn {
 
   const setBiosAttributes = useCallback(
     (attrs: Record<string, unknown>) =>
-      wrap(() => invoke<void>("ilo_set_bios_attributes", { attributes: attrs })),
+      wrap(() =>
+        invoke<void>("ilo_set_bios_attributes", { attributes: attrs }),
+      ),
     [wrap],
   );
 
@@ -528,8 +519,7 @@ export function useIlo(): UseIloReturn {
   );
 
   const activateLicense = useCallback(
-    (key: string) =>
-      wrap(() => invoke<void>("ilo_activate_license", { key })),
+    (key: string) => wrap(() => invoke<void>("ilo_activate_license", { key })),
     [wrap],
   );
 
@@ -541,8 +531,7 @@ export function useIlo(): UseIloReturn {
   // ── Security ────────────────────────────────────────────────────
 
   const getSecurityStatus = useCallback(
-    () =>
-      wrap(() => invoke<IloSecurityStatus>("ilo_get_security_status")),
+    () => wrap(() => invoke<IloSecurityStatus>("ilo_get_security_status")),
     [wrap],
   );
 
@@ -561,18 +550,12 @@ export function useIlo(): UseIloReturn {
   // ── Federation ──────────────────────────────────────────────────
 
   const getFederationGroups = useCallback(
-    () =>
-      wrap(() =>
-        invoke<IloFederationGroup[]>("ilo_get_federation_groups"),
-      ),
+    () => wrap(() => invoke<IloFederationGroup[]>("ilo_get_federation_groups")),
     [wrap],
   );
 
   const getFederationPeers = useCallback(
-    () =>
-      wrap(() =>
-        invoke<IloFederationPeer[]>("ilo_get_federation_peers"),
-      ),
+    () => wrap(() => invoke<IloFederationPeer[]>("ilo_get_federation_peers")),
     [wrap],
   );
 

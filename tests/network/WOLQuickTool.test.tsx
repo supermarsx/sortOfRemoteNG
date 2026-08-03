@@ -205,40 +205,49 @@ describe("WOLQuickTool", () => {
   });
 
   it("counts structured warnings when waking selected devices", async () => {
-    const device = {
-      ip: "192.168.1.100",
-      mac: "00:11:24:33:44:55",
-      hostname: "test-device.example.com",
-      last_seen: "2026-01-04T00:00:00Z",
-    };
-    vi.mocked(invoke)
-      .mockResolvedValueOnce([device])
-      .mockResolvedValueOnce({
-        ...successfulOutcome,
-        warnings: ["Target DNS lookup failed; broadcast delivery succeeded"],
-        targetResolutionFailed: true,
-      });
+    const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const device = {
+        ip: "192.168.1.100",
+        mac: "00:11:24:33:44:55",
+        hostname: "test-device.example.com",
+        last_seen: "2026-01-04T00:00:00Z",
+      };
+      const warning = "Target DNS lookup failed; broadcast delivery succeeded";
+      vi.mocked(invoke)
+        .mockResolvedValueOnce([device])
+        .mockResolvedValueOnce({
+          ...successfulOutcome,
+          warnings: [warning],
+          targetResolutionFailed: true,
+        });
 
-    render(<WOLQuickTool isOpen={true} onClose={() => {}} />);
-    fireEvent.click(screen.getByText("Scan ARP"));
-    const mac = await screen.findByText(device.mac);
-    const row = mac.closest('[role="button"]');
-    expect(row).toBeTruthy();
-    const selectionButton = row?.querySelector("button");
-    expect(selectionButton).toBeTruthy();
-    fireEvent.click(selectionButton!);
-    fireEvent.click(screen.getByText(/Wake Selected/));
+      render(<WOLQuickTool isOpen={true} onClose={() => {}} />);
+      fireEvent.click(screen.getByText("Scan ARP"));
+      const mac = await screen.findByText(device.mac);
+      const row = mac.closest('[role="button"]');
+      expect(row).toBeTruthy();
+      const selectionButton = row?.querySelector("button");
+      expect(selectionButton).toBeTruthy();
+      fireEvent.click(selectionButton!);
+      fireEvent.click(screen.getByText(/Wake Selected/));
 
-    expect(
-      await screen.findByText(/1 used a DNS or delivery fallback/),
-    ).toBeInTheDocument();
-    expect(invoke).toHaveBeenLastCalledWith(
-      "wake_on_lan",
-      expect.objectContaining({
-        macAddress: device.mac,
-        targetAddress: device.hostname,
-      }),
-    );
+      expect(
+        await screen.findByText(/1 used a DNS or delivery fallback/),
+      ).toBeInTheDocument();
+      expect(invoke).toHaveBeenLastCalledWith(
+        "wake_on_lan",
+        expect.objectContaining({
+          macAddress: device.mac,
+          targetAddress: device.hostname,
+        }),
+      );
+      expect(warningSpy.mock.calls).toEqual([
+        [`Wake-on-LAN warnings for ${device.mac}:`, [warning]],
+      ]);
+    } finally {
+      warningSpy.mockRestore();
+    }
   });
 
   it("saves recent MACs to localStorage", async () => {

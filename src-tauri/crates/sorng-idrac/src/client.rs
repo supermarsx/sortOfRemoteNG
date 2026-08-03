@@ -21,6 +21,11 @@ pub struct IdracClient {
 impl IdracClient {
     /// Build a new client from config, attempting protocol detection.
     pub fn new(config: &IdracConfig) -> IdracResult<Self> {
+        if config.insecure {
+            return Err(IdracError::connection(
+                "TLS certificate verification cannot be disabled: insecure=true requires an explicit runtime acknowledgement contract",
+            ));
+        }
         Ok(Self {
             redfish: None,
             wsman: None,

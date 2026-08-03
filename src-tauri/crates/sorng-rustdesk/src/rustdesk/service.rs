@@ -1,6 +1,8 @@
-use chrono::Utc;
 use std::collections::HashMap;
+use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 
 use super::api_client::RustDeskApiClient;
@@ -45,6 +47,9 @@ impl std::fmt::Debug for RustDeskService {
 }
 
 impl RustDeskService {
+    const MAX_CLI_OUTPUT_BYTES: usize = 64 * 1024;
+    pub(crate) const MAX_TRACKED_CONNECTIONS: usize = 256;
+
     /// Create a new service wrapped in `Arc<Mutex<…>>` (standard pattern).
     pub fn new() -> RustDeskServiceState {
         let binary_info = Self::detect_binary();
@@ -82,15 +87,10 @@ impl RustDeskService {
             ]
         };
 
-        let found = candidates.iter().find(|p| std::path::Path::new(p).exists());
-
-        let path_from_which = if found.is_none() {
-            Self::find_in_path()
-        } else {
-            None
-        };
-
-        let path = found.map(|s| s.to_string()).or(path_from_which);
+        let path = candidates
+            .iter()
+            .find(|p| std::path::Path::new(p).is_file())
+            .map(|path| path.to_string());
 
         let platform = if cfg!(target_os = "windows") {
             "windows"
@@ -119,23 +119,6 @@ impl RustDeskService {
         }
     }
 
-    fn find_in_path() -> Option<String> {
-        let cmd = if cfg!(target_os = "windows") {
-            "where"
-        } else {
-            "which"
-        };
-        if let Ok(output) = std::process::Command::new(cmd).arg("rustdesk").output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some(path.lines().next().unwrap_or("").to_string());
-                }
-            }
-        }
-        None
-    }
-
     // ── Public Queries ──────────────────────────────────────────────
 
     pub fn is_available(&self) -> bool {
@@ -155,13 +138,17 @@ impl RustDeskService {
     }
 
     pub fn get_session(&self, session_id: &str) -> Option<RustDeskSession> {
-        self.connections.get(session_id).map(|c| c.session.clone())
+        self.connections
+            .get(session_id)
+            .filter(|record| !record._handle.is_finished())
+            .map(|record| record.session.clone())
     }
 
     pub fn list_sessions(&self) -> Vec<RustDeskSession> {
         self.connections
             .values()
-            .map(|c| c.session.clone())
+            .filter(|record| !record._handle.is_finished())
+            .map(|record| record.session.clone())
             .collect()
     }
 
@@ -189,14 +176,13 @@ impl RustDeskService {
             .ok_or("RustDesk binary not found")?
             .to_string();
 
-        let output = tokio::process::Command::new(&path)
-            .arg("--version")
-            .output()
-            .await
-            .map_err(|e| format!("Failed to execute RustDesk: {}", e))?;
-
-        if output.status.success() {
-            let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let (status, stdout) =
+            Self::run_bounded_command(&path, &["--version"], Duration::from_secs(10)).await?;
+        if status.success() {
+            let ver = String::from_utf8_lossy(&stdout).trim().to_string();
+            if ver.is_empty() {
+                return Err("RustDesk returned an empty version".to_string());
+            }
             self.binary_info.version = Some(ver.clone());
             Ok(ver)
         } else {
@@ -211,14 +197,14 @@ impl RustDeskService {
             .ok_or("RustDesk binary not found")?
             .to_string();
 
-        let output = tokio::process::Command::new(&path)
-            .arg("--get-id")
-            .output()
-            .await
-            .map_err(|e| format!("Failed to execute RustDesk --get-id: {}", e))?;
-
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let (status, stdout) =
+            Self::run_bounded_command(&path, &["--get-id"], Duration::from_secs(10)).await?;
+        if status.success() {
+            let id = String::from_utf8_lossy(&stdout).trim().to_string();
+            if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+                return Err("RustDesk returned an invalid local ID".to_string());
+            }
+            Ok(id)
         } else {
             Err("RustDesk --get-id failed".to_string())
         }
@@ -226,58 +212,68 @@ impl RustDeskService {
 
     // ── Service Status ──────────────────────────────────────────────
 
-    pub async fn check_service_running(&mut self) -> bool {
+    pub async fn check_service_running(&mut self) -> Result<bool, String> {
         #[cfg(target_os = "windows")]
         {
-            if let Ok(output) = tokio::process::Command::new("sc")
-                .args(["query", "RustDesk"])
-                .output()
-                .await
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let running = stdout.contains("RUNNING");
-                self.binary_info.service_running = running;
-                return running;
+            let (status, stdout) =
+                Self::run_bounded_command("sc", &["query", "RustDesk"], Duration::from_secs(10))
+                    .await?;
+            if !status.success() {
+                return Err("Windows could not determine RustDesk service status".to_string());
             }
+            let running = String::from_utf8_lossy(&stdout)
+                .lines()
+                .any(|line| line.split_whitespace().any(|field| field == "RUNNING"));
+            self.binary_info.service_running = running;
+            return Ok(running);
         }
 
         #[cfg(target_os = "linux")]
         {
-            if let Ok(output) = tokio::process::Command::new("systemctl")
-                .args(["is-active", "rustdesk"])
-                .output()
-                .await
-            {
-                let active = String::from_utf8_lossy(&output.stdout)
-                    .trim()
-                    .eq_ignore_ascii_case("active");
-                self.binary_info.service_running = active;
-                return active;
+            let (status, stdout) = Self::run_bounded_command(
+                "systemctl",
+                &["is-active", "rustdesk"],
+                Duration::from_secs(10),
+            )
+            .await?;
+            if !status.success() && status.code() != Some(3) {
+                return Err("systemd could not determine RustDesk service status".to_string());
             }
+            let active = String::from_utf8_lossy(&stdout)
+                .trim()
+                .eq_ignore_ascii_case("active");
+            self.binary_info.service_running = active;
+            return Ok(active);
         }
 
         #[cfg(target_os = "macos")]
         {
-            if let Ok(output) = tokio::process::Command::new("pgrep")
-                .arg("rustdesk")
-                .output()
-                .await
-            {
-                let running = output.status.success();
-                self.binary_info.service_running = running;
-                return running;
-            }
+            let (status, _) =
+                Self::run_bounded_command("pgrep", &["rustdesk"], Duration::from_secs(10)).await?;
+            let running = if status.success() {
+                true
+            } else if status.code() == Some(1) {
+                false
+            } else {
+                return Err("macOS could not determine RustDesk process status".to_string());
+            };
+            self.binary_info.service_running = running;
+            return Ok(running);
         }
 
-        false
+        #[allow(unreachable_code)]
+        Err("RustDesk service status is unavailable on this platform".to_string())
     }
 
     // ── Server Configuration ────────────────────────────────────────
 
-    pub fn configure_server(&mut self, config: RustDeskServerConfig) {
-        let client = RustDeskApiClient::new(config.api_url.clone(), config.api_token.clone());
+    pub fn configure_server(&mut self, config: RustDeskServerConfig) -> Result<(), String> {
+        validate_optional_endpoint("relay server", config.relay_server.as_deref())?;
+        validate_optional_secret("server key", config.server_key.as_deref())?;
+        let client = RustDeskApiClient::new(config.api_url.clone(), config.api_token.clone())?;
         self.api_client = Some(client);
         self.server_config = Some(config);
+        Ok(())
     }
 
     pub fn get_server_config(&self) -> Option<&RustDeskServerConfig> {
@@ -292,8 +288,14 @@ impl RustDeskService {
 
     // ── Client Configuration ────────────────────────────────────────
 
-    pub fn set_client_config(&mut self, config: RustDeskClientConfig) {
+    pub fn set_client_config(&mut self, config: RustDeskClientConfig) -> Result<(), String> {
+        validate_optional_endpoint("ID server", config.id_server.as_deref())?;
+        validate_optional_endpoint("relay server", config.relay_server.as_deref())?;
+        validate_optional_endpoint("API server", config.api_server.as_deref())?;
+        validate_optional_endpoint("direct server", config.direct_server.as_deref())?;
+        validate_optional_secret("client key", config.key.as_deref())?;
         self.client_config = Some(config);
+        Ok(())
     }
 
     pub fn get_client_config(&self) -> Option<&RustDeskClientConfig> {
@@ -307,30 +309,12 @@ impl RustDeskService {
         session_id: &str,
         update: RustDeskSessionUpdate,
     ) -> Result<(), String> {
-        let record = self
+        let _ = self
             .connections
-            .get_mut(session_id)
+            .get(session_id)
             .ok_or_else(|| format!("Session {} not found", session_id))?;
-
-        if let Some(q) = update.quality {
-            record.session.quality = q;
-        }
-        if let Some(c) = update.codec {
-            record.session.codec = c;
-        }
-        if let Some(v) = update.view_only {
-            record.session.view_only = v;
-        }
-        if let Some(a) = update.enable_audio {
-            record.session.enable_audio = a;
-        }
-        if let Some(cb) = update.enable_clipboard {
-            record.session.enable_clipboard = cb;
-        }
-        if let Some(ft) = update.enable_file_transfer {
-            record.session.enable_file_transfer = ft;
-        }
-        Ok(())
+        let _ = update;
+        Err("Live RustDesk session settings are unavailable through the CLI; refusing to report an unapplied update".to_string())
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────
@@ -348,6 +332,9 @@ impl RustDeskService {
     /// Disconnect a single session by id.
     pub async fn disconnect(&mut self, session_id: &str) -> Result<(), String> {
         if let Some(record) = self.connections.remove(session_id) {
+            if record._handle.is_finished() {
+                return Err("RustDesk client process has already exited".to_string());
+            }
             let _ = record.shutdown_tx.send(()).await;
             Ok(())
         } else {
@@ -360,12 +347,15 @@ impl RustDeskService {
     pub fn active_session_count(&self) -> usize {
         self.connections
             .values()
-            .filter(|c| c.session.connected)
+            .filter(|record| record.session.connected && !record._handle.is_finished())
             .count()
     }
 
     pub fn total_session_count(&self) -> usize {
-        self.connections.len()
+        self.connections
+            .values()
+            .filter(|record| !record._handle.is_finished())
+            .count()
     }
 
     pub fn active_tunnel_count(&self) -> usize {
@@ -381,24 +371,16 @@ impl RustDeskService {
         remote_path: &str,
         file_name: &str,
         total_bytes: u64,
-    ) -> String {
-        let id = uuid::Uuid::new_v4().to_string();
-        let transfer = RustDeskFileTransfer {
-            id: id.clone(),
-            session_id: session_id.to_string(),
+    ) -> Result<String, String> {
+        let _ = (
+            session_id,
             direction,
-            local_path: local_path.to_string(),
-            remote_path: remote_path.to_string(),
-            file_name: file_name.to_string(),
+            local_path,
+            remote_path,
+            file_name,
             total_bytes,
-            transferred_bytes: 0,
-            status: FileTransferStatus::Queued,
-            started_at: Utc::now(),
-            completed_at: None,
-            error: None,
-        };
-        self.file_transfers.insert(id.clone(), transfer);
-        id
+        );
+        Err("Manual RustDesk transfer records are disabled because no native transfer lifecycle is wired".to_string())
     }
 
     pub fn update_transfer_progress(
@@ -407,30 +389,79 @@ impl RustDeskService {
         bytes: u64,
         status: FileTransferStatus,
     ) -> Result<(), String> {
-        let t = self
-            .file_transfers
-            .get_mut(transfer_id)
-            .ok_or_else(|| format!("Transfer {} not found", transfer_id))?;
-        t.transferred_bytes = bytes;
-        t.status = status.clone();
-        if status == FileTransferStatus::Completed || status == FileTransferStatus::Failed {
-            t.completed_at = Some(Utc::now());
-        }
-        Ok(())
+        let _ = (transfer_id, bytes, status);
+        Err("Manual RustDesk transfer progress injection is disabled".to_string())
     }
 
     pub fn cancel_file_transfer(&mut self, transfer_id: &str) -> Result<(), String> {
-        let t = self
-            .file_transfers
-            .get_mut(transfer_id)
-            .ok_or_else(|| format!("Transfer {} not found", transfer_id))?;
+        let _ = transfer_id;
+        Err("RustDesk transfer cancellation is unavailable because no native transfer lifecycle is wired".to_string())
+    }
 
-        if t.status == FileTransferStatus::InProgress || t.status == FileTransferStatus::Queued {
-            t.status = FileTransferStatus::Cancelled;
-            t.completed_at = Some(Utc::now());
-            Ok(())
-        } else {
-            Err(format!("Transfer {} is not active", transfer_id))
+    pub(crate) async fn run_bounded_command(
+        program: &str,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<(ExitStatus, Vec<u8>), String> {
+        let mut command = tokio::process::Command::new(program);
+        command
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("Failed to start RustDesk helper process: {}", e))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "RustDesk helper stdout was unavailable".to_string())?;
+
+        tokio::time::timeout(timeout, async move {
+            let mut output = Vec::new();
+            let mut bounded = stdout.take((Self::MAX_CLI_OUTPUT_BYTES + 1) as u64);
+            bounded
+                .read_to_end(&mut output)
+                .await
+                .map_err(|e| format!("Failed to read RustDesk helper output: {}", e))?;
+            if output.len() > Self::MAX_CLI_OUTPUT_BYTES {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err("RustDesk helper output exceeds the 64 KiB limit".to_string());
+            }
+            let status = child
+                .wait()
+                .await
+                .map_err(|e| format!("Failed to wait for RustDesk helper process: {}", e))?;
+            Ok((status, output))
+        })
+        .await
+        .map_err(|_| "RustDesk helper process timed out".to_string())?
+    }
+}
+
+fn validate_optional_endpoint(name: &str, value: Option<&str>) -> Result<(), String> {
+    if let Some(value) = value {
+        if value.trim().is_empty() || value.len() > 2 * 1024 || value.chars().any(char::is_control)
+        {
+            return Err(format!(
+                "RustDesk {} is empty, too long, or contains control characters",
+                name
+            ));
         }
     }
+    Ok(())
+}
+
+fn validate_optional_secret(name: &str, value: Option<&str>) -> Result<(), String> {
+    if let Some(value) = value {
+        if value.is_empty() || value.len() > 16 * 1024 || value.chars().any(char::is_control) {
+            return Err(format!(
+                "RustDesk {} is empty, too long, or contains control characters",
+                name
+            ));
+        }
+    }
+    Ok(())
 }

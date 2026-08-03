@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeManagement as invoke } from "../../utils/security/managementInvoke";
 import type {
   LenovoConfigSafe,
   LenovoSystemInfo,
@@ -163,22 +163,19 @@ export function useLenovo(): UseLenovoReturn {
   const [config, setConfig] = useState<LenovoConfigSafe | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const wrap = useCallback(
-    async <T>(fn: () => Promise<T>): Promise<T> => {
-      setLoading(true);
-      setError(null);
-      try {
-        return await fn();
-      } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error).message;
-        setError(msg);
-        throw e;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const wrap = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
+    setLoading(true);
+    setError(null);
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : (e as Error).message;
+      setError(msg);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -317,8 +314,7 @@ export function useLenovo(): UseLenovoReturn {
   );
 
   const getPhysicalDisks = useCallback(
-    () =>
-      wrap(() => invoke<LenovoPhysicalDisk[]>("lenovo_get_physical_disks")),
+    () => wrap(() => invoke<LenovoPhysicalDisk[]>("lenovo_get_physical_disks")),
     [wrap],
   );
 
@@ -326,15 +322,12 @@ export function useLenovo(): UseLenovoReturn {
 
   const getNetworkAdapters = useCallback(
     () =>
-      wrap(() =>
-        invoke<LenovoNetworkAdapter[]>("lenovo_get_network_adapters"),
-      ),
+      wrap(() => invoke<LenovoNetworkAdapter[]>("lenovo_get_network_adapters")),
     [wrap],
   );
 
   const getXccNetwork = useCallback(
-    () =>
-      wrap(() => invoke<LenovoNetworkAdapter[]>("lenovo_get_xcc_network")),
+    () => wrap(() => invoke<LenovoNetworkAdapter[]>("lenovo_get_xcc_network")),
     [wrap],
   );
 
@@ -342,9 +335,7 @@ export function useLenovo(): UseLenovoReturn {
 
   const getFirmwareInventory = useCallback(
     () =>
-      wrap(() =>
-        invoke<LenovoFirmwareItem[]>("lenovo_get_firmware_inventory"),
-      ),
+      wrap(() => invoke<LenovoFirmwareItem[]>("lenovo_get_firmware_inventory")),
     [wrap],
   );
 
@@ -387,14 +378,12 @@ export function useLenovo(): UseLenovoReturn {
   // ── Event Logs ──────────────────────────────────────────────────
 
   const getEventLog = useCallback(
-    () =>
-      wrap(() => invoke<LenovoEventLogEntry[]>("lenovo_get_event_log")),
+    () => wrap(() => invoke<LenovoEventLogEntry[]>("lenovo_get_event_log")),
     [wrap],
   );
 
   const getAuditLog = useCallback(
-    () =>
-      wrap(() => invoke<LenovoEventLogEntry[]>("lenovo_get_audit_log")),
+    () => wrap(() => invoke<LenovoEventLogEntry[]>("lenovo_get_audit_log")),
     [wrap],
   );
 
@@ -436,9 +425,7 @@ export function useLenovo(): UseLenovoReturn {
 
   const getBiosAttributes = useCallback(
     () =>
-      wrap(() =>
-        invoke<LenovoBiosAttribute[]>("lenovo_get_bios_attributes"),
-      ),
+      wrap(() => invoke<LenovoBiosAttribute[]>("lenovo_get_bios_attributes")),
     [wrap],
   );
 
@@ -457,9 +444,7 @@ export function useLenovo(): UseLenovoReturn {
 
   const setBootOverride = useCallback(
     (target: string, mode?: string) =>
-      wrap(() =>
-        invoke<void>("lenovo_set_boot_override", { target, mode }),
-      ),
+      wrap(() => invoke<void>("lenovo_set_boot_override", { target, mode })),
     [wrap],
   );
 
@@ -480,24 +465,20 @@ export function useLenovo(): UseLenovoReturn {
       country?: string;
       email?: string;
       keySize?: number;
-    }) =>
-      wrap(() => invoke<string>("lenovo_generate_csr", { params })),
+    }) => wrap(() => invoke<string>("lenovo_generate_csr", { params })),
     [wrap],
   );
 
   const importCertificate = useCallback(
     (certPem: string) =>
-      wrap(() =>
-        invoke<void>("lenovo_import_certificate", { certPem }),
-      ),
+      wrap(() => invoke<void>("lenovo_import_certificate", { certPem })),
     [wrap],
   );
 
   // ── Health ──────────────────────────────────────────────────────
 
   const getHealthRollup = useCallback(
-    () =>
-      wrap(() => invoke<LenovoHealthRollup>("lenovo_get_health_rollup")),
+    () => wrap(() => invoke<LenovoHealthRollup>("lenovo_get_health_rollup")),
     [wrap],
   );
 

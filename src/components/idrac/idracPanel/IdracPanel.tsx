@@ -62,7 +62,7 @@ const IdracPanel: React.FC<IdracPanelProps> = ({
           port: connection.port || 443,
           username: connection.username || "root",
           password: connection.password || "",
-          insecure: connection.idracSettings?.insecure ?? true,
+          insecure: connection.idracSettings?.insecure ?? false,
           forceProtocol: connection.idracSettings?.forceProtocol,
           timeoutSecs: connection.idracSettings?.timeoutSecs,
         }
@@ -71,39 +71,36 @@ const IdracPanel: React.FC<IdracPanelProps> = ({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const autoConnectStartedRef = useRef(false);
   const teardownPromiseRef = useRef<Promise<void> | null>(null);
+  const { connect, disconnect, host, username } = mgr;
 
   useEffect(() => {
     onConnectionStateChange?.(
       mgr.connectionState,
       mgr.connectionError ?? undefined,
     );
-  }, [
-    mgr.connectionError,
-    mgr.connectionState,
-    onConnectionStateChange,
-  ]);
+  }, [mgr.connectionError, mgr.connectionState, onConnectionStateChange]);
 
   useEffect(() => {
     if (
       !autoConnect ||
       autoConnectStartedRef.current ||
-      !mgr.host.trim() ||
-      !mgr.username.trim()
+      !host.trim() ||
+      !username.trim()
     ) {
       return;
     }
     autoConnectStartedRef.current = true;
-    void mgr.connect();
-  }, [autoConnect, mgr.connect, mgr.host, mgr.username]);
+    void connect();
+  }, [autoConnect, connect, host, username]);
 
   const teardown = React.useCallback(() => {
     if (!teardownPromiseRef.current) {
       teardownPromiseRef.current = onRequestTeardown
         ? onRequestTeardown()
-        : mgr.disconnect().catch(() => undefined);
+        : disconnect().catch(() => undefined);
     }
     return teardownPromiseRef.current;
-  }, [mgr.disconnect, onRequestTeardown]);
+  }, [disconnect, onRequestTeardown]);
 
   useEffect(
     () => () => {
@@ -169,15 +166,23 @@ const IdracPanel: React.FC<IdracPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg)]" data-testid="idrac-panel">
+    <div
+      className="flex flex-col h-full bg-[var(--color-bg)]"
+      data-testid="idrac-panel"
+    >
       <IdracHeader mgr={mgr} onClose={handleClose} />
 
       {/* Error Bar */}
       {mgr.dataError && (
         <div className="flex items-center gap-2 px-4 py-2 bg-error/10 border-b border-error/20">
           <AlertCircle className="w-3.5 h-3.5 text-error shrink-0" />
-          <p className="text-[10px] text-error flex-1 truncate">{mgr.dataError}</p>
-          <button onClick={() => mgr.refresh?.()} className="text-error hover:text-error">
+          <p className="text-[10px] text-error flex-1 truncate">
+            {mgr.dataError}
+          </p>
+          <button
+            onClick={() => mgr.refresh?.()}
+            className="text-error hover:text-error"
+          >
             <X className="w-3 h-3" />
           </button>
         </div>
@@ -194,8 +199,12 @@ const IdracPanel: React.FC<IdracPanelProps> = ({
       {mgr.showConfirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-xl p-6 max-w-sm w-full shadow-xl">
-            <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">{mgr.confirmTitle}</h3>
-            <p className="text-xs text-[var(--color-textSecondary)] mb-4">{mgr.confirmMessage}</p>
+            <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">
+              {mgr.confirmTitle}
+            </h3>
+            <p className="text-xs text-[var(--color-textSecondary)] mb-4">
+              {mgr.confirmMessage}
+            </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => mgr.cancelConfirm()}
@@ -204,7 +213,9 @@ const IdracPanel: React.FC<IdracPanelProps> = ({
                 {t("common.cancel", "Cancel")}
               </button>
               <button
-                onClick={() => { mgr.executeConfirm(); }}
+                onClick={() => {
+                  mgr.executeConfirm();
+                }}
                 className="px-4 py-2 rounded-lg bg-warning hover:bg-warning/90 text-[var(--color-text)] text-xs font-medium transition-colors"
               >
                 {t("common.confirm", "Confirm")}

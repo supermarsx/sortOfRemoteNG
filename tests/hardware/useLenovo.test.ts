@@ -47,20 +47,17 @@ describe("useLenovo", () => {
       host: "10.0.0.5",
       generation: "xcc2",
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "lenovo_connect",
-      {
-        host: "10.0.0.5",
-        port: 443,
-        username: "USERID",
-        password: "PASSW0RD",
-        protocol: undefined,
-        insecure: true,
-        timeoutSecs: 30,
-        ipmiPort: 623,
-        generation: undefined,
-      },
-    );
+    expect(invoke).toHaveBeenCalledWith("lenovo_connect", {
+      host: "10.0.0.5",
+      port: 443,
+      username: "USERID",
+      password: "PASSW0RD",
+      protocol: undefined,
+      insecure: true,
+      timeoutSecs: 30,
+      ipmiPort: 623,
+      generation: undefined,
+    });
   });
 
   it("connect failure sets error", async () => {

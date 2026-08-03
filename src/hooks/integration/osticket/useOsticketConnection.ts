@@ -50,22 +50,32 @@ export function useOsticketConnection() {
       id: string,
       config: OsticketConnectionConfig,
     ): Promise<OsticketConnectionStatus> => {
+      let acknowledgementAvailable =
+        config.acknowledge_invalid_cert_risk === true;
+      const reconnectConfig = {
+        ...config,
+        acknowledge_invalid_cert_risk: false,
+      };
       return trackConnect(
         `osticket:${id}`,
         async () => {
           setConnecting(true);
           setError(null);
           try {
+            const attemptConfig = {
+              ...reconnectConfig,
+              acknowledge_invalid_cert_risk: acknowledgementAvailable,
+            };
+            acknowledgementAvailable = false;
             const result = await osticketConnectionApi.connect(
               id,
-              withGlobalHttpProxy(config),
+              withGlobalHttpProxy(attemptConfig),
             );
             setConnectionId(id);
             setStatus(result);
             return result;
           } catch (e) {
-            const msg = typeof e === "string" ? e : (e as Error).message;
-            setError(msg);
+            setError("Unable to connect to osTicket.");
             setConnectionId(null);
             setStatus(null);
             throw e;
@@ -96,8 +106,7 @@ export function useOsticketConnection() {
       const result = await osticketConnectionApi.ping(connectionId);
       setStatus(result);
     } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error).message;
-      setError(msg);
+      setError("Unable to contact osTicket.");
     }
   }, [connectionId]);
 

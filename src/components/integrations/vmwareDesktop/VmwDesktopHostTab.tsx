@@ -114,8 +114,7 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
     sharedFolders: true,
   });
   const toggle = useCallback(
-    (key: string) =>
-      setOpenSections((s) => ({ ...s, [key]: !s[key] })),
+    (key: string) => setOpenSections((s) => ({ ...s, [key]: !s[key] })),
     [],
   );
 
@@ -134,14 +133,16 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
   const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
   const [sfName, setSfName] = useState("");
   const [sfHostPath, setSfHostPath] = useState("");
-  const [sfWritable, setSfWritable] = useState(true);
+  const [sfWritable, setSfWritable] = useState(false);
   const [sfNotice, setSfNotice] = useState<string | null>(null);
 
   const loadSharedFolders = useCallback(async () => {
     const list = await run(() => api.listSharedFolders(vmxPath));
     if (list) {
       setSharedFolders(list);
-      setSfNotice(t("integrations.vmwareDesktop.host.notice.loaded", "Loaded."));
+      setSfNotice(
+        t("integrations.vmwareDesktop.host.notice.loaded", "Loaded."),
+      );
     }
   }, [api, run, vmxPath, t]);
 
@@ -256,7 +257,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
       {/* Shared target VM */}
       <div className="flex items-end gap-2">
         <Field
-          label={t("integrations.vmwareDesktop.host.vmxPath", "Target VM (.vmx path)")}
+          label={t(
+            "integrations.vmwareDesktop.host.vmxPath",
+            "Target VM (.vmx path)",
+          )}
           value={vmxPath}
           onChange={setVmxPath}
           placeholder="C:\\VMs\\web01\\web01.vmx"
@@ -271,7 +275,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
       {/* ═══ Shared folders ═══ */}
       <Section
         icon={<FolderSymlink className="h-4 w-4 text-primary" />}
-        title={t("integrations.vmwareDesktop.host.sharedFolders.title", "Shared folders")}
+        title={t(
+          "integrations.vmwareDesktop.host.sharedFolders.title",
+          "Shared folders",
+        )}
         open={!!openSections.sharedFolders}
         onToggle={() => toggle("sharedFolders")}
       >
@@ -285,7 +292,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               )
             }
           >
-            {t("integrations.vmwareDesktop.host.sharedFolders.enable", "Enable")}
+            {t(
+              "integrations.vmwareDesktop.host.sharedFolders.enable",
+              "Enable",
+            )}
           </button>
           <button
             className={btnCls}
@@ -296,7 +306,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               )
             }
           >
-            {t("integrations.vmwareDesktop.host.sharedFolders.disable", "Disable")}
+            {t(
+              "integrations.vmwareDesktop.host.sharedFolders.disable",
+              "Disable",
+            )}
           </button>
           <button
             className={btnCls}
@@ -313,16 +326,36 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             <table className="w-full text-left text-xs">
               <thead className="text-[var(--color-textSecondary)]">
                 <tr>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.name", "Name")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.hostPath", "Host path")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.writable", "Writable")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.enabled", "Enabled")}</th>
+                  <th className="py-1 pr-3">
+                    {t("integrations.vmwareDesktop.host.col.name", "Name")}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t(
+                      "integrations.vmwareDesktop.host.col.hostPath",
+                      "Host path",
+                    )}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t(
+                      "integrations.vmwareDesktop.host.col.writable",
+                      "Writable",
+                    )}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t(
+                      "integrations.vmwareDesktop.host.col.enabled",
+                      "Enabled",
+                    )}
+                  </th>
                   <th className="py-1" />
                 </tr>
               </thead>
               <tbody className="text-[var(--color-text)]">
                 {sharedFolders.map((f) => (
-                  <tr key={f.name} className="border-t border-[var(--color-border)]">
+                  <tr
+                    key={f.name}
+                    className="border-t border-[var(--color-border)]"
+                  >
                     <td className="py-1 pr-3">{f.name}</td>
                     <td className="py-1 pr-3">{f.hostPath}</td>
                     <td className="py-1 pr-3">{String(f.writable)}</td>
@@ -335,7 +368,9 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                           void run(() =>
                             api.removeSharedFolder(vmxPath, f.name),
                           ).then((r) =>
-                            r !== undefined ? void loadSharedFolders() : undefined,
+                            r !== undefined
+                              ? void loadSharedFolders()
+                              : undefined,
                           )
                         }
                       >
@@ -350,10 +385,25 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Field label={t("integrations.vmwareDesktop.host.col.name", "Name")} value={sfName} onChange={setSfName} />
-          <Field label={t("integrations.vmwareDesktop.host.col.hostPath", "Host path")} value={sfHostPath} onChange={setSfHostPath} />
+          <Field
+            label={t("integrations.vmwareDesktop.host.col.name", "Name")}
+            value={sfName}
+            onChange={setSfName}
+          />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.col.hostPath",
+              "Host path",
+            )}
+            value={sfHostPath}
+            onChange={setSfHostPath}
+          />
           <label className="flex items-center gap-2 pt-5 text-xs text-[var(--color-textSecondary)]">
-            <input type="checkbox" checked={sfWritable} onChange={(e) => setSfWritable(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={sfWritable}
+              onChange={(e) => setSfWritable(e.target.checked)}
+            />
             {t("integrations.vmwareDesktop.host.col.writable", "Writable")}
           </label>
         </div>
@@ -364,22 +414,37 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             onClick={() =>
               void run(() =>
                 api.addSharedFolder(vmxPath, sfName, sfHostPath, sfWritable),
-              ).then((r) => (r !== undefined ? void loadSharedFolders() : undefined))
+              ).then((r) =>
+                r !== undefined ? void loadSharedFolders() : undefined,
+              )
             }
           >
             <Plus className="h-3.5 w-3.5" />
-            {t("integrations.vmwareDesktop.host.sharedFolders.add", "Add folder")}
+            {t(
+              "integrations.vmwareDesktop.host.sharedFolders.add",
+              "Add folder",
+            )}
           </button>
           <button
             className={btnCls}
             disabled={busy || !vmxPath || !sfName || !sfHostPath}
             onClick={() =>
               void run(() =>
-                api.setSharedFolderState(vmxPath, sfName, sfHostPath, sfWritable),
-              ).then((r) => (r !== undefined ? void loadSharedFolders() : undefined))
+                api.setSharedFolderState(
+                  vmxPath,
+                  sfName,
+                  sfHostPath,
+                  sfWritable,
+                ),
+              ).then((r) =>
+                r !== undefined ? void loadSharedFolders() : undefined,
+              )
             }
           >
-            {t("integrations.vmwareDesktop.host.sharedFolders.setState", "Set state")}
+            {t(
+              "integrations.vmwareDesktop.host.sharedFolders.setState",
+              "Set state",
+            )}
           </button>
         </div>
         <Notice text={sfNotice} />
@@ -388,14 +453,24 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
       {/* ═══ Virtual networking ═══ */}
       <Section
         icon={<Network className="h-4 w-4 text-primary" />}
-        title={t("integrations.vmwareDesktop.host.networking.title", "Virtual networking")}
+        title={t(
+          "integrations.vmwareDesktop.host.networking.title",
+          "Virtual networking",
+        )}
         open={!!openSections.networking}
         onToggle={() => toggle("networking")}
       >
         <div className="flex flex-wrap gap-2">
-          <button className={btnCls} disabled={busy} onClick={() => void loadNetworks()}>
+          <button
+            className={btnCls}
+            disabled={busy}
+            onClick={() => void loadNetworks()}
+          >
             <RefreshCw className="h-3.5 w-3.5" />
-            {t("integrations.vmwareDesktop.host.networking.list", "List networks")}
+            {t(
+              "integrations.vmwareDesktop.host.networking.list",
+              "List networks",
+            )}
           </button>
           <button
             className={btnCls}
@@ -412,7 +487,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               )
             }
           >
-            {t("integrations.vmwareDesktop.host.networking.readConfig", "Read networking.conf")}
+            {t(
+              "integrations.vmwareDesktop.host.networking.readConfig",
+              "Read networking.conf",
+            )}
           </button>
         </div>
 
@@ -421,10 +499,18 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             <table className="w-full text-left text-xs">
               <thead className="text-[var(--color-textSecondary)]">
                 <tr>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.name", "Name")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.type", "Type")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.subnet", "Subnet")}</th>
-                  <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.mask", "Mask")}</th>
+                  <th className="py-1 pr-3">
+                    {t("integrations.vmwareDesktop.host.col.name", "Name")}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t("integrations.vmwareDesktop.host.col.type", "Type")}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t("integrations.vmwareDesktop.host.col.subnet", "Subnet")}
+                  </th>
+                  <th className="py-1 pr-3">
+                    {t("integrations.vmwareDesktop.host.col.mask", "Mask")}
+                  </th>
                   <th className="py-1 pr-3">DHCP</th>
                   <th className="py-1 pr-3">NAT</th>
                   <th className="py-1" />
@@ -432,13 +518,20 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               </thead>
               <tbody className="text-[var(--color-text)]">
                 {networks.map((n) => (
-                  <tr key={n.name} className="border-t border-[var(--color-border)]">
+                  <tr
+                    key={n.name}
+                    className="border-t border-[var(--color-border)]"
+                  >
                     <td className="py-1 pr-3">{n.name}</td>
                     <td className="py-1 pr-3">{n.networkType}</td>
                     <td className="py-1 pr-3">{n.subnet ?? "—"}</td>
                     <td className="py-1 pr-3">{n.subnetMask ?? "—"}</td>
-                    <td className="py-1 pr-3">{n.dhcpEnabled == null ? "—" : String(n.dhcpEnabled)}</td>
-                    <td className="py-1 pr-3">{n.natEnabled == null ? "—" : String(n.natEnabled)}</td>
+                    <td className="py-1 pr-3">
+                      {n.dhcpEnabled == null ? "—" : String(n.dhcpEnabled)}
+                    </td>
+                    <td className="py-1 pr-3">
+                      {n.natEnabled == null ? "—" : String(n.natEnabled)}
+                    </td>
                     <td className="py-1">
                       <button
                         className={btnCls}
@@ -460,10 +553,30 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Field label={t("integrations.vmwareDesktop.host.col.name", "Name")} value={netName} onChange={setNetName} placeholder="vmnet8" />
-          <Field label={t("integrations.vmwareDesktop.host.col.type", "Type")} value={netType} onChange={setNetType} placeholder="nat" />
-          <Field label={t("integrations.vmwareDesktop.host.col.subnet", "Subnet")} value={netSubnet} onChange={setNetSubnet} placeholder="192.168.100.0" />
-          <Field label={t("integrations.vmwareDesktop.host.col.mask", "Mask")} value={netMask} onChange={setNetMask} placeholder="255.255.255.0" />
+          <Field
+            label={t("integrations.vmwareDesktop.host.col.name", "Name")}
+            value={netName}
+            onChange={setNetName}
+            placeholder="vmnet8"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.col.type", "Type")}
+            value={netType}
+            onChange={setNetType}
+            placeholder="nat"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.col.subnet", "Subnet")}
+            value={netSubnet}
+            onChange={setNetSubnet}
+            placeholder="192.168.100.0"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.col.mask", "Mask")}
+            value={netMask}
+            onChange={setNetMask}
+            placeholder="255.255.255.0"
+          />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
@@ -471,7 +584,12 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             disabled={busy || !netName || !netType}
             onClick={() =>
               void run(() =>
-                api.createNetwork(netName, netType, netSubnet || null, netMask || null),
+                api.createNetwork(
+                  netName,
+                  netType,
+                  netSubnet || null,
+                  netMask || null,
+                ),
               ).then((r) => (r !== undefined ? void loadNetworks() : undefined))
             }
           >
@@ -483,7 +601,12 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             disabled={busy || !netName || !netType}
             onClick={() =>
               void run(() =>
-                api.updateNetwork(netName, netType, netSubnet || null, netMask || null),
+                api.updateNetwork(
+                  netName,
+                  netType,
+                  netSubnet || null,
+                  netMask || null,
+                ),
               ).then((r) => (r !== undefined ? void loadNetworks() : undefined))
             }
           >
@@ -506,11 +629,17 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         {/* Port forwards */}
         <div className="mt-4 border-t border-[var(--color-border)] pt-3">
           <p className="mb-2 text-xs font-medium text-[var(--color-text)]">
-            {t("integrations.vmwareDesktop.host.networking.portForwards", "NAT port forwarding")}
+            {t(
+              "integrations.vmwareDesktop.host.networking.portForwards",
+              "NAT port forwarding",
+            )}
           </p>
           <div className="flex items-end gap-2">
             <Field
-              label={t("integrations.vmwareDesktop.host.col.network", "Network")}
+              label={t(
+                "integrations.vmwareDesktop.host.col.network",
+                "Network",
+              )}
               value={pfNetwork}
               onChange={setPfNetwork}
               placeholder="vmnet8"
@@ -524,14 +653,21 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                   if (l) {
                     setPortForwards(l);
                     setPfNotice(
-                      t("integrations.vmwareDesktop.host.notice.count", "{{n}} item(s).", { n: l.length }),
+                      t(
+                        "integrations.vmwareDesktop.host.notice.count",
+                        "{{n}} item(s).",
+                        { n: l.length },
+                      ),
                     );
                   }
                 })
               }
             >
               <RefreshCw className="h-3.5 w-3.5" />
-              {t("integrations.vmwareDesktop.host.networking.listForwards", "List")}
+              {t(
+                "integrations.vmwareDesktop.host.networking.listForwards",
+                "List",
+              )}
             </button>
             <button
               className={btnCls}
@@ -541,13 +677,20 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                   if (l) {
                     setLeases(l);
                     setPfNotice(
-                      t("integrations.vmwareDesktop.host.notice.count", "{{n}} item(s).", { n: l.length }),
+                      t(
+                        "integrations.vmwareDesktop.host.notice.count",
+                        "{{n}} item(s).",
+                        { n: l.length },
+                      ),
                     );
                   }
                 })
               }
             >
-              {t("integrations.vmwareDesktop.host.networking.dhcpLeases", "DHCP leases")}
+              {t(
+                "integrations.vmwareDesktop.host.networking.dhcpLeases",
+                "DHCP leases",
+              )}
             </button>
           </div>
 
@@ -556,19 +699,41 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               <table className="w-full text-left text-xs">
                 <thead className="text-[var(--color-textSecondary)]">
                   <tr>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.protocol", "Proto")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.hostPort", "Host port")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.guest", "Guest")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.desc", "Description")}</th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.protocol",
+                        "Proto",
+                      )}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.hostPort",
+                        "Host port",
+                      )}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t("integrations.vmwareDesktop.host.col.guest", "Guest")}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.desc",
+                        "Description",
+                      )}
+                    </th>
                     <th className="py-1" />
                   </tr>
                 </thead>
                 <tbody className="text-[var(--color-text)]">
                   {portForwards.map((p) => (
-                    <tr key={`${p.protocol}-${p.hostPort}`} className="border-t border-[var(--color-border)]">
+                    <tr
+                      key={`${p.protocol}-${p.hostPort}`}
+                      className="border-t border-[var(--color-border)]"
+                    >
                       <td className="py-1 pr-3">{p.protocol}</td>
                       <td className="py-1 pr-3">{p.hostPort}</td>
-                      <td className="py-1 pr-3">{p.guestIp}:{p.guestPort}</td>
+                      <td className="py-1 pr-3">
+                        {p.guestIp}:{p.guestPort}
+                      </td>
                       <td className="py-1 pr-3">{p.description ?? "—"}</td>
                       <td className="py-1">
                         <button
@@ -576,11 +741,17 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                           disabled={busy}
                           onClick={() =>
                             void run(() =>
-                              api.deletePortForward(pfNetwork, p.protocol, p.hostPort),
+                              api.deletePortForward(
+                                pfNetwork,
+                                p.protocol,
+                                p.hostPort,
+                              ),
                             ).then((r) =>
                               r !== undefined
-                                ? void run(() => api.listPortForwards(pfNetwork)).then(
-                                    (l) => (l ? setPortForwards(l) : undefined),
+                                ? void run(() =>
+                                    api.listPortForwards(pfNetwork),
+                                  ).then((l) =>
+                                    l ? setPortForwards(l) : undefined,
                                   )
                                 : undefined,
                             )
@@ -603,13 +774,26 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                   <tr>
                     <th className="py-1 pr-3">MAC</th>
                     <th className="py-1 pr-3">IP</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.hostname", "Hostname")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.expires", "Expires")}</th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.hostname",
+                        "Hostname",
+                      )}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.expires",
+                        "Expires",
+                      )}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="text-[var(--color-text)]">
                   {leases.map((l) => (
-                    <tr key={l.macAddress} className="border-t border-[var(--color-border)]">
+                    <tr
+                      key={l.macAddress}
+                      className="border-t border-[var(--color-border)]"
+                    >
                       <td className="py-1 pr-3">{l.macAddress}</td>
                       <td className="py-1 pr-3">{l.ipAddress}</td>
                       <td className="py-1 pr-3">{l.hostname ?? "—"}</td>
@@ -622,16 +806,53 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
           )}
 
           <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Field label={t("integrations.vmwareDesktop.host.col.protocol", "Proto")} value={pfProtocol} onChange={setPfProtocol} placeholder="tcp" />
-            <Field label={t("integrations.vmwareDesktop.host.col.hostPort", "Host port")} value={pfHostPort} onChange={setPfHostPort} type="number" />
-            <Field label={t("integrations.vmwareDesktop.host.col.guestIp", "Guest IP")} value={pfGuestIp} onChange={setPfGuestIp} />
-            <Field label={t("integrations.vmwareDesktop.host.col.guestPort", "Guest port")} value={pfGuestPort} onChange={setPfGuestPort} type="number" />
-            <Field label={t("integrations.vmwareDesktop.host.col.desc", "Description")} value={pfDesc} onChange={setPfDesc} />
+            <Field
+              label={t("integrations.vmwareDesktop.host.col.protocol", "Proto")}
+              value={pfProtocol}
+              onChange={setPfProtocol}
+              placeholder="tcp"
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.hostPort",
+                "Host port",
+              )}
+              value={pfHostPort}
+              onChange={setPfHostPort}
+              type="number"
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.guestIp",
+                "Guest IP",
+              )}
+              value={pfGuestIp}
+              onChange={setPfGuestIp}
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.guestPort",
+                "Guest port",
+              )}
+              value={pfGuestPort}
+              onChange={setPfGuestPort}
+              type="number"
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.desc",
+                "Description",
+              )}
+              value={pfDesc}
+              onChange={setPfDesc}
+            />
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               className={btnCls}
-              disabled={busy || !pfNetwork || !pfHostPort || !pfGuestIp || !pfGuestPort}
+              disabled={
+                busy || !pfNetwork || !pfHostPort || !pfGuestIp || !pfGuestPort
+              }
               onClick={() =>
                 void run(() =>
                   api.setPortForward(
@@ -644,15 +865,18 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                   ),
                 ).then((r) =>
                   r !== undefined
-                    ? void run(() => api.listPortForwards(pfNetwork)).then((l) =>
-                        l ? setPortForwards(l) : undefined,
+                    ? void run(() => api.listPortForwards(pfNetwork)).then(
+                        (l) => (l ? setPortForwards(l) : undefined),
                       )
                     : undefined,
                 )
               }
             >
               <Plus className="h-3.5 w-3.5" />
-              {t("integrations.vmwareDesktop.host.networking.setForward", "Set forward")}
+              {t(
+                "integrations.vmwareDesktop.host.networking.setForward",
+                "Set forward",
+              )}
             </button>
           </div>
           <Notice text={pfNotice} />
@@ -667,10 +891,36 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         onToggle={() => toggle("vmdk")}
       >
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.path", "VMDK path")} value={vmdkPath} onChange={setVmdkPath} className="sm:col-span-2" />
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.sizeMb", "Size (MB)")} value={vmdkSize} onChange={setVmdkSize} type="number" />
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.diskType", "Disk type")} value={vmdkDiskType} onChange={setVmdkDiskType} placeholder="monolithicSparse" />
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.adapter", "Adapter")} value={vmdkAdapter} onChange={setVmdkAdapter} placeholder="lsilogic" />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmdk.path", "VMDK path")}
+            value={vmdkPath}
+            onChange={setVmdkPath}
+            className="sm:col-span-2"
+          />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.sizeMb",
+              "Size (MB)",
+            )}
+            value={vmdkSize}
+            onChange={setVmdkSize}
+            type="number"
+          />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.diskType",
+              "Disk type",
+            )}
+            value={vmdkDiskType}
+            onChange={setVmdkDiskType}
+            placeholder="monolithicSparse"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmdk.adapter", "Adapter")}
+            value={vmdkAdapter}
+            onChange={setVmdkAdapter}
+            placeholder="lsilogic"
+          />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
@@ -678,7 +928,12 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             disabled={busy || !vmdkPath || !vmdkSize}
             onClick={() =>
               void run(() =>
-                api.createVmdk(vmdkPath, Number(vmdkSize), vmdkDiskType || null, vmdkAdapter || null),
+                api.createVmdk(
+                  vmdkPath,
+                  Number(vmdkSize),
+                  vmdkDiskType || null,
+                  vmdkAdapter || null,
+                ),
               ).then((info) => (info ? setVmdkInfo(info) : undefined))
             }
           >
@@ -727,16 +982,41 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.expandTo", "Expand to (MB)")} value={vmdkExpandSize} onChange={setVmdkExpandSize} type="number" />
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.convertType", "Convert to type")} value={vmdkConvertType} onChange={setVmdkConvertType} placeholder="monolithicFlat" />
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.convertDest", "Convert dest (optional)")} value={vmdkConvertDest} onChange={setVmdkConvertDest} />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.expandTo",
+              "Expand to (MB)",
+            )}
+            value={vmdkExpandSize}
+            onChange={setVmdkExpandSize}
+            type="number"
+          />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.convertType",
+              "Convert to type",
+            )}
+            value={vmdkConvertType}
+            onChange={setVmdkConvertType}
+            placeholder="monolithicFlat"
+          />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.convertDest",
+              "Convert dest (optional)",
+            )}
+            value={vmdkConvertDest}
+            onChange={setVmdkConvertDest}
+          />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             className={btnCls}
             disabled={busy || !vmdkPath || !vmdkExpandSize}
             onClick={() =>
-              void run(() => api.expandVmdk(vmdkPath, Number(vmdkExpandSize))).then((r) =>
+              void run(() =>
+                api.expandVmdk(vmdkPath, Number(vmdkExpandSize)),
+              ).then((r) =>
                 r !== undefined ? setVmdkNotice(okMsg) : undefined,
               )
             }
@@ -748,19 +1028,32 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             disabled={busy || !vmdkPath || !vmdkConvertType}
             onClick={() =>
               void run(() =>
-                api.convertVmdk(vmdkPath, vmdkConvertType, vmdkConvertDest || null),
-              ).then((r) => (r !== undefined ? setVmdkNotice(okMsg) : undefined))
+                api.convertVmdk(
+                  vmdkPath,
+                  vmdkConvertType,
+                  vmdkConvertDest || null,
+                ),
+              ).then((r) =>
+                r !== undefined ? setVmdkNotice(okMsg) : undefined,
+              )
             }
           >
             {t("integrations.vmwareDesktop.host.vmdk.convert", "Convert")}
           </button>
-          <Field label={t("integrations.vmwareDesktop.host.vmdk.renameDest", "Rename to")} value={vmdkRenameDest} onChange={setVmdkRenameDest} />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmdk.renameDest",
+              "Rename to",
+            )}
+            value={vmdkRenameDest}
+            onChange={setVmdkRenameDest}
+          />
           <button
             className={`${btnCls} self-end`}
             disabled={busy || !vmdkPath || !vmdkRenameDest}
             onClick={() =>
-              void run(() => api.renameVmdk(vmdkPath, vmdkRenameDest)).then((r) =>
-                r !== undefined ? setVmdkNotice(okMsg) : undefined,
+              void run(() => api.renameVmdk(vmdkPath, vmdkRenameDest)).then(
+                (r) => (r !== undefined ? setVmdkNotice(okMsg) : undefined),
               )
             }
           >
@@ -772,7 +1065,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         {/* Disks attached to a VM */}
         <div className="mt-4 border-t border-[var(--color-border)] pt-3">
           <p className="mb-2 text-xs font-medium text-[var(--color-text)]">
-            {t("integrations.vmwareDesktop.host.vmdk.vmDisks", "Disks on target VM")}
+            {t(
+              "integrations.vmwareDesktop.host.vmdk.vmDisks",
+              "Disks on target VM",
+            )}
           </p>
           <button
             className={btnCls}
@@ -793,21 +1089,35 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                 <thead className="text-[var(--color-textSecondary)]">
                   <tr>
                     <th className="py-1 pr-3">#</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.file", "File")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.type", "Type")}</th>
-                    <th className="py-1 pr-3">{t("integrations.vmwareDesktop.host.col.controller", "Controller")}</th>
+                    <th className="py-1 pr-3">
+                      {t("integrations.vmwareDesktop.host.col.file", "File")}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t("integrations.vmwareDesktop.host.col.type", "Type")}
+                    </th>
+                    <th className="py-1 pr-3">
+                      {t(
+                        "integrations.vmwareDesktop.host.col.controller",
+                        "Controller",
+                      )}
+                    </th>
                     <th className="py-1 pr-3">Bus/Unit</th>
                     <th className="py-1" />
                   </tr>
                 </thead>
                 <tbody className="text-[var(--color-text)]">
                   {vmDisks.map((d) => (
-                    <tr key={`${d.controllerType}-${d.controllerBus}-${d.unitNumber}`} className="border-t border-[var(--color-border)]">
+                    <tr
+                      key={`${d.controllerType}-${d.controllerBus}-${d.unitNumber}`}
+                      className="border-t border-[var(--color-border)]"
+                    >
                       <td className="py-1 pr-3">{d.index}</td>
                       <td className="py-1 pr-3">{d.fileName}</td>
                       <td className="py-1 pr-3">{d.diskType}</td>
                       <td className="py-1 pr-3">{d.controllerType}</td>
-                      <td className="py-1 pr-3">{d.controllerBus}:{d.unitNumber}</td>
+                      <td className="py-1 pr-3">
+                        {d.controllerBus}:{d.unitNumber}
+                      </td>
                       <td className="py-1">
                         <button
                           className={btnCls}
@@ -822,8 +1132,8 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
                               ),
                             ).then((r) =>
                               r !== undefined
-                                ? void run(() => api.listVmDisks(vmxPath)).then((x) =>
-                                    x ? setVmDisks(x) : undefined,
+                                ? void run(() => api.listVmDisks(vmxPath)).then(
+                                    (x) => (x ? setVmDisks(x) : undefined),
                                   )
                                 : undefined,
                             )
@@ -840,9 +1150,32 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
           )}
 
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <Field label={t("integrations.vmwareDesktop.host.vmdk.attachPath", "VMDK to attach")} value={addDiskVmdk} onChange={setAddDiskVmdk} />
-            <Field label={t("integrations.vmwareDesktop.host.col.controller", "Controller")} value={addDiskController} onChange={setAddDiskController} placeholder="scsi" />
-            <Field label={t("integrations.vmwareDesktop.host.vmdk.mode", "Mode (optional)")} value={addDiskMode} onChange={setAddDiskMode} placeholder="persistent" />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.vmdk.attachPath",
+                "VMDK to attach",
+              )}
+              value={addDiskVmdk}
+              onChange={setAddDiskVmdk}
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.controller",
+                "Controller",
+              )}
+              value={addDiskController}
+              onChange={setAddDiskController}
+              placeholder="scsi"
+            />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.vmdk.mode",
+                "Mode (optional)",
+              )}
+              value={addDiskMode}
+              onChange={setAddDiskMode}
+              placeholder="persistent"
+            />
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
@@ -872,14 +1205,34 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             </button>
           </div>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <Field label={t("integrations.vmwareDesktop.host.col.controller", "Controller")} value={rmDiskController} onChange={setRmDiskController} placeholder="scsi" />
-            <Field label={t("integrations.vmwareDesktop.host.vmdk.bus", "Bus")} value={rmDiskBus} onChange={setRmDiskBus} type="number" />
-            <Field label={t("integrations.vmwareDesktop.host.vmdk.unit", "Unit")} value={rmDiskUnit} onChange={setRmDiskUnit} type="number" />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.col.controller",
+                "Controller",
+              )}
+              value={rmDiskController}
+              onChange={setRmDiskController}
+              placeholder="scsi"
+            />
+            <Field
+              label={t("integrations.vmwareDesktop.host.vmdk.bus", "Bus")}
+              value={rmDiskBus}
+              onChange={setRmDiskBus}
+              type="number"
+            />
+            <Field
+              label={t("integrations.vmwareDesktop.host.vmdk.unit", "Unit")}
+              value={rmDiskUnit}
+              onChange={setRmDiskUnit}
+              type="number"
+            />
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               className={btnCls}
-              disabled={busy || !vmxPath || rmDiskBus === "" || rmDiskUnit === ""}
+              disabled={
+                busy || !vmxPath || rmDiskBus === "" || rmDiskUnit === ""
+              }
               onClick={() =>
                 void run(() =>
                   api.removeDiskFromVm(
@@ -898,7 +1251,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               }
             >
               <Trash2 className="h-3.5 w-3.5" />
-              {t("integrations.vmwareDesktop.host.vmdk.removeDisk", "Remove disk")}
+              {t(
+                "integrations.vmwareDesktop.host.vmdk.removeDisk",
+                "Remove disk",
+              )}
             </button>
           </div>
           <Notice text={diskNotice} />
@@ -908,7 +1264,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
       {/* ═══ OVF / OVA ═══ */}
       <Section
         icon={<Package className="h-4 w-4 text-primary" />}
-        title={t("integrations.vmwareDesktop.host.ovf.title", "OVF / OVA import & export")}
+        title={t(
+          "integrations.vmwareDesktop.host.ovf.title",
+          "OVF / OVA import & export",
+        )}
         open={!!openSections.ovf}
         onToggle={() => toggle("ovf")}
       >
@@ -917,7 +1276,15 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="flex items-end gap-2 sm:col-span-2">
-            <Field label={t("integrations.vmwareDesktop.host.ovf.source", "Source (.ovf/.ova)")} value={ovfSource} onChange={setOvfSource} className="flex-1" />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.ovf.source",
+                "Source (.ovf/.ova)",
+              )}
+              value={ovfSource}
+              onChange={setOvfSource}
+              className="flex-1"
+            />
             <button
               className={btnCls}
               onClick={async () => {
@@ -932,11 +1299,22 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             </button>
           </div>
           <div className="flex items-end gap-2">
-            <Field label={t("integrations.vmwareDesktop.host.ovf.destDir", "Destination dir")} value={ovfDestDir} onChange={setOvfDestDir} className="flex-1" />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.ovf.destDir",
+                "Destination dir",
+              )}
+              value={ovfDestDir}
+              onChange={setOvfDestDir}
+              className="flex-1"
+            />
             <button
               className={btnCls}
               onClick={async () => {
-                const sel = await openDialog({ directory: true, multiple: false });
+                const sel = await openDialog({
+                  directory: true,
+                  multiple: false,
+                });
                 if (typeof sel === "string") setOvfDestDir(sel);
               }}
             >
@@ -945,7 +1323,14 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-end gap-2">
-          <Field label={t("integrations.vmwareDesktop.host.ovf.name", "Name (optional)")} value={ovfName} onChange={setOvfName} />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.ovf.name",
+              "Name (optional)",
+            )}
+            value={ovfName}
+            onChange={setOvfName}
+          />
           <button
             className={btnCls}
             disabled={busy || !ovfSource || !ovfDestDir}
@@ -955,7 +1340,11 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               ).then((vmx) =>
                 vmx
                   ? setOvfNotice(
-                      t("integrations.vmwareDesktop.host.ovf.imported", "Imported: {{path}}", { path: vmx }),
+                      t(
+                        "integrations.vmwareDesktop.host.ovf.imported",
+                        "Imported: {{path}}",
+                        { path: vmx },
+                      ),
                     )
                   : undefined,
               )
@@ -966,11 +1355,22 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         </div>
 
         <p className="mb-2 mt-4 text-xs font-medium text-[var(--color-text)]">
-          {t("integrations.vmwareDesktop.host.ovf.export", "Export (uses target VM above)")}
+          {t(
+            "integrations.vmwareDesktop.host.ovf.export",
+            "Export (uses target VM above)",
+          )}
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-1 items-end gap-2">
-            <Field label={t("integrations.vmwareDesktop.host.ovf.exportDest", "Export to")} value={ovfExportDest} onChange={setOvfExportDest} className="flex-1" />
+            <Field
+              label={t(
+                "integrations.vmwareDesktop.host.ovf.exportDest",
+                "Export to",
+              )}
+              value={ovfExportDest}
+              onChange={setOvfExportDest}
+              className="flex-1"
+            />
             <button
               className={btnCls}
               onClick={async () => {
@@ -983,7 +1383,12 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               <FolderOpen className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Field label={t("integrations.vmwareDesktop.host.ovf.format", "Format")} value={ovfFormat} onChange={setOvfFormat} placeholder="ovf" />
+          <Field
+            label={t("integrations.vmwareDesktop.host.ovf.format", "Format")}
+            value={ovfFormat}
+            onChange={setOvfFormat}
+            placeholder="ovf"
+          />
           <button
             className={btnCls}
             disabled={busy || !vmxPath || !ovfExportDest}
@@ -1002,16 +1407,30 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
       {/* ═══ VMX file ═══ */}
       <Section
         icon={<FileCog className="h-4 w-4 text-primary" />}
-        title={t("integrations.vmwareDesktop.host.vmx.title", "VMX file editor")}
+        title={t(
+          "integrations.vmwareDesktop.host.vmx.title",
+          "VMX file editor",
+        )}
         open={!!openSections.vmx}
         onToggle={() => toggle("vmx")}
       >
         <div className="flex items-end gap-2">
-          <Field label={t("integrations.vmwareDesktop.host.vmx.dir", "Discover in directory")} value={vmxDir} onChange={setVmxDir} className="flex-1" />
+          <Field
+            label={t(
+              "integrations.vmwareDesktop.host.vmx.dir",
+              "Discover in directory",
+            )}
+            value={vmxDir}
+            onChange={setVmxDir}
+            className="flex-1"
+          />
           <button
             className={btnCls}
             onClick={async () => {
-              const sel = await openDialog({ directory: true, multiple: false });
+              const sel = await openDialog({
+                directory: true,
+                multiple: false,
+              });
               if (typeof sel === "string") setVmxDir(sel);
             }}
           >
@@ -1064,8 +1483,18 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Field label={t("integrations.vmwareDesktop.host.vmx.key", "Key")} value={vmxKey} onChange={setVmxKey} placeholder="memsize" />
-          <Field label={t("integrations.vmwareDesktop.host.vmx.value", "Value")} value={vmxValue} onChange={setVmxValue} placeholder="4096" />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmx.key", "Key")}
+            value={vmxKey}
+            onChange={setVmxKey}
+            placeholder="memsize"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmx.value", "Value")}
+            value={vmxValue}
+            onChange={setVmxValue}
+            placeholder="4096"
+          />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
@@ -1082,7 +1511,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
         </div>
         <div className="mt-2 flex items-end gap-2">
           <Field
-            label={t("integrations.vmwareDesktop.host.vmx.removeKeys", "Remove keys (comma-separated)")}
+            label={t(
+              "integrations.vmwareDesktop.host.vmx.removeKeys",
+              "Remove keys (comma-separated)",
+            )}
             value={vmxRemoveKeys}
             onChange={setVmxRemoveKeys}
             className="flex-1"
@@ -1127,7 +1559,10 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
             }
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            {t("integrations.vmwareDesktop.host.prefs.read", "Read preferences")}
+            {t(
+              "integrations.vmwareDesktop.host.prefs.read",
+              "Read preferences",
+            )}
           </button>
           <button
             className={btnCls}
@@ -1138,12 +1573,19 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
               )
             }
           >
-            {t("integrations.vmwareDesktop.host.prefs.defaultDir", "Default VM dir")}
+            {t(
+              "integrations.vmwareDesktop.host.prefs.defaultDir",
+              "Default VM dir",
+            )}
           </button>
         </div>
         {defaultVmDir && (
           <p className="mt-2 text-xs text-[var(--color-textSecondary)]">
-            {t("integrations.vmwareDesktop.host.prefs.defaultDir", "Default VM dir")}: {defaultVmDir}
+            {t(
+              "integrations.vmwareDesktop.host.prefs.defaultDir",
+              "Default VM dir",
+            )}
+            : {defaultVmDir}
           </p>
         )}
         {prefs && (
@@ -1152,8 +1594,17 @@ const VmwDesktopHostTab: React.FC<VmwDesktopTabProps> = ({ connected }) => {
           </pre>
         )}
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Field label={t("integrations.vmwareDesktop.host.vmx.key", "Key")} value={prefKey} onChange={setPrefKey} placeholder="pref.defaultVMPath" />
-          <Field label={t("integrations.vmwareDesktop.host.vmx.value", "Value")} value={prefValue} onChange={setPrefValue} />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmx.key", "Key")}
+            value={prefKey}
+            onChange={setPrefKey}
+            placeholder="pref.defaultVMPath"
+          />
+          <Field
+            label={t("integrations.vmwareDesktop.host.vmx.value", "Value")}
+            value={prefValue}
+            onChange={setPrefValue}
+          />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
           <button

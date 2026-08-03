@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ArrowLeft,
   Download,
   File as FileIcon,
@@ -49,14 +50,21 @@ const FtpHeader: React.FC<{ manager: FtpManager }> = ({ manager }) => (
       <HardDrive size={20} className="shrink-0 text-primary" />
       <div className="min-w-0">
         <div className="truncate font-medium text-[var(--color-text)]">
-          FTP — {manager.sessionInfo?.host ?? "connecting"}
+          {manager.sessionInfo?.security === "none" ? "FTP" : "FTPS"} —{" "}
+          {manager.sessionInfo?.host ?? "connecting"}
         </div>
         <div className="truncate text-xs text-[var(--color-textSecondary)]">
           {manager.sessionInfo?.serverBanner || "Direct native FTP session"}
         </div>
       </div>
     </div>
-    <div className="flex items-center gap-3">
+    <div
+      className={
+        manager.tlsCertificateValidationDisabled
+          ? "flex items-center gap-3 !border-red-500/60 !bg-red-500/15 !text-red-200 ring-1 ring-red-500/30"
+          : "flex items-center gap-3"
+      }
+    >
       <span
         className={`rounded-full px-2 py-1 text-xs ${
           manager.status === "connected"
@@ -68,6 +76,23 @@ const FtpHeader: React.FC<{ manager: FtpManager }> = ({ manager }) => (
       >
         {manager.status}
       </span>
+      {manager.sessionInfo?.security ? (
+        <span
+          className={
+            manager.sessionInfo.security === "none"
+              ? "rounded-full border border-error/50 bg-error/10 px-2 py-1 text-xs font-semibold text-error"
+              : "rounded-full border border-success/40 bg-success/10 px-2 py-1 text-xs text-success"
+          }
+        >
+          {manager.sessionInfo.security === "none"
+            ? "Plaintext explicitly allowed"
+            : manager.tlsCertificateValidationDisabled
+              ? "TLS certificate checks disabled"
+              : manager.sessionInfo.security === "explicit"
+                ? "Verified explicit TLS"
+                : "Verified implicit TLS"}
+        </span>
+      ) : null}
       <button
         type="button"
         className="sor-icon-btn-sm"
@@ -357,7 +382,7 @@ export const FTPClient: React.FC<FTPClientProps> = ({ session }) => {
     try {
       await operation();
     } catch (value) {
-      setLocalError(value instanceof Error ? value.message : String(value));
+      setLocalError(manager.sanitizeError(value));
     }
   };
 
@@ -432,6 +457,32 @@ export const FTPClient: React.FC<FTPClientProps> = ({ session }) => {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--color-background)]">
       <FtpHeader manager={manager} />
+      {manager.sessionInfo?.security === "none" ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 border-b border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
+        >
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span>
+            This connection is sending credentials, directory listings, and file
+            contents without transport encryption. Use it only on an isolated
+            trusted network.
+          </span>
+        </div>
+      ) : null}
+      {manager.tlsCertificateValidationDisabled ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+        >
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span>
+            FTPS is encrypted, but this connection accepts an invalid server
+            certificate. Server identity is not verified and interception
+            remains possible.
+          </span>
+        </div>
+      ) : null}
       <FtpToolbar
         manager={manager}
         pathDraft={pathDraft}

@@ -2,7 +2,7 @@
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Activity, Radio, StopCircle } from "lucide-react";
+import { Activity, Radio, RefreshCw, StopCircle } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useTelnetSession } from "../../hooks/protocol/useTelnetSession";
 import type { ConnectionSession } from "../../types/connection/connection";
@@ -14,8 +14,11 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
   const writtenChunksRef = useRef(0);
   const sendRef = useRef(model.sendInput);
   const resizeRef = useRef(model.resize);
+  const inputEnabledRef = useRef(false);
   sendRef.current = model.sendInput;
   resizeRef.current = model.resize;
+  inputEnabledRef.current =
+    model.status === "connected" && !model.requiresInsecureApproval;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -49,9 +52,12 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
     fitTerminal();
     const observer = new ResizeObserver(fitTerminal);
     observer.observe(container);
-    const input = terminal.onData((data) => void sendRef.current(data));
+    const input = terminal.onData((data) => {
+      if (!inputEnabledRef.current) return;
+      void sendRef.current(data).catch(() => undefined);
+    });
     const resize = terminal.onResize(({ cols, rows }) => {
-      void resizeRef.current(cols, rows);
+      void resizeRef.current(cols, rows).catch(() => undefined);
     });
 
     return () => {
@@ -100,7 +106,7 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
             type="button"
             className="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1"
             disabled={model.status !== "connected"}
-            onClick={() => void model.sendAreYouThere()}
+            onClick={() => void model.sendAreYouThere().catch(() => undefined)}
           >
             <Activity size={13} aria-hidden /> AYT
           </button>
@@ -108,7 +114,7 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
             type="button"
             className="rounded border border-[var(--color-border)] px-2 py-1"
             disabled={model.status !== "connected"}
-            onClick={() => void model.sendBreak()}
+            onClick={() => void model.sendBreak().catch(() => undefined)}
           >
             BREAK
           </button>
@@ -116,10 +122,20 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
             type="button"
             className="inline-flex items-center gap-1 rounded border border-error/40 px-2 py-1 text-error"
             disabled={model.status === "disconnected"}
-            onClick={() => void model.disconnect()}
+            onClick={() => void model.disconnect().catch(() => undefined)}
           >
             <StopCircle size={13} aria-hidden /> Disconnect
           </button>
+          {(model.status === "disconnected" || model.status === "error") &&
+          !model.requiresInsecureApproval ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded border border-[var(--color-border)] px-2 py-1"
+              onClick={model.reconnect}
+            >
+              <RefreshCw size={13} aria-hidden /> Reconnect
+            </button>
+          ) : null}
         </div>
       </header>
       {model.error ? (
@@ -130,12 +146,38 @@ export function TelnetClient({ session }: { session: ConnectionSession }) {
           {model.error}
         </div>
       ) : null}
+      {model.requiresInsecureApproval ? (
+        <div
+          className="border-b border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+          role="alert"
+        >
+          <p className="font-semibold">Telnet is not encrypted.</p>
+          <p className="mt-1 text-[var(--color-text-muted)]">
+            Commands, terminal output, and anything typed into the session can
+            be read or modified on the network.
+          </p>
+          {model.savedCredentialsIgnored ? (
+            <p className="mt-1 text-[var(--color-text-muted)]">
+              Saved credentials will not be sent automatically. Automatic Telnet
+              login is unavailable.
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="mt-3 rounded border border-warning/60 bg-warning/15 px-3 py-1.5 font-medium"
+            onClick={model.approveInsecureTransport}
+          >
+            Connect using plaintext Telnet
+          </button>
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 p-3">
         <div
           ref={containerRef}
           className="h-full w-full overflow-hidden rounded border border-[var(--color-border)] bg-black/90 p-1"
           role="application"
           aria-label="Telnet terminal"
+          aria-disabled={!inputEnabledRef.current}
           tabIndex={0}
         />
       </div>

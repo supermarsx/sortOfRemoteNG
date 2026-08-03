@@ -21,6 +21,7 @@ export interface SharedFolderRequest {
   vmxPath: string;
   name: string;
   hostPath: string;
+  /** Write access is opt-in; omission creates a read-only share. */
   writable?: boolean | null;
   enabled?: boolean | null;
 }

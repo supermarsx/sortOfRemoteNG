@@ -401,7 +401,7 @@ describe("useAppLifecycle", () => {
     );
   });
 
-  it("persists integration tabs without plaintext launch secrets and skips app-only tabs", async () => {
+  it("persists integration tabs without launch metadata and skips app-only tabs", async () => {
     mockSettingsManager.getSettings.mockReturnValue({
       language: "en",
       theme: "dark",

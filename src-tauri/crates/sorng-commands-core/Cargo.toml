@@ -20,6 +20,7 @@ sorng-recording = { path = "../sorng-recording" }
 sorng-opkssh = { path = "../sorng-opkssh", optional = true, default-features = false }
 sorng-probes = { path = "../sorng-probes" }
 tauri = { workspace = true }
+tauri-plugin-fs = "=2.5.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

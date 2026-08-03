@@ -4,7 +4,13 @@ import React from "react";
 import { Lock, Trash2 } from "lucide-react";
 import { Select } from "../../ui/forms";
 import { InfoTooltip } from "../../ui/InfoTooltip";
-import { getAllTrustRecords, formatFingerprint, removeIdentity } from "../../../utils/auth/trustStore";
+import {
+  clearAllTrustRecords,
+  getAllTrustRecords,
+  formatFingerprint,
+  parseTrustRecordAddress,
+  removeIdentity,
+} from "../../../utils/auth/trustStore";
 import type { TrustPolicy } from "../../../utils/auth/trustStore";
 
 const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
@@ -12,13 +18,29 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="md:col-span-2">
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-        HTTPS Certificate Trust Policy <InfoTooltip text="Controls how HTTPS certificate fingerprints are remembered and verified across connections to this host." />
+        HTTPS Certificate Trust Policy{" "}
+        <InfoTooltip text="Controls how HTTPS certificate fingerprints are remembered and verified across connections to this host." />
       </label>
-      <Select value={mgr.formData.httpsTrustPolicy ?? mgr.formData.tlsTrustPolicy ?? ""} onChange={(v: string) => mgr.setFormData({
-        ...mgr.formData,
-        httpsTrustPolicy: v === "" ? undefined : (v as TrustPolicy),
-        ...(v === "" ? { tlsTrustPolicy: undefined } : {}),
-          })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} variant="form" />
+      <Select
+        value={
+          mgr.formData.httpsTrustPolicy ?? mgr.formData.tlsTrustPolicy ?? ""
+        }
+        onChange={(v: string) =>
+          mgr.setFormData({
+            ...mgr.formData,
+            httpsTrustPolicy: v === "" ? undefined : (v as TrustPolicy),
+            ...(v === "" ? { tlsTrustPolicy: undefined } : {}),
+          })
+        }
+        options={[
+          { value: "", label: "Use global default" },
+          { value: "tofu", label: "Trust On First Use (TOFU)" },
+          { value: "always-ask", label: "Always Ask" },
+          { value: "always-trust", label: "Always Trust (skip verification)" },
+          { value: "strict", label: "Strict (reject unless pre-approved)" },
+        ]}
+        variant="form"
+      />
       <p className="text-xs text-[var(--color-textMuted)] mt-1">
         Controls whether certificate fingerprints are memorized and verified
         across connections.
@@ -39,16 +61,8 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                 </label>
                 <button
                   type="button"
-                  onClick={() => {
-                    records.forEach((record) => {
-                      const [host, portStr] = record.host.split(":");
-                      removeIdentity(
-                        host,
-                        parseInt(portStr, 10),
-                        record.type,
-                        mgr.formData.id,
-                      );
-                    });
+                  onClick={async () => {
+                    await clearAllTrustRecords(mgr.formData.id);
                     mgr.setFormData({ ...mgr.formData }); // force re-render
                   }}
                   className="text-xs text-[var(--color-textMuted)] hover:text-error transition-colors"
@@ -58,7 +72,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               </div>
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {records.map((record, i) => {
-                  const [host, portStr] = record.host.split(":");
+                  const address = parseTrustRecordAddress(record);
                   return (
                     <div
                       key={i}
@@ -86,10 +100,10 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          removeIdentity(
-                            host,
-                            parseInt(portStr, 10),
+                        onClick={async () => {
+                          await removeIdentity(
+                            address.host,
+                            address.port,
                             record.type,
                             mgr.formData.id,
                           );
