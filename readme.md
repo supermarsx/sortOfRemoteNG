@@ -111,8 +111,11 @@ Read the [security policy](security.md) for vulnerability reporting and the [enc
 
 Public releases use the rolling `YY.N` format. The release badge above is
 derived from GitHub's latest public Release, so allocated tags and hidden drafts
-are never presented as the current release and publishing never needs to mutate
-`main` or trigger another CI run.
+are never presented as the current release. When a new release identity is reserved,
+the verified release snapshot atomically advances `main` and creates its tag so
+`version.json`, package metadata, Cargo metadata, and the generated UI version
+all remain synchronized. The generated commit is marked `[skip ci]` to avoid a
+second release cycle.
 
 - `YY` is the two-digit UTC release year.
 - `N` is that UTC year's monotonically increasing release sequence, starting again at 1 each January.

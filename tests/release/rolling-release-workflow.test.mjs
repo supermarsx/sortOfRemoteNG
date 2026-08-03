@@ -6,17 +6,18 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 
-const releaseWorkflow = readFileSync(
+function readWorkflow(url) {
+  return readFileSync(url, "utf8").replace(/\r\n?/g, "\n");
+}
+
+const releaseWorkflow = readWorkflow(
   new URL("../../.github/workflows/release.yml", import.meta.url),
-  "utf8",
 );
-const ciWorkflow = readFileSync(
+const ciWorkflow = readWorkflow(
   new URL("../../.github/workflows/ci.yml", import.meta.url),
-  "utf8",
 );
-const e2eWorkflow = readFileSync(
+const e2eWorkflow = readWorkflow(
   new URL("../../.github/workflows/e2e.yml", import.meta.url),
-  "utf8",
 );
 const actionlintConfig = readFileSync(
   new URL("../../.github/actionlint.yaml", import.meta.url),
@@ -73,6 +74,10 @@ const opksshBinarySource = readFileSync(
   new URL("../../src-tauri/crates/sorng-opkssh/src/binary.rs", import.meta.url),
   "utf8",
 );
+const stateRegistryOpsSource = readFileSync(
+  new URL("../../src-tauri/src/state_registry/ops.rs", import.meta.url),
+  "utf8",
+);
 const updaterSetupDocumentation = readFileSync(
   new URL("../../docs/release/updater-setup.md", import.meta.url),
   "utf8",
@@ -93,6 +98,14 @@ const workflowCall = releaseWorkflow.slice(
   releaseWorkflow.indexOf("  workflow_call:"),
   releaseWorkflow.indexOf("  workflow_dispatch:"),
 );
+
+function assertOrdered(source, before, after, message) {
+  const beforeIndex = source.indexOf(before);
+  const afterIndex = source.indexOf(after);
+  assert.notEqual(beforeIndex, -1, `missing ordered marker: ${before}`);
+  assert.notEqual(afterIndex, -1, `missing ordered marker: ${after}`);
+  assert.ok(beforeIndex < afterIndex, message);
+}
 
 function activeTomlSection(source, sectionName) {
   const marker = `[${sectionName}]`;
@@ -402,7 +415,16 @@ test("release actions use audited Node 24-compatible immutable releases", () => 
   );
 });
 
-test("README release identity follows immutable publication without mutating main", () => {
+test("rolling snapshots atomically synchronize package versions back to main", () => {
+  const snapshotStep = releaseWorkflow.slice(
+    releaseWorkflow.indexOf(
+      "- name: Create or reuse immutable release snapshot",
+    ),
+    releaseWorkflow.indexOf(
+      "- name: Verify immutable release snapshot integrity",
+    ),
+  );
+
   assert.match(
     readme,
     /\[!\[Latest release\]\(https:\/\/img\.shields\.io\/github\/v\/release\/supermarsx\/sortOfRemoteNG\?display_name=tag&style=flat-square\)\]\(https:\/\/github\.com\/supermarsx\/sortOfRemoteNG\/releases\/latest\)/,
@@ -410,18 +432,43 @@ test("README release identity follows immutable publication without mutating mai
   assert.doesNotMatch(readme, /img\.shields\.io\/badge\/version-/);
   assert.match(
     readme,
-    /allocated tags and hidden drafts[\s\S]*?never presented as the current release[\s\S]*?never needs to mutate\s+`main`/,
+    /allocated tags and hidden drafts[\s\S]*?never presented as the current release[\s\S]*?atomically advances `main`[\s\S]*?package metadata[\s\S]*?\[skip ci\]/,
   );
   assert.match(
     releaseDocumentation,
-    /README badge resolves GitHub's latest public Release directly[\s\S]*?never commits a version-only change back to `main`/,
+    /README badge resolves GitHub's latest public Release directly[\s\S]*?snapshot and its bare tag are pushed atomically[\s\S]*?fast-forwarding `main`[\s\S]*?\[skip ci\]/,
   );
-  assert.equal((releaseWorkflow.match(/\bpush origin\b/g) ?? []).length, 1);
+  assert.equal((releaseWorkflow.match(/\bpush --atomic\b/g) ?? []).length, 1);
   assert.match(
     releaseWorkflow,
-    /push origin "refs\/tags\/\$PUBLIC_TAG:refs\/tags\/\$PUBLIC_TAG"/,
+    /git commit --allow-empty --no-gpg-sign[\s\S]*?chore\(release\): snapshot \$PUBLIC_TAG \[skip ci\][\s\S]*?Release-Source-SHA: \$SOURCE_SHA/,
   );
-  assert.doesNotMatch(releaseWorkflow, /refs\/heads\/main|\[skip ci\]/i);
+  assert.match(
+    releaseWorkflow,
+    /push --atomic[\s\S]*?--force-with-lease="refs\/heads\/main:\$SOURCE_SHA"[\s\S]*?"refs\/tags\/\$PUBLIC_TAG:refs\/tags\/\$PUBLIC_TAG"[\s\S]*?"\$snapshot_commit:refs\/heads\/main"/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /main advanced beyond release source \$SOURCE_SHA; neither the version-synchronized main update nor tag was published/,
+  );
+  assertOrdered(
+    snapshotStep,
+    'node scripts/sync-version.mjs --write --version "$PUBLIC_VERSION"',
+    "git add -A",
+    "every version projection must be generated before the snapshot is staged",
+  );
+  assertOrdered(
+    snapshotStep,
+    "node scripts/sync-version.mjs --check",
+    "git commit --allow-empty",
+    "the generated package, lockfile, Cargo, and UI versions must verify before commit",
+  );
+  assertOrdered(
+    snapshotStep,
+    "verify-release-snapshot.mjs",
+    "push --atomic",
+    "the exact snapshot tree must verify before main and its tag move",
+  );
 });
 
 test("normal main CI calls release only after every internal job", () => {
@@ -569,9 +616,11 @@ test("Windows ARM64 QuickJS builds map alloca to the MSVC intrinsic", () => {
     buildDefinition,
     /^\s+CFLAGS_aarch64_pc_windows_msvc: \/Dalloca=_alloca$/m,
   );
-  assert.ok(
-    buildJob.indexOf("CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca") <
-      buildJob.indexOf("- name: Build native bundles with static Kafka"),
+  assertOrdered(
+    buildJob,
+    "CFLAGS_aarch64_pc_windows_msvc: -Dalloca=_alloca",
+    "- name: Build native bundles with static Kafka",
+    "the ARM64 alloca compatibility flag must be configured before building",
   );
 });
 
@@ -1049,6 +1098,14 @@ test("Windows signing is architecture-aware and both portable archives are compl
   );
   assert.match(
     portableStep,
+    /\$localeSource = "src\/i18n\/locales"[\s\S]*?\$expectedLocaleHashes = @\(Get-RelativeFileHashes -Root \$localeSource\)/,
+  );
+  assert.match(
+    portableStep,
+    /Copy-Item -LiteralPath \$localeSource -Destination \(Join-Path \$resourceRoot "locales"\) -Recurse/,
+  );
+  assert.match(
+    portableStep,
     /sortOfRemoteNG_\$\(\$env:MACHINE_VERSION\)_\$\(\$env:ARTIFACT_ID\)-portable\.zip/,
   );
   assert.match(
@@ -1075,10 +1132,15 @@ test("Windows signing is architecture-aware and both portable archives are compl
     portableStep,
     /expectedResourceHashes[\s\S]*?verifiedResourceHashes[\s\S]*?Compare-Object[\s\S]*?Extracted OPKSSH resources do not match/,
   );
+  assert.match(
+    portableStep,
+    /verifiedLocaleRoot[\s\S]*?resources\/locales[\s\S]*?verifiedLocaleHashes[\s\S]*?Compare-Object[\s\S]*?Extracted locale resources do not match/,
+  );
   for (const archivePath of [
     "sortOfRemoteNG.exe",
     ".portable",
     "resources/opkssh",
+    "resources/locales",
   ]) {
     assert.match(portableStep, new RegExp(archivePath.replaceAll(".", "\\.")));
   }
@@ -1107,6 +1169,65 @@ test("Windows signing is architecture-aware and both portable archives are compl
   assert.match(
     releaseWorkflow,
     /Native Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles are included, together with Windows x64 and ARM64 installers and portable archives\./,
+  );
+});
+
+test("custom locale package layouts match the native runtime fallback", () => {
+  const buildJob = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("  build:"),
+    releaseWorkflow.indexOf("  publish:"),
+  );
+  const portableStart = buildJob.indexOf(
+    "- name: Package portable Windows archive",
+  );
+  const macVerifyStart = buildJob.indexOf(
+    "- name: Verify macOS Developer ID, notarization, and stapling",
+  );
+  const preserveStart = buildJob.indexOf(
+    "- name: Preserve native Linux outputs and prune build intermediates",
+  );
+  const flatpakSetupStart = buildJob.indexOf(
+    "- name: Install pinned Flatpak toolchain and GNOME runtime",
+  );
+  const flatpakBuildStart = buildJob.indexOf(
+    "- name: Build and verify native Flatpak bundle",
+  );
+  const flatpakEnd = buildJob.indexOf(
+    "- name: Notarize and staple macOS disk image",
+  );
+
+  const portableStep = buildJob.slice(portableStart, macVerifyStart);
+  const preserveLinux = buildJob.slice(preserveStart, flatpakSetupStart);
+  const flatpakBuild = buildJob.slice(flatpakBuildStart, flatpakEnd);
+
+  assert.match(
+    stateRegistryOpsSource,
+    /const LOCALES_DIRECTORY_NAME: &str = "locales";[\s\S]*?const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";[\s\S]*?const DEFAULT_LOCALE_CATALOG_NAME: &str = "en-US\.json";/,
+  );
+  assert.match(
+    stateRegistryOpsSource,
+    /let mut candidates = vec!\[resource_dir\.join\(LOCALES_DIRECTORY_NAME\)\];[\s\S]*?\.join\(PORTABLE_RESOURCES_DIRECTORY_NAME\)[\s\S]*?\.join\(LOCALES_DIRECTORY_NAME\)[\s\S]*?candidates\.push\(adjacent_resources\)/,
+  );
+  assert.match(
+    stateRegistryOpsSource,
+    /let executable_path = std::env::current_exe\(\)\.ok\(\);[\s\S]*?packaged_locales_candidates\(&resource_dir, executable_path\.as_deref\(\)\)[\s\S]*?candidate\.join\(DEFAULT_LOCALE_CATALOG_NAME\)\.is_file\(\)/,
+  );
+
+  assert.match(
+    portableStep,
+    /Copy-Item -LiteralPath \$localeSource -Destination \(Join-Path \$resourceRoot "locales"\) -Recurse/,
+  );
+  assert.match(
+    portableStep,
+    /verifiedLocaleRoot = Join-Path \$verificationRoot "resources\/locales"/,
+  );
+  assert.match(
+    preserveLinux,
+    /cp -a "\$locale_source" "\$payload\/resources\/locales"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /test -d \/app\/bin\/resources\/locales[\s\S]*?cd \/app\/bin\/resources\/locales && sha256sum \.\/\*\.json/,
   );
 });
 
@@ -1363,11 +1484,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(flatpakSetup, /FLATPAK_RUNTIME_COMMIT=\$runtime_commit/);
   assert.match(flatpakSetup, /FLATPAK_SDK_COMMIT=\$sdk_commit/);
-  assert.ok(
-    buildJob.indexOf("- name: Build native bundles with static Kafka") <
-      buildJob.indexOf(
-        "- name: Install pinned Flatpak toolchain and GNOME runtime",
-      ),
+  assertOrdered(
+    buildJob,
+    "- name: Build native bundles with static Kafka",
+    "- name: Install pinned Flatpak toolchain and GNOME runtime",
     "the GNOME runtime must not consume disk until after native bundles are built",
   );
 
@@ -1385,6 +1505,14 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     preserveLinux,
+    /locale_source="\$GITHUB_WORKSPACE\/src\/i18n\/locales"[\s\S]*?cp -a "\$locale_source" "\$payload\/resources\/locales"/,
+  );
+  assert.match(
+    preserveLinux,
+    /cd "\$locale_source"[\s\S]*?sha256sum \.\/\*\.json[\s\S]*?cd "\$payload\/resources\/locales"[\s\S]*?sha256sum \.\/\*\.json/,
+  );
+  assert.match(
+    preserveLinux,
     /preserve_one appimage '\*\.AppImage'[\s\S]*?preserve_one deb '\*\.deb'[\s\S]*?preserve_one rpm '\*\.rpm'/,
   );
   assert.match(
@@ -1395,6 +1523,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   assert.match(
     flatpakBuild,
     /payload="\$GITHUB_WORKSPACE\/\.ci\/flatpak-payload"[\s\S]*?test -x "\$payload\/sortOfRemoteNG"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /test -d "\$payload\/resources\/locales"[\s\S]*?diff -u[\s\S]*?sha256sum \.\/\*\.json/,
   );
   assert.match(
     flatpakBuild,
@@ -1415,7 +1547,11 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     flatpakBuild,
-    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"/,
+    /test "\$\{FLATPAK_ID:-\}" = com\.sortofremote\.ng[\s\S]*?test -x \/app\/bin\/sortOfRemoteNG[\s\S]*?test -d \/app\/bin\/resources\/opkssh[\s\S]*?test -d \/app\/bin\/resources\/locales[\s\S]*?ldd \/app\/bin\/sortOfRemoteNG[\s\S]*?grep -F "not found"/,
+  );
+  assert.match(
+    flatpakBuild,
+    /expected_flatpak_locale_digests[\s\S]*?cd "\$locale_source"[\s\S]*?\/app\/bin\/resources\/locales[\s\S]*?diff -u "\$expected_flatpak_locale_digests" "\$actual_flatpak_locale_digests"/,
   );
   assert.doesNotMatch(flatpakBuild, /flatpak run[^\n]*sortOfRemoteNG/);
 
@@ -1449,6 +1585,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
   );
   assert.match(
     stageStep,
+    /expected_locale_root="\/usr\/lib\/\$LINUX_PACKAGE_PRODUCT_NAME\/locales"/,
+  );
+  assert.match(
+    stageStep,
     /expected_icon_root="\/usr\/share\/icons\/hicolor"[\s\S]*?expected_linux_icon_paths=\([\s\S]*?32x32\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?128x128\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?256x256\/apps\/\$FLATPAK_APP_ID\.png[\s\S]*?512x512\/apps\/\$FLATPAK_APP_ID\.png/,
   );
   assert.match(
@@ -1463,7 +1603,10 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     stageStep,
     /expected_linux_icon_paths\[@\].*deb_payload_files/,
   );
-  assert.doesNotMatch(stageStep, /deb_extract_root/);
+  assert.match(
+    stageStep,
+    /deb_extract_root="\$RUNNER_TEMP\/\$\{ARTIFACT_ID\}-deb-extract"[\s\S]*?dpkg-deb -x "\$deb_source" "\$deb_extract_root"/,
+  );
   assert.match(
     flatpakBuild,
     /sha256sum[\s\S]*?src-tauri\/icons\/icon\.png[\s\S]*?flatpak run[\s\S]*?\/app\/share\/icons\/hicolor\/512x512\/apps\/com\.sortofremote\.ng\.png[\s\S]*?diff -u "\$expected_flatpak_icon_digests" "\$actual_flatpak_icon_digests"/,
@@ -1484,9 +1627,26 @@ test("Linux release builds and validates native RPM and Flatpak assets on both a
     ).length,
     3,
   );
+  assert.equal(
+    (
+      stageStep.match(
+        /diff -u "\$expected_locale_files" "\$(?:rpm|deb|appimage)_locale_files"/g,
+      ) ?? []
+    ).length,
+    3,
+  );
+  assert.equal(
+    (
+      stageStep.match(
+        /diff -u "\$expected_locale_hashes" "\$(?:rpm|deb|appimage)_locale_hashes"/g,
+      ) ?? []
+    ).length,
+    3,
+  );
   assert.equal(tauriConfig.productName, "sortOfRemoteNG");
   assert.deepEqual(tauriConfig.bundle.resources, {
     "crates/sorng-opkssh-vendor/bundle/opkssh/": "opkssh/",
+    "../src/i18n/locales/": "locales/",
   });
   assert.match(
     opksshBinarySource,
@@ -1881,19 +2041,22 @@ test("monotonic source and immutable snapshot guards run before tag mutation", (
       "- name: Verify immutable release snapshot integrity",
     ),
   );
-  assert.ok(
-    createSnapshot.indexOf('[ "$SOURCE_GUARD" != "passed" ]') <
-      createSnapshot.indexOf("git update-ref"),
+  assertOrdered(
+    createSnapshot,
+    '[ "$SOURCE_GUARD" != "passed" ]',
+    "git update-ref",
     "monotonic source guard must fail before tag creation",
   );
-  assert.ok(
-    createSnapshot.indexOf("verify-release-snapshot.mjs") <
-      createSnapshot.indexOf('push origin "refs/tags/$PUBLIC_TAG'),
-    "new snapshots must verify before the immutable public tag is pushed",
+  assertOrdered(
+    createSnapshot,
+    "verify-release-snapshot.mjs",
+    "push --atomic",
+    "new snapshots must verify before the immutable tag and main update are pushed",
   );
-  assert.ok(
-    releaseWorkflow.indexOf("Sign updater trust challenge") <
-      releaseWorkflow.indexOf("git update-ref"),
+  assertOrdered(
+    releaseWorkflow,
+    "Sign updater trust challenge",
+    "git update-ref",
     "a wrong updater private key must fail before the public tag is created",
   );
 });
@@ -2464,9 +2627,11 @@ test("publication stays draft until remote validation and a final live guard", (
     /RELEASE_ID: \$\{\{ steps\.staged_release\.outputs\.release_id \}\}[\s\S]*?expected_asset_count=22[\s\S]*?expected_asset_count=31[\s\S]*?download_release_assets "\$RELEASE_ID"[\s\S]*?verify-published-release-assets\.mjs/,
   );
   const promotion = releaseWorkflow.slice(promoteIndex);
-  assert.ok(
-    promotion.indexOf("source_guard=passed") <
-      promotion.indexOf("promote_release_by_id"),
+  assertOrdered(
+    promotion,
+    "source_guard=passed",
+    "promote_release_by_id",
+    "the live source guard must pass before release promotion",
   );
   assert.match(
     releaseIdHelperProgram(),

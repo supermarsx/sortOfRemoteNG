@@ -37,6 +37,12 @@ function jsonText(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+export function versionDerivedTextMatches(current, expected) {
+  if (current === null) return false;
+  const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
+  return normalizeLineEndings(current) === normalizeLineEndings(expected);
+}
+
 function walkFiles(relativeDirectory, fileName) {
   const found = [];
   const visit = (relativePath) => {
@@ -61,7 +67,9 @@ function buildPlan(versionOverride = null) {
   const plan = (relativePath, expected) => {
     const absolutePath = path.join(REPO_ROOT, relativePath);
     const current = fs.existsSync(absolutePath) ? read(relativePath) : null;
-    if (current !== expected) changes.push({ relativePath, current, expected });
+    if (!versionDerivedTextMatches(current, expected)) {
+      changes.push({ relativePath, current, expected });
+    }
   };
 
   if (versionOverride !== null) {

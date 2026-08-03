@@ -304,7 +304,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit --allow-empty --no-gpg-sign \
-            -m "chore(release): snapshot $PUBLIC_TAG" \
+            -m "chore(release): snapshot $PUBLIC_TAG [skip ci]" \
             -m "Release-Source-SHA: $SOURCE_SHA"
           snapshot_commit=$(git rev-parse HEAD)
           git update-ref \
@@ -318,8 +318,16 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --public-version "$PUBLIC_VERSION"
           basic_auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $basic_auth" \
-            push origin "refs/tags/$PUBLIC_TAG:refs/tags/$PUBLIC_TAG"
+          if ! git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $basic_auth" \
+            push --atomic \
+            --force-with-lease="refs/heads/main:$SOURCE_SHA" \
+            origin \
+            "refs/tags/$PUBLIC_TAG:refs/tags/$PUBLIC_TAG" \
+            "$snapshot_commit:refs/heads/main"; then
+            unset basic_auth
+            echo "::error::main advanced beyond release source $SOURCE_SHA; neither the version-synchronized main update nor tag was published. Re-run the newer main commit after its exact-source gates pass."
+            exit 1
+          fi
           unset basic_auth
           echo "snapshot_commit=$snapshot_commit" >> "$GITHUB_OUTPUT"
           echo "Created $PUBLIC_TAG at $snapshot_commit for source $SOURCE_SHA ($MACHINE_VERSION)."
@@ -913,13 +921,22 @@ jobs:
           done
 
           opkssh_source="$GITHUB_WORKSPACE/src-tauri/crates/sorng-opkssh-vendor/bundle/opkssh"
+          locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
           test -d "$opkssh_source"
+          test -d "$locale_source"
           opkssh_file_count=$(find "$opkssh_source" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
+          locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
+          locale_total_file_count=$(find "$locale_source" -type f | wc -l | tr -d '[:space:]')
           [[ "$opkssh_file_count" =~ ^[0-9]+$ ]]
+          [[ "$locale_file_count" =~ ^[0-9]+$ ]]
+          [[ "$locale_total_file_count" =~ ^[0-9]+$ ]]
           test "$opkssh_file_count" -gt 0
+          test "$locale_file_count" -gt 0
+          test "$locale_file_count" -eq "$locale_total_file_count"
           mkdir -p "$payload/resources" "$preserved_bundles"
           install -m 0755 "$executable" "$payload/sortOfRemoteNG"
           cp -a "$opkssh_source" "$payload/resources/opkssh"
+          cp -a "$locale_source" "$payload/resources/locales"
 
           preserve_one() {
             local directory="$1" pattern="$2"
@@ -983,7 +1000,12 @@ jobs:
 
           test -x "$payload/sortOfRemoteNG"
           test -d "$payload/resources/opkssh"
+          test -d "$payload/resources/locales"
           test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -eq "$opkssh_file_count"
+          test "$(find "$payload/resources/locales" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')" -eq "$locale_file_count"
+          diff -u \
+            <(cd "$locale_source" && sha256sum ./*.json | LC_ALL=C sort -k2) \
+            <(cd "$payload/resources/locales" && sha256sum ./*.json | LC_ALL=C sort -k2)
           find "$preserved_bundles" -maxdepth 2 -type f -print
           if [ -n "${LINUX_RELEASE_SWAP_FILE:-}" ]; then
             expected_swap_file="$RUNNER_TEMP/sorng-release.swap"
@@ -1083,9 +1105,18 @@ jobs:
         run: |
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/.ci/flatpak-payload"
+          locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
           test -x "$payload/sortOfRemoteNG"
           test -d "$payload/resources/opkssh"
           test "$(find "$payload/resources/opkssh" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')" -gt 0
+          test -d "$payload/resources/locales"
+          locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
+          [[ "$locale_file_count" =~ ^[0-9]+$ ]]
+          test "$locale_file_count" -gt 0
+          test "$(find "$payload/resources/locales" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')" -eq "$locale_file_count"
+          diff -u \
+            <(cd "$locale_source" && sha256sum ./*.json | LC_ALL=C sort -k2) \
+            <(cd "$payload/resources/locales" && sha256sum ./*.json | LC_ALL=C sort -k2)
 
           appstreamcli validate \
             --no-net \
@@ -1164,6 +1195,9 @@ jobs:
               test -d /app/bin/resources/opkssh
               resource_count=$(find /app/bin/resources/opkssh -type f ! -name .gitkeep | wc -l)
               test "$resource_count" -gt 0
+              test -d /app/bin/resources/locales
+              locale_count=$(find /app/bin/resources/locales -maxdepth 1 -type f -name "*.json" | wc -l)
+              test "$locale_count" -gt 0
               ldd_output=$(ldd /app/bin/sortOfRemoteNG)
               printf "%s\n" "$ldd_output"
               ! printf "%s\n" "$ldd_output" | grep -F "not found"
@@ -1186,6 +1220,19 @@ jobs:
             /app/share/icons/hicolor/512x512/apps/com.sortofremote.ng.png |
             awk '{ print $1 }' > "$actual_flatpak_icon_digests"
           diff -u "$expected_flatpak_icon_digests" "$actual_flatpak_icon_digests"
+
+          expected_flatpak_locale_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-locales.expected"
+          actual_flatpak_locale_digests="$RUNNER_TEMP/${ARTIFACT_ID}-flatpak-locales.actual"
+          (
+            cd "$locale_source"
+            sha256sum ./*.json | LC_ALL=C sort -k2
+          ) > "$expected_flatpak_locale_digests"
+          dbus-run-session -- flatpak run \
+            --command=sh \
+            "$FLATPAK_APP_ID" \
+            -c 'cd /app/bin/resources/locales && sha256sum ./*.json | LC_ALL=C sort -k2' \
+            > "$actual_flatpak_locale_digests"
+          diff -u "$expected_flatpak_locale_digests" "$actual_flatpak_locale_digests"
 
           manifest_sha256=$(sha256sum "$FLATPAK_MANIFEST" | awk '{ print $1 }')
           [[ "$manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
@@ -1332,6 +1379,20 @@ jobs:
             throw "Portable OPKSSH resource manifest is empty."
           }
 
+          $localeSource = "src/i18n/locales"
+          $localeFiles = @(Get-ChildItem -LiteralPath $localeSource -Recurse -File)
+          if ($localeFiles.Count -eq 0) {
+            throw "Portable locale resources were not staged at $localeSource."
+          }
+          $nonJsonLocaleFiles = @($localeFiles | Where-Object { $_.Extension -ne ".json" })
+          if ($nonJsonLocaleFiles.Count -ne 0) {
+            throw "Portable locale resources contain non-JSON files."
+          }
+          $expectedLocaleHashes = @(Get-RelativeFileHashes -Root $localeSource)
+          if ($expectedLocaleHashes.Count -eq 0) {
+            throw "Portable locale resource manifest is empty."
+          }
+
           $portableRoot = Join-Path $env:RUNNER_TEMP "sortOfRemoteNG-$($env:ARTIFACT_ID)-portable"
           if (Test-Path -LiteralPath $portableRoot) {
             throw "Refusing to replace unexpected portable staging path $portableRoot."
@@ -1343,6 +1404,7 @@ jobs:
           $resourceRoot = Join-Path $portableRoot "resources"
           New-Item -ItemType Directory -Path $resourceRoot | Out-Null
           Copy-Item -LiteralPath $opksshSource -Destination (Join-Path $resourceRoot "opkssh") -Recurse
+          Copy-Item -LiteralPath $localeSource -Destination (Join-Path $resourceRoot "locales") -Recurse
 
           $portableBundleDir = "src-tauri/target/$env:RUST_TARGET/release/bundle/portable"
           New-Item -ItemType Directory -Path $portableBundleDir -Force | Out-Null
@@ -1370,6 +1432,10 @@ jobs:
           $verifiedResourceRoot = Join-Path $verificationRoot "resources/opkssh"
           if (-not (Test-Path -LiteralPath $verifiedResourceRoot -PathType Container)) {
             throw "Portable archive is missing the resources/opkssh directory."
+          }
+          $verifiedLocaleRoot = Join-Path $verificationRoot "resources/locales"
+          if (-not (Test-Path -LiteralPath $verifiedLocaleRoot -PathType Container)) {
+            throw "Portable archive is missing the resources/locales directory."
           }
 
           $verifiedExecutable = Join-Path $verificationRoot "sortOfRemoteNG.exe"
@@ -1405,6 +1471,17 @@ jobs:
           if ($resourceDifference.Count -ne 0) {
             $resourceDifference | Format-Table | Out-String | Write-Host
             throw "Extracted OPKSSH resources do not match the staged source manifest."
+          }
+
+          $verifiedLocaleHashes = @(Get-RelativeFileHashes -Root $verifiedLocaleRoot)
+          $localeDifference = @(
+            Compare-Object `
+              -ReferenceObject $expectedLocaleHashes `
+              -DifferenceObject $verifiedLocaleHashes
+          )
+          if ($localeDifference.Count -ne 0) {
+            $localeDifference | Format-Table | Out-String | Write-Host
+            throw "Extracted locale resources do not match the staged source manifest."
           }
 
       - name: Verify macOS Developer ID, notarization, and stapling
@@ -1459,6 +1536,7 @@ jobs:
 
               expected_binary_path="/usr/bin/$LINUX_PACKAGE_MAIN_BINARY"
               expected_resource_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/opkssh"
+              expected_locale_root="/usr/lib/$LINUX_PACKAGE_PRODUCT_NAME/locales"
               expected_icon_root="/usr/share/icons/hicolor"
               expected_linux_icon_paths=(
                 "$expected_icon_root/32x32/apps/$FLATPAK_APP_ID.png"
@@ -1508,6 +1586,25 @@ jobs:
                 find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
               ) > "$expected_resource_files"
               test -s "$expected_resource_files"
+              locale_source="$GITHUB_WORKSPACE/src/i18n/locales"
+              locale_file_count=$(find "$locale_source" -maxdepth 1 -type f -name '*.json' | wc -l | tr -d '[:space:]')
+              locale_total_file_count=$(find "$locale_source" -type f | wc -l | tr -d '[:space:]')
+              [[ "$locale_file_count" =~ ^[0-9]+$ ]]
+              [[ "$locale_total_file_count" =~ ^[0-9]+$ ]]
+              test "$locale_file_count" -gt 0
+              test "$locale_file_count" -eq "$locale_total_file_count"
+              expected_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-expected-locale-files.txt"
+              expected_locale_hashes="$RUNNER_TEMP/${ARTIFACT_ID}-expected-locale-hashes.txt"
+              (
+                cd "$locale_source"
+                find . -maxdepth 1 -type f -name '*.json' -printf '%P\n' | LC_ALL=C sort
+              ) > "$expected_locale_files"
+              (
+                cd "$locale_source"
+                sha256sum ./*.json | LC_ALL=C sort -k2
+              ) > "$expected_locale_hashes"
+              test -s "$expected_locale_files"
+              test -s "$expected_locale_hashes"
 
               actual_rpm_arch=$(rpm -qp --qf '%{ARCH}' "$rpm_source")
               actual_rpm_version=$(rpm -qp --qf '%{VERSION}' "$rpm_source")
@@ -1517,6 +1614,7 @@ jobs:
               rpm -qpl "$rpm_source" | tee "$rpm_file_list"
               grep -Fx "$expected_binary_path" "$rpm_file_list"
               grep -Eq "^${expected_resource_root}/.+[^/]$" "$rpm_file_list"
+              grep -Eq "^${expected_locale_root}/.+\.json$" "$rpm_file_list"
               for icon_path in "${expected_linux_icon_paths[@]}"; do
                 grep -Fx "$icon_path" "$rpm_file_list"
               done
@@ -1544,6 +1642,18 @@ jobs:
                 grep -Ev '(^|/)\.gitkeep$' |
                 LC_ALL=C sort > "$rpm_resource_files"
               diff -u "$expected_resource_files" "$rpm_resource_files"
+              rpm_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-locale-files.txt"
+              rpm -qpvl "$rpm_source" |
+                awk -v prefix="${expected_locale_root}/" \
+                  '$1 ~ /^-/ && index($NF, prefix) == 1 { print substr($NF, length(prefix) + 1) }' |
+                LC_ALL=C sort > "$rpm_locale_files"
+              diff -u "$expected_locale_files" "$rpm_locale_files"
+              rpm_locale_hashes="$RUNNER_TEMP/${ARTIFACT_ID}-rpm-locale-hashes.txt"
+              (
+                cd "$rpm_extract_root$expected_locale_root"
+                sha256sum ./*.json | LC_ALL=C sort -k2
+              ) > "$rpm_locale_hashes"
+              diff -u "$expected_locale_hashes" "$rpm_locale_hashes"
 
               deb_file_list="$RUNNER_TEMP/${ARTIFACT_ID}-deb-files.txt"
               dpkg-deb -c "$deb_source" | tee "$deb_file_list"
@@ -1553,12 +1663,31 @@ jobs:
               test -s "$deb_payload_files"
               grep -Fx "$expected_binary_path" "$deb_payload_files"
               grep -Eq "^${expected_resource_root}/.+[^/]$" "$deb_payload_files"
+              grep -Eq "^${expected_locale_root}/.+\.json$" "$deb_payload_files"
               deb_resource_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-opkssh-files.txt"
               relative_deb_files_under_exact_root "$expected_resource_root" \
                 < "$deb_payload_files" |
                 grep -Ev '(^|/)\.gitkeep$' |
                 LC_ALL=C sort > "$deb_resource_files"
               diff -u "$expected_resource_files" "$deb_resource_files"
+              deb_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-deb-locale-files.txt"
+              relative_deb_files_under_exact_root "$expected_locale_root" \
+                < "$deb_payload_files" |
+                LC_ALL=C sort > "$deb_locale_files"
+              diff -u "$expected_locale_files" "$deb_locale_files"
+              deb_extract_root="$RUNNER_TEMP/${ARTIFACT_ID}-deb-extract"
+              if [ -e "$deb_extract_root" ] || [ -L "$deb_extract_root" ]; then
+                echo "::error::Refusing to replace unexpected DEB extraction path $deb_extract_root."
+                exit 1
+              fi
+              mkdir -p "$deb_extract_root"
+              dpkg-deb -x "$deb_source" "$deb_extract_root"
+              deb_locale_hashes="$RUNNER_TEMP/${ARTIFACT_ID}-deb-locale-hashes.txt"
+              (
+                cd "$deb_extract_root$expected_locale_root"
+                sha256sum ./*.json | LC_ALL=C sort -k2
+              ) > "$deb_locale_hashes"
+              diff -u "$expected_locale_hashes" "$deb_locale_hashes"
 
               appimage_extract_root="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-extract"
               if [ -e "$appimage_extract_root" ] || [ -L "$appimage_extract_root" ]; then
@@ -1573,6 +1702,7 @@ jobs:
               appimage_root="$appimage_extract_root/squashfs-root"
               test -x "$appimage_root$expected_binary_path"
               test -d "$appimage_root$expected_resource_root"
+              test -d "$appimage_root$expected_locale_root"
               appimage_resource_count=$(find "$appimage_root$expected_resource_root" -type f ! -name .gitkeep | wc -l | tr -d '[:space:]')
               [[ "$appimage_resource_count" =~ ^[0-9]+$ ]]
               test "$appimage_resource_count" -gt 0
@@ -1582,6 +1712,18 @@ jobs:
                 find . -type f ! -name .gitkeep -printf '%P\n' | LC_ALL=C sort
               ) > "$appimage_resource_files"
               diff -u "$expected_resource_files" "$appimage_resource_files"
+              appimage_locale_files="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-locale-files.txt"
+              (
+                cd "$appimage_root$expected_locale_root"
+                find . -maxdepth 1 -type f -name '*.json' -printf '%P\n' | LC_ALL=C sort
+              ) > "$appimage_locale_files"
+              diff -u "$expected_locale_files" "$appimage_locale_files"
+              appimage_locale_hashes="$RUNNER_TEMP/${ARTIFACT_ID}-appimage-locale-hashes.txt"
+              (
+                cd "$appimage_root$expected_locale_root"
+                sha256sum ./*.json | LC_ALL=C sort -k2
+              ) > "$appimage_locale_hashes"
+              diff -u "$expected_locale_hashes" "$appimage_locale_hashes"
               os_signing=not-applicable
               ;;
             macos)

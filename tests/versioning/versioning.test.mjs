@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseArgs as parseSyncVersionArgs } from "../../scripts/sync-version.mjs";
+import {
+  parseArgs as parseSyncVersionArgs,
+  versionDerivedTextMatches,
+} from "../../scripts/sync-version.mjs";
 import {
   cargoPackageName,
   formatPublicVersion,
@@ -21,6 +24,20 @@ test("projects the public YY.N version to machine-only SemVer", () => {
   assert.throws(() => projectVersion("26.0"), /expected YY\.N/);
   assert.throws(() => projectVersion("26.1.0"), /expected YY\.N/);
   assert.throws(() => projectVersion("2026.1"), /expected YY\.N/);
+});
+
+test("accepts platform line endings without hiding version drift", () => {
+  const expected = '{\n  "version": "26.1.0"\n}\n';
+  const asCrlf = (value) => value.split("\n").join("\r\n");
+  assert.equal(versionDerivedTextMatches(asCrlf(expected), expected), true);
+  assert.equal(
+    versionDerivedTextMatches(
+      asCrlf(expected.replace("26.1.0", "26.2.0")),
+      expected,
+    ),
+    false,
+  );
+  assert.equal(versionDerivedTextMatches(null, expected), false);
 });
 
 test("formats updater SemVer as the public YY.N identity", () => {

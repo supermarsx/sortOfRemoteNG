@@ -15,19 +15,25 @@ Public releases use a rolling `YY.N` identity, while package ecosystems and upda
 | Git tag                          | `26.1`   | Immutable release-snapshot identity; no `v` prefix |
 | Package / updater version        | `26.1.0` | Machine-compatible SemVer projection               |
 
-`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes; `26.1` is the first-release example for 2026. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs. The README badge resolves GitHub's latest public Release directly, so hidden drafts never appear current and the publisher never commits a version-only change back to `main`.
+`YY` is the two-digit UTC year. `N` is allocated monotonically from the existing bare tags and resets to 1 when the UTC year changes; `26.1` is the first-release example for 2026. The allocator owns this public identity; it synchronizes `version.json` and every machine projection in the release snapshot rather than accepting unrelated version strings from separate jobs. The README badge resolves GitHub's latest public Release directly, so hidden drafts never appear current. The verified snapshot and its bare tag are pushed atomically, fast-forwarding `main` only when it still identifies the exact gated source commit. Its generated `[skip ci]` commit keeps package metadata current without starting a duplicate release cycle.
 
 The workflow records the successful `main` commit as the release `source_sha`.
-Its immutable bare tag identifies a detached, version-synchronized snapshot
-commit whose `Release-Source-SHA` trailer maps back to that source. Builds
-checkout the snapshot, while release notes and recovery retain the original
-main-commit identity. A rerun for the same `source_sha` must reuse the reserved
-tag and existing GitHub Release; it must not allocate another `N`.
+Its immutable bare tag identifies a version-synchronized snapshot commit whose
+`Release-Source-SHA` trailer maps back to that source. A newly created snapshot
+becomes the next `main` commit and is the exact tree used by release builds, while release
+notes and recovery retain the original source identity. Tag creation and the
+`main` fast-forward use one atomic push with an exact-source lease; if `main`
+advances first, neither ref is updated and the newer commit must complete its
+own gates. A rerun for the same `source_sha` must reuse the reserved tag and
+existing GitHub Release; it must not allocate another `N`.
+
+Repository rules must allow the release workflow actor to fast-forward `main`;
+otherwise the leased atomic push fails before either the branch or tag moves.
 
 ## Release path
 
 1. Run the normal CI jobs and the exact-source `Audit`, `Backend Coverage`, `Frontend Build`, and `Docker e2e (nightly)` gates.
-2. Queue the successful `main` source commit, allocate or recover its bare `YY.N` tag, and synchronize the release snapshot.
+2. Queue the successful `main` source commit, allocate or recover its bare `YY.N` tag, synchronize every public and machine version projection, and atomically fast-forward `main` with the tagged release snapshot.
 3. Build Windows x64 and ARM64 installers plus an architecture-matched, installer-free portable ZIP for each, Linux x64 and ARM64 AppImage, Debian, RPM, and Flatpak bundles, macOS Intel bundles, and macOS Apple Silicon bundles.
 4. Publish the public OS installers and application bundles. When every credential for an optional OS-signing capability is absent, CI records that intentional unsigned mode in the job summary without creating a warning annotation. A partial Apple credential set fails closed; a fully absent set leaves the macOS bundles truthfully OS-unsigned and does not suppress the release.
 5. When `TAURI_SIGNING_PRIVATE_KEY` is configured, generate and validate signed updater artifacts for `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, and `darwin-aarch64`.
