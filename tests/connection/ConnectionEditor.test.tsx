@@ -28,8 +28,7 @@ vi.mock("react-i18next", async (importOriginal) => {
         options?: Record<string, unknown>,
       ) => {
         const values =
-          typeof fallbackOrOptions === "object" &&
-          fallbackOrOptions !== null
+          typeof fallbackOrOptions === "object" && fallbackOrOptions !== null
             ? fallbackOrOptions
             : options;
         const template =
@@ -286,6 +285,16 @@ describe("ConnectionEditor", () => {
     resetIntegrationConfigStoreForTests();
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockImplementation(async (command: string, args?: any) => {
+      if (command === "get_runtime_capabilities") {
+        return {
+          cloud: true,
+          ops: true,
+          rdp: true,
+          serial: true,
+          mysql: true,
+          postgresql: true,
+        };
+      }
       if (command === "read_app_data") return integrationConfigRaw;
       if (command === "compare_and_swap_app_data") {
         const expected = (args?.expected ?? null) as string | null;
@@ -451,14 +460,10 @@ describe("ConnectionEditor", () => {
       expect(
         screen.getByRole("heading", { name: "Edit Connection" }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText('Editing "Test Connection"'),
-      ).toBeInTheDocument();
+      expect(screen.getByText('Editing "Test Connection"')).toBeInTheDocument();
       const reset = screen.getByRole("button", { name: "Reset" });
       expect(reset).toHaveAttribute("title", "Reset to Defaults");
-      expect(
-        screen.getByRole("button", { name: "Save" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
       expect(screen.queryByText(/^connectionEditor\./)).not.toBeInTheDocument();
     });
   });
@@ -2316,7 +2321,7 @@ describe("ConnectionEditor", () => {
       expect(screen.getByTestId("editor-connect")).toBeInTheDocument();
     });
 
-    it("connects to the edited on-screen values, not the pre-edit saved values (R2)", () => {
+    it("connects to the edited on-screen values, not the pre-edit saved values (R2)", async () => {
       // ⭐ THE headline regression. The saved connection's hostname is
       // 192.168.1.100; we edit it on screen to 10.0.0.5 and click Connect.
       // A handler that passed mgr.connection, or re-read state.connections
@@ -2342,14 +2347,14 @@ describe("ConnectionEditor", () => {
 
       fireEvent.click(screen.getByTestId("editor-connect"));
 
-      expect(onConnect).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
       const target = onConnect.mock.calls[0][0] as Connection;
       expect(target.hostname).toBe("10.0.0.5");
       expect(target.hostname).not.toBe(mockConnection.hostname);
       expect(target.id).toBe(mockConnection.id);
     });
 
-    it("connects without writing to the store when nothing was edited", () => {
+    it("connects without writing to the store when nothing was edited", async () => {
       const onConnect = vi.fn();
       const seen: Connection[][] = [];
       renderWithProviders(
@@ -2365,18 +2370,18 @@ describe("ConnectionEditor", () => {
 
       const writesBefore = seen.length;
       fireEvent.click(screen.getByTestId("editor-connect"));
+      await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
 
       // saveNow() gates the UPDATE_CONNECTION dispatch on hasChanges, so a
       // clean connect must not mutate state.connections at all (no new state
       // reference reaches the probe).
       expect(seen.length).toBe(writesBefore);
-      expect(onConnect).toHaveBeenCalledTimes(1);
       expect((onConnect.mock.calls[0][0] as Connection).hostname).toBe(
         mockConnection.hostname,
       );
     });
 
-    it("saves the edit exactly once before connecting", () => {
+    it("saves the edit exactly once before connecting", async () => {
       const onConnect = vi.fn();
       const seen: Connection[][] = [];
       renderWithProviders(
@@ -2396,13 +2401,13 @@ describe("ConnectionEditor", () => {
 
       const writesBefore = seen.length;
       fireEvent.click(screen.getByTestId("editor-connect"));
+      await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
 
       // Exactly one UPDATE_CONNECTION reached the store (the save half really
       // happened — not just the callback)...
-      expect(seen.length).toBe(writesBefore + 1);
+      await waitFor(() => expect(seen.length).toBe(writesBefore + 1));
       // ...and it persisted the edited value.
       expect(seen[seen.length - 1][0].hostname).toBe("10.0.0.5");
-      expect(onConnect).toHaveBeenCalledTimes(1);
     });
 
     it("hands integration plaintext only to the immediate runtime callback while persisting vault refs", async () => {
@@ -2585,7 +2590,7 @@ describe("ConnectionEditor", () => {
 
         // The connection is now "dirty forever"; Connect must still work.
         fireEvent.click(screen.getByTestId("editor-connect"));
-        expect(onConnect).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
         expect((onConnect.mock.calls[0][0] as Connection).hostname).toBe(
           "172.16.0.9",
         );
@@ -2728,7 +2733,7 @@ describe("ConnectionEditor", () => {
       );
       fireEvent.click(connectButton);
 
-      expect(onReconnect).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(onReconnect).toHaveBeenCalledTimes(1));
       expect((onReconnect.mock.calls[0][0] as Connection).id).toBe(
         mockConnection.id,
       );
@@ -2764,7 +2769,9 @@ describe("t57 routed protocol picker groups", () => {
       "Linode",
       "OVHcloud",
     ]) {
-      expect(screen.getByRole("option", { name: new RegExp(label, "i") })).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: new RegExp(label, "i") }),
+      ).toBeInTheDocument();
     }
   });
 });

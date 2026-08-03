@@ -5,6 +5,22 @@ import GeneralSection from "../../src/components/connectionEditor/GeneralSection
 
 // ── Mocks ──
 
+const runtimeCapabilityState = vi.hoisted(() => ({
+  value: {
+    cloud: true,
+    ops: true,
+    rdp: true,
+    serial: true,
+    mysql: true,
+    postgresql: true,
+    source: "native" as const,
+  },
+}));
+
+vi.mock("../../src/hooks/runtime/useRuntimeCapabilities", () => ({
+  useRuntimeCapabilities: () => runtimeCapabilityState.value,
+}));
+
 vi.mock("../../src/utils/discovery/defaultPorts", () => ({
   getDefaultPort: () => 22,
 }));
@@ -46,6 +62,62 @@ describe("GeneralSection validation", () => {
 
   beforeEach(() => {
     mockSetFormData.mockReset();
+    runtimeCapabilityState.value = {
+      cloud: true,
+      ops: true,
+      rdp: true,
+      serial: true,
+      mysql: true,
+      postgresql: true,
+      source: "native",
+    };
+  });
+
+  it("uses the canonical grouped built-in and integration protocol options", () => {
+    render(<GeneralSection {...defaultProps} />);
+
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+
+    expect(
+      screen.getByRole("option", { name: "Consoles & Terminals" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("option", { name: /NetBox/i })).toBeInTheDocument();
+  });
+
+  it("keeps a saved protocol visible but disabled when this build omits it", () => {
+    runtimeCapabilityState.value = {
+      cloud: false,
+      ops: false,
+      rdp: false,
+      serial: true,
+      mysql: false,
+      postgresql: false,
+      source: "native",
+    };
+
+    render(
+      <GeneralSection
+        {...defaultProps}
+        formData={{ ...defaultProps.formData, protocol: "rdp" }}
+      />,
+    );
+
+    expect(screen.getByTestId("editor-protocol")).toHaveTextContent(
+      "RDP (Unavailable in this build)",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      'Use the full build or rebuild with the "rdp" feature.',
+    );
+
+    fireEvent.click(screen.getByTestId("editor-protocol"));
+    expect(
+      screen.getByRole("option", {
+        name: "RDP (Unavailable in this build)",
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.queryByRole("option", { name: /Microsoft Azure/i }),
+    ).not.toBeInTheDocument();
   });
 
   // ── Name validation ──
@@ -112,7 +184,9 @@ describe("GeneralSection validation", () => {
 
     fireEvent.blur(portInput);
 
-    expect(screen.getByText("Port must be between 1 and 65535")).toBeInTheDocument();
+    expect(
+      screen.getByText("Port must be between 1 and 65535"),
+    ).toBeInTheDocument();
   });
 
   it("shows no error for valid port 22", () => {
@@ -126,7 +200,9 @@ describe("GeneralSection validation", () => {
 
     fireEvent.blur(portInput);
 
-    expect(screen.queryByText("Port must be between 1 and 65535")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Port must be between 1 and 65535"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows no error for valid port 3389", () => {
@@ -140,7 +216,9 @@ describe("GeneralSection validation", () => {
 
     fireEvent.blur(portInput);
 
-    expect(screen.queryByText("Port must be between 1 and 65535")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Port must be between 1 and 65535"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows no error for valid port 65535", () => {
@@ -154,7 +232,9 @@ describe("GeneralSection validation", () => {
 
     fireEvent.blur(portInput);
 
-    expect(screen.queryByText("Port must be between 1 and 65535")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Port must be between 1 and 65535"),
+    ).not.toBeInTheDocument();
   });
 
   // ── Aria attributes ──
@@ -170,7 +250,9 @@ describe("GeneralSection validation", () => {
 
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
     expect(nameInput).toHaveAttribute("aria-describedby", "name-error");
-    expect(document.getElementById("name-error")).toHaveTextContent("Name is required");
+    expect(document.getElementById("name-error")).toHaveTextContent(
+      "Name is required",
+    );
   });
 
   it("sets aria-invalid and aria-describedby on port input when error present", () => {

@@ -138,7 +138,7 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
   }
 
   if (protocol === "ftp" && section === "security") {
-    const security = formData.ftpSecurity ?? "none";
+    const security = formData.ftpSecurity ?? "explicit";
     return (
       <section data-editor-search-section="ftp-options" className={cardClass}>
         <div data-editor-search-field="ftp-security-mode">
@@ -146,44 +146,113 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
             id="ftp-security-mode"
             label="Transport security"
             value={security}
-            onChange={(ftpSecurity) =>
+            onChange={(value) => {
+              const ftpSecurity = value as "none" | "explicit" | "implicit";
               setFormData((previous) => ({
                 ...previous,
-                ftpSecurity: ftpSecurity as "none" | "explicit" | "implicit",
-              }))
-            }
+                ftpSecurity,
+                ftpAllowPlaintext: ftpSecurity === "none" ? false : undefined,
+                ftpAcceptInvalidCerts:
+                  ftpSecurity === "none"
+                    ? false
+                    : previous.ftpAcceptInvalidCerts,
+                // A transport-security change always requires a fresh,
+                // deliberate acknowledgement before certificate bypass.
+                ftpAcknowledgeInvalidCertRisk: false,
+              }));
+            }}
             options={[
-              { value: "none", label: "FTP (unencrypted)" },
               { value: "explicit", label: "Explicit FTPS (AUTH TLS)" },
               { value: "implicit", label: "Implicit FTPS" },
+              { value: "none", label: "FTP (unencrypted, unsafe)" },
             ]}
             variant="form-sm"
             className="w-full min-w-0"
           />
         </div>
-        <div data-editor-search-field="ftp-invalid-certificates">
-          <CheckboxField
-            id="ftp-accept-invalid-certificates"
-            label="Accept invalid TLS certificates"
-            description="Unsafe: disables certificate validation for FTPS."
-            checked={formData.ftpAcceptInvalidCerts ?? false}
-            onChange={(ftpAcceptInvalidCerts) =>
-              setFormData((previous) => ({
-                ...previous,
-                ftpAcceptInvalidCerts,
-              }))
-            }
-            variant="form"
-          />
-        </div>
-        {(security === "none" || formData.ftpAcceptInvalidCerts) && (
-          <div className="flex items-start gap-2 rounded-md border border-warning/35 bg-warning/5 p-2.5 text-[11px] leading-4 text-[var(--color-textMuted)]">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-warning" />
-            {security === "none"
-              ? "Plain FTP sends credentials and file contents without transport encryption."
-              : "Certificate validation is disabled; a machine-in-the-middle can impersonate this server."}
+        {security === "none" ? (
+          <div className="space-y-2 rounded-md border border-error/50 bg-error/10 p-3">
+            <CheckboxField
+              id="ftp-allow-plaintext"
+              label="Allow plaintext FTP for this connection"
+              description="Required acknowledgement: usernames, passwords, directory listings, and file contents can be intercepted or modified."
+              checked={formData.ftpAllowPlaintext === true}
+              onChange={(ftpAllowPlaintext) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  ftpAllowPlaintext,
+                }))
+              }
+              variant="form"
+            />
+            <div className="flex items-start gap-2 text-[11px] font-medium leading-4 text-error">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              Plain FTP stays blocked until this per-connection consent is
+              enabled. Verified explicit FTPS is the default.
+            </div>
+          </div>
+        ) : (
+          <div data-editor-search-field="ftp-invalid-certificates">
+            <CheckboxField
+              id="ftp-accept-invalid-certificates"
+              label="Accept invalid TLS certificates"
+              description="Unsafe: disables certificate validation for FTPS."
+              checked={formData.ftpAcceptInvalidCerts ?? false}
+              onChange={(ftpAcceptInvalidCerts) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  ftpAcceptInvalidCerts,
+                  // Enabling bypass is only the first interaction. Disabling
+                  // it clears consent, and re-enabling requires confirmation.
+                  ftpAcknowledgeInvalidCertRisk: false,
+                }))
+              }
+              variant="form"
+            />
           </div>
         )}
+        {formData.ftpAcceptInvalidCerts && security !== "none" ? (
+          <div
+            role="alert"
+            className="space-y-3 rounded-md border border-error/60 bg-error/10 p-3"
+          >
+            <div className="flex items-start gap-2 text-[11px] font-medium leading-4 text-error">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <span>
+                Certificate validation is disabled. An attacker can impersonate
+                this server and intercept credentials or file contents.
+              </span>
+            </div>
+            <CheckboxField
+              id="ftp-acknowledge-invalid-certificate-risk"
+              label="I understand and explicitly accept this FTPS interception risk"
+              description="Required separately for this connection before it can connect. Legacy profiles without this acknowledgement remain blocked."
+              checked={formData.ftpAcknowledgeInvalidCertRisk === true}
+              onChange={(ftpAcknowledgeInvalidCertRisk) =>
+                setFormData((previous) => ({
+                  ...previous,
+                  ftpAcknowledgeInvalidCertRisk:
+                    previous.ftpAcceptInvalidCerts === true
+                      ? ftpAcknowledgeInvalidCertRisk
+                      : false,
+                }))
+              }
+              variant="form"
+            />
+            {formData.ftpAcknowledgeInvalidCertRisk !== true ? (
+              <p className="text-[11px] font-medium leading-4 text-error">
+                Confirmation required. Saving this profile does not authorize an
+                insecure connection; connect will fail closed until you check
+                the acknowledgement above.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-4 text-warning">
+                Risk acknowledged for this saved connection. Restore certificate
+                validation as soon as the server certificate can be fixed.
+              </p>
+            )}
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -315,9 +384,10 @@ export const SavedProtocolOptions: React.FC<SavedProtocolOptionsProps> = ({
               Native VNC security policy
             </h4>
             <p className="mt-1 text-[11px] leading-4 text-[var(--color-textMuted)]">
-              The native transport blocks legacy unencrypted, weak-authentication,
-              and unauthenticated modes unless the corresponding per-connection
-              exceptions are explicitly enabled in Security.
+              The native transport blocks legacy unencrypted,
+              weak-authentication, and unauthenticated modes unless the
+              corresponding per-connection exceptions are explicitly enabled in
+              Security.
             </p>
           </div>
         </div>

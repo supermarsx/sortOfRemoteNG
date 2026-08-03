@@ -105,6 +105,7 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           return (
             <div key={tab.id}>
               <button
+                data-testid={`settings-tab-${tab.id}`}
                 onClick={() => {
                   mgr.setActiveTab(tab.id);
                   mgr.setHighlightKey(null);
@@ -164,10 +165,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
   const u = mgr.updateSettings;
 
   return (
-    <div
-      ref={mgr.contentScrollRef}
-      className="flex-1 overflow-y-auto min-h-0"
-    >
+    <div ref={mgr.contentScrollRef} className="flex-1 overflow-y-auto min-h-0">
       <div className="p-6 max-w-3xl mx-auto">
         {mgr.activeTab === "general" && (
           <GeneralSettings settings={s} updateSettings={u} />
@@ -249,7 +247,9 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
         {mgr.activeTab === "advanced" && (
           <AdvancedSettings settings={s} updateSettings={u} />
         )}
-        {mgr.activeTab === "recovery" && <RecoverySettings onClose={() => {}} />}
+        {mgr.activeTab === "recovery" && (
+          <RecoverySettings onClose={() => {}} />
+        )}
         {mgr.activeTab === "about" && <AboutSettings />}
 
         {/* Sentinel for scroll-to-bottom detection */}
@@ -325,8 +325,7 @@ const BenchmarkOverlay: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>
-              This may take{" "}
-              {mgr.settings?.benchmarkTimeSeconds || 1} second(s)
+              This may take {mgr.settings?.benchmarkTimeSeconds || 1} second(s)
             </span>
           </div>
         </div>
@@ -398,7 +397,9 @@ interface SettingsTabContentProps {
   onClose: () => void;
 }
 
-export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({ onClose }) => {
+export const SettingsTabContent: React.FC<SettingsTabContentProps> = ({
+  onClose,
+}) => {
   const mgr = useSettingsDialog(true, onClose);
 
   if (!mgr.settings) return null;

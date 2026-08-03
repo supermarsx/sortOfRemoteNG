@@ -101,6 +101,18 @@ vi.mock("../../connectionEditor/ARDOptions", () => ({
   ),
 }));
 
+vi.mock("../../connectionEditor/BMCOptions", () => ({
+  default: ({ formData, section }: any) => (
+    <div
+      data-testid="bmc-options"
+      data-protocol={formData.protocol}
+      data-section={section}
+    >
+      BMC: {formData.protocol} / {section}
+    </div>
+  ),
+}));
+
 vi.mock("../../connectionEditor/SerialOptions", () => ({
   SerialOptions: ({ sections }: any) => (
     <div
@@ -213,6 +225,35 @@ const idsFor = (formData: Partial<Connection>) =>
   getProtocolSubtabs(formData).map((subtab) => subtab.id);
 
 describe("ProtocolSections", () => {
+  it.each(["idrac", "ilo", "lenovo", "supermicro"] as const)(
+    "routes every %s BMC subtab to the shared editor",
+    (protocol) => {
+      render(<Harness initial={{ protocol, isGroup: false }} />);
+
+      expect(idsFor({ protocol })).toEqual([
+        "connection",
+        "authentication",
+        "security",
+        "advanced",
+        "recovery",
+      ]);
+      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+        "data-protocol",
+        protocol,
+      );
+      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+        "data-section",
+        "connection",
+      );
+
+      fireEvent.click(screen.getByRole("tab", { name: "Security" }));
+      expect(screen.getByTestId("bmc-options")).toHaveAttribute(
+        "data-section",
+        "security",
+      );
+    },
+  );
+
   it("characterizes applicable subtabs for every major protocol family", () => {
     expect(idsFor({ protocol: "rdp" })).toEqual([
       "connection",
@@ -495,6 +536,12 @@ describe("ProtocolSections", () => {
       "data-protocol",
       "vnc",
     );
+    expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
+      "data-section",
+      "connection",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Authentication" }));
+    expect(screen.queryByTestId("ssh-options")).not.toBeInTheDocument();
     expect(screen.getByTestId("saved-protocol-options")).toHaveAttribute(
       "data-section",
       "authentication",

@@ -19,10 +19,23 @@ import {
   getMaxDescendantDepth,
   MAX_NESTING_DEPTH,
 } from "../../utils/window/dragDropManager";
-import { Checkbox, NumberInput, Select } from '../ui/forms';
-import { useTranslation } from 'react-i18next';
-import { sanitizeHostname } from '../../utils/connection/sanitizeHostname';
-import { ToastContext } from '../../contexts/ToastContext';
+import { Checkbox, NumberInput, Select, type SelectOption } from "../ui/forms";
+import { useTranslation } from "react-i18next";
+import { sanitizeHostname } from "../../utils/connection/sanitizeHostname";
+import { ToastContext } from "../../contexts/ToastContext";
+import {
+  INTEGRATION_PROTOCOL_OPTIONS,
+  PROTOCOL_CATEGORY_LABEL_KEYS,
+  PROTOCOL_CATEGORY_LABELS,
+  PROTOCOL_OPTIONS,
+} from "../../hooks/connection/useConnectionEditor";
+import { useRuntimeCapabilities } from "../../hooks/runtime/useRuntimeCapabilities";
+import {
+  getRuntimeProtocolOptions,
+  getUnavailableCurrentProtocolOption,
+  PROTOCOL_CATEGORY_ORDER,
+} from "../../utils/connection/protocolOptionRegistry";
+import { getRuntimeProtocolUnavailableMessage } from "../../utils/runtime/runtimeCapabilities";
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
@@ -71,7 +84,10 @@ const ParentFolderSelect: React.FC<{
           group,
           depth: 0,
           disabled: true,
-          reason: t('connectionEditor.cannotBeOwnParent', 'Cannot be its own parent'),
+          reason: t(
+            "connectionEditor.cannotBeOwnParent",
+            "Cannot be its own parent",
+          ),
         };
       }
 
@@ -85,7 +101,10 @@ const ParentFolderSelect: React.FC<{
               group,
               depth: 0,
               disabled: true,
-              reason: t('connectionEditor.cannotMoveIntoDescendant', 'Cannot move into own descendant'),
+              reason: t(
+                "connectionEditor.cannotMoveIntoDescendant",
+                "Cannot move into own descendant",
+              ),
             };
           }
           checkId = parent?.parentId;
@@ -101,16 +120,38 @@ const ParentFolderSelect: React.FC<{
         depth: groupDepth,
         disabled: wouldExceedDepth,
         reason: wouldExceedDepth
-          ? t('connectionEditor.maxDepthExceeded', 'Max depth ({{max}}) exceeded', { max: MAX_NESTING_DEPTH })
+          ? t(
+              "connectionEditor.maxDepthExceeded",
+              "Max depth ({{max}}) exceeded",
+              { max: MAX_NESTING_DEPTH },
+            )
           : undefined,
       };
     });
   }, [availableGroups, allConnections, formData.id, formData.isGroup, t]);
 
   return (
-    <Select value={formData.parentId || ""} data-testid="editor-parent-folder" onChange={(v: string) =>
-        setFormData({ ...formData, parentId: v || undefined })} options={[{ value: '', label: t('connectionEditor.rootNoParent', 'Root (No parent)') }, ...selectableGroups.map(({ group, depth, disabled, reason }) => ({ value: group.id, label: `${"─".repeat(depth)} ${getFolderPath(group.id, allConnections)}
-          ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="sor-form-select" />
+    <Select
+      value={formData.parentId || ""}
+      data-testid="editor-parent-folder"
+      onChange={(v: string) =>
+        setFormData({ ...formData, parentId: v || undefined })
+      }
+      options={[
+        {
+          value: "",
+          label: t("connectionEditor.rootNoParent", "Root (No parent)"),
+        },
+        ...selectableGroups.map(({ group, depth, disabled, reason }) => ({
+          value: group.id,
+          label: `${"─".repeat(depth)} ${getFolderPath(group.id, allConnections)}
+          ${disabled ? ` (${reason})` : ""}`,
+          disabled: disabled,
+          title: reason,
+        })),
+      ]}
+      className="sor-form-select"
+    />
   );
 };
 
@@ -129,6 +170,119 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
   const toastCtx = useContext(ToastContext);
   const [nameError, setNameError] = useState<string | null>(null);
   const [portError, setPortError] = useState<string | null>(null);
+  const runtimeCapabilities = useRuntimeCapabilities();
+  const runtimeProtocolOptions = useMemo(
+    () =>
+      getRuntimeProtocolOptions(
+        PROTOCOL_OPTIONS,
+        INTEGRATION_PROTOCOL_OPTIONS,
+        runtimeCapabilities,
+      ),
+    [runtimeCapabilities],
+  );
+  const allProtocolOptions = useMemo(
+    () => [...PROTOCOL_OPTIONS, ...INTEGRATION_PROTOCOL_OPTIONS],
+    [],
+  );
+  const unavailableCurrentOption = useMemo(
+    () =>
+      getUnavailableCurrentProtocolOption(
+        runtimeProtocolOptions,
+        allProtocolOptions,
+        formData.protocol,
+      ),
+    [allProtocolOptions, formData.protocol, runtimeProtocolOptions],
+  );
+  const runtimeUnavailableMessage = formData.protocol
+    ? getRuntimeProtocolUnavailableMessage(
+        formData.protocol,
+        runtimeCapabilities,
+      )
+    : null;
+  const unavailableSavedMessage =
+    runtimeUnavailableMessage ??
+    (formData.protocol &&
+    !runtimeProtocolOptions.some(({ value }) => value === formData.protocol)
+      ? t(
+          "connectionEditor.protocolPicker.unavailableSaved",
+          "Unavailable saved protocol",
+        )
+      : null);
+  const protocolSelectOptions = useMemo(() => {
+    const currentOptions = unavailableCurrentOption
+      ? [...runtimeProtocolOptions, unavailableCurrentOption]
+      : runtimeProtocolOptions;
+    const options: SelectOption[] = [];
+
+    for (const category of PROTOCOL_CATEGORY_ORDER) {
+      const categoryOptions = currentOptions.filter(
+        (option) => option.category === category,
+      );
+      if (categoryOptions.length === 0) continue;
+
+      const categoryLabel = String(
+        t(
+          PROTOCOL_CATEGORY_LABEL_KEYS[category],
+          PROTOCOL_CATEGORY_LABELS[category],
+        ),
+      );
+      options.push({
+        value: `__protocol-category:${category}`,
+        label: categoryLabel,
+        disabled: true,
+        title: categoryLabel,
+      });
+      options.push(
+        ...categoryOptions.map((option) => {
+          const isUnavailable =
+            option.value === unavailableCurrentOption?.value;
+          const label = String(
+            option.labelKey ? t(option.labelKey, option.label) : option.label,
+          );
+          return {
+            value: option.value,
+            label: isUnavailable
+              ? `${label} (${t(
+                  "connectionEditor.protocolUnavailableInBuild",
+                  "Unavailable in this build",
+                )})`
+              : label,
+            disabled: isUnavailable,
+            title: isUnavailable
+              ? (unavailableSavedMessage ?? undefined)
+              : option.descKey
+                ? String(t(option.descKey, option.desc))
+                : option.desc,
+            icon: option.icon,
+          };
+        }),
+      );
+    }
+
+    if (
+      formData.protocol &&
+      !allProtocolOptions.some(({ value }) => value === formData.protocol)
+    ) {
+      options.unshift({
+        value: formData.protocol,
+        label: `${formData.protocol} (${t(
+          "connectionEditor.protocolPicker.unavailableSaved",
+          "Unavailable saved protocol",
+        )})`,
+        disabled: true,
+        title: unavailableSavedMessage ?? undefined,
+      });
+    }
+
+    return options;
+  }, [
+    allProtocolOptions,
+    formData.protocol,
+    runtimeProtocolOptions,
+    t,
+    unavailableCurrentOption,
+    unavailableSavedMessage,
+  ]);
 
   /**
    * P8: clean a hostname value (strip leading scheme,
@@ -147,8 +301,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
       // record. Don't clobber a deliberate choice.
       if (
         result.port &&
-        (!prev.port ||
-          prev.port === getDefaultPort(prev.protocol ?? "rdp"))
+        (!prev.port || prev.port === getDefaultPort(prev.protocol ?? "rdp"))
       ) {
         next.port = result.port;
       }
@@ -158,44 +311,84 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
       const parts: string[] = [];
       parts.push(
         t(
-          'connectionEditor.hostnameNormalizedScheme',
-          'Removed the `{{scheme}}://` prefix — the protocol is set separately above.',
+          "connectionEditor.hostnameNormalizedScheme",
+          "Removed the `{{scheme}}://` prefix — the protocol is set separately above.",
           { scheme: result.scheme },
         ) as string,
       );
       if (result.port) {
         parts.push(
           t(
-            'connectionEditor.hostnameNormalizedPort',
-            'Moved port {{port}} into the Port field.',
+            "connectionEditor.hostnameNormalizedPort",
+            "Moved port {{port}} into the Port field.",
             { port: result.port },
           ) as string,
         );
       }
-      if (result.path && result.path !== '/') {
+      if (result.path && result.path !== "/") {
         parts.push(
           t(
-            'connectionEditor.hostnameNormalizedPath',
-            'Discarded path `{{path}}` — only the host belongs here.',
+            "connectionEditor.hostnameNormalizedPath",
+            "Discarded path `{{path}}` — only the host belongs here.",
             { path: result.path },
           ) as string,
         );
       }
-      toastCtx?.toast.info(parts.join(' '), 6000);
+      toastCtx?.toast.info(parts.join(" "), 6000);
     }
   };
 
   const iconOptions = [
-    { value: "", label: t('connectionEditor.iconDefault', 'Default'), icon: Monitor },
-    { value: "terminal", label: t('connectionEditor.iconTerminal', 'Terminal'), icon: Terminal },
-    { value: "globe", label: t('connectionEditor.iconWeb', 'Web'), icon: Globe },
-    { value: "database", label: t('connectionEditor.iconDatabase', 'Database'), icon: Database },
-    { value: "server", label: t('connectionEditor.iconServer', 'Server'), icon: Server },
-    { value: "shield", label: t('connectionEditor.iconShield', 'Shield'), icon: Shield },
-    { value: "cloud", label: t('connectionEditor.iconCloud', 'Cloud'), icon: Cloud },
-    { value: "folder", label: t('connectionEditor.iconFolder', 'Folder'), icon: Folder },
-    { value: "star", label: t('connectionEditor.iconStar', 'Star'), icon: Star },
-    { value: "drive", label: t('connectionEditor.iconDrive', 'Drive'), icon: HardDrive },
+    {
+      value: "",
+      label: t("connectionEditor.iconDefault", "Default"),
+      icon: Monitor,
+    },
+    {
+      value: "terminal",
+      label: t("connectionEditor.iconTerminal", "Terminal"),
+      icon: Terminal,
+    },
+    {
+      value: "globe",
+      label: t("connectionEditor.iconWeb", "Web"),
+      icon: Globe,
+    },
+    {
+      value: "database",
+      label: t("connectionEditor.iconDatabase", "Database"),
+      icon: Database,
+    },
+    {
+      value: "server",
+      label: t("connectionEditor.iconServer", "Server"),
+      icon: Server,
+    },
+    {
+      value: "shield",
+      label: t("connectionEditor.iconShield", "Shield"),
+      icon: Shield,
+    },
+    {
+      value: "cloud",
+      label: t("connectionEditor.iconCloud", "Cloud"),
+      icon: Cloud,
+    },
+    {
+      value: "folder",
+      label: t("connectionEditor.iconFolder", "Folder"),
+      icon: Folder,
+    },
+    {
+      value: "star",
+      label: t("connectionEditor.iconStar", "Star"),
+      icon: Star,
+    },
+    {
+      value: "drive",
+      label: t("connectionEditor.iconDrive", "Drive"),
+      icon: HardDrive,
+    },
   ];
 
   const handleProtocolChange = (protocol: string) => {
@@ -214,16 +407,26 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
     <>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center space-x-2">
-          <Checkbox checked={!!formData.isGroup} onChange={(v: boolean) => setFormData({ ...formData, isGroup: v })} variant="form" />
+          <Checkbox
+            checked={!!formData.isGroup}
+            onChange={(v: boolean) => setFormData({ ...formData, isGroup: v })}
+            variant="form"
+          />
           <span className="text-[var(--color-textSecondary)]">
-            {t('connectionEditor.createAsGroup', 'Create as folder/group')}
+            {t("connectionEditor.createAsGroup", "Create as folder/group")}
           </span>
         </label>
         {!formData.isGroup && (
           <label className="flex items-center space-x-2">
-            <Checkbox checked={!!formData.favorite} onChange={(v: boolean) => setFormData({ ...formData, favorite: v })} variant="form" />
+            <Checkbox
+              checked={!!formData.favorite}
+              onChange={(v: boolean) =>
+                setFormData({ ...formData, favorite: v })
+              }
+              variant="form"
+            />
             <span className="text-[var(--color-textSecondary)]">
-              {t('connectionEditor.markAsFavorite', 'Mark as favorite')}
+              {t("connectionEditor.markAsFavorite", "Mark as favorite")}
             </span>
           </label>
         )}
@@ -232,7 +435,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            {t('connectionEditor.nameLabel', 'Name *')}
+            {t("connectionEditor.nameLabel", "Name *")}
           </label>
           <input
             type="text"
@@ -243,11 +446,21 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
               if (nameError) setNameError(null);
             }}
             onBlur={() => {
-              if (!formData.name?.trim()) setNameError(t('connectionEditor.nameRequired', 'Name is required'));
+              if (!formData.name?.trim())
+                setNameError(
+                  t("connectionEditor.nameRequired", "Name is required"),
+                );
             }}
             data-testid="editor-name"
             className="sor-form-input"
-            placeholder={formData.isGroup ? t('connectionEditor.folderNamePlaceholder', 'Folder name') : t('connectionEditor.connectionNamePlaceholder', 'Connection name')}
+            placeholder={
+              formData.isGroup
+                ? t("connectionEditor.folderNamePlaceholder", "Folder name")
+                : t(
+                    "connectionEditor.connectionNamePlaceholder",
+                    "Connection name",
+                  )
+            }
             aria-invalid={nameError ? true : undefined}
             aria-describedby={nameError ? "name-error" : undefined}
           />
@@ -260,7 +473,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            {t('connectionEditor.iconLabel', 'Icon')}
+            {t("connectionEditor.iconLabel", "Icon")}
           </label>
           <div className="grid grid-cols-5 gap-2">
             {iconOptions.map(({ value, label, icon: Icon }) => {
@@ -291,7 +504,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-            {t('connectionEditor.parentFolder', 'Parent Folder')}
+            {t("connectionEditor.parentFolder", "Parent Folder")}
           </label>
           <ParentFolderSelect
             formData={formData}
@@ -304,7 +517,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
         {!formData.isGroup && tabGroups.length > 0 && (
           <div>
             <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-              {t('connectionEditor.defaultTabGroup', 'Default Tab Group')}
+              {t("connectionEditor.defaultTabGroup", "Default Tab Group")}
             </label>
             <Select
               value={formData.defaultTabGroupId ?? ""}
@@ -315,15 +528,21 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                 })
               }
               options={[
-                { value: "", label: t('connectionEditor.defaultTabGroupNone', 'None — keep ungrouped') },
+                {
+                  value: "",
+                  label: t(
+                    "connectionEditor.defaultTabGroupNone",
+                    "None — keep ungrouped",
+                  ),
+                },
                 ...tabGroups.map((g) => ({ value: g.id, label: g.name })),
               ]}
               variant="form"
             />
             <p className="text-xs text-[var(--color-textMuted)] mt-1">
               {t(
-                'connectionEditor.defaultTabGroupHint',
-                'New sessions for this connection will automatically join this group.',
+                "connectionEditor.defaultTabGroupHint",
+                "New sessions for this connection will automatically join this group.",
               )}
             </p>
           </div>
@@ -333,28 +552,55 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t('connectionEditor.protocol', 'Protocol')}
+                {t("connectionEditor.protocol", "Protocol")}
               </label>
-              <Select value={formData.protocol ?? "rdp"} onChange={(v: string) => handleProtocolChange(v)} data-testid="editor-protocol" options={[{ value: "rdp", label: "RDP (Remote Desktop)" }, { value: "ssh", label: "SSH (Secure Shell)" }, { value: "vnc", label: "VNC (Virtual Network Computing)" }, { value: "anydesk", label: "AnyDesk" }, { value: "http", label: "HTTP" }, { value: "https", label: "HTTPS" }, { value: "telnet", label: "Telnet" }, { value: "rlogin", label: "RLogin" }, { value: "gcp", label: "Google Cloud Platform (GCP)" }, { value: "azure", label: "Microsoft Azure" }, { value: "ibm-csp", label: "IBM Cloud" }, { value: "digital-ocean", label: "Digital Ocean" }, { value: "heroku", label: "Heroku" }, { value: "scaleway", label: "Scaleway" }, { value: "linode", label: "Linode" }, { value: "ovhcloud", label: "OVH Cloud" }]} variant="form" />
+              <Select
+                value={formData.protocol ?? ""}
+                onChange={(v: string) => handleProtocolChange(v)}
+                data-testid="editor-protocol"
+                options={protocolSelectOptions}
+                placeholder={t(
+                  "connectionEditor.protocolPicker.select",
+                  "Select protocol",
+                )}
+                searchable
+                searchPlaceholder={t(
+                  "connectionEditor.protocolPicker.search",
+                  "Search protocols",
+                )}
+                title={unavailableSavedMessage ?? undefined}
+                variant="form"
+              />
+              {unavailableSavedMessage && (
+                <p className="text-xs text-warning mt-1" role="status">
+                  {unavailableSavedMessage}
+                </p>
+              )}
             </div>
 
             {formData.protocol === "ssh" && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  {t('connectionEditor.sshImplementation', 'SSH Implementation')}
+                  {t(
+                    "connectionEditor.sshImplementation",
+                    "SSH Implementation",
+                  )}
                 </label>
                 <div className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)]">
-                  {t('connectionEditor.rustSshLibrary', 'Rust SSH Library')}
+                  {t("connectionEditor.rustSshLibrary", "Rust SSH Library")}
                 </div>
                 <p className="text-xs text-[var(--color-textMuted)] mt-1">
-                  {t('connectionEditor.rustSshDescription', 'Using secure Rust-based SSH implementation')}
+                  {t(
+                    "connectionEditor.rustSshDescription",
+                    "Using secure Rust-based SSH implementation",
+                  )}
                 </p>
               </div>
             )}
 
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t('connectionEditor.hostnameLabel', 'Hostname/IP *')}
+                {t("connectionEditor.hostnameLabel", "Hostname/IP *")}
               </label>
               <input
                 type="text"
@@ -369,35 +615,54 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                   // gets normalised the moment it lands in the field —
                   // not only after the user tabs away. Defer one tick so
                   // React lets the paste land first.
-                  const text = e.clipboardData?.getData('text');
+                  const text = e.clipboardData?.getData("text");
                   if (text) {
                     requestAnimationFrame(() => sanitizeHostnameField(text));
                   }
                 }}
                 data-testid="editor-hostname"
                 className="sor-form-input"
-                placeholder={t('connectionEditor.hostnamePlaceholder', '192.168.1.100 or server.example.com')}
+                placeholder={t(
+                  "connectionEditor.hostnamePlaceholder",
+                  "192.168.1.100 or server.example.com",
+                )}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                {t('connectionEditor.portLabel', 'Port')}
+                {t("connectionEditor.portLabel", "Port")}
               </label>
-              <NumberInput value={formData.port || 0} onChange={(v: number) => {
-                    setFormData({ ...formData, port: v });
-                    if (portError) setPortError(null);
-                  }} onBlur={() => {
-                    const p = formData.port ?? 0;
-                    if (!Number.isFinite(p) || p < 1 || p > 65535) {
-                      setPortError(t('connectionEditor.portError', 'Port must be between 1 and 65535'));
-                    }
-                  }} variant="form" min={1} max={65535}
-                  data-testid="editor-port"
-                  aria-invalid={portError ? true : undefined}
-                  aria-describedby={portError ? "port-error" : undefined} />
+              <NumberInput
+                value={formData.port || 0}
+                onChange={(v: number) => {
+                  setFormData({ ...formData, port: v });
+                  if (portError) setPortError(null);
+                }}
+                onBlur={() => {
+                  const p = formData.port ?? 0;
+                  if (!Number.isFinite(p) || p < 1 || p > 65535) {
+                    setPortError(
+                      t(
+                        "connectionEditor.portError",
+                        "Port must be between 1 and 65535",
+                      ),
+                    );
+                  }
+                }}
+                variant="form"
+                min={1}
+                max={65535}
+                data-testid="editor-port"
+                aria-invalid={portError ? true : undefined}
+                aria-describedby={portError ? "port-error" : undefined}
+              />
               {portError && (
-                <span id="port-error" className="text-sm text-error" role="alert">
+                <span
+                  id="port-error"
+                  className="text-sm text-error"
+                  role="alert"
+                >
                   {portError}
                 </span>
               )}
@@ -406,7 +671,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
             {formData.protocol === "rdp" && (
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                  {t('connectionEditor.domainLabel', 'Domain')}
+                  {t("connectionEditor.domainLabel", "Domain")}
                 </label>
                 <input
                   type="text"
@@ -415,7 +680,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                     setFormData({ ...formData, domain: e.target.value })
                   }
                   className="sor-form-input"
-                  placeholder={t('connectionEditor.domainPlaceholder', 'Domain (optional)')}
+                  placeholder={t(
+                    "connectionEditor.domainPlaceholder",
+                    "Domain (optional)",
+                  )}
                 />
               </div>
             )}

@@ -2,6 +2,9 @@ import React, { useRef, useState } from "react";
 import type { ConnectionEditorMgr } from "../../../hooks/connection/useConnectionEditor";
 import BackupCodesSection from "../../connectionEditor/BackupCodesSection";
 import ARDOptions from "../../connectionEditor/ARDOptions";
+import BMCOptions, {
+  type BmcOptionsSection,
+} from "../../connectionEditor/BMCOptions";
 import CloudProviderOptions from "../../connectionEditor/CloudProviderOptions";
 import HTTPOptions from "../../connectionEditor/HTTPOptions";
 import RDPOptions from "../../connectionEditor/RDPOptions";
@@ -21,6 +24,7 @@ import { normalizePowerShellRemotingSettings } from "../../../utils/powershell/n
 import NetworkPathSection from "./NetworkPathSection";
 import {
   getProtocolSubtabs,
+  isBmcProtocol,
   isCloudProtocol,
   type ProtocolSubtabId,
 } from "./protocolSubtabs";
@@ -86,9 +90,28 @@ const ProtocolSubtabContent: React.FC<{
     );
   }
 
+  if (isBmcProtocol(protocol)) {
+    const section = [
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+    ].includes(subtabId)
+      ? (subtabId as BmcOptionsSection)
+      : "connection";
+    return (
+      <BMCOptions
+        formData={mgr.formData}
+        setFormData={mgr.setFormData}
+        section={section}
+      />
+    );
+  }
+
   if (
     [
       "telnet",
+      "vnc",
       "ftp",
       "sftp",
       "scp",

@@ -360,7 +360,9 @@ describe("SavedProtocolOptions", () => {
       '"ftpAcceptInvalidCerts":true',
     );
     expect(
-      screen.getByText(/machine-in-the-middle can impersonate/i),
+      screen.getByText(
+        /certificate validation is disabled.*attacker can impersonate/i,
+      ),
     ).toBeInTheDocument();
   });
 

@@ -187,7 +187,12 @@ export interface SyslogEntry {
 
 // ── QEMU VMs ─────────────────────────────────────────────────────────────────
 
-export type QemuStatus = "running" | "stopped" | "paused" | "suspended" | "unknown";
+export type QemuStatus =
+  | "running"
+  | "stopped"
+  | "paused"
+  | "suspended"
+  | "unknown";
 
 export interface QemuVmSummary {
   vmid: number;

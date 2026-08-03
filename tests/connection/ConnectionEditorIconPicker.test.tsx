@@ -1,10 +1,52 @@
 import React, { useEffect } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionEditor } from "../../src/components/connection/ConnectionEditor";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { useConnections } from "../../src/contexts/useConnections";
 import type { Connection } from "../../src/types/connection/connection";
+
+const i18nMock = vi.hoisted(() => {
+  const t = vi.fn(
+    (
+      key: string,
+      fallbackOrOptions?:
+        | string
+        | ({ defaultValue?: string } & Record<string, unknown>),
+      interpolation?: Record<string, unknown>,
+    ) => {
+      const options =
+        typeof fallbackOrOptions === "object"
+          ? fallbackOrOptions
+          : interpolation;
+      const template =
+        typeof fallbackOrOptions === "string"
+          ? fallbackOrOptions
+          : (fallbackOrOptions?.defaultValue ?? key);
+      return template.replace(/\{\{(\w+)\}\}/g, (match, token: string) => {
+        const value = options?.[token];
+        return value == null ? match : String(value);
+      });
+    },
+  );
+  return {
+    t,
+    i18n: {
+      language: "en",
+      changeLanguage: vi.fn(async () => undefined),
+    },
+  };
+});
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => i18nMock,
+}));
 
 vi.mock("../../src/contexts/ToastContext", () => ({
   useToastContext: () => ({
@@ -40,12 +82,12 @@ const ConnectionStateProbe: React.FC<{
   return null;
 };
 
-const renderEditor = (
+const renderEditor = async (
   props: React.ComponentProps<typeof ConnectionEditor>,
   onConnections: (connections: Connection[]) => void,
   initialConnections?: Connection[],
-) =>
-  render(
+) => {
+  const view = render(
     <ConnectionProvider>
       <ConnectionStateProbe
         initialConnections={initialConnections}
@@ -54,6 +96,11 @@ const renderEditor = (
       <ConnectionEditor {...props} />
     </ConnectionProvider>,
   );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return view;
+};
 
 describe("ConnectionEditor icon persistence", () => {
   beforeEach(() => {
@@ -62,8 +109,9 @@ describe("ConnectionEditor icon persistence", () => {
 
   it("saves a stable icon key, restores it on reopen, and clears back to automatic", async () => {
     let latestConnections: Connection[] = [];
-    const firstRender = renderEditor(
-      { isOpen: true, onClose: vi.fn() },
+    const createClose = vi.fn();
+    const firstRender = await renderEditor(
+      { isOpen: true, onClose: createClose },
       (connections) => {
         latestConnections = connections;
       },
@@ -84,16 +132,19 @@ describe("ConnectionEditor icon persistence", () => {
     expect(screen.getByText("Manual override")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    await waitFor(() => expect(latestConnections).toHaveLength(1));
+    await waitFor(() => {
+      expect(createClose).toHaveBeenCalledOnce();
+      expect(latestConnections).toHaveLength(1);
+    });
 
     const saved = latestConnections[0];
     expect(saved.icon).toBe("star");
     expect(typeof saved.icon).toBe("string");
     expect(saved).not.toHaveProperty("iconComponent");
 
-    firstRender.unmount();
+    act(() => firstRender.unmount());
     latestConnections = [];
-    const reopenedRender = renderEditor(
+    const reopenedRender = await renderEditor(
       { connection: saved, isOpen: true, onClose: vi.fn() },
       (connections) => {
         latestConnections = connections;
@@ -117,14 +168,25 @@ describe("ConnectionEditor icon persistence", () => {
     ).toHaveAttribute("aria-selected", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Use automatic icon" }));
-    expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText("Automatic · RDP protocol")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Use automatic icon" }),
+      ).toBeDisabled();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await Promise.resolve();
+    });
 
-    await waitFor(() => expect(latestConnections[0]?.icon).toBeUndefined());
+    await waitFor(async () => {
+      expect(latestConnections[0]?.icon).toBeUndefined();
+      await Promise.resolve();
+    });
     const cleared = latestConnections[0];
-    reopenedRender.unmount();
+    act(() => reopenedRender.unmount());
 
-    renderEditor(
+    const finalRender = await renderEditor(
       { connection: cleared, isOpen: true, onClose: vi.fn() },
       () => {},
       [cleared],
@@ -137,6 +199,7 @@ describe("ConnectionEditor icon persistence", () => {
     expect(
       screen.getByRole("button", { name: "Use automatic icon" }),
     ).toBeDisabled();
+    act(() => finalRender.unmount());
   });
 
   it("finds integration icon vocabulary through editor search and focuses the palette", async () => {
@@ -150,9 +213,11 @@ describe("ConnectionEditor icon persistence", () => {
       createdAt: "2026-07-15T00:00:00.000Z",
       updatedAt: "2026-07-15T00:00:00.000Z",
     } as Connection;
-    renderEditor({ connection, isOpen: true, onClose: vi.fn() }, () => {}, [
-      connection,
-    ]);
+    const view = await renderEditor(
+      { connection, isOpen: true, onClose: vi.fn() },
+      () => {},
+      [connection],
+    );
 
     const editorSearch = screen.getByRole("combobox", {
       name: "Search connection settings",
@@ -172,5 +237,6 @@ describe("ConnectionEditor icon persistence", () => {
         screen.getByRole("combobox", { name: "Search connection icons" }),
       ).toHaveFocus();
     });
+    act(() => view.unmount());
   });
 });

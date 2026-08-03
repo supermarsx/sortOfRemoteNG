@@ -108,6 +108,11 @@ const CLOUD_PROTOCOLS = new Set([
 export const isCloudProtocol = (protocol: string): boolean =>
   CLOUD_PROTOCOLS.has(protocol);
 
+const BMC_PROTOCOLS = new Set(["idrac", "ilo", "lenovo", "supermicro"]);
+
+export const isBmcProtocol = (protocol: string): boolean =>
+  BMC_PROTOCOLS.has(protocol);
+
 const selectSubtabs = (
   ids: readonly ProtocolSubtabId[],
 ): readonly ProtocolSubtabDescriptor[] => ids.map((id) => SUBTABS[id]);
@@ -166,6 +171,26 @@ export function getProtocolSubtabs(
 
   if (protocol === "serial") {
     return selectSubtabs(["connection", "terminal", "advanced"]);
+  }
+
+  if (protocol === "vnc") {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "display-input",
+      "recovery",
+    ]);
+  }
+
+  if (isBmcProtocol(protocol)) {
+    return selectSubtabs([
+      "connection",
+      "authentication",
+      "security",
+      "advanced",
+      "recovery",
+    ]);
   }
 
   if (protocol === "sftp") {

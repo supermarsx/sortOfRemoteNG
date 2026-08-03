@@ -42,7 +42,9 @@ export function normalizeAdvancedProtocolConnection(
   );
   const protocol =
     rawMigration?.protocol ??
-    (sourceProtocol === "postgres" ? "postgresql" : input.protocol);
+    (sourceProtocol === "postgres"
+      ? "postgresql"
+      : sourceProtocol || input.protocol);
   const next: AdvancedProtocolConnectionInput = { ...input, protocol };
   const canInitialize = input.isGroup !== true;
 

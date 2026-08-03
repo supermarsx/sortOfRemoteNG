@@ -59,6 +59,8 @@ import {
   type IntegrationInstance,
   type IntegrationInstanceInput,
 } from "../integrations/useIntegrationConfigStore";
+import { useRuntimeCapabilities } from "../runtime/useRuntimeCapabilities";
+import { getRuntimeProtocolOptions } from "../../utils/connection/protocolOptionRegistry";
 
 /* ═══════════════════════════════════════════════════════════════
    Static data
@@ -763,6 +765,28 @@ const DEFAULT_FORM: Partial<Connection> = {
 
 type ManagedSshSecretField = "password" | "passphrase" | "privateKey";
 
+type PreparedEditorConnection = {
+  persistentConnection: Connection;
+  runtimeConnection: Connection;
+  instance?: IntegrationInstance;
+};
+
+type EditorSaveRequest = {
+  revision: number;
+  runtimeConnection: Connection;
+  actionType: "ADD_CONNECTION" | "UPDATE_CONNECTION";
+  shouldPersist?: (prepared: PreparedEditorConnection) => boolean;
+};
+
+type EditorSaveOutcome =
+  | {
+      status: "saved";
+      prepared: PreparedEditorConnection;
+      persisted: boolean;
+    }
+  | { status: "superseded" }
+  | { status: "error"; error: unknown };
+
 export interface ManagedSshSecretsController {
   passwordInputRef: React.RefObject<HTMLInputElement | null>;
   passphraseInputRef: React.RefObject<HTMLInputElement | null>;
@@ -788,7 +812,7 @@ export function useConnectionEditor(
   isOpen: boolean,
   onClose: () => void,
 ) {
-  const { state, dispatch } = useConnections();
+  const { state, dispatchAndFlush } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
   const {
@@ -805,6 +829,18 @@ export function useConnectionEditor(
     "idle" | "pending" | "saved"
   >("idle");
   const autoSaveTimerRef = useRef<number | null>(null);
+  const autoSaveIdleTimerRef = useRef<number | null>(null);
+  const editorMountedRef = useRef(true);
+  const isOpenRef = useRef(isOpen);
+  const editorRevisionRef = useRef(0);
+  const renderedEditorSnapshotRef = useRef<string | null>(null);
+  const editorIdentityRef = useRef<string | null>(null);
+  const saveRequestSequenceRef = useRef(0);
+  const latestSaveRequestRef = useRef(0);
+  const saveQueueTailRef = useRef<Promise<void>>(Promise.resolve());
+  const invalidatePendingSaveRequests = useCallback(() => {
+    latestSaveRequestRef.current = ++saveRequestSequenceRef.current;
+  }, []);
   const isInitializedRef = useRef(false);
   const originalDataRef = useRef<string>("");
   const sshPasswordRef = useRef(
@@ -837,6 +873,7 @@ export function useConnectionEditor(
     sshPrivateKeyRef.current.length > 0,
   );
   const [sshSecretRevision, setSshSecretRevision] = useState(0);
+  isOpenRef.current = isOpen;
 
   const syncManagedSshInputs = useCallback(() => {
     if (sshPasswordInputRef.current) {
@@ -1007,6 +1044,16 @@ export function useConnectionEditor(
   );
 
   const isNewConnection = !connection;
+  const editorIdentity = `${connection?.id ?? "new"}:${isOpen ? "open" : "closed"}`;
+  const renderedEditorSnapshot = buildEditorSnapshot(formData);
+  if (
+    editorIdentityRef.current !== editorIdentity ||
+    renderedEditorSnapshotRef.current !== renderedEditorSnapshot
+  ) {
+    editorIdentityRef.current = editorIdentity;
+    renderedEditorSnapshotRef.current = renderedEditorSnapshot;
+    editorRevisionRef.current += 1;
+  }
 
   // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1048,9 +1095,7 @@ export function useConnectionEditor(
           : connection.sshConnectionConfigOverride,
       };
       const normalized = normalizeAdvancedProtocolConnection(
-        normalizeIntegrationFields(
-          normalizeCloudConnectionForEditor(resolved),
-        ),
+        normalizeIntegrationFields(normalizeCloudConnectionForEditor(resolved)),
       );
       setFormData(normalized);
       originalDataRef.current = buildEditorSnapshot(
@@ -1098,10 +1143,22 @@ export function useConnectionEditor(
   }, [clearManagedSshSecrets, isOpen]);
 
   useEffect(() => {
+    editorMountedRef.current = true;
     return () => {
+      editorMountedRef.current = false;
+      editorRevisionRef.current += 1;
+      invalidatePendingSaveRequests();
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (autoSaveIdleTimerRef.current) {
+        clearTimeout(autoSaveIdleTimerRef.current);
+        autoSaveIdleTimerRef.current = null;
+      }
       clearManagedSshSecrets();
     };
-  }, [clearManagedSshSecrets]);
+  }, [clearManagedSshSecrets, invalidatePendingSaveRequests]);
 
   const buildConnectionData = useCallback(
     (includeIntegrationSecrets = false): Connection => {
@@ -1284,44 +1341,145 @@ export function useConnectionEditor(
     [],
   );
 
+  const isCurrentEditorRevision = useCallback(
+    (revision: number): boolean =>
+      editorMountedRef.current &&
+      isOpenRef.current &&
+      revision === editorRevisionRef.current,
+    [],
+  );
+
+  const persistenceErrorMessage = useCallback(
+    (runtimeConnection: Connection, error: unknown): string => {
+      if (isIntegrationConnectionProtocol(runtimeConnection.protocol)) {
+        return integrationPersistenceError(error);
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      return `Connection was not saved. ${detail}`;
+    },
+    [],
+  );
+
+  const enqueueConnectionSave = useCallback(
+    (request: EditorSaveRequest): Promise<EditorSaveOutcome> => {
+      const requestId = ++saveRequestSequenceRef.current;
+      latestSaveRequestRef.current = requestId;
+
+      const run = async (): Promise<EditorSaveOutcome> => {
+        const isCurrent = () =>
+          requestId === latestSaveRequestRef.current &&
+          isCurrentEditorRevision(request.revision);
+
+        if (!isCurrent()) {
+          return { status: "superseded" };
+        }
+
+        try {
+          // Integration secrets must reach the vault before the connection
+          // record can durably reference them.
+          const prepared = await prepareConnectionForPersistence(
+            request.runtimeConnection,
+          );
+          if (!isCurrent()) {
+            return { status: "superseded" };
+          }
+
+          const shouldPersist = request.shouldPersist?.(prepared) ?? true;
+          if (shouldPersist) {
+            await dispatchAndFlush({
+              type: request.actionType,
+              payload: prepared.persistentConnection,
+            });
+            if (!isCurrent()) {
+              return { status: "superseded" };
+            }
+          }
+
+          return {
+            status: "saved",
+            prepared,
+            persisted: shouldPersist,
+          };
+        } catch (error) {
+          return isCurrent()
+            ? { status: "error", error }
+            : { status: "superseded" };
+        }
+      };
+
+      const result = saveQueueTailRef.current.then(run);
+      saveQueueTailRef.current = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+    [
+      dispatchAndFlush,
+      isCurrentEditorRevision,
+      prepareConnectionForPersistence,
+    ],
+  );
+
   // Auto-save effect
   useEffect(() => {
     if (!connection || !settings.autoSaveEnabled || !isInitializedRef.current) {
       return;
     }
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    if (autoSaveIdleTimerRef.current) {
+      clearTimeout(autoSaveIdleTimerRef.current);
+      autoSaveIdleTimerRef.current = null;
+    }
     setAutoSaveStatus("pending");
+    const revision = editorRevisionRef.current;
 
     autoSaveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const prepared = await prepareConnectionForPersistence(
-            buildConnectionData(true),
-          );
-          dispatch({
-            type: "UPDATE_CONNECTION",
-            payload: prepared.persistentConnection,
-          });
-          syncPersistedIntegrationForm(prepared.persistentConnection);
-          setAutoSaveStatus("saved");
-          setTimeout(() => setAutoSaveStatus("idle"), 2000);
-        } catch (error) {
-          setAutoSaveStatus("idle");
-          toast.error(integrationPersistenceError(error));
+      autoSaveTimerRef.current = null;
+      const runtimeConnection = buildConnectionData(true);
+      void enqueueConnectionSave({
+        revision,
+        runtimeConnection,
+        actionType: "UPDATE_CONNECTION",
+      }).then((outcome) => {
+        if (!isCurrentEditorRevision(revision)) {
+          return;
         }
-      })();
+
+        if (outcome.status === "saved") {
+          syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
+          setAutoSaveStatus("saved");
+          autoSaveIdleTimerRef.current = window.setTimeout(() => {
+            autoSaveIdleTimerRef.current = null;
+            if (isCurrentEditorRevision(revision)) {
+              setAutoSaveStatus("idle");
+            }
+          }, 2000);
+        } else if (outcome.status === "error") {
+          setAutoSaveStatus("idle");
+          toast.error(
+            persistenceErrorMessage(runtimeConnection, outcome.error),
+          );
+        }
+      });
     }, 1000);
 
     return () => {
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
     };
   }, [
     formData,
     connection,
     settings.autoSaveEnabled,
     buildConnectionData,
-    dispatch,
-    prepareConnectionForPersistence,
+    enqueueConnectionSave,
+    isCurrentEditorRevision,
+    persistenceErrorMessage,
     sshSecretRevision,
     syncPersistedIntegrationForm,
     toast,
@@ -1331,7 +1489,14 @@ export function useConnectionEditor(
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (autoSaveIdleTimerRef.current) {
+        clearTimeout(autoSaveIdleTimerRef.current);
+        autoSaveIdleTimerRef.current = null;
+      }
 
       // Detect whether anything actually changed
       const hasChanges =
@@ -1348,36 +1513,45 @@ export function useConnectionEditor(
         }
       }
 
-      try {
-        const prepared = await prepareConnectionForPersistence(
-          buildConnectionData(true),
-        );
-        dispatch({
-          type: connection ? "UPDATE_CONNECTION" : "ADD_CONNECTION",
-          payload: prepared.persistentConnection,
-        });
-        syncPersistedIntegrationForm(prepared.persistentConnection);
-        originalDataRef.current = buildEditorSnapshot(
-          prepared.persistentConnection,
-        );
-        toast.success(
-          `"${prepared.persistentConnection.name}" ${
-            connection ? "saved" : "created"
-          }`,
-        );
-        if (!connection) onClose();
-      } catch (error) {
-        toast.error(integrationPersistenceError(error));
+      const revision = editorRevisionRef.current;
+      const runtimeConnection = buildConnectionData(true);
+      const outcome = await enqueueConnectionSave({
+        revision,
+        runtimeConnection,
+        actionType: connection ? "UPDATE_CONNECTION" : "ADD_CONNECTION",
+      });
+
+      if (
+        outcome.status === "superseded" ||
+        !isCurrentEditorRevision(revision)
+      ) {
+        return;
       }
+      if (outcome.status === "error") {
+        toast.error(persistenceErrorMessage(runtimeConnection, outcome.error));
+        return;
+      }
+
+      syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
+      originalDataRef.current = buildEditorSnapshot(
+        outcome.prepared.persistentConnection,
+      );
+      toast.success(
+        `"${outcome.prepared.persistentConnection.name}" ${
+          connection ? "saved" : "created"
+        }`,
+      );
+      if (!connection) onClose();
     },
     [
       buildConnectionData,
       buildEditorSnapshot,
       connection,
-      dispatch,
-      onClose,
+      enqueueConnectionSave,
       formData,
-      prepareConnectionForPersistence,
+      isCurrentEditorRevision,
+      onClose,
+      persistenceErrorMessage,
       syncPersistedIntegrationForm,
       toast,
     ],
@@ -1385,61 +1559,72 @@ export function useConnectionEditor(
 
   /**
    * Persist any pending edits and return the connection as it now exists on
-   * disk. Returns the freshly-built object — NEVER re-read state.connections
-   * after this, the dispatch has not flushed. Returns null for an unsaved
-   * (new) connection.
+   * disk. Returns the freshly-built runtime object after the provider confirms
+   * its durable flush. Returns null for an unsaved (new), failed, or superseded
+   * connection.
    */
-  const saveNow = useCallback(():
-    | Connection
-    | Promise<Connection | null>
-    | null => {
+  const saveNow = useCallback(async (): Promise<Connection | null> => {
     if (!connection) return null;
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (autoSaveIdleTimerRef.current) {
+      clearTimeout(autoSaveIdleTimerRef.current);
+      autoSaveIdleTimerRef.current = null;
+    }
+
+    const revision = editorRevisionRef.current;
     const runtimeConnection = buildConnectionData(true);
-    if (!isIntegrationConnectionProtocol(runtimeConnection.protocol)) {
-      const hasChanges =
-        buildEditorSnapshot(formData) !== originalDataRef.current;
-      if (hasChanges) {
-        dispatch({
-          type: "UPDATE_CONNECTION",
-          payload: runtimeConnection,
-        });
-        originalDataRef.current = buildEditorSnapshot(formData);
-      }
+    const isIntegration = isIntegrationConnectionProtocol(
+      runtimeConnection.protocol,
+    );
+    const hasChanges =
+      buildEditorSnapshot(formData) !== originalDataRef.current;
+
+    if (!isIntegration && !hasChanges) {
       return runtimeConnection;
     }
 
-    return (async (): Promise<Connection | null> => {
-      try {
-        const prepared =
-          await prepareConnectionForPersistence(runtimeConnection);
-        const hasChanges =
-          buildEditorSnapshot(formData) !== originalDataRef.current ||
-          prepared.persistentConnection.integration?.instanceId !==
-            connection.integration?.instanceId;
-        if (hasChanges) {
-          dispatch({
-            type: "UPDATE_CONNECTION",
-            payload: prepared.persistentConnection,
-          });
-          syncPersistedIntegrationForm(prepared.persistentConnection);
-          originalDataRef.current = buildEditorSnapshot(
-            prepared.persistentConnection,
-          );
-        }
-        return prepared.runtimeConnection;
-      } catch (error) {
-        toast.error(integrationPersistenceError(error));
-        return null;
+    const outcome = await enqueueConnectionSave({
+      revision,
+      runtimeConnection,
+      actionType: "UPDATE_CONNECTION",
+      shouldPersist: isIntegration
+        ? (prepared) =>
+            hasChanges ||
+            prepared.persistentConnection.integration?.instanceId !==
+              connection.integration?.instanceId
+        : undefined,
+    });
+
+    if (outcome.status === "superseded" || !isCurrentEditorRevision(revision)) {
+      return null;
+    }
+    if (outcome.status === "error") {
+      toast.error(persistenceErrorMessage(runtimeConnection, outcome.error));
+      return null;
+    }
+
+    if (outcome.persisted) {
+      if (isIntegration) {
+        syncPersistedIntegrationForm(outcome.prepared.persistentConnection);
+        originalDataRef.current = buildEditorSnapshot(
+          outcome.prepared.persistentConnection,
+        );
+      } else {
+        originalDataRef.current = buildEditorSnapshot(formData);
       }
-    })();
+    }
+    return outcome.prepared.runtimeConnection;
   }, [
     buildConnectionData,
     buildEditorSnapshot,
     connection,
-    dispatch,
+    enqueueConnectionSave,
     formData,
-    prepareConnectionForPersistence,
+    isCurrentEditorRevision,
+    persistenceErrorMessage,
     syncPersistedIntegrationForm,
     toast,
   ]);
@@ -1475,11 +1660,7 @@ export function useConnectionEditor(
               port: getDefaultConnectionPort(protocol),
               authType: nextAuthType,
               password: isNextIntegration ? "" : carriedPassword,
-              integration: buildIntegrationSettings(
-                protocol,
-                undefined,
-                prev,
-              ),
+              integration: buildIntegrationSettings(protocol, undefined, prev),
               passphrase: "",
               privateKey: "",
               totpSecret: "",
@@ -1607,7 +1788,16 @@ export function useConnectionEditor(
     [],
   );
 
+  const runtimeCapabilities = useRuntimeCapabilities();
+  const protocolOptions = getRuntimeProtocolOptions(
+    PROTOCOL_OPTIONS,
+    INTEGRATION_PROTOCOL_OPTIONS,
+    runtimeCapabilities,
+  );
+
   return {
+    runtimeCapabilities,
+    protocolOptions,
     formData,
     setFormData,
     expandedSections,

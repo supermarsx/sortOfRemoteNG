@@ -1,45 +1,71 @@
-import { useState, useCallback, useMemo } from 'react';
-import { ConnectionSession } from '../../types/connection/connection';
-import { ConnectionAction } from '../../contexts/ConnectionContextTypes';
-import { generateId } from '../../utils/core/id';
+import { useState, useCallback, useMemo } from "react";
+import { ConnectionSession } from "../../types/connection/connection";
+import { ConnectionAction } from "../../contexts/ConnectionContextTypes";
+import { generateId } from "../../utils/core/id";
 
 /** All protocol types the app supports for connections. */
 const PROTOCOLS = [
-  'rdp', 'ssh', 'vnc', 'anydesk', 'http', 'https', 'telnet', 'rlogin',
-  'mysql', 'ftp', 'sftp', 'scp', 'winrm', 'rustdesk', 'smb',
-  'gcp', 'azure', 'ibm-csp', 'digital-ocean', 'heroku', 'scaleway',
-  'linode', 'ovhcloud', 'ilo', 'lenovo', 'supermicro',
+  "rdp",
+  "ssh",
+  "vnc",
+  "anydesk",
+  "http",
+  "https",
+  "telnet",
+  "rlogin",
+  "mysql",
+  "ftp",
+  "sftp",
+  "scp",
+  "winrm",
+  "rustdesk",
+  "smb",
+  "gcp",
+  "azure",
+  "ibm-csp",
+  "digital-ocean",
+  "heroku",
+  "scaleway",
+  "linode",
+  "ovhcloud",
+  "ilo",
+  "lenovo",
+  "supermicro",
 ] as const;
 
-const SESSION_STATUSES = ['connecting', 'connected', 'disconnected', 'error', 'reconnecting'] as const;
+const SESSION_STATUSES = [
+  "connecting",
+  "connected",
+  "disconnected",
+  "error",
+  "reconnecting",
+] as const;
 
 type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /** Fake RDP error messages for testing the error screen. */
 const RDP_ERROR_MESSAGES: Record<string, string> = {
-  'CredSSP Oracle':
-    'An authentication error has occurred. The function requested is not supported. This could be due to CredSSP encryption oracle remediation.',
-  'CredSSP Post-Auth':
-    'CredSSP: post-authentication error: The logon attempt failed. The server may require Network Level Authentication.',
-  'Duplicate Session':
-    'The remote session was disconnected because there are no Remote Desktop License Servers available. Another user connected to the server, forcing the disconnection of the current connection.',
-  'Negotiation Failure':
-    'The RDP negotiation with the server failed. The server may not support the requested security protocol (TLS 1.2). Error code: 0x00000002',
-  'Credentials':
-    'Logon failed: The specified account password has expired. Your password must be changed before logging on the first time.',
-  'Network':
-    'Unable to connect to the remote computer. Connection timed out after 30000ms. Verify the computer name, and then try to connect again.',
-  'TLS':
-    'The connection was terminated because an unexpected server authentication certificate was received. TLS handshake failed: certificate verify failed (self signed certificate)',
-  'Unknown':
-    'An unexpected server error has occurred. Error code: 0x00000516',
+  "CredSSP Oracle":
+    "An authentication error has occurred. The function requested is not supported. This could be due to CredSSP encryption oracle remediation.",
+  "CredSSP Post-Auth":
+    "CredSSP: post-authentication error: The logon attempt failed. The server may require Network Level Authentication.",
+  "Duplicate Session":
+    "The remote session was disconnected because there are no Remote Desktop License Servers available. Another user connected to the server, forcing the disconnection of the current connection.",
+  "Negotiation Failure":
+    "The RDP negotiation with the server failed. The server may not support the requested security protocol (TLS 1.2). Error code: 0x00000002",
+  Credentials:
+    "Logon failed: The specified account password has expired. Your password must be changed before logging on the first time.",
+  Network:
+    "Unable to connect to the remote computer. Connection timed out after 30000ms. Verify the computer name, and then try to connect again.",
+  TLS: "The connection was terminated because an unexpected server authentication certificate was received. TLS handshake failed: certificate verify failed (self signed certificate)",
+  Unknown: "An unexpected server error has occurred. Error code: 0x00000516",
 };
 
 export interface DebugAction {
   id: string;
   label: string;
   description: string;
-  category: 'sessions' | 'errors' | 'state' | 'ui';
+  category: "sessions" | "errors" | "state" | "ui";
   action: () => void;
 }
 
@@ -51,7 +77,7 @@ interface UseDebugPanelParams {
 }
 
 function redactSessionId(id: string): string {
-  if (id.length <= 8) return '<redacted>';
+  if (id.length <= 8) return "<redacted>";
   return `${id.slice(0, 4)}...${id.slice(-4)}`;
 }
 
@@ -61,13 +87,20 @@ export function useDebugPanel({
   sessions,
   handleOpenDevtools,
 }: UseDebugPanelParams) {
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  const [filter, setFilter] = useState('');
-  const [expandedCategory, setExpandedCategory] = useState<string | null>('sessions');
+  const isDevelopment = process.env.NODE_ENV !== "production";
+  const [filter, setFilter] = useState("");
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(
+    "sessions",
+  );
   const [crashTrigger, setCrashTrigger] = useState(false);
 
   const createMockSession = useCallback(
-    (protocol: string, status: SessionStatus, name?: string, errorMessage?: string): ConnectionSession => {
+    (
+      protocol: string,
+      status: SessionStatus,
+      name?: string,
+      errorMessage?: string,
+    ): ConnectionSession => {
       const id = generateId();
       const hostname = `debug-${protocol}.example.com`;
       return {
@@ -78,7 +111,7 @@ export function useDebugPanel({
         startTime: new Date(),
         protocol,
         hostname,
-        reconnectAttempts: status === 'reconnecting' ? 2 : 0,
+        reconnectAttempts: status === "reconnecting" ? 2 : 0,
         maxReconnectAttempts: 3,
         ...(errorMessage ? { errorMessage } : {}),
       };
@@ -88,7 +121,7 @@ export function useDebugPanel({
 
   const addSession = useCallback(
     (session: ConnectionSession) => {
-      dispatch({ type: 'ADD_SESSION', payload: session });
+      dispatch({ type: "ADD_SESSION", payload: session });
       requestAnimationFrame(() => setActiveSessionId(session.id));
     },
     [dispatch, setActiveSessionId],
@@ -105,7 +138,7 @@ export function useDebugPanel({
             id: `session-${proto}-${status}`,
             label: `${proto.toUpperCase()} → ${status}`,
             description: `Open a mock ${proto} tab in "${status}" state`,
-            category: 'sessions',
+            category: "sessions",
             action: () => addSession(createMockSession(proto, status)),
           });
         }
@@ -116,10 +149,15 @@ export function useDebugPanel({
         list.push({
           id: `rdp-error-${label}`,
           label: `RDP Error: ${label}`,
-          description: msg.slice(0, 80) + '…',
-          category: 'errors',
+          description: msg.slice(0, 80) + "…",
+          category: "errors",
           action: () => {
-            const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
+            const session = createMockSession(
+              "rdp",
+              "error",
+              `[Debug] RDP ${label}`,
+              msg,
+            );
             addSession(session);
           },
         });
@@ -127,55 +165,68 @@ export function useDebugPanel({
 
       // ── Bulk spawn ────────────────────────────────────────────────
       list.push({
-        id: 'spawn-all-protocols-connected',
-        label: 'All Protocols (connected)',
-        description: 'Open one connected tab for every protocol',
-        category: 'sessions',
+        id: "spawn-all-protocols-connected",
+        label: "All Protocols (connected)",
+        description: "Open one connected tab for every protocol",
+        category: "sessions",
         action: () => {
           for (const proto of PROTOCOLS) {
-            const session = createMockSession(proto, 'connected');
-            dispatch({ type: 'ADD_SESSION', payload: session });
+            const session = createMockSession(proto, "connected");
+            dispatch({ type: "ADD_SESSION", payload: session });
           }
         },
       });
 
       list.push({
-        id: 'spawn-all-protocols-error',
-        label: 'All Protocols (error)',
-        description: 'Open one error tab for every protocol',
-        category: 'sessions',
+        id: "spawn-all-protocols-error",
+        label: "All Protocols (error)",
+        description: "Open one error tab for every protocol",
+        category: "sessions",
         action: () => {
           for (const proto of PROTOCOLS) {
-            const session = createMockSession(proto, 'error');
-            dispatch({ type: 'ADD_SESSION', payload: session });
+            const session = createMockSession(proto, "error");
+            dispatch({ type: "ADD_SESSION", payload: session });
           }
         },
       });
 
       list.push({
-        id: 'spawn-all-rdp-errors',
-        label: 'All RDP Error Variants',
-        description: 'Open tabs for every RDP error category',
-        category: 'errors',
+        id: "spawn-all-rdp-errors",
+        label: "All RDP Error Variants",
+        description: "Open tabs for every RDP error category",
+        category: "errors",
         action: () => {
           for (const [label, msg] of Object.entries(RDP_ERROR_MESSAGES)) {
-            const session = createMockSession('rdp', 'error', `[Debug] RDP ${label}`, msg);
-            dispatch({ type: 'ADD_SESSION', payload: session });
+            const session = createMockSession(
+              "rdp",
+              "error",
+              `[Debug] RDP ${label}`,
+              msg,
+            );
+            dispatch({ type: "ADD_SESSION", payload: session });
           }
         },
       });
 
       list.push({
-        id: 'spawn-mixed-stress',
-        label: 'Stress Test (50 tabs)',
-        description: 'Open 50 random sessions in mixed states',
-        category: 'sessions',
+        id: "spawn-mixed-stress",
+        label: "Stress Test (50 tabs)",
+        description: "Open 50 random sessions in mixed states",
+        category: "sessions",
         action: () => {
           for (let i = 0; i < 50; i++) {
-            const proto = PROTOCOLS[Math.floor(Math.random() * PROTOCOLS.length)];
-            const status = SESSION_STATUSES[Math.floor(Math.random() * SESSION_STATUSES.length)];
-            const session = createMockSession(proto, status, `[Stress ${i + 1}] ${proto.toUpperCase()}`);
-            dispatch({ type: 'ADD_SESSION', payload: session });
+            const proto =
+              PROTOCOLS[Math.floor(Math.random() * PROTOCOLS.length)];
+            const status =
+              SESSION_STATUSES[
+                Math.floor(Math.random() * SESSION_STATUSES.length)
+              ];
+            const session = createMockSession(
+              proto,
+              status,
+              `[Stress ${i + 1}] ${proto.toUpperCase()}`,
+            );
+            dispatch({ type: "ADD_SESSION", payload: session });
           }
         },
       });
@@ -183,76 +234,83 @@ export function useDebugPanel({
 
     // ── State actions ─────────────────────────────────────────────
     list.push({
-      id: 'close-all-debug',
-      label: 'Close All Debug Sessions',
-      description: 'Remove all sessions whose name starts with [Debug] or [Stress]',
-      category: 'state',
+      id: "close-all-debug",
+      label: "Close All Debug Sessions",
+      description:
+        "Remove all sessions whose name starts with [Debug] or [Stress]",
+      category: "state",
       action: () => {
         for (const s of sessions) {
-          if (s.name.startsWith('[Debug]') || s.name.startsWith('[Stress')) {
-            dispatch({ type: 'REMOVE_SESSION', payload: s.id });
+          if (s.name.startsWith("[Debug]") || s.name.startsWith("[Stress")) {
+            dispatch({ type: "REMOVE_SESSION", payload: s.id });
           }
         }
       },
     });
 
     list.push({
-      id: 'close-all-sessions',
-      label: 'Close All Sessions',
-      description: 'Remove every session tab',
-      category: 'state',
+      id: "close-all-sessions",
+      label: "Close All Sessions",
+      description: "Remove every session tab",
+      category: "state",
       action: () => {
         for (const s of sessions) {
-          dispatch({ type: 'REMOVE_SESSION', payload: s.id });
+          dispatch({ type: "REMOVE_SESSION", payload: s.id });
         }
       },
     });
 
     // ── UI Actions ────────────────────────────────────────────────
     list.push({
-      id: 'open-devtools',
-      label: 'Open WebView DevTools',
-      description: 'Open the Tauri/WebView developer console',
-      category: 'ui',
+      id: "open-devtools",
+      label: "Open WebView DevTools",
+      description: "Open the Tauri/WebView developer console",
+      category: "ui",
       action: handleOpenDevtools,
     });
 
     list.push({
-      id: 'throw-error',
-      label: 'Throw Test Error',
-      description: 'Trigger a console.error to test ErrorLogBar',
-      category: 'ui',
+      id: "throw-error",
+      label: "Throw Test Error",
+      description: "Trigger a console.error to test ErrorLogBar",
+      category: "ui",
       action: () => {
-        console.error('[Debug] Test error triggered from Debug Panel at', new Date().toISOString());
+        console.error(
+          "[Debug] Test error triggered from Debug Panel at",
+          new Date().toISOString(),
+        );
       },
     });
 
     if (isDevelopment) {
       list.push({
-        id: 'throw-unhandled',
-        label: 'Throw Unhandled Exception',
-        description: 'Trigger an unhandled throw (caught by window.onerror, not ErrorBoundary)',
-        category: 'ui',
+        id: "throw-unhandled",
+        label: "Throw Unhandled Exception",
+        description:
+          "Trigger an unhandled throw (caught by window.onerror, not ErrorBoundary)",
+        category: "ui",
         action: () => {
           setTimeout(() => {
-            throw new Error('[Debug] Unhandled test exception');
+            throw new Error("[Debug] Unhandled test exception");
           }, 0);
         },
       });
 
       list.push({
-        id: 'trigger-bsod',
-        label: 'Trigger BSOD (Frontend Crash)',
-        description: 'Throw a React render error to trigger the full BSOD crash screen',
-        category: 'ui',
+        id: "trigger-bsod",
+        label: "Trigger BSOD (Frontend Crash)",
+        description:
+          "Throw a React render error to trigger the full BSOD crash screen",
+        category: "ui",
         action: () => setCrashTrigger(true),
       });
 
       list.push({
-        id: 'trigger-bsod-chain',
-        label: 'Trigger BSOD (Multiple Errors)',
-        description: 'Throw two errors in quick succession to test multi-error accordion',
-        category: 'ui',
+        id: "trigger-bsod-chain",
+        label: "Trigger BSOD (Multiple Errors)",
+        description:
+          "Throw two errors in quick succession to test multi-error accordion",
+        category: "ui",
         action: () => {
           setCrashTrigger(true);
         },
@@ -261,38 +319,53 @@ export function useDebugPanel({
 
     if (isDevelopment) {
       list.push({
-        id: 'log-state',
-        label: 'Dump Redacted State to Console',
-        description: 'Log session count and redacted IDs to devtools console',
-        category: 'state',
+        id: "log-state",
+        label: "Dump Redacted State to Console",
+        description: "Log session count and redacted IDs to devtools console",
+        category: "state",
         action: () => {
-          console.group('[Debug] App State Dump');
-          console.debug('Sessions:', {
+          console.group("[Debug] App State Dump");
+          console.debug("Sessions:", {
             count: sessions.length,
             redactedIds: sessions.map((session) => redactSessionId(session.id)),
           });
-          console.debug('Timestamp:', new Date().toISOString());
+          console.debug("Timestamp:", new Date().toISOString());
           console.groupEnd();
         },
       });
     }
 
     return list;
-  }, [addSession, createMockSession, dispatch, sessions, handleOpenDevtools, isDevelopment]);
+  }, [
+    addSession,
+    createMockSession,
+    dispatch,
+    sessions,
+    handleOpenDevtools,
+    isDevelopment,
+  ]);
 
   const filteredActions = useMemo(() => {
     if (!filter) return actions;
     const q = filter.toLowerCase();
     return actions.filter(
-      (a) => a.label.toLowerCase().includes(q) || a.description.toLowerCase().includes(q) || a.category.includes(q),
+      (a) =>
+        a.label.toLowerCase().includes(q) ||
+        a.description.toLowerCase().includes(q) ||
+        a.category.includes(q),
     );
   }, [actions, filter]);
 
   const categories = useMemo(() => {
-    const cats = ['sessions', 'errors', 'state', 'ui'] as const;
+    const cats = ["sessions", "errors", "state", "ui"] as const;
     return cats.map((cat) => ({
       key: cat,
-      label: { sessions: 'Mock Sessions', errors: 'Error Screens', state: 'State Management', ui: 'UI & DevTools' }[cat],
+      label: {
+        sessions: "Mock Sessions",
+        errors: "Error Screens",
+        state: "State Management",
+        ui: "UI & DevTools",
+      }[cat],
       actions: filteredActions.filter((a) => a.category === cat),
     }));
   }, [filteredActions]);
@@ -304,9 +377,9 @@ export function useDebugPanel({
   // When crashTrigger is true, throw during render to be caught by ErrorBoundary
   if (crashTrigger) {
     throw new Error(
-      '[Debug] Intentional frontend crash triggered from Debug Panel.\n' +
-      'This is a test of the BSOD error recovery screen.\n' +
-      'Component: useDebugPanel → DebugPanel → AppContent'
+      "[Debug] Intentional frontend crash triggered from Debug Panel.\n" +
+        "This is a test of the BSOD error recovery screen.\n" +
+        "Component: useDebugPanel → DebugPanel → AppContent",
     );
   }
 
@@ -317,6 +390,8 @@ export function useDebugPanel({
     toggleCategory,
     categories,
     sessionCount: sessions.length,
-    debugSessionCount: sessions.filter((s) => s.name.startsWith('[Debug]') || s.name.startsWith('[Stress')).length,
+    debugSessionCount: sessions.filter(
+      (s) => s.name.startsWith("[Debug]") || s.name.startsWith("[Stress"),
+    ).length,
   };
 }

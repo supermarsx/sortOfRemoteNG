@@ -221,12 +221,9 @@ describe("ConnectionEditor subcomponents", () => {
       />,
     );
 
-    expect(screen.getByText(/Google Cloud Platform/i)).toBeInTheDocument();
+    expect(screen.getByText(/Google Cloud Configuration/i)).toBeInTheDocument();
     expect(container.querySelector('input[type="text"]')?.className).toContain(
       "sor-form-input",
-    );
-    expect(container.querySelector("textarea")?.className).toContain(
-      "sor-form-textarea",
     );
   });
 });

@@ -21,6 +21,15 @@ const connection = (
   }) as Connection;
 
 describe("advanced protocol connection integration", () => {
+  it("canonicalizes persisted protocol casing and whitespace", () => {
+    const normalized = normalizeAdvancedProtocolConnection(
+      connection({ protocol: " SSH " as Connection["protocol"] }),
+    );
+
+    expect(normalized.protocol).toBe("ssh");
+    expect(normalizeAdvancedProtocolConnection(normalized)).toEqual(normalized);
+  });
+
   it("canonicalizes legacy Raw TCP and UDP aliases idempotently", () => {
     const tcp = normalizeAdvancedProtocolConnection(
       connection({

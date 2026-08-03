@@ -32,24 +32,33 @@ export function useConnectionTree(
   /* ── Drag / drop state ── */
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<"before" | "after" | "inside" | null>(null);
+  const [dropPosition, setDropPosition] = useState<
+    "before" | "after" | "inside" | null
+  >(null);
 
   /* ── Rename state ── */
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   /* ── Panel context menu state ── */
-  const [panelMenuPosition, setPanelMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [panelMenuPosition, setPanelMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   /* ── Connect-with-options state ── */
-  const [connectOptionsTarget, setConnectOptionsTarget] = useState<Connection | null>(null);
-  const [connectOptionsData, setConnectOptionsData] = useState<ConnectOptionsData | null>(null);
+  const [connectOptionsTarget, setConnectOptionsTarget] =
+    useState<Connection | null>(null);
+  const [connectOptionsData, setConnectOptionsData] =
+    useState<ConnectOptionsData | null>(null);
 
   /* ── Callbacks ── */
 
   const handleCopyHostname = useCallback((connection: Connection) => {
     if (!connection.hostname) return;
-    navigator.clipboard.writeText(connection.hostname).catch((e) => console.error("Clipboard write failed:", e));
+    navigator.clipboard
+      .writeText(connection.hostname)
+      .catch((e) => console.error("Clipboard write failed:", e));
   }, []);
 
   const handleExportConnection = useCallback((connection: Connection) => {
@@ -61,9 +70,14 @@ export function useConnectionTree(
       totpSecret: undefined,
       basicAuthPassword: undefined,
     };
-    const payload = { exportedAt: new Date().toISOString(), connection: safeConnection };
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      connection: safeConnection,
+    };
     const content = JSON.stringify(payload, null, 2);
-    const filename = `connection-${connection.name || connection.id}.json`.replace(/[^a-z0-9-_]+/gi, "-").toLowerCase();
+    const filename = `connection-${connection.name || connection.id}.json`
+      .replace(/[^a-z0-9-_]+/gi, "-")
+      .toLowerCase();
     const blob = new Blob([content], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -92,36 +106,51 @@ export function useConnectionTree(
     });
   }, []);
 
-  const handleConnectWithoutCredentials = useCallback((connection: Connection) => {
-    const stripped: Connection = {
-      ...connection,
-      username: undefined,
-      password: undefined,
-      privateKey: undefined,
-      passphrase: undefined,
-      totpSecret: undefined,
-      basicAuthPassword: undefined,
-    };
-    onConnect(stripped);
-  }, [onConnect]);
+  const handleConnectWithoutCredentials = useCallback(
+    (connection: Connection) => {
+      const stripped: Connection = {
+        ...connection,
+        username: undefined,
+        password: undefined,
+        privateKey: undefined,
+        passphrase: undefined,
+        totpSecret: undefined,
+        basicAuthPassword: undefined,
+      };
+      onConnect(stripped);
+    },
+    [onConnect],
+  );
 
-  const handleExecuteScripts = useCallback(async (connection: Connection, sessionId?: string) => {
-    try {
-      const engine = ScriptEngine.getInstance();
-      const session = state.sessions.find((item) => item.id === sessionId);
-      const scripts = engine.getScriptsForTrigger("manual", connection.protocol);
-      for (const script of scripts) {
-        await engine.executeScript(script, { trigger: "manual", connection, session });
+  const handleExecuteScripts = useCallback(
+    async (connection: Connection, sessionId?: string) => {
+      try {
+        const engine = ScriptEngine.getInstance();
+        const session = state.sessions.find((item) => item.id === sessionId);
+        const scripts = engine.getScriptsForTrigger(
+          "manual",
+          connection.protocol,
+        );
+        for (const script of scripts) {
+          await engine.executeScript(script, {
+            trigger: "manual",
+            connection,
+            session,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to execute scripts:", error);
       }
-    } catch (error) {
-      console.error("Failed to execute scripts:", error);
-    }
-  }, [state.sessions]);
+    },
+    [state.sessions],
+  );
 
   const handleConnectOptionsSubmit = useCallback(() => {
     if (!connectOptionsTarget || !connectOptionsData) return;
     const isSsh = connectOptionsTarget.protocol === "ssh";
-    const overrides: Partial<Connection> = { username: connectOptionsData.username || undefined };
+    const overrides: Partial<Connection> = {
+      username: connectOptionsData.username || undefined,
+    };
 
     if (isSsh) {
       overrides.authType = connectOptionsData.authType;
@@ -140,7 +169,10 @@ export function useConnectionTree(
 
     const nextConnection = { ...connectOptionsTarget, ...overrides };
     if (connectOptionsData.saveToConnection) {
-      dispatch({ type: "UPDATE_CONNECTION", payload: { ...nextConnection, updatedAt: new Date().toISOString() } });
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...nextConnection, updatedAt: new Date().toISOString() },
+      });
     }
     onConnect(nextConnection);
     setConnectOptionsTarget(null);
@@ -151,7 +183,14 @@ export function useConnectionTree(
     if (!renameTarget) return;
     const trimmed = renameValue.trim();
     if (!trimmed) return;
-    dispatch({ type: "UPDATE_CONNECTION", payload: { ...renameTarget, name: trimmed, updatedAt: new Date().toISOString() } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: {
+        ...renameTarget,
+        name: trimmed,
+        updatedAt: new Date().toISOString(),
+      },
+    });
     setRenameTarget(null);
   }, [dispatch, renameTarget, renameValue]);
 
@@ -181,7 +220,8 @@ export function useConnectionTree(
   );
 
   const handleDuplicateWithCredentials = useCallback(
-    (connection: Connection) => handleDuplicate(connection, { includeCredentials: true }),
+    (connection: Connection) =>
+      handleDuplicate(connection, { includeCredentials: true }),
     [handleDuplicate],
   );
 
@@ -206,51 +246,60 @@ export function useConnectionTree(
 
   /* ── Tree building ── */
 
-  const buildTree = useCallback((connections: Connection[], parentId?: string): Connection[] => {
-    const sortBy = state.filter.sortBy || "name";
-    const sortDirection = state.filter.sortDirection || "asc";
-    const multiplier = sortDirection === "desc" ? -1 : 1;
+  const buildTree = useCallback(
+    (connections: Connection[], parentId?: string): Connection[] => {
+      const sortBy = state.filter.sortBy || "name";
+      const sortDirection = state.filter.sortDirection || "asc";
+      const multiplier = sortDirection === "desc" ? -1 : 1;
 
-    return connections
-      .filter((conn) => conn.parentId === parentId)
-      .sort((a, b) => {
-        if (a.isGroup && !b.isGroup) return -1;
-        if (!a.isGroup && b.isGroup) return 1;
+      return connections
+        .filter((conn) => conn.parentId === parentId)
+        .sort((a, b) => {
+          if (a.isGroup && !b.isGroup) return -1;
+          if (!a.isGroup && b.isGroup) return 1;
 
-        if (enableReorder && sortBy === "custom") {
-          const orderA = a.order ?? 0;
-          const orderB = b.order ?? 0;
-          if (orderA !== orderB) return (orderA - orderB) * multiplier;
-        }
+          if (enableReorder && sortBy === "custom") {
+            const orderA = a.order ?? 0;
+            const orderB = b.order ?? 0;
+            if (orderA !== orderB) return (orderA - orderB) * multiplier;
+          }
 
-        switch (sortBy) {
-          case "protocol":
-            return a.protocol.localeCompare(b.protocol) * multiplier;
-          case "hostname":
-            return (a.hostname || "").localeCompare(b.hostname || "") * multiplier;
-          case "createdAt": {
-            const dateA = new Date(a.createdAt).getTime();
-            const dateB = new Date(b.createdAt).getTime();
-            return (dateA - dateB) * multiplier;
+          switch (sortBy) {
+            case "protocol":
+              return a.protocol.localeCompare(b.protocol) * multiplier;
+            case "hostname":
+              return (
+                (a.hostname || "").localeCompare(b.hostname || "") * multiplier
+              );
+            case "createdAt": {
+              const dateA = new Date(a.createdAt).getTime();
+              const dateB = new Date(b.createdAt).getTime();
+              return (dateA - dateB) * multiplier;
+            }
+            case "updatedAt": {
+              const dateA = new Date(a.updatedAt).getTime();
+              const dateB = new Date(b.updatedAt).getTime();
+              return (dateA - dateB) * multiplier;
+            }
+            case "recentlyUsed": {
+              const dateA = a.lastConnected
+                ? new Date(a.lastConnected).getTime()
+                : 0;
+              const dateB = b.lastConnected
+                ? new Date(b.lastConnected).getTime()
+                : 0;
+              return (dateB - dateA) * (sortDirection === "asc" ? -1 : 1);
+            }
+            case "custom":
+              return a.name.localeCompare(b.name) * multiplier;
+            case "name":
+            default:
+              return a.name.localeCompare(b.name) * multiplier;
           }
-          case "updatedAt": {
-            const dateA = new Date(a.updatedAt).getTime();
-            const dateB = new Date(b.updatedAt).getTime();
-            return (dateA - dateB) * multiplier;
-          }
-          case "recentlyUsed": {
-            const dateA = a.lastConnected ? new Date(a.lastConnected).getTime() : 0;
-            const dateB = b.lastConnected ? new Date(b.lastConnected).getTime() : 0;
-            return (dateB - dateA) * (sortDirection === "asc" ? -1 : 1);
-          }
-          case "custom":
-            return a.name.localeCompare(b.name) * multiplier;
-          case "name":
-          default:
-            return a.name.localeCompare(b.name) * multiplier;
-        }
-      });
-  }, [enableReorder, state.filter.sortBy, state.filter.sortDirection]);
+        });
+    },
+    [enableReorder, state.filter.sortBy, state.filter.sortDirection],
+  );
 
   const hasActiveConnectionFilter = useMemo(() => {
     const filter = state.filter;
@@ -271,9 +320,15 @@ export function useConnectionTree(
     const textTagFilters = state.filter.tags
       .map((tag) => tag.trim().toLowerCase())
       .filter((tag) => tag !== "");
-    const colorTagFilters = new Set(state.filter.colorTags.filter((tagId) => tagId.trim() !== ""));
-    const protocolFilters = new Set(state.filter.protocols.filter((protocol) => protocol.trim() !== ""));
-    const connectionsById = new Map(state.connections.map((conn) => [conn.id, conn]));
+    const colorTagFilters = new Set(
+      state.filter.colorTags.filter((tagId) => tagId.trim() !== ""),
+    );
+    const protocolFilters = new Set(
+      state.filter.protocols.filter((protocol) => protocol.trim() !== ""),
+    );
+    const connectionsById = new Map(
+      state.connections.map((conn) => [conn.id, conn]),
+    );
 
     const matchesConnection = (conn: Connection): boolean => {
       if (state.filter.showFavorites && !conn.favorite) return false;
@@ -287,7 +342,8 @@ export function useConnectionTree(
         if (!matchesSearch) return false;
       }
 
-      if (protocolFilters.size > 0 && !protocolFilters.has(conn.protocol)) return false;
+      if (protocolFilters.size > 0 && !protocolFilters.has(conn.protocol))
+        return false;
 
       if (textTagFilters.length > 0) {
         const connectionTags = new Set(
@@ -295,10 +351,15 @@ export function useConnectionTree(
             .map((tag) => tag.trim().toLowerCase())
             .filter((tag) => tag !== ""),
         );
-        if (!textTagFilters.every((tag) => connectionTags.has(tag))) return false;
+        if (!textTagFilters.every((tag) => connectionTags.has(tag)))
+          return false;
       }
 
-      if (colorTagFilters.size > 0 && (!conn.colorTag || !colorTagFilters.has(conn.colorTag))) return false;
+      if (
+        colorTagFilters.size > 0 &&
+        (!conn.colorTag || !colorTagFilters.has(conn.colorTag))
+      )
+        return false;
 
       return true;
     };
@@ -336,34 +397,65 @@ export function useConnectionTree(
     setPanelMenuPosition({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const handlePanelDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!enableReorder) return;
-    e.dataTransfer.dropEffect = "move";
-    if (draggedId) { setDragOverId(null); setDropPosition(null); }
-  }, [enableReorder, draggedId]);
+  const handlePanelDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!enableReorder) return;
+      e.dataTransfer.dropEffect = "move";
+      if (draggedId) {
+        setDragOverId(null);
+        setDropPosition(null);
+      }
+    },
+    [enableReorder, draggedId],
+  );
 
-  const handlePanelDrop = useCallback((e: React.DragEvent) => {
-    if (!enableReorder || !draggedId) return;
-    e.preventDefault();
+  const handlePanelDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!enableReorder || !draggedId) return;
+      e.preventDefault();
 
-    const draggedConnection = state.connections.find((conn) => conn.id === draggedId);
-    if (!draggedConnection) { setDraggedId(null); setDragOverId(null); setDropPosition(null); return; }
+      const draggedConnection = state.connections.find(
+        (conn) => conn.id === draggedId,
+      );
+      if (!draggedConnection) {
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
 
-    if (!canMoveToParent(draggedId, undefined, state.connections)) {
-      console.warn("Cannot move: would exceed maximum nesting depth");
-      setDraggedId(null); setDragOverId(null); setDropPosition(null);
-      return;
-    }
+      if (!canMoveToParent(draggedId, undefined, state.connections)) {
+        console.warn("Cannot move: would exceed maximum nesting depth");
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
 
-    const rootSiblings = state.connections.filter((c) => !c.parentId);
-    const maxOrder = rootSiblings.reduce((max, c) => Math.max(max, c.order ?? 0), -1);
+      const rootSiblings = state.connections.filter((c) => !c.parentId);
+      const maxOrder = rootSiblings.reduce(
+        (max, c) => Math.max(max, c.order ?? 0),
+        -1,
+      );
 
-    dispatch({ type: "UPDATE_CONNECTION", payload: { ...draggedConnection, parentId: undefined, order: maxOrder + 1, updatedAt: new Date().toISOString() } });
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...draggedConnection,
+          parentId: undefined,
+          order: maxOrder + 1,
+          updatedAt: new Date().toISOString(),
+        },
+      });
 
-    setDraggedId(null); setDragOverId(null); setDropPosition(null);
-  }, [enableReorder, draggedId, state.connections, dispatch]);
+      setDraggedId(null);
+      setDragOverId(null);
+      setDropPosition(null);
+    },
+    [enableReorder, draggedId, state.connections, dispatch],
+  );
 
   /* ── Per-item drag handlers (passed to each tree item) ── */
 
@@ -372,11 +464,14 @@ export function useConnectionTree(
     setDropPosition(null);
   }, []);
 
-  const handleItemDragOver = useCallback((connectionId: string, position: "before" | "after" | "inside") => {
-    if (connectionId === draggedId) return;
-    setDragOverId(connectionId);
-    setDropPosition(position);
-  }, [draggedId]);
+  const handleItemDragOver = useCallback(
+    (connectionId: string, position: "before" | "after" | "inside") => {
+      if (connectionId === draggedId) return;
+      setDragOverId(connectionId);
+      setDropPosition(position);
+    },
+    [draggedId],
+  );
 
   const handleItemDragEnd = useCallback(() => {
     setDraggedId(null);
@@ -384,82 +479,126 @@ export function useConnectionTree(
     setDropPosition(null);
   }, []);
 
-  const handleItemDrop = useCallback((targetId: string, position: "before" | "after" | "inside") => {
-    if (!draggedId || draggedId === targetId) {
-      setDraggedId(null); setDragOverId(null); setDropPosition(null);
-      return;
-    }
-
-    const draggedConnection = state.connections.find((conn) => conn.id === draggedId);
-    const targetConnection = state.connections.find((conn) => conn.id === targetId);
-    if (!draggedConnection || !targetConnection) {
-      setDraggedId(null); setDragOverId(null); setDropPosition(null);
-      return;
-    }
-
-    if (draggedConnection.isGroup && position === "inside") {
-      let checkId: string | undefined = targetId;
-      while (checkId) {
-        if (checkId === draggedId) {
-          console.warn("Cannot drop a folder into itself or its descendants");
-          setDraggedId(null); setDragOverId(null); setDropPosition(null);
-          return;
-        }
-        const parent = state.connections.find((c) => c.id === checkId);
-        checkId = parent?.parentId;
+  const handleItemDrop = useCallback(
+    (targetId: string, position: "before" | "after" | "inside") => {
+      if (!draggedId || draggedId === targetId) {
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
       }
-    }
 
-    let newParentId: string | undefined;
-    if (position === "inside" && targetConnection.isGroup) {
-      newParentId = targetConnection.id;
-    } else {
-      newParentId = targetConnection.parentId;
-    }
+      const draggedConnection = state.connections.find(
+        (conn) => conn.id === draggedId,
+      );
+      const targetConnection = state.connections.find(
+        (conn) => conn.id === targetId,
+      );
+      if (!draggedConnection || !targetConnection) {
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
 
-    if (!canMoveToParent(draggedId, newParentId, state.connections)) {
-      console.warn("Cannot move: would exceed maximum nesting depth");
-      setDraggedId(null); setDragOverId(null); setDropPosition(null);
-      return;
-    }
-
-    const targetSiblings = state.connections.filter((c) => c.parentId === newParentId);
-
-    let newOrder: number;
-    if (position === "inside") {
-      newOrder = 0;
-      targetSiblings.forEach((sibling) => {
-        if (sibling.id !== draggedId) {
-          dispatch({ type: "UPDATE_CONNECTION", payload: { ...sibling, order: (sibling.order ?? 0) + 1 } });
+      if (draggedConnection.isGroup && position === "inside") {
+        let checkId: string | undefined = targetId;
+        while (checkId) {
+          if (checkId === draggedId) {
+            console.warn("Cannot drop a folder into itself or its descendants");
+            setDraggedId(null);
+            setDragOverId(null);
+            setDropPosition(null);
+            return;
+          }
+          const parent = state.connections.find((c) => c.id === checkId);
+          checkId = parent?.parentId;
         }
-      });
-    } else {
-      const sortedSiblings = [...targetSiblings].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      const targetIndex = sortedSiblings.findIndex((s) => s.id === targetId);
+      }
 
-      if (position === "before") {
-        newOrder = targetIndex >= 0 ? targetIndex : 0;
+      let newParentId: string | undefined;
+      if (position === "inside" && targetConnection.isGroup) {
+        newParentId = targetConnection.id;
       } else {
-        newOrder = targetIndex >= 0 ? targetIndex + 1 : sortedSiblings.length;
+        newParentId = targetConnection.parentId;
       }
 
-      const filteredSiblings = sortedSiblings.filter((s) => s.id !== draggedId);
-      filteredSiblings.forEach((sibling, index) => {
-        const adjustedOrder = index >= newOrder ? index + 1 : index;
-        if (sibling.order !== adjustedOrder) {
-          dispatch({ type: "UPDATE_CONNECTION", payload: { ...sibling, order: adjustedOrder } });
+      if (!canMoveToParent(draggedId, newParentId, state.connections)) {
+        console.warn("Cannot move: would exceed maximum nesting depth");
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
+
+      const targetSiblings = state.connections.filter(
+        (c) => c.parentId === newParentId,
+      );
+
+      let newOrder: number;
+      if (position === "inside") {
+        newOrder = 0;
+        targetSiblings.forEach((sibling) => {
+          if (sibling.id !== draggedId) {
+            dispatch({
+              type: "UPDATE_CONNECTION",
+              payload: { ...sibling, order: (sibling.order ?? 0) + 1 },
+            });
+          }
+        });
+      } else {
+        const sortedSiblings = [...targetSiblings].sort(
+          (a, b) => (a.order ?? 0) - (b.order ?? 0),
+        );
+        const targetIndex = sortedSiblings.findIndex((s) => s.id === targetId);
+
+        if (position === "before") {
+          newOrder = targetIndex >= 0 ? targetIndex : 0;
+        } else {
+          newOrder = targetIndex >= 0 ? targetIndex + 1 : sortedSiblings.length;
         }
+
+        const filteredSiblings = sortedSiblings.filter(
+          (s) => s.id !== draggedId,
+        );
+        filteredSiblings.forEach((sibling, index) => {
+          const adjustedOrder = index >= newOrder ? index + 1 : index;
+          if (sibling.order !== adjustedOrder) {
+            dispatch({
+              type: "UPDATE_CONNECTION",
+              payload: { ...sibling, order: adjustedOrder },
+            });
+          }
+        });
+      }
+
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...draggedConnection,
+          parentId: newParentId,
+          order: newOrder,
+          updatedAt: new Date().toISOString(),
+        },
       });
-    }
 
-    dispatch({ type: "UPDATE_CONNECTION", payload: { ...draggedConnection, parentId: newParentId, order: newOrder, updatedAt: new Date().toISOString() } });
+      if (
+        position === "inside" &&
+        targetConnection.isGroup &&
+        !targetConnection.expanded
+      ) {
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: { ...targetConnection, expanded: true },
+        });
+      }
 
-    if (position === "inside" && targetConnection.isGroup && !targetConnection.expanded) {
-      dispatch({ type: "UPDATE_CONNECTION", payload: { ...targetConnection, expanded: true } });
-    }
-
-    setDraggedId(null); setDragOverId(null); setDropPosition(null);
-  }, [draggedId, state.connections, dispatch]);
+      setDraggedId(null);
+      setDragOverId(null);
+      setDropPosition(null);
+    },
+    [draggedId, state.connections, dispatch],
+  );
 
   return {
     state,
