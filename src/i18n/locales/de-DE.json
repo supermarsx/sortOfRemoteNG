@@ -714,6 +714,84 @@
     "updater": {
       "title": "Updater",
       "description": "Signierte Anwendungsupdates, Prüfintervall und privater Feed-Endpunkt."
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "Begrenzt die Dauer einzelner Aufzeichnungen, damit die Dateigrößen überschaubar bleiben. Auf 0 setzen, um bis zum Ende der Sitzung aufzuzeichnen.",
+        "maxStoredTooltip": "Begrenzt die Größe der Aufzeichnungsbibliothek. Sobald das Limit erreicht ist, werden die ältesten Aufzeichnungen entfernt."
+      },
+      "defaultExportFormatLabel": "Standardexportformat",
+      "description": "SSH-Terminal-, RDP-Bildschirm- und Websitzungsaufzeichnungen, Exportformate und Speicherlimits konfigurieren.",
+      "formats": {
+        "gifAnimated": "GIF (animiert)",
+        "scriptText": "Skript (Text)"
+      },
+      "rdp": {
+        "autoRecordDescription": "Videoaufzeichnung bei einer RDP-Verbindung automatisch starten",
+        "autoRecordLabel": "RDP-Sitzungen automatisch aufzeichnen",
+        "autoRecordTooltip": "Eine Bildschirmaufzeichnung starten, sobald eine RDP-Sitzung verbunden ist, ohne manuell auf Aufzeichnen zu klicken.",
+        "autoSaveDescription": "RDP-Aufzeichnungen in der Aufzeichnungsverwaltung speichern, statt einen Dateidialog anzuzeigen",
+        "autoSaveLabel": "Automatisch in der Bibliothek speichern",
+        "autoSaveTooltip": "Den Dialog Speichern unter überspringen und abgeschlossene Aufzeichnungen automatisch in der Aufzeichnungsverwaltung speichern.",
+        "bitrateDescription": "Höher = bessere Qualität, aber größere Dateien",
+        "bitrateLabel": "Videobitrate",
+        "bitrateTooltip": "Zielbitrate des Encoders in Megabit pro Sekunde. Für schnell bewegte Inhalte erhöhen, für weitgehend statische Desktops reduzieren.",
+        "enableDescription": "Bildschirmaufzeichnung von RDP-Sitzungen zulassen",
+        "enableLabel": "RDP-Aufzeichnung aktivieren",
+        "enableTooltip": "Hauptschalter für RDP-Bildschirmaufzeichnungen. Wenn er ausgeschaltet ist, können Sitzungen niemals aufgezeichnet werden.",
+        "fpsDescription": "Höher = flüssiger, aber größere Dateien",
+        "fpsLabel": "Aufzeichnungs-FPS",
+        "fpsTooltip": "Erfasste Bilder pro Sekunde. 15–30 sind ein guter Kompromiss für Desktopsitzungen; 60 sind außer bei Videowiedergabe übermäßig.",
+        "maxDurationLabel": "Maximale Dauer der RDP-Aufzeichnung",
+        "maxStoredLabel": "Maximal gespeicherte RDP-Aufzeichnungen",
+        "videoFormatLabel": "Videoformat",
+        "videoFormatTooltip": "Container/Codec zum Codieren der Aufzeichnung. WebM wird weitgehend unterstützt und ist kompakt; MP4 ist am portabelsten; GIF ist universell, aber sehr groß."
+      },
+      "sections": {
+        "rdpTitle": "RDP-Bildschirmaufzeichnung",
+        "sshTitle": "SSH-Terminalaufzeichnung",
+        "webTitle": "Websitzungsaufzeichnung"
+      },
+      "ssh": {
+        "autoRecordDescription": "Aufzeichnung beim Herstellen einer SSH-Verbindung automatisch starten",
+        "autoRecordLabel": "SSH-Sitzungen automatisch aufzeichnen",
+        "autoRecordTooltip": "Eine Aufzeichnung starten, sobald eine SSH-Sitzung verbunden ist, ohne manuell auf Aufzeichnen zu klicken.",
+        "enableDescription": "Aufzeichnung von SSH-Terminalsitzungen zulassen",
+        "enableLabel": "SSH-Aufzeichnung aktivieren",
+        "enableTooltip": "Hauptschalter für SSH-Sitzungsaufzeichnungen. Wenn er ausgeschaltet ist, können Sitzungen niemals aufgezeichnet werden.",
+        "exportFormatTooltip": "Im Exportdialog vorausgewähltes Format. Asciicast wird in asciinema wiedergegeben; Skript ist Klartext; GIF ist animiert.",
+        "maxDurationLabel": "Maximale Aufzeichnungsdauer",
+        "maxStoredLabel": "Maximal gespeicherte Aufzeichnungen",
+        "recordInputDescription": "Eingegebene Daten in Aufzeichnungen aufnehmen (können vertrauliche Daten enthalten)",
+        "recordInputLabel": "Eingaben aufzeichnen (Tastenanschläge)",
+        "recordInputTooltip": "Erfasst Ihre Eingaben. Das verbessert die Wiedergabetreue, aber in Eingabeaufforderungen eingefügte Passwörter werden ebenfalls aufgezeichnet."
+      },
+      "storage": {
+        "harRecordingOne": "HAR-Aufzeichnung",
+        "harRecordingOther": "HAR-Aufzeichnungen",
+        "rdpRecordingOne": "RDP-Aufzeichnung",
+        "rdpRecordingOther": "RDP-Aufzeichnungen",
+        "sshRecordingOne": "SSH-Aufzeichnung",
+        "sshRecordingOther": "SSH-Aufzeichnungen",
+        "stored": "gespeichert",
+        "videoRecordingOne": "Videoaufzeichnung",
+        "videoRecordingOther": "Videoaufzeichnungen"
+      },
+      "title": "Aufzeichnung",
+      "web": {
+        "autoRecordDescription": "HTTP-Datenverkehr beim Verbinden einer Websitzung automatisch aufzeichnen",
+        "autoRecordLabel": "Websitzungen automatisch aufzeichnen",
+        "autoRecordTooltip": "Die HAR-Erfassung starten, sobald eine Websitzung geladen wird, ohne manuell auf Aufzeichnen zu klicken.",
+        "enableDescription": "Aufzeichnung von Websitzungen zulassen (HAR und Video)",
+        "enableLabel": "Webaufzeichnung aktivieren",
+        "enableTooltip": "Hauptschalter für Websitzungsaufzeichnungen. Wenn er ausgeschaltet ist, können Browsersitzungen niemals aufgezeichnet werden.",
+        "exportFormatTooltip": "Im Exportdialog vorausgewähltes Format. HAR ist das Standardformat HTTP Archive; JSON ist das native Format von sortOfRemoteNG.",
+        "maxDurationLabel": "Maximale Dauer der Webaufzeichnung",
+        "maxStoredLabel": "Maximal gespeicherte Webaufzeichnungen",
+        "recordHeadersDescription": "Anfrage- und Antwort-Header in Aufzeichnungen aufnehmen",
+        "recordHeadersLabel": "HTTP-Header aufzeichnen",
+        "recordHeadersTooltip": "Header können Cookies und Bearer-Token offenlegen. Deaktivieren, wenn Aufzeichnungen außerhalb des Teams geteilt werden."
+      }
     }
   },
   "tabs": {

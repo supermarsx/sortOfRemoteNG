@@ -714,6 +714,84 @@
     "updater": {
       "title": "Actualizador",
       "description": "Actualizaciones firmadas de la aplicación, frecuencia de comprobación y endpoint de fuente privada."
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "Limita cada grabación para acotar el tamaño de los archivos. Establece 0 para grabar hasta que finalice la sesión.",
+        "maxStoredTooltip": "Limita el tamaño de la biblioteca de grabaciones. Al alcanzar el límite, se eliminan las grabaciones más antiguas."
+      },
+      "defaultExportFormatLabel": "Formato de exportación predeterminado",
+      "description": "Configura la grabación de terminales SSH, pantallas RDP y sesiones web, los formatos de exportación y los límites de almacenamiento.",
+      "formats": {
+        "gifAnimated": "GIF (animado)",
+        "scriptText": "Script (texto)"
+      },
+      "rdp": {
+        "autoRecordDescription": "Iniciar automáticamente la grabación de vídeo al conectar por RDP",
+        "autoRecordLabel": "Grabar automáticamente las sesiones RDP",
+        "autoRecordTooltip": "Inicia una grabación de pantalla en cuanto se conecta una sesión RDP, sin tener que pulsar Grabar manualmente.",
+        "autoSaveDescription": "Guardar las grabaciones RDP en el Gestor de grabaciones en vez de mostrar un diálogo de archivo",
+        "autoSaveLabel": "Guardar automáticamente en la biblioteca",
+        "autoSaveTooltip": "Omite el diálogo Guardar como y almacena automáticamente las grabaciones completadas en el Gestor de grabaciones.",
+        "bitrateDescription": "Más alta = mejor calidad, pero archivos más grandes",
+        "bitrateLabel": "Tasa de bits del vídeo",
+        "bitrateTooltip": "Tasa de bits objetivo del codificador en megabits por segundo. Auméntala para contenido con mucho movimiento y redúcela para escritorios casi estáticos.",
+        "enableDescription": "Permitir la grabación de pantalla de las sesiones RDP",
+        "enableLabel": "Activar la grabación RDP",
+        "enableTooltip": "Interruptor principal de la grabación de pantalla RDP. Si está desactivado, las sesiones no se pueden grabar.",
+        "fpsDescription": "Más alta = mayor fluidez, pero archivos más grandes",
+        "fpsLabel": "FPS de grabación",
+        "fpsTooltip": "Fotogramas capturados por segundo. Entre 15 y 30 ofrece un buen equilibrio para sesiones de escritorio; 60 es excesivo salvo para reproducir vídeo.",
+        "maxDurationLabel": "Duración máxima de la grabación RDP",
+        "maxStoredLabel": "Máximo de grabaciones RDP almacenadas",
+        "videoFormatLabel": "Formato de vídeo",
+        "videoFormatTooltip": "Contenedor/códec usado para codificar la grabación. WebM tiene amplia compatibilidad y ocupa poco; MP4 es el más portátil; GIF es universal, pero muy grande."
+      },
+      "sections": {
+        "rdpTitle": "Grabación de pantalla RDP",
+        "sshTitle": "Grabación de terminal SSH",
+        "webTitle": "Grabación de sesiones web"
+      },
+      "ssh": {
+        "autoRecordDescription": "Iniciar automáticamente la grabación al conectar por SSH",
+        "autoRecordLabel": "Grabar automáticamente las sesiones SSH",
+        "autoRecordTooltip": "Inicia una grabación en cuanto se conecta una sesión SSH, sin tener que pulsar Grabar manualmente.",
+        "enableDescription": "Permitir la grabación de sesiones de terminal SSH",
+        "enableLabel": "Activar la grabación SSH",
+        "enableTooltip": "Interruptor principal de la grabación de sesiones SSH. Si está desactivado, las sesiones no se pueden grabar.",
+        "exportFormatTooltip": "Formato preseleccionado en el diálogo Exportar. Asciicast se reproduce en asciinema; Script es texto sin formato; GIF es animado.",
+        "maxDurationLabel": "Duración máxima de la grabación",
+        "maxStoredLabel": "Máximo de grabaciones almacenadas",
+        "recordInputDescription": "Incluir la entrada escrita en las grabaciones (puede contener datos confidenciales)",
+        "recordInputLabel": "Grabar entrada (pulsaciones)",
+        "recordInputTooltip": "Captura lo que escribes. Mejora la fidelidad de reproducción, pero también graba las contraseñas pegadas en los indicadores de entrada."
+      },
+      "storage": {
+        "harRecordingOne": "grabación HAR",
+        "harRecordingOther": "grabaciones HAR",
+        "rdpRecordingOne": "grabación RDP",
+        "rdpRecordingOther": "grabaciones RDP",
+        "sshRecordingOne": "grabación SSH",
+        "sshRecordingOther": "grabaciones SSH",
+        "stored": "en la biblioteca",
+        "videoRecordingOne": "grabación de vídeo",
+        "videoRecordingOther": "grabaciones de vídeo"
+      },
+      "title": "Grabación",
+      "web": {
+        "autoRecordDescription": "Iniciar automáticamente la grabación del tráfico HTTP al conectar una sesión web",
+        "autoRecordLabel": "Grabar automáticamente las sesiones web",
+        "autoRecordTooltip": "Inicia la captura HAR en cuanto se carga una sesión web, sin tener que pulsar Grabar manualmente.",
+        "enableDescription": "Permitir la grabación de sesiones web (HAR y vídeo)",
+        "enableLabel": "Activar la grabación web",
+        "enableTooltip": "Interruptor principal de la grabación de sesiones web. Si está desactivado, las sesiones del navegador no se pueden grabar.",
+        "exportFormatTooltip": "Formato preseleccionado en el diálogo Exportar. HAR es el formato HTTP Archive estándar; JSON es el formato nativo de sortOfRemoteNG.",
+        "maxDurationLabel": "Duración máxima de la grabación web",
+        "maxStoredLabel": "Máximo de grabaciones web almacenadas",
+        "recordHeadersDescription": "Incluir los encabezados de solicitud y respuesta en las grabaciones",
+        "recordHeadersLabel": "Grabar encabezados HTTP",
+        "recordHeadersTooltip": "Los encabezados pueden revelar cookies y tokens de portador. Desactívalo si las grabaciones se van a compartir fuera del equipo."
+      }
     }
   },
   "tabs": {

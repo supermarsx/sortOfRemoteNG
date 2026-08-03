@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import enUS from "../../src/i18n/locales/en-US.json";
+import enLeet from "../../src/i18n/locales/en-x-leet.json";
+import enPirate from "../../src/i18n/locales/en-x-pirate.json";
 import de from "../../src/i18n/locales/de-DE.json";
 import es from "../../src/i18n/locales/es-ES.json";
 import fr from "../../src/i18n/locales/fr-FR.json";
@@ -47,6 +49,8 @@ function interpolations(source: string): string[] {
 
 describe("proxyChainMenu locale parity", () => {
   const locales = {
+    "en-x-leet": enLeet,
+    "en-x-pirate": enPirate,
     "de-DE": de,
     "es-ES": es,
     "fr-FR": fr,

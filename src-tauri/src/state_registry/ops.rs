@@ -1,5 +1,8 @@
 use super::*;
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
@@ -76,6 +79,34 @@ use kafka::service::KafkaServiceState;
 /// Kept as an explicit parity contract so state additions cannot accidentally
 /// migrate back into the root `app_lib` composition unit unnoticed.
 pub const MANAGED_STATE_REGISTRATIONS: usize = 72;
+
+const LOCALES_DIRECTORY_NAME: &str = "locales";
+const PORTABLE_RESOURCES_DIRECTORY_NAME: &str = "resources";
+const DEFAULT_LOCALE_CATALOG_NAME: &str = "en-US.json";
+
+/// Return locale locations in runtime-preference order.
+///
+/// Standard Tauri bundles place resources directly below `resource_dir()`.
+/// The custom Flatpak and Windows portable layouts keep their payload beside
+/// the executable under `resources/`, so retain that deterministic fallback
+/// without weakening the standard bundle contract.
+fn packaged_locales_candidates(
+    resource_dir: &Path,
+    executable_path: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = vec![resource_dir.join(LOCALES_DIRECTORY_NAME)];
+
+    if let Some(executable_dir) = executable_path.and_then(Path::parent) {
+        let adjacent_resources = executable_dir
+            .join(PORTABLE_RESOURCES_DIRECTORY_NAME)
+            .join(LOCALES_DIRECTORY_NAME);
+        if !candidates.contains(&adjacent_resources) {
+            candidates.push(adjacent_resources);
+        }
+    }
+
+    candidates
+}
 
 pub fn register(
     app: &mut tauri::App<tauri::Wry>,
@@ -356,25 +387,26 @@ pub fn register(
         app.manage(kafka_state);
     }
 
-    let locales_dir = app
+    let resource_dir = app
         .path()
         .resource_dir()
-        .unwrap_or_else(|_| app_dir.to_path_buf())
-        .join("locales");
-    let locales_dir = if locales_dir.exists() {
-        locales_dir
-    } else {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("src")
-            .join("i18n")
-            .join("locales")
-    };
-    let i18n_engine = match i18n::I18nEngine::new(&locales_dir, "en") {
+        .unwrap_or_else(|_| app_dir.to_path_buf());
+    let executable_path = std::env::current_exe().ok();
+    let locales_dir = packaged_locales_candidates(&resource_dir, executable_path.as_deref())
+        .into_iter()
+        .find(|candidate| candidate.join(DEFAULT_LOCALE_CATALOG_NAME).is_file())
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../..")
+                .join("src")
+                .join("i18n")
+                .join("locales")
+        });
+    let i18n_engine = match i18n::I18nEngine::new(&locales_dir, "en-US") {
         Ok(engine) => Arc::new(engine),
         Err(err) => {
             log::warn!("i18n: failed to initialise engine: {err}");
-            Arc::new(i18n::I18nEngine::new_empty("en"))
+            Arc::new(i18n::I18nEngine::new_empty("en-US"))
         }
     };
     let app_handle = app.handle().clone();
@@ -395,7 +427,8 @@ pub fn register(
 
 #[cfg(test)]
 mod tests {
-    use super::MANAGED_STATE_REGISTRATIONS;
+    use super::{packaged_locales_candidates, MANAGED_STATE_REGISTRATIONS};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn managed_state_count_matches_the_startup_registration_source() {
@@ -405,6 +438,31 @@ mod tests {
             source.matches(&manage_call).count(),
             MANAGED_STATE_REGISTRATIONS,
             "update the parity contract when operations state wiring changes"
+        );
+    }
+
+    #[test]
+    fn packaged_locale_candidates_cover_standard_and_custom_release_layouts() {
+        assert_eq!(
+            packaged_locales_candidates(
+                Path::new("/usr/lib/sortOfRemoteNG"),
+                Some(Path::new("/app/bin/sortOfRemoteNG")),
+            ),
+            vec![
+                PathBuf::from("/usr/lib/sortOfRemoteNG/locales"),
+                PathBuf::from("/app/bin/resources/locales"),
+            ],
+        );
+
+        assert_eq!(
+            packaged_locales_candidates(
+                Path::new("/portable"),
+                Some(Path::new("/portable/sortOfRemoteNG.exe")),
+            ),
+            vec![
+                PathBuf::from("/portable/locales"),
+                PathBuf::from("/portable/resources/locales"),
+            ],
         );
     }
 }

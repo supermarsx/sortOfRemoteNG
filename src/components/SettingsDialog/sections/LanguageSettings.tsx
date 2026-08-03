@@ -13,10 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings/settings";
-import {
-  SUPPORTED_LANGUAGES,
-  resolveSupportedLanguage,
-} from "../../../i18n";
+import { SUPPORTED_LANGUAGES, resolveSupportedLanguage } from "../../../i18n";
 import { COUNTRIES } from "../../../data/countries";
 import { formatDateTime } from "../../../utils/i18n/localeFormat";
 import SectionHeading from "../../ui/SectionHeading";
@@ -169,7 +166,7 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
               value={explicit}
               options={SUPPORTED_LANGUAGES}
               onChange={(v) => updateSettings({ language: v })}
-              infoTooltip="Choose the display language for the application interface. Changes take effect after restarting the app."
+              infoTooltip="Choose the display language for the application interface. Changes apply immediately."
             />
           </div>
 

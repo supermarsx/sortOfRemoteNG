@@ -1,133 +1,146 @@
-import { S } from '../../helpers/selectors';
-import { resetAppState, createCollection, openSettings, closeSettings } from '../../helpers/app';
+import { S } from "../../helpers/selectors";
+import {
+  resetAppState,
+  createCollection,
+  openSettings,
+  closeSettings,
+  waitForAppReady,
+} from "../../helpers/app";
 
-describe('Internationalization / Language Switching', () => {
+const LANGUAGE_TAB = '[data-testid="settings-tab-language"]';
+const AUTO_DETECT_TOGGLE =
+  '[data-setting-key="autoDetectOsLanguage"] input[type="checkbox"]';
+const LANGUAGE_SELECT = '[data-setting-key="language"] [role="combobox"]';
+
+async function documentLanguage(): Promise<string> {
+  return browser.execute(() => document.documentElement.lang);
+}
+
+async function waitForDocumentLanguage(language: string): Promise<void> {
+  await browser.waitUntil(async () => (await documentLanguage()) === language, {
+    timeout: 10_000,
+    interval: 100,
+    timeoutMsg: `Expected document language to become ${language}`,
+  });
+}
+
+async function waitForSettingsTitle(title: string): Promise<void> {
+  const settingsButton = await $(S.toolbarSettings);
+  await browser.waitUntil(
+    async () => (await settingsButton.getAttribute("title")) === title,
+    {
+      timeout: 10_000,
+      interval: 100,
+      timeoutMsg: `Expected settings title to become ${title}`,
+    },
+  );
+}
+
+async function openLanguageSettings(): Promise<void> {
+  await openSettings();
+  const languageTab = await $(LANGUAGE_TAB);
+  await languageTab.waitForClickable({ timeout: 5_000 });
+  await languageTab.click();
+  await $(LANGUAGE_SELECT).waitForExist({ timeout: 5_000 });
+}
+
+async function disableAutomaticLanguageDetection(): Promise<void> {
+  const toggle = await $(AUTO_DETECT_TOGGLE);
+  await toggle.waitForExist({ timeout: 5_000 });
+  if (await toggle.isSelected()) {
+    await toggle.click();
+    await browser.waitUntil(async () => !(await toggle.isSelected()), {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: "Expected automatic language detection to be disabled",
+    });
+  }
+  await $(LANGUAGE_SELECT).waitForClickable({ timeout: 5_000 });
+}
+
+async function chooseLanguage(label: string, language: string): Promise<void> {
+  await disableAutomaticLanguageDetection();
+  const select = await $(LANGUAGE_SELECT);
+  if ((await select.getText()).trim() !== label) {
+    await select.click();
+    const option = await $(
+      `//*[@role="option" and normalize-space(.)="${label}"]`,
+    );
+    await option.waitForDisplayed({ timeout: 5_000 });
+    await option.click();
+  }
+  await waitForDocumentLanguage(language);
+}
+
+describe("Internationalization / Language Switching", () => {
   beforeEach(async () => {
     await resetAppState();
-    await createCollection('i18n Tests');
-  });
+    await createCollection("i18n Tests");
 
-  it('should default to English', async () => {
-    // Verify toolbar text or known UI label is in English
-    const settingsBtn = await $(S.toolbarSettings);
-    const text = await settingsBtn.getAttribute('aria-label');
-    const btnText = await settingsBtn.getText();
-    const label = text || btnText || '';
-
-    // At minimum, the HTML lang attribute should be "en"
-    const htmlLang = await browser.execute(() => document.documentElement.lang);
-    expect(htmlLang).toMatch(/^en/);
-  });
-
-  it('should switch to Spanish and update the UI', async () => {
-    await openSettings();
-
-    const langSelect = await $('[data-testid="setting-language"]');
-    await langSelect.waitForDisplayed({ timeout: 5_000 });
-    await langSelect.selectByVisibleText('Español');
-    await browser.pause(1000);
-
+    // Native settings persist across WebDriver sessions. Establish an explicit
+    // baseline so every test is independent of the locale selected previously.
+    await openLanguageSettings();
+    await chooseLanguage("English (US)", "en-US");
+    await browser.pause(1_700);
     await closeSettings();
-    await browser.pause(500);
-
-    // Verify the HTML lang changed
-    const htmlLang = await browser.execute(() => document.documentElement.lang);
-    expect(htmlLang).toMatch(/^es/);
-
-    // Verify at least one known UI element is in Spanish
-    const settingsBtn = await $(S.toolbarSettings);
-    const label =
-      (await settingsBtn.getAttribute('aria-label')) || (await settingsBtn.getText()) || '';
-    // "Settings" in Spanish is "Configuración" or similar
-    expect(label.toLowerCase()).not.toBe('settings');
   });
 
-  it('should switch to Japanese and render correctly', async () => {
-    await openSettings();
-
-    const langSelect = await $('[data-testid="setting-language"]');
-    await langSelect.waitForDisplayed({ timeout: 5_000 });
-    await langSelect.selectByVisibleText('日本語');
-    await browser.pause(1000);
-
-    await closeSettings();
-    await browser.pause(500);
-
-    const htmlLang = await browser.execute(() => document.documentElement.lang);
-    expect(htmlLang).toMatch(/^ja/);
-
-    // Verify that CJK characters are present in the page
-    const bodyText = await browser.execute(() => document.body.innerText);
-    const hasCJK = /[\u3000-\u9FFF\uF900-\uFAFF]/.test(bodyText);
-    expect(hasCJK).toBe(true);
+  it("defaults to explicit English", async () => {
+    expect(await documentLanguage()).toBe("en-US");
+    await waitForSettingsTitle("Settings");
   });
 
-  it('should switch to Chinese Simplified and render correctly', async () => {
-    await openSettings();
-
-    const langSelect = await $('[data-testid="setting-language"]');
-    await langSelect.waitForDisplayed({ timeout: 5_000 });
-    await langSelect.selectByVisibleText('简体中文');
-    await browser.pause(1000);
-
+  it("switches to Spanish and updates the UI immediately", async () => {
+    await openLanguageSettings();
+    await chooseLanguage("Español (España)", "es-ES");
     await closeSettings();
-    await browser.pause(500);
 
-    const htmlLang = await browser.execute(() => document.documentElement.lang);
-    expect(htmlLang).toMatch(/^zh/);
-
-    const bodyText = await browser.execute(() => document.body.innerText);
-    const hasChinese = /[\u4E00-\u9FFF]/.test(bodyText);
-    expect(hasChinese).toBe(true);
+    await waitForSettingsTitle("Configuración");
   });
 
-  it('should persist language after restart', async () => {
-    await openSettings();
-
-    const langSelect = await $('[data-testid="setting-language"]');
-    await langSelect.waitForDisplayed({ timeout: 5_000 });
-    await langSelect.selectByVisibleText('Español');
-    await browser.pause(1000);
-
+  it("switches to Japanese and renders its translated title", async () => {
+    await openLanguageSettings();
+    await chooseLanguage("日本語 (日本)", "ja-JP");
     await closeSettings();
-    await browser.pause(500);
 
-    // Simulate restart by reloading the page
+    await waitForSettingsTitle("設定");
+  });
+
+  it("switches to Simplified Chinese and renders its translated title", async () => {
+    await openLanguageSettings();
+    await chooseLanguage("中文 (简体, 中国)", "zh-CN");
+    await closeSettings();
+
+    await waitForSettingsTitle("设置");
+  });
+
+  it("loads both styled-English locales without leaking translation keys", async () => {
+    await openLanguageSettings();
+    await chooseLanguage("English (Leetspeak)", "en-x-leet");
+    await closeSettings();
+    await waitForSettingsTitle("53771n65");
+
+    await openLanguageSettings();
+    await chooseLanguage("English (Pirate)", "en-x-pirate");
+    const dialogText = await $(S.settingsDialog).getText();
+    expect(dialogText).not.toContain("settings.title");
+    expect(dialogText).not.toContain("toolbar.settings");
+    await closeSettings();
+    await waitForSettingsTitle("Ship's settings");
+  });
+
+  it("persists a styled-English locale after a WebDriver restart", async () => {
+    await openLanguageSettings();
+    await chooseLanguage("English (Pirate)", "en-x-pirate");
+
+    // Settings auto-save is debounced by 1.5 seconds; wait for the disk write
+    // before restarting the native WebDriver session.
+    await browser.pause(1_700);
+    await closeSettings();
     await browser.reloadSession();
-    await browser.pause(3000);
+    await waitForAppReady();
 
-    const htmlLang = await browser.execute(() => document.documentElement.lang);
-    expect(htmlLang).toMatch(/^es/);
-  });
-
-  it('should fall back to English for missing translations', async () => {
-    // Set a locale that may have incomplete translations
-    await openSettings();
-
-    const langSelect = await $('[data-testid="setting-language"]');
-    await langSelect.waitForDisplayed({ timeout: 5_000 });
-
-    // Try selecting a less common language
-    const options = await langSelect.$$('option');
-    let selectedNonEnglish = false;
-    for (const opt of options) {
-      const val = await opt.getAttribute('value');
-      if (val && val !== 'en' && val !== 'es' && val !== 'ja' && val !== 'zh') {
-        await langSelect.selectByAttribute('value', val);
-        selectedNonEnglish = true;
-        break;
-      }
-    }
-
-    await browser.pause(1000);
-    await closeSettings();
-    await browser.pause(500);
-
-    if (selectedNonEnglish) {
-      // Verify that no translation keys (e.g. "settings.title") leak into the UI
-      const bodyText = await browser.execute(() => document.body.innerText);
-      const hasLeakedKey = /^[a-z]+\.[a-z]+\.[a-z]+$/m.test(bodyText);
-      expect(hasLeakedKey).toBe(false);
-    }
+    await waitForDocumentLanguage("en-x-pirate");
+    await waitForSettingsTitle("Ship's settings");
   });
 });

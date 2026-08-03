@@ -714,6 +714,84 @@
     "updater": {
       "title": "更新程序",
       "description": "已签名的应用更新、检查频率和私有源端点。"
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "限制单次录制时长，以控制文件大小。将其设为 0 可录制到会话结束。",
+        "maxStoredTooltip": "限制录制库的规模。达到上限后，将轮换移除最早的录制。"
+      },
+      "defaultExportFormatLabel": "默认导出格式",
+      "description": "配置 SSH 终端、RDP 屏幕和 Web 会话录制、导出格式及存储上限。",
+      "formats": {
+        "gifAnimated": "GIF（动画）",
+        "scriptText": "Script（文本）"
+      },
+      "rdp": {
+        "autoRecordDescription": "连接 RDP 时自动开始视频录制",
+        "autoRecordLabel": "自动录制 RDP 会话",
+        "autoRecordTooltip": "RDP 会话连接后立即开始屏幕录制，无需手动按“录制”。",
+        "autoSaveDescription": "将 RDP 录制保存到录制管理器，而不是弹出文件对话框",
+        "autoSaveLabel": "自动保存到录制库",
+        "autoSaveTooltip": "跳过“另存为”对话框，并将完成的录制自动存储到录制管理器。",
+        "bitrateDescription": "值越高，质量越好，但文件越大",
+        "bitrateLabel": "视频比特率",
+        "bitrateTooltip": "编码器目标比特率，单位为兆比特/秒。对快速运动内容可提高该值；对基本静止的桌面可降低该值。",
+        "enableDescription": "允许录制 RDP 会话屏幕",
+        "enableLabel": "启用 RDP 录制",
+        "enableTooltip": "RDP 屏幕录制的总开关。关闭后将无法录制会话。",
+        "fpsDescription": "值越高，画面越流畅，但文件越大",
+        "fpsLabel": "录制 FPS",
+        "fpsTooltip": "每秒捕获的帧数。对于桌面会话，15-30 可较好地平衡效果与大小；除视频播放外，60 通常没有必要。",
+        "maxDurationLabel": "RDP 录制最大时长",
+        "maxStoredLabel": "RDP 录制最大存储数量",
+        "videoFormatLabel": "视频格式",
+        "videoFormatTooltip": "编码录制时使用的容器/编解码器。WebM 支持广泛且体积小；MP4 兼容性最佳；GIF 通用但体积很大。"
+      },
+      "sections": {
+        "rdpTitle": "RDP 屏幕录制",
+        "sshTitle": "SSH 终端录制",
+        "webTitle": "Web 会话录制"
+      },
+      "ssh": {
+        "autoRecordDescription": "连接 SSH 时自动开始录制",
+        "autoRecordLabel": "自动录制 SSH 会话",
+        "autoRecordTooltip": "SSH 会话连接后立即开始录制，无需手动按“录制”。",
+        "enableDescription": "允许录制 SSH 终端会话",
+        "enableLabel": "启用 SSH 录制",
+        "enableTooltip": "SSH 会话录制的总开关。关闭后将无法录制会话。",
+        "exportFormatTooltip": "导出对话框中预先选择的格式。Asciicast 可在 asciinema 中回放；Script 为纯文本；GIF 为动画。",
+        "maxDurationLabel": "最大录制时长",
+        "maxStoredLabel": "录制最大存储数量",
+        "recordInputDescription": "在录制中包含键盘输入（可能包含敏感数据）",
+        "recordInputLabel": "录制输入（按键）",
+        "recordInputTooltip": "捕获您输入的内容。这有助于忠实回放，但请注意，粘贴到提示中的密码也会被录制。"
+      },
+      "storage": {
+        "harRecordingOne": "HAR 录制",
+        "harRecordingOther": "HAR 录制",
+        "rdpRecordingOne": "RDP 录制",
+        "rdpRecordingOther": "RDP 录制",
+        "sshRecordingOne": "SSH 录制",
+        "sshRecordingOther": "SSH 录制",
+        "stored": "已存储",
+        "videoRecordingOne": "视频录制",
+        "videoRecordingOther": "视频录制"
+      },
+      "title": "录制",
+      "web": {
+        "autoRecordDescription": "建立 Web 连接时自动开始录制 HTTP 流量",
+        "autoRecordLabel": "自动录制 Web 会话",
+        "autoRecordTooltip": "Web 会话加载后立即开始 HAR 捕获，无需手动按“录制”。",
+        "enableDescription": "允许录制 Web 会话（HAR 和视频）",
+        "enableLabel": "启用 Web 录制",
+        "enableTooltip": "Web 会话录制的总开关。关闭后将无法录制浏览器会话。",
+        "exportFormatTooltip": "导出对话框中预先选择的格式。HAR 是标准 HTTP Archive 格式；JSON 是 sortOfRemoteNG 的原生格式。",
+        "maxDurationLabel": "Web 录制最大时长",
+        "maxStoredLabel": "Web 录制最大存储数量",
+        "recordHeadersDescription": "在录制中包含请求头和响应头",
+        "recordHeadersLabel": "录制 HTTP 标头",
+        "recordHeadersTooltip": "标头可能泄露 Cookie 和 Bearer 令牌。如果录制内容会在团队外共享，请禁用此选项。"
+      }
     }
   },
   "tabs": {

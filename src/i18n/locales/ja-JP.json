@@ -714,6 +714,84 @@
     "updater": {
       "title": "アップデーター",
       "description": "署名付きアプリケーション更新、確認間隔、プライベートフィードのエンドポイント。"
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "ファイルサイズが増えすぎないよう、録画ごとの時間を制限します。0 に設定すると、セッションが終了するまで録画します。",
+        "maxStoredTooltip": "録画ライブラリの件数を制限します。上限に達すると、最も古い録画から順に削除されます。"
+      },
+      "defaultExportFormatLabel": "既定のエクスポート形式",
+      "description": "SSH ターミナル、RDP 画面、Web セッションの録画、エクスポート形式、保存上限を設定します。",
+      "formats": {
+        "gifAnimated": "GIF（アニメーション）",
+        "scriptText": "Script（テキスト）"
+      },
+      "rdp": {
+        "autoRecordDescription": "RDP 接続時にビデオ録画を自動的に開始します",
+        "autoRecordLabel": "RDP セッションを自動録画",
+        "autoRecordTooltip": "RDP セッションが接続された時点で、手動で録画ボタンを押さなくても画面録画を開始します。",
+        "autoSaveDescription": "ファイル保存ダイアログを表示せず、RDP 録画を録画マネージャーに保存します",
+        "autoSaveLabel": "ライブラリに自動保存",
+        "autoSaveTooltip": "名前を付けて保存ダイアログを省略し、完了した録画を録画マネージャーに自動的に保存します。",
+        "bitrateDescription": "高いほど品質が向上しますが、ファイルサイズも大きくなります",
+        "bitrateLabel": "ビデオビットレート",
+        "bitrateTooltip": "エンコーダーの目標ビットレート（メガビット/秒）です。動きの速いコンテンツでは上げ、ほぼ静止したデスクトップでは下げてください。",
+        "enableDescription": "RDP セッションの画面録画を許可します",
+        "enableLabel": "RDP 録画を有効化",
+        "enableTooltip": "RDP 画面録画のマスタースイッチです。オフの場合、セッションは録画できません。",
+        "fpsDescription": "高いほど滑らかになりますが、ファイルサイズも大きくなります",
+        "fpsLabel": "録画 FPS",
+        "fpsTooltip": "1 秒あたりにキャプチャするフレーム数です。デスクトップセッションでは 15-30 が品質とサイズのバランスに優れ、60 は動画再生以外では過剰です。",
+        "maxDurationLabel": "RDP 録画の最大時間",
+        "maxStoredLabel": "保存する RDP 録画の最大数",
+        "videoFormatLabel": "ビデオ形式",
+        "videoFormatTooltip": "録画のエンコードに使用するコンテナ/コーデックです。WebM は広く対応されサイズも小さく、MP4 は最も互換性が高く、GIF は汎用的ですが非常に大きくなります。"
+      },
+      "sections": {
+        "rdpTitle": "RDP 画面録画",
+        "sshTitle": "SSH ターミナル録画",
+        "webTitle": "Web セッション録画"
+      },
+      "ssh": {
+        "autoRecordDescription": "SSH 接続時に録画を自動的に開始します",
+        "autoRecordLabel": "SSH セッションを自動録画",
+        "autoRecordTooltip": "SSH セッションが接続された時点で、手動で録画ボタンを押さなくても録画を開始します。",
+        "enableDescription": "SSH ターミナルセッションの録画を許可します",
+        "enableLabel": "SSH 録画を有効化",
+        "enableTooltip": "SSH セッション録画のマスタースイッチです。オフの場合、セッションは録画できません。",
+        "exportFormatTooltip": "エクスポートダイアログで事前選択される形式です。Asciicast は asciinema で再生でき、Script はプレーンテキスト、GIF はアニメーションです。",
+        "maxDurationLabel": "最大録画時間",
+        "maxStoredLabel": "保存する録画の最大数",
+        "recordInputDescription": "入力内容を録画に含めます（機密データが含まれる場合があります）",
+        "recordInputLabel": "入力（キー操作）を録画",
+        "recordInputTooltip": "入力内容をキャプチャします。再生の再現性は高まりますが、プロンプトに貼り付けたパスワードも録画される点に注意してください。"
+      },
+      "storage": {
+        "harRecordingOne": "HAR 録画",
+        "harRecordingOther": "HAR 録画",
+        "rdpRecordingOne": "RDP 録画",
+        "rdpRecordingOther": "RDP 録画",
+        "sshRecordingOne": "SSH 録画",
+        "sshRecordingOther": "SSH 録画",
+        "stored": "保存済み",
+        "videoRecordingOne": "ビデオ録画",
+        "videoRecordingOther": "ビデオ録画"
+      },
+      "title": "録画",
+      "web": {
+        "autoRecordDescription": "Web 接続時に HTTP トラフィックの録画を自動的に開始します",
+        "autoRecordLabel": "Web セッションを自動録画",
+        "autoRecordTooltip": "Web セッションが読み込まれた時点で、手動で録画ボタンを押さなくても HAR キャプチャを開始します。",
+        "enableDescription": "Web セッションの録画（HAR とビデオ）を許可します",
+        "enableLabel": "Web 録画を有効化",
+        "enableTooltip": "Web セッション録画のマスタースイッチです。オフの場合、ブラウザーセッションは録画できません。",
+        "exportFormatTooltip": "エクスポートダイアログで事前選択される形式です。HAR は標準の HTTP Archive 形式で、JSON は sortOfRemoteNG のネイティブ形式です。",
+        "maxDurationLabel": "Web 録画の最大時間",
+        "maxStoredLabel": "保存する Web 録画の最大数",
+        "recordHeadersDescription": "リクエストヘッダーとレスポンスヘッダーを録画に含めます",
+        "recordHeadersLabel": "HTTP ヘッダーを録画",
+        "recordHeadersTooltip": "ヘッダーには Cookie や Bearer トークンが含まれる場合があります。録画をチーム外と共有する場合は無効にしてください。"
+      }
     }
   },
   "tabs": {

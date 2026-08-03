@@ -14,6 +14,8 @@ const resources = {
 };
 
 const languageLoaders: Record<string, () => Promise<any>> = {
+  "en-x-leet": () => import("./locales/en-x-leet.json"),
+  "en-x-pirate": () => import("./locales/en-x-pirate.json"),
   "es-ES": () => import("./locales/es-ES.json"),
   "fr-FR": () => import("./locales/fr-FR.json"),
   "de-DE": () => import("./locales/de-DE.json"),
@@ -24,6 +26,16 @@ const languageLoaders: Record<string, () => Promise<any>> = {
   "it-IT": () => import("./locales/it-IT.json"),
   "ru-RU": () => import("./locales/ru-RU.json"),
 };
+
+const syncDocumentLanguage = (language: string) => {
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = language;
+  }
+};
+
+if (typeof i18n.on === "function") {
+  i18n.on("languageChanged", syncDocumentLanguage);
+}
 
 /**
  * Load a locale bundle. Locale files are keyed by their full BCP-47 tag
@@ -46,7 +58,7 @@ const loadLanguage = async (lng: string) => {
   }
 };
 
-i18n
+const initialization = i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
@@ -61,6 +73,10 @@ i18n
       caches: [],
     },
   });
+
+void initialization.then(() =>
+  syncDocumentLanguage(i18n.resolvedLanguage ?? i18n.language ?? "en-US"),
+);
 
 export {
   loadLanguage,

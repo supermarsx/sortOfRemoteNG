@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../../src/types/settings/settings";
 import GeneralSettings from "../../src/components/SettingsDialog/sections/GeneralSettings";
@@ -104,6 +104,20 @@ describe("Core settings section centralization", () => {
       '[data-setting-key="language"] [role="combobox"]',
     ) as HTMLElement;
     expect(languageSelect.className).toContain("sor-settings-select");
+    fireEvent.click(languageSelect);
+    const languageOptions = within(screen.getByRole("listbox"));
+    expect(
+      languageOptions.getByRole("option", { name: "English (Leetspeak)" }),
+    ).toBeInTheDocument();
+    fireEvent.mouseDown(
+      languageOptions.getByRole("option", { name: "English (Pirate)" }),
+    );
+    expect(updateSettings).toHaveBeenCalledWith({ language: "en-x-pirate" });
+    expect(
+      screen.getByLabelText(
+        "Choose the display language for the application interface. Changes apply immediately.",
+      ),
+    ).toBeInTheDocument();
 
     const autoDetectToggle = container.querySelector(
       '[data-setting-key="autoDetectOsLanguage"] input[type="checkbox"]',
@@ -118,10 +132,7 @@ describe("Core settings section centralization", () => {
 
   it("uses the accent color for GeneralSettings section icons", () => {
     const { container } = render(
-      <GeneralSettings
-        settings={baseSettings}
-        updateSettings={vi.fn()}
-      />,
+      <GeneralSettings settings={baseSettings} updateSettings={vi.fn()} />,
     );
 
     const sectionIcons = Array.from(
@@ -186,7 +197,9 @@ describe("Core settings section centralization", () => {
       );
     }
 
-    const firstSelect = container.querySelector('[role="combobox"]') as HTMLElement;
+    const firstSelect = container.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
     expect(firstSelect.className).toContain("sor-settings-select");
 
     const thumbnailCheckbox = container.querySelector(
@@ -221,42 +234,78 @@ describe("Core settings section centralization", () => {
       customCss: "",
     } as unknown as GlobalSettings;
 
-    render(
-      <ThemeSettings settings={settings} updateSettings={vi.fn()} />,
-    );
+    render(<ThemeSettings settings={settings} updateSettings={vi.fn()} />);
 
     const expectedCalls = [
       ["themeSettings.colorScheme", "Color Scheme"],
       ["themeSettings.customAccent", "Custom Accent"],
-      ["themeSettings.customAccentDescription", "Replace the preset scheme with any color you pick"],
+      [
+        "themeSettings.customAccentDescription",
+        "Replace the preset scheme with any color you pick",
+      ],
       ["themeSettings.accentColor", "Accent Color"],
       ["themeSettings.enableBackgroundGlow", "Enable background glow effect"],
-      ["themeSettings.enableBackgroundGlowDescription", "Add a soft radial glow behind the main content area"],
+      [
+        "themeSettings.enableBackgroundGlowDescription",
+        "Add a soft radial glow behind the main content area",
+      ],
       ["themeSettings.glowFollowsColorScheme", "Glow follows color scheme"],
-      ["themeSettings.glowFollowsColorSchemeDescription", "Auto-tint the glow to match the selected color scheme"],
+      [
+        "themeSettings.glowFollowsColorSchemeDescription",
+        "Auto-tint the glow to match the selected color scheme",
+      ],
       ["themeSettings.glowOpacity", "Glow Opacity"],
       ["themeSettings.glowRadius", "Glow Radius"],
       ["themeSettings.glowBlur", "Glow Blur"],
-      ["themeSettings.glowDescription", "The glow effect appears centered in the main content area for an exquisite visual experience."],
+      [
+        "themeSettings.glowDescription",
+        "The glow effect appears centered in the main content area for an exquisite visual experience.",
+      ],
       ["themeSettings.experimental", "Experimental"],
-      ["themeSettings.transparencyWarning", "Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default."],
+      [
+        "themeSettings.transparencyWarning",
+        "Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.",
+      ],
       ["themeSettings.enableTransparency", "Enable window transparency"],
-      ["themeSettings.enableTransparencyDescription", "Make the application window semi-transparent so the desktop shows through"],
+      [
+        "themeSettings.enableTransparencyDescription",
+        "Make the application window semi-transparent so the desktop shows through",
+      ],
       ["themeSettings.opacityLevel", "Opacity Level"],
-      ["themeSettings.showTransparencyToggle", "Show transparency toggle in title bar"],
-      ["themeSettings.showTransparencyToggleDescription", "Add a quick-toggle button to the window title bar"],
-      ["themeSettings.animationsDescription", "Master switch for every UI animation and transition"],
-      ["themeSettings.reduceMotionDescription", "Use subtle animations only — better for motion sensitivity"],
-      ["themeSettings.tabGroupAnimationsDescription", "Fade and slide groups as they are added, removed, or filtered"],
+      [
+        "themeSettings.showTransparencyToggle",
+        "Show transparency toggle in title bar",
+      ],
+      [
+        "themeSettings.showTransparencyToggleDescription",
+        "Add a quick-toggle button to the window title bar",
+      ],
+      [
+        "themeSettings.animationsDescription",
+        "Master switch for every UI animation and transition",
+      ],
+      [
+        "themeSettings.reduceMotionDescription",
+        "Use subtle animations only — better for motion sensitivity",
+      ],
+      [
+        "themeSettings.tabGroupAnimationsDescription",
+        "Fade and slide groups as they are added, removed, or filtered",
+      ],
       ["themeSettings.customCssPlaceholder", "/* Enter custom CSS rules... */"],
-      ["themeSettings.customCssDescription", "Add custom styles to personalize the application appearance."],
+      [
+        "themeSettings.customCssDescription",
+        "Add custom styles to personalize the application appearance.",
+      ],
       ["settings.theme", "Theme"],
-      ["themeSettings.description", "Color scheme, background glow, window transparency, animations, and custom CSS."],
+      [
+        "themeSettings.description",
+        "Color scheme, background glow, window transparency, animations, and custom CSS.",
+      ],
     ] as const;
     expect(expectedCalls).toHaveLength(26);
     for (const [key, fallback] of expectedCalls) {
       expect(themeT).toHaveBeenCalledWith(key, fallback);
     }
   });
-
 });

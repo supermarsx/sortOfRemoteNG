@@ -714,6 +714,84 @@
     "updater": {
       "title": "업데이터",
       "description": "서명된 애플리케이션 업데이트, 확인 주기 및 비공개 피드 엔드포인트입니다."
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "파일 크기를 제한할 수 있도록 개별 녹화 시간을 제한합니다. 0으로 설정하면 세션이 끝날 때까지 녹화합니다.",
+        "maxStoredTooltip": "녹화 라이브러리의 크기를 제한합니다. 상한에 도달하면 가장 오래된 녹화부터 순환 삭제됩니다."
+      },
+      "defaultExportFormatLabel": "기본 내보내기 형식",
+      "description": "SSH 터미널, RDP 화면 및 웹 세션 녹화, 내보내기 형식과 저장 한도를 구성합니다.",
+      "formats": {
+        "gifAnimated": "GIF(애니메이션)",
+        "scriptText": "Script(텍스트)"
+      },
+      "rdp": {
+        "autoRecordDescription": "RDP 연결 시 비디오 녹화를 자동으로 시작",
+        "autoRecordLabel": "RDP 세션 자동 녹화",
+        "autoRecordTooltip": "RDP 세션이 연결되는 즉시 녹화 버튼을 수동으로 누르지 않아도 화면 녹화를 시작합니다.",
+        "autoSaveDescription": "파일 대화 상자를 표시하는 대신 RDP 녹화를 녹화 관리자에 저장",
+        "autoSaveLabel": "라이브러리에 자동 저장",
+        "autoSaveTooltip": "다른 이름으로 저장 대화 상자를 건너뛰고 완료된 녹화를 녹화 관리자에 자동으로 저장합니다.",
+        "bitrateDescription": "값이 높을수록 품질이 좋아지지만 파일이 커집니다",
+        "bitrateLabel": "비디오 비트 전송률",
+        "bitrateTooltip": "인코더 목표 비트 전송률(초당 메가비트)입니다. 움직임이 빠른 콘텐츠에는 값을 높이고, 대부분 정적인 데스크톱에는 낮추십시오.",
+        "enableDescription": "RDP 세션 화면 녹화 허용",
+        "enableLabel": "RDP 녹화 활성화",
+        "enableTooltip": "RDP 화면 녹화의 마스터 스위치입니다. 끄면 세션을 녹화할 수 없습니다.",
+        "fpsDescription": "값이 높을수록 더 부드럽지만 파일이 커집니다",
+        "fpsLabel": "녹화 FPS",
+        "fpsTooltip": "초당 캡처하는 프레임 수입니다. 데스크톱 세션에는 15-30이 품질과 크기의 균형이 좋으며, 60은 비디오 재생 외에는 과도합니다.",
+        "maxDurationLabel": "최대 RDP 녹화 시간",
+        "maxStoredLabel": "저장할 RDP 녹화 최대 개수",
+        "videoFormatLabel": "비디오 형식",
+        "videoFormatTooltip": "녹화 인코딩에 사용하는 컨테이너/코덱입니다. WebM은 폭넓게 지원되고 용량이 작으며, MP4는 호환성이 가장 높고, GIF는 범용적이지만 용량이 매우 큽니다."
+      },
+      "sections": {
+        "rdpTitle": "RDP 화면 녹화",
+        "sshTitle": "SSH 터미널 녹화",
+        "webTitle": "웹 세션 녹화"
+      },
+      "ssh": {
+        "autoRecordDescription": "SSH 연결 시 자동으로 녹화 시작",
+        "autoRecordLabel": "SSH 세션 자동 녹화",
+        "autoRecordTooltip": "SSH 세션이 연결되는 즉시 녹화 버튼을 수동으로 누르지 않아도 녹화를 시작합니다.",
+        "enableDescription": "SSH 터미널 세션 녹화 허용",
+        "enableLabel": "SSH 녹화 활성화",
+        "enableTooltip": "SSH 세션 녹화의 마스터 스위치입니다. 끄면 세션을 녹화할 수 없습니다.",
+        "exportFormatTooltip": "내보내기 대화 상자에서 미리 선택되는 형식입니다. Asciicast는 asciinema에서 재생되고, Script는 일반 텍스트이며, GIF는 애니메이션입니다.",
+        "maxDurationLabel": "최대 녹화 시간",
+        "maxStoredLabel": "저장할 녹화 최대 개수",
+        "recordInputDescription": "입력한 내용을 녹화에 포함(민감한 데이터가 포함될 수 있음)",
+        "recordInputLabel": "입력(키 입력) 녹화",
+        "recordInputTooltip": "입력 내용을 캡처합니다. 재생 충실도는 높아지지만 프롬프트에 붙여 넣은 비밀번호도 녹화된다는 점에 유의하십시오."
+      },
+      "storage": {
+        "harRecordingOne": "HAR 녹화",
+        "harRecordingOther": "HAR 녹화",
+        "rdpRecordingOne": "RDP 녹화",
+        "rdpRecordingOther": "RDP 녹화",
+        "sshRecordingOne": "SSH 녹화",
+        "sshRecordingOther": "SSH 녹화",
+        "stored": "저장됨",
+        "videoRecordingOne": "비디오 녹화",
+        "videoRecordingOther": "비디오 녹화"
+      },
+      "title": "녹화",
+      "web": {
+        "autoRecordDescription": "웹 연결 시 HTTP 트래픽 녹화를 자동으로 시작",
+        "autoRecordLabel": "웹 세션 자동 녹화",
+        "autoRecordTooltip": "웹 세션이 로드되는 즉시 녹화 버튼을 수동으로 누르지 않아도 HAR 캡처를 시작합니다.",
+        "enableDescription": "웹 세션 녹화(HAR 및 비디오) 허용",
+        "enableLabel": "웹 녹화 활성화",
+        "enableTooltip": "웹 세션 녹화의 마스터 스위치입니다. 끄면 브라우저 세션을 녹화할 수 없습니다.",
+        "exportFormatTooltip": "내보내기 대화 상자에서 미리 선택되는 형식입니다. HAR은 표준 HTTP Archive 형식이고, JSON은 sortOfRemoteNG의 기본 형식입니다.",
+        "maxDurationLabel": "최대 웹 녹화 시간",
+        "maxStoredLabel": "저장할 웹 녹화 최대 개수",
+        "recordHeadersDescription": "요청 및 응답 헤더를 녹화에 포함",
+        "recordHeadersLabel": "HTTP 헤더 녹화",
+        "recordHeadersTooltip": "헤더는 쿠키와 Bearer 토큰을 노출할 수 있습니다. 녹화를 팀 외부와 공유할 경우 이 옵션을 비활성화하십시오."
+      }
     }
   },
   "tabs": {

@@ -44,6 +44,20 @@ describe("Translation Loader", () => {
     expect(i18n.hasResourceBundle("pt-PT", "translation")).toBe(true);
   });
 
+  it.each([
+    ["en-x-leet", "54v3"],
+    ["en-x-pirate", "Stow"],
+  ])(
+    "loads and activates the styled English locale %s",
+    async (locale, save) => {
+      await loadLanguage(locale);
+      expect(i18n.hasResourceBundle(locale, "translation")).toBe(true);
+      await i18n.changeLanguage(locale);
+      expect(i18n.t("common.save")).toBe(save);
+      expect(document.documentElement.lang).toBe(locale);
+    },
+  );
+
   // Locale files are keyed by full BCP-47 tag ("fr-FR"), but a legacy stored
   // setting still holds a bare "fr". If the loader stopped resolving those,
   // the app would render untranslated instead of failing loudly.

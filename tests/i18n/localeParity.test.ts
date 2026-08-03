@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import enUS from "../../src/i18n/locales/en-US.json";
+import enLeet from "../../src/i18n/locales/en-x-leet.json";
+import enPirate from "../../src/i18n/locales/en-x-pirate.json";
 import deDE from "../../src/i18n/locales/de-DE.json";
 import esES from "../../src/i18n/locales/es-ES.json";
 import frFR from "../../src/i18n/locales/fr-FR.json";
@@ -13,7 +15,7 @@ import acceptedIdentical from "./acceptedIdentical.json";
 import glossary from "../../src/i18n/glossary.json";
 
 // The canonical locale set. en-US is the source of truth every other locale mirrors.
-const nonEnLocales = {
+const humanTranslatedLocales = {
   "de-DE": deDE,
   "es-ES": esES,
   "fr-FR": frFR,
@@ -23,6 +25,16 @@ const nonEnLocales = {
   "pt-PT": ptPT,
   "ru-RU": ruRU,
   "zh-CN": zhCN,
+} as const;
+
+const derivedEnglishLocales = {
+  "en-x-leet": enLeet,
+  "en-x-pirate": enPirate,
+} as const;
+
+const nonEnLocales = {
+  ...humanTranslatedLocales,
+  ...derivedEnglishLocales,
 } as const;
 
 const allLocales = { "en-US": enUS, ...nonEnLocales } as const;
@@ -117,7 +129,7 @@ describe("repo-wide locale parity + translation ratchet", () => {
   // — one not in the baseline — fails here. Regenerating the baseline is a
   // deliberate, reviewable act, never an automatic side effect.
   it("adds no untranslated value beyond the frozen acceptedIdentical baseline", () => {
-    for (const [name, locale] of Object.entries(nonEnLocales)) {
+    for (const [name, locale] of Object.entries(humanTranslatedLocales)) {
       const baseline = new Set(accepted[name] ?? []);
       const offenders: string[] = [];
       for (const [key, value] of collectLeafEntries(locale)) {

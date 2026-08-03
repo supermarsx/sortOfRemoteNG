@@ -15,6 +15,8 @@ export const getBaseLanguage = (lng: string): string => lng.split("-")[0];
  */
 export const SUPPORTED_LANGUAGES: { value: string; label: string }[] = [
   { value: "en-US", label: "English (US)" },
+  { value: "en-x-leet", label: "English (Leetspeak)" },
+  { value: "en-x-pirate", label: "English (Pirate)" },
   { value: "es-ES", label: "Español (España)" },
   { value: "fr-FR", label: "Français (France)" },
   { value: "de-DE", label: "Deutsch (Deutschland)" },
@@ -26,6 +28,19 @@ export const SUPPORTED_LANGUAGES: { value: string; label: string }[] = [
   { value: "ko-KR", label: "한국어 (대한민국)" },
 ];
 
+const DEFAULT_LOCALE_BY_BASE_LANGUAGE: Record<string, string> = {
+  en: "en-US",
+  es: "es-ES",
+  fr: "fr-FR",
+  de: "de-DE",
+  it: "it-IT",
+  pt: "pt-PT",
+  ru: "ru-RU",
+  zh: "zh-CN",
+  ja: "ja-JP",
+  ko: "ko-KR",
+};
+
 /**
  * Map an arbitrary `navigator.language` value (e.g. "fr-CA") to the closest
  * supported language, falling back to English. Used for OS-language
@@ -35,8 +50,5 @@ export const resolveSupportedLanguage = (lng: string | undefined): string => {
   if (!lng) return "en-US";
   if (SUPPORTED_LANGUAGES.some((l) => l.value === lng)) return lng;
   const base = getBaseLanguage(lng);
-  const match = SUPPORTED_LANGUAGES.find(
-    (l) => l.value === base || getBaseLanguage(l.value) === base,
-  );
-  return match?.value ?? "en-US";
+  return DEFAULT_LOCALE_BY_BASE_LANGUAGE[base] ?? "en-US";
 };

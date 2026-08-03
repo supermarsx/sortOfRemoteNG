@@ -8,6 +8,8 @@
     "version:check": "node ./scripts/sync-version.mjs --check",
     "version:sync": "node ./scripts/sync-version.mjs --write",
     "version:test": "node --test ./tests/versioning/versioning.test.mjs",
+    "i18n:styled:generate": "node ./scripts/styled-english-locales.mjs",
+    "i18n:styled:check": "node ./scripts/styled-english-locales.mjs --check",
     "release:test": "node --test ./tests/release/*.test.mjs",
     "dev": "node ./scripts/dev-server.mjs",
     "dev:check": "node ./scripts/dev-server.mjs --check",

@@ -444,6 +444,14 @@ mod tests {
         de.insert("greeting".into(), "Hallo {{name}}!".into());
         engine.add_translations("de", de);
 
+        let mut leet = HashMap::new();
+        leet.insert("greeting".into(), "H3110 {{name}}!".into());
+        engine.add_translations("en-x-leet", leet);
+
+        let mut pirate = HashMap::new();
+        pirate.insert("greeting".into(), "Ahoy {{name}}!".into());
+        engine.add_translations("en-x-pirate", pirate);
+
         engine
     }
 
@@ -473,6 +481,15 @@ mod tests {
     }
 
     #[test]
+    fn private_use_english_locales_resolve_exact_bundles() {
+        let engine = test_engine();
+        let mut vars = HashMap::new();
+        vars.insert("name".into(), "matey".into());
+        assert_eq!(engine.t("en-x-leet", "greeting", &vars), "H3110 matey!");
+        assert_eq!(engine.t("en-x-pirate", "greeting", &vars), "Ahoy matey!");
+    }
+
+    #[test]
     fn missing_key_returns_key() {
         let engine = test_engine();
         let vars = HashMap::new();
@@ -492,7 +509,7 @@ mod tests {
         let engine = test_engine();
         let mut locales = engine.available_locales();
         locales.sort();
-        assert_eq!(locales, vec!["de", "en"]);
+        assert_eq!(locales, vec!["de", "en", "en-x-leet", "en-x-pirate"]);
     }
 
     #[test]

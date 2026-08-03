@@ -714,6 +714,84 @@
     "updater": {
       "title": "Aggiornamenti",
       "description": "Aggiornamenti firmati dell'applicazione, frequenza di controllo ed endpoint del feed privato."
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "Limita la durata delle singole registrazioni per contenere le dimensioni dei file. Imposta 0 per registrare fino al termine della sessione.",
+        "maxStoredTooltip": "Mantiene limitate le dimensioni della raccolta di registrazioni. Raggiunto il limite, le registrazioni meno recenti vengono rimosse a rotazione."
+      },
+      "defaultExportFormatLabel": "Formato di esportazione predefinito",
+      "description": "Configura la registrazione del terminale SSH, dello schermo RDP e delle sessioni web, i formati di esportazione e i limiti di archiviazione.",
+      "formats": {
+        "gifAnimated": "GIF (animata)",
+        "scriptText": "Script (testo)"
+      },
+      "rdp": {
+        "autoRecordDescription": "Avvia automaticamente la registrazione video alla connessione RDP",
+        "autoRecordLabel": "Registra automaticamente le sessioni RDP",
+        "autoRecordTooltip": "Avvia la registrazione dello schermo non appena si connette una sessione RDP, senza dover premere manualmente Registra.",
+        "autoSaveDescription": "Salva le registrazioni RDP nel Gestore registrazioni invece di mostrare una finestra di selezione del file",
+        "autoSaveLabel": "Salva automaticamente nella raccolta",
+        "autoSaveTooltip": "Ignora la finestra Salva con nome e archivia automaticamente le registrazioni completate nel Gestore registrazioni.",
+        "bitrateDescription": "Valori più alti offrono una qualità migliore, ma generano file più grandi",
+        "bitrateLabel": "Bitrate video",
+        "bitrateTooltip": "Bitrate di destinazione del codificatore in megabit al secondo. Aumentalo per i contenuti con movimenti rapidi; riducilo per i desktop prevalentemente statici.",
+        "enableDescription": "Consenti la registrazione dello schermo delle sessioni RDP",
+        "enableLabel": "Attiva registrazione RDP",
+        "enableTooltip": "Interruttore principale per la registrazione dello schermo RDP. Se è disattivato, le sessioni non possono mai essere registrate.",
+        "fpsDescription": "Valori più alti producono video più fluidi, ma file più grandi",
+        "fpsLabel": "FPS registrazione",
+        "fpsTooltip": "Fotogrammi acquisiti al secondo. 15-30 offre un buon equilibrio per le sessioni desktop; 60 è eccessivo, salvo per la riproduzione video.",
+        "maxDurationLabel": "Durata massima registrazione RDP",
+        "maxStoredLabel": "Numero massimo di registrazioni RDP archiviate",
+        "videoFormatLabel": "Formato video",
+        "videoFormatTooltip": "Contenitore/codec usato per codificare la registrazione. WebM è ampiamente supportato e compatto; MP4 è il più portabile; GIF è universale ma molto pesante."
+      },
+      "sections": {
+        "rdpTitle": "Registrazione schermo RDP",
+        "sshTitle": "Registrazione terminale SSH",
+        "webTitle": "Registrazione sessione web"
+      },
+      "ssh": {
+        "autoRecordDescription": "Avvia automaticamente la registrazione alla connessione SSH",
+        "autoRecordLabel": "Registra automaticamente le sessioni SSH",
+        "autoRecordTooltip": "Avvia una registrazione non appena si connette una sessione SSH, senza dover premere manualmente Registra.",
+        "enableDescription": "Consenti la registrazione delle sessioni del terminale SSH",
+        "enableLabel": "Attiva registrazione SSH",
+        "enableTooltip": "Interruttore principale per la registrazione delle sessioni SSH. Se è disattivato, le sessioni non possono mai essere registrate.",
+        "exportFormatTooltip": "Formato preselezionato nella finestra Esporta. Asciicast viene riprodotto in asciinema; Script è testo normale; GIF è animata.",
+        "maxDurationLabel": "Durata massima registrazione",
+        "maxStoredLabel": "Numero massimo di registrazioni archiviate",
+        "recordInputDescription": "Includi nelle registrazioni ciò che viene digitato (può contenere dati sensibili)",
+        "recordInputLabel": "Registra input (pressioni dei tasti)",
+        "recordInputTooltip": "Acquisisce ciò che digiti. È utile per una riproduzione fedele, ma anche le password incollate nei prompt vengono registrate."
+      },
+      "storage": {
+        "harRecordingOne": "Registrazione HAR",
+        "harRecordingOther": "Registrazioni HAR",
+        "rdpRecordingOne": "Registrazione RDP",
+        "rdpRecordingOther": "Registrazioni RDP",
+        "sshRecordingOne": "Registrazione SSH",
+        "sshRecordingOther": "Registrazioni SSH",
+        "stored": "archiviate",
+        "videoRecordingOne": "Registrazione video",
+        "videoRecordingOther": "Registrazioni video"
+      },
+      "title": "Registrazione",
+      "web": {
+        "autoRecordDescription": "Avvia automaticamente la registrazione del traffico HTTP alla connessione web",
+        "autoRecordLabel": "Registra automaticamente le sessioni web",
+        "autoRecordTooltip": "Avvia l'acquisizione HAR non appena si carica una sessione web, senza dover premere manualmente Registra.",
+        "enableDescription": "Consenti la registrazione delle sessioni web (HAR e video)",
+        "enableLabel": "Attiva registrazione web",
+        "enableTooltip": "Interruttore principale per la registrazione delle sessioni web. Se è disattivato, le sessioni del browser non possono mai essere registrate.",
+        "exportFormatTooltip": "Formato preselezionato nella finestra Esporta. HAR è il formato standard HTTP Archive; JSON è il formato nativo di sortOfRemoteNG.",
+        "maxDurationLabel": "Durata massima registrazione web",
+        "maxStoredLabel": "Numero massimo di registrazioni web archiviate",
+        "recordHeadersDescription": "Includi nelle registrazioni le intestazioni delle richieste e delle risposte",
+        "recordHeadersLabel": "Registra intestazioni HTTP",
+        "recordHeadersTooltip": "Le intestazioni possono esporre cookie e bearer token. Disattiva questa opzione se le registrazioni verranno condivise fuori dal team."
+      }
     }
   },
   "tabs": {

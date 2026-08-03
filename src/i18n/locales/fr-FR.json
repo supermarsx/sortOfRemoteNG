@@ -714,6 +714,84 @@
     "updater": {
       "title": "Programme de mise à jour",
       "description": "Mises à jour d'application signées, cadence de vérification et point de terminaison du flux privé."
+    },
+    "recording": {
+      "common": {
+        "maxDurationTooltip": "Limite chaque enregistrement afin de maîtriser la taille des fichiers. Définir sur 0 pour enregistrer jusqu’à la fin de la session.",
+        "maxStoredTooltip": "Limite la taille de la bibliothèque d’enregistrements. Une fois la limite atteinte, les enregistrements les plus anciens sont supprimés."
+      },
+      "defaultExportFormatLabel": "Format d’exportation par défaut",
+      "description": "Configurer l’enregistrement des terminaux SSH, des écrans RDP et des sessions web, les formats d’exportation et les limites de stockage.",
+      "formats": {
+        "gifAnimated": "GIF (animé)",
+        "scriptText": "Script (texte)"
+      },
+      "rdp": {
+        "autoRecordDescription": "Démarrer automatiquement l’enregistrement vidéo lors de la connexion RDP",
+        "autoRecordLabel": "Enregistrer automatiquement les sessions RDP",
+        "autoRecordTooltip": "Démarre un enregistrement d’écran dès qu’une session RDP se connecte, sans devoir cliquer manuellement sur Enregistrer.",
+        "autoSaveDescription": "Enregistrer les enregistrements RDP dans le gestionnaire d’enregistrements au lieu d’afficher une boîte de dialogue de fichier",
+        "autoSaveLabel": "Enregistrer automatiquement dans la bibliothèque",
+        "autoSaveTooltip": "Ignore la boîte de dialogue Enregistrer sous et stocke automatiquement les enregistrements terminés dans le gestionnaire d’enregistrements.",
+        "bitrateDescription": "Plus élevé = meilleure qualité, mais fichiers plus volumineux",
+        "bitrateLabel": "Débit vidéo",
+        "bitrateTooltip": "Débit cible de l’encodeur en mégabits par seconde. L’augmenter pour les contenus très animés et le réduire pour les bureaux essentiellement statiques.",
+        "enableDescription": "Autoriser l’enregistrement d’écran des sessions RDP",
+        "enableLabel": "Activer l’enregistrement RDP",
+        "enableTooltip": "Interrupteur principal de l’enregistrement d’écran RDP. Lorsqu’il est désactivé, aucune session ne peut être enregistrée.",
+        "fpsDescription": "Plus élevé = plus fluide, mais fichiers plus volumineux",
+        "fpsLabel": "FPS d’enregistrement",
+        "fpsTooltip": "Images capturées par seconde. Une valeur de 15 à 30 offre un bon équilibre pour les sessions de bureau ; 60 est excessif sauf pour la lecture vidéo.",
+        "maxDurationLabel": "Durée maximale de l’enregistrement RDP",
+        "maxStoredLabel": "Nombre maximal d’enregistrements RDP stockés",
+        "videoFormatLabel": "Format vidéo",
+        "videoFormatTooltip": "Conteneur/codec utilisé pour encoder l’enregistrement. WebM est largement pris en charge et compact ; MP4 est le plus portable ; GIF est universel, mais très volumineux."
+      },
+      "sections": {
+        "rdpTitle": "Enregistrement d’écran RDP",
+        "sshTitle": "Enregistrement de terminal SSH",
+        "webTitle": "Enregistrement de sessions web"
+      },
+      "ssh": {
+        "autoRecordDescription": "Démarrer automatiquement l’enregistrement lors de la connexion SSH",
+        "autoRecordLabel": "Enregistrer automatiquement les sessions SSH",
+        "autoRecordTooltip": "Démarre un enregistrement dès qu’une session SSH se connecte, sans devoir cliquer manuellement sur Enregistrer.",
+        "enableDescription": "Autoriser l’enregistrement des sessions de terminal SSH",
+        "enableLabel": "Activer l’enregistrement SSH",
+        "enableTooltip": "Interrupteur principal de l’enregistrement des sessions SSH. Lorsqu’il est désactivé, aucune session ne peut être enregistrée.",
+        "exportFormatTooltip": "Format présélectionné dans la boîte de dialogue Exporter. Asciicast se lit dans asciinema ; Script est du texte brut ; GIF est animé.",
+        "maxDurationLabel": "Durée maximale de l’enregistrement",
+        "maxStoredLabel": "Nombre maximal d’enregistrements stockés",
+        "recordInputDescription": "Inclure les saisies dans les enregistrements (peuvent contenir des données sensibles)",
+        "recordInputLabel": "Enregistrer les saisies (frappes clavier)",
+        "recordInputTooltip": "Capture ce que vous saisissez. Cela améliore la fidélité de lecture, mais les mots de passe collés dans les invites sont également enregistrés."
+      },
+      "storage": {
+        "harRecordingOne": "enregistrement HAR",
+        "harRecordingOther": "enregistrements HAR",
+        "rdpRecordingOne": "enregistrement RDP",
+        "rdpRecordingOther": "enregistrements RDP",
+        "sshRecordingOne": "enregistrement SSH",
+        "sshRecordingOther": "enregistrements SSH",
+        "stored": "dans la bibliothèque",
+        "videoRecordingOne": "enregistrement vidéo",
+        "videoRecordingOther": "enregistrements vidéo"
+      },
+      "title": "Enregistrement",
+      "web": {
+        "autoRecordDescription": "Démarrer automatiquement l’enregistrement du trafic HTTP lors de la connexion d’une session web",
+        "autoRecordLabel": "Enregistrer automatiquement les sessions web",
+        "autoRecordTooltip": "Démarre la capture HAR dès qu’une session web se charge, sans devoir cliquer manuellement sur Enregistrer.",
+        "enableDescription": "Autoriser l’enregistrement des sessions web (HAR et vidéo)",
+        "enableLabel": "Activer l’enregistrement web",
+        "enableTooltip": "Interrupteur principal de l’enregistrement des sessions web. Lorsqu’il est désactivé, aucune session de navigateur ne peut être enregistrée.",
+        "exportFormatTooltip": "Format présélectionné dans la boîte de dialogue Exporter. HAR est le format HTTP Archive standard ; JSON est le format natif de sortOfRemoteNG.",
+        "maxDurationLabel": "Durée maximale de l’enregistrement web",
+        "maxStoredLabel": "Nombre maximal d’enregistrements web stockés",
+        "recordHeadersDescription": "Inclure les en-têtes de requête et de réponse dans les enregistrements",
+        "recordHeadersLabel": "Enregistrer les en-têtes HTTP",
+        "recordHeadersTooltip": "Les en-têtes peuvent divulguer des cookies et des jetons Bearer. Désactiver cette option si les enregistrements doivent être partagés hors de l’équipe."
+      }
     }
   },
   "tabs": {
