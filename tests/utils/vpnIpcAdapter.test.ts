@@ -19,6 +19,7 @@ import {
   toZeroTierIpcConfig,
 } from "../../src/utils/network/vpnIpcAdapter";
 import {
+  buildOpenVpnEditorConfig,
   getUnsupportedVpnEditorSettings,
   getVpnEditorValidationError,
   toVpnEditorFormConfig,
@@ -32,6 +33,30 @@ const openVpnConfig = {
   configFile: "C:/vpn/office.ovpn",
   username: "alice",
   password: "openvpn-secret",
+  remotes: [
+    { host: "vpn-a.example.com", port: 1194, protocol: "udp" as const },
+    { host: "vpn-b.example.com", port: 443, protocol: "tcp" as const },
+  ],
+  remoteRandom: true,
+  remoteRandomHostname: true,
+  resolveRetryInfinite: true,
+  deviceType: "tun" as const,
+  dataCiphers: ["AES-256-GCM", "AES-128-GCM"],
+  tlsVersionMin: "1.2",
+  verifyX509Name: "vpn.example.com",
+  verifyX509Type: "name-prefix" as const,
+  remoteCertTls: true,
+  connectTimeout: 30,
+  connectRetry: 5,
+  connectRetryMaxSeconds: 300,
+  connectRetryMax: 10,
+  serverPollTimeout: 20,
+  redirectGateway: true,
+  redirectGatewayFlags: ["ipv6", "!ipv4"] as const,
+  blockOutsideDns: true,
+  persistTun: true,
+  persistKey: true,
+  nobind: true,
   remoteHost: "vpn.example.com",
   remotePort: 1194,
   protocol: "udp" as const,
@@ -99,13 +124,28 @@ describe("VPN IPC provider boundary", () => {
       config_file: "C:/vpn/office.ovpn",
       username: "alice",
       password: "openvpn-secret",
-      remote_host: "vpn.example.com",
+      remotes: [
+        { host: "vpn-a.example.com", port: 1194, protocol: "udp" },
+        { host: "vpn-b.example.com", port: 443, protocol: "tcp" },
+      ],
+      remote_random: true,
+      remote_random_hostname: true,
+      resolve_retry_infinite: true,
+      data_ciphers: ["AES-256-GCM", "AES-128-GCM"],
+      verify_x509_type: "name-prefix",
+      connect_retry_max_seconds: 300,
+      connect_retry_max: 10,
+      redirect_gateway: true,
+      redirect_gateway_flags: ["ipv6", "!ipv4"],
+      persist_tun: true,
+      remote_host: "vpn-a.example.com",
       remote_port: 1194,
       routes: [{ network: "10.0.0.0", netmask: "255.0.0.0" }],
       dns_servers: [{ server: "10.0.0.53", domain: "corp.example" }],
       custom_options: ["--persist-tun"],
     });
     expect(toOpenVpnIpcConfig({ enabled: true })).toMatchObject({
+      remotes: [],
       routes: [],
       dns_servers: [],
       custom_options: [],
@@ -161,6 +201,26 @@ describe("VPN IPC provider boundary", () => {
     });
   });
 
+  it("mirrors the primary structured OpenVPN remote for downlevel readers", () => {
+    expect(
+      toOpenVpnIpcConfig({
+        enabled: true,
+        remotes: [
+          { host: "ipv6.example.test", port: 443, protocol: "tcp6" },
+          { host: "backup.example.test", port: 1194, protocol: "udp" },
+        ],
+      }),
+    ).toMatchObject({
+      remotes: [
+        { host: "ipv6.example.test", port: 443, protocol: "tcp6" },
+        { host: "backup.example.test", port: 1194, protocol: "udp" },
+      ],
+      remote_host: "ipv6.example.test",
+      remote_port: 443,
+      protocol: "tcp",
+    });
+  });
+
   it("uses provider-specific create/update command payloads and the real ovpn import command", async () => {
     invokeMock.mockImplementation(async (command: string) =>
       command.startsWith("create_") ? `${command}-id` : undefined,
@@ -193,7 +253,7 @@ describe("VPN IPC provider boundary", () => {
     expect(invokeMock).toHaveBeenCalledWith("create_openvpn_connection", {
       name: "Office",
       config: expect.objectContaining({
-        remote_host: "vpn.example.com",
+        remote_host: "vpn-a.example.com",
         routes: expect.any(Array),
         dns_servers: expect.any(Array),
       }),
@@ -281,6 +341,18 @@ describe("VPN IPC provider boundary", () => {
       status: "connected",
       config: {
         remoteHost: "vpn.example.com",
+        remotes: [
+          { host: "vpn-a.example.com", port: 1194, protocol: "udp" },
+          { host: "vpn-b.example.com", port: 443, protocol: "tcp" },
+        ],
+        remoteRandom: true,
+        resolveRetryInfinite: true,
+        dataCiphers: ["AES-256-GCM", "AES-128-GCM"],
+        verifyX509Type: "name-prefix",
+        connectRetryMaxSeconds: 300,
+        connectRetryMax: 10,
+        redirectGateway: true,
+        redirectGatewayFlags: ["ipv6", "!ipv4"],
         inlineConfig: undefined,
       },
       secretPresence: {
@@ -633,10 +705,104 @@ describe("VPN IPC provider boundary", () => {
       }),
     ).toMatchObject({
       inlineConfig: undefined,
+      remotes: [
+        { host: "vpn-a.example.com", port: 1194, protocol: "udp" },
+        { host: "vpn-b.example.com", port: 443, protocol: "tcp" },
+      ],
+      dataCiphersText: "AES-256-GCM:AES-128-GCM",
       keepAliveInterval: 10,
       keepAliveTimeout: 60,
       customOptions: "--persist-tun",
     });
+    const legacyOpenVpnForm = toVpnEditorFormConfig("openvpn", {
+      remotes: [],
+      remoteHost: "legacy.example.com",
+      remotePort: 443,
+      protocol: "tcp",
+    });
+    expect(legacyOpenVpnForm).toMatchObject({
+      remotes: [{ host: "legacy.example.com", port: 443, protocol: "tcp" }],
+    });
+    expect(legacyOpenVpnForm).not.toHaveProperty("remoteHost");
+    expect(legacyOpenVpnForm).not.toHaveProperty("remotePort");
+    expect(legacyOpenVpnForm).not.toHaveProperty("protocol");
+  });
+
+  it("builds the complete ordered OpenVPN draft without legacy endpoint duplication", () => {
+    const built = buildOpenVpnEditorConfig({
+      remotes: [
+        { host: " primary.example.com ", port: 1194, protocol: "udp" },
+        { host: "backup.example.com", port: 443, protocol: "tcp6" },
+      ],
+      remoteHost: "legacy.example.com",
+      remotePort: 9999,
+      protocol: "tcp",
+      remoteRandom: true,
+      remoteRandomHostname: true,
+      dataCiphersText: "AES-256-GCM:AES-128-GCM",
+      route: [
+        { network: "10.20.0.0", netmask: "255.255.0.0", gateway: "10.8.0.1" },
+      ],
+      dns: [{ server: "10.20.0.53", domain: "corp.example" }],
+      connectTimeout: 30,
+      connectRetryMax: 8,
+    });
+
+    expect(built).toMatchObject({
+      remotes: [
+        { host: "primary.example.com", port: 1194, protocol: "udp" },
+        { host: "backup.example.com", port: 443, protocol: "tcp6" },
+      ],
+      remoteRandom: true,
+      remoteRandomHostname: true,
+      deviceType: "tun",
+      dataCiphers: ["AES-256-GCM", "AES-128-GCM"],
+      route: [
+        { network: "10.20.0.0", netmask: "255.255.0.0", gateway: "10.8.0.1" },
+      ],
+      dns: [{ server: "10.20.0.53", domain: "corp.example" }],
+      connectTimeout: 30,
+      connectRetryMax: 8,
+      remoteCertTls: true,
+      persistTun: true,
+      persistKey: true,
+      nobind: true,
+    });
+    expect(built).not.toHaveProperty("remoteHost");
+    expect(built).not.toHaveProperty("remotePort");
+    expect(built).not.toHaveProperty("protocol");
+    expect(built).not.toHaveProperty("resolveRetryInfinite");
+  });
+
+  it("round-trips exact OpenVPN retry, X.509, and redirect semantics", () => {
+    const form = toVpnEditorFormConfig("openvpn", {
+      remotes: [{ host: "vpn.example.com", port: 443, protocol: "tcp4" }],
+      resolveRetryInfinite: false,
+      verifyX509Name: "vpn-",
+      verifyX509Type: "name-prefix",
+      connectRetry: 5,
+      connectRetryMaxSeconds: 300,
+      redirectGateway: true,
+      redirectGatewayFlags: [],
+    });
+    const built = buildOpenVpnEditorConfig(form);
+
+    expect(built).toMatchObject({
+      remotes: [{ host: "vpn.example.com", port: 443, protocol: "tcp4" }],
+      resolveRetryInfinite: false,
+      verifyX509Name: "vpn-",
+      verifyX509Type: "name-prefix",
+      connectRetry: 5,
+      connectRetryMaxSeconds: 300,
+      redirectGateway: true,
+      redirectGatewayFlags: [],
+    });
+    expect(
+      buildOpenVpnEditorConfig({
+        remotes: [{ host: "vpn.example.com", port: 1194, protocol: "udp" }],
+        connectRetryMaxSeconds: 300,
+      }),
+    ).not.toHaveProperty("connectRetryMaxSeconds");
   });
 
   it("preserves supported hidden provider settings through an unrelated editor save", async () => {
@@ -814,8 +980,12 @@ describe("VPN IPC provider boundary", () => {
   });
 
   it("requires separate TLS key files only for manual OpenVPN profiles", () => {
+    const manualRemote = {
+      remotes: [{ host: "vpn.example.com", port: 1194, protocol: "udp" }],
+    };
     expect(
       getVpnEditorValidationError("openvpn", {
+        ...manualRemote,
         tlsAuth: true,
         tlsCrypt: true,
       }),
@@ -824,22 +994,26 @@ describe("VPN IPC provider boundary", () => {
     );
     expect(
       getVpnEditorValidationError("openvpn", {
+        ...manualRemote,
         tlsAuth: true,
       }),
     ).toBe("Select a TLS Auth key file before saving this OpenVPN profile.");
     expect(
       getVpnEditorValidationError("openvpn", {
+        ...manualRemote,
         tlsCrypt: true,
       }),
     ).toBe("Select a TLS Crypt key file before saving this OpenVPN profile.");
     expect(
       getVpnEditorValidationError("openvpn", {
+        ...manualRemote,
         tlsAuth: true,
         tlsAuthFile: "C:/vpn/tls-auth.key",
       }),
     ).toBeNull();
     expect(
       getVpnEditorValidationError("openvpn", {
+        ...manualRemote,
         tlsCrypt: true,
         tlsCryptFile: "C:/vpn/tls-crypt.key",
       }),
@@ -858,6 +1032,53 @@ describe("VPN IPC provider boundary", () => {
       ).toBeNull();
     }
   });
+
+  it("rejects incomplete structured OpenVPN endpoints, routes, and DNS rows", () => {
+    expect(getVpnEditorValidationError("openvpn", {})).toBe(
+      "Add at least one remote server before saving this OpenVPN profile.",
+    );
+    expect(
+      getVpnEditorValidationError("openvpn", {
+        remotes: [{ host: "", port: 1194, protocol: "udp" }],
+      }),
+    ).toBe("Remote 1 requires a host.");
+    expect(
+      getVpnEditorValidationError("openvpn", {
+        remotes: [{ host: "vpn.example.com", port: 70000, protocol: "udp" }],
+      }),
+    ).toContain("between 1 and 65535");
+    expect(
+      getVpnEditorValidationError("openvpn", {
+        remotes: [{ host: "vpn.example.com", port: 1194, protocol: "udp" }],
+        route: [{ network: "10.0.0.0", netmask: "" }],
+      }),
+    ).toContain("network and netmask");
+    expect(
+      getVpnEditorValidationError("openvpn", {
+        remotes: [{ host: "vpn.example.com", port: 1194, protocol: "udp" }],
+        dns: [{ server: "" }],
+      }),
+    ).toContain("DNS entry");
+    expect(
+      getVpnEditorValidationError("openvpn", {
+        remotes: [{ host: "vpn.example.com", port: 1194, protocol: "udp" }],
+        connectRetryMaxSeconds: 300,
+      }),
+    ).toBe("Set a retry delay before setting its maximum retry delay.");
+  });
+
+  it("accepts inline-only OpenVPN hops in advanced chains", async () => {
+    const manager = ProxyOpenVPNManager.getInstance();
+    await expect(
+      manager.validateChainConfig([
+        {
+          type: "openvpn",
+          position: 0,
+          config: { enabled: true, inlineConfig: "client\nremote vpn.test\n" },
+        },
+      ]),
+    ).resolves.toBeUndefined();
+  });
 });
 
 function rustOpenVpn() {
@@ -873,11 +1094,25 @@ function rustOpenVpn() {
       client_key: null,
       username: "alice",
       password: "openvpn-secret",
+      remotes: [
+        { host: "vpn-a.example.com", port: 1194, protocol: "udp" },
+        { host: "vpn-b.example.com", port: 443, protocol: "tcp" },
+      ],
+      remote_random: true,
+      remote_random_hostname: false,
+      resolve_retry_infinite: true,
       remote_host: "vpn.example.com",
       remote_port: 1194,
       protocol: "udp",
       cipher: null,
+      device_type: "tun",
+      device_name: null,
+      data_ciphers: ["AES-256-GCM", "AES-128-GCM"],
       auth: null,
+      tls_version_min: "1.2",
+      verify_x509_name: "vpn.example.com",
+      verify_x509_type: "name-prefix",
+      remote_cert_tls: true,
       tls_auth: null,
       tls_auth_file: null,
       tls_crypt: null,
@@ -888,7 +1123,19 @@ function rustOpenVpn() {
       fragment: null,
       mtu_discover: null,
       keep_alive: { interval: 10, timeout: 60 },
+      connect_timeout: 30,
+      connect_retry: 5,
+      connect_retry_max_seconds: 300,
+      connect_retry_max: 10,
+      server_poll_timeout: 20,
       route_no_pull: false,
+      redirect_gateway: true,
+      redirect_gateway_flags: ["ipv6", "!ipv4"],
+      block_outside_dns: true,
+      persist_tun: true,
+      persist_key: true,
+      nobind: true,
+      float: false,
       routes: [],
       dns_servers: [],
       custom_options: [],

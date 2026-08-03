@@ -194,6 +194,13 @@ export interface LegacyVpnIpcConnection<
  */
 export function toOpenVpnIpcConfig(config: unknown): UnknownRecord {
   const source = record(config, "OpenVPN config");
+  const remotes = openVpnRemoteArray(source.remotes);
+  const primaryRemote = remotes[0];
+  const legacyProtocol = primaryRemote
+    ? primaryRemote.protocol.startsWith("tcp")
+      ? "tcp"
+      : "udp"
+    : optionalEnum(source.protocol, ["udp", "tcp"]);
   return compact({
     config_file: optionalString(source.configFile),
     inline_config: optionalSecret(source.inlineConfig, "OpenVPN inline config"),
@@ -203,11 +210,28 @@ export function toOpenVpnIpcConfig(config: unknown): UnknownRecord {
     client_key: optionalSecret(source.clientKey, "OpenVPN client key"),
     username: optionalString(source.username),
     password: optionalSecret(source.password, "OpenVPN password"),
-    remote_host: optionalString(source.remoteHost),
-    remote_port: optionalNumber(source.remotePort),
-    protocol: optionalEnum(source.protocol, ["udp", "tcp"]),
+    remotes,
+    remote_random: optionalBoolean(source.remoteRandom),
+    remote_random_hostname: optionalBoolean(source.remoteRandomHostname),
+    resolve_retry_infinite: optionalBoolean(source.resolveRetryInfinite),
+    // Mirror the primary structured endpoint for schema-v1/downlevel readers.
+    // Current runtimes continue to prefer the ordered `remotes` collection.
+    remote_host: primaryRemote?.host ?? optionalString(source.remoteHost),
+    remote_port: primaryRemote?.port ?? optionalNumber(source.remotePort),
+    protocol: legacyProtocol,
+    device_type: optionalEnum(source.deviceType, ["tun", "tap"]),
+    device_name: optionalString(source.deviceName),
     cipher: optionalString(source.cipher),
+    data_ciphers: stringArray(source.dataCiphers),
     auth: optionalString(source.auth),
+    tls_version_min: optionalString(source.tlsVersionMin),
+    verify_x509_name: optionalString(source.verifyX509Name),
+    verify_x509_type: optionalEnum(source.verifyX509Type, [
+      "subject",
+      "name",
+      "name-prefix",
+    ]),
+    remote_cert_tls: optionalBoolean(source.remoteCertTls),
     tls_auth: optionalBoolean(source.tlsAuth),
     tls_auth_file: optionalString(source.tlsAuthFile),
     tls_crypt: optionalBoolean(source.tlsCrypt),
@@ -218,7 +242,23 @@ export function toOpenVpnIpcConfig(config: unknown): UnknownRecord {
     fragment: optionalNumber(source.fragment),
     mtu_discover: optionalBoolean(source.mtuDiscover),
     keep_alive: optionalKeepAlive(source.keepAlive),
+    connect_timeout: optionalNumber(source.connectTimeout),
+    connect_retry: optionalNumber(source.connectRetry),
+    connect_retry_max_seconds: optionalNumber(source.connectRetryMaxSeconds),
+    connect_retry_max: optionalNumber(source.connectRetryMax),
+    server_poll_timeout: optionalNumber(source.serverPollTimeout),
     route_no_pull: optionalBoolean(source.routeNoPull),
+    redirect_gateway: optionalBoolean(source.redirectGateway),
+    redirect_gateway_flags:
+      source.redirectGateway === true &&
+      Array.isArray(source.redirectGatewayFlags)
+        ? openVpnRedirectGatewayFlagArray(source.redirectGatewayFlags)
+        : undefined,
+    block_outside_dns: optionalBoolean(source.blockOutsideDns),
+    persist_tun: optionalBoolean(source.persistTun),
+    persist_key: optionalBoolean(source.persistKey),
+    nobind: optionalBoolean(source.nobind),
+    float: optionalBoolean(source.float),
     routes: routeArray(source.route),
     dns_servers: dnsArray(source.dns),
     custom_options: stringArray(source.customOptions),
@@ -776,11 +816,26 @@ export function fromOpenVpnIpcConnection(value: unknown): OpenVpnIpcConnection {
       clientKey: undefined,
       username: optionalString(config.username),
       password: undefined,
+      remotes: openVpnRemoteArray(config.remotes),
+      remoteRandom: optionalBoolean(config.remote_random),
+      remoteRandomHostname: optionalBoolean(config.remote_random_hostname),
+      resolveRetryInfinite: optionalBoolean(config.resolve_retry_infinite),
       remoteHost: optionalString(config.remote_host),
       remotePort: optionalNumber(config.remote_port),
       protocol: optionalEnum(config.protocol, ["udp", "tcp"]),
+      deviceType: optionalEnum(config.device_type, ["tun", "tap"]),
+      deviceName: optionalString(config.device_name),
       cipher: optionalString(config.cipher),
+      dataCiphers: stringArray(config.data_ciphers),
       auth: optionalString(config.auth),
+      tlsVersionMin: optionalString(config.tls_version_min),
+      verifyX509Name: optionalString(config.verify_x509_name),
+      verifyX509Type: optionalEnum(config.verify_x509_type, [
+        "subject",
+        "name",
+        "name-prefix",
+      ]),
+      remoteCertTls: optionalBoolean(config.remote_cert_tls),
       tlsAuth: optionalBoolean(config.tls_auth),
       tlsAuthFile: optionalString(config.tls_auth_file),
       tlsCrypt: optionalBoolean(config.tls_crypt),
@@ -791,7 +846,21 @@ export function fromOpenVpnIpcConnection(value: unknown): OpenVpnIpcConnection {
       fragment: optionalNumber(config.fragment),
       mtuDiscover: optionalBoolean(config.mtu_discover),
       keepAlive: optionalKeepAlive(config.keep_alive),
+      connectTimeout: optionalNumber(config.connect_timeout),
+      connectRetry: optionalNumber(config.connect_retry),
+      connectRetryMaxSeconds: optionalNumber(config.connect_retry_max_seconds),
+      connectRetryMax: optionalNumber(config.connect_retry_max),
+      serverPollTimeout: optionalNumber(config.server_poll_timeout),
       routeNoPull: optionalBoolean(config.route_no_pull),
+      redirectGateway: optionalBoolean(config.redirect_gateway),
+      redirectGatewayFlags: Array.isArray(config.redirect_gateway_flags)
+        ? openVpnRedirectGatewayFlagArray(config.redirect_gateway_flags)
+        : undefined,
+      blockOutsideDns: optionalBoolean(config.block_outside_dns),
+      persistTun: optionalBoolean(config.persist_tun),
+      persistKey: optionalBoolean(config.persist_key),
+      nobind: optionalBoolean(config.nobind),
+      float: optionalBoolean(config.float),
       route: routeArray(config.routes),
       dns: dnsArray(config.dns_servers),
       customOptions: stringArray(config.custom_options),
@@ -1112,6 +1181,51 @@ function optionalKeepAlive(
   return interval !== undefined && timeout !== undefined
     ? { interval, timeout }
     : undefined;
+}
+
+function openVpnRemoteArray(
+  value: unknown,
+): NonNullable<OpenVPNConfig["remotes"]> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const host = optionalNonEmptyString(item.host);
+    const port = optionalNumber(item.port);
+    const protocol = optionalEnum(item.protocol, [
+      "udp",
+      "udp4",
+      "udp6",
+      "tcp",
+      "tcp4",
+      "tcp6",
+    ]);
+    if (!host || port === undefined || !protocol) return [];
+    return [{ host, port, protocol }];
+  });
+}
+
+function openVpnRedirectGatewayFlagArray(
+  value: unknown,
+): NonNullable<OpenVPNConfig["redirectGatewayFlags"]> {
+  if (!Array.isArray(value)) return [];
+  const allowed = [
+    "local",
+    "autolocal",
+    "def1",
+    "bypass-dhcp",
+    "bypass-dns",
+    "block-local",
+    "ipv6",
+    "!ipv4",
+  ] as const;
+  return Array.from(
+    new Set(
+      value.filter(
+        (item): item is (typeof allowed)[number] =>
+          typeof item === "string" && allowed.includes(item as never),
+      ),
+    ),
+  );
 }
 
 function routeArray(value: unknown): NonNullable<OpenVPNConfig["route"]> {

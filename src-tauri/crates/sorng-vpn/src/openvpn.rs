@@ -92,11 +92,35 @@ pub struct OpenVPNConfig {
     pub client_key: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// Ordered failover endpoints used by newly-created manual profiles.
+    #[serde(default)]
+    pub remotes: Vec<OpenVPNRemoteConfig>,
+    #[serde(default)]
+    pub remote_random: bool,
+    #[serde(default)]
+    pub remote_random_hostname: bool,
+    #[serde(default)]
+    pub resolve_retry_infinite: Option<bool>,
+    /// Deprecated single-endpoint fields retained for stored profile compatibility.
     pub remote_host: Option<String>,
     pub remote_port: Option<u16>,
     pub protocol: Option<String>, // "udp" or "tcp"
+    #[serde(default)]
+    pub device_type: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
     pub cipher: Option<String>,
+    #[serde(default)]
+    pub data_ciphers: Vec<String>,
     pub auth: Option<String>,
+    #[serde(default)]
+    pub tls_version_min: Option<String>,
+    #[serde(default)]
+    pub verify_x509_name: Option<String>,
+    #[serde(default)]
+    pub verify_x509_type: Option<OpenVPNVerifyX509Type>,
+    #[serde(default)]
+    pub remote_cert_tls: bool,
     pub tls_auth: Option<bool>,
     pub tls_auth_file: Option<String>,
     pub tls_crypt: Option<bool>,
@@ -107,10 +131,229 @@ pub struct OpenVPNConfig {
     pub fragment: Option<u16>,
     pub mtu_discover: Option<bool>,
     pub keep_alive: Option<KeepAliveConfig>,
+    #[serde(default)]
+    pub connect_timeout: Option<u16>,
+    #[serde(default)]
+    pub connect_retry: Option<u16>,
+    #[serde(default)]
+    pub connect_retry_max_seconds: Option<u16>,
+    #[serde(default)]
+    pub connect_retry_max: Option<u16>,
+    #[serde(default)]
+    pub server_poll_timeout: Option<u16>,
     pub route_no_pull: Option<bool>,
+    #[serde(default)]
+    pub redirect_gateway: bool,
+    #[serde(default)]
+    pub redirect_gateway_flags: Option<Vec<OpenVPNRedirectGatewayFlag>>,
+    #[serde(default)]
+    pub block_outside_dns: bool,
+    #[serde(default)]
+    pub persist_tun: bool,
+    #[serde(default)]
+    pub persist_key: bool,
+    #[serde(default)]
+    pub nobind: bool,
+    #[serde(default)]
+    pub float: bool,
     pub routes: Vec<RouteConfig>,
     pub dns_servers: Vec<DNSConfig>,
     pub custom_options: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpenVPNVerifyX509Type {
+    Subject,
+    Name,
+    NamePrefix,
+}
+
+impl OpenVPNVerifyX509Type {
+    fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "subject" => Some(Self::Subject),
+            "name" => Some(Self::Name),
+            "name-prefix" => Some(Self::NamePrefix),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Subject => "subject",
+            Self::Name => "name",
+            Self::NamePrefix => "name-prefix",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub enum OpenVPNRedirectGatewayFlag {
+    #[serde(rename = "local")]
+    Local,
+    #[serde(rename = "autolocal")]
+    AutoLocal,
+    #[serde(rename = "def1")]
+    Def1,
+    #[serde(rename = "bypass-dhcp")]
+    BypassDhcp,
+    #[serde(rename = "bypass-dns")]
+    BypassDns,
+    #[serde(rename = "block-local")]
+    BlockLocal,
+    #[serde(rename = "ipv6")]
+    Ipv6,
+    #[serde(rename = "!ipv4")]
+    NoIpv4,
+}
+
+impl OpenVPNRedirectGatewayFlag {
+    fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "local" => Some(Self::Local),
+            "autolocal" => Some(Self::AutoLocal),
+            "def1" => Some(Self::Def1),
+            "bypass-dhcp" => Some(Self::BypassDhcp),
+            "bypass-dns" => Some(Self::BypassDns),
+            "block-local" => Some(Self::BlockLocal),
+            "ipv6" => Some(Self::Ipv6),
+            "!ipv4" => Some(Self::NoIpv4),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::AutoLocal => "autolocal",
+            Self::Def1 => "def1",
+            Self::BypassDhcp => "bypass-dhcp",
+            Self::BypassDns => "bypass-dns",
+            Self::BlockLocal => "block-local",
+            Self::Ipv6 => "ipv6",
+            Self::NoIpv4 => "!ipv4",
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct OpenVPNRemoteConfig {
+    pub host: String,
+    #[serde(default = "default_openvpn_remote_port")]
+    pub port: u16,
+    #[serde(default = "default_openvpn_remote_protocol")]
+    pub protocol: String,
+}
+
+fn default_openvpn_remote_port() -> u16 {
+    1194
+}
+
+fn default_openvpn_remote_protocol() -> String {
+    "udp".to_string()
+}
+
+fn normalize_openvpn_protocol(protocol: &str) -> String {
+    match protocol.to_ascii_lowercase().as_str() {
+        "tcp" | "tcp-client" | "tcp-server" => "tcp".to_string(),
+        "tcp4" | "tcp4-client" | "tcp4-server" => "tcp4".to_string(),
+        "tcp6" | "tcp6-client" | "tcp6-server" => "tcp6".to_string(),
+        "udp4" => "udp4".to_string(),
+        "udp6" => "udp6".to_string(),
+        "udp" => "udp".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn openvpn_protocol_argument(protocol: &str) -> &'static str {
+    match normalize_openvpn_protocol(protocol).as_str() {
+        "tcp" => "tcp-client",
+        "tcp4" => "tcp4-client",
+        "tcp6" => "tcp6-client",
+        "udp4" => "udp4",
+        "udp6" => "udp6",
+        _ => "udp",
+    }
+}
+
+#[derive(Debug)]
+struct PendingOpenVPNRemote {
+    host: String,
+    port: Option<u16>,
+    protocol: Option<String>,
+}
+
+fn tokenize_openvpn_option(option: &str) -> Result<Vec<String>, String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut token_started = false;
+    let mut characters = option.chars().peekable();
+
+    while let Some(character) = characters.next() {
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                quote = None;
+                token_started = true;
+            } else if character == '\\' && delimiter == '"' {
+                if let Some(next) = characters.next() {
+                    if matches!(next, '\\' | '"') {
+                        current.push(next);
+                    } else {
+                        current.push(character);
+                        current.push(next);
+                    }
+                    token_started = true;
+                } else {
+                    current.push(character);
+                    token_started = true;
+                }
+            } else {
+                current.push(character);
+                token_started = true;
+            }
+            continue;
+        }
+
+        match character {
+            '\'' | '"' => {
+                quote = Some(character);
+                token_started = true;
+            }
+            '\\' => {
+                if let Some(next) = characters.next() {
+                    if next.is_whitespace() || matches!(next, '\\' | '\'' | '"') {
+                        current.push(next);
+                    } else {
+                        current.push(character);
+                        current.push(next);
+                    }
+                } else {
+                    current.push(character);
+                }
+                token_started = true;
+            }
+            value if value.is_whitespace() => {
+                if token_started {
+                    tokens.push(std::mem::take(&mut current));
+                    token_started = false;
+                }
+            }
+            value => {
+                current.push(value);
+                token_started = true;
+            }
+        }
+    }
+
+    if quote.is_some() {
+        return Err("Configured OpenVPN option contains unterminated quoting".to_string());
+    }
+    if token_started {
+        tokens.push(current);
+    }
+    Ok(tokens)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -633,11 +876,22 @@ impl OpenVPNService {
             client_key: None,
             username: None,
             password: None,
+            remotes: Vec::new(),
+            remote_random: false,
+            remote_random_hostname: false,
+            resolve_retry_infinite: None,
             remote_host: None,
             remote_port: None,
             protocol: None,
+            device_type: None,
+            device_name: None,
             cipher: None,
+            data_ciphers: Vec::new(),
             auth: None,
+            tls_version_min: None,
+            verify_x509_name: None,
+            verify_x509_type: None,
+            remote_cert_tls: false,
             tls_auth: None,
             tls_auth_file: None,
             tls_crypt: None,
@@ -648,7 +902,19 @@ impl OpenVPNService {
             fragment: None,
             mtu_discover: None,
             keep_alive: None,
+            connect_timeout: None,
+            connect_retry: None,
+            connect_retry_max_seconds: None,
+            connect_retry_max: None,
+            server_poll_timeout: None,
             route_no_pull: None,
+            redirect_gateway: false,
+            redirect_gateway_flags: None,
+            block_outside_dns: false,
+            persist_tun: false,
+            persist_key: false,
+            nobind: false,
+            float: false,
             routes: Vec::new(),
             dns_servers: Vec::new(),
             custom_options: Vec::new(),
@@ -656,6 +922,9 @@ impl OpenVPNService {
 
         let lines: Vec<&str> = ovpn_content.lines().collect();
         let mut i = 0;
+        let mut pending_remotes = Vec::new();
+        let mut global_remote_port = None;
+        let mut global_protocol = None;
 
         while i < lines.len() {
             let line = lines[i].trim();
@@ -668,26 +937,48 @@ impl OpenVPNService {
 
             // Parse remote directive
             if line.starts_with("remote ") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
+                let parts = tokenize_openvpn_option(line)?;
                 if parts.len() >= 2 {
-                    config.remote_host = Some(parts[1].to_string());
-                    if parts.len() >= 3 {
-                        config.remote_port = parts[2].parse().ok();
-                    }
+                    pending_remotes.push(PendingOpenVPNRemote {
+                        host: parts[1].to_string(),
+                        port: parts.get(2).and_then(|value| value.parse().ok()),
+                        protocol: parts.get(3).map(|value| normalize_openvpn_protocol(value)),
+                    });
+                }
+            } else if line == "remote-random" {
+                config.remote_random = true;
+            } else if line == "remote-random-hostname" {
+                config.remote_random_hostname = true;
+            } else if line.starts_with("resolv-retry ") {
+                let parts = tokenize_openvpn_option(line)?;
+                match parts.get(1).map(String::as_str) {
+                    Some("infinite") => config.resolve_retry_infinite = Some(true),
+                    Some("0") => config.resolve_retry_infinite = Some(false),
+                    _ => config.custom_options.push(line.to_string()),
                 }
             }
             // Parse port directive
             else if line.starts_with("port ") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
-                    config.remote_port = parts[1].parse().ok();
+                    global_remote_port = parts[1].parse().ok();
                 }
             }
             // Parse proto directive
             else if line.starts_with("proto ") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
-                    config.protocol = Some(parts[1].to_string());
+                    global_protocol = Some(normalize_openvpn_protocol(parts[1]));
+                }
+            } else if line.starts_with("dev-type ") {
+                config.device_type = line.split_whitespace().nth(1).map(ToString::to_string);
+            } else if line.starts_with("dev ") {
+                if let Some(device) = line.split_whitespace().nth(1) {
+                    if matches!(device, "tun" | "tap") {
+                        config.device_type = Some(device.to_string());
+                    } else {
+                        config.device_name = Some(device.to_string());
+                    }
                 }
             }
             // Parse cipher directive
@@ -696,6 +987,15 @@ impl OpenVPNService {
                 if parts.len() >= 2 {
                     config.cipher = Some(parts[1].to_string());
                 }
+            } else if line.starts_with("data-ciphers ") {
+                config.data_ciphers = line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .split(':')
+                    .filter(|cipher| !cipher.is_empty())
+                    .map(ToString::to_string)
+                    .collect();
             }
             // Parse auth directive
             else if line.starts_with("auth ") {
@@ -703,6 +1003,24 @@ impl OpenVPNService {
                 if parts.len() >= 2 {
                     config.auth = Some(parts[1].to_string());
                 }
+            } else if line.starts_with("tls-version-min ") {
+                config.tls_version_min = line.split_whitespace().nth(1).map(ToString::to_string);
+            } else if line.starts_with("verify-x509-name ") {
+                let parts = tokenize_openvpn_option(line)?;
+                if let Some(name) = parts.get(1) {
+                    let verification_type = parts
+                        .get(2)
+                        .map(|value| OpenVPNVerifyX509Type::parse(value))
+                        .unwrap_or(Some(OpenVPNVerifyX509Type::Subject));
+                    if let Some(verification_type) = verification_type {
+                        config.verify_x509_name = Some(name.clone());
+                        config.verify_x509_type = Some(verification_type);
+                    } else {
+                        config.custom_options.push(line.to_string());
+                    }
+                }
+            } else if line == "remote-cert-tls server" {
+                config.remote_cert_tls = true;
             }
             // Parse tls-auth directive
             else if line.starts_with("tls-auth ") {
@@ -755,10 +1073,47 @@ impl OpenVPNService {
                         timeout: parts[2].parse().unwrap_or(60),
                     });
                 }
+            } else if line.starts_with("connect-timeout ") {
+                config.connect_timeout =
+                    line.split_whitespace().nth(1).and_then(|v| v.parse().ok());
+            } else if line.starts_with("connect-retry-max ") {
+                config.connect_retry_max =
+                    line.split_whitespace().nth(1).and_then(|v| v.parse().ok());
+            } else if line.starts_with("connect-retry ") {
+                let parts = tokenize_openvpn_option(line)?;
+                config.connect_retry = parts.get(1).and_then(|value| value.parse().ok());
+                config.connect_retry_max_seconds =
+                    parts.get(2).and_then(|value| value.parse().ok());
+            } else if line.starts_with("server-poll-timeout ") {
+                config.server_poll_timeout =
+                    line.split_whitespace().nth(1).and_then(|v| v.parse().ok());
             }
             // Parse route-no-pull directive
-            else if line == "route-no-pull" {
+            else if matches!(line, "route-nopull" | "route-no-pull") {
                 config.route_no_pull = Some(true);
+            } else if line.starts_with("redirect-gateway") {
+                let parts = tokenize_openvpn_option(line)?;
+                let flags = parts
+                    .iter()
+                    .skip(1)
+                    .map(|flag| OpenVPNRedirectGatewayFlag::parse(flag))
+                    .collect::<Option<Vec<_>>>();
+                if let Some(flags) = flags {
+                    config.redirect_gateway = true;
+                    config.redirect_gateway_flags = Some(flags);
+                } else {
+                    config.custom_options.push(line.to_string());
+                }
+            } else if line == "block-outside-dns" {
+                config.block_outside_dns = true;
+            } else if line == "persist-tun" {
+                config.persist_tun = true;
+            } else if line == "persist-key" {
+                config.persist_key = true;
+            } else if line == "nobind" {
+                config.nobind = true;
+            } else if line == "float" {
+                config.float = true;
             }
             // Parse route directive
             else if line.starts_with("route ") {
@@ -844,6 +1199,22 @@ impl OpenVPNService {
             }
 
             i += 1;
+        }
+
+        let remote_port = global_remote_port.unwrap_or_else(default_openvpn_remote_port);
+        let protocol = global_protocol.unwrap_or_else(default_openvpn_remote_protocol);
+        config.remotes = pending_remotes
+            .into_iter()
+            .map(|remote| OpenVPNRemoteConfig {
+                host: remote.host,
+                port: remote.port.unwrap_or(remote_port),
+                protocol: remote.protocol.unwrap_or_else(|| protocol.clone()),
+            })
+            .collect();
+        if let Some(primary) = config.remotes.first() {
+            config.remote_host = Some(primary.host.clone());
+            config.remote_port = Some(primary.port);
+            config.protocol = Some(primary.protocol.clone());
         }
 
         Ok(config)
@@ -1114,22 +1485,34 @@ fn validate_tracked_openvpn_config(content: &str) -> Result<(), String> {
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
             continue;
         }
-        let Some(raw_directive) = trimmed.split_whitespace().next() else {
+        let tokens = tokenize_openvpn_option(trimmed)?;
+        let Some(raw_directive) = tokens.first() else {
             continue;
         };
-        let directive = raw_directive
-            .trim_start_matches('-')
-            .split('=')
-            .next()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if matches!(
-            directive.as_str(),
-            "config" | "daemon" | "log" | "log-append" | "syslog"
+
+        for raw_directive in std::iter::once(raw_directive).chain(
+            tokens
+                .iter()
+                .skip(1)
+                .filter(|token| token.starts_with("--")),
         ) {
-            return Err(format!(
-                "OpenVPN config directive '{directive}' is incompatible with tracked foreground startup and readiness"
-            ));
+            let directive = raw_directive
+                .trim_start_matches('-')
+                .split('=')
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if matches!(
+                directive.as_str(),
+                "config" | "daemon" | "log" | "log-append" | "syslog"
+            ) {
+                return Err(format!(
+                    "OpenVPN config directive '{directive}' is incompatible with tracked foreground startup and readiness"
+                ));
+            }
+            if directive == "block-outside-dns" && !cfg!(windows) {
+                return Err("OpenVPN block-outside-dns is supported only on Windows".to_string());
+            }
         }
     }
     Ok(())
@@ -1148,6 +1531,46 @@ fn validate_openvpn_path(path: &str, kind: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_openvpn_argument_value(value: &str, kind: &str) -> Result<(), String> {
+    if value.trim().is_empty()
+        || value.starts_with('-')
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(format!("Configured OpenVPN {kind} is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_openvpn_remote_host(host: &str) -> Result<(), String> {
+    validate_openvpn_argument_value(host, "remote host")?;
+    if host.chars().any(char::is_whitespace) {
+        return Err("Configured OpenVPN remote host is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn validate_openvpn_protocol(protocol: &str) -> Result<(), String> {
+    if matches!(
+        protocol.to_ascii_lowercase().as_str(),
+        "udp"
+            | "udp4"
+            | "udp6"
+            | "tcp"
+            | "tcp4"
+            | "tcp6"
+            | "tcp-client"
+            | "tcp4-client"
+            | "tcp6-client"
+            | "tcp-server"
+            | "tcp4-server"
+            | "tcp6-server"
+    ) {
+        Ok(())
+    } else {
+        Err("Configured OpenVPN remote protocol is invalid".to_string())
+    }
+}
+
 fn validate_openvpn_profile_config(config: &OpenVPNConfig) -> Result<(), String> {
     if let Some(config_file) = &config.config_file {
         validate_openvpn_path(config_file, "config")?;
@@ -1163,14 +1586,30 @@ fn validate_openvpn_profile_config(config: &OpenVPNConfig) -> Result<(), String>
         }
         validate_tracked_openvpn_config(inline_config)?;
     } else {
-        if config
-            .remote_host
-            .as_deref()
-            .map(str::trim)
-            .filter(|host| !host.is_empty())
-            .is_none()
-        {
-            return Err("Manual OpenVPN profiles require a remote host".to_string());
+        if config.remotes.is_empty() {
+            let host = config
+                .remote_host
+                .as_deref()
+                .map(str::trim)
+                .filter(|host| !host.is_empty())
+                .ok_or_else(|| {
+                    "Manual OpenVPN profiles require at least one remote host".to_string()
+                })?;
+            validate_openvpn_remote_host(host)?;
+            if config.remote_port == Some(0) {
+                return Err("Configured OpenVPN remote port is invalid".to_string());
+            }
+            if let Some(protocol) = &config.protocol {
+                validate_openvpn_protocol(protocol)?;
+            }
+        } else {
+            for remote in &config.remotes {
+                validate_openvpn_remote_host(&remote.host)?;
+                if remote.port == 0 {
+                    return Err("Configured OpenVPN remote port is invalid".to_string());
+                }
+                validate_openvpn_protocol(&remote.protocol)?;
+            }
         }
         for option in &config.custom_options {
             validate_tracked_openvpn_config(option)?;
@@ -1201,6 +1640,62 @@ fn validate_openvpn_profile_config(config: &OpenVPNConfig) -> Result<(), String>
             })?;
             validate_openvpn_path(path, "tls-crypt key")?;
         }
+        if let Some(device_type) = &config.device_type {
+            if !matches!(device_type.as_str(), "tun" | "tap") {
+                return Err("Configured OpenVPN device type is invalid".to_string());
+            }
+        }
+        if let Some(device_name) = &config.device_name {
+            validate_openvpn_argument_value(device_name, "device name")?;
+        }
+        for cipher in &config.data_ciphers {
+            validate_openvpn_argument_value(cipher, "data cipher")?;
+        }
+        for (value, kind) in [
+            (config.tls_version_min.as_deref(), "minimum TLS version"),
+            (
+                config.verify_x509_name.as_deref(),
+                "X.509 verification name",
+            ),
+        ] {
+            if let Some(value) = value {
+                validate_openvpn_argument_value(value, kind)?;
+            }
+        }
+        for (value, kind) in [
+            (config.connect_timeout, "connect timeout"),
+            (config.connect_retry, "connect retry"),
+            (
+                config.connect_retry_max_seconds,
+                "connect retry maximum delay",
+            ),
+            (config.connect_retry_max, "connect retry maximum"),
+            (config.server_poll_timeout, "server poll timeout"),
+        ] {
+            if value == Some(0) {
+                return Err(format!("Configured OpenVPN {kind} is invalid"));
+            }
+        }
+        if config.verify_x509_type.is_some() && config.verify_x509_name.is_none() {
+            return Err(
+                "Configured OpenVPN X.509 verification type requires a verification name"
+                    .to_string(),
+            );
+        }
+        if config.connect_retry_max_seconds.is_some() && config.connect_retry.is_none() {
+            return Err(
+                "Configured OpenVPN connect retry maximum delay requires a retry delay".to_string(),
+            );
+        }
+        if config.redirect_gateway_flags.is_some() && !config.redirect_gateway {
+            return Err(
+                "Configured OpenVPN redirect-gateway flags require redirect-gateway".to_string(),
+            );
+        }
+    }
+
+    if config.block_outside_dns && !cfg!(windows) {
+        return Err("OpenVPN block-outside-dns is supported only on Windows".to_string());
     }
 
     if let Some(auth_file) = &config.auth_file {
@@ -1250,26 +1745,79 @@ fn build_openvpn_args(
         return Ok(args);
     }
 
-    let mut args = vec![
-        "--client".to_string(),
-        "--dev".to_string(),
-        "tun".to_string(),
-    ];
+    let device_type = config.device_type.as_deref().unwrap_or("tun");
+    let mut args = vec!["--client".to_string(), "--dev".to_string()];
+    if let Some(device_name) = &config.device_name {
+        args.push(device_name.clone());
+        args.extend(["--dev-type".to_string(), device_type.to_string()]);
+    } else {
+        args.push(device_type.to_string());
+    }
 
-    if let Some(remote_host) = &config.remote_host {
-        args.extend(["--remote".to_string(), remote_host.clone()]);
+    if config.remotes.is_empty() {
+        if let Some(remote_host) = &config.remote_host {
+            args.extend(["--remote".to_string(), remote_host.clone()]);
+        }
+        if let Some(remote_port) = config.remote_port {
+            args.extend(["--port".to_string(), remote_port.to_string()]);
+        }
+        if let Some(protocol) = &config.protocol {
+            args.extend([
+                "--proto".to_string(),
+                openvpn_protocol_argument(protocol).to_string(),
+            ]);
+        }
+    } else {
+        for remote in &config.remotes {
+            args.extend([
+                "--remote".to_string(),
+                remote.host.clone(),
+                remote.port.to_string(),
+                openvpn_protocol_argument(&remote.protocol).to_string(),
+            ]);
+        }
     }
-    if let Some(remote_port) = config.remote_port {
-        args.extend(["--port".to_string(), remote_port.to_string()]);
+    if config.remote_random {
+        args.push("--remote-random".to_string());
     }
-    if let Some(protocol) = &config.protocol {
-        args.extend(["--proto".to_string(), protocol.clone()]);
+    if config.remote_random_hostname {
+        args.push("--remote-random-hostname".to_string());
+    }
+    if let Some(resolve_retry_infinite) = config.resolve_retry_infinite {
+        args.extend([
+            "--resolv-retry".to_string(),
+            if resolve_retry_infinite {
+                "infinite".to_string()
+            } else {
+                "0".to_string()
+            },
+        ]);
     }
     if let Some(cipher) = &config.cipher {
         args.extend(["--cipher".to_string(), cipher.clone()]);
     }
+    if !config.data_ciphers.is_empty() {
+        args.extend(["--data-ciphers".to_string(), config.data_ciphers.join(":")]);
+    }
     if let Some(auth) = &config.auth {
         args.extend(["--auth".to_string(), auth.clone()]);
+    }
+    if let Some(tls_version_min) = &config.tls_version_min {
+        args.extend(["--tls-version-min".to_string(), tls_version_min.clone()]);
+    }
+    if let Some(verify_x509_name) = &config.verify_x509_name {
+        args.extend([
+            "--verify-x509-name".to_string(),
+            verify_x509_name.clone(),
+            config
+                .verify_x509_type
+                .unwrap_or(OpenVPNVerifyX509Type::Name)
+                .as_str()
+                .to_string(),
+        ]);
+    }
+    if config.remote_cert_tls {
+        args.extend(["--remote-cert-tls".to_string(), "server".to_string()]);
     }
     if let Some(ca) = &config.ca_cert {
         args.extend(["--ca".to_string(), ca.clone()]);
@@ -1316,8 +1864,55 @@ fn build_openvpn_args(
             keep_alive.timeout.to_string(),
         ]);
     }
+    if let Some(connect_timeout) = config.connect_timeout {
+        args.extend(["--connect-timeout".to_string(), connect_timeout.to_string()]);
+    }
+    if let Some(connect_retry) = config.connect_retry {
+        args.extend(["--connect-retry".to_string(), connect_retry.to_string()]);
+        if let Some(connect_retry_max_seconds) = config.connect_retry_max_seconds {
+            args.push(connect_retry_max_seconds.to_string());
+        }
+    }
+    if let Some(connect_retry_max) = config.connect_retry_max {
+        args.extend([
+            "--connect-retry-max".to_string(),
+            connect_retry_max.to_string(),
+        ]);
+    }
+    if let Some(server_poll_timeout) = config.server_poll_timeout {
+        args.extend([
+            "--server-poll-timeout".to_string(),
+            server_poll_timeout.to_string(),
+        ]);
+    }
     if config.route_no_pull.unwrap_or(false) {
         args.push("--route-nopull".to_string());
+    }
+    if config.redirect_gateway {
+        args.push("--redirect-gateway".to_string());
+        match &config.redirect_gateway_flags {
+            Some(flags) => args.extend(flags.iter().map(|flag| flag.as_str().to_string())),
+            // Profiles written before redirect_gateway_flags existed used def1
+            // unconditionally. Preserve that behavior only for a missing field;
+            // Some(empty) represents an explicit flag-free directive.
+            None => args.push("def1".to_string()),
+        }
+    }
+    if config.block_outside_dns {
+        #[cfg(windows)]
+        args.push("--block-outside-dns".to_string());
+    }
+    if config.persist_tun {
+        args.push("--persist-tun".to_string());
+    }
+    if config.persist_key {
+        args.push("--persist-key".to_string());
+    }
+    if config.nobind {
+        args.push("--nobind".to_string());
+    }
+    if config.float {
+        args.push("--float".to_string());
     }
     for route in &config.routes {
         args.extend([
@@ -1344,7 +1939,7 @@ fn build_openvpn_args(
         }
     }
     for option in &config.custom_options {
-        args.extend(option.split_whitespace().map(ToString::to_string));
+        args.extend(tokenize_openvpn_option(option)?);
     }
     // Verbosity 3 reliably includes the canonical readiness marker without
     // exposing credentials.
@@ -1948,11 +2543,22 @@ mod tests {
             client_key: None,
             username: None,
             password: None,
+            remotes: Vec::new(),
+            remote_random: false,
+            remote_random_hostname: false,
+            resolve_retry_infinite: None,
             remote_host: Some("vpn.example.com".to_string()),
             remote_port: Some(1194),
             protocol: Some("udp".to_string()),
+            device_type: None,
+            device_name: None,
             cipher: None,
+            data_ciphers: Vec::new(),
             auth: None,
+            tls_version_min: None,
+            verify_x509_name: None,
+            verify_x509_type: None,
+            remote_cert_tls: false,
             tls_auth: None,
             tls_auth_file: None,
             tls_crypt: None,
@@ -1963,7 +2569,19 @@ mod tests {
             fragment: None,
             mtu_discover: None,
             keep_alive: None,
+            connect_timeout: None,
+            connect_retry: None,
+            connect_retry_max_seconds: None,
+            connect_retry_max: None,
+            server_poll_timeout: None,
             route_no_pull: None,
+            redirect_gateway: false,
+            redirect_gateway_flags: None,
+            block_outside_dns: false,
+            persist_tun: false,
+            persist_key: false,
+            nobind: false,
+            float: false,
             routes: Vec::new(),
             dns_servers: Vec::new(),
             custom_options: Vec::new(),
@@ -2000,9 +2618,29 @@ mod tests {
     #[test]
     fn frontend_snake_case_config_payload_deserializes() {
         let config: OpenVPNConfig = serde_json::from_value(serde_json::json!({
-            "remote_host": "vpn.example.com",
-            "remote_port": 1194,
-            "protocol": "udp",
+            "remotes": [
+                { "host": "vpn-a.example.com", "port": 1194, "protocol": "udp" },
+                { "host": "vpn-b.example.com", "port": 443, "protocol": "tcp6" }
+            ],
+            "remote_random": true,
+            "remote_random_hostname": true,
+            "resolve_retry_infinite": true,
+            "device_type": "tun",
+            "data_ciphers": ["AES-256-GCM", "CHACHA20-POLY1305"],
+            "verify_x509_name": "vpn.example.com",
+            "verify_x509_type": "name-prefix",
+            "remote_cert_tls": true,
+            "connect_timeout": 30,
+            "connect_retry": 5,
+            "connect_retry_max_seconds": 60,
+            "connect_retry_max": 10,
+            "server_poll_timeout": 20,
+            "redirect_gateway": true,
+            "redirect_gateway_flags": ["def1", "ipv6", "!ipv4"],
+            "block_outside_dns": true,
+            "persist_tun": true,
+            "persist_key": true,
+            "nobind": true,
             "routes": [{
                 "network": "10.20.0.0",
                 "netmask": "255.255.0.0",
@@ -2013,10 +2651,44 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(config.remote_host.as_deref(), Some("vpn.example.com"));
+        assert_eq!(config.remotes.len(), 2);
+        assert_eq!(config.remotes[0].host, "vpn-a.example.com");
+        assert_eq!(config.remotes[1].protocol, "tcp6");
+        assert!(config.remote_random);
+        assert!(config.remote_random_hostname);
+        assert_eq!(config.resolve_retry_infinite, Some(true));
+        assert_eq!(config.data_ciphers.len(), 2);
+        assert_eq!(
+            config.verify_x509_type,
+            Some(OpenVPNVerifyX509Type::NamePrefix)
+        );
+        assert_eq!(config.connect_retry_max_seconds, Some(60));
+        assert_eq!(config.connect_retry_max, Some(10));
+        assert!(config.redirect_gateway);
+        assert_eq!(config.redirect_gateway_flags.as_ref().unwrap().len(), 3);
+        assert!(config.persist_tun);
         assert_eq!(config.routes.len(), 1);
         assert_eq!(config.dns_servers[0].server, "10.20.0.53");
         assert_eq!(config.custom_options, vec!["--persist-tun"]);
+    }
+
+    #[test]
+    fn legacy_openvpn_payload_defaults_new_builder_fields() {
+        let config: OpenVPNConfig = serde_json::from_value(serde_json::json!({
+            "remote_host": "legacy.example.com",
+            "remote_port": 1194,
+            "protocol": "udp",
+            "routes": [],
+            "dns_servers": [],
+            "custom_options": []
+        }))
+        .unwrap();
+
+        assert!(config.remotes.is_empty());
+        assert!(!config.remote_random);
+        assert_eq!(config.resolve_retry_infinite, None);
+        assert!(config.data_ciphers.is_empty());
+        assert_eq!(config.remote_host.as_deref(), Some("legacy.example.com"));
     }
 
     #[test]
@@ -2224,6 +2896,124 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn parse_ovpn_retains_all_remotes_and_selection_options() {
+        let state = OpenVPNService::new();
+        let service = state.lock().await;
+        let config = service
+            .parse_ovpn_file(
+                "remote primary.example.com 1194 udp\nremote backup.example.com 443 tcp6\nremote-random\nremote-random-hostname\nresolv-retry infinite\n",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(config.remotes.len(), 2);
+        assert_eq!(config.remotes[0].host, "primary.example.com");
+        assert_eq!(config.remotes[1].host, "backup.example.com");
+        assert_eq!(config.remotes[1].protocol, "tcp6");
+        assert!(config.remote_random);
+        assert!(config.remote_random_hostname);
+        assert_eq!(config.resolve_retry_infinite, Some(true));
+        assert!(!config.custom_options.contains(&"remote-random".to_string()));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_applies_late_global_remote_defaults_without_cross_inheritance() {
+        let state = OpenVPNService::new();
+        let service = state.lock().await;
+        let config = service
+            .parse_ovpn_file(
+                "remote explicit.example.com 443 tcp6-server\nremote inherited.example.com\nremote port-only.example.com 1195\nport 8443\nproto tcp4-client\n",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            config.remotes,
+            vec![
+                OpenVPNRemoteConfig {
+                    host: "explicit.example.com".to_string(),
+                    port: 443,
+                    protocol: "tcp6".to_string(),
+                },
+                OpenVPNRemoteConfig {
+                    host: "inherited.example.com".to_string(),
+                    port: 8443,
+                    protocol: "tcp4".to_string(),
+                },
+                OpenVPNRemoteConfig {
+                    host: "port-only.example.com".to_string(),
+                    port: 1195,
+                    protocol: "tcp4".to_string(),
+                },
+            ]
+        );
+        assert_eq!(config.remote_host.as_deref(), Some("explicit.example.com"));
+        assert_eq!(config.remote_port, Some(443));
+        assert_eq!(config.protocol.as_deref(), Some("tcp6"));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_preserves_security_retry_and_redirect_semantics() {
+        let state = OpenVPNService::new();
+        let service = state.lock().await;
+        let config = service
+            .parse_ovpn_file(
+                "remote vpn.example.com\nresolv-retry 0\nverify-x509-name 'C=PT, O=Example, CN=vpn.example.com' subject\nconnect-retry 5 30\nredirect-gateway ipv6 !ipv4 bypass-dns\nroute-nopull\n",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(config.resolve_retry_infinite, Some(false));
+        assert_eq!(
+            config.verify_x509_name.as_deref(),
+            Some("C=PT, O=Example, CN=vpn.example.com")
+        );
+        assert_eq!(
+            config.verify_x509_type,
+            Some(OpenVPNVerifyX509Type::Subject)
+        );
+        assert_eq!(config.connect_retry, Some(5));
+        assert_eq!(config.connect_retry_max_seconds, Some(30));
+        assert_eq!(
+            config.redirect_gateway_flags,
+            Some(vec![
+                OpenVPNRedirectGatewayFlag::Ipv6,
+                OpenVPNRedirectGatewayFlag::NoIpv4,
+                OpenVPNRedirectGatewayFlag::BypassDns,
+            ])
+        );
+        assert_eq!(config.route_no_pull, Some(true));
+    }
+
+    #[tokio::test]
+    async fn redirect_gateway_empty_flags_remain_distinct_from_legacy_missing_flags() {
+        let state = OpenVPNService::new();
+        let service = state.lock().await;
+        let mut parsed = service
+            .parse_ovpn_file("remote vpn.example.com\nredirect-gateway\n")
+            .await
+            .unwrap();
+        assert_eq!(parsed.redirect_gateway_flags, Some(Vec::new()));
+
+        parsed.inline_config = None;
+        let parsed_args = build_openvpn_args(&parsed, None).unwrap();
+        let parsed_index = parsed_args
+            .iter()
+            .position(|argument| argument == "--redirect-gateway")
+            .unwrap();
+        assert!(parsed_args[parsed_index + 1].starts_with("--"));
+        assert_ne!(parsed_args[parsed_index + 1], "def1");
+
+        let mut legacy = default_config();
+        legacy.redirect_gateway = true;
+        legacy.redirect_gateway_flags = None;
+        let legacy_args = build_openvpn_args(&legacy, None).unwrap();
+        assert!(legacy_args
+            .windows(2)
+            .any(|arguments| arguments == ["--redirect-gateway", "def1"]));
+    }
+
+    #[tokio::test]
     async fn parse_ovpn_with_keepalive() {
         let state = OpenVPNService::new();
         let svc = state.lock().await;
@@ -2276,12 +3066,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn parse_ovpn_route_no_pull() {
+    async fn parse_ovpn_route_nopull_and_legacy_alias() {
         let state = OpenVPNService::new();
         let svc = state.lock().await;
-        let ovpn = "remote host 1194\nroute-no-pull\n";
-        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
-        assert_eq!(cfg.route_no_pull, Some(true));
+        for directive in ["route-nopull", "route-no-pull"] {
+            let ovpn = format!("remote host 1194\n{directive}\n");
+            let cfg = svc.parse_ovpn_file(&ovpn).await.unwrap();
+            assert_eq!(cfg.route_no_pull, Some(true));
+        }
     }
 
     #[tokio::test]
@@ -2466,6 +3258,212 @@ mod tests {
     }
 
     #[test]
+    fn command_builder_preserves_remote_order_and_advanced_manual_options() {
+        let mut config = default_config();
+        config.remotes = vec![
+            OpenVPNRemoteConfig {
+                host: "vpn-a.example.com".to_string(),
+                port: 1194,
+                protocol: "udp".to_string(),
+            },
+            OpenVPNRemoteConfig {
+                host: "vpn-b.example.com".to_string(),
+                port: 443,
+                protocol: "tcp6".to_string(),
+            },
+        ];
+        config.remote_random = true;
+        config.remote_random_hostname = true;
+        config.resolve_retry_infinite = Some(true);
+        config.device_type = Some("tap".to_string());
+        config.device_name = Some("sorng-tap".to_string());
+        config.data_ciphers = vec!["AES-256-GCM".to_string(), "AES-128-GCM".to_string()];
+        config.tls_version_min = Some("1.2".to_string());
+        config.verify_x509_name = Some("vpn-".to_string());
+        config.verify_x509_type = Some(OpenVPNVerifyX509Type::NamePrefix);
+        config.remote_cert_tls = true;
+        config.connect_timeout = Some(30);
+        config.connect_retry = Some(5);
+        config.connect_retry_max_seconds = Some(30);
+        config.connect_retry_max = Some(10);
+        config.server_poll_timeout = Some(20);
+        config.redirect_gateway = true;
+        config.redirect_gateway_flags = Some(vec![
+            OpenVPNRedirectGatewayFlag::Def1,
+            OpenVPNRedirectGatewayFlag::Ipv6,
+        ]);
+        config.block_outside_dns = cfg!(windows);
+        config.persist_tun = true;
+        config.persist_key = true;
+        config.nobind = true;
+        config.float = true;
+
+        let args = build_openvpn_args(&config, None).unwrap();
+        let remote_indexes = args
+            .iter()
+            .enumerate()
+            .filter_map(|(index, argument)| (argument == "--remote").then_some(index))
+            .collect::<Vec<_>>();
+        assert_eq!(remote_indexes.len(), 2);
+        assert_eq!(
+            &args[remote_indexes[0]..remote_indexes[0] + 4],
+            ["--remote", "vpn-a.example.com", "1194", "udp"]
+        );
+        assert_eq!(
+            &args[remote_indexes[1]..remote_indexes[1] + 4],
+            ["--remote", "vpn-b.example.com", "443", "tcp6-client"]
+        );
+        assert!(!args.contains(&"--port".to_string()));
+        assert!(!args.contains(&"--proto".to_string()));
+        for expected in [
+            "--remote-random",
+            "--remote-random-hostname",
+            "--resolv-retry",
+            "--dev-type",
+            "--data-ciphers",
+            "--tls-version-min",
+            "--verify-x509-name",
+            "--remote-cert-tls",
+            "--connect-timeout",
+            "--connect-retry",
+            "--connect-retry-max",
+            "--server-poll-timeout",
+            "--redirect-gateway",
+            "--persist-tun",
+            "--persist-key",
+            "--nobind",
+            "--float",
+        ] {
+            assert!(args.contains(&expected.to_string()), "missing {expected}");
+        }
+        assert_eq!(
+            args.contains(&"--block-outside-dns".to_string()),
+            cfg!(windows)
+        );
+        assert!(args
+            .windows(3)
+            .any(|arguments| { arguments == ["--verify-x509-name", "vpn-", "name-prefix"] }));
+        assert!(args
+            .windows(3)
+            .any(|arguments| arguments == ["--connect-retry", "5", "30"]));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--data-ciphers", "AES-256-GCM:AES-128-GCM"]));
+    }
+
+    #[test]
+    fn command_builder_preserves_tri_state_dns_retry_behavior() {
+        let mut config = default_config();
+        let inherited = build_openvpn_args(&config, None).unwrap();
+        assert!(!inherited.contains(&"--resolv-retry".to_string()));
+
+        config.resolve_retry_infinite = Some(true);
+        let infinite = build_openvpn_args(&config, None).unwrap();
+        assert!(infinite
+            .windows(2)
+            .any(|arguments| arguments == ["--resolv-retry", "infinite"]));
+
+        config.resolve_retry_infinite = Some(false);
+        let disabled = build_openvpn_args(&config, None).unwrap();
+        assert!(disabled
+            .windows(2)
+            .any(|arguments| arguments == ["--resolv-retry", "0"]));
+    }
+
+    #[test]
+    fn command_builder_preserves_exact_x509_retry_and_redirect_arguments() {
+        let mut config = default_config();
+        config.verify_x509_name = Some("C=PT, O=Example, CN=vpn.example.com".to_string());
+        config.verify_x509_type = Some(OpenVPNVerifyX509Type::Subject);
+        config.connect_retry = Some(5);
+        config.connect_retry_max_seconds = Some(30);
+        config.redirect_gateway = true;
+        config.redirect_gateway_flags = Some(vec![
+            OpenVPNRedirectGatewayFlag::Ipv6,
+            OpenVPNRedirectGatewayFlag::NoIpv4,
+            OpenVPNRedirectGatewayFlag::BypassDns,
+        ]);
+
+        let args = build_openvpn_args(&config, None).unwrap();
+        assert!(args.windows(3).any(|arguments| {
+            arguments
+                == [
+                    "--verify-x509-name",
+                    "C=PT, O=Example, CN=vpn.example.com",
+                    "subject",
+                ]
+        }));
+        assert!(args
+            .windows(3)
+            .any(|arguments| arguments == ["--connect-retry", "5", "30"]));
+        assert!(args.windows(4).any(|arguments| {
+            arguments == ["--redirect-gateway", "ipv6", "!ipv4", "bypass-dns"]
+        }));
+    }
+
+    #[test]
+    fn command_builder_tokenizes_quoted_custom_options_without_splitting_values() {
+        let mut config = default_config();
+        config.custom_options = vec![
+            "--http-proxy-option \"VERSION 1.1\"".to_string(),
+            "--setenv label 'value with spaces'".to_string(),
+        ];
+
+        let args = build_openvpn_args(&config, None).unwrap();
+        assert!(args
+            .windows(2)
+            .any(|arguments| arguments == ["--http-proxy-option", "VERSION 1.1"]));
+        assert!(args
+            .windows(3)
+            .any(|arguments| arguments == ["--setenv", "label", "value with spaces"]));
+
+        config.custom_options = vec!["--setenv label 'unterminated".to_string()];
+        let error = build_openvpn_args(&config, None).unwrap_err();
+        assert!(error.contains("unterminated quoting"));
+        assert!(!error.contains("label"));
+    }
+
+    #[test]
+    fn block_outside_dns_is_windows_only_for_manual_and_raw_profiles() {
+        let mut config = default_config();
+        config.block_outside_dns = true;
+        let manual = build_openvpn_args(&config, None);
+        let raw =
+            validate_tracked_openvpn_config("remote vpn.example.com 1194\nblock-outside-dns\n");
+
+        if cfg!(windows) {
+            assert!(manual.unwrap().contains(&"--block-outside-dns".to_string()));
+            assert!(raw.is_ok());
+        } else {
+            assert!(manual.unwrap_err().contains("only on Windows"));
+            assert!(raw.unwrap_err().contains("only on Windows"));
+        }
+    }
+
+    #[test]
+    fn manual_builder_rejects_incomplete_or_invalid_remote_rows() {
+        let mut config = default_config();
+        config.remote_host = None;
+        let missing = validate_openvpn_profile_config(&config).unwrap_err();
+        assert!(missing.contains("at least one remote host"));
+
+        config.remotes = vec![OpenVPNRemoteConfig {
+            host: "vpn.example.com".to_string(),
+            port: 0,
+            protocol: "udp".to_string(),
+        }];
+        assert!(validate_openvpn_profile_config(&config)
+            .unwrap_err()
+            .contains("port"));
+
+        config.remotes[0].port = 1194;
+        config.remotes[0].protocol = "sctp".to_string();
+        assert!(validate_openvpn_profile_config(&config)
+            .unwrap_err()
+            .contains("protocol"));
+    }
+
+    #[test]
     fn readiness_and_fatal_output_are_classified() {
         assert_eq!(
             classify_openvpn_output("Initialization Sequence Completed"),
@@ -2495,6 +3493,20 @@ mod tests {
         let mut config = default_config();
         config.username = Some("alice".to_string());
         config.password = Some("secret".to_string());
+        config.remotes = vec![
+            OpenVPNRemoteConfig {
+                host: "primary.example.com".to_string(),
+                port: 1194,
+                protocol: "udp".to_string(),
+            },
+            OpenVPNRemoteConfig {
+                host: "backup.example.com".to_string(),
+                port: 443,
+                protocol: "tcp".to_string(),
+            },
+        ];
+        config.remote_random = true;
+        config.connect_retry_max = Some(7);
         let id = service
             .create_connection("Office".to_string(), config)
             .await
@@ -2513,6 +3525,11 @@ mod tests {
         assert_eq!(connection.id, id);
         assert_eq!(connection.config.username.as_deref(), Some("alice"));
         assert_eq!(connection.config.password.as_deref(), Some("secret"));
+        assert_eq!(connection.config.remotes.len(), 2);
+        assert_eq!(connection.config.remotes[0].host, "primary.example.com");
+        assert_eq!(connection.config.remotes[1].host, "backup.example.com");
+        assert!(connection.config.remote_random);
+        assert_eq!(connection.config.connect_retry_max, Some(7));
         assert!(matches!(connection.status, OpenVPNStatus::Disconnected));
         assert!(connection.process_id.is_none());
         assert!(connection.connected_at.is_none());

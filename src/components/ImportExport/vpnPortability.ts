@@ -279,6 +279,7 @@ function normalizeConfig<K extends PortableVpnProvider>(
 }
 
 function normalizeOpenVpnConfig(value: UnknownRecord): OpenVPNConfig {
+  const remotes = normalizeOpenVpnRemotes(value.remotes);
   const routes = arrayValue(value.route ?? value.routes)
     .filter(isRecord)
     .flatMap((route) => {
@@ -308,11 +309,37 @@ function normalizeOpenVpnConfig(value: UnknownRecord): OpenVPNConfig {
     clientKey: optionalString(value.clientKey ?? value.client_key),
     username: optionalString(value.username),
     password: optionalString(value.password),
+    remotes: remotes.length > 0 ? remotes : undefined,
+    remoteRandom: optionalBoolean(value.remoteRandom ?? value.remote_random),
+    remoteRandomHostname: optionalBoolean(
+      value.remoteRandomHostname ?? value.remote_random_hostname,
+    ),
+    resolveRetryInfinite: optionalBoolean(
+      value.resolveRetryInfinite ?? value.resolve_retry_infinite,
+    ),
     remoteHost: optionalString(value.remoteHost ?? value.remote_host),
     remotePort: optionalNumber(value.remotePort ?? value.remote_port),
     protocol: enumValue(value.protocol, ["udp", "tcp"]),
+    deviceType: enumValue(value.deviceType ?? value.device_type, [
+      "tun",
+      "tap",
+    ]),
+    deviceName: optionalString(value.deviceName ?? value.device_name),
     cipher: optionalString(value.cipher),
+    dataCiphers: optionalStringArray(value.dataCiphers ?? value.data_ciphers),
     auth: optionalString(value.auth),
+    tlsVersionMin: optionalString(value.tlsVersionMin ?? value.tls_version_min),
+    verifyX509Name: optionalString(
+      value.verifyX509Name ?? value.verify_x509_name,
+    ),
+    verifyX509Type: enumValue(value.verifyX509Type ?? value.verify_x509_type, [
+      "subject",
+      "name",
+      "name-prefix",
+    ]),
+    remoteCertTls: optionalBoolean(
+      value.remoteCertTls ?? value.remote_cert_tls,
+    ),
     tlsAuth: optionalBoolean(value.tlsAuth ?? value.tls_auth),
     tlsAuthFile: optionalString(value.tlsAuthFile ?? value.tls_auth_file),
     tlsCrypt: optionalBoolean(value.tlsCrypt ?? value.tls_crypt),
@@ -326,7 +353,43 @@ function normalizeOpenVpnConfig(value: UnknownRecord): OpenVPNConfig {
       keepAliveInterval !== undefined && keepAliveTimeout !== undefined
         ? { interval: keepAliveInterval, timeout: keepAliveTimeout }
         : undefined,
+    connectTimeout: optionalNumber(
+      value.connectTimeout ?? value.connect_timeout,
+    ),
+    connectRetry: optionalNumber(value.connectRetry ?? value.connect_retry),
+    connectRetryMaxSeconds: optionalNumber(
+      value.connectRetryMaxSeconds ?? value.connect_retry_max_seconds,
+    ),
+    connectRetryMax: optionalNumber(
+      value.connectRetryMax ?? value.connect_retry_max,
+    ),
+    serverPollTimeout: optionalNumber(
+      value.serverPollTimeout ?? value.server_poll_timeout,
+    ),
     routeNoPull: optionalBoolean(value.routeNoPull ?? value.route_no_pull),
+    redirectGateway: optionalBoolean(
+      value.redirectGateway ?? value.redirect_gateway,
+    ),
+    redirectGatewayFlags: optionalEnumArray(
+      value.redirectGatewayFlags ?? value.redirect_gateway_flags,
+      [
+        "local",
+        "autolocal",
+        "def1",
+        "bypass-dhcp",
+        "bypass-dns",
+        "block-local",
+        "ipv6",
+        "!ipv4",
+      ],
+    ),
+    blockOutsideDns: optionalBoolean(
+      value.blockOutsideDns ?? value.block_outside_dns,
+    ),
+    persistTun: optionalBoolean(value.persistTun ?? value.persist_tun),
+    persistKey: optionalBoolean(value.persistKey ?? value.persist_key),
+    nobind: optionalBoolean(value.nobind),
+    float: optionalBoolean(value.float),
     route: routes.length > 0 ? routes : undefined,
     dns: dns.length > 0 ? dns : undefined,
     customOptions: optionalStringArray(
@@ -624,14 +687,16 @@ function hasProviderMinimumExecutableConfig(
 
   switch (provider) {
     case "openvpn":
-      return [
-        value.configFile,
-        value.config_file,
-        value.inlineConfig,
-        value.inline_config,
-        value.remoteHost,
-        value.remote_host,
-      ].some(hasValue);
+      return (
+        [
+          value.configFile,
+          value.config_file,
+          value.inlineConfig,
+          value.inline_config,
+          value.remoteHost,
+          value.remote_host,
+        ].some(hasValue) || normalizeOpenVpnRemotes(value.remotes).length > 0
+      );
     case "wireguard": {
       if (hasValue(value.configFile ?? value.config_file)) return true;
       const interfaceValue = recordValue(
@@ -779,6 +844,57 @@ function stringArray(value: unknown): string[] {
 function optionalStringArray(value: unknown): string[] | undefined {
   const values = stringArray(value);
   return values.length > 0 ? values : undefined;
+}
+
+function optionalEnumArray<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+): T[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = Array.from(
+    new Set(
+      value.filter(
+        (item): item is T =>
+          typeof item === "string" && allowed.includes(item as T),
+      ),
+    ),
+  );
+  return values;
+}
+
+function normalizeOpenVpnRemotes(
+  value: unknown,
+): NonNullable<OpenVPNConfig["remotes"]> {
+  return arrayValue(value)
+    .filter(isRecord)
+    .flatMap((remote) => {
+      const host = optionalString(remote.host);
+      if (!host?.trim()) return [];
+
+      const port =
+        remote.port === undefined ? 1194 : optionalNumber(remote.port);
+      if (
+        port === undefined ||
+        !Number.isInteger(port) ||
+        port < 1 ||
+        port > 65535
+      ) {
+        return [];
+      }
+
+      const protocol =
+        remote.protocol === undefined
+          ? "udp"
+          : enumValue(remote.protocol, [
+              "udp",
+              "udp4",
+              "udp6",
+              "tcp",
+              "tcp4",
+              "tcp6",
+            ]);
+      return protocol ? [{ host, port, protocol }] : [];
+    });
 }
 
 function arrayValue(value: unknown): unknown[] {

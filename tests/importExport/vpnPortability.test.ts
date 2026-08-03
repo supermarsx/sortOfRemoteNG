@@ -279,6 +279,11 @@ describe("VPN import/export portability", () => {
     ).toBe(true);
     expect(isVpnProfileExecutable("openvpn", { config: {} })).toBe(false);
     expect(
+      isVpnProfileExecutable("openvpn", {
+        config: { remotes: [{ host: "structured-vpn.example.test" }] },
+      }),
+    ).toBe(true);
+    expect(
       isVpnProfileExecutable("tailscale", { config: { authKey: "ts-key" } }),
     ).toBe(true);
     expect(isVpnProfileExecutable("tailscale", { config: {} })).toBe(false);
@@ -292,6 +297,143 @@ describe("VPN import/export portability", () => {
         config: { networkId: "not-a-network" },
       }),
     ).toBe(false);
+  });
+
+  it("preserves advanced OpenVPN fields and migrates defaulted structured remotes", () => {
+    const normalized = normalizeVpnImportData({
+      openvpn: [
+        {
+          id: "ovpn-advanced",
+          name: "Advanced OpenVPN",
+          config: {
+            remotes: [
+              { host: "defaulted.example.test" },
+              { host: "ipv4.example.test", port: 443, protocol: "tcp4" },
+              { host: "invalid.example.test", port: 0, protocol: "udp" },
+            ],
+            remote_random: true,
+            remote_random_hostname: true,
+            resolve_retry_infinite: false,
+            device_type: "tun",
+            device_name: "tun-office",
+            data_ciphers: ["AES-256-GCM", "AES-128-GCM"],
+            tls_version_min: "1.2",
+            verify_x509_name: "vpn-",
+            verify_x509_type: "name-prefix",
+            remote_cert_tls: true,
+            connect_timeout: 30,
+            connect_retry: 5,
+            connect_retry_max_seconds: 300,
+            connect_retry_max: 8,
+            server_poll_timeout: 20,
+            redirect_gateway: true,
+            redirect_gateway_flags: ["ipv6", "!ipv4"],
+            block_outside_dns: true,
+            persist_tun: true,
+            persist_key: true,
+            nobind: true,
+            float: true,
+          },
+        },
+      ],
+    });
+
+    const expectedAdvancedConfig = {
+      remotes: [
+        { host: "defaulted.example.test", port: 1194, protocol: "udp" },
+        { host: "ipv4.example.test", port: 443, protocol: "tcp4" },
+      ],
+      remoteRandom: true,
+      remoteRandomHostname: true,
+      resolveRetryInfinite: false,
+      deviceType: "tun",
+      deviceName: "tun-office",
+      dataCiphers: ["AES-256-GCM", "AES-128-GCM"],
+      tlsVersionMin: "1.2",
+      verifyX509Name: "vpn-",
+      verifyX509Type: "name-prefix",
+      remoteCertTls: true,
+      connectTimeout: 30,
+      connectRetry: 5,
+      connectRetryMaxSeconds: 300,
+      connectRetryMax: 8,
+      serverPollTimeout: 20,
+      redirectGateway: true,
+      redirectGatewayFlags: ["ipv6", "!ipv4"],
+      blockOutsideDns: true,
+      persistTun: true,
+      persistKey: true,
+      nobind: true,
+      float: true,
+    };
+    expect(normalized?.openvpn[0].config).toMatchObject(expectedAdvancedConfig);
+    expect(isVpnProfileExecutable("openvpn", normalized?.openvpn[0])).toBe(
+      true,
+    );
+
+    const profile = normalized!.openvpn[0];
+    const included = prepareVpnConnectionForTransfer("openvpn", profile, true);
+    const includedRoundTrip = normalizeVpnImportData({
+      openvpn: [included.connection],
+    });
+    expect(includedRoundTrip?.openvpn[0].config).toMatchObject(
+      expectedAdvancedConfig,
+    );
+
+    const redacted = prepareVpnConnectionForTransfer("openvpn", profile, false);
+    const redactedRoundTrip = normalizeVpnImportData({
+      openvpn: [redacted.connection],
+    });
+    expect(redactedRoundTrip?.openvpn[0].config).toMatchObject({
+      ...expectedAdvancedConfig,
+      enabled: false,
+    });
+    expect(redactedRoundTrip?.openvpn[0].portability).toMatchObject({
+      credentials: "redacted",
+      executable: false,
+    });
+  });
+
+  it("preserves explicit empty OpenVPN redirect flags across transfer round trips", () => {
+    const normalized = normalizeVpnImportData({
+      openvpn: [
+        {
+          id: "ovpn-bare-redirect",
+          name: "Bare redirect gateway",
+          config: {
+            inline_config: "client\nremote vpn.example.test 1194 udp",
+            redirect_gateway: true,
+            redirect_gateway_flags: [],
+          },
+        },
+        {
+          id: "ovpn-legacy-redirect",
+          name: "Legacy redirect gateway",
+          config: {
+            inline_config: "client\nremote vpn.example.test 1194 udp",
+            redirect_gateway: true,
+          },
+        },
+      ],
+    });
+
+    const explicit = normalized!.openvpn[0];
+    expect(explicit.config.redirectGatewayFlags).toEqual([]);
+    expect(normalized!.openvpn[1].config).not.toHaveProperty(
+      "redirectGatewayFlags",
+    );
+
+    for (const includeCredentials of [true, false]) {
+      const transferred = prepareVpnConnectionForTransfer(
+        "openvpn",
+        explicit,
+        includeCredentials,
+      );
+      const roundTrip = normalizeVpnImportData({
+        openvpn: [transferred.connection],
+      });
+      expect(roundTrip?.openvpn[0].config.redirectGatewayFlags).toEqual([]);
+    }
   });
 
   it("normalizes legacy native snake_case sidecars for all providers", () => {

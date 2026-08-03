@@ -155,9 +155,10 @@ export async function loadVpnProfileCatalog(
 }
 
 function normalizeOpenVpn(connection: OpenVPNConnection): VpnProfileSummary {
+  const primaryRemote = connection.config?.remotes?.[0];
   return common(connection, "openvpn", {
-    host: connection.config?.remoteHost,
-    port: connection.config?.remotePort,
+    host: primaryRemote?.host ?? connection.config?.remoteHost,
+    port: primaryRemote?.port ?? connection.config?.remotePort,
     localIp: connection.localIp,
   });
 }

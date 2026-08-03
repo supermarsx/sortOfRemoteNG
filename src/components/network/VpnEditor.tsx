@@ -8,6 +8,12 @@ import {
   AlertCircle,
   Save,
   Tag,
+  Search,
+  ChevronDown,
+  Check,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -21,6 +27,10 @@ import {
   EXECUTABLE_VPN_PROVIDERS,
   getVpnProviderLabel,
 } from "../../utils/network/vpnProviderCatalog";
+import type {
+  OpenVPNProtocol,
+  OpenVPNRedirectGatewayFlag,
+} from "../../types/settings/vpnSettings";
 
 type Mgr = ReturnType<typeof useVpnEditor>;
 
@@ -41,6 +51,18 @@ const VPN_TYPES = EXECUTABLE_VPN_PROVIDERS.map((provider) => ({
   value: provider.type,
   label: provider.label,
   icon: getConnectionIconDefinition(provider.iconKey)?.icon ?? Shield,
+  description:
+    {
+      openvpn: "Portable TLS VPN profiles",
+      wireguard: "Fast modern encrypted tunnels",
+      tailscale: "Managed WireGuard mesh",
+      zerotier: "Peer-to-peer virtual networks",
+      pptp: "Legacy point-to-point tunnel",
+      l2tp: "L2TP protected by IPsec",
+      ikev2: "Resilient IPsec with IKEv2",
+      ipsec: "Native IPsec tunnel",
+      sstp: "TLS tunnel over HTTPS",
+    }[provider.type] ?? "VPN connection",
 }));
 
 // ── Shared sub-components ───────────────────────────────────────
@@ -90,7 +112,9 @@ function BrowseField({
         className={inputCls + " flex-1"}
       />
       <button
+        type="button"
         onClick={handleBrowse}
+        aria-label={`Browse for ${label}`}
         className="px-3 py-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] transition-colors"
         title="Browse"
       >
@@ -237,33 +261,876 @@ const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 // ── Section: VPN Type ───────────────────────────────────────────
 
-const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className={sectionCls}>
-    <div className={sectionHeadingCls}>VPN Type</div>
-    <div className="grid grid-cols-3 gap-2">
-      {VPN_TYPES.map((type) => {
-        const Icon = type.icon;
-        const isSelected = mgr.vpnType === type.value;
-        return (
-          <button
-            key={type.value}
-            onClick={() => mgr.handleTypeChange(type.value)}
-            className={`p-3 rounded-lg border text-center transition-all flex flex-col items-center gap-1.5 ${
-              isSelected
-                ? "border-primary bg-primary/20 text-primary"
-                : "border-[var(--color-border)] bg-[var(--color-input)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
-            }`}
+const VpnTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const optionRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const selected =
+    VPN_TYPES.find((type) => type.value === mgr.vpnType) ?? VPN_TYPES[0];
+  const SelectedIcon = selected.icon;
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleTypes = React.useMemo(
+    () =>
+      VPN_TYPES.filter((type) =>
+        `${type.label} ${type.value} ${type.description}`
+          .toLowerCase()
+          .includes(normalizedQuery),
+      ),
+    [normalizedQuery],
+  );
+  const locked = Boolean(mgr.editingId);
+
+  const closeDropdown = React.useCallback((restoreFocus = false) => {
+    setOpen(false);
+    setQuery("");
+    setActiveIndex(0);
+    if (restoreFocus) {
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  }, []);
+
+  const openDropdown = React.useCallback(() => {
+    if (locked) return;
+    const selectedIndex = VPN_TYPES.findIndex(
+      (type) => type.value === mgr.vpnType,
+    );
+    setQuery("");
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setOpen(true);
+  }, [locked, mgr.vpnType]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) closeDropdown();
+    };
+    document.addEventListener("mousedown", onOutsideClick);
+    const frame = requestAnimationFrame(() => searchRef.current?.focus());
+    return () => {
+      document.removeEventListener("mousedown", onOutsideClick);
+      cancelAnimationFrame(frame);
+    };
+  }, [closeDropdown, open]);
+
+  React.useEffect(() => {
+    if (open && activeIndex >= 0) {
+      optionRefs.current[activeIndex]?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [activeIndex, open]);
+
+  const choose = (type: VpnEditorType) => {
+    mgr.handleTypeChange(type);
+    closeDropdown(true);
+  };
+
+  const handleSearchKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDropdown(true);
+      return;
+    }
+    if (visibleTypes.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex(
+        (index) =>
+          ((index < 0 ? 0 : index) + delta + visibleTypes.length) %
+          visibleTypes.length,
+      );
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : visibleTypes.length - 1);
+    } else if (event.key === "Enter" && activeIndex >= 0) {
+      event.preventDefault();
+      choose(visibleTypes[activeIndex].value);
+    }
+  };
+
+  return (
+    <div className={sectionCls}>
+      <div className={sectionHeadingCls}>VPN Type</div>
+      <div ref={rootRef} className="relative">
+        <label id="vpn-type-label" className={labelCls}>
+          Connection provider
+        </label>
+        <button
+          ref={triggerRef}
+          type="button"
+          disabled={locked}
+          onClick={() => (open ? closeDropdown() : openDropdown())}
+          onKeyDown={(event) => {
+            if (
+              !open &&
+              (event.key === "ArrowDown" || event.key === "ArrowUp")
+            ) {
+              event.preventDefault();
+              openDropdown();
+            }
+          }}
+          aria-labelledby="vpn-type-label vpn-type-value"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={open ? "vpn-type-options" : undefined}
+          className="w-full flex items-center gap-2.5 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm hover:border-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/50 transition-all disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          <SelectedIcon
+            size={17}
+            aria-hidden="true"
+            className="text-[var(--color-textSecondary)] shrink-0"
+          />
+          <span
+            id="vpn-type-value"
+            className="min-w-0 flex-1 truncate text-left"
           >
-            <Icon size={18} />
-            <div className="text-xs font-medium">{type.label}</div>
-          </button>
-        );
-      })}
+            <span className="font-medium">{selected.label}</span>{" "}
+            <span className="text-xs text-[var(--color-textMuted)]">
+              {selected.description}
+            </span>
+          </span>
+          <ChevronDown
+            size={15}
+            aria-hidden="true"
+            className={`shrink-0 text-[var(--color-textMuted)] transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+        {locked && (
+          <p className="mt-1.5 text-[11px] text-[var(--color-textMuted)]">
+            VPN type is locked while editing an existing profile.
+          </p>
+        )}
+
+        {open && (
+          <div className="absolute z-50 left-0 right-0 mt-1 flex max-h-72 flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">
+            <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+              <Search
+                size={15}
+                aria-hidden="true"
+                className="text-[var(--color-textMuted)]"
+              />
+              <input
+                ref={searchRef}
+                type="search"
+                role="combobox"
+                aria-label="Search VPN types"
+                aria-autocomplete="list"
+                aria-expanded="true"
+                aria-controls="vpn-type-options"
+                aria-activedescendant={
+                  activeIndex >= 0
+                    ? `vpn-type-option-${activeIndex}`
+                    : undefined
+                }
+                value={query}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setQuery(next);
+                  const normalized = next.trim().toLowerCase();
+                  const hasMatch = VPN_TYPES.some((type) =>
+                    `${type.label} ${type.value} ${type.description}`
+                      .toLowerCase()
+                      .includes(normalized),
+                  );
+                  setActiveIndex(hasMatch ? 0 : -1);
+                }}
+                onKeyDown={handleSearchKeyDown}
+                autoComplete="off"
+                placeholder="Search VPN providers…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder:text-[var(--color-textMuted)] focus:outline-none"
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label="Clear VPN type search"
+                  onClick={() => {
+                    setQuery("");
+                    setActiveIndex(0);
+                    searchRef.current?.focus();
+                  }}
+                  className="rounded p-0.5 text-[var(--color-textMuted)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)]"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div
+              id="vpn-type-options"
+              role="listbox"
+              aria-label="Available VPN types"
+              className="overflow-y-auto py-1"
+            >
+              {visibleTypes.map((type, index) => {
+                const Icon = type.icon;
+                const isSelected = mgr.vpnType === type.value;
+                const isActive = activeIndex === index;
+                return (
+                  <button
+                    key={type.value}
+                    ref={(node) => {
+                      optionRefs.current[index] = node;
+                    }}
+                    id={`vpn-type-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    tabIndex={-1}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => choose(type.value)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+                      isSelected
+                        ? "bg-primary/15 text-primary"
+                        : isActive
+                          ? "bg-[var(--color-surfaceHover)] text-[var(--color-text)]"
+                          : "text-[var(--color-text)] hover:bg-[var(--color-surfaceHover)]"
+                    }`}
+                  >
+                    <Icon size={16} aria-hidden="true" className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium">{type.label}</span>{" "}
+                      <span className="text-xs text-[var(--color-textMuted)]">
+                        {type.description}
+                      </span>
+                    </span>
+                    {isSelected && (
+                      <Check
+                        size={14}
+                        aria-hidden="true"
+                        className="shrink-0"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+              {visibleTypes.length === 0 && (
+                <div
+                  role="status"
+                  className="px-4 py-6 text-center text-sm text-[var(--color-textMuted)]"
+                >
+                  No VPN types found.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── OpenVPN Config Form ─────────────────────────────────────────
+
+type OpenVpnRemoteDraft = {
+  host: string;
+  port: number;
+  protocol: OpenVPNProtocol;
+};
+
+const OPENVPN_REDIRECT_GATEWAY_FLAG_OPTIONS: ReadonlyArray<{
+  value: OpenVPNRedirectGatewayFlag;
+  label: string;
+}> = [
+  { value: "def1", label: "Preserve the existing IPv4 default route (def1)" },
+  { value: "local", label: "Remote is on the local subnet" },
+  { value: "autolocal", label: "Detect a local-subnet remote automatically" },
+  { value: "bypass-dhcp", label: "Bypass the tunnel for DHCP" },
+  { value: "bypass-dns", label: "Bypass the tunnel for DNS" },
+  { value: "block-local", label: "Block local LAN access" },
+  { value: "ipv6", label: "Redirect IPv6 traffic" },
+  { value: "!ipv4", label: "Do not redirect IPv4 traffic" },
+];
+
+function isWindowsHostRuntime(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /windows|win32|win64/i.test(
+    `${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`,
+  );
+}
+
+function OpenVpnManualServerSection({
+  config,
+  updateConfig,
+}: {
+  config: Record<string, any>;
+  updateConfig: (updates: Record<string, any>) => void;
+}) {
+  const remotes: OpenVpnRemoteDraft[] = Array.isArray(config.remotes)
+    ? config.remotes
+    : config.remoteHost
+      ? [
+          {
+            host: config.remoteHost,
+            port: config.remotePort ?? 1194,
+            protocol: config.protocol === "tcp" ? "tcp" : "udp",
+          },
+        ]
+      : [{ host: "", port: 1194, protocol: "udp" }];
+  const up = (key: string, value: unknown) => updateConfig({ [key]: value });
+  const setRemotes = (next: OpenVpnRemoteDraft[]) =>
+    updateConfig({
+      remotes: next,
+      remoteHost: undefined,
+      remotePort: undefined,
+      protocol: undefined,
+      ...(next.length < 2 ? { remoteRandom: false } : {}),
+    });
+  const updateRemote = (index: number, updates: Partial<OpenVpnRemoteDraft>) =>
+    setRemotes(
+      remotes.map((remote, remoteIndex) =>
+        remoteIndex === index ? { ...remote, ...updates } : remote,
+      ),
+    );
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+          Remote servers
+        </div>
+        <p className="text-[11px] text-[var(--color-textMuted)]">
+          Endpoints are tried in this order unless random selection is enabled.
+        </p>
+        <div className="space-y-2" data-testid="openvpn-remotes">
+          {remotes.map((remote, index) => (
+            <div
+              key={index}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-input)]/40 p-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-[var(--color-textSecondary)]">
+                  Remote {index + 1}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Move remote ${index + 1} up`}
+                    disabled={index === 0}
+                    onClick={() => {
+                      const next = [...remotes];
+                      [next[index - 1], next[index]] = [
+                        next[index],
+                        next[index - 1],
+                      ];
+                      setRemotes(next);
+                    }}
+                    className="rounded p-1 text-[var(--color-textMuted)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-30"
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move remote ${index + 1} down`}
+                    disabled={index === remotes.length - 1}
+                    onClick={() => {
+                      const next = [...remotes];
+                      [next[index], next[index + 1]] = [
+                        next[index + 1],
+                        next[index],
+                      ];
+                      setRemotes(next);
+                    }}
+                    className="rounded p-1 text-[var(--color-textMuted)] hover:bg-[var(--color-surfaceHover)] disabled:opacity-30"
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove remote ${index + 1}`}
+                    disabled={remotes.length === 1}
+                    onClick={() =>
+                      setRemotes(
+                        remotes.filter((_, itemIndex) => itemIndex !== index),
+                      )
+                    }
+                    className="rounded p-1 text-red-400 hover:bg-red-500/10 disabled:opacity-30"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-6 gap-2">
+                <div className="col-span-3">
+                  <label
+                    className={labelCls}
+                    htmlFor={`openvpn-remote-host-${index}`}
+                  >
+                    Host
+                  </label>
+                  <input
+                    id={`openvpn-remote-host-${index}`}
+                    type="text"
+                    value={remote.host}
+                    onChange={(event) =>
+                      updateRemote(index, { host: event.target.value })
+                    }
+                    placeholder="vpn.example.com"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label
+                    className={labelCls}
+                    htmlFor={`openvpn-remote-port-${index}`}
+                  >
+                    Port
+                  </label>
+                  <input
+                    id={`openvpn-remote-port-${index}`}
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={remote.port}
+                    onChange={(event) =>
+                      updateRemote(index, { port: Number(event.target.value) })
+                    }
+                    className={inputCls}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label
+                    className={labelCls}
+                    htmlFor={`openvpn-remote-protocol-${index}`}
+                  >
+                    Protocol
+                  </label>
+                  <select
+                    id={`openvpn-remote-protocol-${index}`}
+                    value={remote.protocol}
+                    onChange={(event) =>
+                      updateRemote(index, {
+                        protocol: event.target
+                          .value as OpenVpnRemoteDraft["protocol"],
+                      })
+                    }
+                    className={inputCls}
+                  >
+                    <option value="udp">UDP</option>
+                    <option value="udp4">UDP IPv4</option>
+                    <option value="tcp">TCP</option>
+                    <option value="tcp4">TCP IPv4</option>
+                    <option value="udp6">UDP IPv6</option>
+                    <option value="tcp6">TCP IPv6</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            setRemotes([...remotes, { host: "", port: 1194, protocol: "udp" }])
+          }
+          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+        >
+          <Plus size={13} /> Add remote
+        </button>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
+          <label className={checkCls}>
+            <input
+              type="checkbox"
+              checked={config.remoteRandom ?? false}
+              disabled={remotes.length < 2}
+              onChange={(event) => up("remoteRandom", event.target.checked)}
+            />
+            Random remote selection
+          </label>
+          <label className={checkCls}>
+            <input
+              type="checkbox"
+              checked={config.remoteRandomHostname ?? false}
+              onChange={(event) =>
+                up("remoteRandomHostname", event.target.checked)
+              }
+            />
+            Randomize hostname lookup
+          </label>
+          <label className={checkCls}>
+            <input
+              type="checkbox"
+              checked={config.resolveRetryInfinite ?? true}
+              onChange={(event) =>
+                up("resolveRetryInfinite", event.target.checked)
+              }
+            />
+            Retry DNS resolution indefinitely
+          </label>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+          Transport & security
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Device type">
+            <select
+              value={config.deviceType ?? "tun"}
+              onChange={(event) => up("deviceType", event.target.value)}
+              className={inputCls}
+            >
+              <option value="tun">TUN — routed IP tunnel</option>
+              <option value="tap">TAP — Ethernet bridge</option>
+            </select>
+          </FormField>
+          <FormField label="Device name">
+            <input
+              type="text"
+              value={config.deviceName ?? ""}
+              onChange={(event) => up("deviceName", event.target.value)}
+              placeholder="Optional, e.g. tun0"
+              className={inputCls}
+            />
+          </FormField>
+          <FormField label="Legacy cipher">
+            <input
+              type="text"
+              value={config.cipher ?? ""}
+              onChange={(event) => up("cipher", event.target.value)}
+              placeholder="AES-256-GCM"
+              className={inputCls}
+            />
+          </FormField>
+          <FormField label="Auth digest">
+            <input
+              type="text"
+              value={config.auth ?? ""}
+              onChange={(event) => up("auth", event.target.value)}
+              placeholder="SHA256"
+              className={inputCls}
+            />
+          </FormField>
+          <FormField label="Negotiated data ciphers" span={2}>
+            <input
+              type="text"
+              value={config.dataCiphersText ?? ""}
+              onChange={(event) => up("dataCiphersText", event.target.value)}
+              placeholder="AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305"
+              className={inputCls + " font-mono"}
+            />
+          </FormField>
+          <FormField label="Minimum TLS version">
+            <select
+              value={config.tlsVersionMin ?? ""}
+              onChange={(event) =>
+                up("tlsVersionMin", event.target.value || undefined)
+              }
+              className={inputCls}
+            >
+              <option value="">OpenVPN default</option>
+              <option value="1.0">TLS 1.0</option>
+              <option value="1.1">TLS 1.1</option>
+              <option value="1.2">TLS 1.2</option>
+              <option value="1.3">TLS 1.3</option>
+            </select>
+          </FormField>
+          <FormField label="Verify server name">
+            <input
+              type="text"
+              aria-label="Verify server name"
+              value={config.verifyX509Name ?? ""}
+              onChange={(event) => up("verifyX509Name", event.target.value)}
+              placeholder="vpn.example.com"
+              className={inputCls}
+            />
+          </FormField>
+          <FormField label="Server name match">
+            <select
+              aria-label="Server name match"
+              value={config.verifyX509Type ?? "name"}
+              onChange={(event) => up("verifyX509Type", event.target.value)}
+              disabled={!config.verifyX509Name}
+              className={inputCls}
+            >
+              <option value="name">Certificate name (CN/RDN)</option>
+              <option value="subject">Full certificate subject</option>
+              <option value="name-prefix">Certificate name prefix</option>
+            </select>
+          </FormField>
+        </div>
+        <label className={checkCls}>
+          <input
+            type="checkbox"
+            checked={config.remoteCertTls ?? true}
+            onChange={(event) => up("remoteCertTls", event.target.checked)}
+          />
+          Require a server-purpose TLS certificate
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function OpenVpnNetworkSection({
+  config,
+  updateConfig,
+}: {
+  config: Record<string, any>;
+  updateConfig: (updates: Record<string, any>) => void;
+}) {
+  const [isWindows, setIsWindows] = React.useState(false);
+  React.useEffect(() => setIsWindows(isWindowsHostRuntime()), []);
+  const routes: Array<{ network: string; netmask: string; gateway?: string }> =
+    Array.isArray(config.route) ? config.route : [];
+  const dnsEntries: Array<{ server: string; domain?: string }> = Array.isArray(
+    config.dns,
+  )
+    ? config.dns
+    : [];
+  const redirectGatewayFlags: OpenVPNRedirectGatewayFlag[] = Array.isArray(
+    config.redirectGatewayFlags,
+  )
+    ? config.redirectGatewayFlags.filter((flag: unknown) =>
+        OPENVPN_REDIRECT_GATEWAY_FLAG_OPTIONS.some(
+          (option) => option.value === flag,
+        ),
+      )
+    : [];
+  const updateRoute = (
+    index: number,
+    updates: Partial<(typeof routes)[number]>,
+  ) =>
+    updateConfig({
+      route: routes.map((route, routeIndex) =>
+        routeIndex === index ? { ...route, ...updates } : route,
+      ),
+    });
+  const updateDns = (
+    index: number,
+    updates: Partial<(typeof dnsEntries)[number]>,
+  ) =>
+    updateConfig({
+      dns: dnsEntries.map((entry, entryIndex) =>
+        entryIndex === index ? { ...entry, ...updates } : entry,
+      ),
+    });
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
+        Routing & DNS
+      </div>
+      <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+        <label className={checkCls}>
+          <input
+            type="checkbox"
+            checked={config.routeNoPull ?? false}
+            onChange={(event) =>
+              updateConfig({ routeNoPull: event.target.checked })
+            }
+          />
+          Ignore pushed routes
+        </label>
+        <label className={checkCls}>
+          <input
+            type="checkbox"
+            checked={config.redirectGateway ?? false}
+            onChange={(event) => {
+              const redirectGateway = event.target.checked;
+              updateConfig({
+                redirectGateway,
+                redirectGatewayFlags: redirectGateway
+                  ? Array.isArray(config.redirectGatewayFlags)
+                    ? config.redirectGatewayFlags
+                    : ["def1"]
+                  : undefined,
+              });
+            }}
+          />
+          Redirect default gateway
+        </label>
+        {(isWindows || config.blockOutsideDns === true) && (
+          <label className={checkCls}>
+            <input
+              type="checkbox"
+              checked={config.blockOutsideDns ?? false}
+              disabled={!isWindows && config.blockOutsideDns !== true}
+              onChange={(event) =>
+                updateConfig({ blockOutsideDns: event.target.checked })
+              }
+            />
+            <span>
+              Block outside DNS (Windows only)
+              {!isWindows && config.blockOutsideDns === true && (
+                <span className="block text-[11px] text-amber-400">
+                  This stored setting is unsupported here; uncheck it before
+                  using this profile on this platform.
+                </span>
+              )}
+            </span>
+          </label>
+        )}
+      </div>
+
+      {config.redirectGateway && (
+        <div className="rounded-md border border-[var(--color-border)] p-3">
+          <div className="mb-2 text-xs font-medium text-[var(--color-textSecondary)]">
+            Redirect gateway flags
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            {OPENVPN_REDIRECT_GATEWAY_FLAG_OPTIONS.map((option) => (
+              <label key={option.value} className={checkCls}>
+                <input
+                  type="checkbox"
+                  checked={redirectGatewayFlags.includes(option.value)}
+                  onChange={(event) => {
+                    let next = event.target.checked
+                      ? [...redirectGatewayFlags, option.value]
+                      : redirectGatewayFlags.filter(
+                          (flag) => flag !== option.value,
+                        );
+                    if (event.target.checked && option.value === "local") {
+                      next = next.filter((flag) => flag !== "autolocal");
+                    }
+                    if (event.target.checked && option.value === "autolocal") {
+                      next = next.filter((flag) => flag !== "local");
+                    }
+                    updateConfig({ redirectGatewayFlags: next });
+                  }}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-[var(--color-textSecondary)]">
+            IPv4 routes
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              updateConfig({
+                route: [...routes, { network: "", netmask: "", gateway: "" }],
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+          >
+            <Plus size={12} /> Add route
+          </button>
+        </div>
+        {routes.length === 0 && (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-textMuted)]">
+            No custom routes. Server-pushed routes remain active unless disabled
+            above.
+          </p>
+        )}
+        {routes.map((route, index) => (
+          <div key={index} className="grid grid-cols-7 gap-2">
+            <input
+              aria-label={`Route ${index + 1} network`}
+              value={route.network}
+              onChange={(event) =>
+                updateRoute(index, { network: event.target.value })
+              }
+              placeholder="10.20.0.0"
+              className={inputCls + " col-span-2 font-mono"}
+            />
+            <input
+              aria-label={`Route ${index + 1} netmask`}
+              value={route.netmask}
+              onChange={(event) =>
+                updateRoute(index, { netmask: event.target.value })
+              }
+              placeholder="255.255.0.0"
+              className={inputCls + " col-span-2 font-mono"}
+            />
+            <input
+              aria-label={`Route ${index + 1} gateway`}
+              value={route.gateway ?? ""}
+              onChange={(event) =>
+                updateRoute(index, { gateway: event.target.value })
+              }
+              placeholder="Gateway (optional)"
+              className={inputCls + " col-span-2 font-mono"}
+            />
+            <button
+              type="button"
+              aria-label={`Remove route ${index + 1}`}
+              onClick={() =>
+                updateConfig({
+                  route: routes.filter((_, routeIndex) => routeIndex !== index),
+                })
+              }
+              className="flex items-center justify-center rounded-md border border-[var(--color-border)] text-red-400 hover:bg-red-500/10"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-[var(--color-textSecondary)]">
+            DNS servers
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              updateConfig({
+                dns: [...dnsEntries, { server: "", domain: "" }],
+              })
+            }
+            className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+          >
+            <Plus size={12} /> Add DNS server
+          </button>
+        </div>
+        {dnsEntries.length === 0 && (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-textMuted)]">
+            No manual DNS servers. OpenVPN may still apply server-pushed DNS
+            settings.
+          </p>
+        )}
+        {dnsEntries.map((entry, index) => (
+          <div key={index} className="grid grid-cols-7 gap-2">
+            <input
+              aria-label={`DNS ${index + 1} server`}
+              value={entry.server}
+              onChange={(event) =>
+                updateDns(index, { server: event.target.value })
+              }
+              placeholder="10.20.0.53"
+              className={inputCls + " col-span-3 font-mono"}
+            />
+            <input
+              aria-label={`DNS ${index + 1} search domain`}
+              value={entry.domain ?? ""}
+              onChange={(event) =>
+                updateDns(index, { domain: event.target.value })
+              }
+              placeholder="Search domain (optional)"
+              className={inputCls + " col-span-3"}
+            />
+            <button
+              type="button"
+              aria-label={`Remove DNS server ${index + 1}`}
+              onClick={() =>
+                updateConfig({
+                  dns: dnsEntries.filter(
+                    (_, entryIndex) => entryIndex !== index,
+                  ),
+                })
+              }
+              className="flex items-center justify-center rounded-md border border-[var(--color-border)] text-red-400 hover:bg-red-500/10"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { config, updateConfig } = mgr;
@@ -286,53 +1153,10 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       )}
       {/* Server */}
       {!hasConfigSource && (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider">
-            Server
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <FormField label="Remote Host" span={2}>
-              <input
-                type="text"
-                value={config.remoteHost ?? ""}
-                onChange={(e) => up("remoteHost", e.target.value)}
-                placeholder="vpn.example.com"
-                className={inputCls}
-              />
-            </FormField>
-            <FormField label="Port">
-              <input
-                type="number"
-                value={config.remotePort ?? 1194}
-                onChange={(e) =>
-                  up("remotePort", parseInt(e.target.value) || 1194)
-                }
-                className={inputCls}
-              />
-            </FormField>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Protocol">
-              <select
-                value={config.protocol ?? "udp"}
-                onChange={(e) => up("protocol", e.target.value)}
-                className={inputCls}
-              >
-                <option value="udp">UDP</option>
-                <option value="tcp">TCP</option>
-              </select>
-            </FormField>
-            <FormField label="Cipher">
-              <input
-                type="text"
-                value={config.cipher ?? ""}
-                onChange={(e) => up("cipher", e.target.value)}
-                placeholder="AES-256-GCM"
-                className={inputCls}
-              />
-            </FormField>
-          </div>
-        </div>
+        <OpenVpnManualServerSection
+          config={config}
+          updateConfig={updateConfig}
+        />
       )}
 
       {/* Authentication */}
@@ -386,25 +1210,25 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           {(config.inlineConfig || inlineState.stored) && (
             <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-[var(--color-textMuted)]">
               <p>
-                Imported configuration is stored securely with this profile.
-                Choose a file only to replace it.
+                {inlineState.stored
+                  ? "The imported configuration is stored securely and remains authoritative. Paste a replacement or choose a config file; it cannot be converted to manual fields or cleared here."
+                  : "The pasted configuration is authoritative. Clear it to return to manual fields."}
               </p>
-              <button
-                type="button"
-                onClick={() =>
-                  inlineState.stored
-                    ? mgr.clearSecret("inlineConfig")
-                    : up("inlineConfig", undefined)
-                }
-                className="shrink-0 text-sky-300 hover:text-sky-200"
-              >
-                Switch to manual
-              </button>
+              {!inlineState.stored && config.inlineConfig && (
+                <button
+                  type="button"
+                  onClick={() => up("inlineConfig", undefined)}
+                  className="shrink-0 text-sky-300 hover:text-sky-200"
+                >
+                  Switch to manual
+                </button>
+              )}
             </div>
           )}
         </FormField>
         <FormField label="Inline Configuration">
           <textarea
+            aria-label="Inline Configuration"
             value={config.inlineConfig ?? ""}
             onChange={(event) => up("inlineConfig", event.target.value)}
             placeholder={
@@ -420,7 +1244,14 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               The selected config file takes precedence over inline content.
             </p>
           )}
-          <SecretStatus mgr={mgr} field="inlineConfig" />
+          {inlineState.stored && !inlineState.replacementEntered ? (
+            <p className="mt-1 text-[11px] text-emerald-400">
+              Stored securely. Leave blank to keep it, or paste a complete
+              replacement configuration.
+            </p>
+          ) : (
+            <SecretStatus mgr={mgr} field="inlineConfig" />
+          )}
         </FormField>
         {!hasConfigSource && (
           <FormField label="CA Certificate">
@@ -516,18 +1347,42 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <label className={checkCls}>
               <input
                 type="checkbox"
-                checked={config.routeNoPull ?? false}
-                onChange={(e) => up("routeNoPull", e.target.checked)}
-              />
-              Route No Pull
-            </label>
-            <label className={checkCls}>
-              <input
-                type="checkbox"
                 checked={config.mtuDiscover ?? false}
                 onChange={(e) => up("mtuDiscover", e.target.checked)}
               />
               MTU Discover
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.persistTun ?? true}
+                onChange={(e) => up("persistTun", e.target.checked)}
+              />
+              Persist tunnel
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.persistKey ?? true}
+                onChange={(e) => up("persistKey", e.target.checked)}
+              />
+              Persist keys
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.nobind ?? true}
+                onChange={(e) => up("nobind", e.target.checked)}
+              />
+              Do not bind locally
+            </label>
+            <label className={checkCls}>
+              <input
+                type="checkbox"
+                checked={config.float ?? false}
+                onChange={(e) => up("float", e.target.checked)}
+              />
+              Allow server address changes
             </label>
           </div>
           {(config.tlsAuth || config.tlsCrypt) && (
@@ -638,7 +1493,47 @@ const OpenVpnConfigForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
               />
             </FormField>
           </div>
+          <div className="grid grid-cols-5 gap-3">
+            {[
+              ["Connect timeout (s)", "connectTimeout", "30"],
+              ["Retry delay (s)", "connectRetry", "5"],
+              ["Maximum retry delay (s)", "connectRetryMaxSeconds", "300"],
+              ["Maximum retries", "connectRetryMax", "Unlimited"],
+              ["Server poll (s)", "serverPollTimeout", ""],
+            ].map(([label, key, placeholder]) => (
+              <FormField key={key} label={label}>
+                <input
+                  type="number"
+                  aria-label={label}
+                  min={1}
+                  value={config[key] ?? ""}
+                  disabled={
+                    key === "connectRetryMaxSeconds" && !config.connectRetry
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value
+                      ? Number(event.target.value)
+                      : undefined;
+                    if (key === "connectRetry" && value === undefined) {
+                      updateConfig({
+                        connectRetry: undefined,
+                        connectRetryMaxSeconds: undefined,
+                      });
+                      return;
+                    }
+                    up(key, value);
+                  }}
+                  placeholder={placeholder}
+                  className={inputCls}
+                />
+              </FormField>
+            ))}
+          </div>
         </div>
+      )}
+
+      {!hasConfigSource && (
+        <OpenVpnNetworkSection config={config} updateConfig={updateConfig} />
       )}
 
       {/* Custom Options */}
@@ -2046,6 +2941,12 @@ const VpnEditor: React.FC<VpnEditorProps> = ({
           <div className="mb-3 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
             <AlertCircle size={14} className="flex-shrink-0" />
             {mgr.error}
+          </div>
+        )}
+        {!mgr.error && mgr.name.trim() && mgr.validationError && (
+          <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+            <AlertCircle size={14} className="shrink-0" />
+            {mgr.validationError}
           </div>
         )}
         <div className="flex justify-end gap-3">

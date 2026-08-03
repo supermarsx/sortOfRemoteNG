@@ -1551,9 +1551,20 @@ export class ProxyOpenVPNManager {
         }
       } else if (hop.type === "openvpn") {
         const vpnConfig = hop.config as OpenVPNConfig;
-        if (!vpnConfig.remoteHost && !vpnConfig.configFile) {
+        const hasRemote =
+          vpnConfig.remotes?.some((remote) => remote.host.trim() !== "") ??
+          false;
+        const hasInlineConfig =
+          typeof vpnConfig.inlineConfig === "string" &&
+          vpnConfig.inlineConfig.trim() !== "";
+        if (
+          !hasRemote &&
+          !vpnConfig.remoteHost &&
+          !vpnConfig.configFile &&
+          !hasInlineConfig
+        ) {
           throw new Error(
-            `OpenVPN hop at position ${hop.position} must have either remote host or config file`,
+            `OpenVPN hop at position ${hop.position} must have a remote host, config file, or inline configuration`,
           );
         }
       }

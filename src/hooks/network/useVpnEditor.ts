@@ -19,6 +19,11 @@ import {
   type ZeroTierSecretMutation,
 } from "../../utils/network/vpnIpcAdapter";
 import { resolveVpnRoutingPolicy } from "../../utils/network/vpnRoutingPolicy";
+import type {
+  OpenVPNProtocol,
+  OpenVPNRedirectGatewayFlag,
+  OpenVPNVerifyX509Type,
+} from "../../types/settings/vpnSettings";
 
 export type VpnEditorType = LegacyVpnEditorType;
 
@@ -42,6 +47,209 @@ export type VpnEditorSecretField =
   | "authtokenSecret";
 
 type EditorSecretState = Partial<Record<VpnEditorSecretField, boolean>>;
+
+const OPENVPN_PROTOCOLS = [
+  "udp",
+  "udp4",
+  "udp6",
+  "tcp",
+  "tcp4",
+  "tcp6",
+] as const satisfies readonly OpenVPNProtocol[];
+const OPENVPN_VERIFY_X509_TYPES = [
+  "subject",
+  "name",
+  "name-prefix",
+] as const satisfies readonly OpenVPNVerifyX509Type[];
+const OPENVPN_REDIRECT_GATEWAY_FLAGS = [
+  "local",
+  "autolocal",
+  "def1",
+  "bypass-dhcp",
+  "bypass-dns",
+  "block-local",
+  "ipv6",
+  "!ipv4",
+] as const satisfies readonly OpenVPNRedirectGatewayFlag[];
+
+type OpenVpnEditorRemote = {
+  host: string;
+  port: number;
+  protocol: OpenVPNProtocol;
+};
+
+function openVpnEditorRemotes(
+  config: Record<string, any>,
+): OpenVpnEditorRemote[] {
+  if (Array.isArray(config.remotes) && config.remotes.length > 0) {
+    return config.remotes.map((remote: Record<string, any>) => ({
+      host: typeof remote?.host === "string" ? remote.host : "",
+      port:
+        typeof remote?.port === "number" && Number.isFinite(remote.port)
+          ? remote.port
+          : 1194,
+      protocol: OPENVPN_PROTOCOLS.includes(remote?.protocol)
+        ? remote.protocol
+        : "udp",
+    }));
+  }
+  if (nonEmptyString(config.remoteHost)) {
+    return [
+      {
+        host: config.remoteHost,
+        port: typeof config.remotePort === "number" ? config.remotePort : 1194,
+        protocol: config.protocol === "tcp" ? "tcp" : "udp",
+      },
+    ];
+  }
+  return [];
+}
+
+function splitOpenVpnDataCiphers(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[,:\r\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function openVpnRedirectGatewayFlags(
+  value: unknown,
+): OpenVPNRedirectGatewayFlag[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.filter(
+        (flag): flag is OpenVPNRedirectGatewayFlag =>
+          typeof flag === "string" &&
+          OPENVPN_REDIRECT_GATEWAY_FLAGS.includes(
+            flag as OpenVPNRedirectGatewayFlag,
+          ),
+      ),
+    ),
+  );
+}
+
+export function buildOpenVpnEditorConfig(
+  config: Record<string, any>,
+): Record<string, unknown> {
+  const cfg: Record<string, unknown> = { enabled: true };
+  for (const key of [
+    "configFile",
+    "inlineConfig",
+    "authFile",
+    "caCert",
+    "clientCert",
+    "clientKey",
+    "username",
+    "password",
+    "cipher",
+    "auth",
+    "tlsVersionMin",
+    "verifyX509Name",
+    "deviceName",
+  ]) {
+    if (nonEmptyString(config[key])) cfg[key] = config[key];
+  }
+
+  const remotes = openVpnEditorRemotes(config)
+    .map((remote) => ({ ...remote, host: remote.host.trim() }))
+    .filter((remote) => remote.host !== "");
+  if (remotes.length > 0) cfg.remotes = remotes;
+
+  cfg.remoteRandom = config.remoteRandom === true;
+  cfg.remoteRandomHostname = config.remoteRandomHostname === true;
+  if (typeof config.resolveRetryInfinite === "boolean") {
+    cfg.resolveRetryInfinite = config.resolveRetryInfinite;
+  }
+  cfg.deviceType = config.deviceType === "tap" ? "tap" : "tun";
+  cfg.remoteCertTls = config.remoteCertTls !== false;
+  cfg.persistTun = config.persistTun !== false;
+  cfg.persistKey = config.persistKey !== false;
+  cfg.nobind = config.nobind !== false;
+  cfg.float = config.float === true;
+  cfg.redirectGateway = config.redirectGateway === true;
+  if (
+    config.redirectGateway === true &&
+    Array.isArray(config.redirectGatewayFlags)
+  ) {
+    cfg.redirectGatewayFlags = openVpnRedirectGatewayFlags(
+      config.redirectGatewayFlags,
+    );
+  }
+  cfg.blockOutsideDns = config.blockOutsideDns === true;
+
+  if (nonEmptyString(config.verifyX509Name)) {
+    cfg.verifyX509Type = OPENVPN_VERIFY_X509_TYPES.includes(
+      config.verifyX509Type,
+    )
+      ? config.verifyX509Type
+      : "name";
+  }
+
+  const dataCiphers = splitOpenVpnDataCiphers(
+    config.dataCiphersText ?? config.dataCiphers,
+  );
+  if (dataCiphers.length > 0) cfg.dataCiphers = dataCiphers;
+
+  if (config.tlsAuth) cfg.tlsAuth = true;
+  if (config.tlsAuth && config.tlsAuthFile) {
+    cfg.tlsAuthFile = config.tlsAuthFile;
+  }
+  if (config.tlsCrypt) cfg.tlsCrypt = true;
+  if (config.tlsCrypt && config.tlsCryptFile) {
+    cfg.tlsCryptFile = config.tlsCryptFile;
+  }
+  if (config.compression) cfg.compression = true;
+  if (config.routeNoPull) cfg.routeNoPull = true;
+  if (config.mtuDiscover) cfg.mtuDiscover = true;
+
+  for (const key of [
+    "mssFix",
+    "tunMtu",
+    "fragment",
+    "connectTimeout",
+    "connectRetry",
+    "connectRetryMax",
+    "serverPollTimeout",
+  ]) {
+    if (typeof config[key] === "number" && Number.isFinite(config[key])) {
+      cfg[key] = config[key];
+    }
+  }
+  if (
+    typeof config.connectRetry === "number" &&
+    Number.isFinite(config.connectRetry) &&
+    typeof config.connectRetryMaxSeconds === "number" &&
+    Number.isFinite(config.connectRetryMaxSeconds)
+  ) {
+    cfg.connectRetryMaxSeconds = config.connectRetryMaxSeconds;
+  }
+  if (config.keepAliveInterval || config.keepAliveTimeout) {
+    cfg.keepAlive = {
+      interval: config.keepAliveInterval ?? 10,
+      timeout: config.keepAliveTimeout ?? 60,
+    };
+  }
+  if (Array.isArray(config.route)) cfg.route = config.route;
+  if (Array.isArray(config.dns)) cfg.dns = config.dns;
+  if (typeof config.customOptions === "string") {
+    const options = config.customOptions
+      .split(/\r?\n/)
+      .map((option: string) => option.trim())
+      .filter(Boolean);
+    if (options.length > 0) cfg.customOptions = options;
+  } else if (Array.isArray(config.customOptions)) {
+    cfg.customOptions = config.customOptions;
+  }
+  return cfg;
+}
 
 export function getUnsupportedVpnEditorSettings(
   vpnType: VpnEditorType,
@@ -84,6 +292,51 @@ export function getVpnEditorValidationError(
     !nonEmptyString(config.configFile) &&
     !nonEmptyString(config.inlineConfig)
   ) {
+    const remotes = openVpnEditorRemotes(config);
+    if (remotes.length === 0) {
+      return "Add at least one remote server before saving this OpenVPN profile.";
+    }
+    for (const [index, remote] of remotes.entries()) {
+      if (!nonEmptyString(remote.host)) {
+        return `Remote ${index + 1} requires a host.`;
+      }
+      if (
+        !Number.isInteger(remote.port) ||
+        remote.port < 1 ||
+        remote.port > 65535
+      ) {
+        return `Remote ${index + 1} requires a port between 1 and 65535.`;
+      }
+      if (!OPENVPN_PROTOCOLS.includes(remote.protocol)) {
+        return `Remote ${index + 1} has an unsupported protocol.`;
+      }
+    }
+    const incompleteRoute = Array.isArray(config.route)
+      ? config.route.find(
+          (route: Record<string, any>) =>
+            !nonEmptyString(route?.network) || !nonEmptyString(route?.netmask),
+        )
+      : undefined;
+    if (incompleteRoute) {
+      return "Every OpenVPN route requires both a network and netmask.";
+    }
+    const incompleteDns = Array.isArray(config.dns)
+      ? config.dns.find(
+          (entry: Record<string, any>) => !nonEmptyString(entry?.server),
+        )
+      : undefined;
+    if (incompleteDns) {
+      return "Every OpenVPN DNS entry requires a server address.";
+    }
+    if (
+      typeof config.connectRetryMaxSeconds === "number" &&
+      !(
+        typeof config.connectRetry === "number" &&
+        Number.isFinite(config.connectRetry)
+      )
+    ) {
+      return "Set a retry delay before setting its maximum retry delay.";
+    }
     if (config.tlsAuth === true && config.tlsCrypt === true) {
       return "TLS Auth and TLS Crypt are mutually exclusive for an OpenVPN client profile.";
     }
@@ -187,10 +440,19 @@ export function useVpnEditor(
     });
   }, []);
 
-  const clearSecret = useCallback((field: VpnEditorSecretField) => {
-    setConfig((previous) => ({ ...previous, [field]: undefined }));
-    setSecretClears((previous) => ({ ...previous, [field]: true }));
-  }, []);
+  const clearSecret = useCallback(
+    (field: VpnEditorSecretField) => {
+      // Imported OpenVPN source is authoritative and cannot be reconstructed
+      // from the redacted metadata returned to the editor. It may be replaced,
+      // but clearing it would strand or silently alter the profile.
+      if (field === "inlineConfig" && storedSecrets.inlineConfig === true) {
+        return;
+      }
+      setConfig((previous) => ({ ...previous, [field]: undefined }));
+      setSecretClears((previous) => ({ ...previous, [field]: true }));
+    },
+    [storedSecrets.inlineConfig],
+  );
 
   const undoClearSecret = useCallback((field: VpnEditorSecretField) => {
     setSecretClears((previous) => ({ ...previous, [field]: false }));
@@ -279,45 +541,7 @@ export function useVpnEditor(
 
     switch (vpnType) {
       case "openvpn": {
-        const cfg: Record<string, unknown> = { enabled: true };
-        if (config.configFile) cfg.configFile = config.configFile;
-        if (config.inlineConfig) cfg.inlineConfig = config.inlineConfig;
-        if (config.authFile) cfg.authFile = config.authFile;
-        if (config.caCert) cfg.caCert = config.caCert;
-        if (config.clientCert) cfg.clientCert = config.clientCert;
-        if (config.clientKey) cfg.clientKey = config.clientKey;
-        if (config.username) cfg.username = config.username;
-        if (config.password) cfg.password = config.password;
-        if (config.remoteHost) cfg.remoteHost = config.remoteHost;
-        if (config.remotePort) cfg.remotePort = config.remotePort;
-        if (config.protocol) cfg.protocol = config.protocol;
-        if (config.cipher) cfg.cipher = config.cipher;
-        if (config.auth) cfg.auth = config.auth;
-        if (config.tlsAuth) cfg.tlsAuth = true;
-        if (config.tlsAuth && config.tlsAuthFile) {
-          cfg.tlsAuthFile = config.tlsAuthFile;
-        }
-        if (config.tlsCrypt) cfg.tlsCrypt = true;
-        if (config.tlsCrypt && config.tlsCryptFile) {
-          cfg.tlsCryptFile = config.tlsCryptFile;
-        }
-        if (config.compression) cfg.compression = true;
-        if (config.routeNoPull) cfg.routeNoPull = true;
-        if (config.mtuDiscover) cfg.mtuDiscover = true;
-        if (config.mssFix) cfg.mssFix = config.mssFix;
-        if (config.tunMtu) cfg.tunMtu = config.tunMtu;
-        if (config.fragment) cfg.fragment = config.fragment;
-        if (config.keepAliveInterval || config.keepAliveTimeout) {
-          cfg.keepAlive = {
-            interval: config.keepAliveInterval ?? 10,
-            timeout: config.keepAliveTimeout ?? 60,
-          };
-        }
-        if (Array.isArray(config.route)) cfg.route = config.route;
-        if (Array.isArray(config.dns)) cfg.dns = config.dns;
-        const opts = splitLines(config.customOptions);
-        if (opts.length) cfg.customOptions = opts;
-        return cfg;
+        return buildOpenVpnEditorConfig(config);
       }
       case "wireguard": {
         return {
@@ -822,6 +1046,7 @@ export function useVpnEditor(
     handleTagKeyDown,
     isSaving,
     error,
+    validationError,
     handleSave,
     canSave,
     editingConnection,
@@ -839,11 +1064,15 @@ export function toVpnEditorFormConfig(
   source: Record<string, any>,
 ): Record<string, any> {
   switch (vpnType) {
-    case "openvpn":
+    case "openvpn": {
       const {
         password: _password,
         inlineConfig: _inlineConfig,
         clientKey: _clientKey,
+        remoteHost: _remoteHost,
+        remotePort: _remotePort,
+        protocol: _protocol,
+        dataCiphers: _dataCiphers,
         ...safeOpenVpn
       } = source;
       return {
@@ -851,10 +1080,15 @@ export function toVpnEditorFormConfig(
         password: undefined,
         inlineConfig: undefined,
         clientKey: undefined,
+        remotes: openVpnEditorRemotes(source),
+        dataCiphersText: Array.isArray(source.dataCiphers)
+          ? source.dataCiphers.join(":")
+          : "",
         keepAliveInterval: source.keepAlive?.interval,
         keepAliveTimeout: source.keepAlive?.timeout,
         customOptions: joinLines(source.customOptions),
       };
+    }
     case "wireguard":
       return {
         configFile: source.configFile,

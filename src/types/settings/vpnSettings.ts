@@ -152,6 +152,26 @@ export const defaultProxyCollectionData: ProxyCollectionData = {
   version: 1,
 };
 
+export type OpenVPNProtocol = "udp" | "udp4" | "udp6" | "tcp" | "tcp4" | "tcp6";
+
+export type OpenVPNVerifyX509Type = "subject" | "name" | "name-prefix";
+
+export type OpenVPNRedirectGatewayFlag =
+  | "local"
+  | "autolocal"
+  | "def1"
+  | "bypass-dhcp"
+  | "bypass-dns"
+  | "block-local"
+  | "ipv6"
+  | "!ipv4";
+
+export interface OpenVPNRemote {
+  host: string;
+  port: number;
+  protocol: OpenVPNProtocol;
+}
+
 export interface OpenVPNConfig {
   enabled: boolean;
   configFile?: string;
@@ -163,11 +183,24 @@ export interface OpenVPNConfig {
   clientKey?: string;
   username?: string;
   password?: string;
+  /** Ordered failover endpoints. The first endpoint is preferred unless random selection is enabled. */
+  remotes?: OpenVPNRemote[];
+  remoteRandom?: boolean;
+  remoteRandomHostname?: boolean;
+  resolveRetryInfinite?: boolean;
+  /** Legacy single-endpoint fields retained for stored-profile compatibility. */
   remoteHost?: string;
   remotePort?: number;
   protocol?: "udp" | "tcp";
+  deviceType?: "tun" | "tap";
+  deviceName?: string;
   cipher?: string;
+  dataCiphers?: string[];
   auth?: string;
+  tlsVersionMin?: string;
+  verifyX509Name?: string;
+  verifyX509Type?: OpenVPNVerifyX509Type;
+  remoteCertTls?: boolean;
   tlsAuth?: boolean;
   tlsAuthFile?: string;
   tlsCrypt?: boolean;
@@ -181,7 +214,21 @@ export interface OpenVPNConfig {
     interval: number;
     timeout: number;
   };
+  connectTimeout?: number;
+  connectRetry?: number;
+  /** Optional maximum backoff delay for `connect-retry`, in seconds. */
+  connectRetryMaxSeconds?: number;
+  /** Number of attempts per remote; distinct from `connectRetryMaxSeconds`. */
+  connectRetryMax?: number;
+  serverPollTimeout?: number;
   routeNoPull?: boolean;
+  redirectGateway?: boolean;
+  redirectGatewayFlags?: OpenVPNRedirectGatewayFlag[];
+  blockOutsideDns?: boolean;
+  persistTun?: boolean;
+  persistKey?: boolean;
+  nobind?: boolean;
+  float?: boolean;
   route?: Array<{
     network: string;
     netmask: string;

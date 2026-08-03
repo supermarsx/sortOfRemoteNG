@@ -112,7 +112,22 @@ describe("VPN provider capability catalog", () => {
           {
             id: "ovpn-1",
             name: "Office",
-            config: { enabled: true, remoteHost: "vpn.example.test" },
+            config: {
+              enabled: true,
+              remotes: [
+                {
+                  host: "primary.example.test",
+                  port: 1194,
+                  protocol: "udp" as const,
+                },
+                {
+                  host: "backup.example.test",
+                  port: 443,
+                  protocol: "tcp" as const,
+                },
+              ],
+              remoteRandom: true,
+            },
             status: "disconnected" as const,
             createdAt: new Date("2026-07-19T00:00:00.000Z"),
           },
@@ -142,7 +157,8 @@ describe("VPN provider capability catalog", () => {
       expect.objectContaining({
         id: "ovpn-1",
         vpnType: "openvpn",
-        host: "vpn.example.test",
+        host: "primary.example.test",
+        port: 1194,
       }),
     ]);
     expect(snapshot.providerStatus).toEqual({

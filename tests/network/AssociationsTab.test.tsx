@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -34,6 +35,10 @@ const collection = vi.hoisted(() => ({
 const capabilityMocks = vi.hoisted(() => ({
   load: vi.fn(),
 }));
+
+let defaultCapabilityLoad: Promise<
+  Array<{ vpnType: string; executable: boolean }>
+>;
 
 const translate = vi.hoisted(
   () => (_key: string, fallback?: string, values?: Record<string, unknown>) => {
@@ -96,14 +101,22 @@ function manager(connections: Connection[]) {
 describe("AssociationsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    capabilityMocks.load.mockResolvedValue([
+    defaultCapabilityLoad = Promise.resolve([
       { vpnType: "openvpn", executable: true },
     ]);
+    capabilityMocks.load.mockReturnValue(defaultCapabilityLoad);
   });
   afterEach(() => cleanup());
 
-  it("adds a consistent title and semantic association table", () => {
+  const settleDefaultCapabilities = async () => {
+    await act(async () => {
+      await defaultCapabilityLoad;
+    });
+  };
+
+  it("adds a consistent title and semantic association table", async () => {
     render(<AssociationsTab mgr={manager([connection("alpha", "Alpha")])} />);
+    await settleDefaultCapabilities();
 
     expect(
       screen.getByRole("heading", { name: "Connection Associations" }),
@@ -224,13 +237,14 @@ describe("AssociationsTab", () => {
     );
   });
 
-  it("searches, filters, and sorts association rows", () => {
+  it("searches, filters, and sorts association rows", async () => {
     const mgr = manager([
       connection("zulu", "Zulu"),
       connection("alpha", "Alpha", { proxyChainId: "proxy-chain-1" }),
       connection("bravo", "Bravo", { tunnelChainId: "tunnel-1" }),
     ]);
     render(<AssociationsTab mgr={mgr} />);
+    await settleDefaultCapabilities();
 
     fireEvent.change(screen.getByTestId("associations-search"), {
       target: { value: "zulu.example.com" },
@@ -263,13 +277,14 @@ describe("AssociationsTab", () => {
     expect(bodyRows[2]).toHaveTextContent("Alpha");
   });
 
-  it("searches assigned rows by the visible chain names", () => {
+  it("searches assigned rows by the visible chain names", async () => {
     const mgr = manager([
       connection("alpha", "Alpha", { proxyChainId: "proxy-chain-1" }),
       connection("bravo", "Bravo", { tunnelChainId: "tunnel-1" }),
       connection("charlie", "Charlie"),
     ]);
     render(<AssociationsTab mgr={mgr} />);
+    await settleDefaultCapabilities();
 
     fireEvent.change(screen.getByTestId("associations-search"), {
       target: { value: "Office Proxy" },
@@ -294,12 +309,13 @@ describe("AssociationsTab", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("paginates 1000+ connections and renders only the active page", () => {
+  it("paginates 1000+ connections and renders only the active page", async () => {
     const connections = Array.from({ length: 1050 }, (_, index) => {
       const number = String(index + 1).padStart(4, "0");
       return connection(`connection-${number}`, `Connection ${number}`);
     });
     render(<AssociationsTab mgr={manager(connections)} />);
+    await settleDefaultCapabilities();
 
     expect(
       screen.getByTestId("association-row-connection-0001"),
@@ -320,11 +336,12 @@ describe("AssociationsTab", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("preserves chain assignment and tunnel clear dispatch behavior", () => {
+  it("preserves chain assignment and tunnel clear dispatch behavior", async () => {
     const mgr = manager([
       connection("alpha", "Alpha", { tunnelChainId: "tunnel-1" }),
     ]);
     render(<AssociationsTab mgr={mgr} />);
+    await settleDefaultCapabilities();
 
     fireEvent.click(
       screen.getByRole("combobox", { name: "Connection chain for Alpha" }),
