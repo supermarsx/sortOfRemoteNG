@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload container logs
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: e2e-smoke-container-logs
           path: container-logs/
