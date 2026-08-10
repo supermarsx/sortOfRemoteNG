@@ -24,6 +24,11 @@
  * ```
  */
 
+import type {
+  RdpH264RecoveryReason,
+  RdpH264RecoveryState,
+} from "../../types/rdp/rdpEvents";
+
 // ─── ArrayBuffer normalization ─────────────────────────────────────────────
 // Tauri channels may deliver typed arrays (Uint8Array) instead of raw ArrayBuffer.
 // This helper normalizes to a DataView regardless of input type.
@@ -37,23 +42,27 @@ function toByteLength(data: ArrayBuffer | ArrayBufferView): number {
   return data instanceof ArrayBuffer ? data.byteLength : data.byteLength;
 }
 
-function toUint8Array(data: ArrayBuffer | ArrayBufferView, offset?: number): Uint8Array {
-  if (data instanceof ArrayBuffer) return new Uint8Array(data, offset ?? 0);
-  const base = data.byteOffset + (offset ?? 0);
-  return new Uint8Array(data.buffer, base);
+function toUint8Array(
+  data: ArrayBuffer | ArrayBufferView,
+  offset = 0,
+  length = toByteLength(data) - offset,
+): Uint8Array {
+  const buffer = data instanceof ArrayBuffer ? data : data.buffer;
+  const base = (data instanceof ArrayBuffer ? 0 : data.byteOffset) + offset;
+  return new Uint8Array(buffer, base, length);
 }
 
 // ─── Public Types ──────────────────────────────────────────────────────────
 
 /** Identifiers for the available frontend renderers. */
 export type FrontendRendererType =
-  | 'auto'
-  | 'canvas2d'
-  | 'webgl'
-  | 'webgpu'
-  | 'offscreen-worker'
-  | 'webcodecs-worker'
-  | 'webcodecs-cpu';
+  | "auto"
+  | "canvas2d"
+  | "webgl"
+  | "webgpu"
+  | "offscreen-worker"
+  | "webcodecs-worker"
+  | "webcodecs-cpu";
 
 /** Feature-test results exposed for UI / diagnostics. */
 export interface RendererCapabilities {
@@ -89,6 +98,8 @@ export interface FrameRenderer {
    * paint-region loop so they can issue a single draw-call per vsync.
    */
   present(): void;
+  /** Reset any stateful H.264 decoder after transport discontinuity. */
+  resetH264Recovery?(reason: RdpH264RecoveryReason): void;
   /** Release all GPU / worker resources. */
   destroy(): void;
 }
@@ -96,6 +107,116 @@ export interface FrameRenderer {
 /** Options for renderer creation. */
 export interface RendererOptions {
   tripleBuffering?: boolean;
+  onH264RecoveryStateChange?: (
+    state: RdpH264RecoveryState,
+    reason?: RdpH264RecoveryReason,
+  ) => void;
+}
+
+export type AnnexBNalKind = "sps" | "pps" | "idr" | "delta" | "other";
+
+export interface AnnexBNalUnit {
+  type: number;
+  kind: AnnexBNalKind;
+  /** The complete Annex-B NAL, including its three- or four-byte start code. */
+  data: Uint8Array;
+}
+
+export interface AnnexBAccessUnit {
+  valid: boolean;
+  malformedReason?: string;
+  nalUnits: AnnexBNalUnit[];
+  hasSps: boolean;
+  hasPps: boolean;
+  hasIdr: boolean;
+  hasDelta: boolean;
+}
+
+interface AnnexBStartCode {
+  index: number;
+  length: 3 | 4;
+}
+
+function findAnnexBStartCode(
+  bytes: Uint8Array,
+  from: number,
+): AnnexBStartCode | null {
+  for (let index = Math.max(0, from); index + 2 < bytes.length; index += 1) {
+    if (bytes[index] !== 0 || bytes[index + 1] !== 0) continue;
+    if (
+      index + 3 < bytes.length &&
+      bytes[index + 2] === 0 &&
+      bytes[index + 3] === 1
+    ) {
+      return { index, length: 4 };
+    }
+    if (bytes[index + 2] === 1) return { index, length: 3 };
+  }
+  return null;
+}
+
+function invalidAnnexB(reason: string): AnnexBAccessUnit {
+  return {
+    valid: false,
+    malformedReason: reason,
+    nalUnits: [],
+    hasSps: false,
+    hasPps: false,
+    hasIdr: false,
+    hasDelta: false,
+  };
+}
+
+/** Parse one bounded Annex-B access unit without copying its NAL payloads. */
+export function parseAnnexBAccessUnit(
+  data: ArrayBuffer | ArrayBufferView,
+): AnnexBAccessUnit {
+  const bytes = toUint8Array(data);
+  const first = findAnnexBStartCode(bytes, 0);
+  if (!first) return invalidAnnexB("missing Annex-B start code");
+  for (let index = 0; index < first.index; index += 1) {
+    if (bytes[index] !== 0) {
+      return invalidAnnexB("non-zero data before first Annex-B start code");
+    }
+  }
+
+  const nalUnits: AnnexBNalUnit[] = [];
+  let start: AnnexBStartCode | null = first;
+  while (start) {
+    const payloadStart = start.index + start.length;
+    const next = findAnnexBStartCode(bytes, payloadStart);
+    const end = next?.index ?? bytes.length;
+    if (payloadStart >= end) return invalidAnnexB("empty Annex-B NAL unit");
+
+    const header = bytes[payloadStart];
+    const type = header & 0x1f;
+    if ((header & 0x80) !== 0 || type === 0 || type > 23) {
+      return invalidAnnexB("invalid H.264 NAL header");
+    }
+
+    const kind: AnnexBNalKind =
+      type === 7
+        ? "sps"
+        : type === 8
+          ? "pps"
+          : type === 5
+            ? "idr"
+            : type >= 1 && type <= 4
+              ? "delta"
+              : "other";
+    nalUnits.push({ type, kind, data: bytes.subarray(start.index, end) });
+    start = next;
+  }
+
+  if (nalUnits.length === 0) return invalidAnnexB("empty Annex-B access unit");
+  return {
+    valid: true,
+    nalUnits,
+    hasSps: nalUnits.some((unit) => unit.kind === "sps"),
+    hasPps: nalUnits.some((unit) => unit.kind === "pps"),
+    hasIdr: nalUnits.some((unit) => unit.kind === "idr"),
+    hasDelta: nalUnits.some((unit) => unit.kind === "delta"),
+  };
 }
 
 // ─── Feature Detection ─────────────────────────────────────────────────────
@@ -105,21 +226,31 @@ let _caps: RendererCapabilities | null = null;
 /** Probe which renderers the current browser supports. */
 export function detectCapabilities(): RendererCapabilities {
   if (_caps) return _caps;
-  const probe = document.createElement('canvas');
-  probe.width = 1;
-  probe.height = 1;
+
+  const createProbe = (): HTMLCanvasElement => {
+    const probe = document.createElement("canvas");
+    probe.width = 1;
+    probe.height = 1;
+    return probe;
+  };
+
+  // A canvas is permanently bound to its first context mode. Probing 2D and
+  // WebGL on the same element therefore produces a false negative for WebGL
+  // in conforming browsers.
+  const canvas2d = !!createProbe().getContext("2d");
+  const webgl2 = !!createProbe().getContext("webgl2");
+  const webgl = webgl2 || !!createProbe().getContext("webgl");
 
   _caps = {
-    canvas2d: !!probe.getContext('2d'),
-    webgl: !!(probe.getContext('webgl2') || probe.getContext('webgl')),
-    webgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
+    canvas2d,
+    webgl,
+    webgpu: typeof navigator !== "undefined" && "gpu" in navigator,
     offscreenWorker:
-      typeof OffscreenCanvas !== 'undefined' &&
-      typeof Worker !== 'undefined',
+      typeof OffscreenCanvas !== "undefined" && typeof Worker !== "undefined",
     webcodecs:
-      typeof OffscreenCanvas !== 'undefined' &&
-      typeof Worker !== 'undefined' &&
-      typeof VideoDecoder !== 'undefined',
+      typeof OffscreenCanvas !== "undefined" &&
+      typeof Worker !== "undefined" &&
+      typeof VideoDecoder !== "undefined",
   };
   return _caps;
 }
@@ -129,8 +260,8 @@ export function detectCapabilities(): RendererCapabilities {
 // ═════════════════════════════════════════════════════════════════════════════
 
 class Canvas2DRenderer implements FrameRenderer {
-  readonly name = 'Canvas 2D';
-  readonly type: FrontendRendererType = 'canvas2d';
+  readonly name = "Canvas 2D";
+  readonly type: FrontendRendererType = "canvas2d";
   readonly tripleBuffered = false;
   private visCtx: CanvasRenderingContext2D;
   /** Off-screen back-buffer (null when OffscreenCanvas is unavailable). */
@@ -143,8 +274,8 @@ class Canvas2DRenderer implements FrameRenderer {
   private dirty = false;
 
   constructor(private canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext('2d', { desynchronized: false });
-    if (!ctx) throw new Error('Canvas 2D context unavailable');
+    const ctx = canvas.getContext("2d", { desynchronized: false });
+    if (!ctx) throw new Error("Canvas 2D context unavailable");
     this.visCtx = ctx;
 
     // Double-buffer: paint dirty regions to an OffscreenCanvas, then blit
@@ -153,10 +284,13 @@ class Canvas2DRenderer implements FrameRenderer {
     // during large putImageData writes (which causes scanline artifacts).
     // Falls back to direct putImageData when OffscreenCanvas is unavailable
     // (e.g. test environments).
-    if (typeof OffscreenCanvas !== 'undefined') {
+    if (typeof OffscreenCanvas !== "undefined") {
       try {
-        this.backBuffer = new OffscreenCanvas(canvas.width || 1920, canvas.height || 1080);
-        this.backCtx = this.backBuffer.getContext('2d') ?? null;
+        this.backBuffer = new OffscreenCanvas(
+          canvas.width || 1920,
+          canvas.height || 1080,
+        );
+        this.backCtx = this.backBuffer.getContext("2d") ?? null;
       } catch {
         // OffscreenCanvas may exist but fail in some environments.
       }
@@ -192,7 +326,7 @@ class Canvas2DRenderer implements FrameRenderer {
     this.canvas.width = width;
     this.canvas.height = height;
     // Re-acquire visible context after resize.
-    const ctx = this.canvas.getContext('2d', { desynchronized: false });
+    const ctx = this.canvas.getContext("2d", { desynchronized: false });
     if (ctx) this.visCtx = ctx;
 
     if (this.backBuffer && this.backCtx) {
@@ -202,14 +336,14 @@ class Canvas2DRenderer implements FrameRenderer {
       if (width === oldW && height === oldH) return;
 
       const tmp = new OffscreenCanvas(oldW, oldH);
-      const tmpCtx = tmp.getContext('2d');
+      const tmpCtx = tmp.getContext("2d");
       if (tmpCtx && this.dirty) {
         tmpCtx.drawImage(this.backBuffer, 0, 0);
       }
       this.backBuffer.width = width;
       this.backBuffer.height = height;
       // Re-acquire back-buffer context (resize invalidates it).
-      const bCtx = this.backBuffer.getContext('2d');
+      const bCtx = this.backBuffer.getContext("2d");
       if (bCtx) {
         this.backCtx = bCtx;
         if (tmpCtx && this.dirty) {
@@ -260,7 +394,7 @@ const GL_FRAG = `
 
 class WebGLRenderer implements FrameRenderer {
   readonly name: string;
-  readonly type: FrontendRendererType = 'webgl';
+  readonly type: FrontendRendererType = "webgl";
   readonly tripleBuffered: boolean;
   private static readonly INIT_TIMEOUT_MS = 2000;
   private gl: WebGLRenderingContext | WebGL2RenderingContext;
@@ -278,7 +412,10 @@ class WebGLRenderer implements FrameRenderer {
   private writeIdx = 0; // index into texPair: which texture receives uploads
   private isWebGL2 = false;
 
-  constructor(private canvas: HTMLCanvasElement, opts?: RendererOptions) {
+  constructor(
+    private canvas: HTMLCanvasElement,
+    opts?: RendererOptions,
+  ) {
     // preserveDrawingBuffer MUST be true for dirty-rect rendering: we only
     // update changed regions via texSubImage2D, so the browser must not clear
     // unchanged areas between compositing frames.
@@ -287,16 +424,18 @@ class WebGLRenderer implements FrameRenderer {
     // sub-regions per frame via texSubImage2D before a single present().
     // With desynchronized=true, the browser can display the canvas mid-paint,
     // showing a mix of old and new regions — classic ghosting artifacts.
-    const gl2 = canvas.getContext('webgl2', {
+    const gl2 = canvas.getContext("webgl2", {
       desynchronized: false,
       preserveDrawingBuffer: true,
     }) as WebGL2RenderingContext | null;
-    const gl = gl2 ?? (canvas.getContext('webgl', {
-      antialias: false,
-      desynchronized: false,
-      preserveDrawingBuffer: true,
-    }) as WebGLRenderingContext | null);
-    if (!gl) throw new Error('WebGL context unavailable');
+    const gl =
+      gl2 ??
+      (canvas.getContext("webgl", {
+        antialias: false,
+        desynchronized: false,
+        preserveDrawingBuffer: true,
+      }) as WebGLRenderingContext | null);
+    if (!gl) throw new Error("WebGL context unavailable");
     this.gl = gl;
     this.isWebGL2 = !!gl2;
 
@@ -308,7 +447,7 @@ class WebGLRenderer implements FrameRenderer {
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      throw new Error('WebGL program link: ' + gl.getProgramInfoLog(prog));
+      throw new Error("WebGL program link: " + gl.getProgramInfoLog(prog));
     }
     this.program = prog;
     gl.useProgram(prog);
@@ -321,7 +460,7 @@ class WebGLRenderer implements FrameRenderer {
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
       gl.STATIC_DRAW,
     );
-    const loc = gl.getAttribLocation(prog, 'a_pos');
+    const loc = gl.getAttribLocation(prog, "a_pos");
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
@@ -336,10 +475,10 @@ class WebGLRenderer implements FrameRenderer {
       this.texPair = [tA, tB];
       this.fboPair = [this.createFbo(gl, tA), this.createFbo(gl, tB)];
       this.tex = tA; // alias for alloc helper
-      this.name = 'WebGL (triple-buffered)';
+      this.name = "WebGL (triple-buffered)";
     } else {
       this.tex = this.createTex(gl);
-      this.name = 'WebGL';
+      this.name = "WebGL";
     }
 
     // Allocate at current canvas size
@@ -360,10 +499,19 @@ class WebGLRenderer implements FrameRenderer {
     return tex;
   }
 
-  private createFbo(gl: WebGLRenderingContext, tex: WebGLTexture): WebGLFramebuffer {
+  private createFbo(
+    gl: WebGLRenderingContext,
+    tex: WebGLTexture,
+  ): WebGLFramebuffer {
     const fbo = gl.createFramebuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      tex,
+      0,
+    );
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return fbo;
   }
@@ -374,7 +522,7 @@ class WebGLRenderer implements FrameRenderer {
     gl.shaderSource(s, src);
     gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      throw new Error('Shader compile: ' + gl.getShaderInfoLog(s));
+      throw new Error("Shader compile: " + gl.getShaderInfoLog(s));
     }
     return s;
   }
@@ -385,11 +533,31 @@ class WebGLRenderer implements FrameRenderer {
     if (this.tripleBuffered && this.texPair) {
       for (const t of this.texPair) {
         gl.bindTexture(gl.TEXTURE_2D, t);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          w,
+          h,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          null,
+        );
       }
     } else {
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        w,
+        h,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+      );
     }
     this.texW = w;
     this.texH = h;
@@ -414,7 +582,17 @@ class WebGLRenderer implements FrameRenderer {
     } else {
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
     }
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      x,
+      y,
+      w,
+      h,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      rgba,
+    );
     this.dirty = true;
   }
 
@@ -441,9 +619,16 @@ class WebGLRenderer implements FrameRenderer {
       gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, this.fboPair[prevWrite]);
       gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, this.fboPair[this.writeIdx]);
       gl2.blitFramebuffer(
-        0, 0, this.texW, this.texH,
-        0, 0, this.texW, this.texH,
-        gl.COLOR_BUFFER_BIT, gl.NEAREST,
+        0,
+        0,
+        this.texW,
+        this.texH,
+        0,
+        0,
+        this.texW,
+        this.texH,
+        gl.COLOR_BUFFER_BIT,
+        gl.NEAREST,
       );
       gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, null);
       gl2.bindFramebuffer(gl2.DRAW_FRAMEBUFFER, null);
@@ -478,7 +663,7 @@ class WebGLRenderer implements FrameRenderer {
       gl.deleteTexture(this.tex);
     }
     gl.deleteProgram(this.program);
-    const ext = gl.getExtension('WEBGL_lose_context');
+    const ext = gl.getExtension("WEBGL_lose_context");
     ext?.loseContext();
   }
 }
@@ -515,8 +700,8 @@ const WGPU_FRAG = /* wgsl */ `
 const WEBGPU_INIT_TIMEOUT_MS = 2000;
 
 class WebGPURenderer implements FrameRenderer {
-  readonly name = 'WebGPU';
-  readonly type: FrontendRendererType = 'webgpu';
+  readonly name = "WebGPU";
+  readonly type: FrontendRendererType = "webgpu";
   readonly tripleBuffered = false; // WebGPU manages its own swap chain
   private device!: GPUDevice;
   private ctx!: GPUCanvasContext;
@@ -537,14 +722,20 @@ class WebGPURenderer implements FrameRenderer {
   private fallback: Canvas2DRenderer | null = null;
   // Queued paints that arrive before async init completes (no cap — init
   // takes ~50-200ms so the queue stays small)
-  private pendingPaints: { x: number; y: number; w: number; h: number; rgba: Uint8Array }[] = [];
+  private pendingPaints: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    rgba: Uint8Array;
+  }[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     const timeoutHandle = window.setTimeout(() => {
       this.initCancelled = true;
       this.activateFallback(
         new Error(`WebGPU init timed out after ${WEBGPU_INIT_TIMEOUT_MS}ms`),
-        'timeout',
+        "timeout",
       );
     }, WEBGPU_INIT_TIMEOUT_MS);
 
@@ -554,19 +745,23 @@ class WebGPURenderer implements FrameRenderer {
       })
       .catch((e) => {
         window.clearTimeout(timeoutHandle);
-        this.activateFallback(e, 'error');
+        this.activateFallback(e, "error");
       });
   }
 
-  private activateFallback(error: unknown, reason: 'timeout' | 'error'): void {
+  private activateFallback(error: unknown, reason: "timeout" | "error"): void {
     if (this.initFailed) return;
 
-    console.error('WebGPU init failed, falling back to Canvas2D:', error);
+    console.error("WebGPU init failed, falling back to Canvas2D:", error);
     this.initFailed = true;
     try {
       // Unconfigure WebGPU context if it was acquired, so Canvas2D can work
       if (this.ctx) {
-        try { this.ctx.unconfigure(); } catch { /* ignore */ }
+        try {
+          this.ctx.unconfigure();
+        } catch {
+          /* ignore */
+        }
       }
       // Force a fresh context by resetting canvas dimensions
       const w = this.canvas.width;
@@ -581,12 +776,16 @@ class WebGPURenderer implements FrameRenderer {
           p.y,
           p.w,
           p.h,
-          new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength),
+          new Uint8ClampedArray(
+            p.rgba.buffer,
+            p.rgba.byteOffset,
+            p.rgba.byteLength,
+          ),
         );
       }
       this.fallback.present();
       window.dispatchEvent(
-        new CustomEvent('rdp:webgpu-fallback', {
+        new CustomEvent("rdp:webgpu-fallback", {
           detail: {
             reason,
             message: error instanceof Error ? error.message : String(error),
@@ -594,24 +793,24 @@ class WebGPURenderer implements FrameRenderer {
         }),
       );
     } catch (e2) {
-      console.error('Canvas2D fallback also failed:', e2);
+      console.error("Canvas2D fallback also failed:", e2);
     }
     this.pendingPaints = [];
   }
 
   private async initAsync(): Promise<void> {
-    if (!navigator.gpu) throw new Error('WebGPU: navigator.gpu not available');
+    if (!navigator.gpu) throw new Error("WebGPU: navigator.gpu not available");
     const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) throw new Error('WebGPU: no adapter');
+    if (!adapter) throw new Error("WebGPU: no adapter");
     if (this.initCancelled) return;
     this.device = await adapter.requestDevice();
     if (this.initCancelled) return;
 
-    const ctx = this.canvas.getContext('webgpu');
+    const ctx = this.canvas.getContext("webgpu");
     if (!ctx) {
       throw new Error(
         'WebGPU: getContext("webgpu") returned null — the canvas may already ' +
-        'have a different context type (e.g. "2d" or "webgl").',
+          'have a different context type (e.g. "2d" or "webgl").',
       );
     }
     this.ctx = ctx as GPUCanvasContext;
@@ -620,12 +819,12 @@ class WebGPURenderer implements FrameRenderer {
     this.ctx.configure({
       device: this.device,
       format,
-      alphaMode: 'opaque',
+      alphaMode: "opaque",
     });
 
     // Shader module
     const shaderModule = this.device.createShaderModule({
-      code: WGPU_VERT + '\n' + WGPU_FRAG,
+      code: WGPU_VERT + "\n" + WGPU_FRAG,
     });
 
     this.bindGroupLayout = this.device.createBindGroupLayout({
@@ -639,34 +838,48 @@ class WebGPURenderer implements FrameRenderer {
       layout: this.device.createPipelineLayout({
         bindGroupLayouts: [this.bindGroupLayout],
       }),
-      vertex: { module: shaderModule, entryPoint: 'vs' },
+      vertex: { module: shaderModule, entryPoint: "vs" },
       fragment: {
         module: shaderModule,
-        entryPoint: 'fs',
+        entryPoint: "fs",
         targets: [{ format }],
       },
-      primitive: { topology: 'triangle-strip' },
+      primitive: { topology: "triangle-strip" },
     });
 
     this.sampler = this.device.createSampler({
-      magFilter: 'nearest',
-      minFilter: 'linear',
+      magFilter: "nearest",
+      minFilter: "linear",
     });
 
     this.allocTexture(this.canvas.width || 1920, this.canvas.height || 1080);
-  if (this.initCancelled) return;
+    if (this.initCancelled) return;
     this.ready = true;
-    console.log(`[WebGPU] initAsync OK: tex=${this.texW}x${this.texH}, canvas=${this.canvas.width}x${this.canvas.height}, pending=${this.pendingPaints.length}, format=${format}`);
+    console.log(
+      `[WebGPU] initAsync OK: tex=${this.texW}x${this.texH}, canvas=${this.canvas.width}x${this.canvas.height}, pending=${this.pendingPaints.length}, format=${format}`,
+    );
 
     // Flush any queued paints and present immediately
     for (const p of this.pendingPaints) {
-      this.paintRegion(p.x, p.y, p.w, p.h, new Uint8ClampedArray(p.rgba.buffer, p.rgba.byteOffset, p.rgba.byteLength));
+      this.paintRegion(
+        p.x,
+        p.y,
+        p.w,
+        p.h,
+        new Uint8ClampedArray(
+          p.rgba.buffer,
+          p.rgba.byteOffset,
+          p.rgba.byteLength,
+        ),
+      );
     }
     const hadPending = this.pendingPaints.length;
     this.pendingPaints = [];
     if (hadPending > 0) {
       this.present();
-      console.log(`[WebGPU] flushed ${hadPending} pending paints, dirty=${this.dirty}`);
+      console.log(
+        `[WebGPU] flushed ${hadPending} pending paints, dirty=${this.dirty}`,
+      );
     }
   }
 
@@ -675,7 +888,7 @@ class WebGPURenderer implements FrameRenderer {
     if (this.tex) this.tex.destroy();
     this.tex = this.device.createTexture({
       size: [w, h],
-      format: 'rgba8unorm',
+      format: "rgba8unorm",
       usage:
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST |
@@ -716,13 +929,16 @@ class WebGPURenderer implements FrameRenderer {
     // is often a Uint8ClampedArray *view* with a non-zero byteOffset into a
     // larger ArrayBuffer.  Some WebGPU implementations don't correctly handle
     // the view's byteOffset, so we ensure a zero-offset buffer.
-    const data: Uint8Array = rgba.byteOffset === 0
-      ? new Uint8Array(rgba.buffer, 0, rgba.byteLength)
-      : new Uint8Array(rgba);
+    const data: Uint8Array =
+      rgba.byteOffset === 0
+        ? new Uint8Array(rgba.buffer, 0, rgba.byteLength)
+        : new Uint8Array(rgba);
     if (this.diagPaintCount++ < 5) {
       // Sample first 16 bytes to verify non-zero pixel data
       const sample = Array.from(data.subarray(0, Math.min(16, data.length)));
-      console.log(`[WebGPU] paintRegion #${this.diagPaintCount}: (${x},${y}) ${w}x${h}, ${data.length} bytes, offset=${rgba.byteOffset}, texSize=${this.texW}x${this.texH}, sample=${sample.join(',')}`);
+      console.log(
+        `[WebGPU] paintRegion #${this.diagPaintCount}: (${x},${y}) ${w}x${h}, ${data.length} bytes, offset=${rgba.byteOffset}, texSize=${this.texW}x${this.texH}, sample=${sample.join(",")}`,
+      );
     }
     this.device.queue.writeTexture(
       { texture: this.tex, origin: [x, y] },
@@ -734,10 +950,15 @@ class WebGPURenderer implements FrameRenderer {
   }
 
   present(): void {
-    if (this.fallback) { this.fallback.present(); return; }
+    if (this.fallback) {
+      this.fallback.present();
+      return;
+    }
     if (!this.dirty || !this.ready) return;
     if (this.diagPresentCount++ < 5) {
-      console.log(`[WebGPU] present #${this.diagPresentCount}: canvas=${this.canvas.width}x${this.canvas.height}, tex=${this.texW}x${this.texH}`);
+      console.log(
+        `[WebGPU] present #${this.diagPresentCount}: canvas=${this.canvas.width}x${this.canvas.height}, tex=${this.texW}x${this.texH}`,
+      );
     }
     try {
       const target = this.ctx.getCurrentTexture().createView();
@@ -746,8 +967,8 @@ class WebGPURenderer implements FrameRenderer {
         colorAttachments: [
           {
             view: target,
-            loadOp: 'clear',
-            storeOp: 'store',
+            loadOp: "clear",
+            storeOp: "store",
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
           },
         ],
@@ -759,12 +980,15 @@ class WebGPURenderer implements FrameRenderer {
       this.device.queue.submit([enc.finish()]);
       this.dirty = false;
     } catch (e) {
-      console.error('WebGPU present failed:', e);
+      console.error("WebGPU present failed:", e);
     }
   }
 
   resize(width: number, height: number): void {
-    if (this.fallback) { this.fallback.resize(width, height); return; }
+    if (this.fallback) {
+      this.fallback.resize(width, height);
+      return;
+    }
     this.canvas.width = width;
     this.canvas.height = height;
     if (this.ready) {
@@ -773,7 +997,10 @@ class WebGPURenderer implements FrameRenderer {
   }
 
   destroy(): void {
-    if (this.fallback) { this.fallback.destroy(); return; }
+    if (this.fallback) {
+      this.fallback.destroy();
+      return;
+    }
     if (this.tex) this.tex.destroy();
     if (this.device) this.device.destroy();
   }
@@ -853,12 +1080,12 @@ function createPaintWorkerBlob(): Blob {
       }
     };
   `;
-  return new Blob([code], { type: 'application/javascript' });
+  return new Blob([code], { type: "application/javascript" });
 }
 
 class OffscreenWorkerRenderer implements FrameRenderer {
-  readonly name = 'OffscreenCanvas Worker';
-  readonly type: FrontendRendererType = 'offscreen-worker';
+  readonly name = "OffscreenCanvas Worker";
+  readonly type: FrontendRendererType = "offscreen-worker";
   readonly tripleBuffered = false;
   private worker: Worker;
   private ready = false;
@@ -871,10 +1098,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     this.worker = new Worker(url);
     URL.revokeObjectURL(url);
 
-    this.worker.postMessage(
-      { type: 'init', canvas: offscreen },
-      [offscreen],
-    );
+    this.worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
     this.ready = true;
   }
 
@@ -904,15 +1128,12 @@ class OffscreenWorkerRenderer implements FrameRenderer {
     const bufs = this.pendingFrames;
     this.pendingFrames = [];
     // Transfer ownership of the ArrayBuffers for zero-copy
-    this.worker.postMessage(
-      { type: 'frames', buffers: bufs },
-      bufs,
-    );
+    this.worker.postMessage({ type: "frames", buffers: bufs }, bufs);
   }
 
   resize(width: number, height: number): void {
     // OffscreenCanvas must be resized from the worker thread
-    this.worker.postMessage({ type: 'resize', width, height });
+    this.worker.postMessage({ type: "resize", width, height });
   }
 
   destroy(): void {
@@ -929,7 +1150,7 @@ class OffscreenWorkerRenderer implements FrameRenderer {
  * The Rust backend prefixes H.264 NAL payloads with this magic so the
  * frontend can distinguish them from standard RGBA dirty-rect frames.
  */
-const NAL_MAGIC = 0x4E414C48;
+const NAL_MAGIC = 0x4e414c48;
 
 /** NAL header size: magic(4) + surface_id(2) + screen_x(2) + screen_y(2) + dest_w(2) + dest_h(2) + reserved(2) = 16 */
 const NAL_HEADER_SIZE = 16;
@@ -968,7 +1189,9 @@ export function parseNalHeader(data: ArrayBuffer | ArrayBufferView): {
  * - A WebGL2 context on an OffscreenCanvas for GPU presentation
  * - Fallback to Canvas2D for RGBA dirty-rect frames that arrive on the same channel
  */
-function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software' = 'prefer-hardware'): Blob {
+function createWebCodecsWorkerBlob(
+  hwAccel: "prefer-hardware" | "prefer-software" = "prefer-hardware",
+): Blob {
   const code = `
     'use strict';
 
@@ -982,8 +1205,21 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
     let vao = null;
     let w = 0, h = 0;
     let decoderConfigured = false;
-    let frameCount = 0;
+    let decoderWidth = 0;
+    let decoderHeight = 0;
+    let nextInputTimestamp = 0;
+    let acceptedTimestampFloor = 0;
+    let awaitingRecovery = true;
+    let recoveryKeyTimestamp = null;
+    let recoveryNotified = false;
+    let recoveryReason = null;
+    let cachedSps = null;
+    let cachedPps = null;
     const HW_ACCEL = '${hwAccel}';
+    const NAL_MAGIC = 0x4E414C48;
+    const NAL_HEADER_SIZE = 16;
+    const MAX_DECODER_PENDING = 4;
+    const MAX_PARAMETER_SET_BYTES = 256 * 1024;
 
     function toDataView(data) {
       if (data instanceof ArrayBuffer) return new DataView(data);
@@ -1003,6 +1239,69 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
     function toUint8ClampedArray(data, offset, length) {
       const base = data instanceof ArrayBuffer ? 0 : data.byteOffset;
       return new Uint8ClampedArray(data instanceof ArrayBuffer ? data : data.buffer, base + offset, length);
+    }
+
+    function findStartCode(bytes, from) {
+      for (let index = Math.max(0, from); index + 2 < bytes.length; index++) {
+        if (bytes[index] !== 0 || bytes[index + 1] !== 0) continue;
+        if (index + 3 < bytes.length && bytes[index + 2] === 0 && bytes[index + 3] === 1) {
+          return { index, length: 4 };
+        }
+        if (bytes[index + 2] === 1) return { index, length: 3 };
+      }
+      return null;
+    }
+
+    function parseAccessUnit(bytes) {
+      const first = findStartCode(bytes, 0);
+      if (!first) return { valid: false, reason: 'missing-start-code', units: [] };
+      for (let index = 0; index < first.index; index++) {
+        if (bytes[index] !== 0) {
+          return { valid: false, reason: 'leading-data', units: [] };
+        }
+      }
+
+      const units = [];
+      let start = first;
+      while (start) {
+        const payloadStart = start.index + start.length;
+        const next = findStartCode(bytes, payloadStart);
+        const end = next ? next.index : bytes.length;
+        if (payloadStart >= end) {
+          return { valid: false, reason: 'empty-nal', units: [] };
+        }
+        const header = bytes[payloadStart];
+        const type = header & 0x1f;
+        if ((header & 0x80) !== 0 || type === 0 || type > 23) {
+          return { valid: false, reason: 'invalid-nal-header', units: [] };
+        }
+        units.push({
+          type,
+          data: bytes.subarray(start.index, end),
+        });
+        start = next;
+      }
+
+      return {
+        valid: units.length > 0,
+        units,
+        hasSps: units.some((unit) => unit.type === 7),
+        hasPps: units.some((unit) => unit.type === 8),
+        hasIdr: units.some((unit) => unit.type === 5),
+        hasDelta: units.some((unit) => unit.type >= 1 && unit.type <= 4),
+      };
+    }
+
+    function concatenate(parts) {
+      let total = 0;
+      for (const part of parts) total += part.byteLength;
+      const combined = new Uint8Array(total);
+      let offset = 0;
+      for (const part of parts) {
+        combined.set(part, offset);
+        offset += part.byteLength;
+      }
+      return combined;
     }
 
     // ── WebGL2 setup ───────────────────────────────────────────────────
@@ -1077,6 +1376,37 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
     }
 
     // ── VideoDecoder (WebCodecs) ───────────────────────────────────────
+    function publishRecovery(state, reason) {
+      self.postMessage({ type: 'h264-recovery', state, reason });
+    }
+
+    function clearParameterSets() {
+      cachedSps = null;
+      cachedPps = null;
+    }
+
+    function enterRecovery(reason, clearCache = true) {
+      if (decoder && decoder.state !== 'closed') {
+        try {
+          decoder.reset();
+        } catch (_) {
+          // Decoder may already be unconfigured after an asynchronous error.
+        }
+      }
+      decoderConfigured = false;
+      decoderWidth = 0;
+      decoderHeight = 0;
+      acceptedTimestampFloor = nextInputTimestamp;
+      awaitingRecovery = true;
+      recoveryKeyTimestamp = null;
+      if (clearCache) clearParameterSets();
+      if (!recoveryNotified || recoveryReason !== reason) {
+        recoveryNotified = true;
+        recoveryReason = reason;
+        publishRecovery('awaitingRecovery', reason);
+      }
+    }
+
     function initDecoder() {
       if (typeof VideoDecoder === 'undefined') {
         console.warn('[WebCodecs worker] VideoDecoder not available');
@@ -1085,7 +1415,14 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
 
       decoder = new VideoDecoder({
         output: (frame) => {
-          frameCount++;
+          const outputTimestamp = Number(frame.timestamp);
+          if (
+            !Number.isFinite(outputTimestamp) ||
+            outputTimestamp < acceptedTimestampFloor
+          ) {
+            frame.close();
+            return;
+          }
           if (gl) {
             // Upload VideoFrame directly as WebGL texture (GPU→GPU, zero CPU copy)
             gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -1095,15 +1432,44 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
             ctx2d.drawImage(frame, 0, 0);
           }
           frame.close();
+          if (
+            recoveryKeyTimestamp !== null &&
+            outputTimestamp === recoveryKeyTimestamp
+          ) {
+            recoveryKeyTimestamp = null;
+            awaitingRecovery = false;
+            recoveryNotified = false;
+            recoveryReason = null;
+            publishRecovery('healthy');
+          }
         },
         error: (e) => {
           console.error('[WebCodecs worker] decode error:', e);
+          enterRecovery('decoder-error');
         },
       });
+      if (typeof decoder.addEventListener === 'function') {
+        decoder.addEventListener('dequeue', () => {
+          self.postMessage({
+            type: 'h264-dequeue',
+            pending: Number(decoder.decodeQueueSize) || 0,
+          });
+        });
+      }
     }
 
     function configureDecoder(width, height) {
-      if (!decoder || decoderConfigured) return;
+      if (!decoder || width <= 0 || height <= 0) return false;
+      if (decoderConfigured && decoderWidth === width && decoderHeight === height) {
+        return true;
+      }
+      if (decoderConfigured) {
+        try {
+          decoder.reset();
+        } catch (_) {
+          // Reconfiguration below is authoritative.
+        }
+      }
       decoder.configure({
         codec: 'avc1.42001f', // Baseline profile, level 3.1
         codedWidth: width,
@@ -1112,7 +1478,113 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
         optimizeForLatency: true,
       });
       decoderConfigured = true;
+      decoderWidth = width;
+      decoderHeight = height;
       console.log('[WebCodecs worker] decoder configured:', width, 'x', height);
+      return true;
+    }
+
+    function cacheParameterSets(parsed) {
+      let nextSps = cachedSps;
+      let nextPps = cachedPps;
+      for (const unit of parsed.units) {
+        if (unit.type === 7) nextSps = new Uint8Array(unit.data);
+        if (unit.type === 8) nextPps = new Uint8Array(unit.data);
+      }
+      const total = (nextSps ? nextSps.byteLength : 0) + (nextPps ? nextPps.byteLength : 0);
+      if (total > MAX_PARAMETER_SET_BYTES) {
+        enterRecovery('parameter-set-overflow');
+        return false;
+      }
+      cachedSps = nextSps;
+      cachedPps = nextPps;
+      return true;
+    }
+
+    function submitChunk(type, data) {
+      if (!decoder || !decoderConfigured) {
+        enterRecovery(decoder ? 'missing-parameter-sets' : 'decoder-unavailable', false);
+        return false;
+      }
+      const pending = Number(decoder.decodeQueueSize) || 0;
+      if (pending >= MAX_DECODER_PENDING) {
+        enterRecovery('decoder-overflow');
+        return false;
+      }
+
+      const timestamp = nextInputTimestamp++;
+      const completesRecovery = type === 'key' && awaitingRecovery;
+      if (completesRecovery) recoveryKeyTimestamp = timestamp;
+      const chunk = new EncodedVideoChunk({
+        type,
+        timestamp,
+        data,
+      });
+      try {
+        decoder.decode(chunk);
+        return true;
+      } catch (error) {
+        console.error('[WebCodecs worker] decode submission failed:', error);
+        enterRecovery('decoder-error');
+        return false;
+      }
+    }
+
+    function processNalPayload(data) {
+      if (!decoder) {
+        enterRecovery('decoder-unavailable');
+        return;
+      }
+      if (toByteLength(data) <= NAL_HEADER_SIZE) {
+        enterRecovery('malformed-access-unit');
+        return;
+      }
+
+      const view = toDataView(data);
+      const destW = view.getUint16(10, true);
+      const destH = view.getUint16(12, true);
+      const nalData = toUint8Array(data, NAL_HEADER_SIZE);
+      const parsed = parseAccessUnit(nalData);
+      if (!parsed.valid || (parsed.hasIdr && parsed.hasDelta)) {
+        enterRecovery('malformed-access-unit');
+        return;
+      }
+      if (
+        decoderConfigured &&
+        (decoderWidth !== destW || decoderHeight !== destH)
+      ) {
+        enterRecovery('resize');
+      }
+      if (!cacheParameterSets(parsed)) return;
+
+      if (!parsed.hasIdr && !parsed.hasDelta) return;
+      if (!configureDecoder(destW, destH)) {
+        enterRecovery('malformed-access-unit');
+        return;
+      }
+
+      if (parsed.hasIdr) {
+        if (!cachedSps || !cachedPps) {
+          enterRecovery('missing-parameter-sets', false);
+          return;
+        }
+        const parts = [];
+        if (!parsed.hasSps) parts.push(cachedSps);
+        if (!parsed.hasPps) parts.push(cachedPps);
+        parts.push(nalData);
+        submitChunk('key', parts.length === 1 ? nalData : concatenate(parts));
+        return;
+      }
+
+      if (awaitingRecovery) {
+        if (!recoveryNotified || recoveryReason !== 'missing-keyframe') {
+          recoveryNotified = true;
+          recoveryReason = 'missing-keyframe';
+          publishRecovery('awaitingRecovery', 'missing-keyframe');
+        }
+        return;
+      }
+      submitChunk('delta', nalData);
     }
 
     // ── RGBA dirty-rect fallback (for uncompressed/bitmap frames) ─────
@@ -1147,8 +1619,19 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
       if (gl) presentGL();
     }
 
+    function processFrameBuffer(data) {
+      if (toByteLength(data) < 4) return;
+      const magic = toDataView(data).getUint32(0, true);
+      if (magic === NAL_MAGIC) {
+        processNalPayload(data);
+      } else {
+        // RGBA is an independent fallback path. It must never complete an
+        // H.264 recovery episode.
+        paintRgbaRect(data);
+      }
+    }
+
     // ── Message handler ────────────────────────────────────────────────
-    const NAL_MAGIC = 0x4E414C48;
 
     self.onmessage = (e) => {
       const msg = e.data;
@@ -1180,39 +1663,17 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
           gl.bindTexture(gl.TEXTURE_2D, texture);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
         }
-        // Reset decoder for new resolution
-        if (decoder && decoderConfigured) {
-          decoderConfigured = false;
-        }
+        enterRecovery('resize');
+        return;
+      }
+
+      if (msg.type === 'reset-h264') {
+        enterRecovery(msg.reason || 'renderer-reset');
         return;
       }
 
       if (msg.type === 'frame') {
-        const data = msg.data; // ArrayBuffer
-        if (toByteLength(data) < 4) return;
-
-        const magic = toDataView(data).getUint32(0, true);
-        if (magic === NAL_MAGIC && decoder) {
-          // H.264 NAL passthrough
-          const view = toDataView(data);
-          const destW = view.getUint16(10, true);
-          const destH = view.getUint16(12, true);
-          const nalData = toUint8Array(data, 16);
-
-          if (!decoderConfigured && destW > 0 && destH > 0) {
-            configureDecoder(destW, destH);
-          }
-
-          const chunk = new EncodedVideoChunk({
-            type: frameCount === 0 ? 'key' : 'delta',
-            timestamp: frameCount * 33333,  // ~30fps timing
-            data: nalData,
-          });
-          decoder.decode(chunk);
-        } else {
-          // Standard RGBA dirty-rect
-          paintRgbaRect(data);
-        }
+        processFrameBuffer(msg.data);
         return;
       }
 
@@ -1220,32 +1681,13 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
         // Batch of frame ArrayBuffers
         const buffers = msg.buffers;
         for (let i = 0; i < buffers.length; i++) {
-          const data = buffers[i];
-          if (toByteLength(data) < 4) continue;
-          const magic = toDataView(data).getUint32(0, true);
-          if (magic === NAL_MAGIC && decoder) {
-            const view = toDataView(data);
-            const destW = view.getUint16(10, true);
-            const destH = view.getUint16(12, true);
-            const nalData = toUint8Array(data, 16);
-            if (!decoderConfigured && destW > 0 && destH > 0) {
-              configureDecoder(destW, destH);
-            }
-            const chunk = new EncodedVideoChunk({
-              type: frameCount === 0 ? 'key' : 'delta',
-              timestamp: frameCount * 33333,
-              data: nalData,
-            });
-            decoder.decode(chunk);
-          } else {
-            paintRgbaRect(data);
-          }
+          processFrameBuffer(buffers[i]);
         }
         return;
       }
     };
   `;
-  return new Blob([code], { type: 'application/javascript' });
+  return new Blob([code], { type: "application/javascript" });
 }
 
 /**
@@ -1260,25 +1702,30 @@ function createWebCodecsWorkerBlob(hwAccel: 'prefer-hardware' | 'prefer-software
  * via `pushRawBuffer()`, avoiding any main-thread parsing or copying.
  */
 class WebCodecsWorkerRenderer implements FrameRenderer {
+  private static readonly MAX_PRE_READY_FRAMES = 4;
+  private static readonly MAX_PRE_READY_BYTES = 16 * 1024 * 1024;
   readonly name: string;
   readonly type: FrontendRendererType;
   readonly tripleBuffered = false;
   private worker: Worker;
   private ready = false;
   private pendingBuffers: ArrayBuffer[] = [];
+  private pendingBytes = 0;
+  private destroyed = false;
 
   constructor(
     private canvas: HTMLCanvasElement,
     width: number,
     height: number,
-    hwAccel: 'prefer-hardware' | 'prefer-software' = 'prefer-hardware',
+    hwAccel: "prefer-hardware" | "prefer-software" = "prefer-hardware",
+    private readonly options?: RendererOptions,
   ) {
-    this.name = hwAccel === 'prefer-hardware'
-      ? 'WebCodecs Worker (H.264 GPU)'
-      : 'WebCodecs Worker (H.264 CPU)';
-    this.type = hwAccel === 'prefer-hardware'
-      ? 'webcodecs-worker'
-      : 'webcodecs-cpu';
+    this.name =
+      hwAccel === "prefer-hardware"
+        ? "WebCodecs Worker (H.264 GPU)"
+        : "WebCodecs Worker (H.264 CPU)";
+    this.type =
+      hwAccel === "prefer-hardware" ? "webcodecs-worker" : "webcodecs-cpu";
     const offscreen = canvas.transferControlToOffscreen();
     const blob = createWebCodecsWorkerBlob(hwAccel);
     const url = URL.createObjectURL(blob);
@@ -1286,22 +1733,27 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
     URL.revokeObjectURL(url);
 
     this.worker.onmessage = (e) => {
-      if (e.data.type === 'ready') {
+      if (e.data.type === "ready") {
         this.ready = true;
         // Flush any buffers that arrived before worker was ready
         if (this.pendingBuffers.length > 0) {
           const bufs = this.pendingBuffers;
           this.pendingBuffers = [];
-          this.worker.postMessage(
-            { type: 'frames', buffers: bufs },
-            bufs,
-          );
+          this.pendingBytes = 0;
+          this.worker.postMessage({ type: "frames", buffers: bufs }, bufs);
         }
+        return;
+      }
+      if (e.data.type === "h264-recovery") {
+        this.options?.onH264RecoveryStateChange?.(
+          e.data.state as RdpH264RecoveryState,
+          e.data.reason as RdpH264RecoveryReason | undefined,
+        );
       }
     };
 
     this.worker.postMessage(
-      { type: 'init', canvas: offscreen, width, height },
+      { type: "init", canvas: offscreen, width, height },
       [offscreen],
     );
   }
@@ -1312,12 +1764,43 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
    * when using the WebCodecs renderer, avoiding main-thread RGBA parsing.
    */
   pushRawBuffer(data: ArrayBuffer): void {
+    if (this.destroyed) return;
     if (!this.ready) {
+      if (data.byteLength > WebCodecsWorkerRenderer.MAX_PRE_READY_BYTES) {
+        if (isNalPayload(data)) this.resetH264Recovery("pre-ready-overflow");
+        return;
+      }
+
+      const exceedsBounds = () =>
+        this.pendingBuffers.length >=
+          WebCodecsWorkerRenderer.MAX_PRE_READY_FRAMES ||
+        this.pendingBytes + data.byteLength >
+          WebCodecsWorkerRenderer.MAX_PRE_READY_BYTES;
+      if (exceedsBounds()) {
+        const wouldBreakNalChain =
+          isNalPayload(data) || this.pendingBuffers.some(isNalPayload);
+        if (wouldBreakNalChain) {
+          this.resetH264Recovery("pre-ready-overflow");
+        } else {
+          while (this.pendingBuffers.length > 0 && exceedsBounds()) {
+            const dropped = this.pendingBuffers.shift();
+            if (dropped) this.pendingBytes -= dropped.byteLength;
+          }
+        }
+      }
+
+      if (isNalPayload(data) && exceedsBounds()) return;
+      while (this.pendingBuffers.length > 0 && exceedsBounds()) {
+        const dropped = this.pendingBuffers.shift();
+        if (dropped) this.pendingBytes -= dropped.byteLength;
+      }
+      if (exceedsBounds()) return;
       this.pendingBuffers.push(data);
+      this.pendingBytes += data.byteLength;
       return;
     }
     // Transfer ownership for zero-copy
-    this.worker.postMessage({ type: 'frame', data }, [data]);
+    this.worker.postMessage({ type: "frame", data }, [data]);
   }
 
   /** Legacy paintRegion — used for any RGBA rects that bypass the raw path. */
@@ -1345,15 +1828,27 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
   }
 
   resize(width: number, height: number): void {
-    this.worker.postMessage({ type: 'resize', width, height });
+    // Clear pre-ready buffers immediately and enqueue a decoder reset before
+    // the worker changes dimensions. No access unit from the previous surface
+    // may complete recovery for the new surface.
+    this.resetH264Recovery("resize");
+    this.worker.postMessage({ type: "resize", width, height });
+  }
+
+  resetH264Recovery(reason: RdpH264RecoveryReason): void {
+    this.pendingBuffers = [];
+    this.pendingBytes = 0;
+    this.options?.onH264RecoveryStateChange?.("awaitingRecovery", reason);
+    this.worker.postMessage({ type: "reset-h264", reason });
   }
 
   destroy(): void {
+    this.destroyed = true;
+    this.pendingBuffers = [];
+    this.pendingBytes = 0;
     this.worker.terminate();
   }
 }
-
-
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Factory
@@ -1367,10 +1862,10 @@ class WebCodecsWorkerRenderer implements FrameRenderer {
  * limitations with canvas context ownership.)
  */
 function autoSelect(caps: RendererCapabilities): FrontendRendererType {
-  if (caps.webcodecs) return 'webcodecs-worker';
-  if (caps.webgpu) return 'webgpu';
-  if (caps.webgl) return 'webgl';
-  return 'canvas2d';
+  if (caps.webcodecs) return "webcodecs-worker";
+  if (caps.webgpu) return "webgpu";
+  if (caps.webgl) return "webgl";
+  return "canvas2d";
 }
 
 /**
@@ -1388,55 +1883,66 @@ export function createFrameRenderer(
   opts?: RendererOptions & { width?: number; height?: number },
 ): FrameRenderer {
   const caps = detectCapabilities();
-  const resolved = requested === 'auto' ? autoSelect(caps) : requested;
+  const resolved = requested === "auto" ? autoSelect(caps) : requested;
 
   // Attempt in fallback order
   const order: FrontendRendererType[] = [];
 
   switch (resolved) {
-    case 'webcodecs-worker':
-      order.push('webcodecs-worker', 'webcodecs-cpu', 'webgl', 'canvas2d');
+    case "webcodecs-worker":
+      order.push("webcodecs-worker", "webcodecs-cpu", "webgl", "canvas2d");
       break;
-    case 'webcodecs-cpu':
-      order.push('webcodecs-cpu', 'webgl', 'canvas2d');
+    case "webcodecs-cpu":
+      order.push("webcodecs-cpu", "webgl", "canvas2d");
       break;
-    case 'webgpu':
-      order.push('webgpu', 'webgl', 'canvas2d');
+    case "webgpu":
+      order.push("webgpu", "webgl", "canvas2d");
       break;
-    case 'webgl':
-      order.push('webgl', 'canvas2d');
+    case "webgl":
+      order.push("webgl", "canvas2d");
       break;
-    case 'offscreen-worker':
-      order.push('offscreen-worker', 'canvas2d');
+    case "offscreen-worker":
+      order.push("offscreen-worker", "canvas2d");
       break;
-    case 'canvas2d':
+    case "canvas2d":
     default:
-      order.push('canvas2d');
+      order.push("canvas2d");
       break;
   }
 
   for (const t of order) {
     try {
       switch (t) {
-        case 'webcodecs-worker':
+        case "webcodecs-worker":
           if (caps.webcodecs)
-            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height, 'prefer-hardware');
+            return new WebCodecsWorkerRenderer(
+              canvas,
+              opts?.width ?? canvas.width,
+              opts?.height ?? canvas.height,
+              "prefer-hardware",
+              opts,
+            );
           break;
-        case 'webcodecs-cpu':
+        case "webcodecs-cpu":
           if (caps.webcodecs)
-            return new WebCodecsWorkerRenderer(canvas, opts?.width ?? canvas.width, opts?.height ?? canvas.height, 'prefer-software');
+            return new WebCodecsWorkerRenderer(
+              canvas,
+              opts?.width ?? canvas.width,
+              opts?.height ?? canvas.height,
+              "prefer-software",
+              opts,
+            );
           break;
-        case 'webgpu':
+        case "webgpu":
           if (caps.webgpu) return new WebGPURenderer(canvas);
           break;
-        case 'webgl':
+        case "webgl":
           if (caps.webgl) return new WebGLRenderer(canvas, opts);
           break;
-        case 'offscreen-worker':
-          if (caps.offscreenWorker)
-            return new OffscreenWorkerRenderer(canvas);
+        case "offscreen-worker":
+          if (caps.offscreenWorker) return new OffscreenWorkerRenderer(canvas);
           break;
-        case 'canvas2d':
+        case "canvas2d":
           return new Canvas2DRenderer(canvas);
       }
     } catch (e) {

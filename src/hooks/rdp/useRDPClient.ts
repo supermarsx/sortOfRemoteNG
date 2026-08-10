@@ -17,6 +17,7 @@ import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import * as macroService from "../../utils/recording/macroService";
 import { useConnections } from "../../contexts/useConnections";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { resolveRuntimeConnection } from "../../utils/session/runtimeConnectionRegistry";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
@@ -43,6 +44,8 @@ import type {
   RdpCertFingerprintEvent,
   RDPTimingEvent,
   RDPLifecycleEvent,
+  RdpH264RecoveryEvent,
+  RdpSessionActivityResult,
 } from "../../types/rdp/rdpEvents";
 import { mouseButtonCode, keyToScancode } from "../../utils/rdp/rdpKeyboard";
 import {
@@ -78,6 +81,25 @@ import {
 
 const asImageDataArray = (data: Uint8ClampedArray): ImageDataArray =>
   data as Uint8ClampedArray<ArrayBuffer>;
+
+const H264_RECOVERY_RETRY_MS = 2_000;
+const H264_RECOVERY_RECONNECT_MS = 5_000;
+const H264_RECOVERY_TERMINAL_MS = 5_000;
+
+const createRdpFramePipeline = (
+  settings: RDPConnectionSettings,
+  onH264RecoveryStateChange: (event: RdpH264RecoveryEvent) => void,
+  initiallyVisible = true,
+): RdpFramePipeline => {
+  const perf = settings.performance;
+  const pipeline = new RdpFramePipeline({
+    scheduling: (perf?.frameScheduling ?? "adaptive") as FrameSchedulingMode,
+    tripleBuffering: perf?.tripleBuffering ?? true,
+    onH264RecoveryStateChange,
+  });
+  pipeline.setVisibility(initiallyVisible);
+  return pipeline;
+};
 
 interface VpnLeaseOwnerTracker {
   current: string | null;
@@ -131,6 +153,7 @@ const persistTrackedVpnLeaseOwners = (
 // ─── Hook ────────────────────────────────────────────────────────────
 
 export function useRDPClient(session: ConnectionSession) {
+  const { isActive: isRenderActive } = useSessionRenderActivity();
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
@@ -161,13 +184,24 @@ export function useRDPClient(session: ConnectionSession) {
 
   /** The pipeline owns the frame queue, render loop, renderer, and canvas
    *  context.  It never triggers React re-renders. */
+  const frameRecoveryHandlerRef = useRef<(event: RdpH264RecoveryEvent) => void>(
+    () => {},
+  );
+  const forwardFrameRecoveryRef = useRef((event: RdpH264RecoveryEvent) => {
+    frameRecoveryHandlerRef.current(event);
+  });
+  const effectiveRenderActivityRef = useRef(
+    isRenderActive &&
+      (typeof document === "undefined" ||
+        document.visibilityState !== "hidden"),
+  );
   const pipelineRef = useRef<RdpFramePipeline | null>(null);
   if (!pipelineRef.current) {
-    const perf = rdpSettings.performance;
-    pipelineRef.current = new RdpFramePipeline({
-      scheduling: (perf?.frameScheduling ?? "adaptive") as FrameSchedulingMode,
-      tripleBuffering: perf?.tripleBuffering ?? true,
-    });
+    pipelineRef.current = createRdpFramePipeline(
+      rdpSettings,
+      forwardFrameRecoveryRef.current,
+      effectiveRenderActivityRef.current,
+    );
   }
   // Legacy compat shims so the rest of the hook can still reach these.
   // Always go through pipelineRef so we never read from a stale/destroyed pipeline.
@@ -247,6 +281,31 @@ export function useRDPClient(session: ConnectionSession) {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  const sessionActivityGenerationRef = useRef(0);
+  const sessionActivityIntentRef = useRef(0);
+  const sessionActivityMountedRef = useRef(true);
+  const lastRequestedActivityRef = useRef<{
+    sessionId: string;
+    active: boolean;
+  } | null>(null);
+  const activeRecoveryEpisodeRef = useRef<number | null>(null);
+  const recoveryTimersRef = useRef<{
+    retry: ReturnType<typeof setTimeout> | null;
+    reconnect: ReturnType<typeof setTimeout> | null;
+    terminal: ReturnType<typeof setTimeout> | null;
+  }>({ retry: null, reconnect: null, terminal: null });
+  const clearH264RecoveryTimers = useCallback(() => {
+    const timers = recoveryTimersRef.current;
+    if (timers.retry) clearTimeout(timers.retry);
+    if (timers.reconnect) clearTimeout(timers.reconnect);
+    if (timers.terminal) clearTimeout(timers.terminal);
+    recoveryTimersRef.current = {
+      retry: null,
+      reconnect: null,
+      terminal: null,
+    };
+    activeRecoveryEpisodeRef.current = null;
+  }, []);
   const pendingRdpBackendCleanupRef = useRef(new Set<string>());
   const pendingRdpBackendOwnersRef = useRef(new Map<string, string>());
   const protectedVpnLeaseOwnersRef = useRef(new Set<string>());
@@ -607,6 +666,7 @@ export function useRDPClient(session: ConnectionSession) {
   ]);
 
   const handleDisconnect = useCallback(async () => {
+    clearH264RecoveryTimers();
     initGenRef.current++; // abort any in-flight init
     const sid = sessionIdRef.current;
     const backendSessionIds = [
@@ -716,16 +776,13 @@ export function useRDPClient(session: ConnectionSession) {
     sessionRef.current = updatedSession;
     dispatch({ type: "UPDATE_SESSION", payload: updatedSession });
     pipelineRef.current!.destroy();
-    {
-      const perf = rdpSettingsRef.current.performance;
-      pipelineRef.current = new RdpFramePipeline({
-        scheduling: (perf?.frameScheduling ??
-          "adaptive") as FrameSchedulingMode,
-        tripleBuffering: perf?.tripleBuffering ?? true,
-      });
-    }
+    pipelineRef.current = createRdpFramePipeline(
+      rdpSettingsRef.current,
+      forwardFrameRecoveryRef.current,
+      effectiveRenderActivityRef.current,
+    );
     return vpnClean;
-  }, [dispatch, settleVpnLeaseOwner]);
+  }, [clearH264RecoveryTimers, dispatch, settleVpnLeaseOwner]);
 
   const handleCopyToClipboard = useCallback(async () => {
     // If CLIPRDR is active, request clipboard text from the remote session.
@@ -1667,8 +1724,202 @@ export function useRDPClient(session: ConnectionSession) {
     initializeRDPConnection();
   }, [initializeRDPConnection, connectionStatus, handleDisconnect]);
 
+  const setNativeSessionActivity = useCallback(
+    async (
+      sessionId: string,
+      active: boolean,
+      options: {
+        allowStaleCorrection?: boolean;
+        allowWhenUnmounted?: boolean;
+      } = {},
+    ): Promise<RdpSessionActivityResult> => {
+      const intent = sessionActivityIntentRef.current + 1;
+      sessionActivityIntentRef.current = intent;
+      const invokeGeneration = async (
+        generation: number,
+      ): Promise<RdpSessionActivityResult> =>
+        invoke<RdpSessionActivityResult>("rdp_set_session_activity", {
+          sessionId,
+          generation,
+          active,
+        });
+
+      const generation = sessionActivityGenerationRef.current + 1;
+      sessionActivityGenerationRef.current = generation;
+      let result = await invokeGeneration(generation);
+      if (
+        !result ||
+        typeof result !== "object" ||
+        typeof result.appliedGeneration !== "number" ||
+        typeof result.active !== "boolean" ||
+        typeof result.stale !== "boolean"
+      ) {
+        throw new Error("Invalid rdp_set_session_activity response");
+      }
+      sessionActivityGenerationRef.current = Math.max(
+        sessionActivityGenerationRef.current,
+        result.appliedGeneration,
+      );
+
+      const canContinue =
+        (sessionActivityMountedRef.current || options.allowWhenUnmounted) &&
+        sessionActivityIntentRef.current === intent;
+      if (
+        canContinue &&
+        options.allowStaleCorrection !== false &&
+        result.stale &&
+        result.active !== active
+      ) {
+        const correctionGeneration =
+          Math.max(
+            sessionActivityGenerationRef.current,
+            result.appliedGeneration,
+          ) + 1;
+        sessionActivityGenerationRef.current = correctionGeneration;
+        result = await invokeGeneration(correctionGeneration);
+        sessionActivityGenerationRef.current = Math.max(
+          sessionActivityGenerationRef.current,
+          result.appliedGeneration,
+        );
+      }
+      return result;
+    },
+    [],
+  );
+
+  const beginH264Recovery = useCallback(
+    (event: RdpH264RecoveryEvent) => {
+      const sessionId = sessionIdRef.current;
+      if (
+        !sessionActivityMountedRef.current ||
+        !sessionId ||
+        !effectiveRenderActivityRef.current ||
+        event.state !== "awaitingRecovery"
+      ) {
+        return;
+      }
+      if (activeRecoveryEpisodeRef.current === event.episode) return;
+
+      clearH264RecoveryTimers();
+      activeRecoveryEpisodeRef.current = event.episode;
+      setStatusMessage("Recovering the H.264 display stream...");
+      void setNativeSessionActivity(sessionId, true).catch((error) => {
+        debugLog(
+          `RDP display recovery activity request failed: ${String(error)}`,
+        );
+      });
+
+      const isCurrentRecovery = () =>
+        sessionActivityMountedRef.current &&
+        activeRecoveryEpisodeRef.current === event.episode &&
+        sessionIdRef.current === sessionId &&
+        pipelineRef.current?.isAwaitingH264Recovery() === true &&
+        effectiveRenderActivityRef.current;
+
+      recoveryTimersRef.current.retry = setTimeout(() => {
+        if (!isCurrentRecovery()) return;
+        void setNativeSessionActivity(sessionId, true).catch((error) => {
+          debugLog(`RDP display recovery retry failed: ${String(error)}`);
+        });
+      }, H264_RECOVERY_RETRY_MS);
+
+      recoveryTimersRef.current.reconnect = setTimeout(() => {
+        if (!isCurrentRecovery()) return;
+        void invoke("reconnect_rdp_session", { sessionId }).catch((error) => {
+          debugLog(`RDP display recovery reconnect failed: ${String(error)}`);
+        });
+        recoveryTimersRef.current.terminal = setTimeout(() => {
+          if (!isCurrentRecovery()) return;
+          pipelineRef.current?.markH264RecoveryTerminal("recovery-timeout");
+          clearH264RecoveryTimers();
+          setIsConnected(false);
+          setConnectionStatus("error");
+          setStatusMessage(
+            "RDP display recovery failed after refresh and reconnect attempts.",
+          );
+        }, H264_RECOVERY_TERMINAL_MS);
+      }, H264_RECOVERY_RECONNECT_MS);
+    },
+    [clearH264RecoveryTimers, setNativeSessionActivity],
+  );
+
+  const handleH264RecoveryState = useCallback(
+    (event: RdpH264RecoveryEvent) => {
+      if (event.state === "healthy") {
+        clearH264RecoveryTimers();
+        if (sessionIdRef.current) setStatusMessage("Connected");
+        return;
+      }
+      if (event.state === "terminal") {
+        clearH264RecoveryTimers();
+        return;
+      }
+      beginH264Recovery(event);
+    },
+    [beginH264Recovery, clearH264RecoveryTimers],
+  );
+  frameRecoveryHandlerRef.current = handleH264RecoveryState;
+
+  useEffect(() => {
+    const updateActivity = () => {
+      const active = isRenderActive && document.visibilityState !== "hidden";
+      effectiveRenderActivityRef.current = active;
+      const pipeline = pipelineRef.current;
+      if (!active) clearH264RecoveryTimers();
+      pipeline?.setVisibility(active);
+
+      if (!rdpSessionId || !isConnected) {
+        lastRequestedActivityRef.current = null;
+        return;
+      }
+
+      const previous = lastRequestedActivityRef.current;
+      if (previous?.sessionId === rdpSessionId && previous.active === active) {
+        return;
+      }
+      lastRequestedActivityRef.current = {
+        sessionId: rdpSessionId,
+        active,
+      };
+
+      if (!active) {
+        void setNativeSessionActivity(rdpSessionId, false).catch((error) => {
+          debugLog(`RDP inactive display request failed: ${String(error)}`);
+        });
+        return;
+      }
+
+      if (pipeline?.isAwaitingH264Recovery()) {
+        const metrics = pipeline.getMetrics();
+        beginH264Recovery({
+          state: "awaitingRecovery",
+          episode: metrics.h264RecoveryEpisode,
+          reason: metrics.h264RecoveryReason,
+        });
+      } else {
+        void setNativeSessionActivity(rdpSessionId, true).catch((error) => {
+          debugLog(`RDP active display request failed: ${String(error)}`);
+        });
+      }
+    };
+
+    updateActivity();
+    document.addEventListener("visibilitychange", updateActivity);
+    return () => {
+      document.removeEventListener("visibilitychange", updateActivity);
+    };
+  }, [
+    beginH264Recovery,
+    clearH264RecoveryTimers,
+    isConnected,
+    isRenderActive,
+    rdpSessionId,
+    setNativeSessionActivity,
+  ]);
+
   const cleanup = useCallback(
     async (mountedSessionId = sessionRef.current.id) => {
+      clearH264RecoveryTimers();
       // Bump generation so any in-flight initializeRDPConnection aborts
       initGenRef.current++;
       cancelSessionLifecycleActorAttempts(mountedSessionId);
@@ -1681,14 +1932,11 @@ export function useRDPClient(session: ConnectionSession) {
       setConnectionStatus("disconnected");
       setRdpSessionId(null);
       pipelineRef.current!.destroy();
-      {
-        const perf = rdpSettingsRef.current.performance;
-        pipelineRef.current = new RdpFramePipeline({
-          scheduling: (perf?.frameScheduling ??
-            "adaptive") as FrameSchedulingMode,
-          tripleBuffering: perf?.tripleBuffering ?? true,
-        });
-      }
+      pipelineRef.current = createRdpFramePipeline(
+        rdpSettingsRef.current,
+        forwardFrameRecoveryRef.current,
+        effectiveRenderActivityRef.current,
+      );
       // Note: we intentionally do NOT call detach_rdp_session here.
       // The backend session keeps running so it can be reattached on
       // page reload, layout change, or window detach.  Explicit
@@ -1696,7 +1944,7 @@ export function useRDPClient(session: ConnectionSession) {
       // is handled by useSessionDetach which calls detach_rdp_session
       // before opening the new window.
     },
-    [],
+    [clearH264RecoveryTimers],
   );
 
   // ─── Trust accept / reject ─────────────────────────────────────────
@@ -2360,13 +2608,32 @@ export function useRDPClient(session: ConnectionSession) {
 
   useEffect(() => {
     const mountedSessionId = session.id;
+    sessionActivityMountedRef.current = true;
     initializeRDPConnection();
     return () => {
+      const activeSessionId = sessionIdRef.current;
+      sessionActivityMountedRef.current = false;
+      clearH264RecoveryTimers();
+      if (activeSessionId) {
+        void setNativeSessionActivity(activeSessionId, false, {
+          allowStaleCorrection: false,
+          allowWhenUnmounted: true,
+        }).catch((error) => {
+          debugLog(
+            `RDP final inactive display request failed: ${String(error)}`,
+          );
+        });
+      }
       cleanup(mountedSessionId);
       resetFrameBackpressure();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- session.id is the only meaningful trigger
-  }, [session.id, resetFrameBackpressure]);
+  }, [
+    session.id,
+    clearH264RecoveryTimers,
+    resetFrameBackpressure,
+    setNativeSessionActivity,
+  ]);
 
   useEffect(() => {
     if (!rdpSessionId || !isConnected) {

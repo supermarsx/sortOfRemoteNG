@@ -78,7 +78,45 @@ export interface RDPFrameFlowSummary {
   averageRenderMs?: number;
 }
 
-export type RdpFramePressureState = 'healthy' | 'backpressured';
+export type RdpFramePressureState = "healthy" | "backpressured";
+
+export type RdpH264RecoveryState = "healthy" | "awaitingRecovery" | "terminal";
+
+export type RdpH264RecoveryReason =
+  | "background"
+  | "decoder-error"
+  | "decoder-overflow"
+  | "decoder-unavailable"
+  | "malformed-access-unit"
+  | "missing-keyframe"
+  | "missing-parameter-sets"
+  | "parameter-set-overflow"
+  | "pre-attach-overflow"
+  | "pre-ready-overflow"
+  | "queue-overflow"
+  | "recovery-timeout"
+  | "renderer-reset"
+  | "resize";
+
+export interface RdpH264RecoveryEvent {
+  state: RdpH264RecoveryState;
+  episode: number;
+  reason?: RdpH264RecoveryReason;
+}
+
+export interface RdpSessionActivityResult {
+  sessionId: string;
+  requestedGeneration: number;
+  appliedGeneration: number;
+  active: boolean;
+  applied: boolean;
+  stale: boolean;
+  suppressOutputSupported: boolean;
+  refreshRectangleSupported: boolean;
+  suppressOutputSent: boolean;
+  allowDisplayUpdatesSent: boolean;
+  refreshRectangleSent: boolean;
+}
 
 export interface RdpFrameTelemetryEvent {
   sessionId: string;
@@ -103,13 +141,16 @@ export interface RdpFramePipelineMetrics {
   lastFrameRenderMs: number;
   averageRenderMs: number;
   p95RenderMs?: number;
-  activeScheduling: 'vsync' | 'low-latency';
+  activeScheduling: "vsync" | "low-latency";
   renderer: string;
   rendererType?: string;
   canvasAttached: boolean;
   destroyed: boolean;
   lastFrameReceivedAtMs?: number;
   lastFramePresentedAtMs?: number;
+  h264RecoveryState: RdpH264RecoveryState;
+  h264RecoveryEpisode: number;
+  h264RecoveryReason?: RdpH264RecoveryReason;
 }
 
 export interface RdpFrameBackpressureUpdate extends RdpFrameTelemetryEvent {

@@ -14,6 +14,7 @@ import {
 } from "../../src/types/connection/connection";
 import { ConnectionProvider } from "../../src/contexts/ConnectionContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
+import { SessionRenderActivityProvider } from "../../src/components/session/SessionRenderActivity";
 import {
   getStoredIdentity,
   type TrustIdentity,
@@ -28,6 +29,12 @@ import {
 } from "../../src/utils/session/sessionLifecycle";
 
 // Mock Tauri invoke + Channel
+const tauriCoreMocks = vi.hoisted(() => ({
+  channels: [] as Array<{
+    onmessage: ((data: unknown) => void) | null;
+  }>,
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   SERIALIZE_TO_IPC_FN: "__TAURI_TO_IPC_KEY__",
@@ -36,6 +43,7 @@ vi.mock("@tauri-apps/api/core", () => ({
     onmessage: ((data: unknown) => void) | null = null;
     constructor(handler?: (data: unknown) => void) {
       if (handler) this.onmessage = handler;
+      tauriCoreMocks.channels.push(this);
     }
     toJSON() {
       return `__CHANNEL__:${this.id}`;
@@ -297,6 +305,53 @@ function emitStatus(
   }
 }
 
+function setDocumentVisibility(
+  visibilityState: DocumentVisibilityState,
+  emit = true,
+): void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value: visibilityState,
+  });
+  if (emit) document.dispatchEvent(new Event("visibilitychange"));
+}
+
+function sessionActivityResult(
+  generation: number,
+  active: boolean,
+  overrides: Partial<{
+    appliedGeneration: number;
+    active: boolean;
+    applied: boolean;
+    stale: boolean;
+  }> = {},
+) {
+  return {
+    sessionId: "rdp-session-123",
+    requestedGeneration: generation,
+    appliedGeneration: overrides.appliedGeneration ?? generation,
+    active: overrides.active ?? active,
+    applied: overrides.applied ?? true,
+    stale: overrides.stale ?? false,
+    suppressOutputSupported: true,
+    refreshRectangleSupported: true,
+    suppressOutputSent: !active,
+    allowDisplayUpdatesSent: active,
+    refreshRectangleSent: active,
+  };
+}
+
+function buildClientNalFrame(): ArrayBuffer {
+  const annexB = new Uint8Array([0, 0, 0, 1, 0x41, 0x9a, 0x22]);
+  const frame = new ArrayBuffer(16 + annexB.byteLength);
+  const view = new DataView(frame);
+  view.setUint32(0, 0x4e414c48, true);
+  view.setUint16(10, 1920, true);
+  view.setUint16(12, 1080, true);
+  new Uint8Array(frame, 16).set(annexB);
+  return frame;
+}
+
 const renderWithProviders = (session: ConnectionSession) => {
   return render(
     <ToastProvider>
@@ -305,6 +360,33 @@ const renderWithProviders = (session: ConnectionSession) => {
       </ConnectionProvider>
     </ToastProvider>,
   );
+};
+
+const renderWithRenderActivity = (
+  session: ConnectionSession,
+  initialActive = true,
+) => {
+  const tree = (isActive: boolean) => (
+    <ToastProvider>
+      <ConnectionProvider>
+        <SessionRenderActivityProvider isActive={isActive}>
+          <RDPClient session={session} />
+        </SessionRenderActivityProvider>
+      </ConnectionProvider>
+    </ToastProvider>
+  );
+  let currentActive = initialActive;
+  const view = render(tree(currentActive));
+  return {
+    view,
+    async setActive(isActive: boolean): Promise<void> {
+      currentActive = isActive;
+      await act(async () => {
+        view.rerender(tree(currentActive));
+        await Promise.resolve();
+      });
+    },
+  };
 };
 
 const hookWrapper = ({ children }: { children: React.ReactNode }) => (
@@ -392,8 +474,10 @@ describe("RDPClient", () => {
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach((k) => delete mockListeners[k]);
     MockResizeObserver.reset();
+    tauriCoreMocks.channels.length = 0;
     connectionContextMocks.dispatch.mockReset();
     localStorage.clear();
+    setDocumentVisibility("visible", false);
     delete (mockConnection as any).security;
     delete (mockConnection as any).proxyChainId;
     delete (mockConnection as any).tunnelChainId;
@@ -2088,6 +2172,478 @@ describe("RDPClient", () => {
 
       // Canvas should still be in the document after interaction
       expect(canvas).toBeInTheDocument();
+    });
+  });
+
+  describe("H.264 session activity recovery", () => {
+    it("corrects an old unmount generation exactly once when a remount becomes active", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      let appliedGeneration = 0;
+      let nativeActive = true;
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          if (payload.generation <= appliedGeneration) {
+            return sessionActivityResult(payload.generation, payload.active, {
+              appliedGeneration,
+              active: nativeActive,
+              applied: false,
+              stale: true,
+            });
+          }
+          appliedGeneration = payload.generation;
+          nativeActive = payload.active;
+          return sessionActivityResult(payload.generation, payload.active);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const first = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(appliedGeneration).toBe(1));
+
+      act(() => setDocumentVisibility("hidden"));
+      await waitFor(() => expect(appliedGeneration).toBe(2));
+      act(() => setDocumentVisibility("visible"));
+      await waitFor(() => expect(appliedGeneration).toBe(3));
+      act(() => setDocumentVisibility("hidden"));
+      await waitFor(() => expect(appliedGeneration).toBe(4));
+
+      first.unmount();
+      await waitFor(() => {
+        expect(appliedGeneration).toBe(5);
+        expect(nativeActive).toBe(false);
+      });
+      expect(activityCalls[activityCalls.length - 1]).toEqual({
+        sessionId: "rdp-session-123",
+        generation: 5,
+        active: false,
+      });
+
+      setDocumentVisibility("visible", false);
+      // A detached/remounted webview owns a fresh frontend lifecycle allocator,
+      // while the native activity generation remains authoritative.
+      resetSessionLifecycleAllocatorForTests();
+      const remountCallStart = activityCalls.length;
+      const second = renderWithProviders(mockSession);
+      await waitFor(() => {
+        const connectCalls = mockInvoke.mock.calls.filter(
+          ([command]) => command === "connect_rdp",
+        );
+        expect(connectCalls).toHaveLength(2);
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(appliedGeneration).toBe(6);
+        expect(nativeActive).toBe(true);
+      });
+
+      expect(activityCalls.slice(remountCallStart)).toEqual([
+        {
+          sessionId: "rdp-session-123",
+          generation: 1,
+          active: true,
+        },
+        {
+          sessionId: "rdp-session-123",
+          generation: 6,
+          active: true,
+        },
+      ]);
+      second.unmount();
+    });
+
+    it("keeps a newer remount active when the old final inactive response arrives last", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      let appliedGeneration = 0;
+      let nativeActive = true;
+      let resolveOldFinal: (() => void) | null = null;
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          if (payload.generation <= appliedGeneration) {
+            return sessionActivityResult(payload.generation, payload.active, {
+              appliedGeneration,
+              active: nativeActive,
+              applied: false,
+              stale: true,
+            });
+          }
+
+          appliedGeneration = payload.generation;
+          nativeActive = payload.active;
+          const result = sessionActivityResult(
+            payload.generation,
+            payload.active,
+          );
+          if (payload.generation === 5 && !payload.active) {
+            return new Promise((resolve) => {
+              resolveOldFinal = () => resolve(result);
+            });
+          }
+          return result;
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const first = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(appliedGeneration).toBe(1));
+      act(() => setDocumentVisibility("hidden"));
+      await waitFor(() => expect(appliedGeneration).toBe(2));
+      act(() => setDocumentVisibility("visible"));
+      await waitFor(() => expect(appliedGeneration).toBe(3));
+      act(() => setDocumentVisibility("hidden"));
+      await waitFor(() => expect(appliedGeneration).toBe(4));
+
+      first.unmount();
+      await waitFor(() => {
+        expect(appliedGeneration).toBe(5);
+        expect(resolveOldFinal).toBeTypeOf("function");
+      });
+
+      setDocumentVisibility("visible", false);
+      resetSessionLifecycleAllocatorForTests();
+      const remountCallStart = activityCalls.length;
+      const second = renderWithProviders(mockSession);
+      await waitFor(() => {
+        const connectCalls = mockInvoke.mock.calls.filter(
+          ([command]) => command === "connect_rdp",
+        );
+        expect(connectCalls).toHaveLength(2);
+      });
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => {
+        expect(appliedGeneration).toBe(6);
+        expect(nativeActive).toBe(true);
+      });
+      expect(activityCalls.slice(remountCallStart)).toEqual([
+        {
+          sessionId: "rdp-session-123",
+          generation: 1,
+          active: true,
+        },
+        {
+          sessionId: "rdp-session-123",
+          generation: 6,
+          active: true,
+        },
+      ]);
+
+      await act(async () => {
+        resolveOldFinal?.();
+        await Promise.resolve();
+      });
+      expect(appliedGeneration).toBe(6);
+      expect(nativeActive).toBe(true);
+      expect(activityCalls.slice(remountCallStart)).toHaveLength(2);
+      second.unmount();
+    });
+
+    it("suppresses output while hidden without disconnecting the transport", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          return sessionActivityResult(payload.generation, payload.active);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const view = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(activityCalls).toHaveLength(1));
+
+      act(() => setDocumentVisibility("hidden"));
+      await waitFor(() =>
+        expect(activityCalls[activityCalls.length - 1]?.active).toBe(false),
+      );
+      act(() => setDocumentVisibility("visible"));
+      await waitFor(() =>
+        expect(activityCalls[activityCalls.length - 1]?.active).toBe(true),
+      );
+
+      const generations = activityCalls.map((call) => call.generation);
+      expect(generations).toEqual([...generations].sort((a, b) => a - b));
+      expect(new Set(generations).size).toBe(generations.length);
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) =>
+            command === "disconnect_rdp" || command === "reconnect_rdp_session",
+        ),
+      ).toEqual([]);
+      view.unmount();
+    });
+
+    it("combines tab render activity with document visibility without duplicate native transitions", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          return sessionActivityResult(payload.generation, payload.active);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const activity = renderWithRenderActivity(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(activityCalls).toHaveLength(1));
+      expect(activityCalls[0].active).toBe(true);
+
+      await activity.setActive(false);
+      await waitFor(() => expect(activityCalls).toHaveLength(2));
+      expect(activityCalls[1].active).toBe(false);
+
+      const frameChannel = tauriCoreMocks.channels.find(
+        (channel) => channel.onmessage,
+      );
+      act(() => {
+        for (let index = 0; index < 1_000; index += 1) {
+          frameChannel?.onmessage?.(buildClientNalFrame());
+        }
+      });
+      await act(async () => Promise.resolve());
+      expect(activityCalls).toHaveLength(2);
+
+      act(() => setDocumentVisibility("hidden"));
+      await activity.setActive(true);
+      expect(activityCalls).toHaveLength(2);
+      act(() => setDocumentVisibility("visible"));
+      await waitFor(() => expect(activityCalls).toHaveLength(3));
+      expect(activityCalls[2].active).toBe(true);
+
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+      await activity.setActive(true);
+      expect(activityCalls).toHaveLength(3);
+      const generations = activityCalls.map((call) => call.generation);
+      expect(generations).toEqual([...generations].sort((a, b) => a - b));
+      expect(new Set(generations).size).toBe(generations.length);
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) =>
+            command === "disconnect_rdp" || command === "reconnect_rdp_session",
+        ),
+      ).toEqual([]);
+      activity.view.unmount();
+    });
+
+    it("retries at 2s, reconnects once at 5s, and becomes terminal at 10s", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          if (payload.generation === 2) {
+            throw new Error("activity IPC unavailable");
+          }
+          return sessionActivityResult(payload.generation, payload.active);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const view = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(activityCalls).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const raf = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockImplementation(() => 1);
+      try {
+        const frameChannel = tauriCoreMocks.channels.find(
+          (channel) => channel.onmessage,
+        );
+        expect(frameChannel?.onmessage).toBeTypeOf("function");
+        act(() => {
+          for (let index = 0; index < 13; index += 1) {
+            frameChannel?.onmessage?.(buildClientNalFrame());
+          }
+        });
+        await act(async () => Promise.resolve());
+        expect(activityCalls).toHaveLength(2);
+
+        await act(async () => {
+          vi.advanceTimersByTime(2_000);
+          await Promise.resolve();
+        });
+        expect(activityCalls).toHaveLength(3);
+
+        await act(async () => {
+          vi.advanceTimersByTime(3_000);
+          await Promise.resolve();
+        });
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([command]) => command === "reconnect_rdp_session",
+          ),
+        ).toHaveLength(1);
+        expect(screen.queryByText(/display recovery failed/i)).toBeNull();
+
+        await act(async () => {
+          vi.advanceTimersByTime(4_999);
+          await Promise.resolve();
+        });
+        expect(screen.queryByText(/display recovery failed/i)).toBeNull();
+        await act(async () => {
+          vi.advanceTimersByTime(1);
+          await Promise.resolve();
+        });
+        expect(
+          screen.getByText(
+            "RDP display recovery failed after refresh and reconnect attempts.",
+          ),
+        ).toBeInTheDocument();
+
+        await act(async () => {
+          vi.advanceTimersByTime(30_000);
+          await Promise.resolve();
+        });
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([command]) => command === "reconnect_rdp_session",
+          ),
+        ).toHaveLength(1);
+      } finally {
+        raf.mockRestore();
+        view.unmount();
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancels recovery producers on unmount and emits one final non-correcting inactive", async () => {
+      const fallbackInvoke = mockInvoke.getMockImplementation();
+      const activityCalls: Array<{
+        sessionId: string;
+        generation: number;
+        active: boolean;
+      }> = [];
+      mockInvoke.mockImplementation(async (command, args) => {
+        if (command === "rdp_set_session_activity") {
+          const payload = args as (typeof activityCalls)[number];
+          activityCalls.push(payload);
+          return sessionActivityResult(payload.generation, payload.active);
+        }
+        return fallbackInvoke
+          ? fallbackInvoke(command, args)
+          : Promise.resolve(undefined);
+      });
+
+      const view = renderWithProviders(mockSession);
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "connect_rdp",
+          expect.any(Object),
+        ),
+      );
+      emitStatus("connected", "Connected", "rdp-session-123", 1920, 1080);
+      await waitFor(() => expect(activityCalls).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const raf = vi
+        .spyOn(globalThis, "requestAnimationFrame")
+        .mockImplementation(() => 1);
+      try {
+        const frameChannel = tauriCoreMocks.channels.find(
+          (channel) => channel.onmessage,
+        );
+        act(() => {
+          for (let index = 0; index < 13; index += 1) {
+            frameChannel?.onmessage?.(buildClientNalFrame());
+          }
+        });
+        await act(async () => Promise.resolve());
+        expect(activityCalls[activityCalls.length - 1]?.active).toBe(true);
+
+        view.unmount();
+        await act(async () => Promise.resolve());
+        const inactiveCalls = activityCalls.filter((call) => !call.active);
+        expect(inactiveCalls).toHaveLength(1);
+        const callCountAfterUnmount = activityCalls.length;
+
+        await act(async () => {
+          vi.advanceTimersByTime(30_000);
+          document.dispatchEvent(new Event("visibilitychange"));
+          await Promise.resolve();
+        });
+        expect(activityCalls).toHaveLength(callCountAfterUnmount);
+        expect(
+          mockInvoke.mock.calls.filter(
+            ([command]) => command === "reconnect_rdp_session",
+          ),
+        ).toHaveLength(0);
+      } finally {
+        raf.mockRestore();
+        vi.useRealTimers();
+      }
     });
   });
 
