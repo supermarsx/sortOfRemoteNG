@@ -26,6 +26,7 @@ use sorng_encryption::artifacts::settings as artifact_settings;
 use sorng_encryption::envelope::{MasterKeyStorage, SALT_LEN};
 use sorng_encryption::password_wrap::Argon2Params;
 use sorng_encryption::EncryptionState;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{Manager, State};
 
 const SETTINGS_FILENAME: &str = "settings.json";
@@ -35,6 +36,15 @@ pub(crate) const REST_API_VAULT_SERVICE: &str = "sortofremoteng.internal.rest-ap
 const REST_API_KEY_ACCOUNT: &str = "api-key-v1";
 const REST_API_JWT_ACCOUNT: &str = "jwt-signing-secret-v1";
 const REST_API_SECRET_BYTES: usize = 32;
+
+/// Serialize the complete read-merge-write-verify transaction. Settings saves
+/// can arrive concurrently from auto-save hooks and separate Tauri windows;
+/// without this guard they can both merge from the same generation and lose a
+/// sibling patch even if each individual file replacement is atomic.
+static SETTINGS_WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Makes each atomic-write temp name unique within a process. The process id in
+/// `temp_path_for` keeps simultaneously-running app processes separate too.
+static SETTINGS_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 #[doc(hidden)]
@@ -171,7 +181,11 @@ fn reject_rest_api_secret_patch(patch: &Value) -> Result<(), String> {
     Ok(())
 }
 
-async fn migrate_rest_api_secrets_inner(
+/// Move legacy REST API secrets to the credential vault and persist the
+/// sanitized `restApi` object. The caller must hold `SETTINGS_WRITE_LOCK` so
+/// the `settings` snapshot cannot go stale before its sanitized replacement is
+/// merged back into the current document.
+async fn migrate_rest_api_secrets_locked(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
     settings: Value,
@@ -201,20 +215,33 @@ async fn migrate_rest_api_secrets_inner(
         .get("restApi")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({}));
-    write_app_settings_inner(dir, enc_state, serde_json::json!({ "restApi": rest })).await?;
+    write_app_settings_locked(dir, enc_state, serde_json::json!({ "restApi": rest })).await?;
     Ok(sanitized)
 }
 
-pub(crate) async fn read_app_settings_secure_inner(
+/// Read settings and perform any legacy-secret migration while the caller
+/// holds `SETTINGS_WRITE_LOCK`.
+async fn read_app_settings_secure_locked(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
 ) -> Result<Option<Value>, String> {
     let Some(settings) = read_app_settings_inner(dir, enc_state).await? else {
         return Ok(None);
     };
-    migrate_rest_api_secrets_inner(dir, enc_state, settings)
+    migrate_rest_api_secrets_locked(dir, enc_state, settings)
         .await
         .map(Some)
+}
+
+pub(crate) async fn read_app_settings_secure_inner(
+    dir: &std::path::Path,
+    enc_state: &EncryptionState,
+) -> Result<Option<Value>, String> {
+    // A legacy-secret migration is a read-sanitize-write transaction. Taking
+    // the same lock as ordinary settings writes before the read prevents a
+    // stale `restApi` object from replaying over a concurrent patch.
+    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    read_app_settings_secure_locked(dir, enc_state).await
 }
 
 /// Probe the live mode from disk + vault. Mirrors the logic in
@@ -311,8 +338,11 @@ pub async fn write_app_settings(
 ) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     reject_rest_api_secret_patch(&patch)?;
-    let _ = read_app_settings_secure_inner(&dir, &enc_state).await?;
-    write_app_settings_inner(&dir, &enc_state, patch).await
+    // Keep the optional legacy-secret migration and the caller's patch in one
+    // transaction. Both helpers below assume this guard is already held.
+    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    let _ = read_app_settings_secure_locked(&dir, &enc_state).await?;
+    write_app_settings_locked(&dir, &enc_state, patch).await
 }
 
 /// Number of attempts the atomic writer makes before giving up. Rides
@@ -323,19 +353,18 @@ const ATOMIC_WRITE_MAX_ATTEMPTS: u32 = 3;
 /// for a small linear back-off (10ms, 20ms).
 const ATOMIC_WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(10);
 
-/// Derive a per-target temp path so the `.enc` and `.json` writes never
-/// share a single `settings.tmp` and clobber each other's in-flight
-/// bytes. The temp lives in the same directory as the target (so the
-/// final `rename` stays on one filesystem and is atomic) but carries a
-/// file-name-derived, `.tmp`-suffixed name, e.g.
-/// `settings.enc` → `.settings.enc.tmp`, `settings.json` →
-/// `.settings.json.tmp`.
+/// Derive an invocation-unique, per-target temp path. The temp lives in the
+/// same directory as the target (so the final `rename` stays on one filesystem
+/// and is atomic) and includes both the process id and a monotonic counter.
+/// This prevents another process or future non-serialized caller from
+/// truncating a temp file that an in-flight writer is about to publish.
 fn temp_path_for(path: &std::path::Path) -> std::path::PathBuf {
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "settings".to_string());
-    let tmp_name = format!(".{file_name}.tmp");
+    let sequence = SETTINGS_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_name = format!(".{file_name}.{}.{}.tmp", std::process::id(), sequence);
     match path.parent() {
         Some(parent) => parent.join(tmp_name),
         None => std::path::PathBuf::from(tmp_name),
@@ -461,6 +490,22 @@ fn merge_root(mut existing: Value, patch: &Value) -> Result<Value, String> {
 /// future caller that already holds the encryption state by
 /// reference. Kept symmetric with `read_app_settings_inner`.
 pub async fn write_app_settings_inner(
+    dir: &std::path::Path,
+    enc_state: &EncryptionState,
+    patch: Value,
+) -> Result<(), String> {
+    // Cover the entire transaction, not only the rename: a later writer must
+    // read the generation committed by the previous writer before merging its
+    // own patch. This also keeps verify-readback isolated from another save.
+    let _write_guard = SETTINGS_WRITE_LOCK.lock().await;
+    write_app_settings_locked(dir, enc_state, patch).await
+}
+
+/// Execute a complete read-merge-write-verify transaction. The caller must
+/// hold `SETTINGS_WRITE_LOCK`; keeping lock acquisition outside this helper
+/// lets legacy-secret migration compose a sanitized write without deadlocking
+/// on the non-reentrant process mutex.
+async fn write_app_settings_locked(
     dir: &std::path::Path,
     enc_state: &EncryptionState,
     patch: Value,
@@ -651,12 +696,20 @@ mod tests {
         // Target is fully the new bytes (no partial/truncated write).
         assert_eq!(std::fs::read(&target).unwrap(), b"new-content");
 
-        // No stray temp file left behind after a successful write.
-        let temp = temp_path_for(&target);
+        // No invocation-unique temp file is left behind after a successful
+        // write. Enumerate instead of generating another unique candidate.
+        let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with(".settings.json.") && name.ends_with(".tmp")
+            })
+            .collect();
         assert!(
-            !temp.exists(),
-            "temp file {} should have been renamed away",
-            temp.display()
+            leftovers.is_empty(),
+            "successful writes must not leave temp files: {leftovers:?}"
         );
         // Belt-and-braces: nothing matching the legacy single-temp name
         // either.
@@ -683,6 +736,18 @@ mod tests {
         // rename stays on one filesystem).
         assert_eq!(enc_temp.parent(), Some(tmp.path()));
         assert_eq!(json_temp.parent(), Some(tmp.path()));
+    }
+
+    #[test]
+    fn repeated_writes_to_the_same_target_get_unique_temp_names() {
+        let tmp = tempdir().unwrap();
+        let target = tmp.path().join(SETTINGS_ENC_FILENAME);
+        let first = temp_path_for(&target);
+        let second = temp_path_for(&target);
+
+        assert_ne!(first, second);
+        assert_eq!(first.parent(), Some(tmp.path()));
+        assert_eq!(second.parent(), Some(tmp.path()));
     }
 
     #[tokio::test]
@@ -753,6 +818,138 @@ mod tests {
         // No stale plaintext should have been left behind by this
         // freshly-created directory.
         assert!(!tmp.path().join("settings.json").exists());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn legacy_secret_migration_and_rest_patch_share_one_transaction_lock() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let state = EncryptionState::new();
+        std::fs::write(
+            dir.join(SETTINGS_FILENAME),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "restApi": {
+                    "enabled": false,
+                    // An empty legacy field exercises migration without
+                    // touching the real OS credential vault.
+                    "apiKey": ""
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        // Hold the transaction mutex while deterministically queuing the
+        // ordinary writer first and the migration reader second. Before the
+        // secure read took this mutex up front, it could capture the stale
+        // `enabled: false` object here, queue its migration behind the writer,
+        // and replay that stale object after the writer committed `true`.
+        let guard = SETTINGS_WRITE_LOCK.lock().await;
+
+        let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+        let writer_dir = dir.clone();
+        let writer_state = state.clone();
+        let writer = tokio::spawn(async move {
+            let _ = writer_started_tx.send(());
+            write_app_settings_inner(
+                &writer_dir,
+                &writer_state,
+                serde_json::json!({ "restApi": { "enabled": true } }),
+            )
+            .await
+        });
+        writer_started_rx.await.unwrap();
+        assert!(!writer.is_finished());
+
+        let (reader_started_tx, reader_started_rx) = tokio::sync::oneshot::channel();
+        let reader_dir = dir.clone();
+        let reader_state = state.clone();
+        let reader = tokio::spawn(async move {
+            let _ = reader_started_tx.send(());
+            read_app_settings_secure_inner(&reader_dir, &reader_state).await
+        });
+        reader_started_rx.await.unwrap();
+        assert!(!reader.is_finished());
+
+        drop(guard);
+        writer.await.unwrap().unwrap();
+        let observed = reader.await.unwrap().unwrap().unwrap();
+
+        assert_eq!(observed["restApi"]["enabled"], true);
+        assert!(observed["restApi"].get("apiKey").is_none());
+        let persisted = read_app_settings_inner(&dir, &state)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted["restApi"]["enabled"], true);
+        assert!(persisted["restApi"].get("apiKey").is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_encrypted_writes_are_serialized_and_preserve_every_patch() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let state = unlocked_state().await;
+        let mut writes = Vec::new();
+
+        for index in 0..24 {
+            let dir = dir.clone();
+            let state = state.clone();
+            writes.push(tokio::spawn(async move {
+                let mut patch = serde_json::Map::new();
+                patch.insert(format!("key-{index}"), Value::from(index));
+                write_app_settings_inner(&dir, &state, Value::Object(patch)).await
+            }));
+        }
+
+        for write in writes {
+            write.await.unwrap().unwrap();
+        }
+
+        let value = read_app_settings_inner(&dir, &state)
+            .await
+            .unwrap()
+            .unwrap();
+        for index in 0..24 {
+            assert_eq!(value[format!("key-{index}")], index);
+        }
+        assert!(
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp")),
+            "concurrent encrypted writes must not leave temp files"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_plaintext_writes_are_serialized_and_preserve_every_patch() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let state = EncryptionState::new();
+        let mut writes = Vec::new();
+
+        for index in 0..24 {
+            let dir = dir.clone();
+            let state = state.clone();
+            writes.push(tokio::spawn(async move {
+                let mut patch = serde_json::Map::new();
+                patch.insert(format!("key-{index}"), Value::from(index));
+                write_app_settings_inner(&dir, &state, Value::Object(patch)).await
+            }));
+        }
+
+        for write in writes {
+            write.await.unwrap().unwrap();
+        }
+
+        let value = read_app_settings_inner(&dir, &state)
+            .await
+            .unwrap()
+            .unwrap();
+        for index in 0..24 {
+            assert_eq!(value[format!("key-{index}")], index);
+        }
     }
 
     #[tokio::test]
