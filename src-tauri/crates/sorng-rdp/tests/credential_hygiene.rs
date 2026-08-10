@@ -6,7 +6,9 @@ use sorng_rdp::rdp::cert_trust::security_error_lifecycle_summary;
 use sorng_rdp::rdp::session_runtime::RdpWorkerRuntime;
 use sorng_rdp::rdp::session_state::{ChannelSummary, FrameFlowSummary};
 use sorng_rdp::rdp::stats::RdpSessionStats;
-use sorng_rdp::rdp::types::{RdpActiveConnection, RdpSession, RdpStatsEvent};
+use sorng_rdp::rdp::types::{
+    RdpActiveConnection, RdpSession, RdpSessionActivityControl, RdpStatsEvent,
+};
 use sorng_rdp::rdp::wake_channel::create_wake_channel;
 
 const SENSITIVE_MARKERS: &[&str] = &[
@@ -89,6 +91,7 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
         let connection = RdpActiveConnection {
             session: test_session(),
             cmd_tx,
+            activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker: RdpWorkerRuntime::spawn_blocking(1, session_slot, || {}),
             cached_password: SecretString::new("super-secret".to_string()),

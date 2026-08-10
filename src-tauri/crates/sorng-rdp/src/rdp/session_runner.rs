@@ -13,7 +13,11 @@ use crate::ironrdp::connector::connection_activation::ConnectionActivationState;
 use crate::ironrdp::connector::{self, ClientConnector, ConnectionResult, Sequence, State as _};
 use crate::ironrdp::core::WriteBuf;
 use crate::ironrdp::graphics::image_processing::PixelFormat;
+use crate::ironrdp::pdu::geometry::InclusiveRectangle;
 use crate::ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use crate::ironrdp::pdu::rdp::headers::ShareDataPdu;
+use crate::ironrdp::pdu::rdp::refresh_rectangle::RefreshRectanglePdu;
+use crate::ironrdp::pdu::rdp::suppress_output::SuppressOutputPdu;
 use crate::ironrdp::session::image::DecodedImage;
 use crate::ironrdp::session::{ActiveStage, ActiveStageOutput};
 use crate::ironrdp_blocking::Framed;
@@ -32,9 +36,30 @@ use super::network::{
 use super::session_state::{ChannelSummary, FailureClass, FrameFlowSummary};
 use super::settings::{build_bitmap_codecs, DriveRedirectionConfig, ResolvedSettings};
 use super::stats::RdpSessionStats;
-use super::types::{RdpCommand, RdpLogEntry, RdpPointerEvent, RdpStatusEvent};
+use super::types::{
+    RdpCommand, RdpLogEntry, RdpPointerEvent, RdpSessionActivitySnapshot, RdpStatusEvent,
+    SharedRdpSessionActivityControl,
+};
+#[cfg(test)]
+use super::types::RdpSessionActivityResult;
+use super::wake_channel::CheckpointStatus;
 use super::{RdpTlsConfig, RdpTlsStream};
 use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
+
+fn preserve_at_transport_checkpoint(
+    session_id: &str,
+    checkpoint: &str,
+    cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
+) -> CheckpointStatus {
+    let report = cmd_rx.preserve_pending_for_checkpoint();
+    if report.dropped_input_events > 0 {
+        log::warn!(
+            "RDP session {session_id}: dropped {} transient input events at {checkpoint} checkpoint",
+            report.dropped_input_events
+        );
+    }
+    report.status
+}
 
 // ---- Session log helper ----
 
@@ -216,6 +241,8 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
             desktop_size,
             enable_server_pointer,
             pointer_software_rendering,
+            refresh_rectangle_support,
+            suppress_output_support,
         } => {
             log::info!(
                 "Reactivation complete: {}x{} (io={}, user={})",
@@ -231,6 +258,8 @@ pub fn handle_reactivation<S: std::io::Read + std::io::Write>(
                 desktop_size,
                 enable_server_pointer,
                 pointer_software_rendering,
+                refresh_rectangle_support,
+                suppress_output_support,
                 connection_activation: *cas,
             })
         }
@@ -271,6 +300,8 @@ struct EstablishedSession {
     image: DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
+    refresh_rectangle_support: bool,
+    suppress_output_support: bool,
     desktop_scale_factor: u32,
     compositor: Option<Box<dyn FrameCompositor>>,
     active_render_backend: String,
@@ -285,6 +316,442 @@ struct EstablishedSession {
     /// (merged into the lifecycle channel summary) and the Tier-B GFX signals
     /// (codec/cap/surfaces/frames/acks/errors) ridden on the stats event.
     gfx_diagnostics: Option<crate::gfx::processor::SharedGfxDiagnostics>,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+struct RdpOutputCapabilities {
+    suppress_output_supported: bool,
+    refresh_rectangle_supported: bool,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum RdpActivityProtocolStep {
+    SuppressOutput,
+    AllowDisplayUpdates,
+    RefreshRectangle,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+struct RdpActivityProtocolActions {
+    suppress_output_sent: bool,
+    allow_display_updates_sent: bool,
+    refresh_rectangle_sent: bool,
+}
+
+impl RdpActivityProtocolActions {
+    fn record(&mut self, step: RdpActivityProtocolStep) {
+        match step {
+            RdpActivityProtocolStep::SuppressOutput => self.suppress_output_sent = true,
+            RdpActivityProtocolStep::AllowDisplayUpdates => {
+                self.allow_display_updates_sent = true;
+            }
+            RdpActivityProtocolStep::RefreshRectangle => self.refresh_rectangle_sent = true,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct RdpActivityState {
+    applied_generation: u64,
+    desired_active: bool,
+    output_active: bool,
+}
+
+impl Default for RdpActivityState {
+    fn default() -> Self {
+        Self {
+            applied_generation: 0,
+            desired_active: true,
+            output_active: true,
+        }
+    }
+}
+
+impl RdpActivityState {
+    #[cfg(test)]
+    fn result(
+        &self,
+        session_id: &str,
+        requested_generation: u64,
+        capabilities: RdpOutputCapabilities,
+        actions: RdpActivityProtocolActions,
+        applied: bool,
+    ) -> RdpSessionActivityResult {
+        RdpSessionActivityResult {
+            session_id: session_id.to_string(),
+            requested_generation,
+            applied_generation: self.applied_generation,
+            active: self.output_active,
+            applied,
+            stale: !applied,
+            suppress_output_supported: capabilities.suppress_output_supported,
+            refresh_rectangle_supported: capabilities.refresh_rectangle_supported,
+            suppress_output_sent: actions.suppress_output_sent,
+            allow_display_updates_sent: actions.allow_display_updates_sent,
+            refresh_rectangle_sent: actions.refresh_rectangle_sent,
+        }
+    }
+
+    fn should_emit_output(
+        &self,
+        viewer_detached: bool,
+        activity_control: &SharedRdpSessionActivityControl,
+    ) -> bool {
+        self.output_active && activity_control.output_enabled() && !viewer_detached
+    }
+}
+
+fn activity_protocol_plan(
+    active: bool,
+    capabilities: RdpOutputCapabilities,
+) -> Vec<RdpActivityProtocolStep> {
+    let mut plan = Vec::with_capacity(2);
+    if active {
+        if capabilities.suppress_output_supported {
+            plan.push(RdpActivityProtocolStep::AllowDisplayUpdates);
+        }
+        if capabilities.refresh_rectangle_supported {
+            plan.push(RdpActivityProtocolStep::RefreshRectangle);
+        }
+    } else if capabilities.suppress_output_supported {
+        plan.push(RdpActivityProtocolStep::SuppressOutput);
+    }
+    plan
+}
+
+fn apply_desired_activity_to_transport<SendStep>(
+    state: &mut RdpActivityState,
+    capabilities: RdpOutputCapabilities,
+    mut send_step: SendStep,
+) -> Result<RdpActivityProtocolActions, String>
+where
+    SendStep: FnMut(RdpActivityProtocolStep) -> Result<(), String>,
+{
+    // Gate local delivery before any protocol write. In particular, a failed
+    // resume cannot leak stale output while the transport is recovering.
+    state.output_active = false;
+    let mut actions = RdpActivityProtocolActions::default();
+    for step in activity_protocol_plan(state.desired_active, capabilities) {
+        send_step(step)?;
+        actions.record(step);
+    }
+    if state.desired_active {
+        state.output_active = true;
+    }
+    Ok(actions)
+}
+
+#[cfg(test)]
+fn apply_activity_request<SendStep>(
+    session_id: &str,
+    state: &mut RdpActivityState,
+    capabilities: RdpOutputCapabilities,
+    generation: u64,
+    active: bool,
+    send_step: SendStep,
+) -> Result<RdpSessionActivityResult, String>
+where
+    SendStep: FnMut(RdpActivityProtocolStep) -> Result<(), String>,
+{
+    if generation <= state.applied_generation {
+        return Ok(state.result(
+            session_id,
+            generation,
+            capabilities,
+            RdpActivityProtocolActions::default(),
+            false,
+        ));
+    }
+
+    state.applied_generation = generation;
+    state.desired_active = active;
+    let actions = apply_desired_activity_to_transport(state, capabilities, send_step)?;
+    Ok(state.result(session_id, generation, capabilities, actions, true))
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+
+    fn all_capabilities() -> RdpOutputCapabilities {
+        RdpOutputCapabilities {
+            suppress_output_supported: true,
+            refresh_rectangle_supported: true,
+        }
+    }
+
+    #[test]
+    fn stale_replacement_generation_corrects_above_native_generation() {
+        let mut state = RdpActivityState::default();
+        let mut emitted = Vec::new();
+
+        let old_inactive = apply_activity_request(
+            "session",
+            &mut state,
+            all_capabilities(),
+            5,
+            false,
+            |step| {
+                emitted.push(step);
+                Ok(())
+            },
+        )
+        .expect("old viewer activity should apply");
+        assert!(!old_inactive.active);
+        assert_eq!(emitted, vec![RdpActivityProtocolStep::SuppressOutput]);
+
+        let stale_new_viewer =
+            apply_activity_request("session", &mut state, all_capabilities(), 1, true, |step| {
+                emitted.push(step);
+                Ok(())
+            })
+            .expect("stale request should return authoritative state");
+        assert!(stale_new_viewer.stale);
+        assert_eq!(stale_new_viewer.applied_generation, 5);
+        assert!(!stale_new_viewer.active);
+        assert_eq!(emitted.len(), 1);
+
+        let corrected = apply_activity_request(
+            "session",
+            &mut state,
+            all_capabilities(),
+            stale_new_viewer.applied_generation + 1,
+            true,
+            |step| {
+                emitted.push(step);
+                Ok(())
+            },
+        )
+        .expect("one stale-correction retry should win");
+        assert!(corrected.applied);
+        assert!(corrected.active);
+        assert_eq!(corrected.applied_generation, 6);
+        assert_eq!(
+            &emitted[1..],
+            &[
+                RdpActivityProtocolStep::AllowDisplayUpdates,
+                RdpActivityProtocolStep::RefreshRectangle,
+            ]
+        );
+
+        let late_old_viewer = apply_activity_request(
+            "session",
+            &mut state,
+            all_capabilities(),
+            5,
+            false,
+            |step| {
+                emitted.push(step);
+                Ok(())
+            },
+        )
+        .expect("late old-viewer command should be ignored");
+        assert!(late_old_viewer.stale);
+        assert!(late_old_viewer.active);
+        assert_eq!(late_old_viewer.applied_generation, 6);
+        assert_eq!(emitted.len(), 3);
+    }
+
+    #[test]
+    fn duplicate_and_equal_generations_emit_no_protocol_pdu() {
+        let mut state = RdpActivityState::default();
+        let mut emitted = Vec::new();
+        apply_activity_request(
+            "session",
+            &mut state,
+            all_capabilities(),
+            9,
+            false,
+            |step| {
+                emitted.push(step);
+                Ok(())
+            },
+        )
+        .expect("first generation should apply");
+
+        for active in [false, true] {
+            let result = apply_activity_request(
+                "session",
+                &mut state,
+                all_capabilities(),
+                9,
+                active,
+                |step| {
+                    emitted.push(step);
+                    Ok(())
+                },
+            )
+            .expect("duplicate generation should be acknowledged as stale");
+            assert!(result.stale);
+        }
+        assert_eq!(emitted, vec![RdpActivityProtocolStep::SuppressOutput]);
+    }
+
+    #[test]
+    fn negotiated_capabilities_control_resume_order_and_result_flags() {
+        assert_eq!(
+            activity_protocol_plan(true, all_capabilities()),
+            vec![
+                RdpActivityProtocolStep::AllowDisplayUpdates,
+                RdpActivityProtocolStep::RefreshRectangle,
+            ]
+        );
+        assert_eq!(
+            activity_protocol_plan(
+                true,
+                RdpOutputCapabilities {
+                    suppress_output_supported: false,
+                    refresh_rectangle_supported: true,
+                }
+            ),
+            vec![RdpActivityProtocolStep::RefreshRectangle]
+        );
+        assert_eq!(
+            activity_protocol_plan(
+                true,
+                RdpOutputCapabilities {
+                    suppress_output_supported: true,
+                    refresh_rectangle_supported: false,
+                }
+            ),
+            vec![RdpActivityProtocolStep::AllowDisplayUpdates]
+        );
+
+        let mut state = RdpActivityState::default();
+        let result = apply_activity_request(
+            "session",
+            &mut state,
+            RdpOutputCapabilities::default(),
+            1,
+            false,
+            |_| panic!("unsupported protocol actions must not be emitted"),
+        )
+        .expect("local suppression remains available without server support");
+        assert!(result.applied);
+        assert!(!result.active);
+        assert!(!result.suppress_output_supported);
+        assert!(!result.refresh_rectangle_supported);
+        assert!(!result.suppress_output_sent);
+    }
+
+    #[test]
+    fn protocol_write_failures_leave_output_gated_for_recovery() {
+        let mut state = RdpActivityState::default();
+        let inactive_error =
+            apply_activity_request("session", &mut state, all_capabilities(), 2, false, |_| {
+                Err("inactive write failed".to_string())
+            })
+            .expect_err("inactive protocol write should fail");
+        assert!(inactive_error.contains("inactive write failed"));
+        assert_eq!(state.applied_generation, 2);
+        assert!(!state.desired_active);
+        assert!(!state.output_active);
+
+        let active_error =
+            apply_activity_request("session", &mut state, all_capabilities(), 3, true, |_| {
+                Err("active write failed".to_string())
+            })
+            .expect_err("active protocol write should fail");
+        assert!(active_error.contains("active write failed"));
+        assert_eq!(state.applied_generation, 3);
+        assert!(state.desired_active);
+        assert!(!state.output_active);
+    }
+
+    #[test]
+    fn reconnect_reapplies_desired_state_without_resetting_generation() {
+        let mut state = RdpActivityState::default();
+        apply_activity_request("session", &mut state, all_capabilities(), 5, false, |_| {
+            Ok(())
+        })
+        .expect("inactive state should apply");
+
+        let mut inactive_reconnect_steps = Vec::new();
+        apply_desired_activity_to_transport(&mut state, all_capabilities(), |step| {
+            inactive_reconnect_steps.push(step);
+            Ok(())
+        })
+        .expect("inactive state should reapply after reconnect");
+        assert_eq!(
+            inactive_reconnect_steps,
+            vec![RdpActivityProtocolStep::SuppressOutput]
+        );
+        assert_eq!(state.applied_generation, 5);
+        assert!(!state.output_active);
+
+        apply_activity_request("session", &mut state, all_capabilities(), 6, true, |_| {
+            Ok(())
+        })
+        .expect("active correction should apply");
+        let mut active_reconnect_steps = Vec::new();
+        apply_desired_activity_to_transport(&mut state, all_capabilities(), |step| {
+            active_reconnect_steps.push(step);
+            Ok(())
+        })
+        .expect("active state should reapply after reconnect");
+        assert_eq!(
+            active_reconnect_steps,
+            vec![
+                RdpActivityProtocolStep::AllowDisplayUpdates,
+                RdpActivityProtocolStep::RefreshRectangle,
+            ]
+        );
+        assert_eq!(state.applied_generation, 6);
+        assert!(state.output_active);
+    }
+
+    #[test]
+    fn inactive_request_after_attach_selection_still_blocks_snapshot_delivery() {
+        let state = RdpActivityState::default();
+        let activity_control = SharedRdpSessionActivityControl::default();
+        assert!(state.should_emit_output(false, &activity_control));
+
+        // Model the command-loop race precisely: AttachViewer has already been
+        // selected, then the async command surface publishes inactive before
+        // the attach branch decides whether to emit its full-frame snapshot.
+        let request_control = Arc::clone(&activity_control);
+        std::thread::spawn(move || {
+            request_control
+                .request("session", 1, false)
+                .expect("inactive request");
+        })
+        .join()
+        .expect("activity request thread");
+
+        assert!(!state.should_emit_output(false, &activity_control));
+    }
+
+    #[test]
+    fn activity_result_serializes_with_frontend_contract_keys() {
+        let result = RdpActivityState::default().result(
+            "session",
+            7,
+            all_capabilities(),
+            RdpActivityProtocolActions {
+                allow_display_updates_sent: true,
+                refresh_rectangle_sent: true,
+                ..Default::default()
+            },
+            true,
+        );
+        let wire = serde_json::to_value(result).expect("activity result should serialize");
+
+        for key in [
+            "sessionId",
+            "requestedGeneration",
+            "appliedGeneration",
+            "active",
+            "applied",
+            "stale",
+            "suppressOutputSupported",
+            "refreshRectangleSupported",
+            "suppressOutputSent",
+            "allowDisplayUpdatesSent",
+            "refreshRectangleSent",
+        ] {
+            assert!(wire.get(key).is_some(), "missing activity result key {key}");
+        }
+    }
 }
 
 // ---- Blocking RDP session runner ----
@@ -306,6 +773,7 @@ pub fn run_rdp_session(
     frame_store: SharedFrameStoreState,
     frame_channel: DynFrameChannel,
     log_sink: LogSink,
+    activity_control: SharedRdpSessionActivityControl,
 ) {
     // Log CPU SIMD capabilities once (first session only).
     static LOG_FEATURES: std::sync::Once = std::sync::Once::new();
@@ -329,6 +797,7 @@ pub fn run_rdp_session(
             &frame_store,
             &frame_channel,
             &log_sink,
+            &activity_control,
         )
     } else {
         run_rdp_session_inner(
@@ -347,6 +816,7 @@ pub fn run_rdp_session(
             &frame_store,
             &frame_channel,
             &log_sink,
+            &activity_control,
         )
     };
 
@@ -501,6 +971,7 @@ fn run_rdp_session_auto_detect(
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
     log_sink: &LogSink,
+    activity_control: &SharedRdpSessionActivityControl,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -571,6 +1042,7 @@ fn run_rdp_session_auto_detect(
             frame_store,
             frame_channel,
             log_sink,
+            activity_control,
         );
 
         match result {
@@ -689,6 +1161,7 @@ fn run_rdp_session_auto_detect(
                     frame_store,
                     frame_channel,
                     log_sink,
+                    activity_control,
                 );
 
                 match result {
@@ -763,12 +1236,12 @@ fn establish_rdp_connection(
     let conn_start = Instant::now();
 
     // -- 0. Pre-flight shutdown check --
-    match cmd_rx.cmd_rx.try_recv() {
-        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+    match preserve_at_transport_checkpoint(session_id, "before TCP", cmd_rx) {
+        CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
             log::info!("RDP session {session_id}: shutdown before connect (pre-flight)");
             return Err("session_shutdown: cancelled before connect".into());
         }
-        _ => {}
+        CheckpointStatus::Continue => {}
     }
 
     // -- 1. TCP connect (with hostname DNS resolution support) --
@@ -824,12 +1297,12 @@ fn establish_rdp_connection(
     log::info!("RDP session {session_id}: TCP connected in {tcp_ms}ms");
 
     // -- Shutdown check after TCP connect --
-    match cmd_rx.cmd_rx.try_recv() {
-        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+    match preserve_at_transport_checkpoint(session_id, "after TCP", cmd_rx) {
+        CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
             log::info!("RDP session {session_id}: shutdown after TCP connect");
             return Err("session_shutdown: cancelled after TCP connect".into());
         }
-        _ => {}
+        CheckpointStatus::Continue => {}
     }
 
     let mut framed = Framed::new(tcp_stream);
@@ -1160,12 +1633,12 @@ fn establish_rdp_connection(
     let upgraded = crate::ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
     // -- Shutdown check before CredSSP/NLA --
-    match cmd_rx.cmd_rx.try_recv() {
-        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+    match preserve_at_transport_checkpoint(session_id, "before CredSSP", cmd_rx) {
+        CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
             log::info!("RDP session {session_id}: shutdown before CredSSP");
             return Err("session_shutdown: cancelled before CredSSP".into());
         }
-        _ => {}
+        CheckpointStatus::Continue => {}
     }
 
     // -- 5. Finalize connection (CredSSP / NLA + remaining handshake) --
@@ -1294,6 +1767,8 @@ fn establish_rdp_connection(
     // Save connection result fields before ActiveStage::new() consumes it.
     let cr_enable_server_pointer = connection_result.enable_server_pointer;
     let cr_pointer_software_rendering = connection_result.pointer_software_rendering;
+    let cr_refresh_rectangle_support = connection_result.refresh_rectangle_support;
+    let cr_suppress_output_support = connection_result.suppress_output_support;
     let cr_io_channel_id = connection_result.io_channel_id;
     let cr_user_channel_id = connection_result.user_channel_id;
 
@@ -1382,6 +1857,8 @@ fn establish_rdp_connection(
         image,
         desktop_width,
         desktop_height,
+        refresh_rectangle_support: cr_refresh_rectangle_support,
+        suppress_output_support: cr_suppress_output_support,
         desktop_scale_factor: settings.desktop_scale_factor,
         compositor,
         active_render_backend,
@@ -1390,6 +1867,138 @@ fn establish_rdp_connection(
         audin_summary,
         gfx_diagnostics,
     })
+}
+
+fn established_output_capabilities(est: &EstablishedSession) -> RdpOutputCapabilities {
+    RdpOutputCapabilities {
+        suppress_output_supported: est.suppress_output_support,
+        refresh_rectangle_supported: est.refresh_rectangle_support,
+    }
+}
+
+fn full_desktop_rectangle(est: &EstablishedSession) -> Result<InclusiveRectangle, String> {
+    if est.desktop_width == 0 || est.desktop_height == 0 {
+        return Err("Cannot encode RDP activity PDU for an empty desktop".to_string());
+    }
+    Ok(InclusiveRectangle {
+        left: 0,
+        top: 0,
+        right: est.desktop_width - 1,
+        bottom: est.desktop_height - 1,
+    })
+}
+
+fn send_activity_protocol_step(
+    est: &mut EstablishedSession,
+    stats: &RdpSessionStats,
+    step: RdpActivityProtocolStep,
+) -> Result<(), String> {
+    let pdu = match step {
+        RdpActivityProtocolStep::SuppressOutput => {
+            ShareDataPdu::SuppressOutput(SuppressOutputPdu { desktop_rect: None })
+        }
+        RdpActivityProtocolStep::AllowDisplayUpdates => {
+            ShareDataPdu::SuppressOutput(SuppressOutputPdu {
+                desktop_rect: Some(full_desktop_rectangle(est)?),
+            })
+        }
+        RdpActivityProtocolStep::RefreshRectangle => {
+            ShareDataPdu::RefreshRectangle(RefreshRectanglePdu {
+                areas_to_refresh: vec![full_desktop_rectangle(est)?],
+            })
+        }
+    };
+
+    let mut output = WriteBuf::new();
+    let written = est
+        .active_stage
+        .encode_static(&mut output, pdu)
+        .map_err(|error| format!("Failed to encode {step:?}: {error}"))?;
+    let frame = output.filled();
+    let data = frame
+        .get(..written)
+        .ok_or_else(|| format!("Encoded {step:?} length exceeded output buffer"))?;
+    est.tls_framed
+        .write_all(data)
+        .map_err(|error| format!("Failed to write {step:?}: {error}"))?;
+    stats
+        .bytes_sent
+        .fetch_add(data.len() as u64, Ordering::Relaxed);
+    stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+fn reconcile_shared_activity_to_session(
+    state: &mut RdpActivityState,
+    activity_control: &SharedRdpSessionActivityControl,
+    est: &mut EstablishedSession,
+    stats: &RdpSessionStats,
+) -> Result<Option<RdpSessionActivitySnapshot>, String> {
+    let capabilities = established_output_capabilities(est);
+    activity_control.update_capabilities(
+        capabilities.suppress_output_supported,
+        capabilities.refresh_rectangle_supported,
+    )?;
+    let snapshot = activity_control.snapshot()?;
+    if snapshot.applied_generation == 0 {
+        state.applied_generation = 0;
+        state.desired_active = true;
+        state.output_active = true;
+        return Ok(Some(snapshot));
+    }
+
+    activity_control.begin_transport_reconcile();
+    state.applied_generation = snapshot.applied_generation;
+    state.desired_active = snapshot.desired_active;
+    let actions = apply_desired_activity_to_transport(state, capabilities, |step| {
+        send_activity_protocol_step(est, stats, step)
+    })?;
+    let published = activity_control.complete_transport_apply(
+        snapshot.applied_generation,
+        snapshot.desired_active,
+        actions.suppress_output_sent,
+        actions.allow_display_updates_sent,
+        actions.refresh_rectangle_sent,
+    )?;
+    if !published {
+        // A newer shared revision arrived while protocol writes were in
+        // flight. Its synchronous gate remains closed; the coalesced activity
+        // wake will reconcile the latest snapshot on the next loop turn.
+        state.output_active = false;
+        return Ok(None);
+    }
+    activity_control.snapshot().map(Some)
+}
+
+fn send_live_full_frame(
+    session_id: &str,
+    est: &EstablishedSession,
+    channel: &DynFrameChannel,
+    frame_store: &SharedFrameStoreState,
+    frame_accounting: &FrameDeliveryAccounting,
+) -> Result<(), String> {
+    let image_data = est.image.data();
+    let mut payload = Vec::with_capacity(8 + image_data.len());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&est.desktop_width.to_le_bytes());
+    payload.extend_from_slice(&est.desktop_height.to_le_bytes());
+    payload.extend_from_slice(image_data);
+    send_accounted_frame(
+        frame_accounting,
+        channel,
+        FramePayloadKind::FullFrame,
+        payload,
+    )?;
+
+    let slots = frame_store.slots.read().expect("lock poisoned");
+    if let Some(slot_arc) = slots.get(session_id) {
+        let mut slot = slot_arc.inner.write().expect("lock poisoned");
+        if slot.data.len() == image_data.len() {
+            slot.data.copy_from_slice(image_data);
+        }
+    }
+    Ok(())
 }
 
 // ---- Layer 2: Active Session Loop ----
@@ -1407,6 +2016,8 @@ fn run_active_session_loop(
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
     log_sink: &LogSink,
+    activity_state: &mut RdpActivityState,
+    activity_control: &SharedRdpSessionActivityControl,
 ) -> SessionLoopExit {
     // Viewer channel management for session persistence.
     let mut viewer_detached = false;
@@ -1418,6 +2029,15 @@ fn run_active_session_loop(
     // polling::Poller to wait on BOTH the TCP socket and the wake
     // pipe simultaneously.  The thread sleeps until either source
     // has data — zero timeout polling, sub-millisecond input latency.
+
+    if let Err(error) =
+        reconcile_shared_activity_to_session(activity_state, activity_control, est, stats)
+    {
+        log::warn!(
+            "RDP session {session_id}: failed to restore activity state after transport change: {error}"
+        );
+        return SessionLoopExit::NetworkError(error);
+    }
 
     // Switch to non-blocking I/O for the poller.
     set_nonblocking_on_framed(&est.tls_framed, true);
@@ -1504,7 +2124,7 @@ fn run_active_session_loop(
         let mut input_dropped = 0u64;
         let mut requested_resize: Option<(u16, u16)> = None;
         loop {
-            match cmd_rx.cmd_rx.try_recv() {
+            match cmd_rx.try_recv() {
                 Ok(RdpCommand::Shutdown) => {
                     log::info!("RDP session {session_id}: shutdown requested");
                     if let Ok(outputs) = est.active_stage.graceful_shutdown() {
@@ -1532,40 +2152,43 @@ fn run_active_session_loop(
                 }
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
                     log::info!("RDP session {session_id}: viewer attached (new frame channel)");
-                    // Send the LIVE framebuffer from est.image (not the
-                    // potentially stale frame_store) so the reattached
-                    // viewer sees the current screen state immediately.
-                    {
-                        let w = est.desktop_width;
-                        let h = est.desktop_height;
-                        let img_data = est.image.data();
-                        let total = 8 + img_data.len();
-                        let mut payload = Vec::with_capacity(total);
-                        payload.extend_from_slice(&0u16.to_le_bytes()); // x=0
-                        payload.extend_from_slice(&0u16.to_le_bytes()); // y=0
-                        payload.extend_from_slice(&w.to_le_bytes());
-                        payload.extend_from_slice(&h.to_le_bytes());
-                        payload.extend_from_slice(img_data);
-                        // Route the reattach snapshot through accounting too so
-                        // the full-frame sync is not missed by telemetry.
-                        let _ = send_accounted_frame(
-                            &frame_accounting,
-                            &new_channel,
-                            FramePayloadKind::FullFrame,
-                            payload,
-                        );
-                        // Also sync the frame_store with the live image
-                        // so future reattaches use fresh data too.
-                        let slots = frame_store.slots.read().expect("lock poisoned");
-                        if let Some(slot_arc) = slots.get(session_id) {
-                            let mut slot = slot_arc.inner.write().expect("lock poisoned");
-                            if slot.data.len() == img_data.len() {
-                                slot.data.copy_from_slice(img_data);
-                            }
-                        }
-                    }
+                    // Viewer ownership and output activity are independent. A
+                    // viewer may attach while output remains suppressed; the
+                    // resume path sends the live snapshot after protocol sync.
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
+                    let attach_activity = match reconcile_shared_activity_to_session(
+                        activity_state,
+                        activity_control,
+                        est,
+                        stats,
+                    ) {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            log::warn!(
+                                "RDP session {session_id}: attach activity reconciliation failed; output remains gated: {error}"
+                            );
+                            return SessionLoopExit::NetworkError(error);
+                        }
+                    };
+                    if attach_activity.is_some()
+                        && activity_state.should_emit_output(viewer_detached, activity_control)
+                    {
+                        let active_channel = attached_channel
+                            .as_ref()
+                            .expect("attached channel was installed before snapshot delivery");
+                        if let Err(error) = send_live_full_frame(
+                            session_id,
+                            est,
+                            active_channel,
+                            frame_store,
+                            &frame_accounting,
+                        ) {
+                            log::warn!(
+                                "RDP session {session_id}: reattach snapshot failed: {error}"
+                            );
+                        }
+                    }
                     // Force next frame delivery to do a full-frame sync
                     stats
                         .frame_count
@@ -1590,6 +2213,45 @@ fn run_active_session_loop(
                 Ok(RdpCommand::DetachViewer) => {
                     log::info!("RDP session {session_id}: viewer detached");
                     viewer_detached = true;
+                }
+                Ok(RdpCommand::ActivityChanged) => {
+                    match reconcile_shared_activity_to_session(
+                        activity_state,
+                        activity_control,
+                        est,
+                        stats,
+                    ) {
+                        Ok(Some(snapshot)) => {
+                            if snapshot.desired_active
+                                && activity_control.output_enabled()
+                                && !viewer_detached
+                            {
+                                let active_channel =
+                                    attached_channel.as_ref().unwrap_or(frame_channel);
+                                if let Err(error) = send_live_full_frame(
+                                    session_id,
+                                    est,
+                                    active_channel,
+                                    frame_store,
+                                    &frame_accounting,
+                                ) {
+                                    log::warn!(
+                                        "RDP session {session_id}: activity resume snapshot failed: {error}"
+                                    );
+                                }
+                                stats
+                                    .frame_count
+                                    .store(0, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            log::warn!(
+                                "RDP session {session_id}: activity transition failed; output remains gated: {error}"
+                            );
+                            return SessionLoopExit::NetworkError(error);
+                        }
+                    }
                 }
                 Ok(RdpCommand::Reconnect) => {
                     log::info!("RDP session {session_id}: manual reconnect requested");
@@ -1883,7 +2545,8 @@ fn run_active_session_loop(
         if !merged_inputs.is_empty() {
             // Single batch update — avoids N separate Instant::now() calls.
             stats.record_input_sent_batch(merged_inputs.len() as u64);
-            let active_ch = if !viewer_detached {
+            let active_ch = if activity_state.should_emit_output(viewer_detached, activity_control)
+            {
                 attached_channel.as_ref().unwrap_or(frame_channel)
             } else {
                 frame_channel // will fail silently on send
@@ -1893,7 +2556,7 @@ fn run_active_session_loop(
                 .process_fastpath_input(&mut est.image, &merged_inputs)
             {
                 Ok(outputs) => {
-                    if !viewer_detached {
+                    if activity_state.should_emit_output(viewer_detached, activity_control) {
                         if let Err(e) = process_outputs(
                             session_id,
                             &outputs,
@@ -1929,7 +2592,8 @@ fn run_active_session_loop(
                             return SessionLoopExit::ProtocolError(err_str);
                         }
                     } else {
-                        // Still need to send ResponseFrames even when viewer is detached
+                        // ResponseFrames still flow while the viewer is detached
+                        // or local output is activity-gated.
                         for output in &outputs {
                             if let ActiveStageOutput::ResponseFrame(data) = output {
                                 stats
@@ -2070,7 +2734,7 @@ fn run_active_session_loop(
             && last_frame_emit.elapsed() >= batch_interval
         {
             merge_dirty_regions(&mut dirty_regions);
-            if !viewer_detached {
+            if activity_state.should_emit_output(viewer_detached, activity_control) {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 if let Some(ref mut comp) = est.compositor {
                     for &(x, y, w, h) in &dirty_regions {
@@ -2121,7 +2785,7 @@ fn run_active_session_loop(
             }
             for gfx_output in gfx_frames.drain(..) {
                 stats.record_frame();
-                if viewer_detached {
+                if !activity_state.should_emit_output(viewer_detached, activity_control) {
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
@@ -2240,6 +2904,11 @@ fn run_active_session_loop(
                                         }
                                     }
                                     ActiveStageOutput::GraphicsUpdate(region) => {
+                                        if !activity_state
+                                            .should_emit_output(viewer_detached, activity_control)
+                                        {
+                                            continue;
+                                        }
                                         stats.record_frame();
                                         batch_had_graphics = true;
                                         let rw = region.right.saturating_sub(region.left) + 1;
@@ -2274,6 +2943,11 @@ fn run_active_session_loop(
                                         }
                                     }
                                     ActiveStageOutput::PointerDefault => {
+                                        if !activity_state
+                                            .should_emit_output(viewer_detached, activity_control)
+                                        {
+                                            continue;
+                                        }
                                         let _ = event_emitter.emit_event(
                                             "rdp://pointer",
                                             serde_json::to_value(&RdpPointerEvent {
@@ -2291,6 +2965,11 @@ fn run_active_session_loop(
                                         );
                                     }
                                     ActiveStageOutput::PointerHidden => {
+                                        if !activity_state
+                                            .should_emit_output(viewer_detached, activity_control)
+                                        {
+                                            continue;
+                                        }
                                         let _ = event_emitter.emit_event(
                                             "rdp://pointer",
                                             serde_json::to_value(&RdpPointerEvent {
@@ -2308,6 +2987,11 @@ fn run_active_session_loop(
                                         );
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
+                                        if !activity_state
+                                            .should_emit_output(viewer_detached, activity_control)
+                                        {
+                                            continue;
+                                        }
                                         let _ = event_emitter.emit_event(
                                             "rdp://pointer",
                                             serde_json::to_value(&RdpPointerEvent {
@@ -2325,6 +3009,11 @@ fn run_active_session_loop(
                                         );
                                     }
                                     ActiveStageOutput::PointerBitmap(bitmap) => {
+                                        if !activity_state
+                                            .should_emit_output(viewer_detached, activity_control)
+                                        {
+                                            continue;
+                                        }
                                         // Encode the cursor bitmap as base64 RGBA and send
                                         // to the frontend for CSS cursor rendering.
                                         let rgba_b64 = base64::Engine::encode(
@@ -2605,13 +3294,15 @@ fn run_active_session_loop(
         // Flush accumulated dirty rects from this batch.
         if batch_had_graphics && !frame_batching {
             if let Some(ref mut comp) = est.compositor {
-                if !viewer_detached {
+                if activity_state.should_emit_output(viewer_detached, activity_control) {
                     if let Some(frame) = comp.flush() {
                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                         push_compositor_frame_via_channel(frame, active_ch, &frame_accounting);
                     }
                 }
-            } else if !batch_dirty_rects.is_empty() && !viewer_detached {
+            } else if !batch_dirty_rects.is_empty()
+                && activity_state.should_emit_output(viewer_detached, activity_control)
+            {
                 merge_dirty_regions(&mut batch_dirty_rects);
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 push_multi_rect_via_channel(
@@ -2672,12 +3363,25 @@ fn run_active_session_loop(
                 Ok(new_result) => {
                     est.desktop_width = new_result.desktop_size.width;
                     est.desktop_height = new_result.desktop_size.height;
+                    est.refresh_rectangle_support = new_result.refresh_rectangle_support;
+                    est.suppress_output_support = new_result.suppress_output_support;
                     est.image = DecodedImage::new(
                         PixelFormat::RgbA32,
                         est.desktop_width,
                         est.desktop_height,
                     );
                     est.active_stage = ActiveStage::new(new_result);
+                    if let Err(error) = reconcile_shared_activity_to_session(
+                        activity_state,
+                        activity_control,
+                        est,
+                        stats,
+                    ) {
+                        log::warn!(
+                            "RDP session {session_id}: failed to restore activity state after reactivation: {error}"
+                        );
+                        return SessionLoopExit::NetworkError(error);
+                    }
                     frame_store.reinit(session_id, est.desktop_width, est.desktop_height);
                     stats
                         .frame_count
@@ -2746,11 +3450,11 @@ where
     let reconnect_enabled = settings.reconnect_on_network_loss;
 
     'session: loop {
-        match cmd_rx.cmd_rx.try_recv() {
-            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+        match preserve_at_transport_checkpoint(session_id, "reconnect preflight", cmd_rx) {
+            CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
                 return Err("session_shutdown: cancelled before connect".into());
             }
-            _ => {}
+            CheckpointStatus::Continue => {}
         }
 
         let mut established = match establish(cmd_rx) {
@@ -2816,6 +3520,17 @@ where
                 continue 'session;
             }
         };
+
+        // The final CredSSP/activation phase can block after the last internal
+        // handshake checkpoint. Fence that tail before entering the live loop
+        // so keys/clicks accepted against an earlier screen are never replayed
+        // after activation or reconnect; durable admin work remains deferred.
+        match preserve_at_transport_checkpoint(session_id, "after handshake", cmd_rx) {
+            CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
+                return Err("session_shutdown: cancelled after handshake".into());
+            }
+            CheckpointStatus::Continue => {}
+        }
 
         stats
             .frame_count
@@ -2987,7 +3702,9 @@ fn run_rdp_session_inner(
     frame_store: &SharedFrameStoreState,
     frame_channel: &DynFrameChannel,
     log_sink: &LogSink,
+    activity_control: &SharedRdpSessionActivityControl,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut activity_state = RdpActivityState::default();
     run_reconnect_loop(
         session_id,
         settings,
@@ -3025,9 +3742,11 @@ fn run_rdp_session_inner(
                 frame_store,
                 frame_channel,
                 log_sink,
+                &mut activity_state,
+                activity_control,
             )
         },
-        sleep_with_shutdown_check,
+        |cmd_rx, delay| sleep_with_shutdown_check(session_id, cmd_rx, delay),
     )
 }
 
@@ -3043,6 +3762,7 @@ fn compute_backoff_delay(attempt: u32, base: Duration, max: Duration) -> Duratio
 /// Sleep for the given duration, but check for shutdown commands periodically.
 /// Returns Err if shutdown was requested during the sleep.
 fn sleep_with_shutdown_check(
+    session_id: &str,
     cmd_rx: &mut crate::rdp::wake_channel::WakeReceiver,
     total: Duration,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -3050,11 +3770,11 @@ fn sleep_with_shutdown_check(
     let start = Instant::now();
 
     while start.elapsed() < total {
-        match cmd_rx.cmd_rx.try_recv() {
-            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+        match preserve_at_transport_checkpoint(session_id, "reconnect backoff", cmd_rx) {
+            CheckpointStatus::Shutdown | CheckpointStatus::Disconnected => {
                 return Err("session_shutdown: cancelled during reconnect wait".into());
             }
-            _ => {}
+            CheckpointStatus::Continue => {}
         }
         let remaining = total.saturating_sub(start.elapsed());
         std::thread::sleep(remaining.min(check_interval));
@@ -3222,5 +3942,194 @@ mod runner_tests {
             frame_flow.pressure_state(),
             FramePressureState::Backpressured
         );
+    }
+
+    #[test]
+    fn transport_checkpoints_drop_input_and_execute_durable_commands_fifo_once() {
+        use crate::ironrdp::pdu::input::fast_path::KeyboardFlags;
+        use crate::rdp::frame_store::SharedFrameStore;
+        use crate::rdp::wake_channel::create_wake_channel;
+
+        fn input(scancode: u8) -> RdpCommand {
+            RdpCommand::Input(vec![FastPathInputEvent::KeyboardEvent(
+                KeyboardFlags::empty(),
+                scancode,
+            )])
+        }
+
+        let session_id = "checkpoint-session";
+        let mut settings =
+            ResolvedSettings::from_payload(&crate::rdp::RdpSettingsPayload::default(), 4, 4);
+        settings.reconnect_on_network_loss = true;
+        settings.reconnect_base_delay = Duration::ZERO;
+        settings.reconnect_max_delay = Duration::ZERO;
+        let emitter: DynEventEmitter = Arc::new(RecordingEmitter::default());
+        let stats = Arc::new(RdpSessionStats::new());
+        let frame_store = SharedFrameStore::new();
+        let (sender, mut receiver) = create_wake_channel().expect("wake channel");
+        let (log_tx, _log_rx) = std::sync::mpsc::sync_channel(RDP_LOG_CHANNEL_CAPACITY);
+
+        sender
+            .send(RdpCommand::SignOut)
+            .expect("before TCP durable");
+        sender.send(input(1)).expect("before TCP input");
+
+        let establish_sender = sender.clone();
+        let backoff_sender = sender.clone();
+        let mut establish_attempt = 0usize;
+        let mut active_attempt = 0usize;
+        let mut backoff_attempt = 0usize;
+        let mut executed = Vec::new();
+
+        let result = run_reconnect_loop(
+            session_id,
+            &settings,
+            &emitter,
+            &mut receiver,
+            &stats,
+            &frame_store,
+            &log_tx,
+            |cmd_rx| {
+                establish_attempt += 1;
+                if establish_attempt == 1 {
+                    establish_sender
+                        .send(RdpCommand::ClipboardPaste)
+                        .expect("after TCP durable");
+                    establish_sender.send(input(2)).expect("after TCP input");
+                    assert_eq!(
+                        preserve_at_transport_checkpoint(session_id, "after TCP", cmd_rx),
+                        CheckpointStatus::Continue
+                    );
+
+                    establish_sender
+                        .send(RdpCommand::ToggleFeature {
+                            feature: "clipboard".to_string(),
+                            enabled: false,
+                        })
+                        .expect("before CredSSP durable");
+                    establish_sender
+                        .send(input(3))
+                        .expect("before CredSSP input");
+                    assert_eq!(
+                        preserve_at_transport_checkpoint(session_id, "before CredSSP", cmd_rx),
+                        CheckpointStatus::Continue
+                    );
+
+                    // This input lands after the final internal handshake
+                    // checkpoint. The loop's post-establish fence must drop it.
+                    establish_sender
+                        .send(RdpCommand::DetachViewer)
+                        .expect("handshake-tail durable");
+                    establish_sender
+                        .send(input(4))
+                        .expect("handshake-tail input");
+                }
+                Ok(establish_attempt)
+            },
+            |_session, cmd_rx| {
+                active_attempt += 1;
+                loop {
+                    match cmd_rx.try_recv() {
+                        Ok(RdpCommand::SignOut) => executed.push("before_tcp"),
+                        Ok(RdpCommand::ClipboardPaste) => executed.push(if active_attempt == 1 {
+                            "after_tcp"
+                        } else {
+                            "backoff"
+                        }),
+                        Ok(RdpCommand::ToggleFeature {
+                            feature,
+                            enabled: false,
+                        }) if feature == "clipboard" => executed.push("before_credssp"),
+                        Ok(RdpCommand::DetachViewer) => executed.push("handshake_tail"),
+                        Ok(RdpCommand::Input(_)) => panic!("checkpoint input must never replay"),
+                        Ok(other) => panic!(
+                            "unexpected command at active checkpoint test: {}",
+                            std::mem::discriminant(&other)
+                                == std::mem::discriminant(&RdpCommand::Shutdown)
+                        ),
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            panic!("sender remains live")
+                        }
+                    }
+                }
+                if active_attempt == 1 {
+                    SessionLoopExit::NetworkError("test transport loss".to_string())
+                } else {
+                    SessionLoopExit::Shutdown
+                }
+            },
+            |cmd_rx, _delay| {
+                backoff_attempt += 1;
+                backoff_sender
+                    .send(RdpCommand::ClipboardPaste)
+                    .expect("backoff durable");
+                backoff_sender.send(input(5)).expect("backoff input");
+                assert_eq!(
+                    preserve_at_transport_checkpoint(session_id, "reconnect backoff", cmd_rx),
+                    CheckpointStatus::Continue
+                );
+                Ok(())
+            },
+        );
+
+        assert!(
+            result.is_ok(),
+            "checkpoint loop should stop cleanly: {result:?}"
+        );
+        assert_eq!(establish_attempt, 2);
+        assert_eq!(active_attempt, 2);
+        assert_eq!(backoff_attempt, 1);
+        assert_eq!(
+            executed,
+            vec![
+                "before_tcp",
+                "after_tcp",
+                "before_credssp",
+                "handshake_tail",
+                "backoff",
+            ]
+        );
+    }
+
+    #[test]
+    fn shutdown_preempts_durable_work_before_transport_establishment() {
+        use crate::rdp::frame_store::SharedFrameStore;
+        use crate::rdp::wake_channel::create_wake_channel;
+
+        let settings =
+            ResolvedSettings::from_payload(&crate::rdp::RdpSettingsPayload::default(), 4, 4);
+        let emitter: DynEventEmitter = Arc::new(RecordingEmitter::default());
+        let stats = Arc::new(RdpSessionStats::new());
+        let frame_store = SharedFrameStore::new();
+        let (sender, mut receiver) = create_wake_channel().expect("wake channel");
+        let (log_tx, _log_rx) = std::sync::mpsc::sync_channel(RDP_LOG_CHANNEL_CAPACITY);
+        sender.send(RdpCommand::SignOut).expect("durable work");
+        sender
+            .send(RdpCommand::Shutdown)
+            .expect("shutdown bypasses queue");
+        let mut establish_called = false;
+
+        let result = run_reconnect_loop(
+            "shutdown-checkpoint",
+            &settings,
+            &emitter,
+            &mut receiver,
+            &stats,
+            &frame_store,
+            &log_tx,
+            |_cmd_rx| {
+                establish_called = true;
+                Ok(())
+            },
+            |_session, _cmd_rx| SessionLoopExit::Shutdown,
+            |_cmd_rx, _delay| Ok(()),
+        );
+
+        assert!(result
+            .expect_err("shutdown checkpoint should cancel establishment")
+            .to_string()
+            .contains("session_shutdown"));
+        assert!(!establish_called);
     }
 }

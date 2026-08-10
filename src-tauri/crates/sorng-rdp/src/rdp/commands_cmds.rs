@@ -18,6 +18,13 @@ const MAX_RDP_CLIPBOARD_FILE_NAME_BYTES: usize = 1_024;
 const MAX_RDP_CLIPBOARD_FILE_PATH_BYTES: usize = 32 * 1024;
 const MAX_RDP_CLIPBOARD_FILE_METADATA_BYTES: usize = 8 * 1024 * 1024;
 
+fn enqueue_session_command(
+    sender: &crate::rdp::wake_channel::WakeSender,
+    command: RdpCommand,
+) -> Result<(), String> {
+    sender.send(command).map_err(|error| error.to_string())
+}
+
 fn validate_rdp_input_actions(events: &[RdpInputAction]) -> Result<(), String> {
     if events.len() > MAX_RDP_INPUT_ACTIONS {
         return Err(format!(
@@ -85,7 +92,8 @@ pub struct RdpDesktopSizePayload {
 }
 
 fn normalize_desktop_size(width: u32, height: u32) -> RdpDesktopSizePayload {
-    let (width, height) = ironrdp_displaycontrol::pdu::MonitorLayoutEntry::adjust_display_size(width, height);
+    let (width, height) =
+        ironrdp_displaycontrol::pdu::MonitorLayoutEntry::adjust_display_size(width, height);
 
     RdpDesktopSizePayload {
         width: width as u16,
@@ -158,6 +166,8 @@ pub async fn connect_rdp(
     let session_id = Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = crate::rdp::wake_channel::create_wake_channel()
         .map_err(|e| format!("Failed to create wake channel: {e}"))?;
+    let activity_control = Arc::new(RdpSessionActivityControl::default());
+    let worker_activity_control = Arc::clone(&activity_control);
 
     let requested_width = width.unwrap_or(1920);
     let requested_height = height.unwrap_or(1080);
@@ -166,7 +176,8 @@ pub async fn connect_rdp(
     let settings = ResolvedSettings::from_payload(&payload, requested_width, requested_height);
     let actual_width = settings.width;
     let actual_height = settings.height;
-    let cert_validation_mode = crate::rdp::cert_trust::ServerCertValidationMode::from_payload(&payload);
+    let cert_validation_mode =
+        crate::rdp::cert_trust::ServerCertValidationMode::from_payload(&payload);
 
     crate::rdp::cert_trust::initialize_store_path(app_handle.path().app_data_dir().ok());
 
@@ -305,12 +316,14 @@ pub async fn connect_rdp(
                 fs,
                 dyn_frame_channel,
                 log_tx,
+                worker_activity_control,
             );
         });
 
         let connection = RdpActiveConnection {
             session,
             cmd_tx,
+            activity_control,
             stats,
             worker,
             cached_password: password,
@@ -398,7 +411,7 @@ pub async fn detach_rdp_session(
     let mut did_detach = None;
     if let Some(id) = target_id {
         if let Some(conn) = service.connections.get_mut(&id) {
-            let _ = conn.cmd_tx.send(RdpCommand::DetachViewer);
+            enqueue_session_command(&conn.cmd_tx, RdpCommand::DetachViewer)?;
             conn.session.viewer_attached = false;
             did_detach = Some(id);
         }
@@ -443,14 +456,51 @@ pub async fn attach_rdp_session(
         .ok_or_else(|| format!("Session {id} not found"))?;
 
     let dyn_frame_channel: DynFrameChannel = std::sync::Arc::new(TauriFrameChannel(frame_channel));
+    let attach_command = RdpCommand::AttachViewer(dyn_frame_channel);
+    // Reserve before advancing the generation fence. A saturated command
+    // surface therefore rejects the attach without consuming an epoch.
+    let command_permit = conn
+        .cmd_tx
+        .reserve_regular_command(&attach_command)
+        .map_err(|error| error.to_string())?;
+    // Move replacement viewers into a disjoint JS-safe generation epoch before
+    // their attach is observable. Delayed commands from every earlier viewer
+    // epoch are then below the authoritative watermark.
+    conn.activity_control.fence_for_viewer_attach()?;
     conn.cmd_tx
-        .send(RdpCommand::AttachViewer(dyn_frame_channel))
-        .map_err(|_| "Session command channel closed".to_string())?;
+        .send_reserved(attach_command, command_permit)
+        .map_err(|error| error.to_string())?;
 
     conn.session.viewer_attached = true;
     let session_clone = conn.session.clone();
     service.push_log("info", format!("Viewer attached to session {id}"), Some(id));
     Ok(session_clone)
+}
+
+/// Suppress or resume an RDP session's output without changing viewer
+/// ownership or stopping the underlying transport. Activity generations are
+/// scoped to the concrete `session_id` and must increase strictly.
+#[tauri::command]
+pub async fn rdp_set_session_activity(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    generation: u64,
+    active: bool,
+) -> Result<RdpSessionActivityResult, String> {
+    let service = state.lock().await;
+    let connection = service
+        .connections
+        .get(&session_id)
+        .ok_or_else(|| format!("Session {session_id} not found"))?;
+    let result = connection
+        .activity_control
+        .request(&session_id, generation, active)?;
+    if result.applied {
+        // ActivityChanged is a coalesced out-of-band wake edge and cannot be
+        // blocked by the bounded normal command budget.
+        enqueue_session_command(&connection.cmd_tx, RdpCommand::ActivityChanged)?;
+    }
+    Ok(result)
 }
 
 /// Send a graceful sign-out command to the remote RDP session.
@@ -465,9 +515,7 @@ pub async fn rdp_sign_out(
         .connections
         .get(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found"))?;
-    conn.cmd_tx
-        .send(RdpCommand::SignOut)
-        .map_err(|_| "Session command channel closed".to_string())?;
+    enqueue_session_command(&conn.cmd_tx, RdpCommand::SignOut)?;
     service.push_log(
         "info",
         format!("Sign-out requested for session {session_id}"),
@@ -488,9 +536,7 @@ pub async fn rdp_force_reboot(
         .connections
         .get(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found"))?;
-    conn.cmd_tx
-        .send(RdpCommand::ForceReboot)
-        .map_err(|_| "Session command channel closed".to_string())?;
+    enqueue_session_command(&conn.cmd_tx, RdpCommand::ForceReboot)?;
     service.push_log(
         "warn",
         format!("Force reboot requested for session {session_id}"),
@@ -527,9 +573,7 @@ pub async fn reconnect_rdp_session(
         .get(&id)
         .ok_or_else(|| format!("Session {id} not found"))?;
 
-    conn.cmd_tx
-        .send(RdpCommand::Reconnect)
-        .map_err(|_| "Session command channel closed".to_string())?;
+    enqueue_session_command(&conn.cmd_tx, RdpCommand::Reconnect)?;
 
     Ok(())
 }
@@ -545,9 +589,7 @@ pub async fn rdp_send_input(
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
         let fp_events: Vec<FastPathInputEvent> = events.iter().flat_map(convert_input).collect();
-        conn.cmd_tx
-            .send(RdpCommand::Input(fp_events))
-            .map_err(|_| "Session command channel closed".to_string())?;
+        enqueue_session_command(&conn.cmd_tx, RdpCommand::Input(fp_events))?;
         Ok(())
     } else {
         Err(format!("RDP session {session_id} not found"))
@@ -569,12 +611,13 @@ pub async fn rdp_set_desktop_size(
         .get_mut(&session_id)
         .ok_or_else(|| format!("Session {session_id} not found"))?;
 
-    conn.cmd_tx
-        .send(RdpCommand::SetDesktopSize {
+    enqueue_session_command(
+        &conn.cmd_tx,
+        RdpCommand::SetDesktopSize {
             width: normalized.width,
             height: normalized.height,
-        })
-        .map_err(|_| "Session command channel closed".to_string())?;
+        },
+    )?;
 
     conn.session.desktop_width = normalized.width;
     conn.session.desktop_height = normalized.height;
@@ -766,9 +809,7 @@ pub struct RdpCertTrustResponsePayload {
 }
 
 #[tauri::command]
-pub async fn rdp_cert_trust_respond(
-    payload: RdpCertTrustResponsePayload,
-) -> Result<(), String> {
+pub async fn rdp_cert_trust_respond(payload: RdpCertTrustResponsePayload) -> Result<(), String> {
     let approve = match payload.decision.trim().to_ascii_lowercase().as_str() {
         "approve" | "accept" | "trust" | "yes" => true,
         "reject" | "deny" | "no" => false,
@@ -803,9 +844,7 @@ pub async fn rdp_clipboard_copy(
 
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
-        conn.cmd_tx
-            .send(RdpCommand::ClipboardCopy(text))
-            .map_err(|_| "Session command channel closed".to_string())?;
+        enqueue_session_command(&conn.cmd_tx, RdpCommand::ClipboardCopy(text))?;
         Ok(())
     } else {
         Err(format!("RDP session {session_id} not found"))
@@ -825,15 +864,16 @@ pub async fn rdp_clipboard_copy_files(
 
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
-        let entries: Vec<ClipboardFileEntry> = files.into_iter().map(|f| ClipboardFileEntry {
-            name: f.name,
-            size: f.size as u64,
-            path: f.path,
-            is_directory: f.is_directory,
-        }).collect();
-        conn.cmd_tx
-            .send(RdpCommand::ClipboardCopyFiles(entries))
-            .map_err(|_| "Session command channel closed".to_string())?;
+        let entries: Vec<ClipboardFileEntry> = files
+            .into_iter()
+            .map(|f| ClipboardFileEntry {
+                name: f.name,
+                size: f.size as u64,
+                path: f.path,
+                is_directory: f.is_directory,
+            })
+            .collect();
+        enqueue_session_command(&conn.cmd_tx, RdpCommand::ClipboardCopyFiles(entries))?;
         Ok(())
     } else {
         Err(format!("RDP session {session_id} not found"))
@@ -849,9 +889,7 @@ pub async fn rdp_clipboard_paste(
 ) -> Result<(), String> {
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
-        conn.cmd_tx
-            .send(RdpCommand::ClipboardPaste)
-            .map_err(|_| "Session command channel closed".to_string())?;
+        enqueue_session_command(&conn.cmd_tx, RdpCommand::ClipboardPaste)?;
         Ok(())
     } else {
         Err(format!("RDP session {session_id} not found"))
@@ -868,11 +906,38 @@ pub async fn rdp_toggle_feature(
 ) -> Result<(), String> {
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
-        conn.cmd_tx
-            .send(RdpCommand::ToggleFeature { feature, enabled })
-            .map_err(|_| "Session command channel closed".to_string())?;
+        enqueue_session_command(&conn.cmd_tx, RdpCommand::ToggleFeature { feature, enabled })?;
         Ok(())
     } else {
         Err(format!("RDP session {session_id} not found"))
+    }
+}
+
+#[cfg(test)]
+mod command_queue_surface_tests {
+    use super::*;
+
+    #[test]
+    fn saturated_command_surface_reports_full_instead_of_disconnected() {
+        let (sender, _receiver) =
+            crate::rdp::wake_channel::create_wake_channel().expect("wake channel");
+        for _ in 0..crate::rdp::wake_channel::MAX_PENDING_COMMANDS {
+            enqueue_session_command(&sender, RdpCommand::Reconnect).expect("within bound");
+        }
+
+        let full = enqueue_session_command(&sender, RdpCommand::ClipboardPaste)
+            .expect_err("saturated surface must reject explicitly");
+        assert_eq!(full, "RDP command queue is full");
+    }
+
+    #[test]
+    fn disconnected_command_surface_reports_closed() {
+        let (sender, receiver) =
+            crate::rdp::wake_channel::create_wake_channel().expect("wake channel");
+        drop(receiver);
+
+        let closed = enqueue_session_command(&sender, RdpCommand::Reconnect)
+            .expect_err("closed surface must reject explicitly");
+        assert_eq!(closed, "RDP command channel is closed");
     }
 }

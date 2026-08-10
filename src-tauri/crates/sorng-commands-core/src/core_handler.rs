@@ -145,6 +145,7 @@ pub fn is_command(command: &str) -> bool {
             | "disconnect_rdp"
             | "attach_rdp_session"
             | "detach_rdp_session"
+            | "rdp_set_session_activity"
             | "rdp_send_input"
             | "rdp_set_desktop_size"
             | "rdp_get_frame_data"
@@ -1517,6 +1518,7 @@ define_command_group!(
         rdp_commands::disconnect_rdp,
         rdp_commands::attach_rdp_session,
         rdp_commands::detach_rdp_session,
+        rdp_commands::rdp_set_session_activity,
         rdp_commands::rdp_send_input,
         rdp_commands::rdp_set_desktop_size,
         rdp_commands::rdp_get_frame_data,

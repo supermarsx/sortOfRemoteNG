@@ -8,6 +8,27 @@ use crate::{
     general_err, legacy, Config, ConnectionFinalizationSequence, ConnectorResult, DesktopSize, Sequence, State, Written,
 };
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+struct NegotiatedOutputCapabilities {
+    refresh_rectangle_support: bool,
+    suppress_output_support: bool,
+}
+
+fn negotiated_output_capabilities(
+    capability_sets: &[CapabilitySet],
+) -> NegotiatedOutputCapabilities {
+    capability_sets
+        .iter()
+        .find_map(|capability_set| match capability_set {
+            CapabilitySet::General(general) => Some(NegotiatedOutputCapabilities {
+                refresh_rectangle_support: general.refresh_rect_support,
+                suppress_output_support: general.suppress_output_support,
+            }),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
 /// Represents the Capability Exchange and Connection Finalization phases
 /// of the connection sequence (section [1.3.1.1]).
 ///
@@ -136,6 +157,8 @@ impl Sequence for ConnectionActivationSequence {
                     }
                 }
 
+                let output_capabilities = negotiated_output_capabilities(&capability_sets);
+
                 // At this point we have already sent a requested desktop size to the server -- either as a part of the
                 // [`TS_UD_CS_CORE`] (on initial connection) or the [`DISPLAYCONTROL_MONITOR_LAYOUT`] (on resize event).
                 //
@@ -179,6 +202,8 @@ impl Sequence for ConnectionActivationSequence {
                         io_channel_id,
                         user_channel_id,
                         desktop_size,
+                        refresh_rectangle_support: output_capabilities.refresh_rectangle_support,
+                        suppress_output_support: output_capabilities.suppress_output_support,
                         connection_finalization: ConnectionFinalizationSequence::new(io_channel_id, user_channel_id),
                     },
                 )
@@ -187,6 +212,8 @@ impl Sequence for ConnectionActivationSequence {
                 io_channel_id,
                 user_channel_id,
                 desktop_size,
+                refresh_rectangle_support,
+                suppress_output_support,
                 mut connection_finalization,
             } => {
                 debug!("Connection Finalization");
@@ -198,6 +225,8 @@ impl Sequence for ConnectionActivationSequence {
                         io_channel_id,
                         user_channel_id,
                         desktop_size,
+                        refresh_rectangle_support,
+                        suppress_output_support,
                         connection_finalization,
                     }
                 } else {
@@ -207,6 +236,8 @@ impl Sequence for ConnectionActivationSequence {
                         desktop_size,
                         enable_server_pointer: self.config.enable_server_pointer,
                         pointer_software_rendering: self.config.pointer_software_rendering,
+                        refresh_rectangle_support,
+                        suppress_output_support,
                     }
                 };
 
@@ -232,6 +263,8 @@ pub enum ConnectionActivationState {
         io_channel_id: u16,
         user_channel_id: u16,
         desktop_size: DesktopSize,
+        refresh_rectangle_support: bool,
+        suppress_output_support: bool,
         connection_finalization: ConnectionFinalizationSequence,
     },
     Finalized {
@@ -240,6 +273,8 @@ pub enum ConnectionActivationState {
         desktop_size: DesktopSize,
         enable_server_pointer: bool,
         pointer_software_rendering: bool,
+        refresh_rectangle_support: bool,
+        suppress_output_support: bool,
     },
 }
 
@@ -302,6 +337,8 @@ fn create_client_confirm_active(
                 | GeneralExtraFlags::LONG_CREDENTIALS_SUPPORTED
                 | GeneralExtraFlags::AUTORECONNECT_SUPPORTED
                 | GeneralExtraFlags::ENC_SALTED_CHECKSUM,
+            refresh_rect_support: true,
+            suppress_output_support: true,
             ..Default::default()
         }),
         CapabilitySet::Bitmap(Bitmap {
@@ -401,5 +438,36 @@ fn create_client_confirm_active(
             source_descriptor: "IRONRDP".to_owned(),
             capability_sets: server_capability_sets,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ironrdp_pdu::rdp::capability_sets::General;
+
+    #[test]
+    fn preserves_server_output_capabilities_from_general_set() {
+        let capability_sets = vec![CapabilitySet::General(General {
+            refresh_rect_support: true,
+            suppress_output_support: true,
+            ..Default::default()
+        })];
+
+        assert_eq!(
+            negotiated_output_capabilities(&capability_sets),
+            NegotiatedOutputCapabilities {
+                refresh_rectangle_support: true,
+                suppress_output_support: true,
+            }
+        );
+    }
+
+    #[test]
+    fn absent_general_set_does_not_invent_output_capabilities() {
+        assert_eq!(
+            negotiated_output_capabilities(&[]),
+            NegotiatedOutputCapabilities::default()
+        );
     }
 }

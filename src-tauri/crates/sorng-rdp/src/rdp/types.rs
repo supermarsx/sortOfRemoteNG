@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use super::frame_channel::DynFrameChannel;
 use super::session_state::SessionStateSnapshot;
@@ -151,6 +152,369 @@ pub struct RdpSession {
     pub reconnecting: bool,
 }
 
+/// Authoritative result for one generation-aware frontend activity update.
+///
+/// A replacement viewer may start its local counter below `applied_generation`.
+/// When `stale` is true, the frontend should adopt this result and, when its
+/// desired state differs from `active`, retry exactly once using
+/// `applied_generation + 1`. An unmounted viewer must stop producing updates;
+/// any already queued lower/equal generations are ignored by the native loop.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpSessionActivityResult {
+    pub session_id: String,
+    pub requested_generation: u64,
+    pub applied_generation: u64,
+    /// Authoritative desired output state used for stale-viewer correction.
+    /// The internal delivery gate may remain closed while the transport
+    /// applies this state; protocol action flags report that separately.
+    pub active: bool,
+    pub applied: bool,
+    pub stale: bool,
+    pub suppress_output_supported: bool,
+    pub refresh_rectangle_supported: bool,
+    pub suppress_output_sent: bool,
+    pub allow_display_updates_sent: bool,
+    pub refresh_rectangle_sent: bool,
+}
+
+/// Largest integer that can make a lossless round trip through a JavaScript
+/// `number`. Activity generations are part of the Tauri JSON boundary, so the
+/// native authority must never advance beyond this value.
+pub const RDP_ACTIVITY_MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
+
+/// Each viewer owns one explicit JS-safe generation epoch. A replacement
+/// attach advances to the next boundary, making every generation that the
+/// prior viewer was allowed to issue lower than the native watermark. One
+/// epoch permits over one million activity transitions before reconnect is
+/// required.
+pub const RDP_ACTIVITY_GENERATION_EPOCH_STRIDE: u64 = 1 << 20;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct RdpSessionActivitySnapshot {
+    pub applied_generation: u64,
+    pub desired_active: bool,
+    pub output_active: bool,
+    pub suppress_output_supported: bool,
+    pub refresh_rectangle_supported: bool,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct RdpSessionActivityAuthority {
+    applied_generation: u64,
+    generation_epoch_ceiling: u64,
+    desired_active: bool,
+    suppress_output_supported: bool,
+    refresh_rectangle_supported: bool,
+    suppress_output_sent: bool,
+    allow_display_updates_sent: bool,
+    refresh_rectangle_sent: bool,
+}
+
+impl Default for RdpSessionActivityAuthority {
+    fn default() -> Self {
+        Self {
+            applied_generation: 0,
+            generation_epoch_ceiling: RDP_ACTIVITY_GENERATION_EPOCH_STRIDE - 1,
+            desired_active: true,
+            suppress_output_supported: false,
+            refresh_rectangle_supported: false,
+            suppress_output_sent: false,
+            allow_display_updates_sent: false,
+            refresh_rectangle_sent: false,
+        }
+    }
+}
+
+/// Per-native-session activity authority shared by the async Tauri command
+/// surface and the blocking transport worker. Requests are acknowledged here
+/// immediately; the worker observes the snapshot and applies it to each new
+/// transport before it permits frame delivery.
+#[derive(Debug)]
+pub struct RdpSessionActivityControl {
+    inner: Mutex<RdpSessionActivityAuthority>,
+    // Read on every output-delivery path. Inactive requests close this gate
+    // synchronously; active requests leave it closed until the session thread
+    // successfully sends AllowDisplayUpdates/RefreshRectangle as negotiated.
+    output_active: AtomicBool,
+}
+
+pub type SharedRdpSessionActivityControl = Arc<RdpSessionActivityControl>;
+
+impl Default for RdpSessionActivityControl {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(RdpSessionActivityAuthority::default()),
+            output_active: AtomicBool::new(true),
+        }
+    }
+}
+
+impl RdpSessionActivityControl {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, RdpSessionActivityAuthority>, String> {
+        self.inner
+            .lock()
+            .map_err(|_| "RDP activity authority lock is poisoned".to_string())
+    }
+
+    pub fn snapshot(&self) -> Result<RdpSessionActivitySnapshot, String> {
+        let state = self.lock()?;
+        Ok(RdpSessionActivitySnapshot {
+            applied_generation: state.applied_generation,
+            desired_active: state.desired_active,
+            output_active: self.output_active.load(Ordering::Acquire),
+            suppress_output_supported: state.suppress_output_supported,
+            refresh_rectangle_supported: state.refresh_rectangle_supported,
+        })
+    }
+
+    pub fn request(
+        &self,
+        session_id: &str,
+        generation: u64,
+        active: bool,
+    ) -> Result<RdpSessionActivityResult, String> {
+        if generation == 0 || generation > RDP_ACTIVITY_MAX_SAFE_GENERATION {
+            return Err(format!(
+                "RDP activity generation must be between 1 and {RDP_ACTIVITY_MAX_SAFE_GENERATION}"
+            ));
+        }
+
+        let mut state = self.lock()?;
+        if generation > state.generation_epoch_ceiling {
+            return Err(format!(
+                "RDP activity generation {generation} exceeds the current viewer epoch ceiling {}",
+                state.generation_epoch_ceiling
+            ));
+        }
+        let applied = generation > state.applied_generation;
+        if applied {
+            state.applied_generation = generation;
+            state.desired_active = active;
+            state.suppress_output_sent = false;
+            state.allow_display_updates_sent = false;
+            state.refresh_rectangle_sent = false;
+            self.output_active.store(false, Ordering::Release);
+        }
+        Ok(RdpSessionActivityResult {
+            session_id: session_id.to_string(),
+            requested_generation: generation,
+            applied_generation: state.applied_generation,
+            active: state.desired_active,
+            applied,
+            stale: !applied,
+            suppress_output_supported: state.suppress_output_supported,
+            refresh_rectangle_supported: state.refresh_rectangle_supported,
+            suppress_output_sent: state.suppress_output_sent,
+            allow_display_updates_sent: state.allow_display_updates_sent,
+            refresh_rectangle_sent: state.refresh_rectangle_sent,
+        })
+    }
+
+    /// Fence every generation in the previous viewer epoch without changing
+    /// desired or effective activity. The new epoch always reserves enough
+    /// JS-safe values for the replacement viewer's stale correction.
+    pub fn fence_for_viewer_attach(&self) -> Result<u64, String> {
+        let mut state = self.lock()?;
+        let current_epoch = state.applied_generation / RDP_ACTIVITY_GENERATION_EPOCH_STRIDE;
+        let next_epoch = current_epoch.checked_add(1).ok_or_else(|| {
+            "RDP activity generation epoch overflow; reconnect the native session".to_string()
+        })?;
+        let next_floor = next_epoch
+            .checked_mul(RDP_ACTIVITY_GENERATION_EPOCH_STRIDE)
+            .ok_or_else(|| {
+                "RDP activity generation epoch overflow; reconnect the native session".to_string()
+            })?;
+        let next_ceiling = next_floor
+            .checked_add(RDP_ACTIVITY_GENERATION_EPOCH_STRIDE - 1)
+            .filter(|ceiling| *ceiling <= RDP_ACTIVITY_MAX_SAFE_GENERATION)
+            .ok_or_else(|| {
+                "RDP activity generation space exhausted; reconnect the native session".to_string()
+            })?;
+
+        state.applied_generation = next_floor;
+        state.generation_epoch_ceiling = next_ceiling;
+        state.suppress_output_sent = false;
+        state.allow_display_updates_sent = false;
+        state.refresh_rectangle_sent = false;
+        // The fence is a new authority revision. Delivery remains closed until
+        // the session worker has reconciled that revision on the transport.
+        self.output_active.store(false, Ordering::Release);
+        Ok(state.applied_generation)
+    }
+
+    pub fn output_enabled(&self) -> bool {
+        self.output_active.load(Ordering::Acquire)
+    }
+
+    /// Close delivery before a new transport/reactivation is synchronized.
+    pub fn begin_transport_reconcile(&self) {
+        self.output_active.store(false, Ordering::Release);
+    }
+
+    /// Publish protocol completion only if no newer activity revision arrived
+    /// while the session thread was writing the negotiated PDUs.
+    pub fn complete_transport_apply(
+        &self,
+        applied_generation: u64,
+        desired_active: bool,
+        suppress_output_sent: bool,
+        allow_display_updates_sent: bool,
+        refresh_rectangle_sent: bool,
+    ) -> Result<bool, String> {
+        let mut state = self.lock()?;
+        if state.applied_generation != applied_generation || state.desired_active != desired_active
+        {
+            return Ok(false);
+        }
+        state.suppress_output_sent = suppress_output_sent;
+        state.allow_display_updates_sent = allow_display_updates_sent;
+        state.refresh_rectangle_sent = refresh_rectangle_sent;
+        self.output_active.store(desired_active, Ordering::Release);
+        Ok(true)
+    }
+
+    pub fn update_capabilities(
+        &self,
+        suppress_output_supported: bool,
+        refresh_rectangle_supported: bool,
+    ) -> Result<(), String> {
+        let mut state = self.lock()?;
+        state.suppress_output_supported = suppress_output_supported;
+        state.refresh_rectangle_supported = refresh_rectangle_supported;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod activity_control_tests {
+    use super::*;
+
+    #[test]
+    fn activity_authority_acknowledges_desired_state_before_protocol_completion() {
+        let control = RdpSessionActivityControl::default();
+        control
+            .update_capabilities(true, true)
+            .expect("capabilities");
+
+        let inactive = control.request("session", 1, false).expect("inactive");
+        assert!(inactive.applied);
+        assert!(!inactive.active);
+        assert!(!inactive.suppress_output_sent);
+        assert!(!inactive.allow_display_updates_sent);
+        assert!(!inactive.refresh_rectangle_sent);
+        assert!(!control.output_enabled());
+
+        assert!(control
+            .complete_transport_apply(1, false, true, false, false)
+            .expect("publish inactive"));
+        let inactive_duplicate = control.request("session", 1, true).expect("duplicate");
+        assert!(inactive_duplicate.stale);
+        assert!(!inactive_duplicate.active);
+        assert!(inactive_duplicate.suppress_output_sent);
+
+        let active = control.request("session", 2, true).expect("active");
+        assert!(active.applied);
+        assert!(active.active);
+        assert!(!active.allow_display_updates_sent);
+        assert!(!active.refresh_rectangle_sent);
+        assert!(!control.output_enabled());
+
+        assert!(control
+            .complete_transport_apply(2, true, false, true, true)
+            .expect("publish active"));
+        assert!(control.output_enabled());
+        let stale = control.request("session", 1, false).expect("stale request");
+        assert!(stale.stale);
+        assert!(stale.active);
+        assert!(stale.allow_display_updates_sent);
+        assert!(stale.refresh_rectangle_sent);
+    }
+
+    #[test]
+    fn attach_epoch_fences_old_updates_before_and_after_replacement_correction() {
+        let control = RdpSessionActivityControl::default();
+        control.request("session", 10, false).expect("old inactive");
+
+        let first_floor = control.fence_for_viewer_attach().expect("first fence");
+        assert_eq!(first_floor, RDP_ACTIVITY_GENERATION_EPOCH_STRIDE);
+        assert!(!control.output_enabled());
+
+        // In-flight and final updates from the old epoch can arrive before the
+        // replacement's first/corrective requests without changing authority.
+        for old_generation in [11, 12, 12] {
+            let old = control
+                .request("session", old_generation, false)
+                .expect("old request is within its historical epoch");
+            assert!(old.stale);
+            assert!(!old.active);
+            assert_eq!(old.applied_generation, first_floor);
+        }
+
+        let replacement_initial = control
+            .request("session", 1, true)
+            .expect("initial request");
+        assert!(replacement_initial.stale);
+        assert!(!replacement_initial.active);
+        let replacement_generation = replacement_initial.applied_generation + 1;
+        let replacement = control
+            .request("session", replacement_generation, true)
+            .expect("replacement correction");
+        assert!(replacement.applied);
+        assert!(replacement.active);
+
+        // The reverse ordering is safe too: delayed old updates after the new
+        // correction remain stale, including equal/duplicate generations.
+        for old_generation in [13, 13, 14] {
+            let old = control
+                .request("session", old_generation, false)
+                .expect("delayed old request");
+            assert!(old.stale);
+            assert!(old.active);
+            assert_eq!(old.applied_generation, replacement_generation);
+        }
+
+        let second_floor = control.fence_for_viewer_attach().expect("second fence");
+        assert_eq!(second_floor, 2 * RDP_ACTIVITY_GENERATION_EPOCH_STRIDE);
+        assert!(second_floor <= RDP_ACTIVITY_MAX_SAFE_GENERATION);
+    }
+
+    #[test]
+    fn requests_above_current_viewer_epoch_fail_closed() {
+        let control = RdpSessionActivityControl::default();
+        let error = control
+            .request("session", RDP_ACTIVITY_GENERATION_EPOCH_STRIDE, false)
+            .expect_err("epoch escape must fail");
+        assert!(error.contains("epoch ceiling"));
+        let snapshot = control.snapshot().expect("snapshot");
+        assert_eq!(snapshot.applied_generation, 0);
+        assert!(snapshot.desired_active);
+        assert!(snapshot.output_active);
+    }
+
+    #[test]
+    fn epoch_exhaustion_does_not_mutate_authority_or_gate() {
+        let control = RdpSessionActivityControl::default();
+        let last_epoch_floor =
+            RDP_ACTIVITY_MAX_SAFE_GENERATION - (RDP_ACTIVITY_GENERATION_EPOCH_STRIDE - 1);
+        {
+            let mut state = control.inner.lock().expect("authority lock");
+            state.applied_generation = last_epoch_floor;
+            state.generation_epoch_ceiling = RDP_ACTIVITY_MAX_SAFE_GENERATION;
+            state.desired_active = false;
+            state.suppress_output_sent = true;
+        }
+        control.output_active.store(false, Ordering::Release);
+        let before = *control.inner.lock().expect("authority before");
+        let error = control
+            .fence_for_viewer_attach()
+            .expect_err("generation space must be exhausted");
+        assert!(error.contains("generation space exhausted"));
+        assert_eq!(*control.inner.lock().expect("authority after"), before);
+        assert!(!control.output_enabled());
+    }
+}
+
 pub enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
     Shutdown,
@@ -158,6 +522,10 @@ pub enum RdpCommand {
     AttachViewer(DynFrameChannel),
     /// Detach the current viewer without killing the session.
     DetachViewer,
+    /// Wake the blocking worker after the shared activity authority changes.
+    /// The desired state and generation live outside this bounded command queue
+    /// so they remain authoritative through handshake and reconnect backoff.
+    ActivityChanged,
     /// Send a graceful sign-out / logoff to the remote session.
     SignOut,
     /// Force reboot the remote machine.
@@ -196,6 +564,7 @@ pub struct ClipboardFileEntry {
 pub struct RdpActiveConnection {
     pub session: RdpSession,
     pub cmd_tx: WakeSender,
+    pub activity_control: SharedRdpSessionActivityControl,
     pub stats: Arc<RdpSessionStats>,
     pub worker: RdpWorkerRuntime,
     /// Cached password for automatic reconnection (CredSSP re-auth).
@@ -252,9 +621,7 @@ impl RdpService {
 
         Arc::new(tokio::sync::Mutex::new(RdpService {
             connections: HashMap::new(),
-            session_slots: Arc::new(Semaphore::new(
-                MAX_RDP_ACTIVE_OR_PENDING_SESSIONS,
-            )),
+            session_slots: Arc::new(Semaphore::new(MAX_RDP_ACTIVE_OR_PENDING_SESSIONS)),
             next_worker_generation: 1,
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,

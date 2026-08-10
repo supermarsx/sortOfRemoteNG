@@ -46,7 +46,7 @@ qoiz = ["ironrdp-pdu/qoiz"]
 [lib]
 name = "ironrdp_connector"
 path = "src/lib.rs"
-test = false
+test = true
 doctest = false
 
 [dependencies.arbitrary]

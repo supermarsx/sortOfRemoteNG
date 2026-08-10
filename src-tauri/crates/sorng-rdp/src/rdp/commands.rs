@@ -134,6 +134,9 @@ pub async fn close_rdp_connection(
 
     let (session_id, ticket, shutdown_sender) = close_plan;
     if let Some(shutdown_sender) = shutdown_sender {
+        // Best-effort teardown wake: request_close() above is the authoritative
+        // lifecycle fence, so an already-closed command receiver needs no
+        // user-visible error and the completion watcher still reaps the worker.
         let _ = shutdown_sender.send(RdpCommand::Shutdown);
 
         let reap_state = Arc::clone(state);
@@ -167,8 +170,8 @@ pub async fn close_rdp_connection(
 }
 
 fn checked_rgba_len(width: u32, height: u32, label: &str) -> Result<usize, String> {
-    let width = usize::try_from(width)
-        .map_err(|_| format!("{label} width does not fit this platform"))?;
+    let width =
+        usize::try_from(width).map_err(|_| format!("{label} width does not fit this platform"))?;
     let height = usize::try_from(height)
         .map_err(|_| format!("{label} height does not fit this platform"))?;
 
@@ -272,14 +275,8 @@ mod thumbnail_safety_tests {
     fn resize_rejects_oversized_thumbnail_before_allocation() {
         let source = [0_u8; 4];
 
-        let axis_error = resize_rgba_nearest(
-            &source,
-            1,
-            1,
-            MAX_RDP_THUMBNAIL_DIMENSION + 1,
-            1,
-        )
-        .expect_err("oversized thumbnail axis should be rejected");
+        let axis_error = resize_rgba_nearest(&source, 1, 1, MAX_RDP_THUMBNAIL_DIMENSION + 1, 1)
+            .expect_err("oversized thumbnail axis should be rejected");
         assert!(axis_error.contains("dimensions"));
 
         let pixel_error = resize_rgba_nearest(
@@ -375,6 +372,7 @@ mod worker_lifecycle_tests {
                 reconnecting: false,
             },
             cmd_tx,
+            activity_control: Arc::new(RdpSessionActivityControl::default()),
             stats: Arc::new(RdpSessionStats::new()),
             worker,
             cached_password: SecretString::new("test-only".to_string()),
@@ -527,10 +525,7 @@ mod worker_lifecycle_tests {
             .await
             .expect("close task should finish after the worker gate opens")
             .expect("close task should not panic");
-        assert!(matches!(
-            close_outcome,
-            RdpCloseOutcome::Closed { .. }
-        ));
+        assert!(matches!(close_outcome, RdpCloseOutcome::Closed { .. }));
         wait_for_full_cleanup(&state).await;
     }
 

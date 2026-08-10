@@ -26,6 +26,8 @@ pub struct ConnectionResult {
     pub desktop_size: DesktopSize,
     pub enable_server_pointer: bool,
     pub pointer_software_rendering: bool,
+    pub refresh_rectangle_support: bool,
+    pub suppress_output_support: bool,
     pub connection_activation: ConnectionActivationSequence,
 }
 
@@ -598,6 +600,8 @@ impl Sequence for ClientConnector {
                             desktop_size,
                             enable_server_pointer,
                             pointer_software_rendering,
+                            refresh_rectangle_support,
+                            suppress_output_support,
                         } => ClientConnectorState::Connected {
                             result: ConnectionResult {
                                 io_channel_id,
@@ -606,6 +610,8 @@ impl Sequence for ClientConnector {
                                 desktop_size,
                                 enable_server_pointer,
                                 pointer_software_rendering,
+                                refresh_rectangle_support,
+                                suppress_output_support,
                                 connection_activation,
                             },
                         },
