@@ -43,7 +43,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
 const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@eslint/js", "10.0.1", "MIT", "Linting"),
     ("@tailwindcss/postcss", "4.3.0", "MIT", "CSS & Styling"),
-    ("@tauri-apps/cli", "2.11.1", "Apache-2.0 OR MIT", "Tauri Integration"),
+    ("@tauri-apps/cli", "2.11.4", "Apache-2.0 OR MIT", "Tauri Integration"),
     ("@testing-library/dom", "10.4.1", "MIT", "Testing"),
     ("@testing-library/jest-dom", "6.9.1", "MIT", "Testing"),
     ("@testing-library/react", "16.3.2", "MIT", "Testing"),

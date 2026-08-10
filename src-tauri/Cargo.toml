@@ -240,7 +240,7 @@ async-trait = "0.1"
 # WITHOUT the DevTools machinery. DevTools-related code is additionally
 # gated by `cfg(any(debug_assertions, feature = "devtools"))` to match
 # Tauri's own gate on `WebviewWindow::open_devtools`.
-tauri = { version = "=2.11.0", features = ["webview-data-url"] }
+tauri = { version = "=2.11.5", features = ["webview-data-url"] }
 
 # ── HTTP / networking ─────────────────────────────────────────────────
 # Minimal base — crates add features via { workspace = true, features = [...] }
@@ -317,7 +317,7 @@ name = "app_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
-tauri-build = { version = "=2.6.0", features = [] }
+tauri-build = { version = "=2.6.3", features = [] }
 
 [dependencies]
 sorng-app-api = { path = "crates/sorng-app-api" }
@@ -361,9 +361,9 @@ log = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tauri = { workspace = true }
-tauri-plugin-log = "=2.8.0"
+tauri-plugin-log = "=2.9.0"
 tauri-plugin-autostart = "=2.5.1"
-tauri-plugin-dialog = "=2.7.1"
+tauri-plugin-dialog = "=2.7.2"
 tauri-plugin-fs = "=2.5.1"
 tauri-plugin-updater = "2"
 tokio = { workspace = true }
