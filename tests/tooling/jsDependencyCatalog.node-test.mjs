@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  categorizeJsDependency,
   collectDirectDependencies,
   generatedTextMatches,
   renderJsDependencyCatalog,
 } from "../../scripts/sync-js-deps.mjs";
+
+test("categorizes direct Next.js lint tooling with the framework", () => {
+  assert.equal(categorizeJsDependency("next"), "Next.js");
+  assert.equal(categorizeJsDependency("eslint-config-next"), "Next.js");
+  assert.equal(categorizeJsDependency("@next/eslint-plugin-next"), "Next.js");
+});
 
 async function readJson(relativePath) {
   return JSON.parse(

@@ -642,6 +642,11 @@ test("workflow and package scripts enforce atomic generation and the CI parity g
     packageJson.scripts["deps:lock-parity:check"],
     "node ./scripts/ci/check-js-lock-parity.mjs",
   );
+  assert.equal(
+    packageJson.scripts["deps:npm:tree:check"],
+    "npm ls --package-lock-only --all",
+  );
+  assert.match(ciWorkflow, /run: npm run deps:npm:tree:check/);
   assert.match(ciWorkflow, /run: npm run deps:lock-parity:check/);
   assert.match(ciWorkflow, /run: npm run deps:npm:update:test/);
   assert.match(updater, /"update",[\s\S]*"--save"[\s\S]*"--package-lock-only"/);
@@ -652,6 +657,8 @@ test("workflow and package scripts enforce atomic generation and the CI parity g
   assert.match(updater, /"--frozen-lockfile"/);
   assert.match(updater, /scripts\/sync-js-deps\.mjs/);
   assert.match(workflow, /npm run test:coverage/);
+  assert.match(workflow, /npm ls --all/);
+  assert.match(workflow, /npm run deps:npm:tree:check/);
   assert.match(workflow, /node scripts\/ci\/check-npm-audit\.mjs/);
   assert.match(workflow, /npm run build:cold:check/);
   assert.match(

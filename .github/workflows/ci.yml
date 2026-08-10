@@ -39,6 +39,8 @@ jobs:
         run: npm run toolchain:test
       - name: Test compatible npm update automation
         run: npm run deps:npm:update:test
+      - name: Check npm peer graph
+        run: npm run deps:npm:tree:check
       - name: Check npm and Bun lock parity
         run: npm run deps:lock-parity:check
       - name: Test JavaScript About dependency catalog

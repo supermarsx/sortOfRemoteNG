@@ -17,6 +17,7 @@
     "about:js-deps:check": "node ./scripts/sync-js-deps.mjs --check",
     "about:js-deps:test": "node --test ./tests/tooling/jsDependencyCatalog.node-test.mjs",
     "deps:lock-parity:check": "node ./scripts/ci/check-js-lock-parity.mjs",
+    "deps:npm:tree:check": "npm ls --package-lock-only --all",
     "deps:npm:update:dry-run": "node ./scripts/ci/update-npm-compatible.mjs --dry-run",
     "deps:npm:update:compatible": "node ./scripts/ci/update-npm-compatible.mjs --write",
     "deps:npm:update:test": "node --test ./tests/tooling/npmUpdateAutomation.node-test.mjs",
@@ -95,6 +96,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.3.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/dom": "^10.4.1",
@@ -118,7 +120,6 @@
     "@webgpu/types": "^0.1.71",
     "autoprefixer": "^10.5.4",
     "eslint": "^10.3.0",
-    "eslint-config-next": "^16.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "expect-webdriverio": "^5.6.5",

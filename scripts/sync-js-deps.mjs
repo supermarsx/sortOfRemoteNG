@@ -55,7 +55,13 @@ export function categorizeJsDependency(name) {
   ) {
     return "React & UI";
   }
-  if (name === "next" || name === "eslint-config-next") return "Next.js";
+  if (
+    name === "next" ||
+    name === "eslint-config-next" ||
+    name === "@next/eslint-plugin-next"
+  ) {
+    return "Next.js";
+  }
   if (name === "@xterm/xterm" || name.startsWith("@xterm/addon-")) {
     return "Terminal Emulation";
   }

@@ -147,6 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ls --all
+          npm run deps:npm:tree:check
           npm run deps:lock-parity:check
           npm run deps:npm:update:test
           npm run about:js-deps:test

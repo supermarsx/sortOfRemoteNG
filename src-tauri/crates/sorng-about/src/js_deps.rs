@@ -42,6 +42,7 @@ const PRODUCTION_DEPS: &[(&str, &str, &str, &str)] = &[
 #[rustfmt::skip]
 const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@eslint/js", "10.0.1", "MIT", "Linting"),
+    ("@next/eslint-plugin-next", "16.3.0", "MIT", "Next.js"),
     ("@tailwindcss/postcss", "4.3.3", "MIT", "CSS & Styling"),
     ("@tauri-apps/cli", "2.11.4", "Apache-2.0 OR MIT", "Tauri Integration"),
     ("@testing-library/dom", "10.4.1", "MIT", "Testing"),
@@ -65,7 +66,6 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@webgpu/types", "0.1.71", "BSD-3-Clause", "TypeScript"),
     ("autoprefixer", "10.5.4", "MIT", "CSS & Styling"),
     ("eslint", "10.4.0", "MIT", "Linting"),
-    ("eslint-config-next", "16.3.0", "MIT", "Next.js"),
     ("eslint-plugin-react-hooks", "7.1.1", "MIT", "Linting"),
     ("eslint-plugin-react-refresh", "0.5.2", "MIT", "Linting"),
     ("expect-webdriverio", "5.6.5", "MIT", "Testing"),
