@@ -37,6 +37,10 @@ jobs:
           package-manager-cache: false
       - name: Enforce Node toolchain contract
         run: npm run toolchain:test
+      - name: Test JavaScript About dependency catalog
+        run: npm run about:js-deps:test
+      - name: Check JavaScript About dependency catalog
+        run: npm run about:js-deps:check
       - name: Test rolling-version tooling
         run: npm run version:test
       - name: Reject allocated release version regression
