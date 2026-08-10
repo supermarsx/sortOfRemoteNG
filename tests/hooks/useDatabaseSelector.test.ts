@@ -19,6 +19,8 @@ const mockLoadDatabaseData = vi.fn(async () => ({}));
 const mockDuplicateDatabase = vi.fn(async () => makeCollection({ id: "dup" }));
 const mockIsDatabaseUnlocked = vi.fn(() => false);
 const mockSaveData = vi.fn(async () => {});
+const mockFlushPendingSave = vi.fn(async () => {});
+const mockCloseCurrentDatabase = vi.fn(() => "plain");
 
 vi.mock("../../src/utils/connection/databaseManager", () => ({
   DatabaseManager: {
@@ -28,6 +30,7 @@ vi.mock("../../src/utils/connection/databaseManager", () => ({
       loadDatabaseData: mockLoadDatabaseData,
       duplicateDatabase: mockDuplicateDatabase,
       isDatabaseUnlocked: mockIsDatabaseUnlocked,
+      closeCurrentDatabase: mockCloseCurrentDatabase,
     }),
   },
 }));
@@ -42,7 +45,10 @@ vi.mock("../../src/utils/connection/proxyCollectionManager", () => ({
 }));
 
 vi.mock("../../src/contexts/useConnections", () => ({
-  useConnections: () => ({ saveData: mockSaveData }),
+  useConnections: () => ({
+    saveData: mockSaveData,
+    flushPendingSave: mockFlushPendingSave,
+  }),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -87,13 +93,37 @@ function deferred<T = void>() {
 
 function renderSelector(
   onDatabaseSelect: (id: string, password?: string) => Promise<void> | void,
+  onDatabaseClose?: () => Promise<void> | void,
 ) {
-  return renderHook(() => useDatabaseSelector(false, onDatabaseSelect));
+  return renderHook(() =>
+    useDatabaseSelector(false, onDatabaseSelect, onDatabaseClose),
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetCurrentDatabase.mockReturnValue(null);
+  mockFlushPendingSave.mockResolvedValue(undefined);
+});
+
+describe("useDatabaseSelector — fail-closed close", () => {
+  it("keeps the current collection open when pending edits cannot be flushed", async () => {
+    mockGetCurrentDatabase.mockReturnValue({ id: "plain" });
+    mockFlushPendingSave.mockRejectedValueOnce(new Error("disk unavailable"));
+    const onDatabaseClose = vi.fn();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result } = renderSelector(vi.fn(), onDatabaseClose);
+
+    await act(async () => {
+      await result.current.handleCloseCollection(plain);
+    });
+
+    expect(mockFlushPendingSave).toHaveBeenCalledTimes(1);
+    expect(mockCloseCurrentDatabase).not.toHaveBeenCalled();
+    expect(onDatabaseClose).not.toHaveBeenCalled();
+    expect(result.current.error).toBe("disk unavailable");
+    errorSpy.mockRestore();
+  });
 });
 
 describe("useDatabaseSelector — loadingCollection", () => {

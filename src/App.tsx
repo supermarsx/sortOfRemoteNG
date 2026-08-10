@@ -695,8 +695,12 @@ const AppContent: React.FC = () => {
   const handleDatabaseSelect = useCallback(
     async (collectionId: string, password?: string): Promise<void> => {
       try {
+        // A collection hand-off is fail-closed: the outgoing rendered rows
+        // must be durable before DatabaseManager advances its current target.
+        await flushPendingSave();
         await databaseManager.selectDatabase(collectionId, password);
-        await loadData();
+        const loaded = await loadData(collectionId);
+        if (!loaded) return;
         setShowDatabasePanel(false);
         toolShowSetters.current.database(false);
         settingsManager.logAction(
@@ -742,6 +746,7 @@ const AppContent: React.FC = () => {
     },
     [
       databaseManager,
+      flushPendingSave,
       loadData,
       setShowDatabasePanel,
       settingsManager,

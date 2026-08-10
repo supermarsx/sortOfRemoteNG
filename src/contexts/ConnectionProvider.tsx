@@ -6,7 +6,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { DatabaseManager } from "../utils/connection/databaseManager";
+import {
+  DatabaseManager,
+  type DatabaseDataTarget,
+} from "../utils/connection/databaseManager";
 import { StorageData } from "../utils/storage/storage";
 import {
   activateConnectionNotes,
@@ -272,6 +275,11 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   // Track if this is the first render to skip auto-save on mount
   const isInitialMountRef = useRef(true);
   const mountedRef = useRef(true);
+  // The database that owns the connection rows currently rendered by this
+  // provider. This deliberately does not follow DatabaseManager.currentDatabase
+  // during an in-flight switch.
+  const activeDatabaseTargetRef = useRef<DatabaseDataTarget | null>(null);
+  const loadGenerationRef = useRef(0);
   // Stable live snapshot used by logging and persistence callbacks.
   const stateRef = useRef(state);
   const connectionsRef = useRef(state.connections);
@@ -285,6 +293,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const pendingSnapshotRef = useRef<{
     revision: number;
     data: StorageData;
+    target: DatabaseDataTarget;
   } | null>(null);
 
   stateRef.current = state;
@@ -452,6 +461,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (
         hasLoadedRef.current &&
+        activeDatabaseTargetRef.current &&
         databaseManager.getCurrentDatabase() &&
         (nextState.connections !== currentState.connections ||
           nextState.tabGroups !== currentState.tabGroups)
@@ -494,7 +504,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (
       !hasLoadedRef.current ||
-      !databaseManager.getCurrentDatabase() ||
+      !activeDatabaseTargetRef.current ||
       dirtyRevisionRef.current <= persistedRevisionRef.current
     ) {
       return;
@@ -511,10 +521,19 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         const snapshot =
           retainedSnapshot?.revision === targetRevision
             ? retainedSnapshot
-            : {
-                revision: targetRevision,
-                data: buildStorageSnapshot(),
-              };
+            : (() => {
+                const target = activeDatabaseTargetRef.current;
+                if (!target) {
+                  throw new Error(
+                    "Cannot persist connection data without an owning collection",
+                  );
+                }
+                return {
+                  revision: targetRevision,
+                  data: buildStorageSnapshot(),
+                  target,
+                };
+              })();
         pendingSnapshotRef.current = snapshot;
 
         if (mountedRef.current) {
@@ -526,7 +545,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         try {
-          await databaseManager.saveCurrentDatabaseData(snapshot.data);
+          await snapshot.target.save(snapshot.data);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -567,6 +586,15 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [buildStorageSnapshot, databaseManager]);
 
+  // Every DatabaseManager selection path (including import/restore callers)
+  // must cross the same durable barrier before the mutable current database
+  // can advance.
+  useEffect(
+    () =>
+      databaseManager.registerBeforeDatabaseTransition(flushPendingSave),
+    [databaseManager, flushPendingSave],
+  );
+
   const saveData = useCallback(async () => {
     if (!hasLoadedRef.current || !databaseManager.getCurrentDatabase()) {
       return;
@@ -584,9 +612,43 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
     [dispatch, flushPendingSave],
   );
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (expectedDatabaseId?: string) => {
+    const generation = ++loadGenerationRef.current;
     try {
-      const data = await databaseManager.loadCurrentDatabaseData();
+      // Never replace the rendered rows while their owning database still has
+      // a dirty generation. This also covers callers that changed the manager
+      // selection without going through App.handleDatabaseSelect.
+      await flushPendingSave();
+
+      const target = databaseManager.captureCurrentDatabaseDataTarget();
+      if (!target) {
+        throw new Error("No collection selected");
+      }
+      if (
+        expectedDatabaseId &&
+        target.databaseId !== expectedDatabaseId
+      ) {
+        return false;
+      }
+
+      const data = await target.load();
+      if (
+        generation !== loadGenerationRef.current ||
+        databaseManager.getCurrentDatabase()?.id !== target.databaseId
+      ) {
+        return false;
+      }
+
+      // Edits can still arrive while an encrypted or recovered collection is
+      // loading. Flush the old owner once more immediately before publishing.
+      await flushPendingSave();
+      if (
+        generation !== loadGenerationRef.current ||
+        databaseManager.getCurrentDatabase()?.id !== target.databaseId
+      ) {
+        return false;
+      }
+
       if (data && data.connections) {
         // Convert date strings back to Date objects (with validation)
         const toValidDate = (
@@ -624,6 +686,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         baseDispatch({ type: "SET_TAB_GROUPS", payload: tabGroups });
       }
       // Mark as loaded after successfully loading data
+      activeDatabaseTargetRef.current = target;
       hasLoadedRef.current = true;
       dirtyRevisionRef.current = 0;
       persistedRevisionRef.current = 0;
@@ -633,11 +696,19 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         saving: false,
         error: null,
       });
+      return true;
     } catch (error) {
+      if (
+        generation !== loadGenerationRef.current ||
+        (expectedDatabaseId !== undefined &&
+          databaseManager.getCurrentDatabase()?.id !== expectedDatabaseId)
+      ) {
+        return false;
+      }
       console.error("Failed to load data:", error);
       throw error;
     }
-  }, [databaseManager]);
+  }, [databaseManager, flushPendingSave]);
 
   // Debounced auto-save: coalesces rapid connection changes into a single write.
   const debouncedSave = useCallback(() => {

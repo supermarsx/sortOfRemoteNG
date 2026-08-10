@@ -75,7 +75,7 @@ export interface ConnectionContextType {
   persistence: ConnectionPersistenceState;
   saveData: () => Promise<void>;
   flushPendingSave: () => Promise<void>;
-  loadData: () => Promise<void>;
+  loadData: (expectedDatabaseId?: string) => Promise<boolean>;
 }
 
 export const ConnectionContext = createContext<

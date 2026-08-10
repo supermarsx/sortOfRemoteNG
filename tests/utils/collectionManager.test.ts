@@ -218,6 +218,37 @@ describe("DatabaseManager", () => {
     ).resolves.toMatchObject({ collection: { id: second.id } });
   });
 
+  it("keeps a captured data target usable after the active password is rotated", async () => {
+    const secure = await manager.createDatabase(
+      "Secure",
+      "desc",
+      true,
+      "old-secret",
+    );
+    await manager.selectDatabase(secure.id, "old-secret");
+    const target = manager.captureCurrentDatabaseDataTarget();
+    expect(target?.databaseId).toBe(secure.id);
+
+    await manager.changeDatabasePassword(
+      secure.id,
+      "old-secret",
+      "new-secret",
+    );
+    const updated = {
+      connections: [{ id: "after-rotation", name: "After rotation" } as any],
+      settings: {},
+      timestamp: 2,
+    };
+    await target?.save(updated as any);
+
+    await expect(
+      manager.loadDatabaseData(secure.id, "new-secret"),
+    ).resolves.toEqual(updated);
+    await expect(
+      manager.loadDatabaseData(secure.id, "old-secret"),
+    ).rejects.toBeInstanceOf(InvalidPasswordError);
+  });
+
   it("unlockDatabase validates password and remembers it without selecting", async () => {
     const secure = await manager.createDatabase(
       "Secure",

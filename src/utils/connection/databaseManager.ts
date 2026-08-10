@@ -179,6 +179,18 @@ export interface ExportableDatabaseInfo extends ConnectionDatabase {
   lockedReason?: string;
 }
 
+/**
+ * Immutable handle to the database that owned the currently-rendered
+ * connection snapshot when the handle was captured.  The closures retain the
+ * matching in-memory password so a delayed save can never drift onto whatever
+ * database happens to be current later.
+ */
+export interface DatabaseDataTarget {
+  readonly databaseId: string;
+  load: () => Promise<StorageData | null>;
+  save: (data: StorageData) => Promise<void>;
+}
+
 export interface DatabaseExportSnapshot {
   collection: {
     id: string;
@@ -231,6 +243,8 @@ export class DatabaseManager {
   private currentDatabase: ConnectionDatabase | null = null;
   private currentPassword: string | null = null;
   private readonly unlockedDatabasePasswords = new Map<string, string>();
+  private beforeDatabaseTransition: (() => Promise<void>) | null = null;
+  private databaseTransitionQueue: Promise<void> = Promise.resolve();
 
   static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
@@ -361,7 +375,43 @@ export class DatabaseManager {
     return collections.find((c) => c.id === id) || null;
   }
 
+  /**
+   * Register the main connection provider's durable-flush barrier. Database
+   * selection is a manager-wide operation, so placing the barrier here also
+   * protects callers outside the collection picker (import/restore flows).
+   */
+  registerBeforeDatabaseTransition(
+    guard: () => Promise<void>,
+  ): () => void {
+    this.beforeDatabaseTransition = guard;
+    return () => {
+      if (this.beforeDatabaseTransition === guard) {
+        this.beforeDatabaseTransition = null;
+      }
+    };
+  }
+
   async selectDatabase(id: string, password?: string): Promise<void> {
+    const transition = this.databaseTransitionQueue
+      .catch(() => undefined)
+      .then(() => this.selectDatabaseInner(id, password));
+    this.databaseTransitionQueue = transition.then(
+      () => undefined,
+      () => undefined,
+    );
+    return transition;
+  }
+
+  private async selectDatabaseInner(
+    id: string,
+    password?: string,
+  ): Promise<void> {
+    const switchingDatabase =
+      this.currentDatabase !== null && this.currentDatabase.id !== id;
+    if (switchingDatabase) {
+      await this.beforeDatabaseTransition?.();
+    }
+
     const collection = await this.getDatabase(id);
     if (!collection) {
       throw new DatabaseNotFoundError();
@@ -378,6 +428,11 @@ export class DatabaseManager {
     }
 
     await this.loadDatabaseData(id, resolvedPassword);
+    // A database load can be slow. Flush edits made to the outgoing UI while
+    // it was in flight before advancing the mutable current-database pointer.
+    if (switchingDatabase) {
+      await this.beforeDatabaseTransition?.();
+    }
     this.currentDatabase = collection;
     this.currentPassword = resolvedPassword || null;
     this.rememberUnlockedDatabase(collection, resolvedPassword);
@@ -397,6 +452,23 @@ export class DatabaseManager {
 
   getCurrentDatabase(): ConnectionDatabase | null {
     return this.currentDatabase;
+  }
+
+  captureCurrentDatabaseDataTarget(): DatabaseDataTarget | null {
+    const current = this.currentDatabase;
+    if (!current) return null;
+    const databaseId = current.id;
+    const passwordAtCapture = this.currentPassword || undefined;
+    const resolvePassword = () =>
+      this.currentDatabase?.id === databaseId
+        ? this.currentPassword || undefined
+        : passwordAtCapture;
+    return {
+      databaseId,
+      load: () => this.loadDatabaseData(databaseId, resolvePassword()),
+      save: (data) =>
+        this.saveDatabaseData(databaseId, data, resolvePassword()),
+    };
   }
 
   /**

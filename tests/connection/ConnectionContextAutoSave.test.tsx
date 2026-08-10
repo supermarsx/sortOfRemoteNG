@@ -286,7 +286,7 @@ describe("ConnectionProvider auto-save", () => {
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const saveSpy = vi
-      .spyOn(DatabaseManager.getInstance(), "saveCurrentDatabaseData" as any)
+      .spyOn(DatabaseManager.getInstance(), "saveDatabaseData" as any)
       .mockRejectedValueOnce(new Error("DB write failed"));
 
     const conn: Connection = {
@@ -329,5 +329,143 @@ describe("ConnectionProvider auto-save", () => {
 
     errorSpy.mockRestore();
     saveSpy.mockRestore();
+  });
+
+  it("flushes the outgoing collection before switching and never writes its snapshot to the incoming collection", async () => {
+    const second = await manager.createDatabase("Second");
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData(collectionId);
+    });
+
+    const outgoing: Connection = {
+      id: "outgoing-edit",
+      name: "belongs to first",
+      protocol: "ssh",
+      hostname: "first.example",
+      port: 22,
+      isGroup: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Connection;
+
+    act(() => {
+      result.current.dispatch({
+        type: "SET_CONNECTIONS",
+        payload: [outgoing],
+      });
+    });
+
+    await act(async () => {
+      await manager.selectDatabase(second.id);
+      expect(await result.current.loadData(second.id)).toBe(true);
+    });
+
+    const firstData = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${collectionId}`,
+    );
+    const secondData = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${second.id}`,
+    );
+    expect(firstData?.connections.map((connection) => connection.id)).toEqual([
+      "outgoing-edit",
+    ]);
+    expect(secondData?.connections).toEqual([]);
+    expect(result.current.state.connections).toEqual([]);
+  });
+
+  it("keeps the current collection attached when its transition flush fails", async () => {
+    const second = await manager.createDatabase("Second");
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData(collectionId);
+    });
+    act(() => {
+      result.current.dispatch({
+        type: "SET_CONNECTIONS",
+        payload: [
+          {
+            id: "retry-me",
+            name: "retry me",
+            protocol: "ssh",
+            hostname: "first.example",
+            port: 22,
+            isGroup: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as Connection,
+        ],
+      });
+    });
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const saveSpy = vi
+      .spyOn(manager, "saveDatabaseData")
+      .mockRejectedValueOnce(new Error("disk unavailable"));
+
+    await act(async () => {
+      await expect(manager.selectDatabase(second.id)).rejects.toThrow(
+        "disk unavailable",
+      );
+    });
+
+    expect(manager.getCurrentDatabase()?.id).toBe(collectionId);
+    expect(result.current.persistence).toEqual({
+      dirty: true,
+      saving: false,
+      error: "disk unavailable",
+    });
+
+    saveSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("does not persist close-time UI cleanup as an empty collection", async () => {
+    const { result } = renderHook(() => useConnections(), { wrapper });
+
+    await act(async () => {
+      await result.current.loadData(collectionId);
+    });
+    act(() => {
+      result.current.dispatch({
+        type: "SET_CONNECTIONS",
+        payload: [
+          {
+            id: "keep-after-close",
+            name: "keep after close",
+            protocol: "ssh",
+            hostname: "first.example",
+            port: 22,
+            isGroup: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as Connection,
+        ],
+      });
+    });
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+
+    manager.closeCurrentDatabase();
+    act(() => {
+      result.current.dispatch({ type: "SET_CONNECTIONS", payload: [] });
+      result.current.dispatch({ type: "SET_TAB_GROUPS", payload: [] });
+      vi.advanceTimersByTime(600);
+    });
+
+    const stored = await IndexedDbService.getItem<StorageData>(
+      `mremote-database-${collectionId}`,
+    );
+    expect(stored?.connections.map((connection) => connection.id)).toEqual([
+      "keep-after-close",
+    ]);
+    expect(result.current.persistence).toEqual({
+      dirty: false,
+      saving: false,
+      error: null,
+    });
   });
 });

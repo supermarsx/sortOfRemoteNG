@@ -118,7 +118,7 @@ export function useDatabaseSelector(
   onDatabaseClose?: () => Promise<void> | void,
 ) {
   const databaseManager = DatabaseManager.getInstance();
-  const { saveData } = useConnections();
+  const { saveData, flushPendingSave } = useConnections();
   const { t } = useTranslation();
 
   // Collections
@@ -379,6 +379,12 @@ export function useDatabaseSelector(
         isEncrypted: wantsEncryption,
       };
 
+      if (databaseManager.getCurrentDatabase()?.id === editingCollection.id) {
+        // Re-encryption must never race a pending snapshot captured with the
+        // previous password.
+        await flushPendingSave();
+      }
+
       if (editingCollection.isEncrypted && !wantsEncryption) {
         await databaseManager.removePasswordFromDatabase(
           editingCollection.id,
@@ -535,16 +541,23 @@ export function useDatabaseSelector(
       const isCurrent = currentId === collection.id;
 
       if (isCurrent) {
-        // Flush any pending edits BEFORE detaching the manager —
-        // ConnectionProvider's debouncer runs on a 500ms timer and
-        // would throw "No collection selected" if it fires after
-        // closeCurrentDatabase nulls the manager. saveData() is
-        // a no-op when nothing changed, so this is safe to call
-        // unconditionally.
+        // Flush any pending edits BEFORE detaching the manager. A failed
+        // durable write aborts the close so the only in-memory copy remains
+        // attached and retryable.
         try {
-          await saveData();
+          await flushPendingSave();
         } catch (error) {
           console.error("Failed to flush pending edits before close:", error);
+          setError(
+            getActionError(
+              error,
+              t(
+                "databaseCenter.collections.errors.closeFlushFailed",
+                "The collection could not be closed because pending edits were not saved.",
+              ),
+            ),
+          );
+          return;
         }
         databaseManager.closeCurrentDatabase();
         await Promise.resolve(onDatabaseClose?.());
@@ -561,7 +574,8 @@ export function useDatabaseSelector(
       databaseManager,
       loadDatabases,
       onDatabaseClose,
-      saveData,
+      flushPendingSave,
+      t,
     ],
   );
 
