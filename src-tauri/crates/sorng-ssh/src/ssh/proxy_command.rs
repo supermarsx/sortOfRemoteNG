@@ -169,6 +169,8 @@ enum LifecycleStage {
     Bind,
     Accept,
     Registry,
+    #[cfg(windows)]
+    BeforeAttach,
     AfterSpawn,
 }
 
@@ -321,6 +323,83 @@ impl ProcessTreeGuard {
             terminate_unmanaged_process_tree(pid);
         }
     }
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct ThreadEntry32 {
+    size: u32,
+    usage: u32,
+    thread_id: u32,
+    owner_process_id: u32,
+    base_priority: i32,
+    priority_delta: i32,
+    flags: u32,
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    #[link_name = "CreateToolhelp32Snapshot"]
+    fn create_toolhelp32_snapshot(flags: u32, process_id: u32) -> *mut std::ffi::c_void;
+    #[link_name = "Thread32First"]
+    fn thread32_first(snapshot: *mut std::ffi::c_void, entry: *mut ThreadEntry32) -> i32;
+    #[link_name = "Thread32Next"]
+    fn thread32_next(snapshot: *mut std::ffi::c_void, entry: *mut ThreadEntry32) -> i32;
+}
+
+#[cfg(windows)]
+fn resume_suspended_child(child: &Child) -> std::io::Result<()> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    // std::process intentionally does not expose CreateProcessW's primary
+    // thread handle. The process was created suspended, so it still has only
+    // that initial thread; enumerate it by owner PID and resume it only after
+    // the process has inherited the kill-on-close job.
+    const TH32CS_SNAPTHREAD: u32 = 0x0000_0004;
+    let raw_snapshot = unsafe { create_toolhelp32_snapshot(TH32CS_SNAPTHREAD, 0) };
+    if raw_snapshot == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(raw_snapshot) };
+    let mut entry = ThreadEntry32 {
+        size: std::mem::size_of::<ThreadEntry32>() as u32,
+        usage: 0,
+        thread_id: 0,
+        owner_process_id: 0,
+        base_priority: 0,
+        priority_delta: 0,
+        flags: 0,
+    };
+
+    let mut has_entry = unsafe { thread32_first(snapshot.as_raw_handle(), &mut entry) } != 0;
+    while has_entry {
+        if entry.owner_process_id == child.id() {
+            let raw_thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.thread_id) };
+            if raw_thread.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            let thread = unsafe { OwnedHandle::from_raw_handle(raw_thread) };
+            let previous_suspend_count = unsafe { ResumeThread(thread.as_raw_handle()) };
+            if previous_suspend_count == u32::MAX {
+                return Err(std::io::Error::last_os_error());
+            }
+            if previous_suspend_count != 1 {
+                return Err(std::io::Error::other(format!(
+                    "ProxyCommand primary thread had unexpected suspend count {previous_suspend_count}"
+                )));
+            }
+            return Ok(());
+        }
+        has_entry = unsafe { thread32_next(snapshot.as_raw_handle(), &mut entry) } != 0;
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "ProxyCommand primary thread was not found",
+    ))
 }
 
 #[cfg(not(windows))]
@@ -671,8 +750,11 @@ pub fn build_command_string(
 /// This works by:
 /// 1. Binding and synchronously connecting a private loopback relay.
 /// 2. Reserving the session registry and preparing a process-tree guard.
-/// 3. Spawning and immediately registering the guarded helper process.
-/// 4. Starting bounded stderr, relay, and process-monitor workers.
+/// 3. Creating the helper inside its OS process-tree boundary. Windows creates
+///    it suspended, attaches the job, then resumes it; Unix assigns the process
+///    group atomically at spawn.
+/// 4. Registering the helper and starting bounded stderr, relay, and monitor
+///    workers.
 ///
 /// The caller (service.rs `connect_ssh`) uses the returned stream exactly
 /// like a direct TCP connection.
@@ -807,15 +889,39 @@ fn spawn_proxy_command_inner(
             .map_err(|e| format!("Failed to prepare ProxyCommand process guard: {e}"))?,
     );
     log::info!("[{}] Spawning ProxyCommand: {}", session_id, redacted_cmd);
+    #[cfg(windows)]
+    let mut child = spawn_suspended_shell_command(&cmd_string)
+        .map_err(|e| format!("Failed to spawn suspended ProxyCommand: {e}"))?;
+    #[cfg(not(windows))]
     let mut child = spawn_shell_command(&cmd_string)
-        .map_err(|e| format!("Failed to spawn ProxyCommand: {}", e))?;
+        .map_err(|e| format!("Failed to spawn ProxyCommand: {e}"))?;
     hooks.record_spawned_pid(child.id());
+
+    #[cfg(windows)]
+    if hooks.should_fail(LifecycleStage::BeforeAttach) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(
+            "ProxyCommand setup failed before process-tree attachment: injected failure"
+                .to_string(),
+        );
+    }
+
     if let Err(error) = process_tree.attach(&child) {
         process_tree.terminate(child.id());
         let _ = child.kill();
         let _ = child.wait();
         return Err(format!(
             "Failed to attach ProxyCommand process-tree guard: {error}"
+        ));
+    }
+    #[cfg(windows)]
+    if let Err(error) = resume_suspended_child(&child) {
+        process_tree.terminate(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "Failed to resume guarded ProxyCommand process: {error}"
         ));
     }
 
@@ -1160,21 +1266,37 @@ pub fn get_proxy_command_status(session_id: &str) -> Result<Option<ProxyCommandS
 
 // ── OS shell spawning ─────────────────────────────────────────────────
 
+#[cfg(windows)]
+fn windows_shell_command(cmd: &str, extra_creation_flags: u32) -> Command {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new("cmd.exe");
+    command
+        .args(["/D", "/S", "/C"])
+        // cmd.exe does not use MSVCRT argv parsing. `/S /C` requires one outer
+        // quote pair around the exact command string; raw_arg prevents Rust
+        // from adding a second, incompatible layer of argument escaping.
+        .raw_arg(format!("\"{cmd}\""))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | extra_creation_flags);
+    command
+}
+
+#[cfg(windows)]
+fn spawn_suspended_shell_command(cmd: &str) -> std::io::Result<Child> {
+    const CREATE_SUSPENDED: u32 = 0x0000_0004;
+    windows_shell_command(cmd, CREATE_SUSPENDED).spawn()
+}
+
 /// Spawn a command via the system shell with piped stdin/stdout.
 pub fn spawn_shell_command(cmd: &str) -> std::io::Result<Child> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        Command::new("cmd")
-            .args(["/C", cmd])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
-            .spawn()
+        windows_shell_command(cmd, 0).spawn()
     }
 
     #[cfg(not(windows))]
@@ -1213,6 +1335,16 @@ mod tests {
     impl Drop for TestSessionGuard {
         fn drop(&mut self) {
             let _ = stop_proxy_command(&self.0);
+        }
+    }
+
+    #[cfg(windows)]
+    struct TestFileCleanup(std::path::PathBuf);
+
+    #[cfg(windows)]
+    impl Drop for TestFileCleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
         }
     }
 
@@ -1371,6 +1503,41 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn suspended_helper_cannot_execute_before_process_tree_attachment() {
+        let session_id = "proxy-suspended-before-attach";
+        let marker = std::env::temp_dir().join(format!(
+            "sorng-proxy-suspended-{}-{}",
+            std::process::id(),
+            FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _marker_cleanup = TestFileCleanup(marker.clone());
+        let _ = std::fs::remove_file(&marker);
+        let spawned_pid = Arc::new(AtomicU32::new(0));
+
+        run_fake_helper(
+            session_id,
+            "tree",
+            Some(&marker),
+            Some(LifecycleStage::BeforeAttach),
+            spawned_pid.clone(),
+        )
+        .expect_err("a failure before job attachment must fail closed");
+
+        let pid = spawned_pid.load(Ordering::SeqCst);
+        assert_ne!(pid, 0, "the suspended shell must have been created");
+        assert!(wait_until(
+            || !process_is_alive(pid),
+            Duration::from_secs(2)
+        ));
+        assert!(
+            !marker.exists(),
+            "the suspended ProxyCommand ran before process-tree attachment"
+        );
+        assert!(get_proxy_command_status(session_id).unwrap().is_none());
+    }
+
     #[test]
     fn failure_after_spawn_reaps_helper_and_removes_registry_state() {
         let session_id = "proxy-after-spawn-failure";
@@ -1407,7 +1574,12 @@ mod tests {
             },
             Duration::from_secs(5)
         ));
+        let stop_started = Instant::now();
         stop_proxy_command(session_id).expect("stderr-flood helper must stop");
+        assert!(
+            stop_started.elapsed() < Duration::from_secs(5),
+            "bounded stderr shutdown exceeded the lifecycle deadline"
+        );
         let pid = spawned_pid.load(Ordering::SeqCst);
         assert!(wait_until(
             || !process_is_alive(pid),
@@ -1478,6 +1650,53 @@ mod tests {
         ));
         assert!(get_proxy_command_status(session_id).unwrap().is_none());
         let _ = std::fs::remove_file(marker);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_preserves_quoted_executable_arguments_and_metacharacters() {
+        let token = FAKE_HELPER_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let script = std::env::temp_dir().join(format!(
+            "sorng proxy quoted helper {} {token}.cmd",
+            std::process::id()
+        ));
+        let marker = std::env::temp_dir().join(format!(
+            "sorng proxy quoted output {} {token}.txt",
+            std::process::id()
+        ));
+        let _script_cleanup = TestFileCleanup(script.clone());
+        let _marker_cleanup = TestFileCleanup(marker.clone());
+        let _ = std::fs::remove_file(&script);
+        let _ = std::fs::remove_file(&marker);
+        std::fs::write(
+            &script,
+            "@echo off\r\n<nul set /p \"=%~2\" > \"%~1\"\r\nexit /b 0\r\n",
+        )
+        .expect("write quoted ProxyCommand helper");
+
+        let literal_argument = "alpha & beta | gamma";
+        let command = format!(
+            "call \"{}\" \"{}\" \"{}\" && >> \"{}\" echo :shell-chain-ok",
+            script.display(),
+            marker.display(),
+            literal_argument,
+            marker.display()
+        );
+        let output = spawn_shell_command(&command)
+            .expect("spawn quoted ProxyCommand helper")
+            .wait_with_output()
+            .expect("wait for quoted ProxyCommand helper");
+
+        assert!(
+            output.status.success(),
+            "quoted ProxyCommand failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let recorded = std::fs::read_to_string(&marker).expect("read quoted helper marker");
+        assert_eq!(
+            recorded.replace("\r\n", "\n").trim_end(),
+            format!("{literal_argument}:shell-chain-ok")
+        );
     }
 
     #[test]
