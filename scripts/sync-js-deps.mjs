@@ -43,15 +43,7 @@ export function categorizeJsDependency(name) {
   if (name.startsWith("@tauri-apps/")) return "Tauri Integration";
   if (
     name.startsWith("react") ||
-    [
-      "@hello-pangea/dnd",
-      "lucide-react",
-      "react-dom",
-      "react-grid-layout",
-      "react-i18next",
-      "react-resizable-panels",
-      "react-zoom-pan-pinch",
-    ].includes(name)
+    ["lucide-react", "react-dom", "react-i18next"].includes(name)
   ) {
     return "React & UI";
   }
@@ -65,17 +57,14 @@ export function categorizeJsDependency(name) {
   if (name === "@xterm/xterm" || name.startsWith("@xterm/addon-")) {
     return "Terminal Emulation";
   }
-  if (["novnc", "guacamole-common-js", "webssh2-frontend"].includes(name)) {
+  if (name === "webssh2-frontend") {
     return "Remote Desktop & SSH";
   }
   if (["qrcode", "jsqr"].includes(name)) return "Cryptography & Auth";
   if (["i18next", "i18next-browser-languagedetector"].includes(name)) {
     return "Internationalization";
   }
-  if (name === "sql.js") return "Database";
-  if (name === "zod") return "Validation";
-  if (["jszip", "file-saver"].includes(name)) return "File & Archive";
-  if (["socks", "ipaddr.js"].includes(name)) return "Networking";
+  if (name === "ipaddr.js") return "Networking";
   if (name === "idb") return "Storage";
   if (name === "gifenc") return "Media";
   if (name.startsWith("@types/")) return "Type Definitions";

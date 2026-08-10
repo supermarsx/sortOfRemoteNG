@@ -60,7 +60,7 @@ test("generated About catalog exactly covers every direct package", async () => 
     Object.keys(packageJson.dependencies).length +
       Object.keys(packageJson.devDependencies).length,
   );
-  assert.equal(new Set(generatedEntries.map(({ name }) => name)).size, 71);
+  assert.equal(new Set(generatedEntries.map(({ name }) => name)).size, 56);
 });
 
 test("catalog generation fails closed on lock drift or missing metadata", async () => {

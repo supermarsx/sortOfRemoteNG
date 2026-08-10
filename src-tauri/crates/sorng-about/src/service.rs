@@ -207,11 +207,6 @@ fn get_acknowledgments() -> Vec<Acknowledgment> {
             url: "https://github.com/tailwindlabs/tailwindcss".to_string(),
         },
         Acknowledgment {
-            name: "noVNC Contributors".to_string(),
-            role: "VNC client library".to_string(),
-            url: "https://github.com/novnc/noVNC".to_string(),
-        },
-        Acknowledgment {
             name: "xterm.js Contributors".to_string(),
             role: "Terminal emulator".to_string(),
             url: "https://github.com/xtermjs/xterm.js".to_string(),
@@ -220,11 +215,6 @@ fn get_acknowledgments() -> Vec<Acknowledgment> {
             name: "Lucide Contributors".to_string(),
             role: "Icon library".to_string(),
             url: "https://github.com/lucide-icons/lucide".to_string(),
-        },
-        Acknowledgment {
-            name: "Apache Guacamole Contributors".to_string(),
-            role: "Remote desktop gateway protocol".to_string(),
-            url: "https://github.com/apache/guacamole-client".to_string(),
         },
         Acknowledgment {
             name: "Bollard Contributors".to_string(),
@@ -250,11 +240,6 @@ fn get_acknowledgments() -> Vec<Acknowledgment> {
             name: "SQLx Contributors".to_string(),
             role: "Database client".to_string(),
             url: "https://github.com/launchbadge/sqlx".to_string(),
-        },
-        Acknowledgment {
-            name: "Zod Contributors".to_string(),
-            role: "TypeScript schema validation".to_string(),
-            url: "https://github.com/colinhacks/zod".to_string(),
         },
         Acknowledgment {
             name: "i18next Contributors".to_string(),
