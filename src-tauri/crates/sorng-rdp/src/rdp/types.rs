@@ -11,6 +11,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::cert_trust::ServerCertValidationMode;
 use super::network::{build_credssp_http_client, build_tls_config};
+use super::session_runtime::{RdpWorkerGeneration, RdpWorkerRuntime};
 use super::stats::RdpSessionStats;
 
 // ---- Events emitted to the frontend ----
@@ -196,9 +197,7 @@ pub struct RdpActiveConnection {
     pub session: RdpSession,
     pub cmd_tx: WakeSender,
     pub stats: Arc<RdpSessionStats>,
-    pub _handle: tokio::task::JoinHandle<()>,
-    /// Admission permit held for the full lifetime of this active session.
-    pub _session_slot: OwnedSemaphorePermit,
+    pub worker: RdpWorkerRuntime,
     /// Cached password for automatic reconnection (CredSSP re-auth).
     #[allow(dead_code)]
     pub cached_password: SecretString,
@@ -222,6 +221,7 @@ pub struct RdpService {
     /// Counts both active sessions and connect calls that have passed
     /// admission but have not yet been inserted into `connections`.
     pub session_slots: Arc<Semaphore>,
+    next_worker_generation: RdpWorkerGeneration,
     /// Cached TLS connector -- built once, reused for every connection.
     /// Building a TLS connector loads the system root certificate store which
     /// is very expensive on Windows (200-500 ms).  Caching it avoids paying that
@@ -236,8 +236,8 @@ pub struct RdpService {
 }
 
 /// A conservative process-wide ceiling for resource-heavy RDP session
-/// workers. Each admitted session owns one permit before any worker is
-/// spawned and until its active connection record is dropped.
+/// workers. Each admitted worker owns one permit before it is spawned and
+/// until its blocking closure has actually exited.
 pub const MAX_RDP_ACTIVE_OR_PENDING_SESSIONS: usize = 16;
 
 impl RdpService {
@@ -255,6 +255,7 @@ impl RdpService {
             session_slots: Arc::new(Semaphore::new(
                 MAX_RDP_ACTIVE_OR_PENDING_SESSIONS,
             )),
+            next_worker_generation: 1,
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,
             log_buffer: VecDeque::with_capacity(1024),
@@ -272,6 +273,27 @@ impl RdpService {
                     MAX_RDP_ACTIVE_OR_PENDING_SESSIONS
                 )
             })
+    }
+
+    pub fn allocate_worker_generation(&mut self) -> RdpWorkerGeneration {
+        let generation = self.next_worker_generation;
+        self.next_worker_generation = self.next_worker_generation.wrapping_add(1);
+        if self.next_worker_generation == 0 {
+            self.next_worker_generation = 1;
+        }
+        generation
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_test_state(capacity: usize) -> super::RdpServiceState {
+        Arc::new(tokio::sync::Mutex::new(RdpService {
+            connections: HashMap::new(),
+            session_slots: Arc::new(Semaphore::new(capacity)),
+            next_worker_generation: 1,
+            cached_tls_connector: None,
+            cached_http_client: None,
+            log_buffer: VecDeque::with_capacity(16),
+        }))
     }
 
     /// Push a log entry into the ring buffer (capped at 1000).

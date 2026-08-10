@@ -15,6 +15,7 @@ mod network;
 pub mod rdpdr;
 pub mod session_poller;
 pub mod session_runner;
+pub mod session_runtime;
 pub mod session_state;
 pub mod settings;
 pub mod stats;

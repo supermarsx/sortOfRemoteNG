@@ -145,54 +145,13 @@ pub async fn connect_rdp(
     // from the session thread to JS -- no base64, no event+invoke round-trip).
     frame_channel: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
-    // Reserve capacity before creating per-session OS resources. Reconnecting
-    // an existing owned slot transfers its permit, so it cannot be rejected
-    // merely because the service is already at capacity.
-    let session_slot = {
-        let mut service = state.lock().await;
-        let old_id = if let Some(ref cid) = connection_id {
-            // Primary: evict by connection_id (stable frontend slot)
-            service
-                .connections
-                .values()
-                .find(|c| c.session.connection_id.as_deref() == Some(cid))
-                .map(|c| c.session.id.clone())
-        } else {
-            // Fallback: evict by host+port+user (for callers without connection_id)
-            service
-                .connections
-                .values()
-                .find(|c| {
-                    c.session.host == host
-                        && c.session.port == port
-                        && c.session.username == username
-                        && c.session.connected
-                })
-                .map(|c| c.session.id.clone())
-        };
-        let reused_slot = if let Some(id) = old_id {
-            log::info!(
-                "Evicting previous session {id} (connection_id={:?}) for {host}:{port}",
-                connection_id
-            );
-            if let Some(old) = service.connections.remove(&id) {
-                let RdpActiveConnection {
-                    cmd_tx,
-                    _session_slot,
-                    ..
-                } = old;
-                let _ = cmd_tx.send(RdpCommand::Shutdown);
-                Some(_session_slot)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        match reused_slot {
-            Some(slot) => slot,
-            None => service.try_reserve_session_slot()?,
+    let replacement_selector = if let Some(ref connection_id) = connection_id {
+        RdpConnectionSelector::ConnectionId(connection_id.clone())
+    } else {
+        RdpConnectionSelector::Endpoint {
+            host: host.clone(),
+            port,
+            username: username.clone(),
         }
     };
 
@@ -237,13 +196,6 @@ pub async fn connect_rdp(
     let d = domain.clone();
     let ah = app_handle.clone();
 
-    // Clone cached TLS connector & HTTP client from the service so the
-    // blocking thread can use them without holding the service lock.
-    let service = state.lock().await;
-    let tls_conn = service.cached_tls_connector.clone();
-    let http_client = service.cached_http_client.clone();
-    drop(service);
-
     let fs = Arc::clone(&*frame_store);
 
     // Wrap the Tauri AppHandle as a DynEventEmitter for the crate-layer API.
@@ -263,85 +215,119 @@ pub async fn connect_rdp(
         super::session_runner::RDP_LOG_CHANNEL_CAPACITY,
     );
     let log_state = Arc::clone(&*state);
-    tokio::spawn(async move {
-        // Drain in a non-blocking loop with small sleeps so we don't
-        // spin-lock.  Exits when the sender is dropped (session ends).
-        loop {
-            let mut batch =
-                Vec::with_capacity(super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE);
-            while batch.len() < super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE {
-                match log_rx.try_recv() {
-                    Ok(entry) => batch.push(entry),
-                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                        // Drain remaining before exit
-                        if !batch.is_empty() {
-                            let mut svc = log_state.lock().await;
-                            for entry in batch {
-                                svc.log_buffer.push_back(entry);
-                                while svc.log_buffer.len() > 1000 {
-                                    svc.log_buffer.pop_front();
+
+    loop {
+        match close_rdp_connection(
+            &*state,
+            &replacement_selector,
+            "replaced by a newer connect request",
+            RDP_WORKER_SHUTDOWN_GRACE,
+        )
+        .await
+        {
+            RdpCloseOutcome::StillClosing {
+                session_id: previous_session_id,
+                generation,
+            } => {
+                return Err(format!(
+                    "Previous RDP worker {previous_session_id} (generation {generation}) is still closing; retry after cleanup completes"
+                ));
+            }
+            RdpCloseOutcome::NotFound | RdpCloseOutcome::Closed { .. } => {}
+        }
+
+        // The service lock is held from the final stable-slot check through
+        // reserve/spawn/insert. There are no awaits in this section, so two
+        // racing connect calls cannot both claim the same slot.
+        let mut service = state.lock().await;
+        if find_rdp_connection_id(&service, &replacement_selector).is_some() {
+            drop(service);
+            continue;
+        }
+
+        let session_slot = service.try_reserve_session_slot()?;
+        let generation = service.allocate_worker_generation();
+        let tls_conn = service.cached_tls_connector.clone();
+        let http_client = service.cached_http_client.clone();
+        tokio::spawn(async move {
+            // Drain in a non-blocking loop with small sleeps so we don't
+            // spin-lock. Exits when the sender is dropped (session ends).
+            loop {
+                let mut batch = Vec::with_capacity(super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE);
+                while batch.len() < super::session_runner::RDP_LOG_DRAIN_BATCH_SIZE {
+                    match log_rx.try_recv() {
+                        Ok(entry) => batch.push(entry),
+                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            if !batch.is_empty() {
+                                let mut svc = log_state.lock().await;
+                                for entry in batch {
+                                    svc.log_buffer.push_back(entry);
+                                    while svc.log_buffer.len() > 1000 {
+                                        svc.log_buffer.pop_front();
+                                    }
                                 }
                             }
+                            return;
                         }
-                        return;
                     }
                 }
-            }
-            if !batch.is_empty() {
-                let mut svc = log_state.lock().await;
-                for entry in batch {
-                    svc.log_buffer.push_back(entry);
-                    while svc.log_buffer.len() > 1000 {
-                        svc.log_buffer.pop_front();
+                if !batch.is_empty() {
+                    let mut svc = log_state.lock().await;
+                    for entry in batch {
+                        svc.log_buffer.push_back(entry);
+                        while svc.log_buffer.len() > 1000 {
+                            svc.log_buffer.pop_front();
+                        }
                     }
                 }
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    });
+        });
 
-    // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
-    let handle = tokio::task::spawn_blocking(move || {
-        let _trust_guard = crate::rdp::cert_trust::bind_session_prompt_context(trust_context);
-        run_rdp_session(
-            sid,
-            h,
-            port,
-            u,
-            p,
-            d,
-            settings,
-            emitter,
-            cmd_rx,
-            stats_clone,
-            tls_conn,
-            http_client,
-            fs,
-            dyn_frame_channel,
-            log_tx,
+        // `spawn_blocking` binds the admission permit inside the worker and
+        // releases it only after this closure returns on every exit path.
+        let worker = RdpWorkerRuntime::spawn_blocking(generation, session_slot, move || {
+            let _trust_guard = crate::rdp::cert_trust::bind_session_prompt_context(trust_context);
+            run_rdp_session(
+                sid,
+                h,
+                port,
+                u,
+                p,
+                d,
+                settings,
+                emitter,
+                cmd_rx,
+                stats_clone,
+                tls_conn,
+                http_client,
+                fs,
+                dyn_frame_channel,
+                log_tx,
+            );
+        });
+
+        let connection = RdpActiveConnection {
+            session,
+            cmd_tx,
+            stats,
+            worker,
+            cached_password: password,
+            cached_domain: domain.clone(),
+        };
+
+        service.push_log(
+            "info",
+            format!(
+                "Connecting to {host}:{port} as {username} (session {session_id}, generation {generation})"
+            ),
+            Some(session_id.clone()),
         );
-    });
+        service.connections.insert(session_id.clone(), connection);
 
-    let connection = RdpActiveConnection {
-        session,
-        cmd_tx,
-        stats,
-        _handle: handle,
-        _session_slot: session_slot,
-        cached_password: password,
-        cached_domain: domain.clone(),
-    };
-
-    let mut service = state.lock().await;
-    service.push_log(
-        "info",
-        format!("Connecting to {host}:{port} as {username} (session {session_id})"),
-        Some(session_id.clone()),
-    );
-    service.connections.insert(session_id.clone(), connection);
-
-    Ok(session_id)
+        return Ok(session_id);
+    }
 }
 
 #[tauri::command]
@@ -351,46 +337,40 @@ pub async fn disconnect_rdp(
     // Disconnect by stable frontend connection slot ID (preferred).
     connection_id: Option<String>,
 ) -> Result<(), String> {
-    let mut service = state.lock().await;
+    let mut outcome = RdpCloseOutcome::NotFound;
+    if let Some(session_id) = session_id {
+        outcome = close_rdp_connection(
+            &*state,
+            &RdpConnectionSelector::SessionId(session_id),
+            "disconnect requested",
+            RDP_WORKER_SHUTDOWN_GRACE,
+        )
+        .await;
+    }
 
-    // 1) Try by session_id first
-    if let Some(ref sid) = session_id {
-        if let Some(conn) = service.connections.remove(sid) {
-            service.push_log(
-                "info",
-                format!("Disconnecting session {sid}"),
-                Some(sid.clone()),
-            );
-            let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            return Ok(());
+    if matches!(outcome, RdpCloseOutcome::NotFound) {
+        if let Some(connection_id) = connection_id {
+            outcome = close_rdp_connection(
+                &*state,
+                &RdpConnectionSelector::ConnectionId(connection_id),
+                "disconnect requested",
+                RDP_WORKER_SHUTDOWN_GRACE,
+            )
+            .await;
         }
     }
 
-    // 2) Fall back to connection_id (scan values)
-    if let Some(ref cid) = connection_id {
-        let old_id = service
-            .connections
-            .values()
-            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
-            .map(|c| c.session.id.clone());
-        if let Some(id) = old_id {
-            if let Some(conn) = service.connections.remove(&id) {
-                service.push_log(
-                    "info",
-                    format!("Disconnecting session {id} (connection_id={cid})"),
-                    Some(id.clone()),
-                );
-                let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                return Ok(());
-            }
-        }
+    match outcome {
+        RdpCloseOutcome::StillClosing {
+            session_id,
+            generation,
+        } => Err(format!(
+            "RDP worker {session_id} (generation {generation}) is still closing; cleanup continues in the background"
+        )),
+        // A missing record is an idempotent success: another disconnect or
+        // generation-scoped reaper may already have completed cleanup.
+        RdpCloseOutcome::NotFound | RdpCloseOutcome::Closed { .. } => Ok(()),
     }
-
-    // Nothing to disconnect -- this is not an error (the session may
-    // have already been evicted by a racing connect_rdp call).
-    Ok(())
 }
 
 /// Detach the viewer from an active RDP session without killing it.

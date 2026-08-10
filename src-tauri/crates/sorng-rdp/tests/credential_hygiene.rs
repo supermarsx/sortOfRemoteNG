@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use secrecy::{CloneableSecret, DebugSecret, ExposeSecret, Secret, SecretString, Zeroize};
 use sorng_rdp::rdp::cert_trust::security_error_lifecycle_summary;
+use sorng_rdp::rdp::session_runtime::RdpWorkerRuntime;
 use sorng_rdp::rdp::session_state::{ChannelSummary, FrameFlowSummary};
 use sorng_rdp::rdp::stats::RdpSessionStats;
 use sorng_rdp::rdp::types::{RdpActiveConnection, RdpSession, RdpStatsEvent};
@@ -89,8 +90,7 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
             session: test_session(),
             cmd_tx,
             stats: Arc::new(RdpSessionStats::new()),
-            _handle: tokio::spawn(async {}),
-            _session_slot: session_slot,
+            worker: RdpWorkerRuntime::spawn_blocking(1, session_slot, || {}),
             cached_password: SecretString::new("super-secret".to_string()),
             cached_domain: Some("LAB".to_string()),
         };
@@ -107,7 +107,6 @@ fn cached_password_field_uses_secret_string_and_redacts_debug() {
         );
         assert_eq!(connection.cached_password.expose_secret(), "super-secret");
 
-        connection._handle.abort();
         drop(connection);
     });
 }
