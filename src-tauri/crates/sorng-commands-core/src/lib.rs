@@ -22,6 +22,8 @@ mod app_shell_commands;
 mod cpu_commands;
 #[path = "../../../src/database_files.rs"]
 mod database_files;
+#[path = "../../../src/encryption_rotation_commands.rs"]
+mod encryption_rotation_commands;
 // The enum + resolver are only consumed by the middleware in the main
 // app crate; from the core-commands crate's perspective only the static
 // metadata is read by `api_capability_commands::get_api_capabilities`.

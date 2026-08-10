@@ -88,6 +88,7 @@ pub fn is_command(command: &str) -> bool {
             | "encryption_migrate_settings"
             | "encryption_lockout_state"
             | "encryption_disable_settings"
+            | "encryption_rotate_master_key_full"
             | "encryption_export_portable_dek"
             | "encryption_import_portable_dek"
             | "encryption_audit_read"
@@ -1399,6 +1400,7 @@ define_command_group!(
         encryption_commands::encryption_migrate_settings,
         encryption_commands::encryption_lockout_state,
         encryption_commands::encryption_disable_settings,
+        encryption_rotation_commands::encryption_rotate_master_key_full,
         encryption_commands::encryption_export_portable_dek,
         encryption_commands::encryption_import_portable_dek,
         encryption_commands::encryption_audit_read,
@@ -3027,22 +3029,38 @@ mod tests {
     ];
 
     #[test]
-    fn destructive_master_key_rotation_commands_are_not_exposed() {
+    fn only_full_master_key_rotation_is_exposed_and_used_by_the_frontend() {
         let source = include_str!("core_handler.rs");
-        for (module, command) in [
-            ("encryption_commands", "encryption_rotate_master_key"),
-            (
-                "encryption_rotation_commands",
-                "encryption_rotate_master_key_full",
-            ),
-        ] {
-            assert!(!is_command(command), "{command} must remain unavailable");
-            let registration = format!("{module}::{command},");
-            assert!(
-                !source.contains(&registration),
-                "{command} must not be present in generate_handler"
-            );
-        }
+        let legacy = "encryption_rotate_master_key";
+        let full = "encryption_rotate_master_key_full";
+
+        assert!(
+            !is_command(legacy),
+            "legacy partial rotation must remain unavailable"
+        );
+        assert!(!GROUP_A_COMMANDS.contains(&legacy));
+        let legacy_registration = format!("encryption_commands::{legacy},");
+        assert!(!source.contains(&legacy_registration));
+
+        assert!(
+            is_command(full),
+            "full transactional rotation must be recognized"
+        );
+        assert!(GROUP_A_COMMANDS.contains(&full));
+        let full_registration = format!("encryption_rotation_commands::{full},");
+        assert!(source.contains(&full_registration));
+
+        let hook = include_str!("../../../../src/hooks/settings/useEncryption.ts");
+        assert_eq!(
+            hook.matches("\"encryption_rotate_master_key_full\"")
+                .count(),
+            1,
+            "the production hook must invoke the full command exactly once"
+        );
+        assert!(
+            !hook.contains("\"encryption_rotate_master_key\""),
+            "the production hook must not invoke the retired partial command"
+        );
     }
 
     #[cfg(feature = "ops")]
