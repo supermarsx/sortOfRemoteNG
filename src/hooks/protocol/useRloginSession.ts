@@ -1,5 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useSessionRenderActivity } from "../../contexts/SessionRenderActivityContext";
 import { useConnections } from "../../contexts/useConnections";
 import type {
   Connection,
@@ -30,6 +38,10 @@ import {
   type RloginReplaySnapshot,
   type RloginStats,
 } from "./rloginRuntime";
+import {
+  rloginPollingScheduler,
+  type RloginPollingRegistration,
+} from "./rloginPollingScheduler";
 
 export type RloginFrontendStatus =
   | "connecting"
@@ -62,23 +74,98 @@ export interface RloginSessionModel {
 
 const MAX_FRONTEND_OUTPUT_FRAMES = 2_048;
 const MAX_FRONTEND_OUTPUT_BYTES = 1024 * 1024;
-const SNAPSHOT_POLL_MS = 400;
 
-const appendBoundedOutput = (
+export interface RloginBoundedOutputBatch {
+  frames: RloginDeliveredOutput[];
+  byteLength: number;
+  truncated: boolean;
+  examinedFrames: number;
+}
+
+export const appendBoundedRloginOutputBatch = (
   current: readonly RloginDeliveredOutput[],
-  frame: RloginDeliveredOutput,
-): RloginDeliveredOutput[] => {
-  const next = [...current, { ...frame, data: frame.data.slice() }];
-  let bytes = next.reduce((total, entry) => total + entry.data.length, 0);
-  while (
-    next.length > MAX_FRONTEND_OUTPUT_FRAMES ||
-    bytes > MAX_FRONTEND_OUTPUT_BYTES
-  ) {
-    const removed = next.shift();
-    if (!removed) break;
-    bytes -= removed.data.length;
+  currentByteLength: number,
+  incoming: readonly RloginDeliveredOutput[],
+): RloginBoundedOutputBatch => {
+  const combined = [...current, ...incoming];
+  let byteLength = currentByteLength;
+  for (const frame of incoming) byteLength += frame.data.byteLength;
+
+  let start = Math.max(0, combined.length - MAX_FRONTEND_OUTPUT_FRAMES);
+  for (let index = 0; index < start; index += 1) {
+    byteLength -= combined[index].data.byteLength;
   }
-  return next;
+  while (byteLength > MAX_FRONTEND_OUTPUT_BYTES && start < combined.length) {
+    byteLength -= combined[start].data.byteLength;
+    start += 1;
+  }
+  return {
+    frames: combined.slice(start),
+    byteLength: Math.max(0, byteLength),
+    truncated: start > 0,
+    examinedFrames: incoming.length + start,
+  };
+};
+
+interface HeldOutputBuffer {
+  slots: Array<RloginDeliveredOutput | undefined>;
+  head: number;
+  count: number;
+  byteLength: number;
+  truncated: boolean;
+}
+
+const createHeldOutputBuffer = (): HeldOutputBuffer => ({
+  slots: [],
+  head: 0,
+  count: 0,
+  byteLength: 0,
+  truncated: false,
+});
+
+const removeOldestHeldOutput = (buffer: HeldOutputBuffer): void => {
+  if (buffer.count === 0) return;
+  const removed = buffer.slots[buffer.head];
+  if (removed) buffer.byteLength -= removed.data.byteLength;
+  buffer.slots[buffer.head] = undefined;
+  buffer.head = (buffer.head + 1) % MAX_FRONTEND_OUTPUT_FRAMES;
+  buffer.count -= 1;
+  if (buffer.count === 0) buffer.head = 0;
+};
+
+const appendHeldOutput = (
+  buffer: HeldOutputBuffer,
+  frame: RloginDeliveredOutput,
+): void => {
+  const held = { ...frame, data: frame.data.slice() };
+  while (
+    buffer.count >= MAX_FRONTEND_OUTPUT_FRAMES ||
+    buffer.byteLength + held.data.byteLength > MAX_FRONTEND_OUTPUT_BYTES
+  ) {
+    if (buffer.count === 0) {
+      buffer.truncated = true;
+      return;
+    }
+    removeOldestHeldOutput(buffer);
+    buffer.truncated = true;
+  }
+  const index = (buffer.head + buffer.count) % MAX_FRONTEND_OUTPUT_FRAMES;
+  buffer.slots[index] = held;
+  buffer.count += 1;
+  buffer.byteLength += held.data.byteLength;
+  if (frame.prefixTruncated) buffer.truncated = true;
+};
+
+const drainHeldOutput = (
+  buffer: HeldOutputBuffer,
+): { frames: RloginDeliveredOutput[]; truncated: boolean } => {
+  const frames: RloginDeliveredOutput[] = [];
+  for (let offset = 0; offset < buffer.count; offset += 1) {
+    const frame =
+      buffer.slots[(buffer.head + offset) % MAX_FRONTEND_OUTPUT_FRAMES];
+    if (frame) frames.push(frame);
+  }
+  return { frames, truncated: buffer.truncated };
 };
 
 const copyFrame = (
@@ -99,6 +186,7 @@ const copyFrame = (
 export function useRloginSession(
   session: ConnectionSession,
 ): RloginSessionModel {
+  const { isActive: isRenderActive } = useSessionRenderActivity();
   const { state, dispatch } = useConnections();
   const connection = state.connections.find(
     (candidate) => candidate.id === session.connectionId,
@@ -140,11 +228,16 @@ export function useRloginSession(
   const cleanupGenerationRef = useRef(0);
   const channelGenerationRef = useRef(0);
   const pollingGenerationRef = useRef(0);
-  const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollInFlightRef = useRef(false);
+  const pollingRegistrationRef = useRef<RloginPollingRegistration | null>(null);
   const pollCountRef = useRef(0);
   const initializedTokenRef = useRef<string | null>(null);
   const cursorRef = useRef(new RloginSequenceCursor());
+  const renderedOutputRef = useRef<readonly RloginDeliveredOutput[]>([]);
+  const renderedOutputBytesRef = useRef(0);
+  const heldOutputRef = useRef(createHeldOutputBuffer());
+  const renderActiveRef = useRef(isRenderActive);
+  const resumePendingRef = useRef(isRenderActive);
+  const resumeGenerationRef = useRef(0);
   const assemblerRef = useRef<RloginChannelAssembler | null>(null);
   const runtimePathRef = useRef<RuntimeNetworkPath | null>(null);
   const ignoredDisconnectsRef = useRef(new Set<string>());
@@ -160,16 +253,50 @@ export function useRloginSession(
     [dispatch],
   );
 
-  const acceptOutput = useCallback((frame: RloginDeliveredOutput) => {
-    if (!mountedRef.current || !cursorRef.current.accept(frame.sequence))
-      return;
-    if (frame.prefixTruncated) setReplayTruncated(true);
-    setOutputFrames((current) => appendBoundedOutput(current, frame));
+  const commitOutputs = useCallback(
+    (frames: readonly RloginDeliveredOutput[]) => {
+      if (!mountedRef.current) return;
+      const accepted: RloginDeliveredOutput[] = [];
+      let truncated = false;
+      for (const frame of frames) {
+        if (!cursorRef.current.accept(frame.sequence)) continue;
+        accepted.push(frame);
+        truncated ||= frame.prefixTruncated;
+      }
+      if (accepted.length === 0) return;
+      const bounded = appendBoundedRloginOutputBatch(
+        renderedOutputRef.current,
+        renderedOutputBytesRef.current,
+        accepted,
+      );
+      truncated ||= bounded.truncated;
+      if (truncated) setReplayTruncated(true);
+      renderedOutputRef.current = bounded.frames;
+      renderedOutputBytesRef.current = bounded.byteLength;
+      setOutputFrames(bounded.frames);
+    },
+    [],
+  );
+
+  const holdOutput = useCallback((frame: RloginDeliveredOutput) => {
+    appendHeldOutput(heldOutputRef.current, frame);
   }, []);
 
+  const acceptLiveOutput = useCallback(
+    (frame: RloginDeliveredOutput) => {
+      if (!mountedRef.current) return;
+      if (!renderActiveRef.current || resumePendingRef.current) {
+        holdOutput(frame);
+        return;
+      }
+      commitOutputs([frame]);
+    },
+    [commitOutputs, holdOutput],
+  );
+
   const assembler = useMemo(
-    () => new RloginChannelAssembler(acceptOutput),
-    [acceptOutput],
+    () => new RloginChannelAssembler(acceptLiveOutput),
+    [acceptLiveOutput],
   );
   assemblerRef.current = assembler;
 
@@ -254,61 +381,97 @@ export function useRloginSession(
   const ingestSnapshot = useCallback(
     (sessionId: string, snapshot: RloginReplaySnapshot) => {
       if (snapshot.truncated) setReplayTruncated(true);
-      for (const frame of snapshot.frames) {
-        acceptOutput(copyFrame(sessionId, frame));
-      }
+      const replay = snapshot.frames
+        .map((frame) => copyFrame(sessionId, frame))
+        .sort((left, right) => left.sequence - right.sequence);
+      commitOutputs(replay);
     },
-    [acceptOutput],
+    [commitOutputs],
+  );
+
+  const finishActivationReplay = useCallback(
+    (sessionId: string, snapshot: RloginReplaySnapshot) => {
+      const held = drainHeldOutput(heldOutputRef.current);
+      const replay = snapshot.frames.map((frame) =>
+        copyFrame(sessionId, frame),
+      );
+      const merged = [...replay, ...held.frames].sort(
+        (left, right) => left.sequence - right.sequence,
+      );
+      heldOutputRef.current = createHeldOutputBuffer();
+      if (snapshot.truncated || held.truncated) {
+        setReplayTruncated(true);
+      }
+      commitOutputs(merged);
+      resumePendingRef.current = false;
+    },
+    [commitOutputs],
   );
 
   const stopPolling = useCallback(() => {
     pollingGenerationRef.current += 1;
-    if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
-    pollingTimerRef.current = null;
-    pollInFlightRef.current = false;
+    pollingRegistrationRef.current?.unregister();
+    pollingRegistrationRef.current = null;
   }, []);
 
-  const pollSnapshot = useCallback(
+  const executeSnapshotPoll = useCallback(
     async (id: string, generation: number) => {
-      if (pollInFlightRef.current) return;
-      pollInFlightRef.current = true;
+      if (
+        !mountedRef.current ||
+        pollingGenerationRef.current !== generation ||
+        backendRef.current !== id ||
+        !renderActiveRef.current
+      ) {
+        return;
+      }
+      const resumeGeneration = resumeGenerationRef.current;
+      const activationReplay = resumePendingRef.current;
+      let snapshot: RloginReplaySnapshot;
       try {
-        const snapshot = await invoke<RloginReplaySnapshot>(
+        snapshot = await invoke<RloginReplaySnapshot>(
           "get_rlogin_output_snapshot",
           { sessionId: id, afterSequence: cursorRef.current.value },
         );
-        if (
-          !mountedRef.current ||
-          pollingGenerationRef.current !== generation ||
-          backendRef.current !== id
-        ) {
-          return;
-        }
-        ingestSnapshot(id, snapshot);
-        pollCountRef.current += 1;
-        if (pollCountRef.current % 5 === 0) {
-          const info = await invoke<RloginBackendSession>(
-            "get_rlogin_session_info",
-            { sessionId: id },
-          );
-          if (
-            mountedRef.current &&
-            pollingGenerationRef.current === generation &&
-            backendRef.current === id
-          ) {
-            applyBackendSession(info);
-          }
-        }
       } catch {
-        // Lifecycle events own user-visible failure state. Snapshot polling is
-        // best-effort recovery for detach and missed channel delivery.
-      } finally {
-        if (pollingGenerationRef.current === generation) {
-          pollInFlightRef.current = false;
+        // Keep activation gating and held frames intact. Advancing the cursor
+        // without a replay could permanently skip missing retained output.
+        return;
+      }
+      if (
+        !mountedRef.current ||
+        pollingGenerationRef.current !== generation ||
+        backendRef.current !== id ||
+        !renderActiveRef.current ||
+        resumeGenerationRef.current !== resumeGeneration
+      ) {
+        return;
+      }
+      if (activationReplay) {
+        if (!resumePendingRef.current) return;
+        finishActivationReplay(id, snapshot);
+      } else {
+        if (resumePendingRef.current) return;
+        ingestSnapshot(id, snapshot);
+      }
+      pollCountRef.current += 1;
+      if (pollCountRef.current % 5 === 0) {
+        const info = await invoke<RloginBackendSession>(
+          "get_rlogin_session_info",
+          { sessionId: id },
+        ).catch(() => null);
+        if (
+          info &&
+          mountedRef.current &&
+          pollingGenerationRef.current === generation &&
+          backendRef.current === id &&
+          renderActiveRef.current &&
+          resumeGenerationRef.current === resumeGeneration
+        ) {
+          applyBackendSession(info);
         }
       }
     },
-    [applyBackendSession, ingestSnapshot],
+    [applyBackendSession, finishActivationReplay, ingestSnapshot],
   );
 
   const startPolling = useCallback(
@@ -316,13 +479,12 @@ export function useRloginSession(
       stopPolling();
       pollCountRef.current = 0;
       const generation = pollingGenerationRef.current;
-      void pollSnapshot(id, generation);
-      pollingTimerRef.current = setInterval(
-        () => void pollSnapshot(id, generation),
-        SNAPSHOT_POLL_MS,
+      pollingRegistrationRef.current = rloginPollingScheduler.register(
+        () => executeSnapshotPoll(id, generation),
+        renderActiveRef.current,
       );
     },
-    [pollSnapshot, stopPolling],
+    [executeSnapshotPoll, stopPolling],
   );
 
   const markConnected = useCallback(
@@ -394,6 +556,11 @@ export function useRloginSession(
 
       cursorRef.current.reset();
       assembler.clear();
+      renderedOutputRef.current = [];
+      renderedOutputBytesRef.current = 0;
+      heldOutputRef.current = createHeldOutputBuffer();
+      resumeGenerationRef.current += 1;
+      resumePendingRef.current = renderActiveRef.current;
       setOutputFrames([]);
       setReplayTruncated(false);
       setStats(null);
@@ -470,6 +637,14 @@ export function useRloginSession(
     );
   }, [reconnectAttempt, session.status, startInitialize]);
 
+  useLayoutEffect(() => {
+    if (renderActiveRef.current === isRenderActive) return;
+    renderActiveRef.current = isRenderActive;
+    resumeGenerationRef.current += 1;
+    resumePendingRef.current = isRenderActive;
+    pollingRegistrationRef.current?.setActive(isRenderActive);
+  }, [isRenderActive]);
+
   const shouldRunUnmountCleanup = useCallback(
     (generation: number) =>
       !mountedRef.current && cleanupGenerationRef.current === generation,
@@ -489,6 +664,7 @@ export function useRloginSession(
     return () => {
       mountedRef.current = false;
       stopPolling();
+      heldOutputRef.current = createHeldOutputBuffer();
       window.removeEventListener(
         "sorng:session-will-detach",
         preserveForDetach,
