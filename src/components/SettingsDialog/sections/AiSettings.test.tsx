@@ -77,6 +77,38 @@ describe("AiSettings (LLM router fold)", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses the standard settings section headers and cards", async () => {
+    const { container } = render(<AiSettings />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("llm_get_config", undefined),
+    );
+
+    expect(container.querySelector("h3 svg")?.getAttribute("class")).toContain(
+      "text-primary",
+    );
+    expect(
+      container.querySelectorAll(".sor-settings-section-header"),
+    ).toHaveLength(5);
+    expect(container.querySelectorAll(".sor-settings-card")).toHaveLength(5);
+    expect(container.querySelector(".sor-settings-collapsible")).toBeNull();
+
+    for (const name of [
+      "Providers",
+      "Router & load balancing",
+      "Model catalog",
+      "Usage & cache",
+      "Playground",
+    ]) {
+      const heading = screen.getByRole("heading", { name, level: 4 });
+      expect(heading).toHaveClass("sor-settings-section-header");
+      expect(heading.firstElementChild?.getAttribute("class")).toContain(
+        "text-primary",
+      );
+      expect(heading.nextElementSibling).toHaveClass("sor-settings-card");
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+
   it("adds a provider through the form, mapping to llm_add_provider with a snake_case config", async () => {
     render(<AiSettings />);
     await waitFor(() =>

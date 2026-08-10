@@ -3,7 +3,7 @@
 // Folds the sorng-llm crate (the router/aggregator over many LLM providers)
 // into a first-class "AI" settings tab. Binds the FULL 20-command surface of
 // `sorng-llm/src/commands.rs` through `useLlm()` / `llmApi`, grouped into
-// collapsible sub-panels: Providers (add/update/remove/list/default/health),
+// standard settings sections: Providers (add/update/remove/list/default/health),
 // Router (get/update config, balancer strategy, cache, usage tracking), Models
 // (list / by-provider / info), Usage & Cache (usage summary, status, cache
 // stats, clear), and a Playground (chat completion, embeddings, token
@@ -31,7 +31,10 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import SectionHeading from "../../ui/SectionHeading";
-import { SettingsCollapsibleSection } from "../../ui/settings/SettingsPrimitives";
+import {
+  Card,
+  SettingsSectionHeader as SectionHeader,
+} from "../../ui/settings/SettingsPrimitives";
 import { useLlm, type LlmManager } from "../../../hooks/integration/useLlm";
 import {
   useIntegrationConfigStore,
@@ -1140,45 +1143,55 @@ const AiSettings: React.FC = () => {
         </div>
       )}
 
-      <SettingsCollapsibleSection
-        title={t("integrations.llm.providers", "Providers")}
-        icon={<Server size={14} />}
-        defaultOpen
-      >
-        <ProvidersPanel mgr={mgr} store={store} />
-      </SettingsCollapsibleSection>
+      <div className="space-y-4">
+        <SectionHeader
+          title={t("integrations.llm.providers", "Providers")}
+          icon={<Server className="w-4 h-4 text-primary" />}
+        />
+        <Card>
+          <ProvidersPanel mgr={mgr} store={store} />
+        </Card>
+      </div>
 
-      <SettingsCollapsibleSection
-        title={t("integrations.llm.router", "Router & load balancing")}
-        icon={<CircuitBoard size={14} />}
-        defaultOpen={false}
-      >
-        <RouterPanel mgr={mgr} />
-      </SettingsCollapsibleSection>
+      <div className="space-y-4">
+        <SectionHeader
+          title={t("integrations.llm.router", "Router & load balancing")}
+          icon={<CircuitBoard className="w-4 h-4 text-primary" />}
+        />
+        <Card>
+          <RouterPanel mgr={mgr} />
+        </Card>
+      </div>
 
-      <SettingsCollapsibleSection
-        title={t("integrations.llm.models", "Model catalog")}
-        icon={<Cpu size={14} />}
-        defaultOpen={false}
-      >
-        <ModelsPanel mgr={mgr} />
-      </SettingsCollapsibleSection>
+      <div className="space-y-4">
+        <SectionHeader
+          title={t("integrations.llm.models", "Model catalog")}
+          icon={<Cpu className="w-4 h-4 text-primary" />}
+        />
+        <Card>
+          <ModelsPanel mgr={mgr} />
+        </Card>
+      </div>
 
-      <SettingsCollapsibleSection
-        title={t("integrations.llm.usageAndCache", "Usage & cache")}
-        icon={<Gauge size={14} />}
-        defaultOpen={false}
-      >
-        <UsagePanel mgr={mgr} />
-      </SettingsCollapsibleSection>
+      <div className="space-y-4">
+        <SectionHeader
+          title={t("integrations.llm.usageAndCache", "Usage & cache")}
+          icon={<Gauge className="w-4 h-4 text-primary" />}
+        />
+        <Card>
+          <UsagePanel mgr={mgr} />
+        </Card>
+      </div>
 
-      <SettingsCollapsibleSection
-        title={t("integrations.llm.playground", "Playground")}
-        icon={<BrainCircuit size={14} />}
-        defaultOpen={false}
-      >
-        <PlaygroundPanel mgr={mgr} />
-      </SettingsCollapsibleSection>
+      <div className="space-y-4">
+        <SectionHeader
+          title={t("integrations.llm.playground", "Playground")}
+          icon={<BrainCircuit className="w-4 h-4 text-primary" />}
+        />
+        <Card>
+          <PlaygroundPanel mgr={mgr} />
+        </Card>
+      </div>
     </div>
   );
 };
