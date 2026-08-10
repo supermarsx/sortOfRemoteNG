@@ -370,6 +370,112 @@ describe("useWebTerminal input lifecycle", () => {
     );
   });
 
+  it("unmounts a live persisted viewer without disconnecting its actor and remounts from replay", async () => {
+    const backendActors = new Set(["backend-persisted-1"]);
+    let retained = "";
+    mocks.invoke.mockImplementation((command: string) => {
+      if (command === "is_session_alive") return Promise.resolve(true);
+      if (command === "get_shell_info") {
+        return Promise.resolve("shell-persisted-1");
+      }
+      if (command === "get_terminal_buffer_snapshot") {
+        return Promise.resolve({
+          session_id: "backend-persisted-1",
+          data: retained,
+          generation: 1,
+          sequence_start: 0,
+          sequence_end: new TextEncoder().encode(retained).byteLength,
+          retained_start: 0,
+          dropped_bytes: 0,
+          gap: false,
+          generation_changed: false,
+        });
+      }
+      if (command === "disconnect_ssh") {
+        backendActors.delete("backend-persisted-1");
+      }
+      return Promise.resolve(undefined);
+    });
+    let persistedSession: ConnectionSession = {
+      ...session,
+      status: "connected",
+      backendSessionId: "backend-persisted-1",
+      shellId: "shell-persisted-1",
+    };
+    mocks.context.dispatch.mockImplementation((action) => {
+      if (
+        action?.type === "UPDATE_SESSION" &&
+        action.payload?.id === persistedSession.id
+      ) {
+        persistedSession = action.payload;
+      }
+    });
+    const Harness = () => {
+      const model = useWebTerminal(persistedSession, undefined, true);
+      return <div ref={model.containerRef} />;
+    };
+
+    const firstView = render(<Harness />);
+    await waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "get_terminal_buffer_snapshot",
+        { sessionId: "backend-persisted-1" },
+      ),
+    );
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(true));
+    retained = "A";
+    act(() => {
+      emitTauriEvent("ssh-output", {
+        session_id: "backend-persisted-1",
+        data: "A",
+        generation: 1,
+        sequence_start: 0,
+        sequence_end: 1,
+        retained_start: 0,
+        dropped_bytes: 0,
+      });
+    });
+    await waitFor(() =>
+      expect(mocks.MockTerminal.instances[0].write).toHaveBeenCalledWith("A"),
+    );
+
+    firstView.unmount();
+    await waitFor(() => expect(mocks.listeners.has("ssh-output")).toBe(false));
+    await waitFor(() =>
+      expect(hasSessionLifecycleActorAttempt(persistedSession.id)).toBe(false),
+    );
+    expect(backendActors).toEqual(new Set(["backend-persisted-1"]));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+      sessionId: "backend-persisted-1",
+    });
+
+    retained = "AB";
+    const secondView = render(<Harness />);
+    await waitFor(() => expect(mocks.MockTerminal.instances).toHaveLength(2));
+    await waitFor(() =>
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "get_terminal_buffer_snapshot",
+        ),
+      ).toHaveLength(2),
+    );
+    await waitFor(() =>
+      expect(mocks.MockTerminal.instances[1].write).toHaveBeenCalledWith("AB"),
+    );
+    expect(backendActors).toEqual(new Set(["backend-persisted-1"]));
+    expect(
+      mocks.invoke.mock.calls.filter(
+        ([command]) =>
+          command === "connect_ssh" ||
+          command === "start_shell" ||
+          command === "reattach_session" ||
+          command === "disconnect_ssh",
+      ),
+    ).toEqual([]);
+
+    secondView.unmount();
+  });
+
   it("shows connecting from the first render until a deferred SSH attempt settles", async () => {
     let resolveConnect!: (sessionId: string) => void;
     const deferredConnect = new Promise<string>((resolve) => {

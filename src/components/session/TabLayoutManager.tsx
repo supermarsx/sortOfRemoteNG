@@ -26,6 +26,10 @@ import MenuSurface from "../ui/overlays/MenuSurface";
 import { isMosaicMode } from "../../utils/session/tabLayoutBuilder";
 import { partitionSessions } from "../../utils/session/sessionClassification";
 import { SessionRenderActivityProvider } from "./SessionRenderActivity";
+import {
+  isSuspendableSshViewer,
+  useSshViewerMountBudget,
+} from "../../hooks/session/useSshViewerMountBudget";
 
 type Mgr = ReturnType<typeof useTabLayoutManager>;
 
@@ -495,6 +499,7 @@ interface TabLayoutManagerProps {
   onSessionDetach: (sessionId: string) => void;
   renderSession: (session: ConnectionSession) => React.ReactNode;
   middleClickCloseTab?: boolean;
+  maxMountedSshViewers?: number;
 }
 
 export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
@@ -507,6 +512,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   onSessionDetach,
   renderSession,
   middleClickCloseTab = true,
+  maxMountedSshViewers,
 }) => {
   const { t } = useTranslation();
   const mgr = useTabLayoutManager(
@@ -525,6 +531,21 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   const sessionStyles = useMemo(
     () => computeSessionStyles(sessions, layout, activeSessionId),
     [sessions, layout, activeSessionId],
+  );
+  const sshViewerPriorityIds = useMemo(() => {
+    const priority: string[] = [];
+    if (activeSessionId) priority.push(activeSessionId);
+    for (const session of sessions) {
+      if (sessionStyles.get(session.id)?.visibility === "visible") {
+        priority.push(session.id);
+      }
+    }
+    return [...new Set(priority)];
+  }, [activeSessionId, sessionStyles, sessions]);
+  const sshViewerMountBudget = useSshViewerMountBudget(
+    sessions,
+    sshViewerPriorityIds,
+    maxMountedSshViewers,
   );
 
   /**
@@ -759,9 +780,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
 
       {/* ── Stable session container ─────────────────── */}
       {/*
-        ALL sessions are always rendered here. Layout mode only
-        changes the CSS positioning. Sessions never unmount on
-        layout changes — this preserves RDP/SSH connections.
+        Session containers remain stable across layout changes. Protocols whose
+        React viewer owns transport stay mounted. Established inactive SSH
+        actors may release their xterm-only viewer under the bounded MRU budget;
+        the native actor remains alive and replays into a fresh viewer on focus.
       */}
       <div ref={mgr.containerRef} className="flex-1 overflow-hidden relative">
         {sessions.map((session) => {
@@ -774,6 +796,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           const isVisibleTile =
             mosaicMode && style.visibility === "visible" && slotIndex >= 0;
           const isRendererActive = isVisibleTile || (isTabsMode && isActive);
+          const isViewerMounted =
+            !isSuspendableSshViewer(session) ||
+            sshViewerMountBudget.mountedSessionIds.has(session.id);
           const isDropTarget = isVisibleTile && dragOverSlot === slotIndex;
           return (
             <div
@@ -802,6 +827,10 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                 isVisibleTile ? (e) => handleSlotDrop(e, slotIndex) : undefined
               }
               data-testid={isVisibleTile ? `tile-slot-${slotIndex}` : undefined}
+              data-session-id={session.id}
+              data-session-viewer-state={
+                isViewerMounted ? "mounted" : "suspended"
+              }
             >
               {isVisibleTile && (
                 <TileHeader
@@ -829,7 +858,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                 }
               >
                 <SessionRenderActivityProvider isActive={isRendererActive}>
-                  {renderSession(session)}
+                  {isViewerMounted ? renderSession(session) : null}
                 </SessionRenderActivityProvider>
               </div>
             </div>
