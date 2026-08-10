@@ -56,7 +56,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("@types/react", "19.2.14", "MIT", "Type Definitions"),
     ("@types/react-dom", "19.2.3", "MIT", "Type Definitions"),
     ("@types/react-grid-layout", "2.1.0", "MIT", "Type Definitions"),
-    ("@vitejs/plugin-react", "6.0.2", "MIT", "Build Tooling"),
+    ("@vitejs/plugin-react", "6.0.5", "MIT", "Build Tooling"),
     ("@vitest/coverage-v8", "4.1.6", "MIT", "Testing"),
     ("@wdio/cli", "9.27.1", "MIT", "Testing"),
     ("@wdio/local-runner", "9.27.1", "MIT", "Testing"),
@@ -80,7 +80,7 @@ const DEV_DEPS: &[(&str, &str, &str, &str)] = &[
     ("turbo", "2.9.14", "MIT", "Monorepo"),
     ("typescript", "6.0.3", "Apache-2.0", "TypeScript"),
     ("typescript-eslint", "8.59.3", "MIT", "TypeScript"),
-    ("vite", "8.1.4", "MIT", "Build Tooling"),
+    ("vite", "8.2.1", "MIT", "Build Tooling"),
     ("vitest", "4.1.6", "MIT", "Testing"),
     ("webdriverio", "9.27.1", "MIT", "Testing"),
 ];
