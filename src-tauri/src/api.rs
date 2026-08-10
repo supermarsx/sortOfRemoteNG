@@ -13,7 +13,9 @@ use axum::{
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use subtle::ConstantTimeEq;
@@ -399,17 +401,40 @@ fn cors_layer(config: &ApiRuntimeConfig) -> CorsLayer {
     }
 }
 
-/// Start the REST API server (t41 shared-interface entry point).
+type ApiServeFuture = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
+
+/// A fully validated REST API server whose listener is already bound.
 ///
-/// Binds `config.bind_addr()`, serves the hardened router with graceful
-/// shutdown on `shutdown_rx`, and uses TLS (axum-server + rustls) when
-/// `config.tls.enabled`, else plain HTTP. The [`BearerAuthService`] and
-/// rate-limit buckets are created per server run and live for its lifetime.
-pub async fn start_server(
+/// Holding this value keeps the listener reserved. Callers can therefore
+/// publish [`local_addr`](Self::local_addr) as ready without racing a later
+/// bind inside the spawned serve task.
+pub struct ReadyApiServer {
+    local_addr: SocketAddr,
+    serve_future: ApiServeFuture,
+}
+
+impl ReadyApiServer {
+    /// The actual address selected by the OS, including an ephemeral port.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
+    /// Run the pre-bound server until graceful shutdown or a serve error.
+    pub async fn serve(self) -> anyhow::Result<()> {
+        self.serve_future.await
+    }
+}
+
+/// Validate, prepare TLS when enabled, and pre-bind the REST API listener.
+///
+/// Success is the readiness boundary used by the lifecycle controller: both
+/// configuration/TLS preparation and socket binding have completed, and the
+/// returned address is the listener's authoritative `local_addr()`.
+pub async fn prepare_server(
     mut config: ApiRuntimeConfig,
     services: Arc<ApiService>,
     shutdown_rx: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ReadyApiServer> {
     if let Err(reason) = config.validate_for_start() {
         anyhow::bail!("{}", reason);
     }
@@ -430,6 +455,18 @@ pub async fn start_server(
     let bearer = BearerAuthService::new();
     let bind = config.bind_addr();
     let tls = config.tls.clone();
+    let rustls_config = if tls.enabled {
+        Some(build_rustls_config(&tls).await?)
+    } else {
+        None
+    };
+
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to bind {bind}: {e}"))?;
+    let local_addr = listener
+        .local_addr()
+        .map_err(|e| anyhow::anyhow!("failed to resolve bound REST API address for {bind}: {e}"))?;
 
     let state = ApiState {
         services,
@@ -440,24 +477,67 @@ pub async fn start_server(
     };
     let app = create_router(state);
 
-    if tls.enabled {
-        serve_tls(bind, tls, app, shutdown_rx).await
-    } else {
-        tracing::info!(target: "api", %bind, tls = false, "starting REST API server");
-        let listener = tokio::net::TcpListener::bind(bind)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to bind {bind}: {e}"))?;
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.await;
+    let serve_future: ApiServeFuture = if let Some(rustls_config) = rustls_config {
+        let listener = listener
+            .into_std()
+            .map_err(|e| anyhow::anyhow!("failed to prepare TLS listener {local_addr}: {e}"))?;
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
+        Box::pin(async move {
+            tokio::spawn(async move {
+                let _ = shutdown_rx.await;
+                shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
+            });
+            tracing::info!(
+                target: "api",
+                bind = %local_addr,
+                tls = true,
+                mode = ?tls.mode,
+                "starting REST API server"
+            );
+            axum_server::from_tcp_rustls(listener, rustls_config)
+                .handle(handle)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+                .await
+                .map_err(|e| anyhow::anyhow!("REST API TLS server error: {e}"))?;
+            Ok(())
         })
+    } else {
+        Box::pin(async move {
+            tracing::info!(target: "api", bind = %local_addr, tls = false, "starting REST API server");
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("REST API server error: {e}"))?;
+            Ok(())
+        })
+    };
+
+    Ok(ReadyApiServer {
+        local_addr,
+        serve_future,
+    })
+}
+
+/// Start the REST API server (t41 shared-interface entry point).
+///
+/// Existing direct callers retain the blocking serve contract. Lifecycle
+/// callers use [`prepare_server`] to observe the ready address before spawning
+/// the serve future.
+pub async fn start_server(
+    config: ApiRuntimeConfig,
+    services: Arc<ApiService>,
+    shutdown_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+    prepare_server(config, services, shutdown_rx)
+        .await?
+        .serve()
         .await
-        .map_err(|e| anyhow::anyhow!("REST API server error: {e}"))?;
-        Ok(())
-    }
 }
 
 fn derive_run_jwt_secret(persistent_secret: &str, run_epoch: &[u8]) -> String {
@@ -469,30 +549,6 @@ fn derive_run_jwt_secret(persistent_secret: &str, run_epoch: &[u8]) -> String {
     digest.update(persistent_secret.as_bytes());
     digest.update(run_epoch);
     hex::encode(digest.finalize())
-}
-
-/// Serve the router over TLS via `axum-server`. Graceful shutdown is driven by
-/// `shutdown_rx` through an `axum_server::Handle`.
-async fn serve_tls(
-    bind: SocketAddr,
-    tls: TlsConfig,
-    app: Router,
-    shutdown_rx: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
-    let rustls_config = build_rustls_config(&tls).await?;
-    let handle = axum_server::Handle::new();
-    let shutdown_handle = handle.clone();
-    tokio::spawn(async move {
-        let _ = shutdown_rx.await;
-        shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
-    });
-    tracing::info!(target: "api", %bind, tls = true, mode = ?tls.mode, "starting REST API server");
-    axum_server::bind_rustls(bind, rustls_config)
-        .handle(handle)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .await
-        .map_err(|e| anyhow::anyhow!("REST API TLS server error: {e}"))?;
-    Ok(())
 }
 
 /// Resolve an `axum_server` rustls config from the resolved [`TlsConfig`].

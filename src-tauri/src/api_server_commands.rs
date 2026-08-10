@@ -17,11 +17,11 @@
 //! Instead it holds an [`ApiServerLauncher`] — a boxed async closure the main
 //! app crate registers at startup (`state_registry`) that captures the real
 //! backend `ApiService`, resolves the current [`ApiRuntimeConfig`] from
-//! settings, spawns `api::start_server(config, services, shutdown_rx)`, and
-//! reports back a join handle + a secret-free status snapshot. This mirrors
-//! the `DisabledCapsSetter` bridge already used for live capability updates,
-//! and keeps the resolve-config-and-spawn logic (which needs app-crate types)
-//! on the app-crate side of the boundary.
+//! settings, pre-binds `api::prepare_server(config, services, shutdown_rx)`,
+//! and reports back a join handle + a secret-free ready status snapshot. This
+//! mirrors the `DisabledCapsSetter` bridge already used for live capability
+//! updates, and keeps the resolve-config-and-spawn logic (which needs app-crate
+//! types) on the app-crate side of the boundary.
 //!
 //! [`ApiRuntimeConfig`]: crate::api_config::ApiRuntimeConfig
 
@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 
 /// How long `stop`/`restart` wait for a graceful shutdown before aborting the
@@ -52,8 +52,7 @@ pub struct ApiServerStatus {
     pub running: bool,
     /// Resolved bind address, e.g. `"127.0.0.1:9876"`. Empty before first start.
     pub bind_addr: String,
-    /// Configured port. `0` when an OS-assigned ephemeral port was requested
-    /// and the real value is not yet known to the controller.
+    /// Actual bound port. Never `0` for a successfully started server.
     pub port: u16,
     /// Whether callers must authenticate (forced on for remote exposure).
     pub auth_required: bool,
@@ -72,11 +71,11 @@ pub struct ApiSecretStatus {
 /// by the app-crate [`ApiServerLauncher`].
 pub struct ServerLaunch {
     /// Join handle of the spawned axum server task. Completes when the server
-    /// stops (graceful shutdown, bind failure, or panic).
+    /// stops (graceful shutdown, serve failure, or panic).
     pub join: JoinHandle<()>,
     /// Resolved bind address for the status snapshot (`ip:port`).
     pub bind_addr: String,
-    /// Resolved/configured port for the status snapshot.
+    /// Actual bound port for the status snapshot.
     pub port: u16,
     /// Whether authentication is required for this run.
     pub auth_required: bool,
@@ -89,11 +88,11 @@ pub type LaunchFuture = Pin<Box<dyn Future<Output = Result<ServerLaunch, String>
 /// spawn the real (app-crate) axum server without depending on `api.rs`.
 ///
 /// The closure receives the shutdown `Receiver` for this run and must:
-/// resolve the current config from settings, spawn
-/// `api::start_server(config, services, shutdown_rx)`, and return the join
-/// handle + a secret-free [`ServerLaunch`]. Returning `Err(reason)` (e.g. a
-/// fail-closed "auth required but no key" refusal) surfaces to the caller and
-/// leaves the controller stopped.
+/// resolve the current config from settings, finish validation/TLS setup and
+/// listener binding, spawn the prepared server, and return the join handle + a
+/// secret-free [`ServerLaunch`]. Returning `Err(reason)` (e.g. a fail-closed
+/// validation or bind refusal) surfaces to the caller and leaves the controller
+/// stopped.
 ///
 /// Registered in Tauri state by `state_registry` as
 /// `sorng_commands_core::api_server_commands::ApiServerLauncher` so the
@@ -129,6 +128,10 @@ struct ControllerState {
 /// pull it out of Tauri state and delegate to its methods.
 pub struct ApiServerController {
     state: Mutex<ControllerState>,
+    /// Serializes lifecycle mutations across their async launcher/join waits.
+    /// Status reads stay synchronous and continue to use the short-held state
+    /// mutex above.
+    lifecycle: AsyncMutex<()>,
     launcher: ApiServerLauncher,
 }
 
@@ -141,6 +144,7 @@ impl ApiServerController {
                 shutdown: None,
                 status: ApiServerStatus::default(),
             }),
+            lifecycle: AsyncMutex::new(()),
             launcher,
         }
     }
@@ -156,16 +160,33 @@ impl ApiServerController {
     /// Start the server. Returns the resulting status, or an error if the
     /// server is already running or the launcher refused (fail-closed).
     pub async fn start(&self) -> Result<ApiServerStatus, String> {
-        // Double-start guard (peek only; do not hold the lock across the await).
+        let _lifecycle = self.lifecycle.lock().await;
+        self.start_locked().await
+    }
+
+    /// Start while the caller holds the lifecycle guard.
+    async fn start_locked(&self) -> Result<ApiServerStatus, String> {
         {
-            let state = self.state.lock().unwrap();
+            let mut state = self.state.lock().unwrap();
             if Self::is_running(&state) {
                 return Err("REST API server is already running".to_string());
             }
+            // Retire a task that ended on its own before attempting a new
+            // launch. A failed launch must never inherit a stale running flag.
+            state.join.take();
+            state.shutdown.take();
+            state.status.running = false;
         }
 
         let (tx, rx) = oneshot::channel();
         let launch = (self.launcher.0)(rx).await?;
+        if launch.port == 0 {
+            launch.join.abort();
+            return Err(
+                "REST API launcher reported port 0 after readiness; refusing to publish running"
+                    .to_string(),
+            );
+        }
         let status = ApiServerStatus {
             running: true,
             bind_addr: launch.bind_addr,
@@ -174,13 +195,6 @@ impl ApiServerController {
         };
 
         let mut state = self.state.lock().unwrap();
-        // Re-check after the await: another task may have won the race while
-        // we were launching. If so, abort the server we just spawned so we
-        // never leak two concurrent listeners.
-        if Self::is_running(&state) {
-            launch.join.abort();
-            return Err("REST API server is already running".to_string());
-        }
         state.join = Some(launch.join);
         state.shutdown = Some(tx);
         state.status = status.clone();
@@ -191,8 +205,18 @@ impl ApiServerController {
     /// [`SHUTDOWN_GRACE`]. Idempotent: stopping an already-stopped server is a
     /// no-op success.
     pub async fn stop(&self) -> Result<(), String> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.stop_locked().await
+    }
+
+    /// Stop while the caller holds the lifecycle guard.
+    async fn stop_locked(&self) -> Result<(), String> {
         let (shutdown, join) = {
             let mut state = self.state.lock().unwrap();
+            // Publish stopped at the same moment this generation is detached.
+            // No completion after the join wait writes status, so it cannot
+            // overwrite a later generation.
+            state.status.running = false;
             (state.shutdown.take(), state.join.take())
         };
 
@@ -209,16 +233,15 @@ impl ApiServerController {
             }
         }
 
-        let mut state = self.state.lock().unwrap();
-        state.status.running = false;
         Ok(())
     }
 
     /// Stop (if running) then start with freshly-resolved config. Used when the
     /// user changes settings that only take effect on a listener restart.
     pub async fn restart(&self) -> Result<ApiServerStatus, String> {
-        self.stop().await?;
-        self.start().await
+        let _lifecycle = self.lifecycle.lock().await;
+        self.stop_locked().await?;
+        self.start_locked().await
     }
 
     /// Current status snapshot. Reconciles the `running` flag if the server

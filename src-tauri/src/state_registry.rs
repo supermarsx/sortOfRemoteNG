@@ -117,9 +117,10 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
     // NOT nameable) receives this closure from the app crate. On each start it
     // re-resolves the CURRENT settings+env (so a Settings change followed by a
     // restart takes effect), fails closed if auth is required without a key,
-    // persists any freshly-generated secrets, spawns the axum server, and hands
-    // back a secret-free launch snapshot. Mirrors the DisabledCapsSetter bridge
-    // used for live capability updates above.
+    // persists any freshly-generated secrets, validates TLS and pre-binds the
+    // listener, then spawns the ready axum server and hands back its actual
+    // secret-free launch snapshot. Mirrors the DisabledCapsSetter bridge used
+    // for live capability updates above.
     let services_for_launcher = Arc::new(api_service.clone());
     let app_handle_for_launcher = app.app_handle().clone();
     let launcher =
@@ -157,21 +158,22 @@ pub(crate) fn register(app: &mut tauri::App<tauri::Wry>) -> tauri::Result<()> {
                 );
                 config.validate_for_start()?;
 
-                let bind_addr = config.bind_addr().to_string();
-                let port = config.port;
                 let auth_required = config.auth_required;
+                let server = crate::api::prepare_server(config, services, shutdown_rx)
+                    .await
+                    .map_err(|err| format!("failed to prepare REST API server: {err}"))?;
+                let local_addr = server.local_addr();
 
                 let join = tokio::spawn(async move {
-                    if let Err(err) = crate::api::start_server(config, services, shutdown_rx).await
-                    {
+                    if let Err(err) = server.serve().await {
                         log::error!("REST API server exited with error: {err}");
                     }
                 });
 
                 Ok(sorng_commands_core::api_server_commands::ServerLaunch {
                     join,
-                    bind_addr,
-                    port,
+                    bind_addr: local_addr.to_string(),
+                    port: local_addr.port(),
                     auth_required,
                 })
             }) as sorng_commands_core::api_server_commands::LaunchFuture
