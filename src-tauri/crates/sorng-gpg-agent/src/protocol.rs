@@ -1214,7 +1214,7 @@ impl AssuanClient {
         };
         let cmd = Zeroizing::new(format!(
             "PRESET_PASSPHRASE {} {} {}",
-            keygrip, timeout_str, &*hex_passphrase
+            keygrip, timeout_str, *hex_passphrase
         ));
         let result = self.send_command_buffer(cmd).await?;
         if result.ok {
