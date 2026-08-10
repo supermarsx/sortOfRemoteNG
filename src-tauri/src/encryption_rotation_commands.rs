@@ -53,6 +53,7 @@ const EVENT_UNLOCKED: &str = "encryption:unlocked";
 
 type RotationFailureInjector<'a> = dyn Fn(&str, &Path) -> Option<String> + Sync + 'a;
 type VaultReceiptWriter<'a> = dyn Fn(&[u8; 32]) -> Result<(), String> + Sync + 'a;
+type BeforeSettingsLockHook<'a> = dyn Fn() + Sync + 'a;
 
 #[derive(Debug)]
 struct StagedArtifact {
@@ -212,6 +213,7 @@ pub async fn rotate_master_key_full_inner(
         vault_present,
         None,
         None,
+        None,
     )
     .await
 }
@@ -227,32 +229,16 @@ async fn rotate_master_key_full_inner_impl(
     vault_present: bool,
     failure_injector: Option<&RotationFailureInjector<'_>>,
     vault_receipt_writer: Option<&VaultReceiptWriter<'_>>,
+    before_settings_lock: Option<&BeforeSettingsLockHook<'_>>,
 ) -> Result<FullRotateReport, String> {
     if !enc_state.is_unlocked().await {
         return Err("state is locked; unlock before rotating".into());
     }
 
     let dek_enc_path = app_data_dir.join(DEK_ENC_FILENAME);
-    let dek_enc_present = dek_enc_path.exists();
     let settings_enc_path = app_data_dir.join(SETTINGS_ENC_FILENAME);
-    let settings_enc_present = settings_enc_path.exists();
-
-    if dek_enc_present && password.is_none() {
-        return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
-    }
 
     let new_mode = durable_rotation_mode(vault_present, password.is_some())?;
-
-    // ── Step 1: freeze the old DEK ─────────────────────────────────
-    let old_state = enc_state
-        .snapshot()
-        .await
-        .ok_or_else(|| "internal: state vanished mid-rotation".to_string())?;
-
-    let old_bytes_raw = old_state
-        .master_bytes_raw()
-        .await
-        .ok_or_else(|| "internal: old master DEK vanished mid-rotation".to_string())?;
 
     // ── Step 2: prepare the new DEK in isolation ───────────────────
     // The live state deliberately stays on the old key until every
@@ -265,6 +251,55 @@ async fn rotate_master_key_full_inner_impl(
         .ok_or_else(|| "internal: new master DEK vanished mid-rotation".to_string())?;
 
     let salt = [0u8; SALT_LEN];
+
+    // Password wrapping is intentionally preflighted before taking the
+    // process-wide settings coordinator. Argon2 is the slowest part of a
+    // password rotation and no settings snapshot exists yet, so ordinary
+    // settings writes remain unblocked while it runs.
+    let new_dek_enc_blob = match password.as_deref() {
+        Some(pw) => {
+            let Some(dek_owned) = MasterDek::from_bytes(&new_bytes_raw) else {
+                return Err("internal: master DEK wrong length".to_string());
+            };
+            Some(
+                password_wrap::wrap(pw, &dek_owned, Argon2Params::OWASP)
+                    .map_err(|error| format!("wrap: {error}"))?,
+            )
+        }
+        None => None,
+    };
+
+    if let Some(hook) = before_settings_lock {
+        hook();
+    }
+
+    // From the live-key/settings snapshot through canonical replacement,
+    // receipt persistence, and live-key installation, rotation is one FIFO
+    // transaction with ordinary settings writes and representation changes.
+    let settings_guard = sorng_encryption::settings_coordinator::lock().await;
+
+    // The state or on-disk receipt could have changed while password preflight
+    // ran and this rotation waited its turn, so all canonical preconditions are
+    // re-read only after entering the shared coordinator.
+    if !enc_state.is_unlocked().await {
+        return Err("state is locked; unlock before rotating".into());
+    }
+    let dek_enc_present = dek_enc_path.exists();
+    let settings_enc_present = settings_enc_path.exists();
+    if dek_enc_present && password.is_none() {
+        return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
+    }
+
+    // ── Step 1: freeze the old DEK ─────────────────────────────────
+    let old_state = enc_state
+        .snapshot()
+        .await
+        .ok_or_else(|| "internal: state vanished mid-rotation".to_string())?;
+
+    let old_bytes_raw = old_state
+        .master_bytes_raw()
+        .await
+        .ok_or_else(|| "internal: old master DEK vanished mid-rotation".to_string())?;
 
     // Capture the old receipt before any canonical artifact can be
     // committed so a later receipt failure has a recovery source.
@@ -421,27 +456,6 @@ async fn rotate_master_key_full_inner_impl(
         return Ok(report);
     }
 
-    // Password wrapping is deliberately deferred until the entire
-    // artifact set has staged successfully. Partial rewrite failures
-    // should not spend the expensive Argon2 work or produce any new
-    // key receipt, even transiently.
-    let new_dek_enc_blob = match password.as_deref() {
-        Some(pw) => {
-            let Some(dek_owned) = MasterDek::from_bytes(&new_bytes_raw) else {
-                discard_rotation_files(&staged);
-                return Err("internal: master DEK wrong length".to_string());
-            };
-            match password_wrap::wrap(pw, &dek_owned, Argon2Params::OWASP) {
-                Ok(blob) => Some(blob),
-                Err(error) => {
-                    discard_rotation_files(&staged);
-                    return Err(format!("wrap: {error}"));
-                }
-            }
-        }
-        None => None,
-    };
-
     // ── Step 4: commit staged artifacts with rollback copies ───────
     if let Err((artifact, path, reason)) = prepare_backups(&staged) {
         push_failure(&mut report, artifact, &path, reason);
@@ -533,6 +547,10 @@ async fn rotate_master_key_full_inner_impl(
     report.vault_updated = vault_updated;
     report.dek_enc_updated = new_dek_enc_blob.is_some();
     discard_rotation_files(&staged);
+
+    // Lockout bookkeeping and audit persistence do not participate in the
+    // canonical settings/key transaction and must not delay queued writers.
+    drop(settings_guard);
 
     // Lockout reset + audit. The cross-window broadcast lives in the
     // Tauri wrapper (this helper has no AppHandle).
@@ -829,7 +847,7 @@ fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
 
     use sorng_encryption::envelope::EnvelopeHeader;
@@ -900,6 +918,191 @@ mod tests {
         }
     }
 
+    async fn password_receipt_fixture(seed: u8, password: &str) -> ReceiptFixture {
+        let fixture = receipt_fixture(seed).await;
+        let receipt_dek = MasterDek::from_bytes(&fixture.old_dek_bytes).expect("receipt DEK");
+        let test_argon = Argon2Params {
+            memory_kib: 8 * 1024,
+            time_cost: 1,
+            parallelism: 1,
+        };
+        let receipt = password_wrap::wrap(password, &receipt_dek, test_argon)
+            .expect("wrap old password receipt");
+        std::fs::write(fixture.app_data.join(DEK_ENC_FILENAME), receipt)
+            .expect("write old password receipt");
+
+        let settings_blob = artifact_settings::write(
+            &fixture.enc_state,
+            &fixture.settings_payload,
+            MasterKeyStorage::Password,
+            Argon2Params::OWASP,
+            [0u8; SALT_LEN],
+        )
+        .await
+        .expect("encode password settings");
+        std::fs::write(&fixture.settings_path, settings_blob).expect("write password settings");
+        fixture
+    }
+
+    async fn restart_from_password_receipt(
+        fixture: &ReceiptFixture,
+        password: &str,
+    ) -> serde_json::Value {
+        let receipt = std::fs::read(fixture.app_data.join(DEK_ENC_FILENAME))
+            .expect("rotated password receipt");
+        let restarted_state = EncryptionState::new();
+        restarted_state
+            .install(password_wrap::unwrap(password, &receipt).expect("unwrap rotated receipt"))
+            .await;
+        let settings = std::fs::read(&fixture.settings_path).expect("rotated settings");
+        artifact_settings::read(&restarted_state, &settings)
+            .await
+            .expect("decrypt settings after restart")
+            .expect("settings document after restart")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn rotation_then_queued_write_preserves_the_newest_patch_under_the_new_key() {
+        let password = "rotation-then-write";
+        let fixture = password_receipt_fixture(71, password).await;
+        let guard = sorng_encryption::settings_coordinator::lock().await;
+
+        let (rotation_ready_tx, rotation_ready_rx) = tokio::sync::oneshot::channel();
+        let rotation_dir = fixture.app_data.clone();
+        let rotation_enc = fixture.enc_state.clone();
+        let rotation_storage = fixture.storage_state.clone();
+        let rotation_backup = fixture.backup_state.clone();
+        let rotation_recording = fixture.recording_state.clone();
+        let rotation_password = password.to_string();
+        let rotation = tokio::spawn(async move {
+            let rotation_ready_tx = Mutex::new(Some(rotation_ready_tx));
+            let before_lock = || {
+                let sender = rotation_ready_tx
+                    .lock()
+                    .expect("rotation ready lock")
+                    .take()
+                    .expect("rotation ready sent once");
+                let _ = sender.send(());
+            };
+            rotate_master_key_full_inner_impl(
+                &rotation_dir,
+                &rotation_enc,
+                &rotation_storage,
+                &rotation_backup,
+                &rotation_recording,
+                Some(rotation_password),
+                false,
+                None,
+                None,
+                Some(&before_lock),
+            )
+            .await
+        });
+        rotation_ready_rx
+            .await
+            .expect("rotation reached coordinator");
+        assert!(!rotation.is_finished());
+
+        let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+        let writer_dir = fixture.app_data.clone();
+        let writer_enc = fixture.enc_state.clone();
+        let writer = tokio::spawn(async move {
+            let _ = writer_started_tx.send(());
+            crate::app_settings_commands::write_app_settings_inner(
+                &writer_dir,
+                &writer_enc,
+                json!({ "language": "fr", "windowSize": 1080 }),
+            )
+            .await
+        });
+        writer_started_rx.await.expect("writer started");
+        assert!(!writer.is_finished());
+
+        drop(guard);
+        let report = rotation.await.expect("rotation task").expect("rotation");
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+        writer.await.expect("writer task").expect("queued writer");
+
+        assert!(fixture.settings_path.exists());
+        assert!(!fixture.app_data.join("settings.json").exists());
+        let restarted = restart_from_password_receipt(&fixture, password).await;
+        assert_eq!(restarted["theme"], "dark");
+        assert_eq!(restarted["fixture"], 71);
+        assert_eq!(restarted["language"], "fr");
+        assert_eq!(restarted["windowSize"], 1080);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn queued_write_then_rotation_includes_the_patch_in_its_snapshot() {
+        let password = "write-then-rotation";
+        let fixture = password_receipt_fixture(72, password).await;
+        let guard = sorng_encryption::settings_coordinator::lock().await;
+
+        let (writer_started_tx, writer_started_rx) = tokio::sync::oneshot::channel();
+        let writer_dir = fixture.app_data.clone();
+        let writer_enc = fixture.enc_state.clone();
+        let writer = tokio::spawn(async move {
+            let _ = writer_started_tx.send(());
+            crate::app_settings_commands::write_app_settings_inner(
+                &writer_dir,
+                &writer_enc,
+                json!({ "language": "pirate", "writeGeneration": 2 }),
+            )
+            .await
+        });
+        writer_started_rx.await.expect("writer started");
+        assert!(!writer.is_finished());
+
+        let (rotation_ready_tx, rotation_ready_rx) = tokio::sync::oneshot::channel();
+        let rotation_dir = fixture.app_data.clone();
+        let rotation_enc = fixture.enc_state.clone();
+        let rotation_storage = fixture.storage_state.clone();
+        let rotation_backup = fixture.backup_state.clone();
+        let rotation_recording = fixture.recording_state.clone();
+        let rotation_password = password.to_string();
+        let rotation = tokio::spawn(async move {
+            let rotation_ready_tx = Mutex::new(Some(rotation_ready_tx));
+            let before_lock = || {
+                let sender = rotation_ready_tx
+                    .lock()
+                    .expect("rotation ready lock")
+                    .take()
+                    .expect("rotation ready sent once");
+                let _ = sender.send(());
+            };
+            rotate_master_key_full_inner_impl(
+                &rotation_dir,
+                &rotation_enc,
+                &rotation_storage,
+                &rotation_backup,
+                &rotation_recording,
+                Some(rotation_password),
+                false,
+                None,
+                None,
+                Some(&before_lock),
+            )
+            .await
+        });
+        rotation_ready_rx
+            .await
+            .expect("rotation reached coordinator");
+        assert!(!rotation.is_finished());
+
+        drop(guard);
+        writer.await.expect("writer task").expect("queued writer");
+        let report = rotation.await.expect("rotation task").expect("rotation");
+        assert!(report.failures.is_empty(), "{:?}", report.failures);
+
+        assert!(fixture.settings_path.exists());
+        assert!(!fixture.app_data.join("settings.json").exists());
+        let restarted = restart_from_password_receipt(&fixture, password).await;
+        assert_eq!(restarted["theme"], "dark");
+        assert_eq!(restarted["fixture"], 72);
+        assert_eq!(restarted["language"], "pirate");
+        assert_eq!(restarted["writeGeneration"], 2);
+    }
+
     #[tokio::test]
     async fn durable_receipt_matrix_sets_truthful_metadata_and_restarts_readably() {
         let cases = [
@@ -937,6 +1140,7 @@ mod tests {
                 vault_present,
                 None,
                 Some(&vault_writer),
+                None,
             )
             .await
             .unwrap_or_else(|error| panic!("{name} rotation failed: {error}"));
@@ -1002,6 +1206,7 @@ mod tests {
             &fixture.recording_state,
             None,
             false,
+            None,
             None,
             None,
         )
@@ -1109,6 +1314,7 @@ mod tests {
             Some(password.to_string()),
             false,
             Some(&fail_connections),
+            None,
             None,
         )
         .await
