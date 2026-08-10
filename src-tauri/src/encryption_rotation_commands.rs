@@ -1,8 +1,8 @@
 //! Full-artifact master-key rotation orchestrator.
 //!
-//! `encryption_rotate_master_key` in `sorng-encryption` rotates only
-//! the settings envelope + key-storage receipts (`dek.enc` +
-//! vault). That left every other artifact — connections (`data.enc`),
+//! The retired `encryption_rotate_master_key` command in
+//! `sorng-encryption` rotated only the settings envelope + key-storage
+//! receipts (`dek.enc` + vault). That left every other artifact — connections (`data.enc`),
 //! recording metadata, recording media sidecars, macros, and every
 //! v2 backup file across every destination — encrypted under the old
 //! sub-keys after rotation, which made them all unreadable on next
@@ -120,10 +120,9 @@ pub struct FullRotateFailure {
 
 /// Rotate the master DEK and re-encrypt every persisted artifact
 /// under the new sub-keys. Replaces the call to
-/// `encryption_rotate_master_key` from the Settings UI — the old
-/// command stays registered for callers that genuinely only want the
-/// settings half rotated, but the production "Rotate master key"
-/// button uses this one.
+/// `encryption_rotate_master_key` from the Settings UI. The legacy
+/// settings-only entry point now fails closed; this is the sole
+/// supported master-key rotation implementation.
 ///
 /// Implementation note: this Tauri command is intentionally a thin
 /// shell around [`rotate_master_key_full_inner`]. The shell owns the

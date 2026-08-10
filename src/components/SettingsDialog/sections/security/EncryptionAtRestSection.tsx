@@ -297,10 +297,9 @@ const EncryptionAtRestSection: React.FC = () => {
     setRotateError(null);
     setRotateSummary(null);
     try {
-      // Phase A — use the full-artifact rotation (settings +
-      // connections + backups + recordings + media + macros). The
-      // settings-only `rotateMasterKey` lives behind the same hook
-      // for advanced callers but is no longer the UI default.
+      // Use the full-artifact rotation (settings + connections + backups +
+      // recordings + media + macros). The unsafe settings-only command is
+      // retired and is no longer exposed by the frontend hook.
       const report = await enc.rotateMasterKeyFull(
         passwordModeActive ? rotatePassword : undefined,
       );

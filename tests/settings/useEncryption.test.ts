@@ -363,29 +363,6 @@ describe("useEncryption", () => {
     expect(got).toEqual(report);
   });
 
-  it("rotateMasterKey forwards the password (null when omitted)", async () => {
-    let received: any = null;
-    invokeImpl = makeInvoke(async (cmd, args) => {
-      if (cmd === "encryption_status") return sampleStatus;
-      if (cmd === "encryption_rotate_master_key") {
-        received = args;
-        return {
-          artifactsRewritten: 1,
-          bytesRewritten: 80,
-          vaultUpdated: true,
-          dekEncUpdated: false,
-        };
-      }
-      throw new Error(cmd);
-    });
-    const { result } = renderHook(() => useEncryption());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    await act(async () => {
-      await result.current.rotateMasterKey();
-    });
-    expect(received).toEqual({ password: null });
-  });
-
   it("exportPortableDek sends camelCase args", async () => {
     let received: any = null;
     invokeImpl = makeInvoke(async (cmd, args) => {
@@ -549,11 +526,10 @@ describe("useEncryption", () => {
   it("rotateMasterKeyFull invokes the full-rotation command, not the legacy one", async () => {
     // The UI's "Rotate master key" button must call the full-artifact
     // command so settings + connections + backups + recordings + media
-    // + macros all get rewritten under fresh sub-keys. The legacy
-    // `encryption_rotate_master_key` (settings-only) stays exposed on
-    // the hook for advanced callers but should NOT be the default
-    // path. This test pins both halves: the right command fires AND
-    // the legacy command stays silent.
+    // + macros all get rewritten under fresh sub-keys. The retired
+    // `encryption_rotate_master_key` (settings-only) must stay silent.
+    // This test pins both halves: the right command fires and the
+    // legacy command is never invoked.
     const fullReport = {
       settingsRewritten: true,
       connectionsRewritten: true,

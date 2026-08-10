@@ -91,13 +91,6 @@ export type LockReason =
   | "minimize"
   | "visibility-hidden";
 
-export interface RotateReport {
-  artifactsRewritten: number;
-  bytesRewritten: number;
-  vaultUpdated: boolean;
-  dekEncUpdated: boolean;
-}
-
 /** Full-artifact rotation report. Mirrors the Rust
  *  `FullRotateReport` returned by
  *  `encryption_rotate_master_key_full`. */
@@ -159,11 +152,6 @@ export interface UseEncryption {
    *  delete the encrypted file. Master key stays alive for other
    *  artifacts. */
   disableSettings: () => Promise<DisableSettingsReport>;
-  /** Legacy rotation — only rotates `settings.enc` + key-storage
-   *  receipts. Prefer [`rotateMasterKeyFull`] for any user-facing
-   *  "Rotate" button; this entry point is retained for callers that
-   *  genuinely want the settings-only behaviour. */
-  rotateMasterKey: (password?: string) => Promise<RotateReport>;
   /** Generate a fresh master DEK, re-encrypt every persisted
    *  artifact under new sub-keys (settings, connections database,
    *  every v2 backup file, recording metadata, recording-media
@@ -409,18 +397,6 @@ export function useEncryption(): UseEncryption {
     [refresh],
   );
 
-  const rotateMasterKey = useCallback(
-    async (password?: string): Promise<RotateReport> => {
-      const inv = await invokeOrThrow();
-      const report = await inv<RotateReport>("encryption_rotate_master_key", {
-        password: password ?? null,
-      });
-      await refresh();
-      return report;
-    },
-    [refresh],
-  );
-
   const rotateMasterKeyFull = useCallback(
     async (password?: string): Promise<FullRotateReport> => {
       const inv = await invokeOrThrow();
@@ -488,7 +464,6 @@ export function useEncryption(): UseEncryption {
     migrateRecordings,
     cancelRecordingsMigration,
     disableSettings,
-    rotateMasterKey,
     rotateMasterKeyFull,
     exportPortableDek,
     importPortableDek,

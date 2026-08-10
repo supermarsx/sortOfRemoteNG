@@ -891,140 +891,26 @@ pub async fn encryption_disable_settings(
     Ok(report)
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RotateReport {
-    pub artifacts_rewritten: u32,
-    pub bytes_rewritten: usize,
-    pub vault_updated: bool,
-    pub dek_enc_updated: bool,
+const LEGACY_ROTATION_RETIRED_ERROR: &str = "Legacy settings-only master-key rotation is retired because it can leave connections, backups, recordings, and macros unreadable. Use encryption_rotate_master_key_full instead.";
+
+fn reject_legacy_master_key_rotation() -> Result<(), String> {
+    Err(LEGACY_ROTATION_RETIRED_ERROR.to_string())
 }
 
-/// Rotate the master DEK. Generates fresh 32 random bytes, re-
-/// encrypts every artifact currently on disk under the new sub-keys,
-/// updates the vault entry and/or `dek.enc` to match. Atomic per file
-/// (temp + rename); a partial failure mid-rotation leaves the file
-/// that's mid-flight as its old ciphertext rather than corruption.
+/// Retired compatibility entry point.
 ///
-/// `password` is required iff `dek.enc` exists on disk (password or
-/// hybrid mode) — we need to rewrap the new DEK under it. Vault-only
-/// mode doesn't need it.
+/// The legacy command changed the master key and settings envelope without
+/// rewriting the other encrypted artifact families. Returning a hard error is
+/// safer than preserving an operation that can strand durable user data. The
+/// app-level `encryption_rotate_master_key_full` command is the only supported
+/// master-key rotation path.
 #[tauri::command]
 pub async fn encryption_rotate_master_key(
-    app: AppHandle,
-    state: State<'_, EncryptionState>,
-    password: Option<String>,
-) -> Result<RotateReport, String> {
-    if !state.is_unlocked().await {
-        return Err("state is locked; unlock before rotating".into());
-    }
-    let dir = ensure_app_data_dir(&app)?;
-    let dek_enc_path = dir.join(DEK_ENC_FILENAME);
-    let dek_enc_present = dek_enc_path.exists();
-    let settings_enc_path = dir.join(artifact_settings::SETTINGS_ENC_FILENAME);
-    let settings_enc_present = settings_enc_path.exists();
-    let vault_present = sorng_vault::keychain::read_dek().await.is_ok();
-
-    if dek_enc_present && password.is_none() {
-        return Err("password mode is in effect; supply the password to re-wrap dek.enc".into());
-    }
-
-    let new_mode = durable_settings_mode(vault_present, dek_enc_present)?;
-
-    // Generate and perform the password KDF before taking the settings
-    // coordinator. No settings snapshot has been captured yet, so doing the
-    // expensive preparation here cannot become stale.
-    let new_dek = MasterDek::generate();
-    let new_bytes = *new_dek.bytes_for_password_wrap();
-    let new_password_blob = password
-        .as_deref()
-        .map(|pw| password_wrap::wrap(pw, &new_dek, Argon2Params::OWASP))
-        .transpose()
-        .map_err(|e| format!("wrap: {e}"))?;
-
-    let _settings_guard = crate::settings_coordinator::lock().await;
-    if !state.is_unlocked().await {
-        return Err("state was locked while waiting to rotate".into());
-    }
-
-    // Read each artifact's plaintext via the *current* state, before
-    // we install the new DEK.
-    let settings_plaintext = if settings_enc_present {
-        let blob = read_bounded_regular_file(&settings_enc_path, MAX_SETTINGS_BYTES)?;
-        artifact_settings::read(&state, &blob)
-            .await
-            .map_err(|e| e.to_string())?
-            .unwrap_or_else(|| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    // Install the prepared master DEK only after the settings generation is
-    // frozen against ordinary writers.
-    state.install(new_dek).await;
-
-    let mut artifacts_rewritten = 0u32;
-    let mut bytes_rewritten = 0usize;
-
-    if settings_enc_present {
-        let salt = [0u8; crate::envelope::SALT_LEN];
-        let blob = artifact_settings::write(
-            &state,
-            &settings_plaintext,
-            new_mode,
-            Argon2Params::OWASP,
-            salt,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        bytes_rewritten += blob.len();
-        atomic_write(&settings_enc_path, &blob)?;
-        artifacts_rewritten += 1;
-    }
-
-    // Update key-storage receipts.
-    let mut vault_updated = false;
-    let mut dek_enc_updated = false;
-    if vault_present {
-        sorng_vault::keychain::store_bytes(
-            sorng_vault::types::SERVICE_NAME,
-            sorng_vault::types::MASTER_DEK_ACCOUNT,
-            &new_bytes,
-        )
-        .await
-        .map_err(|e| format!("vault update: {e}"))?;
-        vault_updated = true;
-    }
-    if let Some(blob) = new_password_blob {
-        atomic_write(&dek_enc_path, &blob)?;
-        dek_enc_updated = true;
-    }
-    drop(_settings_guard);
-
-    // Reset the lockout counter — successful rotation is the strongest
-    // possible signal that the user holds the password.
-    let lockout = update_lockout_state(&dir, LockoutState::record_success);
-    let lockout_result = persist_lockout_state(&dir, &lockout);
-    let audit_result = record_security_audit(
-        &dir,
-        AuditEvent::KeyRotated,
-        serde_json::json!({
-            "artifactsRewritten": artifacts_rewritten,
-            "bytesRewritten": bytes_rewritten,
-            "vaultUpdated": vault_updated,
-            "dekEncUpdated": dek_enc_updated,
-        }),
-    );
-    lockout_result?;
-    audit_result?;
-    let _ = app.emit(EVENT_UNLOCKED, ());
-
-    Ok(RotateReport {
-        artifacts_rewritten,
-        bytes_rewritten,
-        vault_updated,
-        dek_enc_updated,
-    })
+    _app: AppHandle,
+    _state: State<'_, EncryptionState>,
+    _password: Option<String>,
+) -> Result<(), String> {
+    reject_legacy_master_key_rotation()
 }
 
 /// Write the master DEK as a portable wrapped blob at the user-chosen
@@ -1255,18 +1141,16 @@ mod tests {
     }
 
     #[test]
-    fn rotate_report_camel_case() {
-        let r = RotateReport {
-            artifacts_rewritten: 3,
-            bytes_rewritten: 1024,
-            vault_updated: true,
-            dek_enc_updated: false,
-        };
-        let s = serde_json::to_string(&r).unwrap();
-        assert!(s.contains("\"artifactsRewritten\":3"));
-        assert!(s.contains("\"bytesRewritten\":1024"));
-        assert!(s.contains("\"vaultUpdated\":true"));
-        assert!(s.contains("\"dekEncUpdated\":false"));
+    fn legacy_settings_only_rotation_is_retired_with_full_rotation_guidance() {
+        let error = reject_legacy_master_key_rotation()
+            .expect_err("the settings-only rotation path must fail closed");
+
+        assert!(error.contains("settings-only master-key rotation is retired"));
+        assert!(error.contains("connections"));
+        assert!(error.contains("backups"));
+        assert!(error.contains("recordings"));
+        assert!(error.contains("macros"));
+        assert!(error.contains("encryption_rotate_master_key_full"));
     }
 
     #[test]
@@ -1482,12 +1366,9 @@ mod tests {
     use crate::envelope::{self, SALT_LEN};
 
     #[tokio::test]
-    async fn rotation_logic_invalidates_old_ciphertext() {
-        // Compose the same steps `encryption_rotate_master_key`
-        // performs, minus AppHandle / vault I/O: install DEK, encrypt
-        // a settings payload, then rotate and verify the old
-        // ciphertext fails to decrypt under the new state while the
-        // new ciphertext round-trips.
+    async fn fresh_master_key_invalidates_old_ciphertext() {
+        // Install a fresh DEK and verify old ciphertext fails to decrypt
+        // under the new state while new ciphertext still round-trips.
         let enc_state = EncryptionState::new();
         enc_state.install(MasterDek::generate()).await;
 
